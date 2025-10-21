@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Horas Extras - Meet Tech</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background: linear-gradient(135deg, #00ADEE 0%, #76B843 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 550px;
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #58595B 0%, #00ADEE 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+            position: relative;
+        }
+
+        .logo-container {
+            margin-bottom: 15px;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .logo-subtitle {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        .header h1 {
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .screen {
+            display: none;
+        }
+
+        .active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #58595B;
+        }
+
+        input, select {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #00ADEE;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #00ADEE 0%, #76B843 100%);
+            color: white;
+            border: none;
+            padding: 15px 20px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #58595B 0%, #808080 100%);
+        }
+
+        .btn-logout {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            margin-top: 10px;
+        }
+
+        .resultado {
+            background: #F3F3F3;
+            border: 2px solid #76B843;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .historico-item {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+
+        .info-card {
+            background: #F3F3F3;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .info-line {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .valor-destaque {
+            font-size: 24px;
+            font-weight: bold;
+            color: #76B843;
+            text-align: center;
+            margin: 15px 0;
+        }
+
+        .valor-destaque-dsr {
+            font-size: 20px;
+            font-weight: bold;
+            color: #00ADEE;
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .menu-buttons {
+            display: grid;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .user-welcome {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #80D6F7;
+            border-radius: 10px;
+            border-left: 4px solid #00ADEE;
+        }
+
+        .brand-colors {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .color-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .color-1 { background: #00ADEE; }
+        .color-2 { background: #76B843; }
+        .color-3 { background: #58595B; }
+        .color-4 { background: #80D6F7; }
+        .color-5 { background: #BBDCA1; }
+        .color-6 { background: #F3F3F3; }
+
+        .dsr-info {
+            background: #e3f2fd;
+            border-left: 4px solid #00ADEE;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-size: 14px;
+        }
+
+        .calculos-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 15px 0;
+        }
+
+        .calc-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .calc-card h4 {
+            color: #58595B;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .calc-valor {
+            font-size: 18px;
+            font-weight: bold;
+            color: #76B843;
+        }
+
+        .calc-valor-dsr {
+            font-size: 16px;
+            font-weight: bold;
+            color: #00ADEE;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Cabeçalho com Logo -->
+        <div class="header">
+            <div class="logo-container">
+                <div class="logo">Meet Tech</div>
+                <div class="logo-subtitle">BICYCLING</div>
+            </div>
+            
+            <h1>🏢 Controle de Horas Extras</h1>
+            <p>Sistema Corporativo - Com DSR</p>
+            
+            <div class="brand-colors">
+                <div class="color-dot color-1" title="#00ADEE"></div>
+                <div class="color-dot color-2" title="#76B843"></div>
+                <div class="color-dot color-3" title="#58595B"></div>
+                <div class="color-dot color-4" title="#80D6F7"></div>
+                <div class="color-dot color-5" title="#BBDCA1"></div>
+                <div class="color-dot color-6" title="#F3F3F3"></div>
+            </div>
+        </div>
+
+        <!-- Conteúdo -->
+        <div class="content">
+            <!-- Tela de Login -->
+            <div id="loginScreen" class="screen active">
+                <div class="form-group">
+                    <label for="senha">🔑 Senha do Funcionário:</label>
+                    <input type="password" id="senha" placeholder="Digite sua senha de 4 dígitos" maxlength="4">
+                </div>
+                <button class="btn" onclick="fazerLogin()">Entrar no Sistema</button>
+                
+                <div style="text-align: center; margin-top: 20px; color: #58595B; font-size: 14px;">
+                    <strong>Meet Tech</strong> - Sistema interno corporativo
+                </div>
+            </div>
+
+            <!-- Menu Principal -->
+            <div id="menuScreen" class="screen">
+                <div class="user-welcome">
+                    <h3>Olá, <span id="nomeFuncionario"></span>!</h3>
+                    <p>Salário Base: R$ <span id="salarioBase"></span></p>
+                </div>
+
+                <div class="menu-buttons">
+                    <button class="btn" onclick="mostrarTela('calcularScreen')">📊 Calcular Horas Extras + DSR</button>
+                    <button class="btn" onclick="mostrarHistorico()">📋 Ver Meu Histórico</button>
+                    <button class="btn" onclick="mostrarResumo()">ℹ️ Meu Resumo</button>
+                    <button class="btn btn-logout" onclick="sair()">🚪 Sair do Sistema</button>
+                </div>
+            </div>
+
+            <!-- Tela de Cálculo -->
+            <div id="calcularScreen" class="screen">
+                <h3 style="margin-bottom: 20px; color: #58595B;">📊 Calcular Horas Extras + DSR</h3>
+                
+                <div class="info-card">
+                    <div class="info-line">
+                        <span>Valor Hora Normal:</span>
+                        <span id="valorHoraNormal">R$ 0,00</span>
+                    </div>
+                    <div class="info-line">
+                        <span>Valor Hora Extra (50%):</span>
+                        <span id="valorHoraExtra">R$ 0,00</span>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="horasExtras">Quantidade de Horas Extras no Mês:</label>
+                    <input type="number" id="horasExtras" step="0.5" min="0.5" placeholder="Ex: 10.5" value="1">
+                </div>
+
+                <div class="form-group">
+                    <label for="diasUteis">Dias Úteis no Mês:</label>
+                    <select id="diasUteis">
+                        <option value="22">22 dias (Janeiro, Março, Maio, Julho, Agosto, Outubro, Dezembro)</option>
+                        <option value="21">21 dias (Abril, Junho, Setembro, Novembro)</option>
+                        <option value="20">20 dias (Fevereiro - ano não bissexto)</option>
+                        <option value="23">23 dias (Fevereiro - ano bissexto)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="domingosFeriados">Domingos e Feriados no Mês:</label>
+                    <select id="domingosFeriados">
+                        <option value="4">4 dias</option>
+                        <option value="5">5 dias</option>
+                        <option value="6">6 dias</option>
+                        <option value="7">7 dias</option>
+                        <option value="8">8 dias</option>
+                        <option value="9">9 dias</option>
+                    </select>
+                </div>
+
+                <button class="btn" onclick="calcularHorasExtrasComDSR()">Calcular Horas + DSR</button>
+                <button class="btn btn-secondary" onclick="mostrarTela('menuScreen')">Voltar</button>
+
+                <div id="resultadoCalculo" class="resultado">
+                    <h4 style="color: #76B843; margin-bottom: 15px;">✅ Cálculo Realizado</h4>
+                    
+                    <div class="calculos-grid">
+                        <div class="calc-card">
+                            <h4>Horas Extras</h4>
+                            <div class="calc-valor" id="horasCalculadas">0h</div>
+                            <div class="calc-valor" id="valorTotalHoras">R$ 0,00</div>
+                        </div>
+                        <div class="calc-card">
+                            <h4>DSR sobre HE</h4>
+                            <div class="calc-valor-dsr" id="valorDSR">R$ 0,00</div>
+                        </div>
+                    </div>
+
+                    <div class="valor-destaque" id="valorTotalGeral">R$ 0,00</div>
+
+                    <div class="dsr-info">
+                        <strong>💡 Como é calculado o DSR:</strong><br>
+                        DSR = (Horas Extras ÷ Dias Úteis) × Domingos/Feriados × Valor Hora Extra
+                    </div>
+
+                    <button class="btn" onclick="registrarHoras()">💾 Registrar no Histórico</button>
+                </div>
+            </div>
+
+            <!-- Tela de Histórico -->
+            <div id="historicoScreen" class="screen">
+                <h3 style="margin-bottom: 20px; color: #58595B;">📋 Meu Histórico</h3>
+                <div id="listaHistorico"></div>
+                <button class="btn btn-secondary" onclick="mostrarTela('menuScreen')" style="margin-top: 20px;">Voltar</button>
+            </div>
+
+            <!-- Tela de Resumo -->
+            <div id="resumoScreen" class="screen">
+                <h3 style="margin-bottom: 20px; color: #58595B;">ℹ️ Meu Resumo</h3>
+                <div id="dadosResumo"></div>
+                <button class="btn btn-secondary" onclick="mostrarTela('menuScreen')" style="margin-top: 20px;">Voltar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Dados dos funcionários (codificados)
+        const funcionarios = {
+            "2209": {"nome": "Andressa Sloboda", "salario": 2223.90},
+            "1809": {"nome": "Adryel Silva", "salario": 1098.48},
+            "3003": {"nome": "Arthur Finkler", "salario": 2557.50},
+            "0408": {"nome": "Bruna Jomek", "salario": 2223.90},
+            "2411": {"nome": "Elaine Guidelli", "salario": 2640.00},
+            "2701": {"nome": "Laura Souza", "salario": 2100.00},
+            "1204": {"nome": "Thalyta Pampuch", "salario": 2223.90}
+        };
+
+        let funcionarioLogado = null;
+        let historico = JSON.parse(localStorage.getItem('historicoHorasExtras')) || {};
+
+        // Função de login
+        function fazerLogin() {
+            const senha = document.getElementById('senha').value.trim();
+            
+            if (!senha) {
+                alert('❌ Por favor, digite sua senha!');
+                return;
+            }
+
+            if (funcionarios[senha]) {
+                funcionarioLogado = {
+                    senha: senha,
+                    ...funcionarios[senha]
+                };
+                
+                document.getElementById('nomeFuncionario').textContent = funcionarioLogado.nome;
+                document.getElementById('salarioBase').textContent = funcionarioLogado.salario.toFixed(2);
+                
+                // Calcular valores iniciais
+                const valorHora = funcionarioLogado.salario / 220;
+                document.getElementById('valorHoraNormal').textContent = `R$ ${valorHora.toFixed(2)}`;
+                document.getElementById('valorHoraExtra').textContent = `R$ ${(valorHora * 1.5).toFixed(2)}`;
+                
+                mostrarTela('menuScreen');
+                document.getElementById('senha').value = '';
+            } else {
+                alert('❌ Senha inválida! Verifique e tente novamente.');
+            }
+        }
+
+        // Navegação entre telas
+        function mostrarTela(telaId) {
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+            });
+            document.getElementById(telaId).classList.add('active');
+            
+            // Esconder resultado ao mudar de tela
+            document.getElementById('resultadoCalculo').style.display = 'none';
+        }
+
+        // Cálculo de horas extras COM DSR
+        function calcularHorasExtrasComDSR() {
+            const horas = parseFloat(document.getElementById('horasExtras').value);
+            const diasUteis = parseInt(document.getElementById('diasUteis').value);
+            const domingosFeriados = parseInt(document.getElementById('domingosFeriados').value);
+            
+            if (!horas || horas <= 0) {
+                alert('❌ Digite uma quantidade válida de horas!');
+                return;
+            }
+
+            const valorHora = funcionarioLogado.salario / 220;
+            const valorHoraExtra = valorHora * 1.5;
+            const valorTotalHoras = valorHoraExtra * horas;
+
+            // Cálculo do DSR
+            const mediaDiariaHE = horas / diasUteis;
+            const valorDSR = mediaDiariaHE * domingosFeriados * valorHoraExtra;
+
+            // Valor total geral
+            const valorTotalGeral = valorTotalHoras + valorDSR;
+
+            // Mostrar resultados
+            document.getElementById('horasCalculadas').textContent = `${horas}h`;
+            document.getElementById('valorTotalHoras').textContent = `R$ ${valorTotalHoras.toFixed(2)}`;
+            document.getElementById('valorDSR').textContent = `R$ ${valorDSR.toFixed(2)}`;
+            document.getElementById('valorTotalGeral').textContent = `Total: R$ ${valorTotalGeral.toFixed(2)}`;
+            document.getElementById('resultadoCalculo').style.display = 'block';
+
+            // Salvar cálculo temporário
+            sessionStorage.setItem('calculoTemp', JSON.stringify({
+                horas: horas,
+                diasUteis: diasUteis,
+                domingosFeriados: domingosFeriados,
+                valorHoraExtra: valorHoraExtra,
+                valorTotalHoras: valorTotalHoras,
+                valorDSR: valorDSR,
+                valorTotalGeral: valorTotalGeral
+            }));
+        }
+
+        // Registrar horas no histórico
+        function registrarHoras() {
+            const calculoTemp = JSON.parse(sessionStorage.getItem('calculoTemp'));
+            
+            if (!calculoTemp) {
+                alert('❌ Realize um cálculo primeiro!');
+                return;
+            }
+
+            const registro = {
+                data: new Date().toLocaleString('pt-BR'),
+                horas: calculoTemp.horas,
+                diasUteis: calculoTemp.diasUteis,
+                domingosFeriados: calculoTemp.domingosFeriados,
+                valorHoraExtra: calculoTemp.valorHoraExtra,
+                valorTotalHoras: calculoTemp.valorTotalHoras,
+                valorDSR: calculoTemp.valorDSR,
+                valorTotalGeral: calculoTemp.valorTotalGeral
+            };
+
+            // Adicionar ao histórico
+            if (!historico[funcionarioLogado.senha]) {
+                historico[funcionarioLogado.senha] = [];
+            }
+            
+            historico[funcionarioLogado.senha].push(registro);
+            localStorage.setItem('historicoHorasExtras', JSON.stringify(historico));
+
+            alert('✅ Horas extras + DSR registradas com sucesso!');
+            sessionStorage.removeItem('calculoTemp');
+            document.getElementById('resultadoCalculo').style.display = 'none';
+            document.getElementById('horasExtras').value = '1';
+        }
+
+        // Mostrar histórico
+        function mostrarHistorico() {
+            const historicoDiv = document.getElementById('listaHistorico');
+            const historicoFuncionario = historico[funcionarioLogado.senha] || [];
+
+            if (historicoFuncionario.length === 0) {
+                historicoDiv.innerHTML = '<div class="info-card"><p>Nenhuma hora extra registrada até o momento.</p></div>';
+            } else {
+                historicoDiv.innerHTML = historicoFuncionario.map((registro, index) => `
+                    <div class="historico-item">
+                        <div class="info-line">
+                            <strong>Data:</strong>
+                            <span>${registro.data}</span>
+                        </div>
+                        <div class="info-line">
+                            <strong>Horas Extras:</strong>
+                            <span>${registro.horas}h</span>
+                        </div>
+                        <div class="info-line">
+                            <strong>Valor Horas Extras:</strong>
+                            <span>R$ ${registro.valorTotalHoras.toFixed(2)}</span>
+                        </div>
+                        <div class="info-line">
+                            <strong>DSR:</strong>
+                            <span style="color: #00ADEE;">R$ ${registro.valorDSR.toFixed(2)}</span>
+                        </div>
+                        <div class="info-line">
+                            <strong>Valor Total:</strong>
+                            <span style="color: #76B843; font-weight: bold;">R$ ${registro.valorTotalGeral.toFixed(2)}</span>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            mostrarTela('historicoScreen');
+        }
+
+        // Mostrar resumo
+        function mostrarResumo() {
+            const resumoDiv = document.getElementById('dadosResumo');
+            const historicoFuncionario = historico[funcionarioLogado.senha] || [];
+            const valorHora = funcionarioLogado.salario / 220;
+            const valorHoraExtra = valorHora * 1.5;
+
+            let totalHoras = 0;
+            let totalValorHoras = 0;
+            let totalDSR = 0;
+            let totalGeral = 0;
+
+            historicoFuncionario.forEach(registro => {
+                totalHoras += registro.horas;
+                totalValorHoras += registro.valorTotalHoras;
+                totalDSR += registro.valorDSR;
+                totalGeral += registro.valorTotalGeral;
+            });
+
+            resumoDiv.innerHTML = `
+                <div class="info-card">
+                    <div class="info-line">
+                        <span>Nome:</span>
+                        <span>${funcionarioLogado.nome}</span>
+                    </div>
+                    <div class="info-line">
+                        <span>Salário Base:</span>
+                        <span>R$ ${funcionarioLogado.salario.toFixed(2)}</span>
+                    </div>
+                    <div class="info-line">
+                        <span>Valor Hora Normal:</span>
+                        <span>R$ ${valorHora.toFixed(2)}</span>
+                    </div>
+                    <div class="info-line">
+                        <span>Valor Hora Extra:</span>
+                        <span>R$ ${valorHoraExtra.toFixed(2)}</span>
+                    </div>
+                    <div class="info-line">
+                        <span>Total de Horas Extras:</span>
+                        <span>${totalHoras.toFixed(1)}h</span>
+                    </div>
+                    <div class="info-line">
+                        <span>Valor Total Horas Extras:</span>
+                        <span>R$ ${totalValorHoras.toFixed(2)}</span>
+                    </div>
+                    <div class="info-line">
+                        <span>Total DSR:</span>
+                        <span style="color: #00ADEE;">R$ ${totalDSR.toFixed(2)}</span>
+                    </div>
+                    <div class="info-line">
+                        <span>Valor Geral:</span>
+                        <span style="color: #76B843; font-weight: bold;">R$ ${totalGeral.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+
+            mostrarTela('resumoScreen');
+        }
+
+        // Logout
+        function sair() {
+            funcionarioLogado = null;
+            mostrarTela('loginScreen');
+        }
+
+        // Enter para login
+        document.getElementById('senha').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                fazerLogin();
+            }
+        });
+
+        // Enter para calcular
+        document.getElementById('horasExtras').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                calcularHorasExtrasComDSR();
+            }
+        });
+    </script>
+</body>
+</html>
