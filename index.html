@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Horas Extras - Wheel Tech</title>
+    <title>Sistema Wheel Tech</title>
     <style>
         * {
             margin: 0;
@@ -26,7 +26,7 @@
             border-radius: 15px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             width: 100%;
-            max-width: 900px;
+            max-width: 500px;
             overflow: hidden;
         }
 
@@ -35,24 +35,17 @@
             color: white;
             padding: 25px;
             text-align: center;
-            position: relative;
-        }
-
-        .logo-container {
-            margin-bottom: 15px;
         }
 
         .logo {
             font-size: 28px;
             font-weight: bold;
-            color: white;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            margin-bottom: 10px;
         }
 
         .logo-subtitle {
             font-size: 14px;
             opacity: 0.9;
-            margin-top: 5px;
         }
 
         .content {
@@ -67,284 +60,90 @@
             display: block;
         }
 
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #58595B;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #00ADEE;
+        }
+
         .btn {
             background: linear-gradient(135deg, #00ADEE 0%, #76B843 100%);
             color: white;
             border: none;
-            padding: 12px 20px;
+            padding: 15px 20px;
             border-radius: 8px;
-            font-size: 14px;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
+            width: 100%;
             transition: transform 0.2s;
-            margin-bottom: 10px;
         }
 
         .btn:hover {
             transform: translateY(-2px);
         }
 
-        .btn-full {
-            width: 100%;
-        }
-
         .btn-secondary {
             background: linear-gradient(135deg, #58595B 0%, #808080 100%);
         }
 
-        .btn-anuncios {
-            background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+        .btn-logout {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            margin-top: 10px;
         }
 
-        .btn-atualizar {
-            background: linear-gradient(135deg, #76B843 0%, #5A8A2A 100%);
-        }
-
-        .btn-comparar {
-            background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
-        }
-
-        /* Estilos para comparação de preços */
-        .comparacao-container {
-            margin: 20px 0;
-        }
-
-        .produto-card {
-            background: white;
-            border: 2px solid #e0e0e0;
+        .user-welcome {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #80D6F7;
             border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 15px;
+            border-left: 4px solid #00ADEE;
         }
 
-        .produto-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #e0e0e0;
-        }
-
-        .produto-titulo {
-            font-weight: bold;
-            color: #58595B;
-            font-size: 16px;
-            flex: 1;
-        }
-
-        .produto-sku {
-            font-size: 12px;
-            color: #888;
-            background: #f5f5f5;
-            padding: 2px 8px;
-            border-radius: 10px;
-        }
-
-        .precos-comparacao {
+        .menu-buttons {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-top: 15px;
-        }
-
-        .preco-plataforma {
-            text-align: center;
-            padding: 15px;
-            border-radius: 8px;
-            border: 2px solid #e0e0e0;
-        }
-
-        .preco-ml {
-            border-color: #FFE600;
-            background: #FFFDE7;
-        }
-
-        .preco-shopee {
-            border-color: #EE4D2D;
-            background: #FFEBEE;
-        }
-
-        .plataforma-nome {
-            font-weight: bold;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .preco-valor {
-            font-size: 20px;
-            font-weight: bold;
-            margin: 8px 0;
-        }
-
-        .preco-ml .preco-valor {
-            color: #2D3277;
-        }
-
-        .preco-shopee .preco-valor {
-            color: #EE4D2D;
-        }
-
-        .diferenca {
-            font-size: 12px;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-weight: bold;
-        }
-
-        .diferenca-positiva {
-            background: #E8F5E8;
-            color: #2E7D32;
-        }
-
-        .diferenca-negativa {
-            background: #FFEBEE;
-            color: #C62828;
-        }
-
-        .status-produto {
-            font-size: 11px;
-            margin-top: 5px;
-            padding: 2px 6px;
-            border-radius: 8px;
-            display: inline-block;
-        }
-
-        .status-ativo {
-            background: #E8F5E8;
-            color: #2E7D32;
-        }
-
-        .status-inativo {
-            background: #FFEBEE;
-            color: #C62828;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #58595B;
-        }
-
-        .error-message {
-            background: #ffebee;
-            border: 1px solid #f44336;
-            border-radius: 8px;
-            padding: 15px;
-            text-align: center;
-            color: #c62828;
-            margin: 10px 0;
-        }
-
-        .success-message {
-            background: #e8f5e8;
-            border: 1px solid #4caf50;
-            border-radius: 8px;
-            padding: 10px;
-            text-align: center;
-            color: #2e7d32;
-            margin-bottom: 15px;
-        }
-
-        .contador-produtos {
-            text-align: center;
-            margin: 15px 0;
-            color: #58595B;
-            font-size: 14px;
-            font-weight: bold;
-        }
-
-        .filtros-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
             gap: 10px;
-            margin-bottom: 15px;
+            margin-top: 20px;
         }
 
-        .form-group {
-            margin-bottom: 15px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #58595B;
-            font-size: 14px;
-        }
-
-        select, input {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-        }
-
-        .api-status {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 15px;
-            padding: 10px;
-            border-radius: 8px;
-            background: #e3f2fd;
-        }
-
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
+        .acesso-badge {
+            margin-top: 10px;
+            padding: 8px;
             background: #76B843;
-        }
-
-        .status-dot.loading {
-            background: #FFA000;
-            animation: pulse 1.5s infinite;
-        }
-
-        .status-dot.error {
-            background: #f44336;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-
-        .resumo-comparacao {
-            background: #F3F3F3;
-            border-radius: 10px;
-            padding: 15px;
-            margin: 15px 0;
-        }
-
-        .resumo-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .melhor-preco {
-            font-weight: bold;
-            color: #76B843;
+            color: white;
+            border-radius: 5px;
+            font-size: 12px;
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Cabeçalho -->
         <div class="header">
-            <div class="logo-container">
-                <div class="logo">Wheel Tech</div>
-                <div class="logo-subtitle">BICYCLING</div>
-            </div>
-            
-            <h1>🏢 Sistema Corporativo</h1>
-            <p>Horas Extras + Comparação de Preços</p>
+            <div class="logo">Wheel Tech</div>
+            <div class="logo-subtitle">BICYCLING</div>
         </div>
 
+        <!-- Conteúdo -->
         <div class="content">
             <!-- Tela de Login -->
             <div id="loginScreen" class="screen active">
@@ -352,7 +151,7 @@
                     <label for="senha">🔑 Senha do Funcionário:</label>
                     <input type="password" id="senha" placeholder="Digite sua senha de 4 dígitos" maxlength="4">
                 </div>
-                <button class="btn btn-full" onclick="fazerLogin()">Entrar no Sistema</button>
+                <button class="btn" onclick="fazerLogin()">Entrar no Sistema</button>
             </div>
 
             <!-- Menu Principal -->
@@ -360,104 +159,73 @@
                 <div class="user-welcome">
                     <h3>Olá, <span id="nomeFuncionario"></span>!</h3>
                     <p>Salário Base: R$ <span id="salarioBase"></span></p>
-                    <div id="acessoAnuncios" style="display: none; margin-top: 10px; padding: 8px; background: #76B843; color: white; border-radius: 5px; font-size: 12px;">
-                        ✅ Acesso à Comparação de Preços
+                    <div id="acessoAnuncios" class="acesso-badge" style="display: none;">
+                        ✅ Acesso à Gestão de Anúncios
                     </div>
                 </div>
 
                 <div class="menu-buttons">
-                    <button class="btn btn-full" onclick="mostrarTela('calcularScreen')">📊 Calcular Horas Extras + DSR</button>
-                    <button class="btn btn-full" onclick="mostrarHistorico()">📋 Ver Meu Histórico</button>
-                    <button class="btn btn-full" onclick="mostrarResumo()">ℹ️ Meu Resumo</button>
+                    <button class="btn" onclick="mostrarTela('calcularScreen')">📊 Calcular Horas Extras</button>
+                    <button class="btn" onclick="mostrarHistorico()">📋 Ver Meu Histórico</button>
+                    <button class="btn" onclick="mostrarResumo()">ℹ️ Meu Resumo</button>
                     
-                    <!-- Botão de Comparação de Preços -->
-                    <button id="btnComparacao" class="btn btn-full btn-comparar" onclick="mostrarComparacaoPrecos()" style="display: none;">
-                        💰 Comparação de Preços
+                    <!-- Botão de Anúncios (apenas para usuários autorizados) -->
+                    <button id="btnAnuncios" class="btn" onclick="mostrarAnuncios()" style="display: none; background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);">
+                        🛍️ Gestão de Anúncios
                     </button>
                     
-                    <button class="btn btn-full btn-secondary" onclick="sair()">🚪 Sair do Sistema</button>
+                    <button class="btn btn-logout" onclick="sair()">🚪 Sair do Sistema</button>
                 </div>
             </div>
 
-            <!-- Tela de Comparação de Preços -->
-            <div id="comparacaoScreen" class="screen">
-                <h3 style="margin-bottom: 15px; color: #58595B;">💰 Comparação de Preços</h3>
-                <p style="margin-bottom: 15px; color: #58595B; font-size: 14px;">
-                    Comparação automática de preços entre Mercado Livre e Shopee
-                </p>
-
-                <div class="api-status">
-                    <div class="status-dot" id="statusDot"></div>
-                    <span id="statusText">Pronto para consultar</span>
+            <!-- Tela de Cálculo -->
+            <div id="calcularScreen" class="screen">
+                <h3 style="margin-bottom: 20px; color: #58595B;">📊 Calcular Horas Extras</h3>
+                
+                <div class="form-group">
+                    <label for="horasExtras">Quantidade de Horas Extras:</label>
+                    <input type="number" id="horasExtras" step="0.5" min="0.5" placeholder="Ex: 2.5" value="1">
                 </div>
 
-                <div class="filtros-container">
-                    <div class="form-group">
-                        <label for="filtroPlataforma">Plataforma:</label>
-                        <select id="filtroPlataforma" onchange="filtrarProdutos()">
-                            <option value="todos">Todas</option>
-                            <option value="Mercado Livre">Mercado Livre</option>
-                            <option value="Shopee">Shopee</option>
-                        </select>
-                    </div>
+                <button class="btn" onclick="calcularHorasExtras()">Calcular Valor</button>
+                <button class="btn btn-secondary" onclick="mostrarTela('menuScreen')">Voltar</button>
 
-                    <div class="form-group">
-                        <label for="filtroStatus">Status:</label>
-                        <select id="filtroStatus" onchange="filtrarProdutos()">
-                            <option value="todos">Todos</option>
-                            <option value="ativo">Ativos</option>
-                            <option value="inativo">Inativos</option>
-                        </select>
+                <div id="resultadoCalculo" style="background: #e8f6f3; border-radius: 10px; padding: 20px; margin-top: 20px; display: none;">
+                    <h4 style="color: #27ae60; margin-bottom: 15px;">✅ Cálculo Realizado</h4>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Horas Extras:</strong> <span id="horasCalculadas">0h</span>
                     </div>
-
-                    <div class="form-group">
-                        <label for="filtroMelhorPreco">Melhor Preço:</label>
-                        <select id="filtroMelhorPreco" onchange="filtrarProdutos()">
-                            <option value="todos">Todos</option>
-                            <option value="ml">ML Mais Barato</option>
-                            <option value="shopee">Shopee Mais Barato</option>
-                        </select>
+                    <div style="margin-bottom: 10px;">
+                        <strong>Valor Total:</strong> <span id="valorTotalCalculado" style="font-size: 24px; font-weight: bold; color: #27ae60;">R$ 0,00</span>
                     </div>
+                    <button class="btn" onclick="registrarHoras()">💾 Registrar no Histórico</button>
                 </div>
-
-                <button class="btn btn-full btn-atualizar" onclick="carregarTodosPrecos()">
-                    🔄 Atualizar Todos os Preços
-                </button>
-
-                <div id="resumoComparacao" class="resumo-comparacao" style="display: none;">
-                    <h4 style="margin-bottom: 10px;">📈 Resumo da Comparação</h4>
-                    <div class="resumo-item">
-                        <span>Total de Produtos:</span>
-                        <span id="totalProdutos">0</span>
-                    </div>
-                    <div class="resumo-item">
-                        <span>ML Mais Barato:</span>
-                        <span id="mlMaisBarato" class="melhor-preco">0</span>
-                    </div>
-                    <div class="resumo-item">
-                        <span>Shopee Mais Barato:</span>
-                        <span id="shopeeMaisBarato" class="melhor-preco">0</span>
-                    </div>
-                    <div class="resumo-item">
-                        <span>Economia Média:</span>
-                        <span id="economiaMedia" class="melhor-preco">R$ 0,00</span>
-                    </div>
-                </div>
-
-                <div id="contadorProdutos" class="contador-produtos"></div>
-
-                <div id="comparacaoContainer" class="comparacao-container">
-                    <div class="loading" id="loadingComparacao">
-                        📡 Preparando comparação de preços...
-                    </div>
-                </div>
-
-                <button class="btn btn-full btn-secondary" onclick="mostrarTela('menuScreen')">
-                    ← Voltar ao Menu
-                </button>
             </div>
 
-            <!-- [Telas de Horas Extras permanecem iguais] -->
+            <!-- Tela de Anúncios -->
+            <div id="anunciosScreen" class="screen">
+                <h3 style="margin-bottom: 20px; color: #58595B;">🛍️ Gestão de Anúncios</h3>
+                <div id="anunciosContainer">
+                    <div style="text-align: center; padding: 20px; color: #58595B;">
+                        📡 Sistema de anúncios em desenvolvimento...
+                    </div>
+                </div>
+                <button class="btn btn-secondary" onclick="mostrarTela('menuScreen')" style="margin-top: 20px;">Voltar</button>
+            </div>
+
+            <!-- Tela de Histórico -->
+            <div id="historicoScreen" class="screen">
+                <h3 style="margin-bottom: 20px; color: #58595B;">📋 Meu Histórico</h3>
+                <div id="listaHistorico"></div>
+                <button class="btn btn-secondary" onclick="mostrarTela('menuScreen')" style="margin-top: 20px;">Voltar</button>
+            </div>
+
+            <!-- Tela de Resumo -->
+            <div id="resumoScreen" class="screen">
+                <h3 style="margin-bottom: 20px; color: #58595B;">ℹ️ Meu Resumo</h3>
+                <div id="dadosResumo"></div>
+                <button class="btn btn-secondary" onclick="mostrarTela('menuScreen')" style="margin-top: 20px;">Voltar</button>
+            </div>
         </div>
     </div>
 
@@ -473,166 +241,225 @@
             "1204": {"nome": "Thalyta Pampuch", "salario": 2223.90, "acessoAnuncios": true}
         };
 
-        // URL da planilha
-        const PLANILHA_URL = 'https://docs.google.com/spreadsheets/d/1zMa-RSRr53XpyVcaQu8WKvPZuqPKdseBNNZJNXUINmU/gviz/tq?tqx=out:json&sheet=Página1';
-
         let funcionarioLogado = null;
         let historico = JSON.parse(localStorage.getItem('historicoHorasExtras')) || {};
-        let todosProdutos = [];
 
-        // Função para extrair ID da Shopee da URL
-        function extrairIdShopee(url) {
-            const match = url.match(/\/(\d+)$/);
-            return match ? match[1] : null;
-        }
+        // Função de login - CORRIGIDA
+        function fazerLogin() {
+            const senha = document.getElementById('senha').value.trim();
+            console.log('Senha digitada:', senha); // Para debug
+            
+            if (!senha) {
+                alert('❌ Por favor, digite sua senha!');
+                return;
+            }
 
-        // Função para extrair Shop ID da Shopee da URL
-        function extrairShopIdShopee(url) {
-            const match = url.match(/product\/(\d+)\//);
-            return match ? match[1] : null;
-        }
-
-        // API Mercado Livre
-        async function buscarDadosML(mlb) {
-            try {
-                const response = await fetch(`https://api.mercadolibre.com/items/MLB${mlb}`);
-                if (!response.ok) throw new Error('Produto não encontrado no ML');
-                
-                const data = await response.json();
-                return {
-                    titulo: data.title,
-                    preco: data.price,
-                    status: data.status === 'active' ? 'ativo' : 'inativo',
-                    vendas: data.sold_quantity || 0,
-                    visualizacoes: data.visits || 0,
-                    link: data.permalink
+            if (funcionarios[senha]) {
+                funcionarioLogado = {
+                    senha: senha,
+                    ...funcionarios[senha]
                 };
-            } catch (error) {
-                console.error(`Erro ao buscar MLB ${mlb}:`, error);
-                return null;
+                
+                console.log('Login bem-sucedido:', funcionarioLogado); // Para debug
+                
+                document.getElementById('nomeFuncionario').textContent = funcionarioLogado.nome;
+                document.getElementById('salarioBase').textContent = funcionarioLogado.salario.toFixed(2);
+                
+                // Mostrar/ocultar botão de anúncios
+                const btnAnuncios = document.getElementById('btnAnuncios');
+                const acessoAnunciosDiv = document.getElementById('acessoAnuncios');
+                
+                if (funcionarioLogado.acessoAnuncios) {
+                    btnAnuncios.style.display = 'block';
+                    acessoAnunciosDiv.style.display = 'block';
+                } else {
+                    btnAnuncios.style.display = 'none';
+                    acessoAnunciosDiv.style.display = 'none';
+                }
+                
+                mostrarTela('menuScreen');
+                document.getElementById('senha').value = '';
+                
+            } else {
+                alert('❌ Senha inválida! Tente: 2209, 1809, 3003, 0408, 2411, 2701, 1204');
             }
         }
 
-        // API Shopee (via scraping alternativo)
-        async function buscarDadosShopee(shopeeUrl) {
-            try {
-                const itemid = extrairIdShopee(shopeeUrl);
-                const shopid = extrairShopIdShopee(shopeeUrl);
-                
-                if (!itemid || !shopid) {
-                    throw new Error('URL da Shopee inválida');
-                }
-
-                // Tentativa de acesso à API não-oficial da Shopee
-                const apiUrl = `https://shopee.com.br/api/v4/item/get?itemid=${itemid}&shopid=${shopid}`;
-                
-                const response = await fetch(apiUrl, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.data) {
-                        return {
-                            titulo: data.data.name,
-                            preco: data.data.price / 100000, // Shopee usa centavos
-                            status: 'ativo', // Assumindo ativo se encontrou
-                            vendas: data.data.historical_sold || 0,
-                            visualizacoes: data.data.view_count || 0
-                        };
-                    }
-                }
-
-                // Fallback: retornar dados básicos
-                return {
-                    titulo: 'Produto Shopee',
-                    preco: 0,
-                    status: 'ativo',
-                    vendas: 0,
-                    visualizacoes: 0
-                };
-
-            } catch (error) {
-                console.error(`Erro ao buscar Shopee ${shopeeUrl}:`, error);
-                return null;
-            }
+        // Navegação entre telas
+        function mostrarTela(telaId) {
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+            });
+            document.getElementById(telaId).classList.add('active');
+            
+            // Esconder resultado ao mudar de tela
+            document.getElementById('resultadoCalculo').style.display = 'none';
         }
 
-        // Carregar e comparar todos os preços
-        async function carregarTodosPrecos() {
-            const statusDot = document.getElementById('statusDot');
-            const statusText = document.getElementById('statusText');
-            const container = document.getElementById('comparacaoContainer');
-            const loading = document.getElementById('loadingComparacao');
+        // Mostrar tela de anúncios
+        function mostrarAnuncios() {
+            if (!funcionarioLogado.acessoAnuncios) {
+                alert('❌ Acesso não autorizado!');
+                return;
+            }
+            mostrarTela('anunciosScreen');
+        }
 
-            statusDot.className = 'status-dot loading';
-            statusText.textContent = 'Consultando APIs...';
-            loading.innerHTML = '🔄 Consultando Mercado Livre e Shopee...';
+        // Cálculo de horas extras
+        function calcularHorasExtras() {
+            const horas = parseFloat(document.getElementById('horasExtras').value);
+            
+            if (!horas || horas <= 0) {
+                alert('❌ Digite uma quantidade válida de horas!');
+                return;
+            }
 
-            try {
-                // Carregar dados da planilha
-                const response = await fetch(PLANILHA_URL);
-                const text = await response.text();
-                const json = JSON.parse(text.substring(47).slice(0, -2));
-                
-                const rows = json.table.rows;
-                todosProdutos = [];
+            const valorHora = funcionarioLogado.salario / 220;
+            const valorHoraExtra = valorHora * 1.5;
+            const valorTotal = valorHoraExtra * horas;
 
-                for (let i = 1; i < rows.length; i++) {
-                    const row = rows[i];
-                    const cells = row.c;
-                    
-                    if (cells && cells.length >= 5) {
-                        const shopeeUrl = cells[0]?.v;
-                        const mlb = cells[3]?.v?.toString();
-                        const sku = cells[2]?.v;
+            // Mostrar resultados
+            document.getElementById('horasCalculadas').textContent = `${horas}h`;
+            document.getElementById('valorTotalCalculado').textContent = `R$ ${valorTotal.toFixed(2)}`;
+            document.getElementById('resultadoCalculo').style.display = 'block';
 
-                        if (shopeeUrl && mlb) {
-                            const produto = {
-                                sku: sku || `SKU-${i}`,
-                                shopeeUrl: shopeeUrl,
-                                mlb: mlb,
-                                mlData: null,
-                                shopeeData: null
-                            };
+            // Salvar cálculo temporário
+            sessionStorage.setItem('calculoTemp', JSON.stringify({
+                horas: horas,
+                valorTotal: valorTotal
+            }));
+        }
 
-                            // Buscar dados do Mercado Livre
-                            produto.mlData = await buscarDadosML(mlb);
-                            
-                            // Buscar dados da Shopee
-                            produto.shopeeData = await buscarDadosShopee(shopeeUrl);
+        // Registrar horas no histórico
+        function registrarHoras() {
+            const calculoTemp = JSON.parse(sessionStorage.getItem('calculoTemp'));
+            
+            if (!calculoTemp) {
+                alert('❌ Realize um cálculo primeiro!');
+                return;
+            }
 
-                            todosProdutos.push(produto);
+            const registro = {
+                data: new Date().toLocaleString('pt-BR'),
+                horas: calculoTemp.horas,
+                valorTotal: calculoTemp.valorTotal
+            };
 
-                            // Atualizar status
-                            statusText.textContent = `Processando ${i}/${rows.length-1} produtos...`;
-                        }
-                    }
-                }
+            // Adicionar ao histórico
+            if (!historico[funcionarioLogado.senha]) {
+                historico[funcionarioLogado.senha] = [];
+            }
+            
+            historico[funcionarioLogado.senha].push(registro);
+            localStorage.setItem('historicoHorasExtras', JSON.stringify(historico));
 
-                statusDot.className = 'status-dot';
-                statusText.textContent = `✅ ${todosProdutos.length} produtos processados`;
-                filtrarProdutos();
-                atualizarResumoComparacao();
+            alert('✅ Horas extras registradas com sucesso!');
+            sessionStorage.removeItem('calculoTemp');
+            document.getElementById('resultadoCalculo').style.display = 'none';
+            document.getElementById('horasExtras').value = '1';
+        }
 
-            } catch (error) {
-                statusDot.className = 'status-dot error';
-                statusText.textContent = '❌ Erro ao carregar preços';
-                loading.innerHTML = `
-                    <div class="error-message">
-                        Erro: ${error.message}<br>
-                        <small>Tentando carregar dados de exemplo...</small>
+        // Mostrar histórico
+        function mostrarHistorico() {
+            const historicoDiv = document.getElementById('listaHistorico');
+            const historicoFuncionario = historico[funcionarioLogado.senha] || [];
+
+            if (historicoFuncionario.length === 0) {
+                historicoDiv.innerHTML = '<div style="background: #f8f9fa; padding: 20px; border-radius: 10px; text-align: center;"><p>Nenhuma hora extra registrada até o momento.</p></div>';
+            } else {
+                historicoDiv.innerHTML = historicoFuncionario.map((registro, index) => `
+                    <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 10px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <strong>Data:</strong>
+                            <span>${registro.data}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                            <strong>Horas:</strong>
+                            <span>${registro.horas}h</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <strong>Valor Total:</strong>
+                            <span style="color: #27ae60; font-weight: bold;">R$ ${registro.valorTotal.toFixed(2)}</span>
+                        </div>
                     </div>
-                `;
-                
-                // Carregar dados de exemplo em caso de erro
-                carregarDadosExemplo();
+                `).join('');
             }
+            
+            mostrarTela('historicoScreen');
         }
 
-        // [Restante do código...]
+        // Mostrar resumo
+        function mostrarResumo() {
+            const resumoDiv = document.getElementById('dadosResumo');
+            const historicoFuncionario = historico[funcionarioLogado.senha] || [];
+            const valorHora = funcionarioLogado.salario / 220;
+            const valorHoraExtra = valorHora * 1.5;
+
+            let totalHoras = 0;
+            let totalValor = 0;
+
+            historicoFuncionario.forEach(registro => {
+                totalHoras += registro.horas;
+                totalValor += registro.valorTotal;
+            });
+
+            resumoDiv.innerHTML = `
+                <div style="background: #f8f9fa; border-radius: 10px; padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #dee2e6;">
+                        <span>Nome:</span>
+                        <span>${funcionarioLogado.nome}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #dee2e6;">
+                        <span>Salário Base:</span>
+                        <span>R$ ${funcionarioLogado.salario.toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #dee2e6;">
+                        <span>Valor Hora Normal:</span>
+                        <span>R$ ${valorHora.toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #dee2e6;">
+                        <span>Valor Hora Extra:</span>
+                        <span>R$ ${valorHoraExtra.toFixed(2)}</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #dee2e6;">
+                        <span>Total de Horas Extras:</span>
+                        <span>${totalHoras.toFixed(1)}h</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Valor Total em Horas Extras:</span>
+                        <span style="color: #27ae60; font-weight: bold;">R$ ${totalValor.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+
+            mostrarTela('resumoScreen');
+        }
+
+        // Logout
+        function sair() {
+            funcionarioLogado = null;
+            mostrarTela('loginScreen');
+        }
+
+        // Enter para login
+        document.getElementById('senha').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                fazerLogin();
+            }
+        });
+
+        // Enter para calcular
+        document.getElementById('horasExtras').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                calcularHorasExtras();
+            }
+        });
+
+        // Debug: mostrar senhas disponíveis no console
+        console.log('Senhas disponíveis para teste:');
+        Object.keys(funcionarios).forEach(senha => {
+            console.log(`${senha} - ${funcionarios[senha].nome}`);
+        });
     </script>
 </body>
 </html>
