@@ -558,8 +558,8 @@
             "1204": {"nome": "Thalyta Pampuch", "salario": 2223.90, "acessoAnuncios": true}
         };
 
-        // URL da sua planilha
-        const PLANILHA_URL = 'https://docs.google.com/spreadsheets/d/1zMa-RSRr53XpyVcaQu8WKvPZuqPKdseBNNZJNXUINmU/edit?usp=sharing';
+        // URL da sua planilha - ATUALIZADA
+        const PLANILHA_URL = 'https://docs.google.com/spreadsheets/d/1zMa-RSRr53XpyVcaQu8WKvPZuqPKdseBNNZJNXUINmU/gviz/tq?tqx=out:json&headers=1&sheet=P%C3%A1gina1';
 
         let funcionarioLogado = null;
         let historico = JSON.parse(localStorage.getItem('historicoHorasExtras')) || {};
@@ -598,13 +598,10 @@
             try {
                 console.log(`Processando Shopee: ${shopeeUrl}`);
                 
-                // Extrair informações da URL da Shopee
-                const urlParts = shopeeUrl.split('/');
-                const productId = urlParts[urlParts.length - 1];
-                const shopId = urlParts[urlParts.length - 3];
-                
                 // Simulação de dados - na prática precisaria de scraping
-                // Por enquanto retornamos dados simulados
+                // Por enquanto retornamos dados simulados baseados na URL
+                const productId = shopeeUrl.split('/').pop();
+                
                 return {
                     titulo: `Produto Shopee ${productId}`,
                     preco: Math.random() * 100 + 50, // Preço aleatório entre 50-150
@@ -619,7 +616,7 @@
             }
         }
 
-        // 🚀 FUNÇÃO PRINCIPAL: Carregar e comparar todos os preços
+        // 🚀 FUNÇÃO PRINCIPAL: Carregar e comparar todos os preços (VERSÃO CORRIGIDA)
         async function carregarTodosPrecos() {
             const statusDot = document.getElementById('statusDot');
             const statusText = document.getElementById('statusText');
@@ -651,32 +648,46 @@
             try {
                 // 1. Buscar dados da planilha
                 statusText.textContent = 'Buscando dados da planilha...';
+                
                 const response = await fetch(PLANILHA_URL);
                 const text = await response.text();
-                const json = JSON.parse(text.substring(47).slice(0, -2));
                 
+                // Verificar se a resposta é válida
+                if (!text.startsWith('/*O_o*/')) {
+                    throw new Error('Resposta inválida da planilha. Verifique se a planilha está publicada.');
+                }
+                
+                const json = JSON.parse(text.substring(47).slice(0, -2));
                 const rows = json.table.rows;
                 todosProdutos = [];
                 let produtosProcessados = 0;
 
+                // Verificar se há dados
+                if (!rows || rows.length <= 1) {
+                    throw new Error('Nenhum produto encontrado na planilha');
+                }
+
                 // Atualizar contador inicial
                 contador.textContent = `📊 Processando 0 de ${rows.length - 1} produtos`;
 
-                // 2. Processar cada linha da planilha
+                // 2. Processar cada linha da planilha (COMEÇA DA LINHA 1 - PULA CABEÇALHO)
                 for (let i = 1; i < rows.length; i++) {
                     const row = rows[i];
                     const cells = row.c;
                     
-                    if (cells && cells.length >= 5) {
-                        const shopeeUrl = cells[0]?.v;
-                        const mlb = cells[3]?.v?.toString();
-                        const sku = cells[2]?.v || `SKU-${i}`;
+                    // ESTRUTURA DA SUA PLANILHA:
+                    // Coluna A: Links Shopee (célula 0)
+                    // Coluna B: MLBs (célula 1)
+                    if (cells && cells.length >= 2) {
+                        const shopeeUrl = cells[0]?.v; // Coluna A - Links Shopee
+                        const mlb = cells[1]?.v?.toString(); // Coluna B - MLBs
+                        const sku = `Produto-${i + 1}`; // SKU automático
 
-                        if (shopeeUrl && mlb) {
+                        if (shopeeUrl || mlb) {
                             const produto = {
                                 sku: sku,
                                 shopeeUrl: shopeeUrl,
-                                mlb: mlb,
+                                mlb: mlb ? mlb.replace('MLB', '').trim() : null, // Remove 'MLB' se presente
                                 mlData: null,
                                 shopeeData: null
                             };
@@ -687,32 +698,51 @@
 
                             // Atualizar barra de progresso
                             const progresso = ((produtosProcessados + 1) / (rows.length - 1)) * 100;
-                            document.getElementById('progressFill').style.width = `${progresso}%`;
+                            const progressFill = document.getElementById('progressFill');
+                            if (progressFill) {
+                                progressFill.style.width = `${progresso}%`;
+                            }
 
-                            // 3. Buscar dados do Mercado Livre (API REAL)
-                            statusText.textContent = `Consultando Mercado Livre (${mlb})...`;
-                            produto.mlData = await buscarDadosML(mlb);
-                            
-                            // 4. Buscar dados da Shopee (SIMULAÇÃO)
-                            statusText.textContent = `Consultando Shopee...`;
-                            produto.shopeeData = await buscarDadosShopee(shopeeUrl);
+                            // 3. Buscar dados do Mercado Livre (se tiver MLB)
+                            if (produto.mlb && produto.mlb.length > 0) {
+                                statusText.textContent = `Consultando Mercado Livre (${produto.mlb})...`;
+                                produto.mlData = await buscarDadosML(produto.mlb);
+                            }
+
+                            // 4. Buscar dados da Shopee (se tiver URL)
+                            if (produto.shopeeUrl && produto.shopeeUrl.includes('shopee.com.br')) {
+                                statusText.textContent = `Consultando Shopee...`;
+                                produto.shopeeData = await buscarDadosShopee(produto.shopeeUrl);
+                            }
 
                             todosProdutos.push(produto);
                             produtosProcessados++;
 
                             // Atualizar preview em tempo real
-                            atualizarPreviewProdutos();
+                            atualizarPreviewProdutos(produtosProcessados, rows.length - 1);
 
                             // Pequena pausa para não sobrecarregar as APIs
-                            await new Promise(resolve => setTimeout(resolve, 300));
+                            await new Promise(resolve => setTimeout(resolve, 500));
                         }
                     }
                 }
 
                 statusDot.className = 'status-dot';
                 statusText.textContent = `✅ ${produtosProcessados} produtos carregados`;
-                filtrarProdutos();
-                atualizarResumoComparacao();
+                
+                if (produtosProcessados > 0) {
+                    filtrarProdutos();
+                    atualizarResumoComparacao();
+                } else {
+                    container.innerHTML = `
+                        <div class="info-card">
+                            <p>✅ Planilha carregada com sucesso!</p>
+                            <p><small>Foram encontrados ${rows.length - 1} linhas na planilha.</small></p>
+                            <p><small>Verifique se os produtos possuem links do Mercado Livre ou Shopee preenchidos.</small></p>
+                        </div>
+                    `;
+                    contador.textContent = `📊 ${rows.length - 1} linhas encontradas na planilha`;
+                }
 
             } catch (error) {
                 console.error('Erro geral:', error);
@@ -722,7 +752,10 @@
                     <div class="error-message">
                         <strong>Erro ao carregar dados:</strong><br>
                         ${error.message}<br>
-                        <small>Verifique sua conexão e tente novamente</small>
+                        <small>Verifique: 
+                        <br>• Se a planilha está publicada (Arquivo → Publicar na web)
+                        <br>• A estrutura das colunas
+                        <br>• Sua conexão com a internet</small>
                     </div>
                 `;
                 contador.textContent = '❌ Erro no carregamento';
@@ -730,20 +763,21 @@
         }
 
         // 👀 FUNÇÃO: Atualizar preview durante o carregamento
-        function atualizarPreviewProdutos() {
+        function atualizarPreviewProdutos(processados, total) {
             const container = document.getElementById('comparacaoContainer');
             const produtosCarregados = todosProdutos.filter(p => p.mlData || p.shopeeData);
             
             if (produtosCarregados.length > 0) {
                 container.innerHTML = `
                     <div class="loading">
-                        <div style="margin-bottom: 15px;">🔄 Carregando... (${produtosCarregados.length} produtos processados)</div>
+                        <div style="margin-bottom: 15px;">🔄 Carregando... (${processados}/${total} produtos processados)</div>
                         <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${(produtosCarregados.length / todosProdutos.length) * 100}%"></div>
+                            <div class="progress-fill" style="width: ${(processados / total) * 100}%"></div>
                         </div>
                         <div style="font-size: 14px; color: #666;">
-                            <div>• ✅ ${produtosCarregados.length} produtos consultados</div>
+                            <div>• ✅ ${produtosCarregados.length} produtos com dados</div>
                             <div>• ⏳ Continuando busca...</div>
+                            <div>• Último produto: ${todosProdutos[todosProdutos.length - 1]?.sku || 'N/A'}</div>
                         </div>
                     </div>
                 `;
@@ -803,7 +837,7 @@
                     <div class="produto-card">
                         <div class="produto-header">
                             <div class="produto-titulo">${produto.sku}</div>
-                            <div class="produto-sku">SKU</div>
+                            <div class="produto-sku">${produto.mlb ? `MLB: ${produto.mlb}` : 'Sem MLB'}</div>
                         </div>
                         
                         <div class="precos-comparacao">
@@ -816,7 +850,7 @@
                                     <div>📈 ${ml.vendas} vendas</div>
                                     <div>👁️ ${ml.visualizacoes} views</div>
                                     ${diferenca < 0 ? `<div class="diferenca diferenca-positiva">+R$ ${Math.abs(diferenca).toFixed(2)} mais barato</div>` : ''}
-                                ` : '<div style="color: #888;">Dados não disponíveis</div>'}
+                                ` : '<div style="color: #888; padding: 10px;">Dados não disponíveis</div>'}
                             </div>
                             
                             <!-- Shopee -->
@@ -828,7 +862,7 @@
                                     <div>📈 ${shopee.vendas} vendas</div>
                                     <div>👁️ ${shopee.visualizacoes} views</div>
                                     ${diferenca > 0 ? `<div class="diferenca diferenca-positiva">+R$ ${diferenca.toFixed(2)} mais barato</div>` : ''}
-                                ` : '<div style="color: #888;">Dados não disponíveis</div>'}
+                                ` : '<div style="color: #888; padding: 10px;">Dados não disponíveis</div>'}
                             </div>
                         </div>
                         
@@ -1068,6 +1102,7 @@
         // Debug
         console.log('Sistema Wheel Tech - Comparação de Preços carregado!');
         console.log('Senhas disponíveis:', Object.keys(funcionarios));
+        console.log('URL da planilha:', PLANILHA_URL);
     </script>
 </body>
 </html>
