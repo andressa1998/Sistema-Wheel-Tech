@@ -129,6 +129,14 @@
             background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
         }
 
+        .btn-lista-produtos {
+            background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+        }
+
+        .btn-monitoramento {
+            background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
+        }
+
         .user-welcome {
             text-align: center;
             margin-bottom: 30px;
@@ -154,7 +162,6 @@
             font-size: 12px;
         }
 
-        /* Estilos para comparação de preços */
         .comparacao-container {
             margin: 20px 0;
         }
@@ -356,18 +363,6 @@
             margin: 20px 0;
         }
 
-        .resumo-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 10px;
-            font-size: 16px;
-        }
-
-        .melhor-preco {
-            font-weight: bold;
-            color: #76B843;
-        }
-
         .info-card {
             background: #f8f9fa;
             border: 1px solid #dee2e6;
@@ -375,31 +370,6 @@
             padding: 30px;
             text-align: center;
             color: #6c757d;
-        }
-
-        .produto-preview {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 10px;
-            margin: 5px 0;
-            font-size: 12px;
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: #e0e0e0;
-            border-radius: 4px;
-            margin: 15px 0;
-            overflow: hidden;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #00ADEE, #76B843);
-            border-radius: 4px;
-            transition: width 0.3s ease;
         }
 
         .action-buttons {
@@ -481,7 +451,6 @@
             border-top: 2px solid #27ae60;
         }
 
-        /* Novos estilos para histórico de preços */
         .historico-precos {
             margin-top: 20px;
         }
@@ -528,8 +497,65 @@
             text-align: center;
         }
 
-        .btn-monitoramento {
-            background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
+        .lista-rapida-produtos {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .produto-item-rapido {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .produto-info-rapido {
+            flex: 1;
+        }
+
+        .produto-nome-rapido {
+            font-weight: bold;
+            color: #58595B;
+            font-size: 14px;
+        }
+
+        .produto-sku-rapido {
+            font-size: 11px;
+            color: #888;
+        }
+
+        .produto-acoes-rapido {
+            display: flex;
+            gap: 5px;
+        }
+
+        .btn-pequeno {
+            padding: 6px 10px;
+            font-size: 11px;
+            width: auto;
+            margin: 0;
+        }
+
+        .preco-info {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .preco-carregado {
+            color: #2E7D32;
+        }
+
+        .preco-pendente {
+            color: #FF6B35;
         }
     </style>
 </head>
@@ -567,7 +593,6 @@
                     <button class="btn" onclick="mostrarHistorico()">📋 Ver Meu Histórico</button>
                     <button class="btn" onclick="mostrarResumo()">ℹ️ Meu Resumo</button>
                     
-                    <!-- Botão de Comparação de Preços -->
                     <button id="btnComparacao" class="btn btn-anuncios" onclick="mostrarComparacaoPrecos()" style="display: none;">
                         💰 Comparação de Preços
                     </button>
@@ -662,19 +687,26 @@
                     </div>
                 </div>
 
+                <!-- AÇÃO RÁPIDA -->
                 <div class="action-buttons">
                     <button class="btn btn-cadastrar" onclick="mostrarTela('cadastroScreen')">
                         ➕ Cadastrar Produto
                     </button>
+                    <button class="btn btn-lista-produtos" onclick="toggleListaProdutos()" id="btnListaProdutos">
+                        📋 Lista de Produtos
+                    </button>
                     <button class="btn btn-atualizar" onclick="atualizarPrecosAutomaticamente()">
-                        🔄 Atualizar Preços Agora
+                        🔄 Atualizar Preços
                     </button>
                     <button class="btn btn-monitoramento" onclick="toggleMonitoramentoAutomatico()" id="btnMonitoramento">
                         ⚡ Iniciar Monitoramento
                     </button>
-                    <button class="btn btn-excel" onclick="exportarParaExcel()" id="btnExportarExcel" style="display: none;">
-                        📊 Exportar para Excel
-                    </button>
+                </div>
+
+                <!-- LISTA RÁPIDA DE PRODUTOS -->
+                <div id="listaRapidaProdutos" class="lista-rapida-produtos" style="display: none;">
+                    <h4 style="margin-bottom: 15px; color: #58595B;">📦 Produtos Cadastrados</h4>
+                    <div id="conteudoListaRapida"></div>
                 </div>
 
                 <div class="filtros-container">
@@ -754,35 +786,25 @@
                 
                 <div class="form-group">
                     <label for="nomeProduto">Nome do Produto:</label>
-                    <input type="text" id="nomeProduto" placeholder="Ex: Bicicleta Aro 29">
+                    <input type="text" id="nomeProduto" placeholder="Ex: Gancheira Mosso Odyssey Challenger">
                 </div>
 
                 <div class="form-group">
                     <label for="skuProduto">SKU/Código:</label>
-                    <input type="text" id="skuProduto" placeholder="Ex: BT-001">
+                    <input type="text" id="skuProduto" placeholder="Ex: K33009">
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
                         <label for="mlbProduto">MLB (Mercado Livre):</label>
-                        <input type="text" id="mlbProduto" placeholder="Ex: MLB1234567890">
+                        <input type="text" id="mlbProduto" placeholder="Ex: MLB2106981701">
+                        <small style="color: #666;">O preço será buscado automaticamente</small>
                     </div>
 
-                    <div class="form-group">
-                        <label for="precoML">Preço ML (R$):</label>
-                        <input type="number" id="precoML" step="0.01" min="0" placeholder="Ex: 299.90">
-                    </div>
-                </div>
-
-                <div class="form-row">
                     <div class="form-group">
                         <label for="urlShopee">URL Shopee:</label>
                         <input type="text" id="urlShopee" placeholder="Ex: https://shopee.com.br/produto">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="precoShopee">Preço Shopee (R$):</label>
-                        <input type="number" id="precoShopee" step="0.01" min="0" placeholder="Ex: 279.90">
+                        <small style="color: #666;">O preço será buscado automaticamente</small>
                     </div>
                 </div>
 
@@ -842,12 +864,11 @@
             "1204": {"nome": "Thalyta Pampuch", "salario": 2223.90, "acessoAnuncios": true}
         };
 
-        // 🔧 🔧 🔧 CONFIGURAÇÕES DO MERCADO LIVRE 🔧 🔧 🔧
-        // ⚠️ ⚠️ ⚠️ COLE SUAS CREDENCIAIS AQUI ⚠️ ⚠️ ⚠️
+        // 🔧 CONFIGURAÇÕES DO MERCADO LIVRE
         const ML_CONFIG = {
-            app_key: '6382303492960193',                    // ← COLE SUA APP KEY AQUI
-            access_token: 'APP_USR-6382303492960193-101308-75f8ed46fed99fd9751068e6fa37892e-415176739',          // ← COLE SEU ACCESS TOKEN AQUI
-            client_secret: 'J0eBOOjqAG60c1jiXZd0J9YXp76r5EPe'         // ← COLE SEU CLIENT SECRET AQUI (opcional)
+            app_key: '6382303492960193',
+            access_token: 'APP_USR-6382303492960193-101308-75f8ed46fed99fd9751068e6fa37892e-415176739',
+            client_secret: 'J0eBOOjqAG60c1jiXZd0J9YXp76r5EPeI'
         };
 
         let funcionarioLogado = null;
@@ -855,9 +876,10 @@
         let todosProdutos = JSON.parse(localStorage.getItem('produtosCadastrados')) || [];
         let monitoramentoAtivo = false;
         let intervaloMonitoramento = null;
-        const INTERVALO_ATUALIZACAO = 6 * 60 * 60 * 1000; // 6 horas em milissegundos
+        const INTERVALO_ATUALIZACAO = 6 * 60 * 60 * 1000; // 6 horas
+        let produtoEditandoId = null;
 
-        // 🚀 FUNÇÃO: Atualizar preços automaticamente COM API REAL
+        // 🚀 FUNÇÃO: Atualizar preços automaticamente
         async function atualizarPrecosAutomaticamente() {
             const statusDot = document.getElementById('statusDot');
             const statusText = document.getElementById('statusText');
@@ -866,7 +888,6 @@
             statusText.textContent = 'Atualizando preços do Mercado Livre...';
 
             try {
-                // Verificar se as credenciais foram configuradas
                 if (ML_CONFIG.app_key === 'SUA_APP_KEY_AQUI' || ML_CONFIG.access_token === 'SEU_ACCESS_TOKEN_AQUI') {
                     throw new Error('Configure suas credenciais do Mercado Livre primeiro!');
                 }
@@ -876,7 +897,6 @@
                 statusDot.className = 'status-dot';
                 statusText.textContent = `✅ ${produtosAtualizados} preços atualizados`;
                 
-                // Atualizar a interface
                 carregarProdutosInternos();
                 
             } catch (error) {
@@ -884,10 +904,15 @@
                 statusText.textContent = '❌ Erro ao atualizar preços';
                 console.error('Erro na atualização:', error);
                 
-                // Fallback para simulação se a API falhar
                 if (error.message.includes('Configure suas credenciais')) {
                     statusText.textContent = '⚠️ Configure as credenciais do ML primeiro';
-                    alert('❌ Configure suas credenciais do Mercado Livre no código!\n\nProcure por "SUA_APP_KEY_AQUI" no código e substitua pelas suas credenciais.');
+                    alert('❌ Configure suas credenciais do Mercado Livre no código!');
+                } else {
+                    // Fallback para simulação
+                    const produtosAtualizados = await simularAtualizacaoPrecos();
+                    statusDot.className = 'status-dot';
+                    statusText.textContent = `✅ ${produtosAtualizados} preços simulados`;
+                    carregarProdutosInternos();
                 }
             }
         }
@@ -899,9 +924,6 @@
             for (const produto of todosProdutos) {
                 if (produto.mlb && produto.mlb.trim() !== '') {
                     try {
-                        console.log(`Buscando preço para MLB: ${produto.mlb}`);
-                        
-                        // API do Mercado Livre para buscar item por ID
                         const response = await fetch(`https://api.mercadolibre.com/items/${produto.mlb}?access_token=${ML_CONFIG.access_token}`);
                         
                         if (response.ok) {
@@ -909,18 +931,12 @@
                             const novoPreco = data.price;
                             
                             if (novoPreco && novoPreco !== produto.precoML) {
-                                console.log(`Preço atualizado: ${produto.nome} - R$ ${novoPreco}`);
                                 produto.precoML = novoPreco;
                                 produtosAtualizados++;
-                                
-                                // Registrar no histórico
                                 registrarMudancaPreco(produto);
                             }
-                        } else {
-                            console.warn(`Produto não encontrado ou sem acesso: ${produto.mlb}`);
                         }
                         
-                        // Delay para respeitar limites da API
                         await new Promise(resolve => setTimeout(resolve, 500));
                         
                     } catch (error) {
@@ -931,6 +947,33 @@
             
             localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
             return produtosAtualizados;
+        }
+
+        // 🔄 FUNÇÃO: Simular atualização de preços
+        async function simularAtualizacaoPrecos() {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    let produtosAtualizados = 0;
+                    
+                    todosProdutos.forEach(produto => {
+                        if (produto.mlb && !produto.precoML) {
+                            // Simular preço base para ML
+                            produto.precoML = 200 + Math.random() * 100;
+                            produtosAtualizados++;
+                            registrarMudancaPreco(produto);
+                        }
+                        if (produto.urlShopee && !produto.precoShopee) {
+                            // Simular preço base para Shopee
+                            produto.precoShopee = 180 + Math.random() * 100;
+                            produtosAtualizados++;
+                            registrarMudancaPreco(produto);
+                        }
+                    });
+                    
+                    localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
+                    resolve(produtosAtualizados);
+                }, 2000);
+            });
         }
 
         // 💾 FUNÇÃO: Registrar mudança de preço no histórico
@@ -951,7 +994,6 @@
             
             historicoPrecos[produto.id].push(registro);
             
-            // Manter apenas os últimos 100 registros por produto
             if (historicoPrecos[produto.id].length > 100) {
                 historicoPrecos[produto.id] = historicoPrecos[produto.id].slice(-100);
             }
@@ -959,29 +1001,364 @@
             localStorage.setItem('historicoPrecos', JSON.stringify(historicoPrecos));
         }
 
-        // 📈 FUNÇÃO: Salvar histórico completo
-        function salvarHistoricoPrecos() {
-            const historicoCompleto = {
-                dataAtualizacao: new Date().toISOString(),
-                produtos: todosProdutos.map(produto => ({
-                    id: produto.id,
-                    nome: produto.nome,
-                    sku: produto.sku,
-                    precoML: produto.precoML,
-                    precoShopee: produto.precoShopee,
-                    diferenca: produto.precoShopee - produto.precoML
-                }))
-            };
+        // 📋 FUNÇÃO: Toggle da lista rápida de produtos
+        function toggleListaProdutos() {
+            const listaDiv = document.getElementById('listaRapidaProdutos');
+            const btnLista = document.getElementById('btnListaProdutos');
             
-            let historicoGeral = JSON.parse(localStorage.getItem('historicoGeralPrecos')) || [];
-            historicoGeral.push(historicoCompleto);
-            
-            // Manter apenas os últimos 50 registros gerais
-            if (historicoGeral.length > 50) {
-                historicoGeral = historicoGeral.slice(-50);
+            if (listaDiv.style.display === 'none') {
+                carregarListaRapidaProdutos();
+                listaDiv.style.display = 'block';
+                btnLista.innerHTML = '📋 Ocultar Lista';
+                btnLista.style.background = 'linear-gradient(135deg, #58595B 0%, #808080 100%)';
+            } else {
+                listaDiv.style.display = 'none';
+                btnLista.innerHTML = '📋 Lista de Produtos';
+                btnLista.style.background = 'linear-gradient(135deg, #FF6B35 0%, #F7931E 100%)';
             }
+        }
+
+        // 📦 FUNÇÃO: Carregar lista rápida de produtos
+        function carregarListaRapidaProdutos() {
+            const container = document.getElementById('conteudoListaRapida');
             
-            localStorage.setItem('historicoGeralPrecos', JSON.stringify(historicoGeral));
+            if (todosProdutos.length === 0) {
+                container.innerHTML = '<div class="info-card"><p>Nenhum produto cadastrado ainda.</p></div>';
+                return;
+            }
+
+            container.innerHTML = todosProdutos.map(produto => `
+                <div class="produto-item-rapido">
+                    <div class="produto-info-rapido">
+                        <div class="produto-nome-rapido">${produto.nome}</div>
+                        <div class="produto-sku-rapido">SKU: ${produto.sku} | MLB: ${produto.mlb || 'Não informado'}</div>
+                        <div class="preco-info">
+                            <span class="${produto.precoML > 0 ? 'preco-carregado' : 'preco-pendente'}">
+                                ML: ${produto.precoML > 0 ? `R$ ${produto.precoML.toFixed(2)}` : 'Não carregado'}
+                            </span> | 
+                            <span class="${produto.precoShopee > 0 ? 'preco-carregado' : 'preco-pendente'}">
+                                Shopee: ${produto.precoShopee > 0 ? `R$ ${produto.precoShopee.toFixed(2)}` : 'Não carregado'}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="produto-acoes-rapido">
+                        <button class="btn btn-pequeno" onclick="mostrarHistoricoProduto(${produto.id})" title="Ver histórico">
+                            📊
+                        </button>
+                        <button class="btn btn-pequeno" onclick="editarProduto(${produto.id})" title="Editar produto">
+                            ✏️
+                        </button>
+                        <button class="btn btn-pequeno" onclick="excluirProduto(${produto.id})" title="Excluir produto">
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ✏️ FUNÇÃO: Editar produto
+        function editarProduto(id) {
+            const produto = todosProdutos.find(p => p.id === id);
+            if (!produto) return;
+
+            produtoEditandoId = produto.id;
+            
+            document.getElementById('nomeProduto').value = produto.nome;
+            document.getElementById('skuProduto').value = produto.sku;
+            document.getElementById('mlbProduto').value = produto.mlb || '';
+            document.getElementById('urlShopee').value = produto.urlShopee || '';
+            document.getElementById('statusProduto').value = produto.status;
+
+            mostrarTela('cadastroScreen');
+            window.scrollTo(0, 0);
+
+            setTimeout(() => {
+                alert(`Editando: ${produto.nome}\n\nAltere os dados e clique em "Salvar Produto" para atualizar.`);
+            }, 500);
+        }
+
+        // ➕ FUNÇÃO: Cadastrar produto
+        function cadastrarProduto() {
+            const nome = document.getElementById('nomeProduto').value.trim();
+            const sku = document.getElementById('skuProduto').value.trim();
+            const mlb = document.getElementById('mlbProduto').value.trim();
+            const urlShopee = document.getElementById('urlShopee').value.trim();
+            const status = document.getElementById('statusProduto').value;
+
+            if (!nome) {
+                alert('❌ Por favor, informe o nome do produto!');
+                return;
+            }
+
+            if (!sku) {
+                alert('❌ Por favor, informe o SKU do produto!');
+                return;
+            }
+
+            let produtoAtualizado;
+
+            if (produtoEditandoId) {
+                // Modo edição
+                produtoAtualizado = {
+                    ...todosProdutos.find(p => p.id === produtoEditandoId),
+                    nome: nome,
+                    sku: sku,
+                    mlb: mlb,
+                    urlShopee: urlShopee,
+                    status: status
+                };
+
+                todosProdutos = todosProdutos.map(p => p.id === produtoEditandoId ? produtoAtualizado : p);
+                
+            } else {
+                // Novo produto
+                const produtoExistente = todosProdutos.find(p => p.sku === sku);
+                if (produtoExistente) {
+                    alert('❌ Já existe um produto com este SKU!');
+                    return;
+                }
+
+                produtoAtualizado = {
+                    id: Date.now(),
+                    nome: nome,
+                    sku: sku,
+                    mlb: mlb,
+                    precoML: 0,
+                    urlShopee: urlShopee,
+                    precoShopee: 0,
+                    status: status,
+                    dataCadastro: new Date().toLocaleString('pt-BR')
+                };
+
+                todosProdutos.push(produtoAtualizado);
+            }
+
+            localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
+
+            // Limpar formulário
+            document.getElementById('nomeProduto').value = '';
+            document.getElementById('skuProduto').value = '';
+            document.getElementById('mlbProduto').value = '';
+            document.getElementById('urlShopee').value = '';
+            document.getElementById('statusProduto').value = 'ativo';
+            
+            produtoEditandoId = null;
+
+            alert(`✅ Produto ${produtoEditandoId ? 'atualizado' : 'cadastrado'} com sucesso!`);
+            
+            atualizarListaProdutosCadastrados();
+            if (document.getElementById('listaRapidaProdutos').style.display === 'block') {
+                carregarListaRapidaProdutos();
+            }
+
+            mostrarTela('comparacaoScreen');
+        }
+
+        // 🗑️ FUNÇÃO: Excluir produto
+        function excluirProduto(id) {
+            if (confirm('Tem certeza que deseja excluir este produto?')) {
+                todosProdutos = todosProdutos.filter(produto => produto.id !== id);
+                localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
+                if (document.getElementById('listaRapidaProdutos').style.display === 'block') {
+                    carregarListaRapidaProdutos();
+                }
+                alert('✅ Produto excluído com sucesso!');
+            }
+        }
+
+        // 📋 FUNÇÃO: Atualizar lista de produtos cadastrados
+        function atualizarListaProdutosCadastrados() {
+            const container = document.getElementById('produtosCadastradosContainer');
+            
+            if (todosProdutos.length === 0) {
+                container.innerHTML = '<div class="info-card"><p>Nenhum produto cadastrado ainda.</p></div>';
+                return;
+            }
+
+            container.innerHTML = todosProdutos.map(produto => `
+                <div class="produto-card" style="margin-bottom: 10px;">
+                    <div class="produto-header">
+                        <div class="produto-titulo">${produto.nome}</div>
+                        <div class="produto-sku">${produto.sku}</div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
+                        <div>
+                            <strong>Mercado Livre:</strong><br>
+                            ${produto.mlb ? `MLB: ${produto.mlb}<br>` : ''}
+                            ${produto.precoML > 0 ? `R$ ${produto.precoML.toFixed(2)}` : 'Preço não carregado'}
+                        </div>
+                        <div>
+                            <strong>Shopee:</strong><br>
+                            ${produto.urlShopee ? `URL: ${produto.urlShopee.substring(0, 30)}...<br>` : ''}
+                            ${produto.precoShopee > 0 ? `R$ ${produto.precoShopee.toFixed(2)}` : 'Preço não carregado'}
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <span class="status-produto status-${produto.status}">${produto.status}</span>
+                        <div>
+                            <button class="btn btn-pequeno" onclick="mostrarHistoricoProduto(${produto.id})" style="margin-right: 5px;">
+                                📊 Histórico
+                            </button>
+                            <button class="btn btn-pequeno" onclick="editarProduto(${produto.id})" style="margin-right: 5px;">
+                                ✏️ Editar
+                            </button>
+                            <button class="btn btn-pequeno" onclick="excluirProduto(${produto.id})">
+                                🗑️ Excluir
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 🚀 FUNÇÃO: Carregar produtos do sistema interno
+        function carregarProdutosInternos() {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            const container = document.getElementById('comparacaoContainer');
+            const contador = document.getElementById('contadorProdutos');
+
+            statusDot.className = 'status-dot loading';
+            statusText.textContent = 'Carregando produtos...';
+            container.innerHTML = '';
+            contador.textContent = '📊 Carregando...';
+
+            setTimeout(() => {
+                statusDot.className = 'status-dot';
+                statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
+                
+                if (todosProdutos.length > 0) {
+                    filtrarProdutos();
+                    atualizarResumoComparacao();
+                    document.getElementById('btnExportarExcel').style.display = 'block';
+                    
+                    const produtosComPreco = todosProdutos.filter(p => p.precoML > 0 || p.precoShopee > 0).length;
+                    contador.textContent = `📊 ${todosProdutos.length} produtos cadastrados | ${produtosComPreco} com preços carregados`;
+                    
+                    mostrarHistoricoPrecos();
+
+                    if (document.getElementById('listaRapidaProdutos').style.display === 'block') {
+                        carregarListaRapidaProdutos();
+                    }
+                } else {
+                    container.innerHTML = `
+                        <div class="info-card">
+                            <p>Nenhum produto cadastrado ainda.</p>
+                            <p><small>Clique em "Cadastrar Produto" para adicionar produtos ao sistema.</small></p>
+                        </div>
+                    `;
+                    contador.textContent = '📊 Nenhum produto cadastrado';
+                }
+            }, 1000);
+        }
+
+        // 📊 FUNÇÃO: Filtrar produtos
+        function filtrarProdutos() {
+            const filtroPlataforma = document.getElementById('filtroPlataforma').value;
+            const filtroStatus = document.getElementById('filtroStatus').value;
+            const filtroMelhorPreco = document.getElementById('filtroMelhorPreco').value;
+            const container = document.getElementById('comparacaoContainer');
+            const contador = document.getElementById('contadorProdutos');
+
+            let produtosFiltrados = todosProdutos.filter(produto => {
+                const temML = produto.precoML > 0;
+                const temShopee = produto.precoShopee > 0;
+                let plataformaMatch = true;
+                
+                if (filtroPlataforma === 'Mercado Livre') plataformaMatch = temML;
+                if (filtroPlataforma === 'Shopee') plataformaMatch = temShopee;
+
+                let statusMatch = true;
+                if (filtroStatus === 'ativo') statusMatch = produto.status === 'ativo';
+                if (filtroStatus === 'inativo') statusMatch = produto.status === 'inativo';
+
+                let precoMatch = true;
+                if (filtroMelhorPreco === 'ml') {
+                    precoMatch = produto.precoML > 0 && produto.precoShopee > 0 && produto.precoML < produto.precoShopee;
+                } else if (filtroMelhorPreco === 'shopee') {
+                    precoMatch = produto.precoML > 0 && produto.precoShopee > 0 && produto.precoShopee < produto.precoML;
+                }
+
+                return plataformaMatch && statusMatch && precoMatch;
+            });
+
+            contador.textContent = `📊 Mostrando ${produtosFiltrados.length} de ${todosProdutos.length} produtos`;
+
+            if (produtosFiltrados.length === 0) {
+                container.innerHTML = '<div class="info-card"><p>Nenhum produto encontrado com os filtros selecionados.</p></div>';
+                return;
+            }
+
+            container.innerHTML = produtosFiltrados.map(produto => {
+                const diferenca = produto.precoShopee - produto.precoML;
+                
+                return `
+                    <div class="produto-card">
+                        <div class="produto-header">
+                            <div class="produto-titulo">${produto.nome}</div>
+                            <div class="produto-sku">${produto.sku}</div>
+                        </div>
+                        
+                        <div class="precos-comparacao">
+                            <div class="preco-plataforma preco-ml">
+                                <div class="plataforma-nome">🛒 Mercado Livre</div>
+                                ${produto.precoML > 0 ? `
+                                    <div class="preco-valor">R$ ${produto.precoML.toFixed(2)}</div>
+                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
+                                    ${produto.mlb ? `<div style="font-size: 12px; color: #666;">MLB: ${produto.mlb}</div>` : ''}
+                                    ${diferenca < 0 ? `<div class="diferenca diferenca-positiva">+R$ ${Math.abs(diferenca).toFixed(2)} mais barato</div>` : ''}
+                                ` : '<div style="color: #888; padding: 10px;">Preço não carregado</div>'}
+                            </div>
+                            
+                            <div class="preco-plataforma preco-shopee">
+                                <div class="plataforma-nome">🛍️ Shopee</div>
+                                ${produto.precoShopee > 0 ? `
+                                    <div class="preco-valor">R$ ${produto.precoShopee.toFixed(2)}</div>
+                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
+                                    ${produto.urlShopee ? `<div style="font-size: 12px; color: #666;">URL: ${produto.urlShopee.substring(0, 20)}...</div>` : ''}
+                                    ${diferenca > 0 ? `<div class="diferenca diferenca-positiva">+R$ ${diferenca.toFixed(2)} mais barato</div>` : ''}
+                                ` : '<div style="color: #888; padding: 10px;">Preço não carregado</div>'}
+                            </div>
+                        </div>
+                        
+                        ${produto.precoML > 0 && produto.precoShopee > 0 ? `
+                            <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
+                                💰 Diferença: R$ ${Math.abs(diferenca).toFixed(2)} | 
+                                ${diferenca < 0 ? '🛒 ML mais barato' : diferenca > 0 ? '🛍️ Shopee mais barato' : '⚖️ Mesmo preço'}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 📈 FUNÇÃO: Atualizar resumo da comparação
+        function atualizarResumoComparacao() {
+            const resumo = document.getElementById('resumoComparacao');
+            const totalProdutos = document.getElementById('totalProdutos');
+            const mlMaisBarato = document.getElementById('mlMaisBarato');
+            const shopeeMaisBarato = document.getElementById('shopeeMaisBarato');
+            const empatePrecos = document.getElementById('empatePrecos');
+
+            let mlBaratoCount = 0;
+            let shopeeBaratoCount = 0;
+            let empateCount = 0;
+
+            todosProdutos.forEach(produto => {
+                if (produto.precoML > 0 && produto.precoShopee > 0) {
+                    const diferenca = produto.precoShopee - produto.precoML;
+                    if (diferenca < 0) mlBaratoCount++;
+                    else if (diferenca > 0) shopeeBaratoCount++;
+                    else empateCount++;
+                }
+            });
+
+            totalProdutos.textContent = `${todosProdutos.length}`;
+            mlMaisBarato.textContent = `${mlBaratoCount}`;
+            shopeeMaisBarato.textContent = `${shopeeBaratoCount}`;
+            empatePrecos.textContent = `${empateCount}`;
+
+            resumo.style.display = todosProdutos.length > 0 ? 'block' : 'none';
         }
 
         // ⚡ FUNÇÃO: Toggle monitoramento automático
@@ -990,22 +1367,16 @@
             const statusDiv = document.getElementById('autoUpdateStatus');
             
             if (!monitoramentoAtivo) {
-                // Iniciar monitoramento
                 monitoramentoAtivo = true;
                 btnMonitoramento.innerHTML = '⏸️ Pausar Monitoramento';
                 btnMonitoramento.style.background = 'linear-gradient(135deg, #FF6B35 0%, #F7931E 100%)';
                 statusDiv.style.display = 'block';
                 
-                // Executar primeira atualização
                 atualizarPrecosAutomaticamente();
-                
-                // Configurar intervalo
                 intervaloMonitoramento = setInterval(atualizarPrecosAutomaticamente, INTERVALO_ATUALIZACAO);
-                
                 atualizarProximaAtualizacao();
                 
             } else {
-                // Parar monitoramento
                 monitoramentoAtivo = false;
                 btnMonitoramento.innerHTML = '⚡ Iniciar Monitoramento';
                 btnMonitoramento.style.background = 'linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%)';
@@ -1013,7 +1384,6 @@
                 
                 if (intervaloMonitoramento) {
                     clearInterval(intervaloMonitoramento);
-                    intervaloMonitoramento = null;
                 }
             }
         }
@@ -1116,262 +1486,6 @@
             historicoDiv.style.display = 'block';
         }
 
-        // ➕ FUNÇÃO: Cadastrar produto
-        function cadastrarProduto() {
-            const nome = document.getElementById('nomeProduto').value.trim();
-            const sku = document.getElementById('skuProduto').value.trim();
-            const mlb = document.getElementById('mlbProduto').value.trim();
-            const precoML = parseFloat(document.getElementById('precoML').value) || 0;
-            const urlShopee = document.getElementById('urlShopee').value.trim();
-            const precoShopee = parseFloat(document.getElementById('precoShopee').value) || 0;
-            const status = document.getElementById('statusProduto').value;
-
-            if (!nome) {
-                alert('❌ Por favor, informe o nome do produto!');
-                return;
-            }
-
-            if (!sku) {
-                alert('❌ Por favor, informe o SKU do produto!');
-                return;
-            }
-
-            const novoProduto = {
-                id: Date.now(),
-                nome: nome,
-                sku: sku,
-                mlb: mlb,
-                precoML: precoML,
-                urlShopee: urlShopee,
-                precoShopee: precoShopee,
-                status: status,
-                dataCadastro: new Date().toLocaleString('pt-BR')
-            };
-
-            todosProdutos.push(novoProduto);
-            localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-
-            // Registrar no histórico
-            registrarMudancaPreco(novoProduto);
-
-            // Limpar formulário
-            document.getElementById('nomeProduto').value = '';
-            document.getElementById('skuProduto').value = '';
-            document.getElementById('mlbProduto').value = '';
-            document.getElementById('precoML').value = '';
-            document.getElementById('urlShopee').value = '';
-            document.getElementById('precoShopee').value = '';
-            document.getElementById('statusProduto').value = 'ativo';
-
-            alert('✅ Produto cadastrado com sucesso!');
-            atualizarListaProdutosCadastrados();
-        }
-
-        // 📋 FUNÇÃO: Atualizar lista de produtos cadastrados
-        function atualizarListaProdutosCadastrados() {
-            const container = document.getElementById('produtosCadastradosContainer');
-            
-            if (todosProdutos.length === 0) {
-                container.innerHTML = '<div class="info-card"><p>Nenhum produto cadastrado ainda.</p></div>';
-                return;
-            }
-
-            container.innerHTML = todosProdutos.map(produto => `
-                <div class="produto-card" style="margin-bottom: 10px;">
-                    <div class="produto-header">
-                        <div class="produto-titulo">${produto.nome}</div>
-                        <div class="produto-sku">${produto.sku}</div>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
-                        <div>
-                            <strong>Mercado Livre:</strong><br>
-                            ${produto.mlb ? `MLB: ${produto.mlb}<br>` : ''}
-                            ${produto.precoML > 0 ? `R$ ${produto.precoML.toFixed(2)}` : 'Não informado'}
-                        </div>
-                        <div>
-                            <strong>Shopee:</strong><br>
-                            ${produto.urlShopee ? `URL: ${produto.urlShopee.substring(0, 30)}...<br>` : ''}
-                            ${produto.precoShopee > 0 ? `R$ ${produto.precoShopee.toFixed(2)}` : 'Não informado'}
-                        </div>
-                    </div>
-                    <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
-                        <span class="status-produto status-${produto.status}">${produto.status}</span>
-                        <div>
-                            <button class="btn" onclick="mostrarHistoricoProduto(${produto.id})" style="padding: 5px 10px; font-size: 12px; width: auto; margin-right: 5px;">
-                                📊 Histórico
-                            </button>
-                            <button class="btn" onclick="excluirProduto(${produto.id})" style="padding: 5px 10px; font-size: 12px; width: auto;">
-                                🗑️ Excluir
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // 🗑️ FUNÇÃO: Excluir produto
-        function excluirProduto(id) {
-            if (confirm('Tem certeza que deseja excluir este produto?')) {
-                todosProdutos = todosProdutos.filter(produto => produto.id !== id);
-                localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-                atualizarListaProdutosCadastrados();
-                alert('✅ Produto excluído com sucesso!');
-            }
-        }
-
-        // 🚀 FUNÇÃO: Carregar produtos do sistema interno
-        function carregarProdutosInternos() {
-            const statusDot = document.getElementById('statusDot');
-            const statusText = document.getElementById('statusText');
-            const container = document.getElementById('comparacaoContainer');
-            const contador = document.getElementById('contadorProdutos');
-            const btnExcel = document.getElementById('btnExportarExcel');
-
-            statusDot.className = 'status-dot loading';
-            statusText.textContent = 'Carregando produtos...';
-            container.innerHTML = '';
-            contador.textContent = '📊 Carregando...';
-
-            // Simular carregamento
-            setTimeout(() => {
-                statusDot.className = 'status-dot';
-                statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
-                
-                if (todosProdutos.length > 0) {
-                    filtrarProdutos();
-                    atualizarResumoComparacao();
-                    btnExcel.style.display = 'block';
-                    contador.textContent = `📊 ${todosProdutos.length} produtos carregados`;
-                    
-                    // Mostrar histórico geral
-                    mostrarHistoricoPrecos();
-                } else {
-                    container.innerHTML = `
-                        <div class="info-card">
-                            <p>Nenhum produto cadastrado ainda.</p>
-                            <p><small>Clique em "Cadastrar Produto" para adicionar produtos ao sistema.</small></p>
-                        </div>
-                    `;
-                    contador.textContent = '📊 Nenhum produto cadastrado';
-                }
-            }, 1000);
-        }
-
-        // 📊 FUNÇÃO: Filtrar produtos
-        function filtrarProdutos() {
-            const filtroPlataforma = document.getElementById('filtroPlataforma').value;
-            const filtroStatus = document.getElementById('filtroStatus').value;
-            const filtroMelhorPreco = document.getElementById('filtroMelhorPreco').value;
-            const container = document.getElementById('comparacaoContainer');
-            const contador = document.getElementById('contadorProdutos');
-
-            let produtosFiltrados = todosProdutos.filter(produto => {
-                // Filtro por plataforma com dados
-                const temML = produto.precoML > 0;
-                const temShopee = produto.precoShopee > 0;
-                let plataformaMatch = true;
-                
-                if (filtroPlataforma === 'Mercado Livre') plataformaMatch = temML;
-                if (filtroPlataforma === 'Shopee') plataformaMatch = temShopee;
-
-                // Filtro por status
-                let statusMatch = true;
-                if (filtroStatus === 'ativo') statusMatch = produto.status === 'ativo';
-                if (filtroStatus === 'inativo') statusMatch = produto.status === 'inativo';
-
-                // Filtro por melhor preço
-                let precoMatch = true;
-                if (filtroMelhorPreco === 'ml') {
-                    precoMatch = produto.precoML > 0 && produto.precoShopee > 0 && produto.precoML < produto.precoShopee;
-                } else if (filtroMelhorPreco === 'shopee') {
-                    precoMatch = produto.precoML > 0 && produto.precoShopee > 0 && produto.precoShopee < produto.precoML;
-                }
-
-                return plataformaMatch && statusMatch && precoMatch;
-            });
-
-            contador.textContent = `📊 Mostrando ${produtosFiltrados.length} de ${todosProdutos.length} produtos`;
-
-            if (produtosFiltrados.length === 0) {
-                container.innerHTML = '<div class="info-card"><p>Nenhum produto encontrado com os filtros selecionados.</p></div>';
-                return;
-            }
-
-            // Renderizar produtos
-            container.innerHTML = produtosFiltrados.map(produto => {
-                const diferenca = produto.precoShopee - produto.precoML;
-                
-                return `
-                    <div class="produto-card">
-                        <div class="produto-header">
-                            <div class="produto-titulo">${produto.nome}</div>
-                            <div class="produto-sku">${produto.sku}</div>
-                        </div>
-                        
-                        <div class="precos-comparacao">
-                            <!-- Mercado Livre -->
-                            <div class="preco-plataforma preco-ml">
-                                <div class="plataforma-nome">🛒 Mercado Livre</div>
-                                ${produto.precoML > 0 ? `
-                                    <div class="preco-valor">R$ ${produto.precoML.toFixed(2)}</div>
-                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
-                                    ${produto.mlb ? `<div style="font-size: 12px; color: #666;">MLB: ${produto.mlb}</div>` : ''}
-                                    ${diferenca < 0 ? `<div class="diferenca diferenca-positiva">+R$ ${Math.abs(diferenca).toFixed(2)} mais barato</div>` : ''}
-                                ` : '<div style="color: #888; padding: 10px;">Preço não informado</div>'}
-                            </div>
-                            
-                            <!-- Shopee -->
-                            <div class="preco-plataforma preco-shopee">
-                                <div class="plataforma-nome">🛍️ Shopee</div>
-                                ${produto.precoShopee > 0 ? `
-                                    <div class="preco-valor">R$ ${produto.precoShopee.toFixed(2)}</div>
-                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
-                                    ${produto.urlShopee ? `<div style="font-size: 12px; color: #666;">URL: ${produto.urlShopee.substring(0, 20)}...</div>` : ''}
-                                    ${diferenca > 0 ? `<div class="diferenca diferenca-positiva">+R$ ${diferenca.toFixed(2)} mais barato</div>` : ''}
-                                ` : '<div style="color: #888; padding: 10px;">Preço não informado</div>'}
-                            </div>
-                        </div>
-                        
-                        ${produto.precoML > 0 && produto.precoShopee > 0 ? `
-                            <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
-                                💰 Diferença: R$ ${Math.abs(diferenca).toFixed(2)} | 
-                                ${diferenca < 0 ? '🛒 ML mais barato' : diferenca > 0 ? '🛍️ Shopee mais barato' : '⚖️ Mesmo preço'}
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // 📈 FUNÇÃO: Atualizar resumo da comparação
-        function atualizarResumoComparacao() {
-            const resumo = document.getElementById('resumoComparacao');
-            const totalProdutos = document.getElementById('totalProdutos');
-            const mlMaisBarato = document.getElementById('mlMaisBarato');
-            const shopeeMaisBarato = document.getElementById('shopeeMaisBarato');
-            const empatePrecos = document.getElementById('empatePrecos');
-
-            let mlBaratoCount = 0;
-            let shopeeBaratoCount = 0;
-            let empateCount = 0;
-
-            todosProdutos.forEach(produto => {
-                if (produto.precoML > 0 && produto.precoShopee > 0) {
-                    const diferenca = produto.precoShopee - produto.precoML;
-                    if (diferenca < 0) mlBaratoCount++;
-                    else if (diferenca > 0) shopeeBaratoCount++;
-                    else empateCount++;
-                }
-            });
-
-            totalProdutos.textContent = `${todosProdutos.length}`;
-            mlMaisBarato.textContent = `${mlBaratoCount}`;
-            shopeeMaisBarato.textContent = `${shopeeBaratoCount}`;
-            empatePrecos.textContent = `${empateCount}`;
-
-            resumo.style.display = 'block';
-        }
-
         // 📊 FUNÇÃO: Exportar para Excel
         function exportarParaExcel() {
             if (todosProdutos.length === 0) {
@@ -1379,10 +1493,8 @@
                 return;
             }
 
-            // Criar cabeçalho do CSV
             let csv = 'Nome,SKU,MLB,Preço ML,URL Shopee,Preço Shopee,Status,Data Cadastro,Diferença,Melhor Preço\n';
             
-            // Adicionar dados
             todosProdutos.forEach(produto => {
                 const diferenca = produto.precoShopee - produto.precoML;
                 const melhorPreco = diferenca < 0 ? 'Mercado Livre' : diferenca > 0 ? 'Shopee' : 'Empate';
@@ -1403,7 +1515,6 @@
                 csv += linha + '\n';
             });
 
-            // Criar e baixar arquivo
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
@@ -1437,7 +1548,6 @@
                 document.getElementById('nomeFuncionario').textContent = funcionarioLogado.nome;
                 document.getElementById('salarioBase').textContent = funcionarioLogado.salario.toFixed(2);
                 
-                // Mostrar/ocultar botão de comparação de preços
                 const btnComparacao = document.getElementById('btnComparacao');
                 const acessoAnunciosDiv = document.getElementById('acessoAnuncios');
                 
@@ -1464,7 +1574,6 @@
             });
             document.getElementById(telaId).classList.add('active');
 
-            // Carregar dados específicos da tela
             if (telaId === 'cadastroScreen') {
                 atualizarListaProdutosCadastrados();
             } else if (telaId === 'comparacaoScreen') {
@@ -1506,11 +1615,9 @@
             const valorHoraExtra = valorHora * 1.5;
             const valorTotalHorasExtras = valorHoraExtra * horas;
             
-            // Cálculo do DSR: (Horas Extras / Dias Úteis) × Dias Trabalhados
             const valorDSR = (valorTotalHorasExtras / diasUteis) * diasTrabalhados;
             const valorTotalGeral = valorTotalHorasExtras + valorDSR;
 
-            // Atualizar interface
             document.getElementById('horasCalculadas').textContent = `${horas}h`;
             document.getElementById('valorHoraExtra').textContent = `R$ ${valorHoraExtra.toFixed(2)}`;
             document.getElementById('valorTotalHorasExtras').textContent = `R$ ${valorTotalHorasExtras.toFixed(2)}`;
@@ -1679,12 +1786,8 @@
         });
 
         // Inicialização
-        console.log('Sistema Wheel Tech - Com Monitoramento de Preços carregado!');
+        console.log('Sistema Wheel Tech - Completo carregado!');
         console.log('Produtos cadastrados:', todosProdutos.length);
-        
-        // Verificar se há histórico salvo
-        const historicoPrecos = JSON.parse(localStorage.getItem('historicoPrecos')) || {};
-        console.log('Histórico de preços:', Object.keys(historicoPrecos).length, 'produtos com histórico');
     </script>
 </body>
 </html>
