@@ -46,12 +46,6 @@
             gap: 15px;
         }
 
-        .logo-img {
-            max-height: 60px;
-            max-width: 200px;
-            object-fit: contain;
-        }
-
         .logo-text {
             font-size: 36px;
             font-weight: bold;
@@ -125,20 +119,6 @@
             font-size: 14px;
         }
 
-        .departamento-img {
-            width: 100%;
-            height: 150px;
-            object-fit: cover;
-            border-radius: 8px;
-            margin-top: 15px;
-            background-color: #e0e0e0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #888;
-            font-size: 14px;
-        }
-
         .menu-buttons {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -200,7 +180,6 @@
             font-size: 12px;
         }
 
-        /* Estilos para os formulários e outras telas */
         .form-group {
             margin-bottom: 20px;
         }
@@ -253,6 +232,37 @@
             padding: 15px;
             margin-bottom: 10px;
             border-left: 4px solid #00ADEE;
+        }
+
+        .info-salario {
+            background: #e3f2fd;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            border-left: 4px solid #2196F3;
+        }
+
+        .detalhes-calculo {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            border-left: 4px solid #00ADEE;
+        }
+
+        .linha-calculo {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            padding: 5px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .valor-destaque {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2E7D32;
+            margin: 10px 0;
         }
 
         .comparacao-container {
@@ -554,29 +564,6 @@
             font-size: 10px;
             margin-left: 5px;
         }
-
-        .valor-destaque {
-            font-size: 24px;
-            font-weight: bold;
-            color: #2E7D32;
-            margin: 10px 0;
-        }
-
-        .detalhes-calculo {
-            background: white;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 15px 0;
-            border-left: 4px solid #00ADEE;
-        }
-
-        .linha-calculo {
-            display: flex;
-            justify-content: space-between;
-            margin: 8px 0;
-            padding: 5px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
     </style>
 </head>
 <body>
@@ -584,7 +571,6 @@
         <!-- Cabeçalho -->
         <div class="header">
             <div class="logo-container">
-                <img src="logo inclinada.jpg" alt="Wheel Tech BICYCLING" class="logo-img">
                 <div>
                     <div class="logo-text">Wheel Tech</div>
                     <div class="logo-subtitle">BICYCLING</div>
@@ -604,9 +590,6 @@
                         <div class="departamento-icon">📊</div>
                         <div class="departamento-title">RECURSOS HUMANOS</div>
                         <div class="departamento-desc">Gestão de horas extras, histórico e resumo</div>
-                        <div class="departamento-img">
-                            [Imagem do WhatsApp de 2025-10-24 à(s) 13.19.06_88ae7acc.jpg]
-                        </div>
                     </div>
 
                     <!-- Card Administrativo -->
@@ -614,9 +597,6 @@
                         <div class="departamento-icon">💰</div>
                         <div class="departamento-title">ADMINISTRATIVO</div>
                         <div class="departamento-desc">Comparação de preços e gestão de produtos</div>
-                        <div class="departamento-img">
-                            [Imagem do WhatsApp de 2025-10-24 à(s) 13.19.06_88ae7acc.jpg]
-                        </div>
                     </div>
                 </div>
             </div>
@@ -675,15 +655,26 @@
             <div id="calcularScreen" class="screen">
                 <h3 style="margin-bottom: 20px; color: #58595B;">⏰ Calcular Horas Extras + DSR</h3>
                 
+                <!-- Informações do Salário -->
+                <div class="info-salario">
+                    <h4 style="color: #1976D2; margin-bottom: 10px;">💰 Informações do Salário</h4>
+                    <div class="linha-calculo">
+                        <span>Salário Base:</span>
+                        <span><strong>R$ <span id="salarioBase">0,00</span></strong></span>
+                    </div>
+                    <div class="linha-calculo">
+                        <span>Valor da Hora Normal:</span>
+                        <span><strong>R$ <span id="valorHoraAuto">0,00</span></strong></span>
+                    </div>
+                    <div style="font-size: 12px; color: #666; margin-top: 10px;">
+                        * Cálculo automático: Salário Base ÷ 220 horas mensais
+                    </div>
+                </div>
+
                 <div class="calculadora-container">
                     <div class="form-group">
                         <label for="horasExtras">Horas Extras Trabalhadas:</label>
                         <input type="number" id="horasExtras" placeholder="Ex: 10" min="0" step="0.5">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="valorHora">Valor da Hora Normal (R$):</label>
-                        <input type="number" id="valorHora" placeholder="Ex: 12.50" min="0" step="0.01">
                     </div>
 
                     <div class="form-group">
@@ -708,27 +699,12 @@
             <!-- Tela de Comparação de Preços -->
             <div id="comparacaoScreen" class="screen">
                 <h3 style="margin-bottom: 15px; color: #58595B;">💰 Comparação de Preços</h3>
-                <p style="margin-bottom: 15px; color: #58595B; font-size: 14px;">
-                    Comparação automática entre Mercado Livre e Shopee com API Real
-                </p>
-
+                
                 <div class="api-status">
                     <div class="status-dot" id="statusDot"></div>
                     <span id="statusText">Sistema de produtos interno</span>
                 </div>
 
-                <!-- Status do Monitoramento Automático -->
-                <div class="auto-update-status" id="autoUpdateStatus" style="display: none;">
-                    <div style="display: flex; align-items: center; justify-content: center; gap: 10px;">
-                        <div class="status-dot loading" id="monitoramentoDot"></div>
-                        <span id="monitoramentoText">Monitoramento automático ativo</span>
-                    </div>
-                    <div style="margin-top: 10px; font-size: 12px;">
-                        Próxima atualização em: <span id="proximaAtualizacao">--:--</span>
-                    </div>
-                </div>
-
-                <!-- AÇÃO RÁPIDA - BOTÕES ADICIONADOS -->
                 <div class="action-buttons">
                     <button class="btn btn-cadastrar" onclick="mostrarTela('cadastroScreen')">
                         ➕ Cadastrar Produto
@@ -739,9 +715,6 @@
                     <button class="btn btn-atualizar" onclick="atualizarPrecosAutomaticamente()">
                         🔄 Atualizar Preços
                     </button>
-                    <button class="btn btn-monitoramento" onclick="toggleMonitoramentoAutomatico()" id="btnMonitoramento">
-                        ⚡ Iniciar Monitoramento
-                    </button>
                     <button class="btn btn-excel" onclick="exportarParaExcel()" id="btnExportarExcel">
                         📊 Exportar Excel
                     </button>
@@ -751,14 +724,6 @@
                 <div id="listaRapidaProdutos" class="lista-rapida-produtos" style="display: none;">
                     <h4 style="margin-bottom: 15px; color: #58595B;">📦 Produtos Cadastrados</h4>
                     <div id="conteudoListaRapida"></div>
-                </div>
-
-                <!-- Status do Scraping -->
-                <div id="scrapingStatus" class="scraping-status" style="display: none;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="status-dot loading" id="scrapingDot"></div>
-                        <span id="scrapingText">Iniciando atualização de preços...</span>
-                    </div>
                 </div>
 
                 <div id="contadorProdutos" class="contador-produtos">
@@ -787,28 +752,6 @@
                 <div class="form-group">
                     <label for="skuProduto">SKU/Código:</label>
                     <input type="text" id="skuProduto" placeholder="Ex: K33009">
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                    <div class="form-group">
-                        <label for="mlbProduto">MLB (Mercado Livre):</label>
-                        <input type="text" id="mlbProduto" placeholder="Ex: MLB2106981701">
-                        <small style="color: #666;">O preço será buscado automaticamente via API</small>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="urlShopee">URL Shopee:</label>
-                        <input type="text" id="urlShopee" placeholder="Ex: https://shopee.com.br/produto">
-                        <small style="color: #666;">O preço será buscado automaticamente via Web Scraping</small>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="statusProduto">Status do Produto:</label>
-                    <select id="statusProduto">
-                        <option value="ativo">Ativo</option>
-                        <option value="inativo">Inativo</option>
-                    </select>
                 </div>
 
                 <div class="action-buttons">
@@ -855,24 +798,11 @@
             "1204": {"nome": "Thalyta Pampuch", "salario": 2223.90, "acessoAnuncios": true}
         };
 
-        // CONFIGURAÇÃO DA API DO MERCADO LIVRE
-        const ML_API_CONFIG = {
-            accessToken: "APP_USR-6382303492960193-102410-577704e0d4d1ffc1957af5e23f94bf26-415176739",
-            clientId: "6382303492960193",
-            clientSecret: "J0eBOOjqAG60c1jiXZd0J9YXp76r5EPe",
-            baseUrl: "https://api.mercadolibre.com"
-        };
-
-        // CONFIGURAÇÃO DO MONITORAMENTO AUTOMÁTICO (2 HORAS)
-        const INTERVALO_ATUALIZACAO = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
-
         let funcionarioLogado = null;
         let departamentoSelecionado = null;
         let historicoHorasExtras = JSON.parse(localStorage.getItem('historicoHorasExtras')) || {};
         let todosProdutos = JSON.parse(localStorage.getItem('produtosCadastrados')) || [];
         let produtoEditandoId = null;
-        let monitoramentoAtivo = false;
-        let intervaloMonitoramento = null;
 
         // 🔄 FUNÇÃO: Selecionar departamento
         function selecionarDepartamento(departamento) {
@@ -926,29 +856,26 @@
             }
         }
 
-        // 🧭 FUNÇÃO: Mostrar comparação de preços
-        function mostrarComparacaoPrecos() {
-            if (!funcionarioLogado.acessoAnuncios) {
-                alert('❌ Acesso não autorizado!');
+        // ⏰ FUNÇÃO: Calcular horas extras + DSR - AGORA AUTOMÁTICO
+        function calcularHorasExtras() {
+            if (!funcionarioLogado) {
+                alert('❌ Nenhum funcionário logado!');
                 return;
             }
-            mostrarTela('comparacaoScreen');
-            carregarProdutosInternos();
-        }
 
-        // ⏰ FUNÇÃO: Calcular horas extras + DSR
-        function calcularHorasExtras() {
             const horasExtras = parseFloat(document.getElementById('horasExtras').value);
-            const valorHora = parseFloat(document.getElementById('valorHora').value);
             const percentualHE = parseInt(document.getElementById('percentualHE').value);
 
-            if (!horasExtras || !valorHora) {
-                alert('❌ Por favor, preencha todos os campos!');
+            if (!horasExtras || horasExtras <= 0) {
+                alert('❌ Por favor, informe a quantidade de horas extras trabalhadas!');
                 return;
             }
 
+            // Cálculo automático do valor da hora
+            const valorHoraNormal = funcionarioLogado.salario / 220;
+            
             // Cálculo da hora extra
-            const valorHoraExtra = valorHora * (1 + percentualHE / 100);
+            const valorHoraExtra = valorHoraNormal * (1 + percentualHE / 100);
             const totalHorasExtras = horasExtras * valorHoraExtra;
 
             // Cálculo do DSR (1/6 das horas extras)
@@ -957,6 +884,10 @@
             // Total geral
             const totalGeral = totalHorasExtras + dsr;
 
+            // Atualizar informações do salário na tela
+            document.getElementById('salarioBase').textContent = funcionarioLogado.salario.toFixed(2);
+            document.getElementById('valorHoraAuto').textContent = valorHoraNormal.toFixed(2);
+
             // Exibir resultados
             const resultadoDiv = document.getElementById('resultadoCalculo');
             const detalhesDiv = document.getElementById('detalhesCalculo');
@@ -964,12 +895,16 @@
             detalhesDiv.innerHTML = `
                 <div class="detalhes-calculo">
                     <div class="linha-calculo">
-                        <span>Horas Extras Trabalhadas:</span>
-                        <span><strong>${horasExtras} horas</strong></span>
+                        <span>Salário Base:</span>
+                        <span><strong>R$ ${funcionarioLogado.salario.toFixed(2)}</strong></span>
                     </div>
                     <div class="linha-calculo">
                         <span>Valor da Hora Normal:</span>
-                        <span><strong>R$ ${valorHora.toFixed(2)}</strong></span>
+                        <span><strong>R$ ${valorHoraNormal.toFixed(2)}</strong></span>
+                    </div>
+                    <div class="linha-calculo">
+                        <span>Horas Extras Trabalhadas:</span>
+                        <span><strong>${horasExtras} horas</strong></span>
                     </div>
                     <div class="linha-calculo">
                         <span>Percentual de Hora Extra:</span>
@@ -997,7 +932,7 @@
             resultadoDiv.style.display = 'block';
 
             // Salvar no histórico
-            salvarNoHistorico(horasExtras, valorHora, percentualHE, totalGeral);
+            salvarNoHistorico(horasExtras, valorHoraNormal, percentualHE, totalGeral);
         }
 
         // 💾 FUNÇÃO: Salvar cálculo no histórico
@@ -1011,7 +946,8 @@
                 horas: horas,
                 valorHora: valorHora,
                 percentual: percentual,
-                total: total
+                total: total,
+                salario: funcionarioLogado.salario
             };
 
             historicoHorasExtras[funcionarioLogado.senha].unshift(registro);
@@ -1043,6 +979,9 @@
                     <div style="font-size: 14px; color: #666; margin-top: 5px;">
                         ${registro.horas} horas × R$ ${registro.valorHora.toFixed(2)} (${registro.percentual}%)
                     </div>
+                    <div style="font-size: 12px; color: #888;">
+                        Salário base: R$ ${registro.salario.toFixed(2)}
+                    </div>
                 </div>
             `).join('');
         }
@@ -1068,295 +1007,67 @@
                         <div style="font-size: 14px; color: #666;">Total em Horas Extras</div>
                     </div>
                 </div>
+                <div style="text-align: center; padding: 15px; background: #FFF3E0; border-radius: 8px; margin-top: 15px;">
+                    <div style="font-size: 18px; font-weight: bold; color: #FF6B35;">Salário Base</div>
+                    <div style="font-size: 24px; font-weight: bold; color: #58595B;">R$ ${funcionarioLogado.salario.toFixed(2)}</div>
+                    <div style="font-size: 14px; color: #666;">Valor da Hora: R$ ${(funcionarioLogado.salario / 220).toFixed(2)}</div>
+                </div>
                 ${totalCalculos > 0 ? `
-                    <div style="margin-top: 20px; padding: 15px; background: #FFF3E0; border-radius: 8px;">
-                        <h5 style="color: #FF6B35; margin-bottom: 10px;">Último Cálculo</h5>
+                    <div style="margin-top: 20px; padding: 15px; background: #F3E5F5; border-radius: 8px;">
+                        <h5 style="color: #9C27B0; margin-bottom: 10px;">Último Cálculo</h5>
                         <div>Data: ${historicoUsuario[0].data}</div>
                         <div>Valor: R$ ${historicoUsuario[0].total.toFixed(2)}</div>
+                        <div>Horas: ${historicoUsuario[0].horas}</div>
                     </div>
                 ` : ''}
             `;
         }
 
-        // 🚀 FUNÇÃO: Atualizar preços automaticamente - COM API REAL
-        async function atualizarPrecosAutomaticamente() {
+        // 🧭 FUNÇÃO: Mostrar comparação de preços
+        function mostrarComparacaoPrecos() {
+            if (!funcionarioLogado.acessoAnuncios) {
+                alert('❌ Acesso não autorizado!');
+                return;
+            }
+            mostrarTela('comparacaoScreen');
+            carregarProdutosInternos();
+        }
+
+        // 📊 FUNÇÃO: Carregar produtos do sistema interno
+        function carregarProdutosInternos() {
             const statusDot = document.getElementById('statusDot');
             const statusText = document.getElementById('statusText');
-            const scrapingDiv = document.getElementById('scrapingStatus');
-            const scrapingText = document.getElementById('scrapingText');
-            
+            const container = document.getElementById('comparacaoContainer');
+            const contador = document.getElementById('contadorProdutos');
+
             statusDot.className = 'status-dot loading';
-            statusText.textContent = 'Iniciando atualização de preços...';
-            scrapingDiv.style.display = 'block';
-            scrapingText.textContent = 'Preparando busca de preços...';
+            statusText.textContent = 'Carregando produtos...';
 
-            try {
-                let produtosAtualizados = 0;
-                let produtosComErro = 0;
-
-                for (let i = 0; i < todosProdutos.length; i++) {
-                    const produto = todosProdutos[i];
-                    
-                    statusText.textContent = `Atualizando ${i + 1}/${todosProdutos.length}`;
-                    scrapingText.textContent = `Processando: ${produto.nome}`;
-                    
-                    let precoAtualizado = false;
-
-                    // Buscar preço do Mercado Livre - COM API REAL
-                    if (produto.mlb && produto.mlb.trim() !== '') {
-                        try {
-                            scrapingText.textContent = `Buscando ML: ${produto.nome}`;
-                            const resultadoML = await buscarPrecoMercadoLivreAPI(produto.mlb);
-                            if (resultadoML && resultadoML.precoPromocional > 0) {
-                                produto.precoML = resultadoML.precoPromocional;
-                                produto.precoOriginalML = resultadoML.precoOriginal;
-                                produto.descontoML = resultadoML.desconto;
-                                produto.promocaoNome = resultadoML.promocaoNome;
-                                precoAtualizado = true;
-                                console.log(`✅ ML atualizado: ${produto.nome} - R$ ${resultadoML.precoPromocional} (Desconto: ${resultadoML.desconto}%)`);
-                            }
-                        } catch (error) {
-                            console.error(`❌ Erro ML ${produto.nome}:`, error);
-                            produtosComErro++;
-                        }
-                    }
-
-                    // Buscar preço da Shopee - SEM SIMULAÇÃO
-                    if (produto.urlShopee && produto.urlShopee.trim() !== '') {
-                        try {
-                            scrapingText.textContent = `Buscando Shopee: ${produto.nome}`;
-                            const precoShopee = await buscarPrecoShopeeReal(produto.urlShopee);
-                            if (precoShopee && precoShopee > 0) {
-                                produto.precoShopee = precoShopee;
-                                precoAtualizado = true;
-                                console.log(`✅ Shopee atualizado: ${produto.nome} - R$ ${precoShopee}`);
-                            } else {
-                                console.log(`ℹ️ Preço Shopee não encontrado para: ${produto.nome}`);
-                            }
-                        } catch (error) {
-                            console.error(`❌ Erro Shopee ${produto.nome}:`, error);
-                            produtosComErro++;
-                        }
-                    }
-
-                    if (precoAtualizado) {
-                        produtosAtualizados++;
-                        registrarMudancaPreco(produto);
-                    }
-
-                    // Delay entre requisições para não sobrecarregar a API
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-
-                localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-                
+            setTimeout(() => {
                 statusDot.className = 'status-dot';
-                scrapingDiv.style.display = 'none';
                 
-                if (produtosAtualizados > 0) {
-                    statusText.textContent = `✅ ${produtosAtualizados} preços atualizados`;
-                    if (produtosComErro > 0) {
-                        statusText.textContent += ` | ${produtosComErro} erros`;
-                    }
+                if (todosProdutos.length > 0) {
+                    statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
+                    contador.textContent = `📊 ${todosProdutos.length} produtos cadastrados`;
+                    
+                    container.innerHTML = `
+                        <div class="info-card">
+                            <p>Sistema de produtos carregado com sucesso!</p>
+                            <p><small>Use os botões acima para gerenciar os produtos.</small></p>
+                        </div>
+                    `;
+                    
                 } else {
-                    statusText.textContent = `ℹ️ Nenhum preço novo encontrado`;
-                    if (produtosComErro > 0) {
-                        statusText.textContent += ` | ${produtosComErro} erros`;
-                    }
+                    statusText.textContent = 'ℹ️ Nenhum produto cadastrado';
+                    container.innerHTML = `
+                        <div class="info-card">
+                            <p>Nenhum produto cadastrado ainda.</p>
+                            <p><small>Clique em "Cadastrar Produto" para adicionar produtos ao sistema.</small></p>
+                        </div>
+                    `;
+                    contador.textContent = '📊 Nenhum produto cadastrado';
                 }
-                
-                carregarProdutosInternos();
-                
-            } catch (error) {
-                statusDot.className = 'status-dot error';
-                statusText.textContent = '❌ Erro na atualização';
-                document.getElementById('scrapingStatus').style.display = 'none';
-                console.error('Erro geral na atualização:', error);
-            }
-        }
-
-        // 🔍 FUNÇÃO: Buscar preço do Mercado Livre usando API REAL - CORRIGIDA
-        async function buscarPrecoMercadoLivreAPI(mlb) {
-            // Limpar MLB - remover espaços e caracteres especiais
-            mlb = mlb.trim().replace(/[^a-zA-Z0-9]/g, '');
-            
-            if (!mlb.startsWith('MLB')) {
-                mlb = 'MLB' + mlb;
-            }
-
-            console.log(`🔍 Buscando preço ML via API para: ${mlb}`);
-
-            try {
-                const response = await fetch(`${ML_API_CONFIG.baseUrl}/items/${mlb}`, {
-                    headers: {
-                        'Authorization': `Bearer ${ML_API_CONFIG.accessToken}`
-                    }
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const data = await response.json();
-                console.log('📦 Dados recebidos da API ML:', data);
-                
-                let precoPromocional = data.price;
-                let precoOriginal = data.original_price || data.price;
-                let desconto = 0;
-                let promocaoNome = null;
-                
-                // Calcular desconto se houver preço original diferente
-                if (precoOriginal && precoOriginal > precoPromocional) {
-                    desconto = Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100);
-                }
-                
-                // Buscar informações de promoção
-                if (data.sale_terms && Array.isArray(data.sale_terms)) {
-                    const saleTerm = data.sale_terms.find(term => term.id === 'SALE');
-                    if (saleTerm) {
-                        promocaoNome = saleTerm.value_name;
-                    }
-                }
-                
-                // Se não encontrou promoção, verificar se é venda direta
-                if (!promocaoNome && data.seller_address) {
-                    promocaoNome = "Venda Direta";
-                }
-                
-                console.log(`✅ Preço ML encontrado via API: R$ ${precoPromocional} (Original: R$ ${precoOriginal}, ${desconto}% off)`);
-                
-                return {
-                    precoPromocional: precoPromocional,
-                    precoOriginal: precoOriginal,
-                    desconto: desconto,
-                    promocaoNome: promocaoNome
-                };
-                
-            } catch (error) {
-                console.error(`❌ Erro na API ML para ${mlb}:`, error);
-                throw new Error(`Falha ao buscar preço do Mercado Livre: ${error.message}`);
-            }
-        }
-
-        // 🛍️ FUNÇÃO: Buscar preço da Shopee (sem simulação)
-        async function buscarPrecoShopeeReal(urlShopee) {
-            if (!urlShopee || !urlShopee.includes('shopee')) {
-                console.log('❌ URL da Shopee inválida');
-                return null;
-            }
-
-            console.log(`🛍️ Buscando preço Shopee: ${urlShopee}`);
-
-            try {
-                // Tentativa de web scraping real
-                const preco = await buscarPrecoShopeeScraping(urlShopee);
-                if (preco && preco > 0) {
-                    return preco;
-                } else {
-                    console.log('ℹ️ Preço Shopee não encontrado via scraping');
-                    return null;
-                }
-            } catch (error) {
-                console.error('❌ Erro no scraping Shopee:', error);
-                return null;
-            }
-        }
-
-        // 🌐 FUNÇÃO: Web scraping real da Shopee
-        async function buscarPrecoShopeeScraping(urlShopee) {
-            try {
-                console.log(`🔍 Iniciando scraping Shopee: ${urlShopee}`);
-                
-                // Usar proxy CORS
-                const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-                const targetUrl = urlShopee;
-                
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-                const response = await fetch(proxyUrl + targetUrl, {
-                    method: 'GET',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-                    },
-                    signal: controller.signal
-                });
-
-                clearTimeout(timeoutId);
-
-                if (!response.ok) {
-                    throw new Error(`Erro HTTP: ${response.status}`);
-                }
-
-                const html = await response.text();
-                
-                // Padrões para extrair preço da Shopee
-                const preco = extrairPrecoShopeeDoHTML(html);
-                
-                if (preco) {
-                    console.log(`✅ Preço Shopee encontrado: R$ ${preco}`);
-                    return preco;
-                } else {
-                    throw new Error('Preço não encontrado no HTML da Shopee');
-                }
-                
-            } catch (error) {
-                console.error('❌ Erro no scraping Shopee:', error);
-                throw error;
-            }
-        }
-
-        // 🔍 FUNÇÃO: Extrair preço do HTML da Shopee
-        function extrairPrecoShopeeDoHTML(html) {
-            // Padrões específicos da Shopee
-            const padroesPreco = [
-                /"price":\s*(\d+)/g,
-                /"price":\s*"(\d+)"/g,
-                /"item_price":\s*(\d+)/g,
-                /"item_price":\s*"(\d+)"/g,
-                /"final_price":\s*(\d+)/g,
-                /"final_price":\s*"(\d+)"/g,
-                /"value":\s*"(\d+)"/g,
-                /<span[^>]*class="[^"]*[Pp]rice[^"]*"[^>]*>[\s\S]*?R\$\s*([\d.,]+)/gi,
-                /<div[^>]*class="[^"]*[Pp]rice[^"]*"[^>]*>[\s\S]*?R\$\s*([\d.,]+)/gi,
-                /data-price="(\d+)"/g,
-                /"sellerPrice":\s*"(\d+)"/g,
-                /"originalPrice":\s*"(\d+)"/g
-            ];
-
-            for (let padrao of padroesPreco) {
-                const matches = html.match(padrao);
-                if (matches) {
-                    for (let match of matches) {
-                        const precoMatch = match.match(/(\d+)/);
-                        if (precoMatch && precoMatch[1]) {
-                            const preco = parseInt(precoMatch[1]) / 100;
-                            // Validação do preço
-                            if (preco > 10 && preco < 10000) {
-                                console.log(`💰 Preço extraído: R$ ${preco} (padrão: ${padrao})`);
-                                return preco;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Tentar encontrar preço em formato brasileiro
-            const precoBRL = html.match(/R\$\s*([\d.,]+)/gi);
-            if (precoBRL) {
-                for (let match of precoBRL) {
-                    const valor = match.replace(/R\$\s*/, '').replace('.', '').replace(',', '.');
-                    const preco = parseFloat(valor);
-                    if (preco > 10 && preco < 10000) {
-                        console.log(`💰 Preço BRL encontrado: R$ ${preco}`);
-                        return preco;
-                    }
-                }
-            }
-            
-            return null;
+            }, 800);
         }
 
         // 📋 FUNÇÃO: Toggle da lista rápida de produtos
@@ -1389,16 +1100,7 @@
                 <div class="produto-item-rapido">
                     <div class="produto-info-rapido">
                         <div class="produto-nome-rapido">${produto.nome}</div>
-                        <div class="produto-sku-rapido">SKU: ${produto.sku} | MLB: ${produto.mlb || 'Não informado'}</div>
-                        <div class="preco-info">
-                            <span class="${produto.precoML > 0 ? 'preco-carregado' : 'preco-pendente'}">
-                                ML: ${produto.precoML > 0 ? `R$ ${produto.precoML.toFixed(2)}` : 'Não carregado'}
-                                ${produto.descontoML ? `<span class="desconto-badge">${produto.descontoML}% OFF</span>` : ''}
-                            </span> | 
-                            <span class="${produto.precoShopee > 0 ? 'preco-carregado' : 'preco-pendente'}">
-                                Shopee: ${produto.precoShopee > 0 ? `R$ ${produto.precoShopee.toFixed(2)}` : 'Não carregado'}
-                            </span>
-                        </div>
+                        <div class="produto-sku-rapido">SKU: ${produto.sku}</div>
                     </div>
                     <div class="produto-acoes-rapido">
                         <button class="btn btn-pequeno" onclick="editarProduto(${produto.id})" title="Editar produto">
@@ -1412,201 +1114,10 @@
             `).join('');
         }
 
-        // ⚡ FUNÇÃO: Toggle monitoramento automático (2 HORAS)
-        function toggleMonitoramentoAutomatico() {
-            const btnMonitoramento = document.getElementById('btnMonitoramento');
-            const statusDiv = document.getElementById('autoUpdateStatus');
-            
-            if (!monitoramentoAtivo) {
-                monitoramentoAtivo = true;
-                btnMonitoramento.innerHTML = '⏸️ Pausar Monitoramento';
-                btnMonitoramento.style.background = 'linear-gradient(135deg, #FF6B35 0%, #F7931E 100%)';
-                statusDiv.style.display = 'block';
-                
-                // Executar primeira atualização imediatamente
-                atualizarPrecosAutomaticamente();
-                
-                // Configurar intervalo de 2 horas
-                intervaloMonitoramento = setInterval(atualizarPrecosAutomaticamente, INTERVALO_ATUALIZACAO);
-                atualizarProximaAtualizacao();
-                
-                alert('✅ Monitoramento automático ativado! Os preços serão atualizados a cada 2 horas.');
-                
-            } else {
-                monitoramentoAtivo = false;
-                btnMonitoramento.innerHTML = '⚡ Iniciar Monitoramento';
-                btnMonitoramento.style.background = 'linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%)';
-                statusDiv.style.display = 'none';
-                
-                if (intervaloMonitoramento) {
-                    clearInterval(intervaloMonitoramento);
-                    intervaloMonitoramento = null;
-                }
-                
-                alert('⏸️ Monitoramento automático pausado!');
-            }
-        }
-
-        // 🕒 FUNÇÃO: Atualizar próxima atualização
-        function atualizarProximaAtualizacao() {
-            const elemento = document.getElementById('proximaAtualizacao');
-            if (elemento && monitoramentoAtivo) {
-                const agora = new Date();
-                const proxima = new Date(agora.getTime() + INTERVALO_ATUALIZACAO);
-                elemento.textContent = proxima.toLocaleTimeString('pt-BR');
-                
-                // Atualizar a cada minuto
-                setTimeout(atualizarProximaAtualizacao, 60000);
-            }
-        }
-
-        // 💾 FUNÇÃO: Registrar mudança de preço no histórico
-        function registrarMudancaPreco(produto) {
-            let historicoPrecos = JSON.parse(localStorage.getItem('historicoPrecos')) || {};
-            
-            if (!historicoPrecos[produto.id]) {
-                historicoPrecos[produto.id] = [];
-            }
-            
-            const registro = {
-                timestamp: new Date().toISOString(),
-                data: new Date().toLocaleString('pt-BR'),
-                precoML: produto.precoML,
-                precoOriginalML: produto.precoOriginalML,
-                descontoML: produto.descontoML,
-                promocaoNome: produto.promocaoNome,
-                precoShopee: produto.precoShopee,
-                diferenca: produto.precoShopee - produto.precoML
-            };
-            
-            historicoPrecos[produto.id].push(registro);
-            
-            if (historicoPrecos[produto.id].length > 100) {
-                historicoPrecos[produto.id] = historicoPrecos[produto.id].slice(-100);
-            }
-            
-            localStorage.setItem('historicoPrecos', JSON.stringify(historicoPrecos));
-        }
-
-        // 📊 FUNÇÃO: Carregar produtos do sistema interno
-        function carregarProdutosInternos() {
-            const statusDot = document.getElementById('statusDot');
-            const statusText = document.getElementById('statusText');
-            const container = document.getElementById('comparacaoContainer');
-            const contador = document.getElementById('contadorProdutos');
-
-            statusDot.className = 'status-dot loading';
-            statusText.textContent = 'Carregando produtos...';
-            container.innerHTML = '';
-            contador.textContent = '📊 Carregando...';
-
-            setTimeout(() => {
-                statusDot.className = 'status-dot';
-                
-                if (todosProdutos.length > 0) {
-                    const produtosComPrecoML = todosProdutos.filter(p => p.precoML > 0).length;
-                    const produtosComPrecoShopee = todosProdutos.filter(p => p.precoShopee > 0).length;
-                    
-                    statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
-                    contador.textContent = `📊 ${todosProdutos.length} produtos | ML: ${produtosComPrecoML} | Shopee: ${produtosComPrecoShopee}`;
-                    
-                    exibirProdutosComparacao();
-                    
-                } else {
-                    statusText.textContent = 'ℹ️ Nenhum produto cadastrado';
-                    container.innerHTML = `
-                        <div class="info-card">
-                            <p>Nenhum produto cadastrado ainda.</p>
-                            <p><small>Clique em "Cadastrar Produto" para adicionar produtos ao sistema.</small></p>
-                        </div>
-                    `;
-                    contador.textContent = '📊 Nenhum produto cadastrado';
-                }
-            }, 800);
-        }
-
-        // 📈 FUNÇÃO: Exibir produtos na comparação - ATUALIZADA
-        function exibirProdutosComparacao() {
-            const container = document.getElementById('comparacaoContainer');
-            
-            if (todosProdutos.length === 0) {
-                container.innerHTML = '<div class="info-card"><p>Nenhum produto cadastrado.</p></div>';
-                return;
-            }
-
-            container.innerHTML = todosProdutos.map(produto => {
-                const diferenca = produto.precoShopee - produto.precoML;
-                const temML = produto.precoML > 0;
-                const temShopee = produto.precoShopee > 0;
-                const temDescontoML = produto.descontoML > 0;
-                const temPromocao = produto.promocaoNome;
-                
-                return `
-                    <div class="produto-card">
-                        <div class="produto-header">
-                            <div class="produto-titulo">${produto.nome}</div>
-                            <div class="produto-sku">${produto.sku}</div>
-                        </div>
-                        
-                        <div class="precos-comparacao">
-                            <div class="preco-plataforma preco-ml">
-                                <div class="plataforma-nome">🛒 Mercado Livre</div>
-                                ${temML ? `
-                                    ${temDescontoML ? `
-                                        <div class="preco-original">De: R$ ${produto.precoOriginalML.toFixed(2)}</div>
-                                    ` : ''}
-                                    <div class="preco-valor">R$ ${produto.precoML.toFixed(2)}</div>
-                                    ${temDescontoML ? `
-                                        <div class="desconto-badge">${produto.descontoML}% OFF</div>
-                                    ` : ''}
-                                    ${temPromocao ? `
-                                        <div class="promocao-nome">${produto.promocaoNome}</div>
-                                    ` : ''}
-                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
-                                    ${produto.mlb ? `<div style="font-size: 12px; color: #666;">MLB: ${produto.mlb}</div>` : ''}
-                                    ${diferenca < 0 ? `<div class="diferenca diferenca-positiva">+R$ ${Math.abs(diferenca).toFixed(2)} mais barato</div>` : ''}
-                                ` : `
-                                    <div style="color: #888; padding: 10px;">
-                                        Preço não carregado
-                                        ${produto.mlb ? `<br><small>MLB: ${produto.mlb}</small>` : ''}
-                                    </div>
-                                `}
-                            </div>
-                            
-                            <div class="preco-plataforma preco-shopee">
-                                <div class="plataforma-nome">🛍️ Shopee</div>
-                                ${temShopee ? `
-                                    <div class="preco-valor">R$ ${produto.precoShopee.toFixed(2)}</div>
-                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
-                                    ${produto.urlShopee ? `<div style="font-size: 12px; color: #666;">URL: ${produto.urlShopee.substring(0, 30)}...</div>` : ''}
-                                    ${diferenca > 0 ? `<div class="diferenca diferenca-positiva">+R$ ${diferenca.toFixed(2)} mais barato</div>` : ''}
-                                ` : `
-                                    <div style="color: #888; padding: 10px;">
-                                        Preço não carregado
-                                        ${produto.urlShopee ? `<br><small>URL: ${produto.urlShopee.substring(0, 30)}...</small>` : ''}
-                                    </div>
-                                `}
-                            </div>
-                        </div>
-                        
-                        ${temML && temShopee ? `
-                            <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
-                                💰 Diferença: R$ ${Math.abs(diferenca).toFixed(2)} | 
-                                ${diferenca < 0 ? '🛒 ML mais barato' : diferenca > 0 ? '🛍️ Shopee mais barato' : '⚖️ Mesmo preço'}
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-            }).join('');
-        }
-
         // ➕ FUNÇÃO: Cadastrar produto
         function cadastrarProduto() {
             const nome = document.getElementById('nomeProduto').value.trim();
             const sku = document.getElementById('skuProduto').value.trim();
-            const mlb = document.getElementById('mlbProduto').value.trim();
-            const urlShopee = document.getElementById('urlShopee').value.trim();
-            const status = document.getElementById('statusProduto').value;
 
             if (!nome) {
                 alert('❌ Por favor, informe o nome do produto!');
@@ -1624,10 +1135,7 @@
                 produtoAtualizado = {
                     ...todosProdutos.find(p => p.id === produtoEditandoId),
                     nome: nome,
-                    sku: sku,
-                    mlb: mlb,
-                    urlShopee: urlShopee,
-                    status: status
+                    sku: sku
                 };
 
                 todosProdutos = todosProdutos.map(p => p.id === produtoEditandoId ? produtoAtualizado : p);
@@ -1643,14 +1151,6 @@
                     id: Date.now(),
                     nome: nome,
                     sku: sku,
-                    mlb: mlb,
-                    precoML: 0,
-                    precoOriginalML: 0,
-                    descontoML: 0,
-                    promocaoNome: null,
-                    urlShopee: urlShopee,
-                    precoShopee: 0,
-                    status: status,
                     dataCadastro: new Date().toLocaleString('pt-BR')
                 };
 
@@ -1661,9 +1161,6 @@
 
             document.getElementById('nomeProduto').value = '';
             document.getElementById('skuProduto').value = '';
-            document.getElementById('mlbProduto').value = '';
-            document.getElementById('urlShopee').value = '';
-            document.getElementById('statusProduto').value = 'ativo';
             
             produtoEditandoId = null;
 
@@ -1694,27 +1191,8 @@
                         <div class="produto-titulo">${produto.nome}</div>
                         <div class="produto-sku">${produto.sku}</div>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
-                        <div>
-                            <strong>Mercado Livre:</strong><br>
-                            ${produto.mlb ? `MLB: ${produto.mlb}<br>` : ''}
-                            ${produto.precoML > 0 ? `
-                                ${produto.descontoML > 0 ? `
-                                    <span class="preco-original">De: R$ ${produto.precoOriginalML.toFixed(2)}</span><br>
-                                    <strong>Por: R$ ${produto.precoML.toFixed(2)}</strong>
-                                    <span class="desconto-badge">${produto.descontoML}% OFF</span>
-                                ` : `R$ ${produto.precoML.toFixed(2)}`}
-                                ${produto.promocaoNome ? `<br><span class="promocao-nome">${produto.promocaoNome}</span>` : ''}
-                            ` : 'Preço não carregado'}
-                        </div>
-                        <div>
-                            <strong>Shopee:</strong><br>
-                            ${produto.urlShopee ? `URL: ${produto.urlShopee.substring(0, 30)}...<br>` : ''}
-                            ${produto.precoShopee > 0 ? `R$ ${produto.precoShopee.toFixed(2)}` : 'Preço não carregado'}
-                        </div>
-                    </div>
                     <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
-                        <span class="status-produto status-${produto.status}">${produto.status}</span>
+                        <span style="font-size: 12px; color: #666;">Cadastrado em: ${produto.dataCadastro}</span>
                         <div>
                             <button class="btn" onclick="editarProduto(${produto.id})" style="margin-right: 5px; padding: 8px 12px; font-size: 12px;">
                                 ✏️ Editar
@@ -1737,9 +1215,6 @@
             
             document.getElementById('nomeProduto').value = produto.nome;
             document.getElementById('skuProduto').value = produto.sku;
-            document.getElementById('mlbProduto').value = produto.mlb || '';
-            document.getElementById('urlShopee').value = produto.urlShopee || '';
-            document.getElementById('statusProduto').value = produto.status;
 
             mostrarTela('cadastroScreen');
             window.scrollTo(0, 0);
@@ -1769,26 +1244,13 @@
                 return;
             }
 
-            let csv = 'Nome do Produto,SKU,MLB,Preço Original ML,Preço Promocional ML,Desconto ML,Nome Promoção,URL Shopee,Preço Shopee,Status,Data Cadastro,Diferença,Melhor Preço\n';
+            let csv = 'Nome do Produto,SKU,Data Cadastro\n';
             
             todosProdutos.forEach(produto => {
-                const diferenca = produto.precoShopee - produto.precoML;
-                const melhorPreco = diferenca < 0 ? 'Mercado Livre' : diferenca > 0 ? 'Shopee' : 'Empate';
-                
                 const linha = [
                     `"${produto.nome}"`,
                     `"${produto.sku}"`,
-                    `"${produto.mlb || ''}"`,
-                    produto.precoOriginalML > 0 ? produto.precoOriginalML.toFixed(2) : '0.00',
-                    produto.precoML > 0 ? produto.precoML.toFixed(2) : '0.00',
-                    produto.descontoML > 0 ? `${produto.descontoML}%` : '0%',
-                    `"${produto.promocaoNome || ''}"`,
-                    `"${produto.urlShopee || ''}"`,
-                    produto.precoShopee > 0 ? produto.precoShopee.toFixed(2) : '0.00',
-                    `"${produto.status}"`,
-                    `"${produto.dataCadastro}"`,
-                    diferenca.toFixed(2),
-                    `"${melhorPreco}"`
+                    `"${produto.dataCadastro}"`
                 ].join(',');
                 
                 csv += linha + '\n';
@@ -1809,12 +1271,24 @@
             alert(`✅ ${todosProdutos.length} produtos exportados com sucesso!`);
         }
 
+        // 🔄 FUNÇÃO: Atualizar preços (simulação)
+        function atualizarPrecosAutomaticamente() {
+            alert('ℹ️ Funcionalidade de atualização de preços em desenvolvimento');
+        }
+
         // 🧭 FUNÇÃO: Navegação entre telas
         function mostrarTela(telaId) {
             document.querySelectorAll('.screen').forEach(screen => {
                 screen.classList.remove('active');
             });
             document.getElementById(telaId).classList.add('active');
+            
+            // Se for a tela de cálculo, atualizar informações do salário
+            if (telaId === 'calcularScreen' && funcionarioLogado) {
+                const valorHora = funcionarioLogado.salario / 220;
+                document.getElementById('salarioBase').textContent = funcionarioLogado.salario.toFixed(2);
+                document.getElementById('valorHoraAuto').textContent = valorHora.toFixed(2);
+            }
         }
 
         // 🚪 FUNÇÃO: Sair do sistema
@@ -1830,7 +1304,7 @@
         });
 
         // Inicialização
-        console.log('Sistema Wheel Tech - Com API Real do Mercado Livre!');
+        console.log('Sistema Wheel Tech - Cálculo Automático de Horas Extras!');
         console.log('Produtos cadastrados:', todosProdutos.length);
         
         // Mostrar botão de exportação se houver produtos
