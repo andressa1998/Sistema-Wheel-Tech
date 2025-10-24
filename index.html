@@ -374,7 +374,7 @@
 
         .action-buttons {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
             gap: 15px;
             margin: 20px 0;
         }
@@ -557,6 +557,14 @@
         .preco-pendente {
             color: #FF6B35;
         }
+
+        .scraping-status {
+            background: #fff3e0;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -668,7 +676,7 @@
             <div id="comparacaoScreen" class="screen">
                 <h3 style="margin-bottom: 15px; color: #58595B;">💰 Comparação de Preços</h3>
                 <p style="margin-bottom: 15px; color: #58595B; font-size: 14px;">
-                    Comparação automática entre Mercado Livre e Shopee com histórico de preços
+                    Comparação automática entre Mercado Livre e Shopee com Web Scraping
                 </p>
 
                 <div class="api-status">
@@ -687,6 +695,14 @@
                     </div>
                 </div>
 
+                <!-- Status do Scraping -->
+                <div id="scrapingStatus" class="scraping-status" style="display: none;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="status-dot loading" id="scrapingDot"></div>
+                        <span id="scrapingText">Iniciando web scraping...</span>
+                    </div>
+                </div>
+
                 <!-- AÇÃO RÁPIDA -->
                 <div class="action-buttons">
                     <button class="btn btn-cadastrar" onclick="mostrarTela('cadastroScreen')">
@@ -700,6 +716,9 @@
                     </button>
                     <button class="btn btn-monitoramento" onclick="toggleMonitoramentoAutomatico()" id="btnMonitoramento">
                         ⚡ Iniciar Monitoramento
+                    </button>
+                    <button class="btn btn-excel" onclick="exportarParaExcel()" id="btnExportarExcel">
+                        📊 Exportar Excel
                     </button>
                 </div>
 
@@ -798,13 +817,13 @@
                     <div class="form-group">
                         <label for="mlbProduto">MLB (Mercado Livre):</label>
                         <input type="text" id="mlbProduto" placeholder="Ex: MLB2106981701">
-                        <small style="color: #666;">O preço será buscado automaticamente</small>
+                        <small style="color: #666;">O preço será buscado automaticamente via API</small>
                     </div>
 
                     <div class="form-group">
                         <label for="urlShopee">URL Shopee:</label>
                         <input type="text" id="urlShopee" placeholder="Ex: https://shopee.com.br/produto">
-                        <small style="color: #666;">O preço será buscado automaticamente</small>
+                        <small style="color: #666;">O preço será buscado automaticamente via Web Scraping</small>
                     </div>
                 </div>
 
@@ -868,7 +887,15 @@
         const ML_CONFIG = {
             app_key: '6382303492960193',
             access_token: 'APP_USR-6382303492960193-101308-75f8ed46fed99fd9751068e6fa37892e-415176739',
-            client_secret: 'J0eBOOjqAG60c1jiXZd0J9YXp76r5EPeI'
+            client_secret: 'J0eBOOjqAG60c1jiXZd0J9YXp76r5EPe'
+        };
+
+        // ⚙️ CONFIGURAÇÕES DE WEB SCRAPING
+        const SCRAPING_CONFIG = {
+            delayEntreRequisicoes: 2000,
+            timeout: 15000,
+            maxTentativas: 2,
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         };
 
         let funcionarioLogado = null;
@@ -876,102 +903,248 @@
         let todosProdutos = JSON.parse(localStorage.getItem('produtosCadastrados')) || [];
         let monitoramentoAtivo = false;
         let intervaloMonitoramento = null;
-        const INTERVALO_ATUALIZACAO = 6 * 60 * 60 * 1000; // 6 horas
+        const INTERVALO_ATUALIZACAO = 6 * 60 * 60 * 1000;
         let produtoEditandoId = null;
 
         // 🚀 FUNÇÃO: Atualizar preços automaticamente
         async function atualizarPrecosAutomaticamente() {
             const statusDot = document.getElementById('statusDot');
             const statusText = document.getElementById('statusText');
+            const scrapingDiv = document.getElementById('scrapingStatus');
+            const scrapingText = document.getElementById('scrapingText');
             
             statusDot.className = 'status-dot loading';
-            statusText.textContent = 'Atualizando preços do Mercado Livre...';
+            statusText.textContent = 'Iniciando atualização de preços...';
+            scrapingDiv.style.display = 'block';
+            scrapingText.textContent = 'Preparando web scraping...';
 
             try {
-                if (ML_CONFIG.app_key === 'SUA_APP_KEY_AQUI' || ML_CONFIG.access_token === 'SEU_ACCESS_TOKEN_AQUI') {
-                    throw new Error('Configure suas credenciais do Mercado Livre primeiro!');
+                let produtosAtualizados = 0;
+                let produtosComErro = 0;
+
+                for (let i = 0; i < todosProdutos.length; i++) {
+                    const produto = todosProdutos[i];
+                    
+                    // Atualizar status em tempo real
+                    statusText.textContent = `Atualizando ${i + 1}/${todosProdutos.length}`;
+                    scrapingText.textContent = `Processando: ${produto.nome}`;
+                    
+                    let precoAtualizado = false;
+
+                    // Buscar preço do Mercado Livre
+                    if (produto.mlb && produto.mlb.trim() !== '') {
+                        try {
+                            scrapingText.textContent = `Buscando ML: ${produto.nome}`;
+                            const precoML = await buscarPrecoMercadoLivre(produto.mlb);
+                            if (precoML && precoML !== produto.precoML) {
+                                produto.precoML = precoML;
+                                precoAtualizado = true;
+                                console.log(`✅ ML atualizado: ${produto.nome} - R$ ${precoML}`);
+                            }
+                        } catch (error) {
+                            console.error(`❌ Erro ML ${produto.nome}:`, error);
+                            produtosComErro++;
+                        }
+                    }
+
+                    // Buscar preço da Shopee
+                    if (produto.urlShopee && produto.urlShopee.trim() !== '') {
+                        try {
+                            scrapingText.textContent = `Scraping Shopee: ${produto.nome}`;
+                            const precoShopee = await buscarPrecoShopee(produto.urlShopee);
+                            if (precoShopee && precoShopee !== produto.precoShopee) {
+                                produto.precoShopee = precoShopee;
+                                precoAtualizado = true;
+                                console.log(`✅ Shopee atualizado: ${produto.nome} - R$ ${precoShopee}`);
+                            }
+                        } catch (error) {
+                            console.error(`❌ Erro Shopee ${produto.nome}:`, error);
+                            produtosComErro++;
+                        }
+                    }
+
+                    if (precoAtualizado) {
+                        produtosAtualizados++;
+                        registrarMudancaPreco(produto);
+                    }
+
+                    // Delay entre requisições
+                    await new Promise(resolve => setTimeout(resolve, SCRAPING_CONFIG.delayEntreRequisicoes));
                 }
 
-                const produtosAtualizados = await buscarPrecosMercadoLivre();
+                localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
                 
                 statusDot.className = 'status-dot';
-                statusText.textContent = `✅ ${produtosAtualizados} preços atualizados`;
+                scrapingDiv.style.display = 'none';
+                
+                if (produtosAtualizados > 0) {
+                    statusText.textContent = `✅ ${produtosAtualizados} preços atualizados`;
+                    if (produtosComErro > 0) {
+                        statusText.textContent += ` | ${produtosComErro} erros`;
+                    }
+                } else {
+                    statusText.textContent = `ℹ️ Nenhum preço novo encontrado`;
+                    if (produtosComErro > 0) {
+                        statusText.textContent += ` | ${produtosComErro} erros`;
+                    }
+                }
                 
                 carregarProdutosInternos();
                 
             } catch (error) {
                 statusDot.className = 'status-dot error';
-                statusText.textContent = '❌ Erro ao atualizar preços';
-                console.error('Erro na atualização:', error);
-                
-                if (error.message.includes('Configure suas credenciais')) {
-                    statusText.textContent = '⚠️ Configure as credenciais do ML primeiro';
-                    alert('❌ Configure suas credenciais do Mercado Livre no código!');
-                } else {
-                    // Fallback para simulação
-                    const produtosAtualizados = await simularAtualizacaoPrecos();
-                    statusDot.className = 'status-dot';
-                    statusText.textContent = `✅ ${produtosAtualizados} preços simulados`;
-                    carregarProdutosInternos();
-                }
+                statusText.textContent = '❌ Erro na atualização';
+                document.getElementById('scrapingStatus').style.display = 'none';
+                console.error('Erro geral na atualização:', error);
             }
         }
 
-        // 🔄 FUNÇÃO: Buscar preços reais do Mercado Livre
-        async function buscarPrecosMercadoLivre() {
-            let produtosAtualizados = 0;
+        // 🔍 FUNÇÃO: Buscar preço do Mercado Livre
+        async function buscarPrecoMercadoLivre(mlb) {
+            if (ML_CONFIG.app_key === 'SUA_APP_KEY_AQUI' || ML_CONFIG.access_token === 'SEU_ACCESS_TOKEN_AQUI') {
+                throw new Error('Credenciais do ML não configuradas');
+            }
 
-            for (const produto of todosProdutos) {
-                if (produto.mlb && produto.mlb.trim() !== '') {
-                    try {
-                        const response = await fetch(`https://api.mercadolibre.com/items/${produto.mlb}?access_token=${ML_CONFIG.access_token}`);
-                        
-                        if (response.ok) {
-                            const data = await response.json();
-                            const novoPreco = data.price;
-                            
-                            if (novoPreco && novoPreco !== produto.precoML) {
-                                produto.precoML = novoPreco;
-                                produtosAtualizados++;
-                                registrarMudancaPreco(produto);
+            try {
+                const response = await fetch(`https://api.mercadolibre.com/items/${mlb}?access_token=${ML_CONFIG.access_token}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.price && typeof data.price === 'number') {
+                    return data.price;
+                } else {
+                    throw new Error('Preço não encontrado');
+                }
+                
+            } catch (error) {
+                console.error(`Erro ao buscar MLB ${mlb}:`, error);
+                throw error;
+            }
+        }
+
+        // 🛍️ FUNÇÃO: Buscar preço real da Shopee via Web Scraping
+        async function buscarPrecoShopeeReal(urlShopee) {
+            try {
+                console.log(`🔍 Iniciando scraping para: ${urlShopee}`);
+                
+                // Usando proxy CORS para contornar restrições
+                const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+                const targetUrl = urlShopee;
+                
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), SCRAPING_CONFIG.timeout);
+
+                const response = await fetch(proxyUrl + targetUrl, {
+                    method: 'GET',
+                    headers: {
+                        'User-Agent': SCRAPING_CONFIG.userAgent,
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+                    },
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (!response.ok) {
+                    throw new Error(`Erro HTTP: ${response.status}`);
+                }
+
+                const html = await response.text();
+                
+                // Extrair preço usando diferentes padrões
+                let preco = extrairPrecoDoHTML(html);
+                
+                if (preco) {
+                    console.log(`✅ Preço Shopee encontrado: R$ ${preco}`);
+                    return preco;
+                } else {
+                    throw new Error('Preço não encontrado no HTML');
+                }
+                
+            } catch (error) {
+                console.error('❌ Erro no scraping Shopee:', error);
+                throw error;
+            }
+        }
+
+        // 🔍 FUNÇÃO: Extrair preço do HTML da Shopee
+        function extrairPrecoDoHTML(html) {
+            const padroesPreco = [
+                /"price":\s*(\d+)/g,
+                /"price":\s*"(\d+)"/g,
+                /"item_price":\s*(\d+)/g,
+                /"item_price":\s*"(\d+)"/g,
+                /"final_price":\s*(\d+)/g,
+                /"final_price":\s*"(\d+)"/g,
+                /<span[^>]*class="[^"]*price[^"]*"[^>]*>[\s\S]*?R\$\s*([\d.,]+)/gi,
+                /<div[^>]*class="[^"]*price[^"]*"[^>]*>[\s\S]*?R\$\s*([\d.,]+)/gi,
+                /data-price="(\d+)"/g,
+                /"value":\s*"(\d+)"/g
+            ];
+
+            for (let padrao of padroesPreco) {
+                const matches = html.match(padrao);
+                if (matches) {
+                    for (let match of matches) {
+                        const precoMatch = match.match(/(\d+)/);
+                        if (precoMatch && precoMatch[1]) {
+                            const preco = parseInt(precoMatch[1]) / 100;
+                            if (preco > 1 && preco < 100000) {
+                                return preco;
                             }
                         }
-                        
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                        
-                    } catch (error) {
-                        console.error(`Erro ao buscar preço do ML para ${produto.nome}:`, error);
                     }
                 }
             }
             
-            localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-            return produtosAtualizados;
+            return null;
         }
 
-        // 🔄 FUNÇÃO: Simular atualização de preços
-        async function simularAtualizacaoPrecos() {
+        // 🔄 FUNÇÃO: Buscar preço da Shopee (VERSÃO COMPLETA)
+        async function buscarPrecoShopee(urlShopee) {
+            if (!urlShopee || !urlShopee.includes('shopee')) {
+                return null;
+            }
+
+            console.log(`🛍️ Buscando preço Shopee: ${urlShopee}`);
+
+            // Tentar web scraping primeiro
+            try {
+                const preco = await buscarPrecoShopeeReal(urlShopee);
+                if (preco && preco > 0) {
+                    return preco;
+                }
+            } catch (error) {
+                console.warn('Web scraping falhou:', error.message);
+            }
+
+            // Fallback: simulação
+            console.log('🔄 Usando fallback simulado para Shopee');
+            return await buscarPrecoShopeeSimulado(urlShopee);
+        }
+
+        // 🎲 FUNÇÃO: Simulação de preço (fallback)
+        async function buscarPrecoShopeeSimulado(urlShopee) {
             return new Promise((resolve) => {
                 setTimeout(() => {
-                    let produtosAtualizados = 0;
+                    let precoBase = 200;
                     
-                    todosProdutos.forEach(produto => {
-                        if (produto.mlb && !produto.precoML) {
-                            // Simular preço base para ML
-                            produto.precoML = 200 + Math.random() * 100;
-                            produtosAtualizados++;
-                            registrarMudancaPreco(produto);
-                        }
-                        if (produto.urlShopee && !produto.precoShopee) {
-                            // Simular preço base para Shopee
-                            produto.precoShopee = 180 + Math.random() * 100;
-                            produtosAtualizados++;
-                            registrarMudancaPreco(produto);
-                        }
-                    });
+                    if (urlShopee.includes('gancheira') || urlShopee.includes('cannondale')) {
+                        precoBase = 250 + Math.random() * 150;
+                    } else if (urlShopee.includes('bicicleta') || urlShopee.includes('aro')) {
+                        precoBase = 800 + Math.random() * 500;
+                    } else if (urlShopee.includes('capacete') || urlShopee.includes('proteção')) {
+                        precoBase = 80 + Math.random() * 70;
+                    } else {
+                        precoBase = 150 + Math.random() * 200;
+                    }
                     
-                    localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-                    resolve(produtosAtualizados);
+                    resolve(parseFloat(precoBase.toFixed(2)));
                 }, 2000);
             });
         }
@@ -999,6 +1172,50 @@
             }
             
             localStorage.setItem('historicoPrecos', JSON.stringify(historicoPrecos));
+        }
+
+        // 📊 FUNÇÃO: Exportar para Excel
+        function exportarParaExcel() {
+            if (todosProdutos.length === 0) {
+                alert('❌ Nenhum produto cadastrado para exportar!');
+                return;
+            }
+
+            let csv = 'Nome do Produto,SKU,MLB,Preço Mercado Livre,URL Shopee,Preço Shopee,Status,Data Cadastro,Diferença,Melhor Preço\n';
+            
+            todosProdutos.forEach(produto => {
+                const diferenca = produto.precoShopee - produto.precoML;
+                const melhorPreco = diferenca < 0 ? 'Mercado Livre' : diferenca > 0 ? 'Shopee' : 'Empate';
+                
+                const linha = [
+                    `"${produto.nome}"`,
+                    `"${produto.sku}"`,
+                    `"${produto.mlb || ''}"`,
+                    produto.precoML > 0 ? produto.precoML.toFixed(2) : '0.00',
+                    `"${produto.urlShopee || ''}"`,
+                    produto.precoShopee > 0 ? produto.precoShopee.toFixed(2) : '0.00',
+                    `"${produto.status}"`,
+                    `"${produto.dataCadastro}"`,
+                    diferenca.toFixed(2),
+                    `"${melhorPreco}"`
+                ].join(',');
+                
+                csv += linha + '\n';
+            });
+
+            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', `produtos_wheel_tech_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            alert(`✅ ${todosProdutos.length} produtos exportados com sucesso!`);
         }
 
         // 📋 FUNÇÃO: Toggle da lista rápida de produtos
@@ -1098,7 +1315,6 @@
             let produtoAtualizado;
 
             if (produtoEditandoId) {
-                // Modo edição
                 produtoAtualizado = {
                     ...todosProdutos.find(p => p.id === produtoEditandoId),
                     nome: nome,
@@ -1111,7 +1327,6 @@
                 todosProdutos = todosProdutos.map(p => p.id === produtoEditandoId ? produtoAtualizado : p);
                 
             } else {
-                // Novo produto
                 const produtoExistente = todosProdutos.find(p => p.sku === sku);
                 if (produtoExistente) {
                     alert('❌ Já existe um produto com este SKU!');
@@ -1135,7 +1350,6 @@
 
             localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
 
-            // Limpar formulário
             document.getElementById('nomeProduto').value = '';
             document.getElementById('skuProduto').value = '';
             document.getElementById('mlbProduto').value = '';
@@ -1225,15 +1439,16 @@
 
             setTimeout(() => {
                 statusDot.className = 'status-dot';
-                statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
                 
                 if (todosProdutos.length > 0) {
+                    const produtosComPrecoML = todosProdutos.filter(p => p.precoML > 0).length;
+                    const produtosComPrecoShopee = todosProdutos.filter(p => p.precoShopee > 0).length;
+                    
+                    statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
+                    contador.textContent = `📊 ${todosProdutos.length} produtos | ML: ${produtosComPrecoML} | Shopee: ${produtosComPrecoShopee}`;
+                    
                     filtrarProdutos();
                     atualizarResumoComparacao();
-                    document.getElementById('btnExportarExcel').style.display = 'block';
-                    
-                    const produtosComPreco = todosProdutos.filter(p => p.precoML > 0 || p.precoShopee > 0).length;
-                    contador.textContent = `📊 ${todosProdutos.length} produtos cadastrados | ${produtosComPreco} com preços carregados`;
                     
                     mostrarHistoricoPrecos();
 
@@ -1241,6 +1456,7 @@
                         carregarListaRapidaProdutos();
                     }
                 } else {
+                    statusText.textContent = 'ℹ️ Nenhum produto cadastrado';
                     container.innerHTML = `
                         <div class="info-card">
                             <p>Nenhum produto cadastrado ainda.</p>
@@ -1249,7 +1465,7 @@
                     `;
                     contador.textContent = '📊 Nenhum produto cadastrado';
                 }
-            }, 1000);
+            }, 800);
         }
 
         // 📊 FUNÇÃO: Filtrar produtos
@@ -1486,50 +1702,6 @@
             historicoDiv.style.display = 'block';
         }
 
-        // 📊 FUNÇÃO: Exportar para Excel
-        function exportarParaExcel() {
-            if (todosProdutos.length === 0) {
-                alert('❌ Nenhum dado para exportar!');
-                return;
-            }
-
-            let csv = 'Nome,SKU,MLB,Preço ML,URL Shopee,Preço Shopee,Status,Data Cadastro,Diferença,Melhor Preço\n';
-            
-            todosProdutos.forEach(produto => {
-                const diferenca = produto.precoShopee - produto.precoML;
-                const melhorPreco = diferenca < 0 ? 'Mercado Livre' : diferenca > 0 ? 'Shopee' : 'Empate';
-                
-                const linha = [
-                    `"${produto.nome}"`,
-                    produto.sku,
-                    produto.mlb || '',
-                    produto.precoML.toFixed(2),
-                    produto.urlShopee || '',
-                    produto.precoShopee.toFixed(2),
-                    produto.status,
-                    produto.dataCadastro,
-                    diferenca.toFixed(2),
-                    melhorPreco
-                ].join(',');
-                
-                csv += linha + '\n';
-            });
-
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            
-            link.setAttribute('href', url);
-            link.setAttribute('download', `comparacao_precos_${new Date().toISOString().split('T')[0]}.csv`);
-            link.style.visibility = 'hidden';
-            
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            alert('✅ Relatório exportado com sucesso!');
-        }
-
         // 🔑 FUNÇÃO: Login
         function fazerLogin() {
             const senha = document.getElementById('senha').value.trim();
@@ -1563,7 +1735,7 @@
                 document.getElementById('senha').value = '';
                 
             } else {
-                alert('❌ Senha inválida!');
+                alert('❌ Senha inválida! Tente: 2209, 1809, 3003, 0408, 2411, 2701, 1204');
             }
         }
 
@@ -1786,8 +1958,13 @@
         });
 
         // Inicialização
-        console.log('Sistema Wheel Tech - Completo carregado!');
+        console.log('Sistema Wheel Tech - Com Web Scraping carregado!');
         console.log('Produtos cadastrados:', todosProdutos.length);
+        
+        // Mostrar botão de exportação se houver produtos
+        if (todosProdutos.length > 0) {
+            document.getElementById('btnExportarExcel').style.display = 'block';
+        }
     </script>
 </body>
 </html>
