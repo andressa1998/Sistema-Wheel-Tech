@@ -137,6 +137,14 @@
             background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
         }
 
+        .btn-rh {
+            background: linear-gradient(135deg, #00ADEE 0%, #0078A6 100%);
+        }
+
+        .btn-administrativo {
+            background: linear-gradient(135deg, #76B843 0%, #5A8A2A 100%);
+        }
+
         .user-welcome {
             text-align: center;
             margin-bottom: 30px;
@@ -151,6 +159,32 @@
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 15px;
             margin-top: 20px;
+        }
+
+        .departamento-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid;
+        }
+
+        .departamento-rh {
+            border-left-color: #00ADEE;
+        }
+
+        .departamento-administrativo {
+            border-left-color: #76B843;
+        }
+
+        .departamento-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #58595B;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         .acesso-badge {
@@ -590,23 +624,43 @@
             <div id="menuScreen" class="screen">
                 <div class="user-welcome">
                     <h3>Olá, <span id="nomeFuncionario"></span>!</h3>
-                    <p>Salário Base: R$ <span id="salarioBase"></span></p>
+                    <!-- Salário removido da tela principal -->
                     <div id="acessoAnuncios" class="acesso-badge" style="display: none;">
-                        ✅ Acesso à Comparação de Preços
+                        ✅ Acesso Administrativo
                     </div>
                 </div>
 
-                <div class="menu-buttons">
-                    <button class="btn" onclick="mostrarTela('calcularScreen')">📊 Calcular Horas Extras + DSR</button>
-                    <button class="btn" onclick="mostrarHistorico()">📋 Ver Meu Histórico</button>
-                    <button class="btn" onclick="mostrarResumo()">ℹ️ Meu Resumo</button>
-                    
-                    <button id="btnComparacao" class="btn btn-anuncios" onclick="mostrarComparacaoPrecos()" style="display: none;">
-                        💰 Comparação de Preços
-                    </button>
-                    
-                    <button class="btn btn-logout" onclick="sair()">🚪 Sair do Sistema</button>
+                <!-- Seção RH -->
+                <div class="departamento-section departamento-rh">
+                    <div class="departamento-title">
+                        📊 RECURSOS HUMANOS
+                    </div>
+                    <div class="menu-buttons">
+                        <button class="btn btn-rh" onclick="mostrarTela('calcularScreen')">
+                            ⏰ Calcular Horas Extras + DSR
+                        </button>
+                        <button class="btn btn-rh" onclick="mostrarHistorico()">
+                            📋 Ver Meu Histórico
+                        </button>
+                        <button class="btn btn-rh" onclick="mostrarResumo()">
+                            ℹ️ Meu Resumo
+                        </button>
+                    </div>
                 </div>
+
+                <!-- Seção Administrativo -->
+                <div id="secaoAdministrativo" class="departamento-section departamento-administrativo" style="display: none;">
+                    <div class="departamento-title">
+                        💰 ADMINISTRATIVO
+                    </div>
+                    <div class="menu-buttons">
+                        <button class="btn btn-administrativo" onclick="mostrarComparacaoPrecos()">
+                            📈 Comparação de Preços
+                        </button>
+                    </div>
+                </div>
+
+                <button class="btn btn-logout" onclick="sair()">🚪 Sair do Sistema</button>
             </div>
 
             <!-- Tela de Cálculo de Horas -->
@@ -886,7 +940,7 @@
         // 🔧 CONFIGURAÇÕES DO MERCADO LIVRE
         const ML_CONFIG = {
             app_key: '6382303492960193',
-            access_token: 'APP_USR-6382303492960193-101308-75f8ed46fed99fd9751068e6fa37892e-415176739',
+            access_token: 'APP_USR-6382303492960193-102410-577704e0d4d1ffc1957af5e23f94bf26-415176739',
             client_secret: 'J0eBOOjqAG60c1jiXZd0J9YXp76r5EPe'
         };
 
@@ -905,6 +959,53 @@
         let intervaloMonitoramento = null;
         const INTERVALO_ATUALIZACAO = 6 * 60 * 60 * 1000;
         let produtoEditandoId = null;
+
+        // 🔑 FUNÇÃO: Login ATUALIZADA
+        function fazerLogin() {
+            const senha = document.getElementById('senha').value.trim();
+            
+            if (!senha) {
+                alert('❌ Por favor, digite sua senha!');
+                return;
+            }
+
+            if (funcionarios[senha]) {
+                funcionarioLogado = {
+                    senha: senha,
+                    ...funcionarios[senha]
+                };
+                
+                document.getElementById('nomeFuncionario').textContent = funcionarioLogado.nome;
+                
+                const acessoAnunciosDiv = document.getElementById('acessoAnuncios');
+                const secaoAdministrativo = document.getElementById('secaoAdministrativo');
+                
+                if (funcionarioLogado.acessoAnuncios) {
+                    acessoAnunciosDiv.style.display = 'block';
+                    secaoAdministrativo.style.display = 'block';
+                } else {
+                    acessoAnunciosDiv.style.display = 'none';
+                    secaoAdministrativo.style.display = 'none';
+                }
+                
+                mostrarTela('menuScreen');
+                document.getElementById('senha').value = '';
+                
+            } else {
+                alert('❌ Senha inválida! Tente: 2209, 1809, 3003, 0408, 2411, 2701, 1204');
+            }
+        }
+
+        // 🧭 FUNÇÃO: Mostrar comparação de preços
+        function mostrarComparacaoPrecos() {
+            if (!funcionarioLogado.acessoAnuncios) {
+                alert('❌ Acesso não autorizado!');
+                return;
+            }
+            mostrarTela('comparacaoScreen');
+        }
+
+        // ... (TODAS AS OUTRAS FUNÇÕES PERMANECEM EXATAMENTE IGUAIS) ...
 
         // 🚀 FUNÇÃO: Atualizar preços automaticamente
         async function atualizarPrecosAutomaticamente() {
@@ -1702,66 +1803,6 @@
             historicoDiv.style.display = 'block';
         }
 
-        // 🔑 FUNÇÃO: Login
-        function fazerLogin() {
-            const senha = document.getElementById('senha').value.trim();
-            
-            if (!senha) {
-                alert('❌ Por favor, digite sua senha!');
-                return;
-            }
-
-            if (funcionarios[senha]) {
-                funcionarioLogado = {
-                    senha: senha,
-                    ...funcionarios[senha]
-                };
-                
-                document.getElementById('nomeFuncionario').textContent = funcionarioLogado.nome;
-                document.getElementById('salarioBase').textContent = funcionarioLogado.salario.toFixed(2);
-                
-                const btnComparacao = document.getElementById('btnComparacao');
-                const acessoAnunciosDiv = document.getElementById('acessoAnuncios');
-                
-                if (funcionarioLogado.acessoAnuncios) {
-                    btnComparacao.style.display = 'block';
-                    acessoAnunciosDiv.style.display = 'block';
-                } else {
-                    btnComparacao.style.display = 'none';
-                    acessoAnunciosDiv.style.display = 'none';
-                }
-                
-                mostrarTela('menuScreen');
-                document.getElementById('senha').value = '';
-                
-            } else {
-                alert('❌ Senha inválida! Tente: 2209, 1809, 3003, 0408, 2411, 2701, 1204');
-            }
-        }
-
-        // 🧭 FUNÇÃO: Navegação entre telas
-        function mostrarTela(telaId) {
-            document.querySelectorAll('.screen').forEach(screen => {
-                screen.classList.remove('active');
-            });
-            document.getElementById(telaId).classList.add('active');
-
-            if (telaId === 'cadastroScreen') {
-                atualizarListaProdutosCadastrados();
-            } else if (telaId === 'comparacaoScreen') {
-                carregarProdutosInternos();
-            }
-        }
-
-        // 🧭 FUNÇÃO: Mostrar comparação de preços
-        function mostrarComparacaoPrecos() {
-            if (!funcionarioLogado.acessoAnuncios) {
-                alert('❌ Acesso não autorizado!');
-                return;
-            }
-            mostrarTela('comparacaoScreen');
-        }
-
         // ⏰ FUNÇÃO: Calcular horas extras com DSR
         function calcularHorasExtras() {
             const horas = parseFloat(document.getElementById('horasExtras').value);
@@ -1942,6 +1983,20 @@
             mostrarTela('resumoScreen');
         }
 
+        // 🧭 FUNÇÃO: Navegação entre telas
+        function mostrarTela(telaId) {
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+            });
+            document.getElementById(telaId).classList.add('active');
+
+            if (telaId === 'cadastroScreen') {
+                atualizarListaProdutosCadastrados();
+            } else if (telaId === 'comparacaoScreen') {
+                carregarProdutosInternos();
+            }
+        }
+
         // 🚪 FUNÇÃO: Sair do sistema
         function sair() {
             funcionarioLogado = null;
@@ -1958,7 +2013,7 @@
         });
 
         // Inicialização
-        console.log('Sistema Wheel Tech - Com Web Scraping carregado!');
+        console.log('Sistema Wheel Tech - Com Departamentos carregado!');
         console.log('Produtos cadastrados:', todosProdutos.length);
         
         // Mostrar botão de exportação se houver produtos
