@@ -225,6 +225,36 @@
             border-color: #00ADEE;
         }
 
+        .calculadora-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 25px;
+            margin: 20px 0;
+        }
+
+        .resultado-container {
+            background: #e8f5e9;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            border-left: 4px solid #4caf50;
+        }
+
+        .historico-container {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+
+        .historico-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-left: 4px solid #00ADEE;
+        }
+
         .comparacao-container {
             margin: 20px 0;
         }
@@ -524,6 +554,29 @@
             font-size: 10px;
             margin-left: 5px;
         }
+
+        .valor-destaque {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2E7D32;
+            margin: 10px 0;
+        }
+
+        .detalhes-calculo {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            border-left: 4px solid #00ADEE;
+        }
+
+        .linha-calculo {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+            padding: 5px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
     </style>
 </head>
 <body>
@@ -582,69 +635,74 @@
                 </button>
             </div>
 
-            <!-- Menu Principal -->
-            <div id="menuScreen" class="screen">
+            <!-- Tela RH -->
+            <div id="rhScreen" class="screen">
                 <div class="user-welcome">
-                    <h3>Olá, <span id="nomeFuncionario"></span>!</h3>
-                    <div id="acessoAnuncios" class="acesso-badge" style="display: none;">
-                        ✅ Acesso Administrativo
-                    </div>
+                    <h3>Olá, <span id="nomeFuncionarioRH"></span>!</h3>
+                    <div class="acesso-badge">📊 Departamento de RH</div>
                 </div>
 
-                <!-- Menu de Departamentos -->
-                <div class="menu-departamentos">
-                    <!-- Card RH -->
-                    <div class="departamento-card rh" onclick="mostrarDepartamento('rh')">
-                        <div class="departamento-icon">📊</div>
-                        <div class="departamento-title">RECURSOS HUMANOS</div>
-                        <div class="departamento-desc">Gestão de horas extras, histórico e resumo</div>
-                    </div>
+                <div class="menu-buttons">
+                    <button class="btn btn-rh" onclick="mostrarTela('calcularScreen')">
+                        ⏰ Calcular Horas Extras + DSR
+                    </button>
+                    <button class="btn btn-rh" onclick="mostrarHistorico()">
+                        📋 Ver Meu Histórico
+                    </button>
+                    <button class="btn btn-rh" onclick="mostrarResumo()">
+                        ℹ️ Meu Resumo
+                    </button>
+                    <button class="btn btn-logout" onclick="sair()" style="margin-top: 30px;">🚪 Sair do Sistema</button>
+                </div>
+            </div>
 
-                    <!-- Card Administrativo -->
-                    <div id="cardAdministrativo" class="departamento-card administrativo" onclick="mostrarDepartamento('administrativo')" style="display: none;">
-                        <div class="departamento-icon">💰</div>
-                        <div class="departamento-title">ADMINISTRATIVO</div>
-                        <div class="departamento-desc">Comparação de preços e gestão de produtos</div>
-                    </div>
+            <!-- Tela Administrativo -->
+            <div id="administrativoScreen" class="screen">
+                <div class="user-welcome">
+                    <h3>Olá, <span id="nomeFuncionarioAdm"></span>!</h3>
+                    <div class="acesso-badge">💰 Departamento Administrativo</div>
                 </div>
 
-                <!-- Seção RH (inicialmente oculta) -->
-                <div id="secaoRH" class="departamento-section" style="display: none; margin-top: 30px;">
-                    <div class="departamento-title" style="font-size: 18px; margin-bottom: 15px;">
-                        📊 RECURSOS HUMANOS
+                <div class="menu-buttons">
+                    <button class="btn btn-administrativo" onclick="mostrarComparacaoPrecos()">
+                        📈 Comparação de Preços
+                    </button>
+                    <button class="btn btn-logout" onclick="sair()" style="margin-top: 30px;">🚪 Sair do Sistema</button>
+                </div>
+            </div>
+
+            <!-- Tela de Cálculo de Horas Extras -->
+            <div id="calcularScreen" class="screen">
+                <h3 style="margin-bottom: 20px; color: #58595B;">⏰ Calcular Horas Extras + DSR</h3>
+                
+                <div class="calculadora-container">
+                    <div class="form-group">
+                        <label for="horasExtras">Horas Extras Trabalhadas:</label>
+                        <input type="number" id="horasExtras" placeholder="Ex: 10" min="0" step="0.5">
                     </div>
-                    <div class="menu-buttons">
-                        <button class="btn btn-rh" onclick="mostrarTela('calcularScreen')">
-                            ⏰ Calcular Horas Extras + DSR
-                        </button>
-                        <button class="btn btn-rh" onclick="mostrarHistorico()">
-                            📋 Ver Meu Histórico
-                        </button>
-                        <button class="btn btn-rh" onclick="mostrarResumo()">
-                            ℹ️ Meu Resumo
-                        </button>
-                        <button class="btn btn-secondary" onclick="voltarParaMenu()">
-                            ← Voltar ao Menu Principal
-                        </button>
+
+                    <div class="form-group">
+                        <label for="valorHora">Valor da Hora Normal (R$):</label>
+                        <input type="number" id="valorHora" placeholder="Ex: 12.50" min="0" step="0.01">
                     </div>
+
+                    <div class="form-group">
+                        <label for="percentualHE">Percentual de Hora Extra (%):</label>
+                        <select id="percentualHE">
+                            <option value="50">50% - Hora Extra Normal</option>
+                            <option value="100">100% - Hora Extra Feriado/Domingo</option>
+                        </select>
+                    </div>
+
+                    <button class="btn btn-rh" onclick="calcularHorasExtras()">📊 Calcular</button>
                 </div>
 
-                <!-- Seção Administrativo (inicialmente oculta) -->
-                <div id="secaoAdministrativo" class="departamento-section" style="display: none; margin-top: 30px;">
-                    <div class="departamento-title" style="font-size: 18px; margin-bottom: 15px;">
-                        💰 ADMINISTRATIVO
-                    </div>
-                    <div class="menu-buttons">
-                        <button class="btn btn-administrativo" onclick="mostrarComparacaoPrecos()">
-                            📈 Comparação de Preços
-                        </button>
-                        <button class="btn btn-secondary" onclick="voltarParaMenu()">
-                            ← Voltar ao Menu Principal
-                        </button>
-                    </div>
+                <div id="resultadoCalculo" class="resultado-container" style="display: none;">
+                    <h4 style="color: #2E7D32; margin-bottom: 15px;">💰 Resultado do Cálculo</h4>
+                    <div id="detalhesCalculo"></div>
                 </div>
 
-                <button class="btn btn-logout" onclick="sair()" style="margin-top: 30px;">🚪 Sair do Sistema</button>
+                <button class="btn btn-secondary" onclick="voltarParaArea()">← Voltar</button>
             </div>
 
             <!-- Tela de Comparação de Preços -->
@@ -714,7 +772,7 @@
                     </div>
                 </div>
 
-                <button class="btn btn-secondary" onclick="mostrarTela('menuScreen')">← Voltar ao Menu</button>
+                <button class="btn btn-secondary" onclick="voltarParaArea()">← Voltar</button>
             </div>
 
             <!-- Tela de Cadastro de Produtos -->
@@ -768,17 +826,19 @@
                 </div>
             </div>
 
-            <!-- Outras telas (Histórico, Resumo, Cálculo de Horas) -->
-            <div id="calcularScreen" class="screen">
-                <!-- Conteúdo da tela de cálculo de horas -->
-            </div>
-
+            <!-- Outras telas (Histórico, Resumo) -->
             <div id="historicoScreen" class="screen">
-                <!-- Conteúdo do histórico -->
+                <h3 style="margin-bottom: 20px; color: #58595B;">📋 Histórico de Cálculos</h3>
+                <div id="historicoContainer" class="historico-container"></div>
+                <button class="btn btn-secondary" onclick="voltarParaArea()">← Voltar</button>
             </div>
 
             <div id="resumoScreen" class="screen">
-                <!-- Conteúdo do resumo -->
+                <h3 style="margin-bottom: 20px; color: #58595B;">ℹ️ Meu Resumo</h3>
+                <div id="resumoContainer" class="info-card">
+                    <p>Resumo do funcionário em desenvolvimento...</p>
+                </div>
+                <button class="btn btn-secondary" onclick="voltarParaArea()">← Voltar</button>
             </div>
         </div>
     </div>
@@ -807,12 +867,12 @@
         const INTERVALO_ATUALIZACAO = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
 
         let funcionarioLogado = null;
-        let historico = JSON.parse(localStorage.getItem('historicoHorasExtras')) || {};
+        let departamentoSelecionado = null;
+        let historicoHorasExtras = JSON.parse(localStorage.getItem('historicoHorasExtras')) || {};
         let todosProdutos = JSON.parse(localStorage.getItem('produtosCadastrados')) || [];
         let produtoEditandoId = null;
         let monitoramentoAtivo = false;
         let intervaloMonitoramento = null;
-        let departamentoSelecionado = null;
 
         // 🔄 FUNÇÃO: Selecionar departamento
         function selecionarDepartamento(departamento) {
@@ -841,20 +901,15 @@
                     ...funcionarios[senha]
                 };
                 
-                document.getElementById('nomeFuncionario').textContent = funcionarioLogado.nome;
-                
-                const acessoAnunciosDiv = document.getElementById('acessoAnuncios');
-                const cardAdministrativo = document.getElementById('cardAdministrativo');
-                
-                if (funcionarioLogado.acessoAnuncios) {
-                    acessoAnunciosDiv.style.display = 'block';
-                    cardAdministrativo.style.display = 'block';
-                } else {
-                    acessoAnunciosDiv.style.display = 'none';
-                    cardAdministrativo.style.display = 'none';
+                // Redireciona para a área selecionada
+                if (departamentoSelecionado === 'rh') {
+                    document.getElementById('nomeFuncionarioRH').textContent = funcionarioLogado.nome;
+                    mostrarTela('rhScreen');
+                } else if (departamentoSelecionado === 'administrativo') {
+                    document.getElementById('nomeFuncionarioAdm').textContent = funcionarioLogado.nome;
+                    mostrarTela('administrativoScreen');
                 }
                 
-                mostrarTela('menuScreen');
                 document.getElementById('senha').value = '';
                 
             } else {
@@ -862,24 +917,13 @@
             }
         }
 
-        // 🧭 FUNÇÃO: Mostrar departamento específico
-        function mostrarDepartamento(departamento) {
-            document.getElementById('secaoRH').style.display = 'none';
-            document.getElementById('secaoAdministrativo').style.display = 'none';
-            document.querySelector('.menu-departamentos').style.display = 'none';
-            
-            if (departamento === 'rh') {
-                document.getElementById('secaoRH').style.display = 'block';
-            } else if (departamento === 'administrativo') {
-                document.getElementById('secaoAdministrativo').style.display = 'block';
+        // 🔙 FUNÇÃO: Voltar para a área do usuário
+        function voltarParaArea() {
+            if (departamentoSelecionado === 'rh') {
+                mostrarTela('rhScreen');
+            } else if (departamentoSelecionado === 'administrativo') {
+                mostrarTela('administrativoScreen');
             }
-        }
-
-        // 🔙 FUNÇÃO: Voltar para o menu principal
-        function voltarParaMenu() {
-            document.getElementById('secaoRH').style.display = 'none';
-            document.getElementById('secaoAdministrativo').style.display = 'none';
-            document.querySelector('.menu-departamentos').style.display = 'grid';
         }
 
         // 🧭 FUNÇÃO: Mostrar comparação de preços
@@ -890,6 +934,148 @@
             }
             mostrarTela('comparacaoScreen');
             carregarProdutosInternos();
+        }
+
+        // ⏰ FUNÇÃO: Calcular horas extras + DSR
+        function calcularHorasExtras() {
+            const horasExtras = parseFloat(document.getElementById('horasExtras').value);
+            const valorHora = parseFloat(document.getElementById('valorHora').value);
+            const percentualHE = parseInt(document.getElementById('percentualHE').value);
+
+            if (!horasExtras || !valorHora) {
+                alert('❌ Por favor, preencha todos os campos!');
+                return;
+            }
+
+            // Cálculo da hora extra
+            const valorHoraExtra = valorHora * (1 + percentualHE / 100);
+            const totalHorasExtras = horasExtras * valorHoraExtra;
+
+            // Cálculo do DSR (1/6 das horas extras)
+            const dsr = totalHorasExtras / 6;
+
+            // Total geral
+            const totalGeral = totalHorasExtras + dsr;
+
+            // Exibir resultados
+            const resultadoDiv = document.getElementById('resultadoCalculo');
+            const detalhesDiv = document.getElementById('detalhesCalculo');
+
+            detalhesDiv.innerHTML = `
+                <div class="detalhes-calculo">
+                    <div class="linha-calculo">
+                        <span>Horas Extras Trabalhadas:</span>
+                        <span><strong>${horasExtras} horas</strong></span>
+                    </div>
+                    <div class="linha-calculo">
+                        <span>Valor da Hora Normal:</span>
+                        <span><strong>R$ ${valorHora.toFixed(2)}</strong></span>
+                    </div>
+                    <div class="linha-calculo">
+                        <span>Percentual de Hora Extra:</span>
+                        <span><strong>${percentualHE}%</strong></span>
+                    </div>
+                    <div class="linha-calculo">
+                        <span>Valor da Hora Extra:</span>
+                        <span><strong>R$ ${valorHoraExtra.toFixed(2)}</strong></span>
+                    </div>
+                    <div class="linha-calculo" style="border-bottom: 2px solid #00ADEE;">
+                        <span>Total Horas Extras:</span>
+                        <span><strong>R$ ${totalHorasExtras.toFixed(2)}</strong></span>
+                    </div>
+                    <div class="linha-calculo">
+                        <span>DSR (Descanso Semanal Remunerado):</span>
+                        <span><strong>R$ ${dsr.toFixed(2)}</strong></span>
+                    </div>
+                    <div class="linha-calculo" style="font-size: 18px; font-weight: bold; color: #2E7D32;">
+                        <span>TOTAL A RECEBER:</span>
+                        <span>R$ ${totalGeral.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+
+            resultadoDiv.style.display = 'block';
+
+            // Salvar no histórico
+            salvarNoHistorico(horasExtras, valorHora, percentualHE, totalGeral);
+        }
+
+        // 💾 FUNÇÃO: Salvar cálculo no histórico
+        function salvarNoHistorico(horas, valorHora, percentual, total) {
+            if (!historicoHorasExtras[funcionarioLogado.senha]) {
+                historicoHorasExtras[funcionarioLogado.senha] = [];
+            }
+
+            const registro = {
+                data: new Date().toLocaleString('pt-BR'),
+                horas: horas,
+                valorHora: valorHora,
+                percentual: percentual,
+                total: total
+            };
+
+            historicoHorasExtras[funcionarioLogado.senha].unshift(registro);
+            
+            // Manter apenas os últimos 50 registros
+            if (historicoHorasExtras[funcionarioLogado.senha].length > 50) {
+                historicoHorasExtras[funcionarioLogado.senha] = historicoHorasExtras[funcionarioLogado.senha].slice(0, 50);
+            }
+
+            localStorage.setItem('historicoHorasExtras', JSON.stringify(historicoHorasExtras));
+        }
+
+        // 📋 FUNÇÃO: Mostrar histórico
+        function mostrarHistorico() {
+            mostrarTela('historicoScreen');
+            const container = document.getElementById('historicoContainer');
+            
+            if (!historicoHorasExtras[funcionarioLogado.senha] || historicoHorasExtras[funcionarioLogado.senha].length === 0) {
+                container.innerHTML = '<div class="info-card"><p>Nenhum cálculo realizado ainda.</p></div>';
+                return;
+            }
+
+            container.innerHTML = historicoHorasExtras[funcionarioLogado.senha].map(registro => `
+                <div class="historico-item">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong>${registro.data}</strong>
+                        <span style="color: #2E7D32; font-weight: bold;">R$ ${registro.total.toFixed(2)}</span>
+                    </div>
+                    <div style="font-size: 14px; color: #666; margin-top: 5px;">
+                        ${registro.horas} horas × R$ ${registro.valorHora.toFixed(2)} (${registro.percentual}%)
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // ℹ️ FUNÇÃO: Mostrar resumo
+        function mostrarResumo() {
+            mostrarTela('resumoScreen');
+            const container = document.getElementById('resumoContainer');
+            
+            const historicoUsuario = historicoHorasExtras[funcionarioLogado.senha] || [];
+            const totalCalculos = historicoUsuario.length;
+            const totalRecebido = historicoUsuario.reduce((sum, item) => sum + item.total, 0);
+
+            container.innerHTML = `
+                <h4 style="color: #58595B; margin-bottom: 20px;">Resumo de ${funcionarioLogado.nome}</h4>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div style="text-align: center; padding: 15px; background: #E3F2FD; border-radius: 8px;">
+                        <div style="font-size: 24px; font-weight: bold; color: #1976D2;">${totalCalculos}</div>
+                        <div style="font-size: 14px; color: #666;">Cálculos Realizados</div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: #E8F5E9; border-radius: 8px;">
+                        <div style="font-size: 24px; font-weight: bold; color: #2E7D32;">R$ ${totalRecebido.toFixed(2)}</div>
+                        <div style="font-size: 14px; color: #666;">Total em Horas Extras</div>
+                    </div>
+                </div>
+                ${totalCalculos > 0 ? `
+                    <div style="margin-top: 20px; padding: 15px; background: #FFF3E0; border-radius: 8px;">
+                        <h5 style="color: #FF6B35; margin-bottom: 10px;">Último Cálculo</h5>
+                        <div>Data: ${historicoUsuario[0].data}</div>
+                        <div>Valor: R$ ${historicoUsuario[0].total.toFixed(2)}</div>
+                    </div>
+                ` : ''}
+            `;
         }
 
         // 🚀 FUNÇÃO: Atualizar preços automaticamente - COM API REAL
@@ -989,7 +1175,7 @@
             }
         }
 
-        // 🔍 FUNÇÃO: Buscar preço do Mercado Livre usando API REAL
+        // 🔍 FUNÇÃO: Buscar preço do Mercado Livre usando API REAL - CORRIGIDA
         async function buscarPrecoMercadoLivreAPI(mlb) {
             // Limpar MLB - remover espaços e caracteres especiais
             mlb = mlb.trim().replace(/[^a-zA-Z0-9]/g, '');
@@ -1032,7 +1218,7 @@
                     }
                 }
                 
-                // Buscar informações de condição de venda
+                // Se não encontrou promoção, verificar se é venda direta
                 if (!promocaoNome && data.seller_address) {
                     promocaoNome = "Venda Direta";
                 }
@@ -1629,19 +1815,12 @@
                 screen.classList.remove('active');
             });
             document.getElementById(telaId).classList.add('active');
-
-            if (telaId === 'menuScreen') {
-                voltarParaMenu();
-            } else if (telaId === 'cadastroScreen') {
-                atualizarListaProdutosCadastrados();
-            } else if (telaId === 'comparacaoScreen') {
-                carregarProdutosInternos();
-            }
         }
 
         // 🚪 FUNÇÃO: Sair do sistema
         function sair() {
             funcionarioLogado = null;
+            departamentoSelecionado = null;
             mostrarTela('departamentoScreen');
         }
 
@@ -1658,9 +1837,6 @@
         if (todosProdutos.length > 0) {
             document.getElementById('btnExportarExcel').style.display = 'block';
         }
-
-        // As funções de RH (cálculo de horas, histórico, resumo) permanecem as mesmas
-        // ... (código das funções de RH) ...
     </script>
 </body>
 </html>
