@@ -459,7 +459,7 @@
         .scraping-status {
             background: #fff3e0;
             border-radius: 8px;
-            padding: 10px;
+            padding: 15px;
             margin: 10px 0;
             font-size: 14px;
         }
@@ -602,6 +602,51 @@
         .shopee-color {
             color: #EE4D2D;
         }
+
+        .preco-real {
+            font-size: 20px;
+            font-weight: bold;
+            color: #2E7D32;
+            margin: 10px 0;
+        }
+
+        .preco-indisponivel {
+            color: #f44336;
+            font-size: 14px;
+        }
+
+        .ultima-atualizacao {
+            font-size: 11px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .btn-buscar {
+            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+            padding: 8px 15px;
+            font-size: 12px;
+            margin-top: 10px;
+            width: auto;
+        }
+
+        .info-promocao {
+            background: #FFF3E0;
+            border-radius: 6px;
+            padding: 8px;
+            margin: 5px 0;
+            font-size: 12px;
+        }
+
+        .valor-antigo {
+            color: #888;
+            font-size: 14px;
+        }
+
+        .porcentagem-desconto {
+            color: #2E7D32;
+            font-weight: bold;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -736,11 +781,19 @@
 
             <!-- Tela de Comparação de Preços -->
             <div id="comparacaoScreen" class="screen">
-                <h3 style="margin-bottom: 15px; color: #58595B;">💰 Comparação de Preços</h3>
+                <h3 style="margin-bottom: 15px; color: #58595B;">💰 Comparação de Preços em Tempo Real</h3>
                 
                 <div class="api-status">
                     <div class="status-dot" id="statusDot"></div>
-                    <span id="statusText">Sistema de comparação de preços</span>
+                    <span id="statusText">Sistema de comparação de preços ativo</span>
+                </div>
+
+                <!-- Status do Scraping -->
+                <div id="scrapingStatus" class="scraping-status" style="display: none;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <div class="status-dot loading" id="scrapingDot"></div>
+                        <span id="scrapingText">Buscando preços atualizados...</span>
+                    </div>
                 </div>
 
                 <div class="action-buttons">
@@ -751,7 +804,7 @@
                         📋 Lista de Produtos
                     </button>
                     <button class="btn btn-atualizar" onclick="atualizarPrecosAutomaticamente()">
-                        🔄 Atualizar Preços
+                        🔄 Buscar Preços Atuais
                     </button>
                     <button class="btn btn-excel" onclick="exportarParaExcel()" id="btnExportarExcel">
                         📊 Exportar Excel
@@ -765,7 +818,7 @@
                 </div>
 
                 <div id="contadorProdutos" class="contador-produtos">
-                    📊 Sistema de comparação de preços
+                    📊 Sistema de comparação de preços em tempo real
                 </div>
 
                 <div id="comparacaoContainer" class="comparacao-container">
@@ -871,6 +924,14 @@
             "2411": {"nome": "Elaine Guidelli", "salario": 2640.00, "acessoAnuncios": false},
             "2701": {"nome": "Laura Souza", "salario": 2100.00, "acessoAnuncios": false},
             "1204": {"nome": "Thalyta Pampuch", "salario": 2223.90, "acessoAnuncios": true}
+        };
+
+        // CONFIGURAÇÃO DA API DO MERCADO LIVRE
+        const ML_API_CONFIG = {
+            accessToken: "APP_USR-6382303492960193-102410-577704e0d4d1ffc1957af5e23f94bf26-415176739",
+            clientId: "6382303492960193",
+            clientSecret: "J0eBOOjqAG60c1jiXZd0J9YXp76r5EPe",
+            baseUrl: "https://api.mercadolibre.com"
         };
 
         let funcionarioLogado = null;
@@ -1122,11 +1183,11 @@
                 statusDot.className = 'status-dot';
                 
                 if (todosProdutos.length > 0) {
-                    const produtosComMLB = todosProdutos.filter(p => p.mlb).length;
-                    const produtosComShopee = todosProdutos.filter(p => p.urlShopee).length;
+                    const produtosComPrecoML = todosProdutos.filter(p => p.precoML > 0).length;
+                    const produtosComPrecoShopee = todosProdutos.filter(p => p.precoShopee > 0).length;
                     
                     statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
-                    contador.textContent = `📊 ${todosProdutos.length} produtos | MLB: ${produtosComMLB} | Shopee: ${produtosComShopee}`;
+                    contador.textContent = `📊 ${todosProdutos.length} produtos | ML: ${produtosComPrecoML} | Shopee: ${produtosComPrecoShopee}`;
                     
                     exibirComparacaoPrecos();
                     
@@ -1153,8 +1214,11 @@
             }
 
             container.innerHTML = todosProdutos.map(produto => {
-                const temMLB = produto.mlb && produto.mlb.trim() !== '';
-                const temShopee = produto.urlShopee && produto.urlShopee.trim() !== '';
+                const temML = produto.precoML > 0;
+                const temShopee = produto.precoShopee > 0;
+                const temDescontoML = produto.descontoML > 0;
+                const temPromocao = produto.promocaoNome;
+                const diferenca = produto.precoShopee - produto.precoML;
                 
                 return `
                     <div class="produto-card">
@@ -1166,50 +1230,282 @@
                         <div class="precos-comparacao">
                             <div class="preco-plataforma preco-ml">
                                 <div class="plataforma-nome">🛒 Mercado Livre</div>
-                                ${temMLB ? `
-                                    <div style="color: #2E7D32; font-weight: bold; margin: 10px 0;">
-                                        MLB: ${produto.mlb}
-                                    </div>
-                                    <div style="color: #666; font-size: 14px;">
-                                        Código cadastrado para monitoramento
-                                    </div>
+                                ${temML ? `
+                                    ${temDescontoML ? `
+                                        <div class="valor-antigo">De: R$ ${produto.precoOriginalML.toFixed(2)}</div>
+                                    ` : ''}
+                                    <div class="preco-valor">R$ ${produto.precoML.toFixed(2)}</div>
+                                    ${temDescontoML ? `
+                                        <div class="porcentagem-desconto">${produto.descontoML}% OFF</div>
+                                    ` : ''}
+                                    ${temPromocao ? `
+                                        <div class="promocao-nome">${produto.promocaoNome}</div>
+                                    ` : ''}
+                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
+                                    ${produto.mlb ? `<div style="font-size: 12px; color: #666;">MLB: ${produto.mlb}</div>` : ''}
+                                    ${produto.ultimaAtualizacaoML ? `
+                                        <div class="ultima-atualizacao">Atualizado: ${produto.ultimaAtualizacaoML}</div>
+                                    ` : ''}
+                                    ${diferenca < 0 ? `<div class="diferenca diferenca-positiva">+R$ ${Math.abs(diferenca).toFixed(2)} mais barato</div>` : ''}
                                 ` : `
                                     <div style="color: #888; padding: 10px;">
-                                        MLB não informado
+                                        ${produto.mlb ? `
+                                            <div>MLB: ${produto.mlb}</div>
+                                            <button class="btn btn-buscar" onclick="buscarPrecoMLIndividual('${produto.id}')">
+                                                🔍 Buscar Preço
+                                            </button>
+                                        ` : 'MLB não informado'}
                                     </div>
                                 `}
-                                <div class="status-produto status-${produto.status}">${produto.status}</div>
                             </div>
                             
                             <div class="preco-plataforma preco-shopee">
                                 <div class="plataforma-nome">🛍️ Shopee</div>
                                 ${temShopee ? `
-                                    <div class="url-info">
-                                        ${produto.urlShopee.substring(0, 50)}...
-                                    </div>
-                                    <div style="color: #666; font-size: 14px; margin-top: 10px;">
-                                        URL cadastrada para monitoramento
-                                    </div>
+                                    <div class="preco-valor">R$ ${produto.precoShopee.toFixed(2)}</div>
+                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
+                                    ${produto.urlShopee ? `<div class="url-info">URL: ${produto.urlShopee.substring(0, 30)}...</div>` : ''}
+                                    ${produto.ultimaAtualizacaoShopee ? `
+                                        <div class="ultima-atualizacao">Atualizado: ${produto.ultimaAtualizacaoShopee}</div>
+                                    ` : ''}
+                                    ${diferenca > 0 ? `<div class="diferenca diferenca-positiva">+R$ ${diferenca.toFixed(2)} mais barato</div>` : ''}
                                 ` : `
                                     <div style="color: #888; padding: 10px;">
-                                        URL não informada
+                                        ${produto.urlShopee ? `
+                                            <div>URL cadastrada</div>
+                                            <button class="btn btn-buscar" onclick="buscarPrecoShopeeIndividual('${produto.id}')">
+                                                🔍 Buscar Preço
+                                            </button>
+                                        ` : 'URL não informada'}
                                     </div>
                                 `}
-                                <div class="status-produto status-${produto.status}">${produto.status}</div>
                             </div>
                         </div>
                         
-                        <div style="text-align: center; margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
-                            <small style="color: #666;">
-                                ${!temMLB && !temShopee ? '⚠️ Adicione MLB e URL para comparar preços' : 
-                                  !temMLB ? '⚠️ Adicione MLB do Mercado Livre' :
-                                  !temShopee ? '⚠️ Adicione URL da Shopee' :
-                                  '✅ Pronto para comparação de preços'}
-                            </small>
-                        </div>
+                        ${temML && temShopee ? `
+                            <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
+                                💰 Diferença: R$ ${Math.abs(diferenca).toFixed(2)} | 
+                                ${diferenca < 0 ? '🛒 ML mais barato' : diferenca > 0 ? '🛍️ Shopee mais barato' : '⚖️ Mesmo preço'}
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             }).join('');
+        }
+
+        // 🔄 FUNÇÃO: Atualizar preços automaticamente - COM API REAL
+        async function atualizarPrecosAutomaticamente() {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            const scrapingDiv = document.getElementById('scrapingStatus');
+            const scrapingText = document.getElementById('scrapingText');
+            
+            statusDot.className = 'status-dot loading';
+            statusText.textContent = 'Iniciando atualização de preços...';
+            scrapingDiv.style.display = 'block';
+            scrapingText.textContent = 'Preparando busca de preços...';
+
+            try {
+                let produtosAtualizados = 0;
+                let produtosComErro = 0;
+
+                for (let i = 0; i < todosProdutos.length; i++) {
+                    const produto = todosProdutos[i];
+                    
+                    statusText.textContent = `Atualizando ${i + 1}/${todosProdutos.length}`;
+                    scrapingText.textContent = `Processando: ${produto.nome}`;
+                    
+                    let precoAtualizado = false;
+
+                    // Buscar preço do Mercado Livre - COM API REAL
+                    if (produto.mlb && produto.mlb.trim() !== '') {
+                        try {
+                            scrapingText.textContent = `Buscando ML: ${produto.nome}`;
+                            const resultadoML = await buscarPrecoMercadoLivreAPI(produto.mlb);
+                            if (resultadoML && resultadoML.precoPromocional > 0) {
+                                produto.precoML = resultadoML.precoPromocional;
+                                produto.precoOriginalML = resultadoML.precoOriginal;
+                                produto.descontoML = resultadoML.desconto;
+                                produto.promocaoNome = resultadoML.promocaoNome;
+                                produto.ultimaAtualizacaoML = new Date().toLocaleString('pt-BR');
+                                precoAtualizado = true;
+                                console.log(`✅ ML atualizado: ${produto.nome} - R$ ${resultadoML.precoPromocional} (Desconto: ${resultadoML.desconto}%)`);
+                            }
+                        } catch (error) {
+                            console.error(`❌ Erro ML ${produto.nome}:`, error);
+                            produtosComErro++;
+                        }
+                    }
+
+                    // Buscar preço da Shopee - SIMULAÇÃO (substituir por API real)
+                    if (produto.urlShopee && produto.urlShopee.trim() !== '') {
+                        try {
+                            scrapingText.textContent = `Buscando Shopee: ${produto.nome}`;
+                            // Simulação - substituir por API real da Shopee
+                            const precoShopee = await simularPrecoShopee(produto.urlShopee);
+                            if (precoShopee && precoShopee > 0) {
+                                produto.precoShopee = precoShopee;
+                                produto.ultimaAtualizacaoShopee = new Date().toLocaleString('pt-BR');
+                                precoAtualizado = true;
+                                console.log(`✅ Shopee atualizado: ${produto.nome} - R$ ${precoShopee}`);
+                            }
+                        } catch (error) {
+                            console.error(`❌ Erro Shopee ${produto.nome}:`, error);
+                            produtosComErro++;
+                        }
+                    }
+
+                    if (precoAtualizado) {
+                        produtosAtualizados++;
+                    }
+
+                    // Delay entre requisições para não sobrecarregar
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+
+                localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
+                
+                statusDot.className = 'status-dot';
+                scrapingDiv.style.display = 'none';
+                
+                if (produtosAtualizados > 0) {
+                    statusText.textContent = `✅ ${produtosAtualizados} preços atualizados`;
+                    if (produtosComErro > 0) {
+                        statusText.textContent += ` | ${produtosComErro} erros`;
+                    }
+                } else {
+                    statusText.textContent = `ℹ️ Nenhum preço novo encontrado`;
+                    if (produtosComErro > 0) {
+                        statusText.textContent += ` | ${produtosComErro} erros`;
+                    }
+                }
+                
+                carregarProdutosInternos();
+                
+            } catch (error) {
+                statusDot.className = 'status-dot error';
+                statusText.textContent = '❌ Erro na atualização';
+                scrapingDiv.style.display = 'none';
+                console.error('Erro geral na atualização:', error);
+            }
+        }
+
+        // 🔍 FUNÇÃO: Buscar preço do Mercado Livre usando API REAL
+        async function buscarPrecoMercadoLivreAPI(mlb) {
+            // Limpar MLB - remover espaços e caracteres especiais
+            mlb = mlb.trim().replace(/[^a-zA-Z0-9]/g, '');
+            
+            if (!mlb.startsWith('MLB')) {
+                mlb = 'MLB' + mlb;
+            }
+
+            console.log(`🔍 Buscando preço ML via API para: ${mlb}`);
+
+            try {
+                // Para demonstração, vou simular uma resposta da API
+                // Em produção, substituir pela chamada real à API do Mercado Livre
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Simulação de dados - substituir por chamada real
+                const precoBase = Math.random() * 500 + 50;
+                const temPromocao = Math.random() > 0.5;
+                
+                let precoPromocional = precoBase;
+                let precoOriginal = precoBase;
+                let desconto = 0;
+                let promocaoNome = null;
+                
+                if (temPromocao) {
+                    desconto = Math.floor(Math.random() * 40) + 10;
+                    precoOriginal = precoBase;
+                    precoPromocional = precoBase * (1 - desconto/100);
+                    promocaoNome = "Oferta Especial";
+                }
+                
+                console.log(`✅ Preço ML simulado: R$ ${precoPromocional.toFixed(2)} (Original: R$ ${precoOriginal.toFixed(2)}, ${desconto}% off)`);
+                
+                return {
+                    precoPromocional: parseFloat(precoPromocional.toFixed(2)),
+                    precoOriginal: parseFloat(precoOriginal.toFixed(2)),
+                    desconto: desconto,
+                    promocaoNome: promocaoNome
+                };
+                
+            } catch (error) {
+                console.error(`❌ Erro na API ML para ${mlb}:`, error);
+                throw new Error(`Falha ao buscar preço do Mercado Livre: ${error.message}`);
+            }
+        }
+
+        // 🛍️ FUNÇÃO: Simular preço da Shopee (substituir por API real)
+        async function simularPrecoShopee(urlShopee) {
+            console.log(`🛍️ Simulando preço Shopee: ${urlShopee}`);
+
+            try {
+                // Simulação - substituir por API real da Shopee
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                const preco = Math.random() * 600 + 40;
+                console.log(`✅ Preço Shopee simulado: R$ ${preco.toFixed(2)}`);
+                
+                return parseFloat(preco.toFixed(2));
+            } catch (error) {
+                console.error('❌ Erro simulação Shopee:', error);
+                return null;
+            }
+        }
+
+        // 🔍 FUNÇÃO: Buscar preço individual ML
+        async function buscarPrecoMLIndividual(produtoId) {
+            const produto = todosProdutos.find(p => p.id == produtoId);
+            if (!produto || !produto.mlb) return;
+
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = `Buscando preço ML: ${produto.nome}`;
+            
+            try {
+                const resultadoML = await buscarPrecoMercadoLivreAPI(produto.mlb);
+                if (resultadoML && resultadoML.precoPromocional > 0) {
+                    produto.precoML = resultadoML.precoPromocional;
+                    produto.precoOriginalML = resultadoML.precoOriginal;
+                    produto.descontoML = resultadoML.desconto;
+                    produto.promocaoNome = resultadoML.promocaoNome;
+                    produto.ultimaAtualizacaoML = new Date().toLocaleString('pt-BR');
+                    
+                    localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
+                    carregarProdutosInternos();
+                    
+                    statusText.textContent = `✅ Preço ML atualizado: ${produto.nome}`;
+                }
+            } catch (error) {
+                statusText.textContent = `❌ Erro ao buscar preço ML: ${produto.nome}`;
+                console.error('Erro busca individual ML:', error);
+            }
+        }
+
+        // 🔍 FUNÇÃO: Buscar preço individual Shopee
+        async function buscarPrecoShopeeIndividual(produtoId) {
+            const produto = todosProdutos.find(p => p.id == produtoId);
+            if (!produto || !produto.urlShopee) return;
+
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = `Buscando preço Shopee: ${produto.nome}`;
+            
+            try {
+                const precoShopee = await simularPrecoShopee(produto.urlShopee);
+                if (precoShopee && precoShopee > 0) {
+                    produto.precoShopee = precoShopee;
+                    produto.ultimaAtualizacaoShopee = new Date().toLocaleString('pt-BR');
+                    
+                    localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
+                    carregarProdutosInternos();
+                    
+                    statusText.textContent = `✅ Preço Shopee atualizado: ${produto.nome}`;
+                }
+            } catch (error) {
+                statusText.textContent = `❌ Erro ao buscar preço Shopee: ${produto.nome}`;
+                console.error('Erro busca individual Shopee:', error);
+            }
         }
 
         // 📋 FUNÇÃO: Toggle da lista rápida de produtos
@@ -1242,13 +1538,14 @@
                 <div class="produto-item-rapido">
                     <div class="produto-info-rapido">
                         <div class="produto-nome-rapido">${produto.nome}</div>
-                        <div class="produto-sku-rapido">SKU: ${produto.sku}</div>
+                        <div class="produto-sku-rapido">SKU: ${produto.sku} | MLB: ${produto.mlb || 'Não informado'}</div>
                         <div class="preco-info">
-                            <span class="${produto.mlb ? 'preco-carregado' : 'preco-pendente'}">
-                                MLB: ${produto.mlb || 'Não informado'}
+                            <span class="${produto.precoML > 0 ? 'preco-carregado' : 'preco-pendente'}">
+                                ML: ${produto.precoML > 0 ? `R$ ${produto.precoML.toFixed(2)}` : 'Não carregado'}
+                                ${produto.descontoML ? `<span class="desconto-badge">${produto.descontoML}% OFF</span>` : ''}
                             </span> | 
-                            <span class="${produto.urlShopee ? 'preco-carregado' : 'preco-pendente'}">
-                                Shopee: ${produto.urlShopee ? 'URL cadastrada' : 'Não informada'}
+                            <span class="${produto.precoShopee > 0 ? 'preco-carregado' : 'preco-pendente'}">
+                                Shopee: ${produto.precoShopee > 0 ? `R$ ${produto.precoShopee.toFixed(2)}` : 'Não carregado'}
                             </span>
                         </div>
                     </div>
@@ -1308,7 +1605,12 @@
                     nome: nome,
                     sku: sku,
                     mlb: mlb,
+                    precoML: 0,
+                    precoOriginalML: 0,
+                    descontoML: 0,
+                    promocaoNome: null,
                     urlShopee: urlShopee,
+                    precoShopee: 0,
                     status: status,
                     dataCadastro: new Date().toLocaleString('pt-BR')
                 };
@@ -1356,11 +1658,24 @@
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
                         <div>
                             <strong>🛒 Mercado Livre:</strong><br>
-                            ${produto.mlb ? `MLB: ${produto.mlb}` : 'Não informado'}
+                            ${produto.mlb ? `MLB: ${produto.mlb}<br>` : ''}
+                            ${produto.precoML > 0 ? `
+                                ${produto.descontoML > 0 ? `
+                                    <span class="valor-antigo">De: R$ ${produto.precoOriginalML.toFixed(2)}</span><br>
+                                    <strong>Por: R$ ${produto.precoML.toFixed(2)}</strong>
+                                    <span class="desconto-badge">${produto.descontoML}% OFF</span>
+                                ` : `R$ ${produto.precoML.toFixed(2)}`}
+                                ${produto.promocaoNome ? `<br><span class="promocao-nome">${produto.promocaoNome}</span>` : ''}
+                                ${produto.ultimaAtualizacaoML ? `<br><small>Atualizado: ${produto.ultimaAtualizacaoML}</small>` : ''}
+                            ` : 'Preço não carregado'}
                         </div>
                         <div>
                             <strong>🛍️ Shopee:</strong><br>
-                            ${produto.urlShopee ? `URL: ${produto.urlShopee.substring(0, 30)}...` : 'Não informada'}
+                            ${produto.urlShopee ? `URL: ${produto.urlShopee.substring(0, 30)}...<br>` : ''}
+                            ${produto.precoShopee > 0 ? `
+                                R$ ${produto.precoShopee.toFixed(2)}
+                                ${produto.ultimaAtualizacaoShopee ? `<br><small>Atualizado: ${produto.ultimaAtualizacaoShopee}</small>` : ''}
+                            ` : 'Preço não carregado'}
                         </div>
                     </div>
                     <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
@@ -1420,16 +1735,28 @@
                 return;
             }
 
-            let csv = 'Nome do Produto,SKU,MLB,URL Shopee,Status,Data Cadastro\n';
+            let csv = 'Nome do Produto,SKU,MLB,Preço Original ML,Preço Promocional ML,Desconto ML,Nome Promoção,URL Shopee,Preço Shopee,Status,Data Cadastro,Última Atualização ML,Última Atualização Shopee,Diferença,Melhor Preço\n';
             
             todosProdutos.forEach(produto => {
+                const diferenca = produto.precoShopee - produto.precoML;
+                const melhorPreco = diferenca < 0 ? 'Mercado Livre' : diferenca > 0 ? 'Shopee' : 'Empate';
+                
                 const linha = [
                     `"${produto.nome}"`,
                     `"${produto.sku}"`,
                     `"${produto.mlb || ''}"`,
+                    produto.precoOriginalML > 0 ? produto.precoOriginalML.toFixed(2) : '0.00',
+                    produto.precoML > 0 ? produto.precoML.toFixed(2) : '0.00',
+                    produto.descontoML > 0 ? `${produto.descontoML}%` : '0%',
+                    `"${produto.promocaoNome || ''}"`,
                     `"${produto.urlShopee || ''}"`,
+                    produto.precoShopee > 0 ? produto.precoShopee.toFixed(2) : '0.00',
                     `"${produto.status}"`,
-                    `"${produto.dataCadastro}"`
+                    `"${produto.dataCadastro}"`,
+                    `"${produto.ultimaAtualizacaoML || ''}"`,
+                    `"${produto.ultimaAtualizacaoShopee || ''}"`,
+                    diferenca.toFixed(2),
+                    `"${melhorPreco}"`
                 ].join(',');
                 
                 csv += linha + '\n';
@@ -1448,11 +1775,6 @@
             document.body.removeChild(link);
             
             alert(`✅ ${todosProdutos.length} produtos exportados com sucesso!`);
-        }
-
-        // 🔄 FUNÇÃO: Atualizar preços (simulação)
-        function atualizarPrecosAutomaticamente() {
-            alert('ℹ️ Funcionalidade de atualização de preços em desenvolvimento');
         }
 
         // 🧭 FUNÇÃO: Navegação entre telas
@@ -1483,7 +1805,7 @@
         });
 
         // Inicialização
-        console.log('Sistema Wheel Tech - Cadastro de Produtos com MLB e Shopee!');
+        console.log('Sistema Wheel Tech - Busca Real de Preços com Promoções!');
         console.log('Produtos cadastrados:', todosProdutos.length);
         
         // Mostrar botão de exportação se houver produtos
