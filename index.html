@@ -564,6 +564,44 @@
             font-size: 10px;
             margin-left: 5px;
         }
+
+        .url-info {
+            font-size: 11px;
+            color: #666;
+            word-break: break-all;
+            margin-top: 5px;
+        }
+
+        .campos-plataforma {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .campo-plataforma {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+        }
+
+        .plataforma-titulo {
+            font-weight: bold;
+            color: #58595B;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .mlb-color {
+            color: #2D3277;
+        }
+
+        .shopee-color {
+            color: #EE4D2D;
+        }
     </style>
 </head>
 <body>
@@ -702,7 +740,7 @@
                 
                 <div class="api-status">
                     <div class="status-dot" id="statusDot"></div>
-                    <span id="statusText">Sistema de produtos interno</span>
+                    <span id="statusText">Sistema de comparação de preços</span>
                 </div>
 
                 <div class="action-buttons">
@@ -727,7 +765,7 @@
                 </div>
 
                 <div id="contadorProdutos" class="contador-produtos">
-                    📊 Sistema de produtos interno - Cadastre produtos para começar
+                    📊 Sistema de comparação de preços
                 </div>
 
                 <div id="comparacaoContainer" class="comparacao-container">
@@ -752,6 +790,43 @@
                 <div class="form-group">
                     <label for="skuProduto">SKU/Código:</label>
                     <input type="text" id="skuProduto" placeholder="Ex: K33009">
+                </div>
+
+                <!-- Campos para MLB e Shopee -->
+                <div class="campos-plataforma">
+                    <div class="campo-plataforma">
+                        <div class="plataforma-titulo mlb-color">
+                            🛒 Mercado Livre
+                        </div>
+                        <div class="form-group">
+                            <label for="mlbProduto">MLB (Código do Produto):</label>
+                            <input type="text" id="mlbProduto" placeholder="Ex: MLB2106981701">
+                            <small style="color: #666; font-size: 12px;">
+                                Encontre o código MLB na URL do produto
+                            </small>
+                        </div>
+                    </div>
+
+                    <div class="campo-plataforma">
+                        <div class="plataforma-titulo shopee-color">
+                            🛍️ Shopee
+                        </div>
+                        <div class="form-group">
+                            <label for="urlShopee">URL do Produto:</label>
+                            <input type="text" id="urlShopee" placeholder="Ex: https://shopee.com.br/produto...">
+                            <small style="color: #666; font-size: 12px;">
+                                Cole a URL completa do produto na Shopee
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="statusProduto">Status do Produto:</label>
+                    <select id="statusProduto">
+                        <option value="ativo">Ativo</option>
+                        <option value="inativo">Inativo</option>
+                    </select>
                 </div>
 
                 <div class="action-buttons">
@@ -1047,15 +1122,13 @@
                 statusDot.className = 'status-dot';
                 
                 if (todosProdutos.length > 0) {
-                    statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
-                    contador.textContent = `📊 ${todosProdutos.length} produtos cadastrados`;
+                    const produtosComMLB = todosProdutos.filter(p => p.mlb).length;
+                    const produtosComShopee = todosProdutos.filter(p => p.urlShopee).length;
                     
-                    container.innerHTML = `
-                        <div class="info-card">
-                            <p>Sistema de produtos carregado com sucesso!</p>
-                            <p><small>Use os botões acima para gerenciar os produtos.</small></p>
-                        </div>
-                    `;
+                    statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
+                    contador.textContent = `📊 ${todosProdutos.length} produtos | MLB: ${produtosComMLB} | Shopee: ${produtosComShopee}`;
+                    
+                    exibirComparacaoPrecos();
                     
                 } else {
                     statusText.textContent = 'ℹ️ Nenhum produto cadastrado';
@@ -1068,6 +1141,75 @@
                     contador.textContent = '📊 Nenhum produto cadastrado';
                 }
             }, 800);
+        }
+
+        // 📈 FUNÇÃO: Exibir comparação de preços
+        function exibirComparacaoPrecos() {
+            const container = document.getElementById('comparacaoContainer');
+            
+            if (todosProdutos.length === 0) {
+                container.innerHTML = '<div class="info-card"><p>Nenhum produto cadastrado.</p></div>';
+                return;
+            }
+
+            container.innerHTML = todosProdutos.map(produto => {
+                const temMLB = produto.mlb && produto.mlb.trim() !== '';
+                const temShopee = produto.urlShopee && produto.urlShopee.trim() !== '';
+                
+                return `
+                    <div class="produto-card">
+                        <div class="produto-header">
+                            <div class="produto-titulo">${produto.nome}</div>
+                            <div class="produto-sku">${produto.sku}</div>
+                        </div>
+                        
+                        <div class="precos-comparacao">
+                            <div class="preco-plataforma preco-ml">
+                                <div class="plataforma-nome">🛒 Mercado Livre</div>
+                                ${temMLB ? `
+                                    <div style="color: #2E7D32; font-weight: bold; margin: 10px 0;">
+                                        MLB: ${produto.mlb}
+                                    </div>
+                                    <div style="color: #666; font-size: 14px;">
+                                        Código cadastrado para monitoramento
+                                    </div>
+                                ` : `
+                                    <div style="color: #888; padding: 10px;">
+                                        MLB não informado
+                                    </div>
+                                `}
+                                <div class="status-produto status-${produto.status}">${produto.status}</div>
+                            </div>
+                            
+                            <div class="preco-plataforma preco-shopee">
+                                <div class="plataforma-nome">🛍️ Shopee</div>
+                                ${temShopee ? `
+                                    <div class="url-info">
+                                        ${produto.urlShopee.substring(0, 50)}...
+                                    </div>
+                                    <div style="color: #666; font-size: 14px; margin-top: 10px;">
+                                        URL cadastrada para monitoramento
+                                    </div>
+                                ` : `
+                                    <div style="color: #888; padding: 10px;">
+                                        URL não informada
+                                    </div>
+                                `}
+                                <div class="status-produto status-${produto.status}">${produto.status}</div>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+                            <small style="color: #666;">
+                                ${!temMLB && !temShopee ? '⚠️ Adicione MLB e URL para comparar preços' : 
+                                  !temMLB ? '⚠️ Adicione MLB do Mercado Livre' :
+                                  !temShopee ? '⚠️ Adicione URL da Shopee' :
+                                  '✅ Pronto para comparação de preços'}
+                            </small>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         // 📋 FUNÇÃO: Toggle da lista rápida de produtos
@@ -1101,6 +1243,14 @@
                     <div class="produto-info-rapido">
                         <div class="produto-nome-rapido">${produto.nome}</div>
                         <div class="produto-sku-rapido">SKU: ${produto.sku}</div>
+                        <div class="preco-info">
+                            <span class="${produto.mlb ? 'preco-carregado' : 'preco-pendente'}">
+                                MLB: ${produto.mlb || 'Não informado'}
+                            </span> | 
+                            <span class="${produto.urlShopee ? 'preco-carregado' : 'preco-pendente'}">
+                                Shopee: ${produto.urlShopee ? 'URL cadastrada' : 'Não informada'}
+                            </span>
+                        </div>
                     </div>
                     <div class="produto-acoes-rapido">
                         <button class="btn btn-pequeno" onclick="editarProduto(${produto.id})" title="Editar produto">
@@ -1118,6 +1268,9 @@
         function cadastrarProduto() {
             const nome = document.getElementById('nomeProduto').value.trim();
             const sku = document.getElementById('skuProduto').value.trim();
+            const mlb = document.getElementById('mlbProduto').value.trim();
+            const urlShopee = document.getElementById('urlShopee').value.trim();
+            const status = document.getElementById('statusProduto').value;
 
             if (!nome) {
                 alert('❌ Por favor, informe o nome do produto!');
@@ -1135,7 +1288,10 @@
                 produtoAtualizado = {
                     ...todosProdutos.find(p => p.id === produtoEditandoId),
                     nome: nome,
-                    sku: sku
+                    sku: sku,
+                    mlb: mlb,
+                    urlShopee: urlShopee,
+                    status: status
                 };
 
                 todosProdutos = todosProdutos.map(p => p.id === produtoEditandoId ? produtoAtualizado : p);
@@ -1151,6 +1307,9 @@
                     id: Date.now(),
                     nome: nome,
                     sku: sku,
+                    mlb: mlb,
+                    urlShopee: urlShopee,
+                    status: status,
                     dataCadastro: new Date().toLocaleString('pt-BR')
                 };
 
@@ -1161,6 +1320,9 @@
 
             document.getElementById('nomeProduto').value = '';
             document.getElementById('skuProduto').value = '';
+            document.getElementById('mlbProduto').value = '';
+            document.getElementById('urlShopee').value = '';
+            document.getElementById('statusProduto').value = 'ativo';
             
             produtoEditandoId = null;
 
@@ -1191,7 +1353,18 @@
                         <div class="produto-titulo">${produto.nome}</div>
                         <div class="produto-sku">${produto.sku}</div>
                     </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
+                        <div>
+                            <strong>🛒 Mercado Livre:</strong><br>
+                            ${produto.mlb ? `MLB: ${produto.mlb}` : 'Não informado'}
+                        </div>
+                        <div>
+                            <strong>🛍️ Shopee:</strong><br>
+                            ${produto.urlShopee ? `URL: ${produto.urlShopee.substring(0, 30)}...` : 'Não informada'}
+                        </div>
+                    </div>
                     <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <span class="status-produto status-${produto.status}">${produto.status}</span>
                         <span style="font-size: 12px; color: #666;">Cadastrado em: ${produto.dataCadastro}</span>
                         <div>
                             <button class="btn" onclick="editarProduto(${produto.id})" style="margin-right: 5px; padding: 8px 12px; font-size: 12px;">
@@ -1215,6 +1388,9 @@
             
             document.getElementById('nomeProduto').value = produto.nome;
             document.getElementById('skuProduto').value = produto.sku;
+            document.getElementById('mlbProduto').value = produto.mlb || '';
+            document.getElementById('urlShopee').value = produto.urlShopee || '';
+            document.getElementById('statusProduto').value = produto.status;
 
             mostrarTela('cadastroScreen');
             window.scrollTo(0, 0);
@@ -1244,12 +1420,15 @@
                 return;
             }
 
-            let csv = 'Nome do Produto,SKU,Data Cadastro\n';
+            let csv = 'Nome do Produto,SKU,MLB,URL Shopee,Status,Data Cadastro\n';
             
             todosProdutos.forEach(produto => {
                 const linha = [
                     `"${produto.nome}"`,
                     `"${produto.sku}"`,
+                    `"${produto.mlb || ''}"`,
+                    `"${produto.urlShopee || ''}"`,
+                    `"${produto.status}"`,
                     `"${produto.dataCadastro}"`
                 ].join(',');
                 
@@ -1304,7 +1483,7 @@
         });
 
         // Inicialização
-        console.log('Sistema Wheel Tech - Cálculo Automático de Horas Extras!');
+        console.log('Sistema Wheel Tech - Cadastro de Produtos com MLB e Shopee!');
         console.log('Produtos cadastrados:', todosProdutos.length);
         
         // Mostrar botão de exportação se houver produtos
