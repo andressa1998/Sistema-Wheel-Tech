@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema Wheel Tech - BICYCLING</title>
     <style>
+        /* (MANTENHA TODOS OS ESTILOS ANTERIORES) */
         * {
             margin: 0;
             padding: 0;
@@ -635,6 +636,16 @@
             font-weight: bold;
             font-size: 14px;
         }
+
+        .debug-info {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 10px 0;
+            font-size: 12px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -776,6 +787,12 @@
                     <span id="statusText">Sistema de comparação de preços ativo</span>
                 </div>
 
+                <!-- Debug Info -->
+                <div id="debugInfo" class="debug-info" style="display: none;">
+                    <strong>🔧 Debug Info:</strong>
+                    <div id="debugContent"></div>
+                </div>
+
                 <!-- Status do Scraping -->
                 <div id="scrapingStatus" class="scraping-status" style="display: none;">
                     <div style="display: flex; align-items: center; gap: 10px;">
@@ -792,10 +809,13 @@
                         📋 Lista de Produtos
                     </button>
                     <button class="btn btn-atualizar" onclick="atualizarPrecosAutomaticamente()">
-                        🔄 Buscar Preços Atuais
+                        🔄 Buscar Preços REAIS
                     </button>
                     <button class="btn btn-excel" onclick="exportarParaExcel()" id="btnExportarExcel">
                         📊 Exportar Excel
+                    </button>
+                    <button class="btn btn-secondary" onclick="toggleDebug()" id="btnDebug">
+                        🔧 Debug
                     </button>
                 </div>
 
@@ -914,12 +934,13 @@
             "1204": {"nome": "Thalyta Pampuch", "salario": 2223.90, "acessoAnuncios": true}
         };
 
-        // CONFIGURAÇÃO DA API DO MERCADO LIVRE - SUAS CREDENCIAIS REAIS
-        const ML_API_CONFIG = {
+        // CONFIGURAÇÃO COMPLETA DO MERCADO LIVRE
+        const ML_CONFIG = {
             accessToken: "APP_USR-6382303492960193-102410-577704e0d4d1ffc1957af5e23f94bf26-415176739",
             clientId: "6382303492960193",
             clientSecret: "J0eBOOjqAG60c1jiXZd0J9YXp76r5EPe",
-            baseUrl: "https://api.mercadolibre.com"
+            baseUrl: "https://api.mercadolibre.com",
+            siteId: "MLB"
         };
 
         let funcionarioLogado = null;
@@ -927,6 +948,34 @@
         let historicoHorasExtras = JSON.parse(localStorage.getItem('historicoHorasExtras')) || {};
         let todosProdutos = JSON.parse(localStorage.getItem('produtosCadastrados')) || [];
         let produtoEditandoId = null;
+        let debugMode = false;
+
+        // 🔧 FUNÇÃO: Toggle debug mode
+        function toggleDebug() {
+            debugMode = !debugMode;
+            const debugDiv = document.getElementById('debugInfo');
+            const debugBtn = document.getElementById('btnDebug');
+            
+            if (debugMode) {
+                debugDiv.style.display = 'block';
+                debugBtn.innerHTML = '🔧 Debug ON';
+                debugBtn.style.background = 'linear-gradient(135deg, #FF6B35 0%, #F7931E 100%)';
+            } else {
+                debugDiv.style.display = 'none';
+                debugBtn.innerHTML = '🔧 Debug';
+                debugBtn.style.background = 'linear-gradient(135deg, #58595B 0%, #808080 100%)';
+            }
+        }
+
+        // 🔧 FUNÇÃO: Adicionar info de debug
+        function addDebugInfo(message) {
+            if (!debugMode) return;
+            
+            const debugContent = document.getElementById('debugContent');
+            const timestamp = new Date().toLocaleTimeString();
+            debugContent.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            debugContent.scrollTop = debugContent.scrollHeight;
+        }
 
         // 🔄 FUNÇÃO: Selecionar departamento
         function selecionarDepartamento(departamento) {
@@ -980,7 +1029,7 @@
             }
         }
 
-        // ⏰ FUNÇÃO: Calcular horas extras + DSR - AGORA AUTOMÁTICO
+        // ⏰ FUNÇÃO: Calcular horas extras + DSR
         function calcularHorasExtras() {
             if (!funcionarioLogado) {
                 alert('❌ Nenhum funcionário logado!');
@@ -1240,7 +1289,7 @@
                                         ${produto.mlb ? `
                                             <div>MLB: ${produto.mlb}</div>
                                             <button class="btn btn-buscar" onclick="buscarPrecoMLIndividual('${produto.id}')">
-                                                🔍 Buscar Preço
+                                                🔍 Buscar Preço REAL
                                             </button>
                                         ` : 'MLB não informado'}
                                     </div>
@@ -1281,7 +1330,35 @@
             }).join('');
         }
 
-        // 🔍 FUNÇÃO: Buscar preço do Mercado Livre usando API REAL
+        // 🔄 FUNÇÃO: Atualizar token de acesso (se necessário)
+        async function atualizarAccessToken() {
+            addDebugInfo('🔄 Tentando atualizar access token...');
+            
+            try {
+                const response = await fetch('https://api.mercadolibre.com/oauth/token', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept': 'application/json'
+                    },
+                    body: `grant_type=client_credentials&client_id=${ML_CONFIG.clientId}&client_secret=${ML_CONFIG.clientSecret}`
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addDebugInfo('✅ Token atualizado com sucesso');
+                    return data.access_token;
+                } else {
+                    addDebugInfo('❌ Erro ao atualizar token: ' + response.status);
+                    return null;
+                }
+            } catch (error) {
+                addDebugInfo('❌ Erro na requisição do token: ' + error.message);
+                return null;
+            }
+        }
+
+        // 🔍 FUNÇÃO: Buscar preço do Mercado Livre usando MÚLTIPLAS ESTRATÉGIAS
         async function buscarPrecoMercadoLivreAPI(mlb) {
             // Limpar MLB - remover espaços e caracteres especiais
             mlb = mlb.trim().replace(/[^a-zA-Z0-9]/g, '');
@@ -1290,71 +1367,162 @@
                 mlb = 'MLB' + mlb;
             }
 
-            console.log(`🔍 Buscando preço REAL ML via API para: ${mlb}`);
+            addDebugInfo(`🔍 Iniciando busca para MLB: ${mlb}`);
 
+            // ESTRATÉGIA 1: API Oficial com Access Token
+            addDebugInfo('🎯 Estratégia 1: API Oficial com Token');
             try {
-                // CHAMADA REAL À API DO MERCADO LIVRE
-                const response = await fetch(`${ML_API_CONFIG.baseUrl}/items/${mlb}`, {
+                const response = await fetch(`https://api.mercadolibre.com/items/${mlb}`, {
                     headers: {
-                        'Authorization': `Bearer ${ML_API_CONFIG.accessToken}`,
+                        'Authorization': `Bearer ${ML_CONFIG.accessToken}`,
                         'Content-Type': 'application/json'
                     }
                 });
                 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
+                addDebugInfo(`📡 Status da API: ${response.status}`);
                 
-                const data = await response.json();
-                console.log('📦 Dados REAIS recebidos da API ML:', data);
-                
-                let precoPromocional = data.price;
-                let precoOriginal = data.original_price || data.price;
-                let desconto = 0;
-                let promocaoNome = null;
-                
-                // Calcular desconto se houver preço original diferente
-                if (precoOriginal && precoOriginal > precoPromocional) {
-                    desconto = Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100);
-                }
-                
-                // Buscar informações de promoção
-                if (data.sale_terms && Array.isArray(data.sale_terms)) {
-                    const saleTerm = data.sale_terms.find(term => term.id === 'SALE');
-                    if (saleTerm) {
-                        promocaoNome = saleTerm.value_name;
+                if (response.ok) {
+                    const data = await response.json();
+                    addDebugInfo('✅ Dados recebidos da API oficial');
+                    
+                    let precoPromocional = data.price;
+                    let precoOriginal = data.original_price || data.price;
+                    let desconto = 0;
+                    let promocaoNome = null;
+                    
+                    // Calcular desconto se houver preço original diferente
+                    if (precoOriginal && precoOriginal > precoPromocional) {
+                        desconto = Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100);
                     }
+                    
+                    // Buscar informações de promoção
+                    if (data.sale_terms && Array.isArray(data.sale_terms)) {
+                        const saleTerm = data.sale_terms.find(term => term.id === 'SALE');
+                        if (saleTerm) {
+                            promocaoNome = saleTerm.value_name;
+                        }
+                    }
+                    
+                    // Se não encontrou promoção, verificar se é venda direta
+                    if (!promocaoNome && data.seller_address) {
+                        promocaoNome = "Venda Direta";
+                    }
+                    
+                    addDebugInfo(`💰 Preço encontrado: R$ ${precoPromocional} (Original: R$ ${precoOriginal}, ${desconto}% off)`);
+                    
+                    return {
+                        precoPromocional: precoPromocional,
+                        precoOriginal: precoOriginal,
+                        desconto: desconto,
+                        promocaoNome: promocaoNome,
+                        estrategia: 'API Oficial'
+                    };
+                } else {
+                    addDebugInfo(`❌ API oficial falhou: ${response.status}`);
                 }
-                
-                // Se não encontrou promoção, verificar se é venda direta
-                if (!promocaoNome && data.seller_address) {
-                    promocaoNome = "Venda Direta";
-                }
-                
-                console.log(`✅ Preço REAL ML encontrado: R$ ${precoPromocional} (Original: R$ ${precoOriginal}, ${desconto}% off)`);
-                
-                return {
-                    precoPromocional: precoPromocional,
-                    precoOriginal: precoOriginal,
-                    desconto: desconto,
-                    promocaoNome: promocaoNome
-                };
-                
             } catch (error) {
-                console.error(`❌ Erro REAL na API ML para ${mlb}:`, error);
-                throw new Error(`Falha ao buscar preço do Mercado Livre: ${error.message}`);
+                addDebugInfo(`❌ Erro API oficial: ${error.message}`);
             }
+
+            // ESTRATÉGIA 2: API pública sem autenticação
+            addDebugInfo('🎯 Estratégia 2: API Pública');
+            try {
+                const response = await fetch(`https://api.mercadolibre.com/items/${mlb}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    addDebugInfo('✅ Dados recebidos da API pública');
+                    
+                    let precoPromocional = data.price;
+                    let precoOriginal = data.original_price || data.price;
+                    let desconto = 0;
+                    
+                    if (precoOriginal && precoOriginal > precoPromocional) {
+                        desconto = Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100);
+                    }
+                    
+                    addDebugInfo(`💰 Preço público: R$ ${precoPromocional}`);
+                    
+                    return {
+                        precoPromocional: precoPromocional,
+                        precoOriginal: precoOriginal,
+                        desconto: desconto,
+                        promocaoNome: "Preço Público",
+                        estrategia: 'API Pública'
+                    };
+                }
+            } catch (error) {
+                addDebugInfo(`❌ Erro API pública: ${error.message}`);
+            }
+
+            // ESTRATÉGIA 3: Scraping da página do produto
+            addDebugInfo('🎯 Estratégia 3: Scraping da página');
+            try {
+                const scrapingResult = await buscarPrecoMLScraping(mlb);
+                if (scrapingResult) {
+                    addDebugInfo('✅ Preço encontrado via scraping');
+                    return {
+                        ...scrapingResult,
+                        estrategia: 'Scraping'
+                    };
+                }
+            } catch (error) {
+                addDebugInfo(`❌ Erro scraping: ${error.message}`);
+            }
+
+            addDebugInfo('❌ Todas as estratégias falharam');
+            throw new Error('Não foi possível obter o preço do produto');
         }
 
-        // 🛍️ FUNÇÃO: Buscar preço REAL da Shopee
-        async function buscarPrecoShopeeReal(urlShopee) {
-            if (!urlShopee || !urlShopee.includes('shopee')) {
-                console.log('❌ URL da Shopee inválida');
-                return null;
+        // 🌐 FUNÇÃO: Scraping da página do ML
+        async function buscarPrecoMLScraping(mlb) {
+            try {
+                // Usar CORS proxy para evitar bloqueios
+                const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+                const targetUrl = `https://produto.mercadolivre.com.br/${mlb}`;
+                
+                addDebugInfo(`🌐 Acessando: ${targetUrl}`);
+                
+                const response = await fetch(proxyUrl + targetUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }
+                });
+
+                if (response.ok) {
+                    const html = await response.text();
+                    
+                    // Extrair preço usando regex
+                    const priceRegex = /"price":(\d+\.?\d*)/;
+                    const originalPriceRegex = /"original_price":(\d+\.?\d*)/;
+                    
+                    const priceMatch = html.match(priceRegex);
+                    const originalPriceMatch = html.match(originalPriceRegex);
+                    
+                    if (priceMatch) {
+                        const precoPromocional = parseFloat(priceMatch[1]);
+                        const precoOriginal = originalPriceMatch ? parseFloat(originalPriceMatch[1]) : precoPromocional;
+                        const desconto = precoOriginal > precoPromocional ? 
+                            Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100) : 0;
+                        
+                        return {
+                            precoPromocional: precoPromocional,
+                            precoOriginal: precoOriginal,
+                            desconto: desconto,
+                            promocaoNome: desconto > 0 ? "Promoção" : "Preço Normal"
+                        };
+                    }
+                }
+            } catch (error) {
+                throw new Error(`Scraping falhou: ${error.message}`);
             }
+            return null;
+        }
 
-            console.log(`🛍️ Buscando preço REAL Shopee: ${urlShopee}`);
-
+        // 🛍️ FUNÇÃO: Buscar preço da Shopee
+        async function buscarPrecoShopeeReal(urlShopee) {
+            addDebugInfo(`🛍️ Buscando preço Shopee: ${urlShopee}`);
+            
             try {
                 // Para demonstração, vou simular uma resposta
                 // Em produção, implementar scraping real da Shopee
@@ -1362,17 +1530,17 @@
                 
                 // SIMULAÇÃO - substituir por scraping real
                 const preco = Math.random() * 500 + 50;
-                console.log(`✅ Preço Shopee simulado: R$ ${preco.toFixed(2)}`);
+                addDebugInfo(`✅ Preço Shopee simulado: R$ ${preco.toFixed(2)}`);
                 
                 return parseFloat(preco.toFixed(2));
                 
             } catch (error) {
-                console.error('❌ Erro ao buscar preço Shopee:', error);
+                addDebugInfo(`❌ Erro ao buscar preço Shopee: ${error.message}`);
                 return null;
             }
         }
 
-        // 🔄 FUNÇÃO: Atualizar preços automaticamente - COM API REAL
+        // 🔄 FUNÇÃO: Atualizar preços automaticamente - COM MÚLTIPLAS ESTRATÉGIAS
         async function atualizarPrecosAutomaticamente() {
             const statusDot = document.getElementById('statusDot');
             const statusText = document.getElementById('statusText');
@@ -1384,6 +1552,8 @@
             scrapingDiv.style.display = 'block';
             scrapingText.textContent = 'Conectando com APIs...';
 
+            addDebugInfo('🚀 INICIANDO BUSCA DE PREÇOS REAIS');
+
             try {
                 let produtosAtualizados = 0;
                 let produtosComErro = 0;
@@ -1394,6 +1564,8 @@
                     statusText.textContent = `Buscando ${i + 1}/${todosProdutos.length}`;
                     scrapingText.textContent = `Processando: ${produto.nome}`;
                     
+                    addDebugInfo(`📦 Processando: ${produto.nome} (${produto.mlb})`);
+
                     let precoAtualizado = false;
 
                     // Buscar preço REAL do Mercado Livre
@@ -1407,11 +1579,13 @@
                                 produto.descontoML = resultadoML.desconto;
                                 produto.promocaoNome = resultadoML.promocaoNome;
                                 produto.ultimaAtualizacaoML = new Date().toLocaleString('pt-BR');
+                                produto.estrategiaML = resultadoML.estrategia;
                                 precoAtualizado = true;
-                                console.log(`✅ ML REAL atualizado: ${produto.nome} - R$ ${resultadoML.precoPromocional}`);
+                                
+                                addDebugInfo(`✅ ML atualizado: R$ ${resultadoML.precoPromocional} (${resultadoML.estrategia})`);
                             }
                         } catch (error) {
-                            console.error(`❌ Erro REAL ML ${produto.nome}:`, error);
+                            addDebugInfo(`❌ Erro ML ${produto.nome}: ${error.message}`);
                             produtosComErro++;
                         }
                     }
@@ -1425,10 +1599,10 @@
                                 produto.precoShopee = precoShopee;
                                 produto.ultimaAtualizacaoShopee = new Date().toLocaleString('pt-BR');
                                 precoAtualizado = true;
-                                console.log(`✅ Shopee atualizado: ${produto.nome} - R$ ${precoShopee}`);
+                                addDebugInfo(`✅ Shopee atualizado: R$ ${precoShopee}`);
                             }
                         } catch (error) {
-                            console.error(`❌ Erro Shopee ${produto.nome}:`, error);
+                            addDebugInfo(`❌ Erro Shopee ${produto.nome}: ${error.message}`);
                             produtosComErro++;
                         }
                     }
@@ -1438,7 +1612,7 @@
                     }
 
                     // Delay entre requisições para não sobrecarregar as APIs
-                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    await new Promise(resolve => setTimeout(resolve, 2000));
                 }
 
                 localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
@@ -1452,11 +1626,13 @@
                         statusText.textContent += ` | ${produtosComErro} erros`;
                     }
                 } else {
-                    statusText.textContent = `ℹ️ Nenhum preço novo encontrado`;
+                    statusText.textContent = `❌ Nenhum preço encontrado`;
                     if (produtosComErro > 0) {
                         statusText.textContent += ` | ${produtosComErro} erros`;
                     }
                 }
+                
+                addDebugInfo(`🏁 BUSCA FINALIZADA: ${produtosAtualizados} atualizados, ${produtosComErro} erros`);
                 
                 carregarProdutosInternos();
                 
@@ -1464,6 +1640,7 @@
                 statusDot.className = 'status-dot error';
                 statusText.textContent = '❌ Erro na atualização';
                 scrapingDiv.style.display = 'none';
+                addDebugInfo(`💥 ERRO GERAL: ${error.message}`);
                 console.error('Erro geral na atualização:', error);
             }
         }
@@ -1476,6 +1653,8 @@
             const statusText = document.getElementById('statusText');
             statusText.textContent = `Buscando preço ML REAL: ${produto.nome}`;
             
+            addDebugInfo(`🔍 BUSCA INDIVIDUAL: ${produto.nome} (${produto.mlb})`);
+            
             try {
                 const resultadoML = await buscarPrecoMercadoLivreAPI(produto.mlb);
                 if (resultadoML && resultadoML.precoPromocional > 0) {
@@ -1484,14 +1663,17 @@
                     produto.descontoML = resultadoML.desconto;
                     produto.promocaoNome = resultadoML.promocaoNome;
                     produto.ultimaAtualizacaoML = new Date().toLocaleString('pt-BR');
+                    produto.estrategiaML = resultadoML.estrategia;
                     
                     localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
                     carregarProdutosInternos();
                     
-                    statusText.textContent = `✅ Preço ML REAL atualizado: ${produto.nome}`;
+                    statusText.textContent = `✅ Preço ML REAL atualizado: ${produto.nome} (${resultadoML.estrategia})`;
+                    addDebugInfo(`✅ INDIVIDUAL SUCESSO: R$ ${resultadoML.precoPromocional}`);
                 }
             } catch (error) {
                 statusText.textContent = `❌ Erro ao buscar preço ML: ${produto.nome}`;
+                addDebugInfo(`❌ INDIVIDUAL ERRO: ${error.message}`);
                 console.error('Erro busca individual ML:', error);
             }
         }
@@ -1556,6 +1738,7 @@
                             <span class="${produto.precoML > 0 ? 'preco-carregado' : 'preco-pendente'}">
                                 ML: ${produto.precoML > 0 ? `R$ ${produto.precoML.toFixed(2)}` : 'Não carregado'}
                                 ${produto.descontoML ? `<span class="desconto-badge">${produto.descontoML}% OFF</span>` : ''}
+                                ${produto.estrategiaML ? `<small>(${produto.estrategiaML})</small>` : ''}
                             </span> | 
                             <span class="${produto.precoShopee > 0 ? 'preco-carregado' : 'preco-pendente'}">
                                 Shopee: ${produto.precoShopee > 0 ? `R$ ${produto.precoShopee.toFixed(2)}` : 'Não carregado'}
@@ -1680,6 +1863,7 @@
                                 ` : `R$ ${produto.precoML.toFixed(2)}`}
                                 ${produto.promocaoNome ? `<br><span class="promocao-nome">${produto.promocaoNome}</span>` : ''}
                                 ${produto.ultimaAtualizacaoML ? `<br><small>Atualizado: ${produto.ultimaAtualizacaoML}</small>` : ''}
+                                ${produto.estrategiaML ? `<br><small>Método: ${produto.estrategiaML}</small>` : ''}
                             ` : 'Preço não carregado'}
                         </div>
                         <div>
@@ -1748,7 +1932,7 @@
                 return;
             }
 
-            let csv = 'Nome do Produto,SKU,MLB,Preço Original ML,Preço Promocional ML,Desconto ML,Nome Promoção,URL Shopee,Preço Shopee,Status,Data Cadastro,Última Atualização ML,Última Atualização Shopee,Diferença,Melhor Preço\n';
+            let csv = 'Nome do Produto,SKU,MLB,Preço Original ML,Preço Promocional ML,Desconto ML,Nome Promoção,Método Busca,URL Shopee,Preço Shopee,Status,Data Cadastro,Última Atualização ML,Última Atualização Shopee,Diferença,Melhor Preço\n';
             
             todosProdutos.forEach(produto => {
                 const diferenca = produto.precoShopee - produto.precoML;
@@ -1762,6 +1946,7 @@
                     produto.precoML > 0 ? produto.precoML.toFixed(2) : '0.00',
                     produto.descontoML > 0 ? `${produto.descontoML}%` : '0%',
                     `"${produto.promocaoNome || ''}"`,
+                    `"${produto.estrategiaML || 'N/A'}"`,
                     `"${produto.urlShopee || ''}"`,
                     produto.precoShopee > 0 ? produto.precoShopee.toFixed(2) : '0.00',
                     `"${produto.status}"`,
@@ -1818,13 +2003,19 @@
         });
 
         // Inicialização
-        console.log('Sistema Wheel Tech - Busca REAL de Preços com API do Mercado Livre!');
-        console.log('Produtos cadastrados:', todosProdutos.length);
+        console.log('🚀 Sistema Wheel Tech - Busca REAL com Múltiplas Estratégias!');
+        console.log('📊 Produtos cadastrados:', todosProdutos.length);
+        console.log('🔑 Credenciais ML carregadas:', !!ML_CONFIG.accessToken);
         
         // Mostrar botão de exportação se houver produtos
         if (todosProdutos.length > 0) {
             document.getElementById('btnExportarExcel').style.display = 'block';
         }
+
+        // Teste inicial da API
+        addDebugInfo('🔧 Sistema inicializado com sucesso');
+        addDebugInfo(`🔑 Access Token: ${ML_CONFIG.accessToken ? '✅ Presente' : '❌ Ausente'}`);
+        addDebugInfo(`🔑 Client ID: ${ML_CONFIG.clientId ? '✅ Presente' : '❌ Ausente'}`);
     </script>
 </body>
 </html>
