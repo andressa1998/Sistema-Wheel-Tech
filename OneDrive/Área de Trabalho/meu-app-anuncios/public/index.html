@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MEU-APP-ANUNCIOS - Sistema de Anúncios</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <img src="logo.png" alt="Logo" class="logo">
+            <h1>MEU-APP-ANUNCIOS</h1>
+            <nav>
+                <a href="index.html">Home</a>
+                <a href="about.htm">Sobre</a>
+                <a href="#produtos">Produtos</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="hero">
+            <h2>Encontre os Melhores Produtos</h2>
+            <p>Sistema de anúncios online - Compre e venda com segurança</p>
+        </section>
+
+        <section id="produtos" class="products-section">
+            <h2>Nossos Produtos</h2>
+            <div class="filters">
+                <input type="text" id="searchInput" placeholder="Buscar produtos...">
+                <select id="categoryFilter">
+                    <option value="">Todas as categorias</option>
+                    <option value="Eletrônicos">Eletrônicos</option>
+                    <option value="Informática">Informática</option>
+                    <option value="Áudio">Áudio</option>
+                </select>
+            </div>
+            <div id="productsList" class="products-grid">
+                <!-- Produtos serão carregados aqui pelo JavaScript -->
+            </div>
+        </section>
+
+        <section class="add-product">
+            <h2>Adicionar Novo Anúncio</h2>
+            <form id="productForm">
+                <input type="text" id="productName" placeholder="Nome do produto" required>
+                <input type="number" id="productPrice" placeholder="Preço" step="0.01" required>
+                <input type="text" id="productCategory" placeholder="Categoria" required>
+                <textarea id="productDescription" placeholder="Descrição" required></textarea>
+                <button type="submit">Cadastrar Produto</button>
+            </form>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 MEU-APP-ANUNCIOS. Todos os direitos reservados.</p>
+        </div>
+    </footer>
+
+    <script src="../src/components/app.js"></script>
+</body>
+</html>

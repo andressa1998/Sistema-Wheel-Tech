@@ -1,0 +1,26 @@
+{
+  "name": "meu-app-anuncios",
+  "version": "1.0.0",
+  "description": "Sistema de anúncios online - MEU-APP-ANUNCIOS",
+  "main": "src/components/app.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'Build completo'",
+    "start": "vercel start"
+  },
+  "keywords": [
+    "anuncios",
+    "produtos",
+    "ecommerce",
+    "vercel"
+  ],
+  "author": "Andressa",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.x"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@vercel/node": "^2.0.0"
+  }
+}
