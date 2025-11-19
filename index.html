@@ -7,13 +7,19 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --primary: #3498db;
-            --secondary: #2c3e50;
-            --success: #27ae60;
-            --warning: #f39c12;
-            --danger: #e74c3c;
-            --light: #ecf0f1;
-            --dark: #2c3e50;
+            --primary: #8A2BE2;
+            --secondary: #FF6B8B;
+            --success: #00D26A;
+            --warning: #FFA500;
+            --danger: #FF4757;
+            --info: #00CED1;
+            --light: #F8F9FA;
+            --dark: #2C3E50;
+            --purple: #9B59B6;
+            --teal: #20B2AA;
+            --orange: #FF7F50;
+            --pink: #FF69B4;
+            --blue: #4169E1;
         }
         
         * {
@@ -24,9 +30,10 @@
         }
         
         body {
-            background-color: #f5f7fa;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: #333;
             line-height: 1.6;
+            min-height: 100vh;
         }
         
         .container {
@@ -36,274 +43,362 @@
         }
         
         header {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            background: linear-gradient(135deg, var(--primary), var(--purple));
             color: white;
-            padding: 20px 0;
-            border-radius: 10px;
+            padding: 25px 0;
+            border-radius: 15px;
             margin-bottom: 30px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            animation: float 20s linear infinite;
+        }
+        
+        @keyframes float {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            100% { transform: translate(-20px, -20px) rotate(360deg); }
         }
         
         .header-content {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0 20px;
+            padding: 0 25px;
+            position: relative;
+            z-index: 2;
         }
         
         h1 {
-            font-size: 28px;
+            font-size: 32px;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 15px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
         }
         
         .user-info {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 15px;
+            background: rgba(255,255,255,0.2);
+            padding: 10px 20px;
+            border-radius: 25px;
+            backdrop-filter: blur(10px);
         }
         
         .user-avatar {
-            width: 40px;
-            height: 40px;
+            width: 45px;
+            height: 45px;
             border-radius: 50%;
-            background-color: var(--light);
+            background: linear-gradient(135deg, var(--secondary), var(--pink));
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--dark);
+            color: white;
             font-weight: bold;
+            font-size: 18px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
         
         .card {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-            padding: 25px;
-            margin-bottom: 25px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.2);
+            backdrop-filter: blur(10px);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary), var(--success), var(--warning));
         }
         
         .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #eee;
+            margin-bottom: 25px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e9ecef;
         }
         
         h2 {
-            color: var(--secondary);
-            font-size: 22px;
+            color: var(--primary);
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
         .form-row {
             display: flex;
             flex-wrap: wrap;
-            gap: 20px;
-            margin-bottom: 20px;
+            gap: 25px;
+            margin-bottom: 25px;
         }
         
         .form-group {
             flex: 1;
-            min-width: 250px;
+            min-width: 280px;
         }
         
         label {
             display: block;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             font-weight: 600;
-            color: var(--secondary);
+            color: var(--dark);
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         
         input, select, textarea {
             width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
+            padding: 14px;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
             font-size: 15px;
-            transition: all 0.3s;
+            transition: all 0.3s ease;
+            background: white;
         }
         
         input:focus, select:focus, textarea:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+            box-shadow: 0 0 0 3px rgba(138, 43, 226, 0.1);
+            transform: translateY(-2px);
         }
         
         .checkbox-group {
             display: flex;
             align-items: center;
-            gap: 10px;
-            margin-bottom: 15px;
+            gap: 12px;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 10px;
+            border-left: 4px solid var(--info);
         }
         
         .checkbox-group input {
             width: auto;
+            transform: scale(1.2);
         }
         
         .btn {
-            padding: 12px 20px;
+            padding: 14px 24px;
             border: none;
-            border-radius: 6px;
+            border-radius: 10px;
             cursor: pointer;
             font-size: 15px;
             font-weight: 600;
-            transition: all 0.3s;
+            transition: all 0.3s ease;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
         }
         
         .btn-primary {
-            background-color: var(--primary);
+            background: linear-gradient(135deg, var(--primary), var(--purple));
             color: white;
-        }
-        
-        .btn-primary:hover {
-            background-color: #2980b9;
         }
         
         .btn-success {
-            background-color: var(--success);
+            background: linear-gradient(135deg, var(--success), var(--teal));
             color: white;
-        }
-        
-        .btn-success:hover {
-            background-color: #219653;
         }
         
         .btn-warning {
-            background-color: var(--warning);
+            background: linear-gradient(135deg, var(--warning), var(--orange));
             color: white;
-        }
-        
-        .btn-warning:hover {
-            background-color: #e67e22;
         }
         
         .btn-danger {
-            background-color: var(--danger);
+            background: linear-gradient(135deg, var(--danger), var(--pink));
             color: white;
-        }
-        
-        .btn-danger:hover {
-            background-color: #c0392b;
         }
         
         .btn-secondary {
-            background-color: var(--secondary);
+            background: linear-gradient(135deg, var(--secondary), var(--pink));
             color: white;
         }
         
-        .btn-secondary:hover {
-            background-color: #1a252f;
+        .btn-info {
+            background: linear-gradient(135deg, var(--info), var(--blue));
+            color: white;
         }
         
         .btn-group {
             display: flex;
-            gap: 10px;
+            gap: 15px;
             flex-wrap: wrap;
         }
         
         .badge {
             display: inline-block;
-            padding: 5px 12px;
+            padding: 8px 16px;
             border-radius: 20px;
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         
         .badge-primary {
-            background-color: var(--primary);
+            background: linear-gradient(135deg, var(--primary), var(--purple));
             color: white;
         }
         
         .badge-success {
-            background-color: var(--success);
+            background: linear-gradient(135deg, var(--success), var(--teal));
             color: white;
         }
         
         .badge-warning {
-            background-color: var(--warning);
+            background: linear-gradient(135deg, var(--warning), var(--orange));
             color: white;
         }
         
         .badge-danger {
-            background-color: var(--danger);
+            background: linear-gradient(135deg, var(--danger), var(--pink));
+            color: white;
+        }
+        
+        .badge-info {
+            background: linear-gradient(135deg, var(--info), var(--blue));
             color: white;
         }
         
         .badge-secondary {
-            background-color: var(--secondary);
+            background: linear-gradient(135deg, var(--secondary), var(--pink));
             color: white;
-        }
-        
-        .badge-light {
-            background-color: var(--light);
-            color: var(--dark);
         }
         
         .table-container {
             overflow-x: auto;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
         }
         
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 10px;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
         }
         
         th, td {
-            padding: 14px 12px;
+            padding: 16px 14px;
             text-align: left;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid #e9ecef;
         }
         
         th {
-            background-color: #f8f9fa;
+            background: linear-gradient(135deg, var(--primary), var(--purple));
+            color: white;
             font-weight: 600;
-            color: var(--secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 13px;
         }
         
         tr:hover {
-            background-color: #f8f9fa;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            transform: scale(1.01);
+            transition: all 0.2s ease;
         }
         
         .urgent-high {
-            border-left: 4px solid var(--danger);
+            border-left: 6px solid var(--danger);
+            background: linear-gradient(135deg, #fff, #ffeaea);
         }
         
         .urgent-normal {
-            border-left: 4px solid var(--warning);
+            border-left: 6px solid var(--warning);
+            background: linear-gradient(135deg, #fff, #fff3e0);
         }
         
         .urgent-low {
-            border-left: 4px solid var(--success);
+            border-left: 6px solid var(--success);
+            background: linear-gradient(135deg, #fff, #e8f5e8);
         }
         
         .return-flag {
-            background-color: #ffeaea;
+            background: linear-gradient(135deg, #ffeaea, #ffcccc) !important;
+            position: relative;
+        }
+        
+        .return-flag::after {
+            content: '🔄 DEVOLUÇÃO';
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: var(--danger);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: bold;
         }
         
         .login-container {
-            max-width: 400px;
-            margin: 100px auto;
-            padding: 30px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            max-width: 450px;
+            margin: 80px auto;
+            padding: 40px;
+            background: linear-gradient(135deg, #ffffff, #f8f9fa);
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.15);
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.3);
+            backdrop-filter: blur(10px);
         }
         
         .login-header {
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 40px;
         }
         
         .login-header h1 {
             color: var(--primary);
-            margin-bottom: 10px;
+            margin-bottom: 15px;
+            font-size: 36px;
+        }
+        
+        .login-header p {
+            color: var(--dark);
+            font-size: 16px;
+            opacity: 0.8;
         }
         
         .hidden {
@@ -311,14 +406,16 @@
         }
         
         .os-code {
-            font-size: 18px;
+            font-size: 20px;
             font-weight: bold;
             color: var(--primary);
-            background-color: #e8f4fc;
-            padding: 8px 15px;
-            border-radius: 6px;
+            background: linear-gradient(135deg, #e8f4fc, #d6e8ff);
+            padding: 12px 20px;
+            border-radius: 10px;
             display: inline-block;
-            margin-bottom: 15px;
+            margin-bottom: 20px;
+            border: 2px dashed var(--primary);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
         
         .print-only {
@@ -326,13 +423,14 @@
         }
         
         .sku-list {
-            margin-top: 10px;
+            margin-top: 15px;
         }
         
         .sku-item {
             display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
+            gap: 12px;
+            margin-bottom: 12px;
+            align-items: center;
         }
         
         .sku-item input {
@@ -342,33 +440,73 @@
         .action-buttons {
             display: flex;
             gap: 8px;
+            flex-wrap: wrap;
         }
         
         .action-btn {
-            padding: 6px 10px;
-            font-size: 13px;
+            padding: 8px 12px;
+            font-size: 12px;
+            border-radius: 8px;
         }
         
         .status-badge {
-            padding: 6px 12px;
+            padding: 8px 16px;
             border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         
         .status-pendente {
-            background-color: #ffeaa7;
+            background: linear-gradient(135deg, #ffeaa7, #fdcb6e);
             color: #e17055;
         }
         
         .status-andamento {
-            background-color: #81ecec;
-            color: #00cec9;
+            background: linear-gradient(135deg, #81ecec, #00cec9);
+            color: #2d3436;
         }
         
         .status-finalizado {
-            background-color: #55efc4;
-            color: #00b894;
+            background: linear-gradient(135deg, #55efc4, #00b894);
+            color: #2d3436;
+        }
+        
+        .floating-bg {
+            position: fixed;
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            z-index: -1;
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        .bg-1 {
+            top: 10%;
+            left: 10%;
+            background: radial-gradient(circle, rgba(138, 43, 226, 0.1) 0%, transparent 70%);
+        }
+        
+        .bg-2 {
+            top: 60%;
+            right: 10%;
+            background: radial-gradient(circle, rgba(255, 107, 139, 0.1) 0%, transparent 70%);
+            animation-delay: -2s;
+        }
+        
+        .bg-3 {
+            bottom: 20%;
+            left: 20%;
+            background: radial-gradient(circle, rgba(0, 210, 106, 0.1) 0%, transparent 70%);
+            animation-delay: -4s;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(180deg); }
         }
         
         @media print {
@@ -392,6 +530,11 @@
     </style>
 </head>
 <body>
+    <!-- Elementos de fundo flutuantes -->
+    <div class="floating-bg bg-1"></div>
+    <div class="floating-bg bg-2"></div>
+    <div class="floating-bg bg-3"></div>
+
     <!-- Tela de Login -->
     <div id="loginScreen" class="login-container">
         <div class="login-header">
@@ -401,15 +544,24 @@
         <form id="loginForm">
             <div class="form-group">
                 <label for="username">Usuário</label>
-                <input type="text" id="username" required>
+                <input type="text" id="username" required placeholder="Digite seu usuário">
             </div>
             <div class="form-group">
                 <label for="password">Senha</label>
-                <input type="password" id="password" required>
+                <input type="password" id="password" required placeholder="Digite sua senha">
             </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 20px;">
-                <i class="fas fa-sign-in-alt"></i> Entrar
+            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 25px;">
+                <i class="fas fa-sign-in-alt"></i> Entrar no Sistema
             </button>
+            
+            <div style="margin-top: 25px; padding: 15px; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 10px; border-left: 4px solid var(--info);">
+                <h4 style="color: var(--primary); margin-bottom: 10px;">Usuários de Teste:</h4>
+                <p style="font-size: 12px; color: var(--dark); line-height: 1.4;">
+                    <strong>Elaine:</strong> elaine / elaine123<br>
+                    <strong>Arthur:</strong> arthur / arthur123<br>
+                    <strong>Laura:</strong> laura / laura123
+                </p>
+            </div>
         </form>
     </div>
 
@@ -422,8 +574,8 @@
                     <div class="user-info">
                         <div class="user-avatar" id="userAvatar">U</div>
                         <div>
-                            <div id="userName">Usuário</div>
-                            <button id="logoutBtn" class="btn btn-light" style="padding: 5px 10px; font-size: 12px;">
+                            <div id="userName" style="font-weight: bold;">Usuário</div>
+                            <button id="logoutBtn" class="btn btn-info" style="padding: 6px 12px; font-size: 11px; margin-top: 5px;">
                                 <i class="fas fa-sign-out-alt"></i> Sair
                             </button>
                         </div>
@@ -437,53 +589,52 @@
             <div class="card no-print">
                 <div class="card-header">
                     <h2><i class="fas fa-plus-circle"></i> Nova Ordem de Serviço</h2>
+                    <div class="os-code" id="osCodeDisplay">OS: Aguardando criação...</div>
                 </div>
                 
                 <form id="osForm">
-                    <div class="os-code" id="osCodeDisplay">OS: Aguardando criação...</div>
-                    
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="productName">Nome do Produto *</label>
-                            <input type="text" id="productName" required>
+                            <label for="productName"><i class="fas fa-box"></i> Nome do Produto *</label>
+                            <input type="text" id="productName" required placeholder="Digite o nome do produto">
                         </div>
                         <div class="form-group">
-                            <label for="urgency">Grau de Urgência *</label>
+                            <label for="urgency"><i class="fas fa-exclamation-triangle"></i> Grau de Urgência *</label>
                             <select id="urgency" required>
-                                <option value="baixa">Baixa</option>
-                                <option value="normal" selected>Normal</option>
-                                <option value="alta">Alta</option>
+                                <option value="baixa">🟢 Baixa</option>
+                                <option value="normal" selected>🟡 Normal</option>
+                                <option value="alta">🔴 Alta</option>
                             </select>
                         </div>
                     </div>
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="photoType">Tipo de Foto</label>
+                            <label for="photoType"><i class="fas fa-camera"></i> Tipo de Foto</label>
                             <select id="photoType">
-                                <option value="studio">Estúdio</option>
-                                <option value="bike">Na Bike</option>
+                                <option value="studio">🎬 Estúdio</option>
+                                <option value="bike">🚲 Na Bike</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="scalePhoto">Foto na Balança</label>
+                            <label for="scalePhoto"><i class="fas fa-weight-scale"></i> Foto na Balança</label>
                             <select id="scalePhoto">
-                                <option value="nao">Não</option>
-                                <option value="sim">Sim</option>
+                                <option value="nao">❌ Não</option>
+                                <option value="sim">✅ Sim</option>
                             </select>
                         </div>
                     </div>
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label>SKUs</label>
+                            <label><i class="fas fa-barcode"></i> SKUs</label>
                             <div class="sku-list" id="skuList">
                                 <div class="sku-item">
                                     <input type="text" class="sku-input" placeholder="Código SKU">
                                     <button type="button" class="btn btn-danger action-btn" onclick="removeSku(this)"><i class="fas fa-times"></i></button>
                                 </div>
                             </div>
-                            <button type="button" class="btn btn-secondary" onclick="addSku()" style="margin-top: 10px;">
+                            <button type="button" class="btn btn-info" onclick="addSku()" style="margin-top: 10px;">
                                 <i class="fas fa-plus"></i> Adicionar SKU
                             </button>
                         </div>
@@ -491,11 +642,11 @@
                     
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="links">Links (opcional)</label>
+                            <label for="links"><i class="fas fa-link"></i> Links (opcional)</label>
                             <input type="text" id="links" placeholder="Links relacionados ao produto">
                         </div>
                         <div class="form-group">
-                            <label for="clip">Clip (opcional)</label>
+                            <label for="clip"><i class="fas fa-paperclip"></i> Clip (opcional)</label>
                             <input type="text" id="clip" placeholder="Número do clip">
                         </div>
                     </div>
@@ -503,17 +654,17 @@
                     <div class="form-row">
                         <div class="checkbox-group">
                             <input type="checkbox" id="unpackProduct">
-                            <label for="unpackProduct">Tirar produto da embalagem para foto</label>
+                            <label for="unpackProduct">📦 Tirar produto da embalagem para foto</label>
                         </div>
                         <div class="checkbox-group">
                             <input type="checkbox" id="isReturn">
-                            <label for="isReturn">É uma devolução</label>
+                            <label for="isReturn">🔄 É uma devolução</label>
                         </div>
                     </div>
                     
                     <div class="form-group">
-                        <label for="observations">Observações</label>
-                        <textarea id="observations" rows="3"></textarea>
+                        <label for="observations"><i class="fas fa-sticky-note"></i> Observações</label>
+                        <textarea id="observations" rows="3" placeholder="Observações adicionais..."></textarea>
                     </div>
                     
                     <div class="btn-group">
@@ -523,7 +674,7 @@
                         <button type="button" class="btn btn-primary" onclick="printOS()">
                             <i class="fas fa-print"></i> Imprimir OS
                         </button>
-                        <button type="reset" class="btn btn-secondary">
+                        <button type="reset" class="btn btn-warning">
                             <i class="fas fa-broom"></i> Limpar
                         </button>
                     </div>
@@ -535,10 +686,18 @@
                 <div class="card-header">
                     <h2><i class="fas fa-list"></i> Ordens de Serviço</h2>
                     <div class="btn-group">
-                        <button class="btn btn-primary" onclick="filterOS('all')">Todas</button>
-                        <button class="btn btn-warning" onclick="filterOS('pendente')">Pendentes</button>
-                        <button class="btn btn-secondary" onclick="filterOS('andamento')">Em Andamento</button>
-                        <button class="btn btn-success" onclick="filterOS('finalizado')">Finalizadas</button>
+                        <button class="btn btn-primary" onclick="filterOS('all')">
+                            <i class="fas fa-layer-group"></i> Todas
+                        </button>
+                        <button class="btn btn-warning" onclick="filterOS('pendente')">
+                            <i class="fas fa-clock"></i> Pendentes
+                        </button>
+                        <button class="btn btn-info" onclick="filterOS('andamento')">
+                            <i class="fas fa-play-circle"></i> Em Andamento
+                        </button>
+                        <button class="btn btn-success" onclick="filterOS('finalizado')">
+                            <i class="fas fa-check-circle"></i> Finalizadas
+                        </button>
                     </div>
                 </div>
                 
@@ -546,13 +705,13 @@
                     <table id="osTable">
                         <thead>
                             <tr>
-                                <th>Código</th>
-                                <th>Produto</th>
-                                <th>Criado por</th>
-                                <th>Urgência</th>
-                                <th>Status</th>
-                                <th>Data Criação</th>
-                                <th>Ações</th>
+                                <th><i class="fas fa-hashtag"></i> Código</th>
+                                <th><i class="fas fa-box"></i> Produto</th>
+                                <th><i class="fas fa-user"></i> Criado por</th>
+                                <th><i class="fas fa-exclamation-triangle"></i> Urgência</th>
+                                <th><i class="fas fa-tasks"></i> Status</th>
+                                <th><i class="fas fa-calendar"></i> Data Criação</th>
+                                <th><i class="fas fa-cogs"></i> Ações</th>
                             </tr>
                         </thead>
                         <tbody id="osTableBody">
@@ -600,7 +759,7 @@
         // Funções de Login
         function handleLogin(e) {
             e.preventDefault();
-            const username = document.getElementById('username').value;
+            const username = document.getElementById('username').value.trim().toLowerCase();
             const password = document.getElementById('password').value;
             
             const user = users.find(u => u.username === username && u.password === password);
@@ -614,7 +773,7 @@
                 generateOSCode();
                 renderOSTable();
             } else {
-                alert('Usuário ou senha incorretos!');
+                alert('❌ Usuário ou senha incorretos!');
             }
         }
 
@@ -638,8 +797,8 @@
             e.preventDefault();
             
             const skus = Array.from(document.querySelectorAll('.sku-input'))
-                .map(input => input.value)
-                .filter(sku => sku.trim() !== '');
+                .map(input => input.value.trim())
+                .filter(sku => sku !== '');
             
             const os = {
                 id: osCounter++,
@@ -669,7 +828,7 @@
             renderOSTable();
             osForm.reset();
             generateOSCode();
-            alert('Ordem de Serviço salva com sucesso!');
+            alert('✅ Ordem de Serviço salva com sucesso!');
         }
 
         function handleReturnChange() {
@@ -709,41 +868,41 @@
                 
                 let statusBadge = '';
                 if (os.status === 'pendente') {
-                    statusBadge = '<span class="status-badge status-pendente">Pendente</span>';
+                    statusBadge = '<span class="status-badge status-pendente">⏳ Pendente</span>';
                 } else if (os.status === 'andamento') {
-                    statusBadge = '<span class="status-badge status-andamento">Em Andamento</span>';
+                    statusBadge = '<span class="status-badge status-andamento">🚀 Em Andamento</span>';
                 } else if (os.status === 'finalizado') {
-                    statusBadge = '<span class="status-badge status-finalizado">Finalizado</span>';
+                    statusBadge = '<span class="status-badge status-finalizado">✅ Finalizado</span>';
                 }
                 
                 let urgencyBadge = '';
                 if (os.urgency === 'baixa') {
-                    urgencyBadge = '<span class="badge badge-success">Baixa</span>';
+                    urgencyBadge = '<span class="badge badge-success">🟢 Baixa</span>';
                 } else if (os.urgency === 'normal') {
-                    urgencyBadge = '<span class="badge badge-warning">Normal</span>';
+                    urgencyBadge = '<span class="badge badge-warning">🟡 Normal</span>';
                 } else if (os.urgency === 'alta') {
-                    urgencyBadge = '<span class="badge badge-danger">Alta</span>';
+                    urgencyBadge = '<span class="badge badge-danger">🔴 Alta</span>';
                 }
                 
                 row.innerHTML = `
-                    <td>${os.code}</td>
+                    <td><strong>${os.code}</strong></td>
                     <td>${os.productName}</td>
-                    <td>${os.createdBy}</td>
+                    <td><span class="badge badge-info">${os.createdBy}</span></td>
                     <td>${urgencyBadge}</td>
                     <td>${statusBadge}</td>
                     <td>${os.creationDate}</td>
                     <td>
                         <div class="action-buttons">
-                            <button class="btn btn-primary action-btn" onclick="viewOS(${os.id})">
+                            <button class="btn btn-primary action-btn" onclick="viewOS(${os.id})" title="Visualizar">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            <button class="btn btn-warning action-btn" onclick="editOS(${os.id})">
+                            <button class="btn btn-warning action-btn" onclick="editOS(${os.id})" title="Editar">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn btn-success action-btn" onclick="updateStatus(${os.id}, 'andamento')">
+                            <button class="btn btn-success action-btn" onclick="updateStatus(${os.id}, 'andamento')" title="Iniciar">
                                 <i class="fas fa-play"></i>
                             </button>
-                            <button class="btn btn-danger action-btn" onclick="deleteOS(${os.id})">
+                            <button class="btn btn-danger action-btn" onclick="deleteOS(${os.id})" title="Excluir">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
@@ -762,7 +921,8 @@
         function viewOS(id) {
             const os = osList.find(os => os.id === id);
             if (os) {
-                alert(`Detalhes da OS:\nCódigo: ${os.code}\nProduto: ${os.productName}\nStatus: ${os.status}\nUrgência: ${os.urgency}\nData Criação: ${os.creationDate}`);
+                const skusText = os.skus.length > 0 ? os.skus.join(', ') : 'Nenhum SKU informado';
+                alert(`📋 Detalhes da OS:\n\n🏷️ Código: ${os.code}\n📦 Produto: ${os.productName}\n📊 Status: ${os.status}\n⚠️ Urgência: ${os.urgency}\n📅 Data Criação: ${os.creationDate}\n👤 Criado por: ${os.createdBy}\n📸 Tipo Foto: ${os.photoType}\n⚖️ Foto Balança: ${os.scalePhoto}\n📦 Desembalar: ${os.unpackProduct ? 'Sim' : 'Não'}\n🔄 Devolução: ${os.isReturn ? 'Sim' : 'Não'}\n🏷️ SKUs: ${skusText}\n📝 Observações: ${os.observations || 'Nenhuma'}`);
             }
         }
 
@@ -806,7 +966,7 @@
                 // Atualizar o código exibido
                 osCodeDisplay.textContent = `OS: ${os.code}`;
                 
-                alert('OS carregada para edição!');
+                alert('📝 OS carregada para edição!');
             }
         }
 
@@ -815,9 +975,10 @@
             if (os) {
                 if (status === 'andamento' && os.status === 'pendente') {
                     os.status = 'andamento';
+                    alert('🚀 OS iniciada com sucesso!');
                 } else if (status === 'finalizado' && os.status === 'andamento') {
-                    const photosCount = prompt('Quantidade de fotos tiradas:');
-                    const editsCount = prompt('Quantidade de edições feitas:');
+                    const photosCount = prompt('📸 Quantidade de fotos tiradas:');
+                    const editsCount = prompt('🎨 Quantidade de edições feitas:');
                     
                     if (photosCount !== null && editsCount !== null) {
                         os.status = 'finalizado';
@@ -831,6 +992,8 @@
                         } else {
                             os.salesCompletion = new Date().toLocaleDateString('pt-BR');
                         }
+                        
+                        alert('✅ OS finalizada com sucesso!');
                     }
                 }
                 
@@ -840,10 +1003,11 @@
         }
 
         function deleteOS(id) {
-            if (confirm('Tem certeza que deseja excluir esta Ordem de Serviço?')) {
+            if (confirm('❓ Tem certeza que deseja excluir esta Ordem de Serviço?')) {
                 osList = osList.filter(os => os.id !== id);
                 saveData();
                 renderOSTable();
+                alert('🗑️ OS excluída com sucesso!');
             }
         }
 
