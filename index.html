@@ -3,1993 +3,453 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema Wheel Tech - BICYCLING</title>
+    <title>Sistema de Ordem de Serviço</title>
     <style>
-        /* (MANTENHA TODOS OS ESTILOS ANTERIORES) */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         body {
-            background: linear-gradient(135deg, #00ADEE 0%, #76B843 100%);
-            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
             padding: 20px;
         }
 
         .container {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            width: 100%;
             max-width: 1200px;
             margin: 0 auto;
-            overflow: hidden;
-        }
-
-        .header {
-            background: linear-gradient(135deg, #58595B 0%, #00ADEE 100%);
-            color: white;
+            background: white;
             padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        h1 {
             text-align: center;
-            border-bottom: 3px solid #76B843;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
+            color: #333;
+            margin-bottom: 30px;
         }
 
-        .logo-container {
-            display: flex;
-            align-items: center;
-            gap: 15px;
+        .form-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
         }
 
-        .logo-text {
-            font-size: 36px;
-            font-weight: bold;
-        }
-
-        .logo-subtitle {
-            font-size: 18px;
-            opacity: 0.9;
-            font-weight: 300;
-        }
-
-        .content {
-            padding: 30px;
-            min-height: 600px;
-        }
-
-        .screen {
-            display: none;
-        }
-
-        .active {
-            display: block;
-        }
-
-        .menu-departamentos {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        .departamento-card {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 25px;
-            text-align: center;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-            border-left: 4px solid;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .departamento-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        .departamento-card.rh {
-            border-left-color: #00ADEE;
-        }
-
-        .departamento-card.administrativo {
-            border-left-color: #76B843;
-        }
-
-        .departamento-icon {
-            font-size: 40px;
+        h2 {
+            color: #555;
             margin-bottom: 15px;
         }
 
-        .departamento-title {
-            font-size: 20px;
-            font-weight: bold;
-            color: #58595B;
-            margin-bottom: 10px;
-        }
-
-        .departamento-desc {
-            color: #666;
-            font-size: 14px;
-        }
-
-        .menu-buttons {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }
-
-        .btn {
-            background: linear-gradient(135deg, #00ADEE 0%, #76B843 100%);
-            color: white;
-            border: none;
-            padding: 15px 20px;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s;
-            margin-bottom: 10px;
-            text-align: center;
-            display: block;
-            width: 100%;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-        }
-
-        .btn-secondary {
-            background: linear-gradient(135deg, #58595B 0%, #808080 100%);
-        }
-
-        .btn-logout {
-            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-        }
-
-        .btn-rh {
-            background: linear-gradient(135deg, #00ADEE 0%, #0078A6 100%);
-        }
-
-        .btn-administrativo {
-            background: linear-gradient(135deg, #76B843 0%, #5A8A2A 100%);
-        }
-
-        .user-welcome {
-            text-align: center;
-            margin-bottom: 30px;
-            padding: 20px;
-            background: #80D6F7;
-            border-radius: 10px;
-            border-left: 4px solid #00ADEE;
-        }
-
-        .acesso-badge {
-            margin-top: 10px;
-            padding: 8px;
-            background: #76B843;
-            color: white;
-            border-radius: 5px;
-            font-size: 12px;
-        }
-
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
 
         label {
             display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #58595B;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
         }
 
         input, select, textarea {
             width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 16px;
-        }
-
-        input:focus, select:focus, textarea:focus {
-            outline: none;
-            border-color: #00ADEE;
-        }
-
-        .calculadora-container {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 25px;
-            margin: 20px 0;
-        }
-
-        .resultado-container {
-            background: #e8f5e9;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-            border-left: 4px solid #4caf50;
-        }
-
-        .historico-container {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-        }
-
-        .historico-item {
-            background: white;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 10px;
-            border-left: 4px solid #00ADEE;
-        }
-
-        .info-salario {
-            background: #e3f2fd;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 15px 0;
-            border-left: 4px solid #2196F3;
-        }
-
-        .detalhes-calculo {
-            background: white;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 15px 0;
-            border-left: 4px solid #00ADEE;
-        }
-
-        .linha-calculo {
-            display: flex;
-            justify-content: space-between;
-            margin: 8px 0;
-            padding: 5px 0;
-            border-bottom: 1px solid #f0f0f0;
-        }
-
-        .valor-destaque {
-            font-size: 24px;
-            font-weight: bold;
-            color: #2E7D32;
-            margin: 10px 0;
-        }
-
-        .comparacao-container {
-            margin: 20px 0;
-        }
-
-        .produto-card {
-            background: white;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-            transition: transform 0.2s;
-        }
-
-        .produto-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        .produto-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #e0e0e0;
-        }
-
-        .produto-titulo {
-            font-weight: bold;
-            color: #58595B;
-            font-size: 18px;
-            flex: 1;
-        }
-
-        .produto-sku {
-            font-size: 12px;
-            color: #888;
-            background: #f5f5f5;
-            padding: 4px 12px;
-            border-radius: 10px;
-        }
-
-        .precos-comparacao {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-            margin-top: 15px;
-        }
-
-        .preco-plataforma {
-            text-align: center;
-            padding: 20px;
-            border-radius: 8px;
-            border: 2px solid #e0e0e0;
-        }
-
-        .preco-ml {
-            border-color: #FFE600;
-            background: #FFFDE7;
-        }
-
-        .preco-shopee {
-            border-color: #EE4D2D;
-            background: #FFEBEE;
-        }
-
-        .plataforma-nome {
-            font-weight: bold;
-            margin-bottom: 10px;
-            font-size: 16px;
-        }
-
-        .preco-valor {
-            font-size: 24px;
-            font-weight: bold;
-            margin: 10px 0;
-        }
-
-        .preco-ml .preco-valor {
-            color: #2D3277;
-        }
-
-        .preco-shopee .preco-valor {
-            color: #EE4D2D;
-        }
-
-        .diferenca {
-            font-size: 12px;
-            padding: 4px 8px;
-            border-radius: 12px;
-            font-weight: bold;
-        }
-
-        .diferenca-positiva {
-            background: #E8F5E8;
-            color: #2E7D32;
-        }
-
-        .diferenca-negativa {
-            background: #FFEBEE;
-            color: #C62828;
-        }
-
-        .status-produto {
-            font-size: 11px;
-            margin-top: 5px;
-            padding: 2px 6px;
-            border-radius: 8px;
-            display: inline-block;
-        }
-
-        .status-ativo {
-            background: #E8F5E8;
-            color: #2E7D32;
-        }
-
-        .status-inativo {
-            background: #FFEBEE;
-            color: #C62828;
-        }
-
-        .promocao-nome {
-            font-size: 12px;
-            color: #FF6B35;
-            margin-top: 5px;
-            font-weight: bold;
-            background: #FFF3E0;
-            padding: 3px 8px;
-            border-radius: 6px;
-            display: inline-block;
-        }
-
-        .api-status {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 20px;
-            padding: 15px;
-            border-radius: 8px;
-            background: #e3f2fd;
-        }
-
-        .status-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #76B843;
-        }
-
-        .status-dot.loading {
-            background: #FFA000;
-            animation: pulse 1.5s infinite;
-        }
-
-        .status-dot.error {
-            background: #f44336;
-        }
-
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-
-        .action-buttons {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr 1fr;
-            gap: 15px;
-            margin: 20px 0;
-        }
-
-        .btn-cadastrar {
-            background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
-        }
-
-        .btn-atualizar {
-            background: linear-gradient(135deg, #76B843 0%, #5A8A2A 100%);
-        }
-
-        .btn-excel {
-            background: linear-gradient(135deg, #217346 0%, #1E7E34 100%);
-        }
-
-        .btn-lista-produtos {
-            background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
-        }
-
-        .scraping-status {
-            background: #fff3e0;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 10px 0;
-            font-size: 14px;
-        }
-
-        .info-card {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 10px;
-            padding: 30px;
-            text-align: center;
-            color: #6c757d;
-        }
-
-        .contador-produtos {
-            text-align: center;
-            margin: 20px 0;
-            color: #58595B;
-            font-size: 16px;
-            font-weight: bold;
-        }
-
-        .lista-rapida-produtos {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 15px 0;
-            max-height: 400px;
-            overflow-y: auto;
-        }
-
-        .produto-item-rapido {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 8px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .produto-info-rapido {
-            flex: 1;
-        }
-
-        .produto-nome-rapido {
-            font-weight: bold;
-            color: #58595B;
-            font-size: 14px;
-        }
-
-        .produto-sku-rapido {
-            font-size: 11px;
-            color: #888;
-        }
-
-        .produto-acoes-rapido {
-            display: flex;
-            gap: 5px;
-        }
-
-        .btn-pequeno {
-            padding: 6px 10px;
-            font-size: 11px;
-            width: auto;
-            margin: 0;
-        }
-
-        .preco-info {
-            font-size: 11px;
-            color: #666;
-            margin-top: 4px;
-        }
-
-        .preco-carregado {
-            color: #2E7D32;
-        }
-
-        .preco-pendente {
-            color: #FF6B35;
-        }
-
-        .preco-original {
-            text-decoration: line-through;
-            color: #888;
-            font-size: 14px;
-        }
-
-        .desconto-badge {
-            background: #FF6B35;
-            color: white;
-            padding: 2px 6px;
-            border-radius: 8px;
-            font-size: 10px;
-            margin-left: 5px;
-        }
-
-        .url-info {
-            font-size: 11px;
-            color: #666;
-            word-break: break-all;
-            margin-top: 5px;
-        }
-
-        .campos-plataforma {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        .campo-plataforma {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
-            border: 1px solid #e0e0e0;
-        }
-
-        .plataforma-titulo {
-            font-weight: bold;
-            color: #58595B;
-            margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .mlb-color {
-            color: #2D3277;
-        }
-
-        .shopee-color {
-            color: #EE4D2D;
-        }
-
-        .preco-real {
-            font-size: 20px;
-            font-weight: bold;
-            color: #2E7D32;
-            margin: 10px 0;
-        }
-
-        .preco-indisponivel {
-            color: #f44336;
-            font-size: 14px;
-        }
-
-        .ultima-atualizacao {
-            font-size: 11px;
-            color: #666;
-            margin-top: 5px;
-        }
-
-        .btn-buscar {
-            background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
-            padding: 8px 15px;
-            font-size: 12px;
-            margin-top: 10px;
-            width: auto;
-        }
-
-        .info-promocao {
-            background: #FFF3E0;
-            border-radius: 6px;
             padding: 8px;
-            margin: 5px 0;
-            font-size: 12px;
-        }
-
-        .valor-antigo {
-            color: #888;
+            border: 1px solid #ddd;
+            border-radius: 4px;
             font-size: 14px;
         }
 
-        .porcentagem-desconto {
-            color: #2E7D32;
+        textarea {
+            height: 100px;
+            resize: vertical;
+        }
+
+        .btn {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+
+        .btn:hover {
+            background-color: #0056b3;
+        }
+
+        .btn-success {
+            background-color: #28a745;
+        }
+
+        .btn-success:hover {
+            background-color: #1e7e34;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+        }
+
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+
+        .btn-group {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .table-container {
+            margin-top: 30px;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #f8f9fa;
             font-weight: bold;
-            font-size: 14px;
         }
 
-        .debug-info {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 10px 0;
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .status-pendente {
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 4px 8px;
+            border-radius: 4px;
             font-size: 12px;
-            color: #666;
-            max-height: 200px;
-            overflow-y: auto;
         }
 
-        .teste-api {
-            background: #e8f5e9;
-            border-radius: 8px;
-            padding: 15px;
-            margin: 10px 0;
-            border-left: 4px solid #4caf50;
+        .status-andamento {
+            background-color: #cce7ff;
+            color: #004085;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .status-concluido {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .search-container {
+            margin-bottom: 20px;
+        }
+
+        .search-box {
+            width: 300px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Cabeçalho -->
-        <div class="header">
-            <div class="logo-container">
-                <div>
-                    <div class="logo-text">Wheel Tech</div>
-                    <div class="logo-subtitle">BICYCLING</div>
-                </div>
-            </div>
-        </div>
+        <h1>📋 Sistema de Ordem de Serviço</h1>
 
-        <!-- Conteúdo -->
-        <div class="content">
-            <!-- Tela de Seleção de Departamento -->
-            <div id="departamentoScreen" class="screen active">
-                <h3 style="text-align: center; margin-bottom: 30px; color: #58595B;">Selecione seu Departamento</h3>
-                
-                <div class="menu-departamentos">
-                    <!-- Card RH -->
-                    <div class="departamento-card rh" onclick="selecionarDepartamento('rh')">
-                        <div class="departamento-icon">📊</div>
-                        <div class="departamento-title">RECURSOS HUMANOS</div>
-                        <div class="departamento-desc">Gestão de horas extras, histórico e resumo</div>
-                    </div>
-
-                    <!-- Card Administrativo -->
-                    <div class="departamento-card administrativo" onclick="selecionarDepartamento('administrativo')">
-                        <div class="departamento-icon">💰</div>
-                        <div class="departamento-title">ADMINISTRATIVO</div>
-                        <div class="departamento-desc">Comparação de preços e gestão de produtos</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Tela de Login -->
-            <div id="loginScreen" class="screen">
-                <h3 style="text-align: center; margin-bottom: 20px; color: #58595B;" id="loginTitle">Login</h3>
-                
+        <!-- Formulário de Ordem de Serviço -->
+        <div class="form-section">
+            <h2>Nova Ordem de Serviço</h2>
+            <form id="osForm">
                 <div class="form-group">
-                    <label for="senha">🔑 Senha do Funcionário:</label>
-                    <input type="password" id="senha" placeholder="Digite sua senha de 4 dígitos" maxlength="4">
-                </div>
-                <button class="btn" onclick="fazerLogin()">Entrar no Sistema</button>
-                <button class="btn btn-secondary" onclick="voltarParaDepartamentos()" style="margin-top: 10px;">
-                    ← Voltar para Departamentos
-                </button>
-            </div>
-
-            <!-- Tela RH -->
-            <div id="rhScreen" class="screen">
-                <div class="user-welcome">
-                    <h3>Olá, <span id="nomeFuncionarioRH"></span>!</h3>
-                    <div class="acesso-badge">📊 Departamento de RH</div>
-                </div>
-
-                <div class="menu-buttons">
-                    <button class="btn btn-rh" onclick="mostrarTela('calcularScreen')">
-                        ⏰ Calcular Horas Extras + DSR
-                    </button>
-                    <button class="btn btn-rh" onclick="mostrarHistorico()">
-                        📋 Ver Meu Histórico
-                    </button>
-                    <button class="btn btn-rh" onclick="mostrarResumo()">
-                        ℹ️ Meu Resumo
-                    </button>
-                    <button class="btn btn-logout" onclick="sair()" style="margin-top: 30px;">🚪 Sair do Sistema</button>
-                </div>
-            </div>
-
-            <!-- Tela Administrativo -->
-            <div id="administrativoScreen" class="screen">
-                <div class="user-welcome">
-                    <h3>Olá, <span id="nomeFuncionarioAdm"></span>!</h3>
-                    <div class="acesso-badge">💰 Departamento Administrativo</div>
-                </div>
-
-                <div class="menu-buttons">
-                    <button class="btn btn-administrativo" onclick="mostrarComparacaoPrecos()">
-                        📈 Comparação de Preços
-                    </button>
-                    <button class="btn" onclick="testarConexaoAPI()" style="background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);">
-                        🔧 Testar API Mercado Livre
-                    </button>
-                    <button class="btn btn-logout" onclick="sair()" style="margin-top: 30px;">🚪 Sair do Sistema</button>
-                </div>
-            </div>
-
-            <!-- Tela de Cálculo de Horas Extras -->
-            <div id="calcularScreen" class="screen">
-                <h3 style="margin-bottom: 20px; color: #58595B;">⏰ Calcular Horas Extras + DSR</h3>
-                
-                <!-- Informações do Salário -->
-                <div class="info-salario">
-                    <h4 style="color: #1976D2; margin-bottom: 10px;">💰 Informações do Salário</h4>
-                    <div class="linha-calculo">
-                        <span>Salário Base:</span>
-                        <span><strong>R$ <span id="salarioBase">0,00</span></strong></span>
-                    </div>
-                    <div class="linha-calculo">
-                        <span>Valor da Hora Normal:</span>
-                        <span><strong>R$ <span id="valorHoraAuto">0,00</span></strong></span>
-                    </div>
-                    <div style="font-size: 12px; color: #666; margin-top: 10px;">
-                        * Cálculo automático: Salário Base ÷ 220 horas mensais
-                    </div>
-                </div>
-
-                <div class="calculadora-container">
-                    <div class="form-group">
-                        <label for="horasExtras">Horas Extras Trabalhadas:</label>
-                        <input type="number" id="horasExtras" placeholder="Ex: 10" min="0" step="0.5">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="percentualHE">Percentual de Hora Extra (%):</label>
-                        <select id="percentualHE">
-                            <option value="50">50% - Hora Extra Normal</option>
-                            <option value="100">100% - Hora Extra Feriado/Domingo</option>
-                        </select>
-                    </div>
-
-                    <button class="btn btn-rh" onclick="calcularHorasExtras()">📊 Calcular</button>
-                </div>
-
-                <div id="resultadoCalculo" class="resultado-container" style="display: none;">
-                    <h4 style="color: #2E7D32; margin-bottom: 15px;">💰 Resultado do Cálculo</h4>
-                    <div id="detalhesCalculo"></div>
-                </div>
-
-                <button class="btn btn-secondary" onclick="voltarParaArea()">← Voltar</button>
-            </div>
-
-            <!-- Tela de Comparação de Preços -->
-            <div id="comparacaoScreen" class="screen">
-                <h3 style="margin-bottom: 15px; color: #58595B;">💰 Comparação de Preços em Tempo Real</h3>
-                
-                <div class="api-status">
-                    <div class="status-dot" id="statusDot"></div>
-                    <span id="statusText">Sistema de comparação de preços ativo</span>
-                </div>
-
-                <!-- Área de Teste da API -->
-                <div id="testeAPI" class="teste-api" style="display: none;">
-                    <h4 style="color: #2E7D32; margin-bottom: 10px;">🧪 Teste da API Mercado Livre</h4>
-                    <div id="testeAPIContent"></div>
-                </div>
-
-                <!-- Debug Info -->
-                <div id="debugInfo" class="debug-info" style="display: none;">
-                    <strong>🔧 Debug Info:</strong>
-                    <div id="debugContent"></div>
-                </div>
-
-                <!-- Status do Scraping -->
-                <div id="scrapingStatus" class="scraping-status" style="display: none;">
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div class="status-dot loading" id="scrapingDot"></div>
-                        <span id="scrapingText">Buscando preços atualizados...</span>
-                    </div>
-                </div>
-
-                <div class="action-buttons">
-                    <button class="btn btn-cadastrar" onclick="mostrarTela('cadastroScreen')">
-                        ➕ Cadastrar Produto
-                    </button>
-                    <button class="btn btn-lista-produtos" onclick="toggleListaProdutos()" id="btnListaProdutos">
-                        📋 Lista de Produtos
-                    </button>
-                    <button class="btn btn-atualizar" onclick="atualizarPrecosAutomaticamente()">
-                        🔄 Buscar Preços REAIS
-                    </button>
-                    <button class="btn btn-excel" onclick="exportarParaExcel()" id="btnExportarExcel">
-                        📊 Exportar Excel
-                    </button>
-                    <button class="btn" onclick="testarConexaoAPI()" style="background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);">
-                        🔧 Testar API
-                    </button>
-                    <button class="btn btn-secondary" onclick="toggleDebug()" id="btnDebug">
-                        🔍 Debug
-                    </button>
-                </div>
-
-                <!-- LISTA RÁPIDA DE PRODUTOS -->
-                <div id="listaRapidaProdutos" class="lista-rapida-produtos" style="display: none;">
-                    <h4 style="margin-bottom: 15px; color: #58595B;">📦 Produtos Cadastrados</h4>
-                    <div id="conteudoListaRapida"></div>
-                </div>
-
-                <div id="contadorProdutos" class="contador-produtos">
-                    📊 Sistema de comparação de preços em tempo real
-                </div>
-
-                <div id="comparacaoContainer" class="comparacao-container">
-                    <div class="info-card">
-                        <p>Nenhum produto cadastrado ainda.</p>
-                        <p><small>Clique em "Cadastrar Produto" para adicionar produtos ao sistema.</small></p>
-                    </div>
-                </div>
-
-                <button class="btn btn-secondary" onclick="voltarParaArea()">← Voltar</button>
-            </div>
-
-            <!-- Tela de Cadastro de Produtos -->
-            <div id="cadastroScreen" class="screen">
-                <h3 style="margin-bottom: 20px; color: #58595B;">➕ Cadastrar Produto</h3>
-                
-                <div class="form-group">
-                    <label for="nomeProduto">Nome do Produto:</label>
-                    <input type="text" id="nomeProduto" placeholder="Ex: Gancheira Mosso Odyssey Challenger">
+                    <label for="cliente">Cliente:</label>
+                    <input type="text" id="cliente" name="cliente" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="skuProduto">SKU/Código:</label>
-                    <input type="text" id="skuProduto" placeholder="Ex: K33009">
-                </div>
-
-                <!-- Campos para MLB e Shopee -->
-                <div class="campos-plataforma">
-                    <div class="campo-plataforma">
-                        <div class="plataforma-titulo mlb-color">
-                            🛒 Mercado Livre
-                        </div>
-                        <div class="form-group">
-                            <label for="mlbProduto">MLB (Código do Produto):</label>
-                            <input type="text" id="mlbProduto" placeholder="Ex: MLB2106981701">
-                            <small style="color: #666; font-size: 12px;">
-                                Encontre o código MLB na URL do produto
-                            </small>
-                        </div>
-                    </div>
-
-                    <div class="campo-plataforma">
-                        <div class="plataforma-titulo shopee-color">
-                            🛍️ Shopee
-                        </div>
-                        <div class="form-group">
-                            <label for="urlShopee">URL do Produto:</label>
-                            <input type="text" id="urlShopee" placeholder="Ex: https://shopee.com.br/produto...">
-                            <small style="color: #666; font-size: 12px;">
-                                Cole a URL completa do produto na Shopee
-                            </small>
-                        </div>
-                    </div>
+                    <label for="telefone">Telefone:</label>
+                    <input type="tel" id="telefone" name="telefone" required>
                 </div>
 
                 <div class="form-group">
-                    <label for="statusProduto">Status do Produto:</label>
-                    <select id="statusProduto">
-                        <option value="ativo">Ativo</option>
-                        <option value="inativo">Inativo</option>
+                    <label for="email">Email:</label>
+                    <input type="email" id="email" name="email">
+                </div>
+
+                <div class="form-group">
+                    <label for="equipamento">Equipamento:</label>
+                    <input type="text" id="equipamento" name="equipamento" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="marca">Marca/Modelo:</label>
+                    <input type="text" id="marca" name="marca" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="numero_serie">Número de Série:</label>
+                    <input type="text" id="numero_serie" name="numero_serie">
+                </div>
+
+                <div class="form-group">
+                    <label for="defeito">Defeito Relatado:</label>
+                    <textarea id="defeito" name="defeito" required></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="observacoes">Observações:</label>
+                    <textarea id="observacoes" name="observacoes"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="tecnico">Técnico Responsável:</label>
+                    <select id="tecnico" name="tecnico" required>
+                        <option value="">Selecione o técnico</option>
+                        <option value="tecnico1">Técnico 1</option>
+                        <option value="tecnico2">Técnico 2</option>
+                        <option value="tecnico3">Técnico 3</option>
                     </select>
                 </div>
 
-                <div class="action-buttons">
-                    <button class="btn btn-cadastrar" onclick="cadastrarProduto()">
-                        💾 Salvar Produto
-                    </button>
-                    <button class="btn btn-secondary" onclick="mostrarTela('comparacaoScreen')">
-                        ← Voltar
-                    </button>
+                <div class="form-group">
+                    <label for="prioridade">Prioridade:</label>
+                    <select id="prioridade" name="prioridade" required>
+                        <option value="baixa">Baixa</option>
+                        <option value="media">Média</option>
+                        <option value="alta">Alta</option>
+                        <option value="urgente">Urgente</option>
+                    </select>
                 </div>
 
-                <div id="listaProdutosCadastrados" style="margin-top: 30px;">
-                    <h4 style="margin-bottom: 15px; color: #58595B;">📋 Produtos Cadastrados</h4>
-                    <div id="produtosCadastradosContainer"></div>
+                <div class="btn-group">
+                    <button type="submit" class="btn btn-success">Salvar OS</button>
+                    <button type="button" class="btn" onclick="limparFormulario()">Limpar</button>
                 </div>
+            </form>
+        </div>
+
+        <!-- Busca e Lista de Ordens de Serviço -->
+        <div class="form-section">
+            <h2>Ordens de Serviço</h2>
+            
+            <div class="search-container">
+                <input type="text" id="search" class="search-box" placeholder="Buscar por cliente, equipamento...">
+                <button class="btn" onclick="filtrarOS()">Buscar</button>
+                <button class="btn" onclick="limparBusca()">Limpar</button>
             </div>
 
-            <!-- Outras telas (Histórico, Resumo) -->
-            <div id="historicoScreen" class="screen">
-                <h3 style="margin-bottom: 20px; color: #58595B;">📋 Histórico de Cálculos</h3>
-                <div id="historicoContainer" class="historico-container"></div>
-                <button class="btn btn-secondary" onclick="voltarParaArea()">← Voltar</button>
-            </div>
-
-            <div id="resumoScreen" class="screen">
-                <h3 style="margin-bottom: 20px; color: #58595B;">ℹ️ Meu Resumo</h3>
-                <div id="resumoContainer" class="info-card">
-                    <p>Resumo do funcionário em desenvolvimento...</p>
-                </div>
-                <button class="btn btn-secondary" onclick="voltarParaArea()">← Voltar</button>
+            <div class="table-container">
+                <table id="tabelaOS">
+                    <thead>
+                        <tr>
+                            <th>Nº OS</th>
+                            <th>Cliente</th>
+                            <th>Equipamento</th>
+                            <th>Data Abertura</th>
+                            <th>Status</th>
+                            <th>Técnico</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="corpoTabela">
+                        <!-- As ordens de serviço serão inseridas aqui via JavaScript -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 
     <script>
-        // Dados dos funcionários
-        const funcionarios = {
-            "2209": {"nome": "Andressa Sloboda", "salario": 2223.90, "acessoAnuncios": true},
-            "1809": {"nome": "Adryel Silva", "salario": 1098.48, "acessoAnuncios": false},
-            "3003": {"nome": "Arthur Finkler", "salario": 2557.50, "acessoAnuncios": true},
-            "0408": {"nome": "Bruna Jomek", "salario": 2223.90, "acessoAnuncios": true},
-            "2411": {"nome": "Elaine Guidelli", "salario": 2640.00, "acessoAnuncios": false},
-            "2701": {"nome": "Laura Souza", "salario": 2100.00, "acessoAnuncios": false},
-            "1204": {"nome": "Thalyta Pampuch", "salario": 2223.90, "acessoAnuncios": true}
-        };
+        // Array para armazenar as ordens de serviço
+        let ordensServico = JSON.parse(localStorage.getItem('ordensServico')) || [];
+        let contadorOS = parseInt(localStorage.getItem('contadorOS')) || 1;
 
-        // CONFIGURAÇÃO CORRIGIDA DO MERCADO LIVRE
-        const ML_CONFIG = {
-            // SEUS DADOS REAIS - VERIFIQUE SE ESTÃO CORRETOS
-            accessToken: "APP_USR-6382303492960193-102410-577704e0d4d1ffc1957af5e23f94bf26-415176739",
-            clientId: "6382303492960193",
-            clientSecret: "J0eBOOjqAG60c1jiXZd0J9YXp76r5EPe",
-            baseUrl: "https://api.mercadolibre.com",
-            siteId: "MLB"
-        };
-
-        let funcionarioLogado = null;
-        let departamentoSelecionado = null;
-        let historicoHorasExtras = JSON.parse(localStorage.getItem('historicoHorasExtras')) || {};
-        let todosProdutos = JSON.parse(localStorage.getItem('produtosCadastrados')) || [];
-        let produtoEditandoId = null;
-        let debugMode = false;
-
-        // 🔧 FUNÇÃO: Testar conexão com API do Mercado Livre
-        async function testarConexaoAPI() {
-            const statusText = document.getElementById('statusText');
-            const testeAPIDiv = document.getElementById('testeAPI');
-            const testeAPIContent = document.getElementById('testeAPIContent');
+        // Função para salvar ordem de serviço
+        document.getElementById('osForm').addEventListener('submit', function(e) {
+            e.preventDefault();
             
-            statusText.textContent = '🔧 Testando conexão com API...';
-            testeAPIDiv.style.display = 'block';
-            
-            try {
-                // Teste 1: Verificar se o access token é válido
-                testeAPIContent.innerHTML = '<div>🔑 Testando Access Token...</div>';
-                
-                const response = await fetch('https://api.mercadolibre.com/users/me', {
-                    headers: {
-                        'Authorization': `Bearer ${ML_CONFIG.accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (response.ok) {
-                    const userData = await response.json();
-                    testeAPIContent.innerHTML += `<div style="color: green;">✅ Access Token VÁLIDO</div>`;
-                    testeAPIContent.innerHTML += `<div>👤 Usuário: ${userData.nickname}</div>`;
-                    testeAPIContent.innerHTML += `<div>🆔 ID: ${userData.id}</div>`;
-                } else {
-                    testeAPIContent.innerHTML += `<div style="color: red;">❌ Access Token INVÁLIDO (Status: ${response.status})</div>`;
-                    statusText.textContent = '❌ Access Token expirado ou inválido!';
-                    return;
-                }
-
-                // Teste 2: Buscar um produto de exemplo
-                testeAPIContent.innerHTML += '<div>🔍 Testando busca de produto...</div>';
-                
-                // Produto de teste (iPhone como exemplo)
-                const mlbTeste = 'MLB4637831691';
-                const produtoResponse = await fetch(`https://api.mercadolibre.com/items/${mlbTeste}`, {
-                    headers: {
-                        'Authorization': `Bearer ${ML_CONFIG.accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (produtoResponse.ok) {
-                    const produtoData = await produtoResponse.json();
-                    testeAPIContent.innerHTML += `<div style="color: green;">✅ Produto encontrado!</div>`;
-                    testeAPIContent.innerHTML += `<div>📦 Nome: ${produtoData.title.substring(0, 50)}...</div>`;
-                    testeAPIContent.innerHTML += `<div>💰 Preço: R$ ${produtoData.price}</div>`;
-                    testeAPIContent.innerHTML += `<div>📊 Status: ${produtoData.status}</div>`;
-                    testeAPIContent.innerHTML += `<div>🆔 MLB: ${produtoData.id}</div>`;
-                    
-                    statusText.textContent = '✅ API funcionando perfeitamente!';
-                    
-                } else {
-                    testeAPIContent.innerHTML += `<div style="color: red;">❌ Erro ao buscar produto (Status: ${produtoResponse.status})</div>`;
-                    statusText.textContent = '❌ Erro na busca de produtos';
-                }
-
-                // Teste 3: Verificar permissões
-                testeAPIContent.innerHTML += '<div>🔐 Verificando permissões...</div>';
-                const sitesResponse = await fetch('https://api.mercadolibre.com/sites/MLB', {
-                    headers: {
-                        'Authorization': `Bearer ${ML_CONFIG.accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                if (sitesResponse.ok) {
-                    testeAPIContent.innerHTML += `<div style="color: green;">✅ Permissões OK - Acesso ao site MLB</div>`;
-                } else {
-                    testeAPIContent.innerHTML += `<div style="color: red;">❌ Problema com permissões</div>`;
-                }
-
-            } catch (error) {
-                testeAPIContent.innerHTML += `<div style="color: red;">💥 Erro na conexão: ${error.message}</div>`;
-                statusText.textContent = '❌ Erro de conexão com a API';
-                console.error('Erro no teste da API:', error);
-            }
-        }
-
-        // 🔧 FUNÇÃO: Toggle debug mode
-        function toggleDebug() {
-            debugMode = !debugMode;
-            const debugDiv = document.getElementById('debugInfo');
-            const debugBtn = document.getElementById('btnDebug');
-            
-            if (debugMode) {
-                debugDiv.style.display = 'block';
-                debugBtn.innerHTML = '🔍 Debug ON';
-                debugBtn.style.background = 'linear-gradient(135deg, #FF6B35 0%, #F7931E 100%)';
-            } else {
-                debugDiv.style.display = 'none';
-                debugBtn.innerHTML = '🔍 Debug';
-                debugBtn.style.background = 'linear-gradient(135deg, #58595B 0%, #808080 100%)';
-            }
-        }
-
-        // 🔧 FUNÇÃO: Adicionar info de debug
-        function addDebugInfo(message) {
-            if (!debugMode) return;
-            
-            const debugContent = document.getElementById('debugContent');
-            const timestamp = new Date().toLocaleTimeString();
-            debugContent.innerHTML += `<div>[${timestamp}] ${message}</div>`;
-            debugContent.scrollTop = debugContent.scrollHeight;
-        }
-
-        // 🔄 FUNÇÃO: Selecionar departamento
-        function selecionarDepartamento(departamento) {
-            departamentoSelecionado = departamento;
-            document.getElementById('loginTitle').textContent = `Login - ${departamento.toUpperCase()}`;
-            mostrarTela('loginScreen');
-        }
-
-        // 🔄 FUNÇÃO: Voltar para seleção de departamentos
-        function voltarParaDepartamentos() {
-            mostrarTela('departamentoScreen');
-        }
-
-        // 🔑 FUNÇÃO: Login
-        function fazerLogin() {
-            const senha = document.getElementById('senha').value.trim();
-            
-            if (!senha) {
-                alert('❌ Por favor, digite sua senha!');
-                return;
-            }
-
-            if (funcionarios[senha]) {
-                funcionarioLogado = {
-                    senha: senha,
-                    ...funcionarios[senha]
-                };
-                
-                // Redireciona para a área selecionada
-                if (departamentoSelecionado === 'rh') {
-                    document.getElementById('nomeFuncionarioRH').textContent = funcionarioLogado.nome;
-                    mostrarTela('rhScreen');
-                } else if (departamentoSelecionado === 'administrativo') {
-                    document.getElementById('nomeFuncionarioAdm').textContent = funcionarioLogado.nome;
-                    mostrarTela('administrativoScreen');
-                }
-                
-                document.getElementById('senha').value = '';
-                
-            } else {
-                alert('❌ Senha inválida!');
-            }
-        }
-
-        // 🔙 FUNÇÃO: Voltar para a área do usuário
-        function voltarParaArea() {
-            if (departamentoSelecionado === 'rh') {
-                mostrarTela('rhScreen');
-            } else if (departamentoSelecionado === 'administrativo') {
-                mostrarTela('administrativoScreen');
-            }
-        }
-
-        // ⏰ FUNÇÃO: Calcular horas extras + DSR
-        function calcularHorasExtras() {
-            if (!funcionarioLogado) {
-                alert('❌ Nenhum funcionário logado!');
-                return;
-            }
-
-            const horasExtras = parseFloat(document.getElementById('horasExtras').value);
-            const percentualHE = parseInt(document.getElementById('percentualHE').value);
-
-            if (!horasExtras || horasExtras <= 0) {
-                alert('❌ Por favor, informe a quantidade de horas extras trabalhadas!');
-                return;
-            }
-
-            // Cálculo automático do valor da hora
-            const valorHoraNormal = funcionarioLogado.salario / 220;
-            
-            // Cálculo da hora extra
-            const valorHoraExtra = valorHoraNormal * (1 + percentualHE / 100);
-            const totalHorasExtras = horasExtras * valorHoraExtra;
-
-            // Cálculo do DSR (1/6 das horas extras)
-            const dsr = totalHorasExtras / 6;
-
-            // Total geral
-            const totalGeral = totalHorasExtras + dsr;
-
-            // Atualizar informações do salário na tela
-            document.getElementById('salarioBase').textContent = funcionarioLogado.salario.toFixed(2);
-            document.getElementById('valorHoraAuto').textContent = valorHoraNormal.toFixed(2);
-
-            // Exibir resultados
-            const resultadoDiv = document.getElementById('resultadoCalculo');
-            const detalhesDiv = document.getElementById('detalhesCalculo');
-
-            detalhesDiv.innerHTML = `
-                <div class="detalhes-calculo">
-                    <div class="linha-calculo">
-                        <span>Salário Base:</span>
-                        <span><strong>R$ ${funcionarioLogado.salario.toFixed(2)}</strong></span>
-                    </div>
-                    <div class="linha-calculo">
-                        <span>Valor da Hora Normal:</span>
-                        <span><strong>R$ ${valorHoraNormal.toFixed(2)}</strong></span>
-                    </div>
-                    <div class="linha-calculo">
-                        <span>Horas Extras Trabalhadas:</span>
-                        <span><strong>${horasExtras} horas</strong></span>
-                    </div>
-                    <div class="linha-calculo">
-                        <span>Percentual de Hora Extra:</span>
-                        <span><strong>${percentualHE}%</strong></span>
-                    </div>
-                    <div class="linha-calculo">
-                        <span>Valor da Hora Extra:</span>
-                        <span><strong>R$ ${valorHoraExtra.toFixed(2)}</strong></span>
-                    </div>
-                    <div class="linha-calculo" style="border-bottom: 2px solid #00ADEE;">
-                        <span>Total Horas Extras:</span>
-                        <span><strong>R$ ${totalHorasExtras.toFixed(2)}</strong></span>
-                    </div>
-                    <div class="linha-calculo">
-                        <span>DSR (Descanso Semanal Remunerado):</span>
-                        <span><strong>R$ ${dsr.toFixed(2)}</strong></span>
-                    </div>
-                    <div class="linha-calculo" style="font-size: 18px; font-weight: bold; color: #2E7D32;">
-                        <span>TOTAL A RECEBER:</span>
-                        <span>R$ ${totalGeral.toFixed(2)}</span>
-                    </div>
-                </div>
-            `;
-
-            resultadoDiv.style.display = 'block';
-
-            // Salvar no histórico
-            salvarNoHistorico(horasExtras, valorHoraNormal, percentualHE, totalGeral);
-        }
-
-        // 💾 FUNÇÃO: Salvar cálculo no histórico
-        function salvarNoHistorico(horas, valorHora, percentual, total) {
-            if (!historicoHorasExtras[funcionarioLogado.senha]) {
-                historicoHorasExtras[funcionarioLogado.senha] = [];
-            }
-
-            const registro = {
-                data: new Date().toLocaleString('pt-BR'),
-                horas: horas,
-                valorHora: valorHora,
-                percentual: percentual,
-                total: total,
-                salario: funcionarioLogado.salario
+            const formData = new FormData(this);
+            const os = {
+                id: contadorOS++,
+                cliente: formData.get('cliente'),
+                telefone: formData.get('telefone'),
+                email: formData.get('email'),
+                equipamento: formData.get('equipamento'),
+                marca: formData.get('marca'),
+                numero_serie: formData.get('numero_serie'),
+                defeito: formData.get('defeito'),
+                observacoes: formData.get('observacoes'),
+                tecnico: formData.get('tecnico'),
+                prioridade: formData.get('prioridade'),
+                status: 'pendente',
+                data_abertura: new Date().toLocaleDateString('pt-BR'),
+                data_conclusao: null
             };
 
-            historicoHorasExtras[funcionarioLogado.senha].unshift(registro);
-            
-            // Manter apenas os últimos 50 registros
-            if (historicoHorasExtras[funcionarioLogado.senha].length > 50) {
-                historicoHorasExtras[funcionarioLogado.senha] = historicoHorasExtras[funcionarioLogado.senha].slice(0, 50);
-            }
-
-            localStorage.setItem('historicoHorasExtras', JSON.stringify(historicoHorasExtras));
-        }
-
-        // 📋 FUNÇÃO: Mostrar histórico
-        function mostrarHistorico() {
-            mostrarTela('historicoScreen');
-            const container = document.getElementById('historicoContainer');
-            
-            if (!historicoHorasExtras[funcionarioLogado.senha] || historicoHorasExtras[funcionarioLogado.senha].length === 0) {
-                container.innerHTML = '<div class="info-card"><p>Nenhum cálculo realizado ainda.</p></div>';
-                return;
-            }
-
-            container.innerHTML = historicoHorasExtras[funcionarioLogado.senha].map(registro => `
-                <div class="historico-item">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <strong>${registro.data}</strong>
-                        <span style="color: #2E7D32; font-weight: bold;">R$ ${registro.total.toFixed(2)}</span>
-                    </div>
-                    <div style="font-size: 14px; color: #666; margin-top: 5px;">
-                        ${registro.horas} horas × R$ ${registro.valorHora.toFixed(2)} (${registro.percentual}%)
-                    </div>
-                    <div style="font-size: 12px; color: #888;">
-                        Salário base: R$ ${registro.salario.toFixed(2)}
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // ℹ️ FUNÇÃO: Mostrar resumo
-        function mostrarResumo() {
-            mostrarTela('resumoScreen');
-            const container = document.getElementById('resumoContainer');
-            
-            const historicoUsuario = historicoHorasExtras[funcionarioLogado.senha] || [];
-            const totalCalculos = historicoUsuario.length;
-            const totalRecebido = historicoUsuario.reduce((sum, item) => sum + item.total, 0);
-
-            container.innerHTML = `
-                <h4 style="color: #58595B; margin-bottom: 20px;">Resumo de ${funcionarioLogado.nome}</h4>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
-                    <div style="text-align: center; padding: 15px; background: #E3F2FD; border-radius: 8px;">
-                        <div style="font-size: 24px; font-weight: bold; color: #1976D2;">${totalCalculos}</div>
-                        <div style="font-size: 14px; color: #666;">Cálculos Realizados</div>
-                    </div>
-                    <div style="text-align: center; padding: 15px; background: #E8F5E9; border-radius: 8px;">
-                        <div style="font-size: 24px; font-weight: bold; color: #2E7D32;">R$ ${totalRecebido.toFixed(2)}</div>
-                        <div style="font-size: 14px; color: #666;">Total em Horas Extras</div>
-                    </div>
-                </div>
-                <div style="text-align: center; padding: 15px; background: #FFF3E0; border-radius: 8px; margin-top: 15px;">
-                    <div style="font-size: 18px; font-weight: bold; color: #FF6B35;">Salário Base</div>
-                    <div style="font-size: 24px; font-weight: bold; color: #58595B;">R$ ${funcionarioLogado.salario.toFixed(2)}</div>
-                    <div style="font-size: 14px; color: #666;">Valor da Hora: R$ ${(funcionarioLogado.salario / 220).toFixed(2)}</div>
-                </div>
-                ${totalCalculos > 0 ? `
-                    <div style="margin-top: 20px; padding: 15px; background: #F3E5F5; border-radius: 8px;">
-                        <h5 style="color: #9C27B0; margin-bottom: 10px;">Último Cálculo</h5>
-                        <div>Data: ${historicoUsuario[0].data}</div>
-                        <div>Valor: R$ ${historicoUsuario[0].total.toFixed(2)}</div>
-                        <div>Horas: ${historicoUsuario[0].horas}</div>
-                    </div>
-                ` : ''}
-            `;
-        }
-
-        // 🧭 FUNÇÃO: Mostrar comparação de preços
-        function mostrarComparacaoPrecos() {
-            if (!funcionarioLogado.acessoAnuncios) {
-                alert('❌ Acesso não autorizado!');
-                return;
-            }
-            mostrarTela('comparacaoScreen');
-            carregarProdutosInternos();
-        }
-
-        // 📊 FUNÇÃO: Carregar produtos do sistema interno
-        function carregarProdutosInternos() {
-            const statusDot = document.getElementById('statusDot');
-            const statusText = document.getElementById('statusText');
-            const container = document.getElementById('comparacaoContainer');
-            const contador = document.getElementById('contadorProdutos');
-
-            statusDot.className = 'status-dot loading';
-            statusText.textContent = 'Carregando produtos...';
-
-            setTimeout(() => {
-                statusDot.className = 'status-dot';
-                
-                if (todosProdutos.length > 0) {
-                    const produtosComPrecoML = todosProdutos.filter(p => p.precoML > 0).length;
-                    const produtosComPrecoShopee = todosProdutos.filter(p => p.precoShopee > 0).length;
-                    
-                    statusText.textContent = `✅ ${todosProdutos.length} produtos carregados`;
-                    contador.textContent = `📊 ${todosProdutos.length} produtos | ML: ${produtosComPrecoML} | Shopee: ${produtosComPrecoShopee}`;
-                    
-                    exibirComparacaoPrecos();
-                    
-                } else {
-                    statusText.textContent = 'ℹ️ Nenhum produto cadastrado';
-                    container.innerHTML = `
-                        <div class="info-card">
-                            <p>Nenhum produto cadastrado ainda.</p>
-                            <p><small>Clique em "Cadastrar Produto" para adicionar produtos ao sistema.</small></p>
-                        </div>
-                    `;
-                    contador.textContent = '📊 Nenhum produto cadastrado';
-                }
-            }, 800);
-        }
-
-        // 📈 FUNÇÃO: Exibir comparação de preços
-        function exibirComparacaoPrecos() {
-            const container = document.getElementById('comparacaoContainer');
-            
-            if (todosProdutos.length === 0) {
-                container.innerHTML = '<div class="info-card"><p>Nenhum produto cadastrado.</p></div>';
-                return;
-            }
-
-            container.innerHTML = todosProdutos.map(produto => {
-                const temML = produto.precoML > 0;
-                const temShopee = produto.precoShopee > 0;
-                const temDescontoML = produto.descontoML > 0;
-                const temPromocao = produto.promocaoNome;
-                const diferenca = produto.precoShopee - produto.precoML;
-                
-                return `
-                    <div class="produto-card">
-                        <div class="produto-header">
-                            <div class="produto-titulo">${produto.nome}</div>
-                            <div class="produto-sku">${produto.sku}</div>
-                        </div>
-                        
-                        <div class="precos-comparacao">
-                            <div class="preco-plataforma preco-ml">
-                                <div class="plataforma-nome">🛒 Mercado Livre</div>
-                                ${temML ? `
-                                    ${temDescontoML ? `
-                                        <div class="valor-antigo">De: R$ ${produto.precoOriginalML.toFixed(2)}</div>
-                                    ` : ''}
-                                    <div class="preco-valor">R$ ${produto.precoML.toFixed(2)}</div>
-                                    ${temDescontoML ? `
-                                        <div class="porcentagem-desconto">${produto.descontoML}% OFF</div>
-                                    ` : ''}
-                                    ${temPromocao ? `
-                                        <div class="promocao-nome">${produto.promocaoNome}</div>
-                                    ` : ''}
-                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
-                                    ${produto.mlb ? `<div style="font-size: 12px; color: #666;">MLB: ${produto.mlb}</div>` : ''}
-                                    ${produto.ultimaAtualizacaoML ? `
-                                        <div class="ultima-atualizacao">Atualizado: ${produto.ultimaAtualizacaoML}</div>
-                                    ` : ''}
-                                    ${produto.estrategiaML ? `<div style="font-size: 10px; color: #666;">Método: ${produto.estrategiaML}</div>` : ''}
-                                    ${diferenca < 0 ? `<div class="diferenca diferenca-positiva">+R$ ${Math.abs(diferenca).toFixed(2)} mais barato</div>` : ''}
-                                ` : `
-                                    <div style="color: #888; padding: 10px;">
-                                        ${produto.mlb ? `
-                                            <div>MLB: ${produto.mlb}</div>
-                                            <button class="btn btn-buscar" onclick="buscarPrecoMLIndividual('${produto.id}')">
-                                                🔍 Buscar Preço REAL
-                                            </button>
-                                        ` : 'MLB não informado'}
-                                    </div>
-                                `}
-                            </div>
-                            
-                            <div class="preco-plataforma preco-shopee">
-                                <div class="plataforma-nome">🛍️ Shopee</div>
-                                ${temShopee ? `
-                                    <div class="preco-valor">R$ ${produto.precoShopee.toFixed(2)}</div>
-                                    <div class="status-produto status-${produto.status}">${produto.status}</div>
-                                    ${produto.urlShopee ? `<div class="url-info">URL: ${produto.urlShopee.substring(0, 30)}...</div>` : ''}
-                                    ${produto.ultimaAtualizacaoShopee ? `
-                                        <div class="ultima-atualizacao">Atualizado: ${produto.ultimaAtualizacaoShopee}</div>
-                                    ` : ''}
-                                    ${diferenca > 0 ? `<div class="diferenca diferenca-positiva">+R$ ${diferenca.toFixed(2)} mais barato</div>` : ''}
-                                ` : `
-                                    <div style="color: #888; padding: 10px;">
-                                        ${produto.urlShopee ? `
-                                            <div>URL cadastrada</div>
-                                            <button class="btn btn-buscar" onclick="buscarPrecoShopeeIndividual('${produto.id}')">
-                                                🔍 Buscar Preço
-                                            </button>
-                                        ` : 'URL não informada'}
-                                    </div>
-                                `}
-                            </div>
-                        </div>
-                        
-                        ${temML && temShopee ? `
-                            <div style="text-align: center; margin-top: 10px; font-size: 12px; color: #666;">
-                                💰 Diferença: R$ ${Math.abs(diferenca).toFixed(2)} | 
-                                ${diferenca < 0 ? '🛒 ML mais barato' : diferenca > 0 ? '🛍️ Shopee mais barato' : '⚖️ Mesmo preço'}
-                            </div>
-                        ` : ''}
-                    </div>
-                `;
-            }).join('');
-        }
-
-        // 🔍 FUNÇÃO: Buscar preço do Mercado Livre CORRIGIDA
-        async function buscarPrecoMercadoLivreAPI(mlb) {
-            // Limpar e formatar MLB
-            mlb = mlb.trim().replace(/[^a-zA-Z0-9]/g, '');
-            
-            if (!mlb.startsWith('MLB')) {
-                mlb = 'MLB' + mlb;
-            }
-
-            addDebugInfo(`🔍 Buscando MLB: ${mlb}`);
-
-            try {
-                // ESTRATÉGIA 1: API Oficial com Access Token
-                addDebugInfo('🎯 Tentando API Oficial...');
-                const response = await fetch(`https://api.mercadolibre.com/items/${mlb}`, {
-                    headers: {
-                        'Authorization': `Bearer ${ML_CONFIG.accessToken}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                
-                addDebugInfo(`📡 Status: ${response.status}`);
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    addDebugInfo('✅ Dados recebidos da API oficial');
-                    
-                    let precoPromocional = data.price;
-                    let precoOriginal = data.original_price || data.price;
-                    let desconto = 0;
-                    let promocaoNome = null;
-                    
-                    // Calcular desconto
-                    if (precoOriginal && precoOriginal > precoPromocional) {
-                        desconto = Math.round(((precoOriginal - precoPromocional) / precoOriginal) * 100);
-                    }
-                    
-                    // Buscar informações de promoção
-                    if (data.sale_terms && Array.isArray(data.sale_terms)) {
-                        const saleTerm = data.sale_terms.find(term => term.id === 'SALE');
-                        if (saleTerm) {
-                            promocaoNome = saleTerm.value_name;
-                        }
-                    }
-                    
-                    addDebugInfo(`💰 Preço: R$ ${precoPromocional} (${desconto}% off)`);
-                    
-                    return {
-                        precoPromocional: precoPromocional,
-                        precoOriginal: precoOriginal,
-                        desconto: desconto,
-                        promocaoNome: promocaoNome,
-                        estrategia: 'API Oficial'
-                    };
-                } else {
-                    const errorText = await response.text();
-                    addDebugInfo(`❌ API oficial falhou: ${response.status} - ${errorText}`);
-                    
-                    // ESTRATÉGIA 2: Tentar sem autenticação
-                    addDebugInfo('🎯 Tentando API pública...');
-                    const publicResponse = await fetch(`https://api.mercadolibre.com/items/${mlb}`);
-                    
-                    if (publicResponse.ok) {
-                        const publicData = await publicResponse.json();
-                        addDebugInfo('✅ Dados da API pública');
-                        
-                        return {
-                            precoPromocional: publicData.price,
-                            precoOriginal: publicData.original_price || publicData.price,
-                            desconto: 0,
-                            promocaoNome: "Preço Público",
-                            estrategia: 'API Pública'
-                        };
-                    } else {
-                        addDebugInfo(`❌ API pública também falhou: ${publicResponse.status}`);
-                        throw new Error(`Não foi possível obter preço (${response.status})`);
-                    }
-                }
-            } catch (error) {
-                addDebugInfo(`💥 Erro geral: ${error.message}`);
-                throw error;
-            }
-        }
-
-        // 🛍️ FUNÇÃO: Buscar preço da Shopee (simulação)
-        async function buscarPrecoShopeeReal(urlShopee) {
-            addDebugInfo(`🛍️ Buscando Shopee: ${urlShopee}`);
-            
-            try {
-                // Simulação - em produção implementar scraping real
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                const preco = Math.random() * 500 + 50;
-                addDebugInfo(`✅ Preço Shopee simulado: R$ ${preco.toFixed(2)}`);
-                
-                return parseFloat(preco.toFixed(2));
-                
-            } catch (error) {
-                addDebugInfo(`❌ Erro Shopee: ${error.message}`);
-                return null;
-            }
-        }
-
-        // 🔄 FUNÇÃO: Atualizar preços automaticamente
-        async function atualizarPrecosAutomaticamente() {
-            const statusDot = document.getElementById('statusDot');
-            const statusText = document.getElementById('statusText');
-            const scrapingDiv = document.getElementById('scrapingStatus');
-            const scrapingText = document.getElementById('scrapingText');
-            
-            statusDot.className = 'status-dot loading';
-            statusText.textContent = 'Iniciando busca de preços REAIS...';
-            scrapingDiv.style.display = 'block';
-            scrapingText.textContent = 'Conectando com APIs...';
-
-            addDebugInfo('🚀 INICIANDO BUSCA DE PREÇOS');
-
-            try {
-                let produtosAtualizados = 0;
-                let produtosComErro = 0;
-
-                for (let i = 0; i < todosProdutos.length; i++) {
-                    const produto = todosProdutos[i];
-                    
-                    statusText.textContent = `Buscando ${i + 1}/${todosProdutos.length}`;
-                    scrapingText.textContent = `Processando: ${produto.nome}`;
-                    
-                    addDebugInfo(`📦 Processando: ${produto.nome}`);
-
-                    let precoAtualizado = false;
-
-                    // Buscar preço do Mercado Livre
-                    if (produto.mlb && produto.mlb.trim() !== '') {
-                        try {
-                            const resultadoML = await buscarPrecoMercadoLivreAPI(produto.mlb);
-                            if (resultadoML && resultadoML.precoPromocional > 0) {
-                                produto.precoML = resultadoML.precoPromocional;
-                                produto.precoOriginalML = resultadoML.precoOriginal;
-                                produto.descontoML = resultadoML.desconto;
-                                produto.promocaoNome = resultadoML.promocaoNome;
-                                produto.ultimaAtualizacaoML = new Date().toLocaleString('pt-BR');
-                                produto.estrategiaML = resultadoML.estrategia;
-                                precoAtualizado = true;
-                                produtosAtualizados++;
-                                
-                                addDebugInfo(`✅ ML atualizado: R$ ${resultadoML.precoPromocional}`);
-                            }
-                        } catch (error) {
-                            addDebugInfo(`❌ Erro ML: ${error.message}`);
-                            produtosComErro++;
-                        }
-                    }
-
-                    // Buscar preço da Shopee
-                    if (produto.urlShopee && produto.urlShopee.trim() !== '') {
-                        try {
-                            const precoShopee = await buscarPrecoShopeeReal(produto.urlShopee);
-                            if (precoShopee && precoShopee > 0) {
-                                produto.precoShopee = precoShopee;
-                                produto.ultimaAtualizacaoShopee = new Date().toLocaleString('pt-BR');
-                                precoAtualizado = true;
-                                produtosAtualizados++;
-                                addDebugInfo(`✅ Shopee atualizado: R$ ${precoShopee}`);
-                            }
-                        } catch (error) {
-                            addDebugInfo(`❌ Erro Shopee: ${error.message}`);
-                            produtosComErro++;
-                        }
-                    }
-
-                    // Delay entre requisições
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                }
-
-                localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-                
-                statusDot.className = 'status-dot';
-                scrapingDiv.style.display = 'none';
-                
-                if (produtosAtualizados > 0) {
-                    statusText.textContent = `✅ ${produtosAtualizados} preços atualizados`;
-                    if (produtosComErro > 0) {
-                        statusText.textContent += ` | ${produtosComErro} erros`;
-                    }
-                } else {
-                    statusText.textContent = `❌ Nenhum preço encontrado`;
-                }
-                
-                addDebugInfo(`🏁 BUSCA FINALIZADA: ${produtosAtualizados} atualizados`);
-                
-                carregarProdutosInternos();
-                
-            } catch (error) {
-                statusDot.className = 'status-dot error';
-                statusText.textContent = '❌ Erro na atualização';
-                scrapingDiv.style.display = 'none';
-                addDebugInfo(`💥 ERRO GERAL: ${error.message}`);
-            }
-        }
-
-        // 🔍 FUNÇÃO: Buscar preço individual ML
-        async function buscarPrecoMLIndividual(produtoId) {
-            const produto = todosProdutos.find(p => p.id == produtoId);
-            if (!produto || !produto.mlb) return;
-
-            const statusText = document.getElementById('statusText');
-            statusText.textContent = `Buscando preço ML: ${produto.nome}`;
-            
-            try {
-                const resultadoML = await buscarPrecoMercadoLivreAPI(produto.mlb);
-                if (resultadoML && resultadoML.precoPromocional > 0) {
-                    produto.precoML = resultadoML.precoPromocional;
-                    produto.precoOriginalML = resultadoML.precoOriginal;
-                    produto.descontoML = resultadoML.desconto;
-                    produto.promocaoNome = resultadoML.promocaoNome;
-                    produto.ultimaAtualizacaoML = new Date().toLocaleString('pt-BR');
-                    produto.estrategiaML = resultadoML.estrategia;
-                    
-                    localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-                    carregarProdutosInternos();
-                    
-                    statusText.textContent = `✅ Preço ML atualizado: ${produto.nome}`;
-                }
-            } catch (error) {
-                statusText.textContent = `❌ Erro ao buscar preço ML: ${produto.nome}`;
-            }
-        }
-
-        // 🔍 FUNÇÃO: Buscar preço individual Shopee
-        async function buscarPrecoShopeeIndividual(produtoId) {
-            const produto = todosProdutos.find(p => p.id == produtoId);
-            if (!produto || !produto.urlShopee) return;
-
-            const statusText = document.getElementById('statusText');
-            statusText.textContent = `Buscando preço Shopee: ${produto.nome}`;
-            
-            try {
-                const precoShopee = await buscarPrecoShopeeReal(produto.urlShopee);
-                if (precoShopee && precoShopee > 0) {
-                    produto.precoShopee = precoShopee;
-                    produto.ultimaAtualizacaoShopee = new Date().toLocaleString('pt-BR');
-                    
-                    localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-                    carregarProdutosInternos();
-                    
-                    statusText.textContent = `✅ Preço Shopee atualizado: ${produto.nome}`;
-                }
-            } catch (error) {
-                statusText.textContent = `❌ Erro ao buscar preço Shopee: ${produto.nome}`;
-            }
-        }
-
-        // 📋 FUNÇÃO: Toggle da lista rápida de produtos
-        function toggleListaProdutos() {
-            const listaDiv = document.getElementById('listaRapidaProdutos');
-            const btnLista = document.getElementById('btnListaProdutos');
-            
-            if (listaDiv.style.display === 'none') {
-                carregarListaRapidaProdutos();
-                listaDiv.style.display = 'block';
-                btnLista.innerHTML = '📋 Ocultar Lista';
-                btnLista.style.background = 'linear-gradient(135deg, #58595B 0%, #808080 100%)';
-            } else {
-                listaDiv.style.display = 'none';
-                btnLista.innerHTML = '📋 Lista de Produtos';
-                btnLista.style.background = 'linear-gradient(135deg, #FF6B35 0%, #F7931E 100%)';
-            }
-        }
-
-        // 📦 FUNÇÃO: Carregar lista rápida de produtos
-        function carregarListaRapidaProdutos() {
-            const container = document.getElementById('conteudoListaRapida');
-            
-            if (todosProdutos.length === 0) {
-                container.innerHTML = '<div class="info-card"><p>Nenhum produto cadastrado ainda.</p></div>';
-                return;
-            }
-
-            container.innerHTML = todosProdutos.map(produto => `
-                <div class="produto-item-rapido">
-                    <div class="produto-info-rapido">
-                        <div class="produto-nome-rapido">${produto.nome}</div>
-                        <div class="produto-sku-rapido">SKU: ${produto.sku} | MLB: ${produto.mlb || 'Não informado'}</div>
-                        <div class="preco-info">
-                            <span class="${produto.precoML > 0 ? 'preco-carregado' : 'preco-pendente'}">
-                                ML: ${produto.precoML > 0 ? `R$ ${produto.precoML.toFixed(2)}` : 'Não carregado'}
-                                ${produto.descontoML ? `<span class="desconto-badge">${produto.descontoML}% OFF</span>` : ''}
-                                ${produto.estrategiaML ? `<small>(${produto.estrategiaML})</small>` : ''}
-                            </span> | 
-                            <span class="${produto.precoShopee > 0 ? 'preco-carregado' : 'preco-pendente'}">
-                                Shopee: ${produto.precoShopee > 0 ? `R$ ${produto.precoShopee.toFixed(2)}` : 'Não carregado'}
-                            </span>
-                        </div>
-                    </div>
-                    <div class="produto-acoes-rapido">
-                        <button class="btn btn-pequeno" onclick="editarProduto(${produto.id})" title="Editar produto">
-                            ✏️
-                        </button>
-                        <button class="btn btn-pequeno" onclick="excluirProduto(${produto.id})" title="Excluir produto">
-                            🗑️
-                        </button>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // ➕ FUNÇÃO: Cadastrar produto
-        function cadastrarProduto() {
-            const nome = document.getElementById('nomeProduto').value.trim();
-            const sku = document.getElementById('skuProduto').value.trim();
-            const mlb = document.getElementById('mlbProduto').value.trim();
-            const urlShopee = document.getElementById('urlShopee').value.trim();
-            const status = document.getElementById('statusProduto').value;
-
-            if (!nome) {
-                alert('❌ Por favor, informe o nome do produto!');
-                return;
-            }
-
-            if (!sku) {
-                alert('❌ Por favor, informe o SKU do produto!');
-                return;
-            }
-
-            let produtoAtualizado;
-
-            if (produtoEditandoId) {
-                produtoAtualizado = {
-                    ...todosProdutos.find(p => p.id === produtoEditandoId),
-                    nome: nome,
-                    sku: sku,
-                    mlb: mlb,
-                    urlShopee: urlShopee,
-                    status: status
-                };
-
-                todosProdutos = todosProdutos.map(p => p.id === produtoEditandoId ? produtoAtualizado : p);
-                
-            } else {
-                const produtoExistente = todosProdutos.find(p => p.sku === sku);
-                if (produtoExistente) {
-                    alert('❌ Já existe um produto com este SKU!');
-                    return;
-                }
-
-                produtoAtualizado = {
-                    id: Date.now(),
-                    nome: nome,
-                    sku: sku,
-                    mlb: mlb,
-                    precoML: 0,
-                    precoOriginalML: 0,
-                    descontoML: 0,
-                    promocaoNome: null,
-                    urlShopee: urlShopee,
-                    precoShopee: 0,
-                    status: status,
-                    dataCadastro: new Date().toLocaleString('pt-BR')
-                };
-
-                todosProdutos.push(produtoAtualizado);
-            }
-
-            localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-
-            document.getElementById('nomeProduto').value = '';
-            document.getElementById('skuProduto').value = '';
-            document.getElementById('mlbProduto').value = '';
-            document.getElementById('urlShopee').value = '';
-            document.getElementById('statusProduto').value = 'ativo';
-            
-            produtoEditandoId = null;
-
-            alert(`✅ Produto ${produtoEditandoId ? 'atualizado' : 'cadastrado'} com sucesso!`);
-            
-            atualizarListaProdutosCadastrados();
-            
-            if (document.getElementById('listaRapidaProdutos').style.display === 'block') {
-                carregarListaRapidaProdutos();
-            }
-            
-            mostrarTela('comparacaoScreen');
-        }
-
-        // 📋 FUNÇÃO: Atualizar lista de produtos cadastrados
-        function atualizarListaProdutosCadastrados() {
-            const container = document.getElementById('produtosCadastradosContainer');
-            
-            if (todosProdutos.length === 0) {
-                container.innerHTML = '<div class="info-card"><p>Nenhum produto cadastrado ainda.</p></div>';
-                return;
-            }
-
-            container.innerHTML = todosProdutos.map(produto => `
-                <div class="produto-card" style="margin-bottom: 10px;">
-                    <div class="produto-header">
-                        <div class="produto-titulo">${produto.nome}</div>
-                        <div class="produto-sku">${produto.sku}</div>
-                    </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 14px;">
-                        <div>
-                            <strong>🛒 Mercado Livre:</strong><br>
-                            ${produto.mlb ? `MLB: ${produto.mlb}<br>` : ''}
-                            ${produto.precoML > 0 ? `
-                                ${produto.descontoML > 0 ? `
-                                    <span class="valor-antigo">De: R$ ${produto.precoOriginalML.toFixed(2)}</span><br>
-                                    <strong>Por: R$ ${produto.precoML.toFixed(2)}</strong>
-                                    <span class="desconto-badge">${produto.descontoML}% OFF</span>
-                                ` : `R$ ${produto.precoML.toFixed(2)}`}
-                                ${produto.promocaoNome ? `<br><span class="promocao-nome">${produto.promocaoNome}</span>` : ''}
-                                ${produto.ultimaAtualizacaoML ? `<br><small>Atualizado: ${produto.ultimaAtualizacaoML}</small>` : ''}
-                                ${produto.estrategiaML ? `<br><small>Método: ${produto.estrategiaML}</small>` : ''}
-                            ` : 'Preço não carregado'}
-                        </div>
-                        <div>
-                            <strong>🛍️ Shopee:</strong><br>
-                            ${produto.urlShopee ? `URL: ${produto.urlShopee.substring(0, 30)}...<br>` : ''}
-                            ${produto.precoShopee > 0 ? `
-                                R$ ${produto.precoShopee.toFixed(2)}
-                                ${produto.ultimaAtualizacaoShopee ? `<br><small>Atualizado: ${produto.ultimaAtualizacaoShopee}</small>` : ''}
-                            ` : 'Preço não carregado'}
-                        </div>
-                    </div>
-                    <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
-                        <span class="status-produto status-${produto.status}">${produto.status}</span>
-                        <span style="font-size: 12px; color: #666;">Cadastrado em: ${produto.dataCadastro}</span>
-                        <div>
-                            <button class="btn" onclick="editarProduto(${produto.id})" style="margin-right: 5px; padding: 8px 12px; font-size: 12px;">
-                                ✏️ Editar
-                            </button>
-                            <button class="btn" onclick="excluirProduto(${produto.id})" style="padding: 8px 12px; font-size: 12px; background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">
-                                🗑️ Excluir
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        // ✏️ FUNÇÃO: Editar produto
-        function editarProduto(id) {
-            const produto = todosProdutos.find(p => p.id === id);
-            if (!produto) return;
-
-            produtoEditandoId = produto.id;
-            
-            document.getElementById('nomeProduto').value = produto.nome;
-            document.getElementById('skuProduto').value = produto.sku;
-            document.getElementById('mlbProduto').value = produto.mlb || '';
-            document.getElementById('urlShopee').value = produto.urlShopee || '';
-            document.getElementById('statusProduto').value = produto.status;
-
-            mostrarTela('cadastroScreen');
-            window.scrollTo(0, 0);
-        }
-
-        // 🗑️ FUNÇÃO: Excluir produto
-        function excluirProduto(id) {
-            if (confirm('Tem certeza que deseja excluir este produto?')) {
-                todosProdutos = todosProdutos.filter(produto => produto.id !== id);
-                localStorage.setItem('produtosCadastrados', JSON.stringify(todosProdutos));
-                atualizarListaProdutosCadastrados();
-                carregarProdutosInternos();
-                
-                if (document.getElementById('listaRapidaProdutos').style.display === 'block') {
-                    carregarListaRapidaProdutos();
-                }
-                
-                alert('✅ Produto excluído com sucesso!');
-            }
-        }
-
-        // 📊 FUNÇÃO: Exportar para Excel
-        function exportarParaExcel() {
-            if (todosProdutos.length === 0) {
-                alert('❌ Nenhum produto cadastrado para exportar!');
-                return;
-            }
-
-            let csv = 'Nome do Produto,SKU,MLB,Preço Original ML,Preço Promocional ML,Desconto ML,Nome Promoção,Método Busca,URL Shopee,Preço Shopee,Status,Data Cadastro,Última Atualização ML,Última Atualização Shopee,Diferença,Melhor Preço\n';
-            
-            todosProdutos.forEach(produto => {
-                const diferenca = produto.precoShopee - produto.precoML;
-                const melhorPreco = diferenca < 0 ? 'Mercado Livre' : diferenca > 0 ? 'Shopee' : 'Empate';
-                
-                const linha = [
-                    `"${produto.nome}"`,
-                    `"${produto.sku}"`,
-                    `"${produto.mlb || ''}"`,
-                    produto.precoOriginalML > 0 ? produto.precoOriginalML.toFixed(2) : '0.00',
-                    produto.precoML > 0 ? produto.precoML.toFixed(2) : '0.00',
-                    produto.descontoML > 0 ? `${produto.descontoML}%` : '0%',
-                    `"${produto.promocaoNome || ''}"`,
-                    `"${produto.estrategiaML || 'N/A'}"`,
-                    `"${produto.urlShopee || ''}"`,
-                    produto.precoShopee > 0 ? produto.precoShopee.toFixed(2) : '0.00',
-                    `"${produto.status}"`,
-                    `"${produto.dataCadastro}"`,
-                    `"${produto.ultimaAtualizacaoML || ''}"`,
-                    `"${produto.ultimaAtualizacaoShopee || ''}"`,
-                    diferenca.toFixed(2),
-                    `"${melhorPreco}"`
-                ].join(',');
-                
-                csv += linha + '\n';
-            });
-
-            const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            
-            link.setAttribute('href', url);
-            link.setAttribute('download', `produtos_wheel_tech_${new Date().toISOString().split('T')[0]}.csv`);
-            link.style.visibility = 'hidden';
-            
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            alert(`✅ ${todosProdutos.length} produtos exportados com sucesso!`);
-        }
-
-        // 🧭 FUNÇÃO: Navegação entre telas
-        function mostrarTela(telaId) {
-            document.querySelectorAll('.screen').forEach(screen => {
-                screen.classList.remove('active');
-            });
-            document.getElementById(telaId).classList.add('active');
-            
-            if (telaId === 'calcularScreen' && funcionarioLogado) {
-                const valorHora = funcionarioLogado.salario / 220;
-                document.getElementById('salarioBase').textContent = funcionarioLogado.salario.toFixed(2);
-                document.getElementById('valorHoraAuto').textContent = valorHora.toFixed(2);
-            }
-        }
-
-        // 🚪 FUNÇÃO: Sair do sistema
-        function sair() {
-            funcionarioLogado = null;
-            departamentoSelecionado = null;
-            mostrarTela('departamentoScreen');
-        }
-
-        // Event Listeners
-        document.getElementById('senha').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') fazerLogin();
+            ordensServico.push(os);
+            salvarDados();
+            atualizarTabela();
+            limparFormulario();
+            alert('Ordem de Serviço salva com sucesso!');
         });
 
-        // Inicialização
-        console.log('🚀 Sistema Wheel Tech - API Corrigida!');
-        console.log('📊 Produtos cadastrados:', todosProdutos.length);
-        
-        if (todosProdutos.length > 0) {
-            document.getElementById('btnExportarExcel').style.display = 'block';
+        // Função para salvar dados no localStorage
+        function salvarDados() {
+            localStorage.setItem('ordensServico', JSON.stringify(ordensServico));
+            localStorage.setItem('contadorOS', contadorOS.toString());
         }
 
-        addDebugInfo('🔧 Sistema inicializado com sucesso');
+        // Função para atualizar a tabela
+        function atualizarTabela() {
+            const corpoTabela = document.getElementById('corpoTabela');
+            corpoTabela.innerHTML = '';
+
+            ordensServico.forEach(os => {
+                const row = document.createElement('tr');
+                
+                let statusClass = '';
+                let statusText = '';
+                
+                switch(os.status) {
+                    case 'pendente':
+                        statusClass = 'status-pendente';
+                        statusText = 'Pendente';
+                        break;
+                    case 'andamento':
+                        statusClass = 'status-andamento';
+                        statusText = 'Em Andamento';
+                        break;
+                    case 'concluido':
+                        statusClass = 'status-concluido';
+                        statusText = 'Concluído';
+                        break;
+                }
+
+                row.innerHTML = `
+                    <td>#${os.id}</td>
+                    <td>${os.cliente}</td>
+                    <td>${os.equipamento}</td>
+                    <td>${os.data_abertura}</td>
+                    <td><span class="${statusClass}">${statusText}</span></td>
+                    <td>${os.tecnico}</td>
+                    <td>
+                        <button class="btn" onclick="editarOS(${os.id})">Editar</button>
+                        <button class="btn btn-danger" onclick="excluirOS(${os.id})">Excluir</button>
+                    </td>
+                `;
+                
+                corpoTabela.appendChild(row);
+            });
+        }
+
+        // Função para limpar formulário
+        function limparFormulario() {
+            document.getElementById('osForm').reset();
+        }
+
+        // Função para excluir ordem de serviço
+        function excluirOS(id) {
+            if (confirm('Tem certeza que deseja excluir esta ordem de serviço?')) {
+                ordensServico = ordensServico.filter(os => os.id !== id);
+                salvarDados();
+                atualizarTabela();
+            }
+        }
+
+        // Função para editar ordem de serviço (simplificada)
+        function editarOS(id) {
+            const os = ordensServico.find(os => os.id === id);
+            if (os) {
+                // Preencher formulário com dados da OS
+                document.getElementById('cliente').value = os.cliente;
+                document.getElementById('telefone').value = os.telefone;
+                document.getElementById('email').value = os.email;
+                document.getElementById('equipamento').value = os.equipamento;
+                document.getElementById('marca').value = os.marca;
+                document.getElementById('numero_serie').value = os.numero_serie;
+                document.getElementById('defeito').value = os.defeito;
+                document.getElementById('observacoes').value = os.observacoes;
+                document.getElementById('tecnico').value = os.tecnico;
+                document.getElementById('prioridade').value = os.prioridade;
+
+                // Remover a OS original
+                ordensServico = ordensServico.filter(item => item.id !== id);
+                salvarDados();
+                atualizarTabela();
+            }
+        }
+
+        // Função para filtrar ordens de serviço
+        function filtrarOS() {
+            const termo = document.getElementById('search').value.toLowerCase();
+            const corpoTabela = document.getElementById('corpoTabela');
+            corpoTabela.innerHTML = '';
+
+            const ordensFiltradas = ordensServico.filter(os => 
+                os.cliente.toLowerCase().includes(termo) ||
+                os.equipamento.toLowerCase().includes(termo) ||
+                os.marca.toLowerCase().includes(termo)
+            );
+
+            ordensFiltradas.forEach(os => {
+                const row = document.createElement('tr');
+                
+                let statusClass = '';
+                let statusText = '';
+                
+                switch(os.status) {
+                    case 'pendente':
+                        statusClass = 'status-pendente';
+                        statusText = 'Pendente';
+                        break;
+                    case 'andamento':
+                        statusClass = 'status-andamento';
+                        statusText = 'Em Andamento';
+                        break;
+                    case 'concluido':
+                        statusClass = 'status-concluido';
+                        statusText = 'Concluído';
+                        break;
+                }
+
+                row.innerHTML = `
+                    <td>#${os.id}</td>
+                    <td>${os.cliente}</td>
+                    <td>${os.equipamento}</td>
+                    <td>${os.data_abertura}</td>
+                    <td><span class="${statusClass}">${statusText}</span></td>
+                    <td>${os.tecnico}</td>
+                    <td>
+                        <button class="btn" onclick="editarOS(${os.id})">Editar</button>
+                        <button class="btn btn-danger" onclick="excluirOS(${os.id})">Excluir</button>
+                    </td>
+                `;
+                
+                corpoTabela.appendChild(row);
+            });
+        }
+
+        // Função para limpar busca
+        function limparBusca() {
+            document.getElementById('search').value = '';
+            atualizarTabela();
+        }
+
+        // Inicializar tabela ao carregar a página
+        document.addEventListener('DOMContentLoaded', atualizarTabela);
     </script>
 </body>
 </html>
