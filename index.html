@@ -553,15 +553,6 @@
             <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 25px;">
                 <i class="fas fa-sign-in-alt"></i> Entrar no Sistema
             </button>
-            
-            <div style="margin-top: 25px; padding: 15px; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 10px; border-left: 4px solid var(--info);">
-                <h4 style="color: var(--primary); margin-bottom: 10px;">Usuários de Teste:</h4>
-                <p style="font-size: 12px; color: var(--dark); line-height: 1.4;">
-                    <strong>Elaine:</strong> elaine / elaine123<br>
-                    <strong>Arthur:</strong> arthur / arthur123<br>
-                    <strong>Laura:</strong> laura / laura123
-                </p>
-            </div>
         </form>
     </div>
 
@@ -671,7 +662,7 @@
                         <button type="submit" class="btn btn-success">
                             <i class="fas fa-save"></i> Salvar OS
                         </button>
-                        <button type="button" class="btn btn-primary" onclick="printOS()">
+                        <button type="button" class="btn btn-primary" onclick="printCurrentOS()">
                             <i class="fas fa-print"></i> Imprimir OS
                         </button>
                         <button type="reset" class="btn btn-warning">
@@ -729,6 +720,7 @@
         let osList = JSON.parse(localStorage.getItem('osList')) || [];
         let osCounter = parseInt(localStorage.getItem('osCounter')) || 1;
         let currentFilter = 'all';
+        let currentEditingOS = null;
 
         // Elementos DOM
         const loginScreen = document.getElementById('loginScreen');
@@ -801,15 +793,15 @@
                 .filter(sku => sku !== '');
             
             const os = {
-                id: osCounter++,
-                code: generateOSCode(),
+                id: currentEditingOS ? currentEditingOS.id : osCounter++,
+                code: currentEditingOS ? currentEditingOS.code : generateOSCode(),
                 productName: document.getElementById('productName').value,
                 createdBy: currentUser.name,
                 urgency: document.getElementById('urgency').value,
-                creationDate: new Date().toLocaleDateString('pt-BR'),
-                conclusionDate: null,
-                elaineCompletion: null,
-                salesCompletion: null,
+                creationDate: currentEditingOS ? currentEditingOS.creationDate : new Date().toLocaleDateString('pt-BR'),
+                conclusionDate: currentEditingOS ? currentEditingOS.conclusionDate : null,
+                elaineCompletion: currentEditingOS ? currentEditingOS.elaineCompletion : null,
+                salesCompletion: currentEditingOS ? currentEditingOS.salesCompletion : null,
                 photoType: document.getElementById('photoType').value,
                 scalePhoto: document.getElementById('scalePhoto').value,
                 unpackProduct: document.getElementById('unpackProduct').checked,
@@ -818,12 +810,23 @@
                 clip: document.getElementById('clip').value,
                 observations: document.getElementById('observations').value,
                 skus: skus,
-                status: 'pendente',
-                photosCount: null,
-                editsCount: null
+                status: currentEditingOS ? currentEditingOS.status : 'pendente',
+                photosCount: currentEditingOS ? currentEditingOS.photosCount : null,
+                editsCount: currentEditingOS ? currentEditingOS.editsCount : null
             };
             
-            osList.push(os);
+            if (currentEditingOS) {
+                // Atualizar OS existente
+                const index = osList.findIndex(item => item.id === currentEditingOS.id);
+                if (index !== -1) {
+                    osList[index] = os;
+                }
+                currentEditingOS = null;
+            } else {
+                // Nova OS
+                osList.push(os);
+            }
+            
             saveData();
             renderOSTable();
             osForm.reset();
@@ -902,6 +905,9 @@
                             <button class="btn btn-success action-btn" onclick="updateStatus(${os.id}, 'andamento')" title="Iniciar">
                                 <i class="fas fa-play"></i>
                             </button>
+                            <button class="btn btn-info action-btn" onclick="printOS(${os.id})" title="Imprimir">
+                                <i class="fas fa-print"></i>
+                            </button>
                             <button class="btn btn-danger action-btn" onclick="deleteOS(${os.id})" title="Excluir">
                                 <i class="fas fa-trash"></i>
                             </button>
@@ -922,13 +928,19 @@
             const os = osList.find(os => os.id === id);
             if (os) {
                 const skusText = os.skus.length > 0 ? os.skus.join(', ') : 'Nenhum SKU informado';
-                alert(`📋 Detalhes da OS:\n\n🏷️ Código: ${os.code}\n📦 Produto: ${os.productName}\n📊 Status: ${os.status}\n⚠️ Urgência: ${os.urgency}\n📅 Data Criação: ${os.creationDate}\n👤 Criado por: ${os.createdBy}\n📸 Tipo Foto: ${os.photoType}\n⚖️ Foto Balança: ${os.scalePhoto}\n📦 Desembalar: ${os.unpackProduct ? 'Sim' : 'Não'}\n🔄 Devolução: ${os.isReturn ? 'Sim' : 'Não'}\n🏷️ SKUs: ${skusText}\n📝 Observações: ${os.observations || 'Nenhuma'}`);
+                const finalizacaoElaine = os.elaineCompletion ? `Elaine: ${os.elaineCompletion}` : 'Não finalizada por Elaine';
+                const finalizacaoVendas = os.salesCompletion ? `Vendas: ${os.salesCompletion}` : 'Não finalizada por Vendas';
+                const fotosEdicoes = os.photosCount ? `Fotos: ${os.photosCount}, Edições: ${os.editsCount}` : 'Não informado';
+                
+                alert(`📋 Detalhes da OS:\n\n🏷️ Código: ${os.code}\n📦 Produto: ${os.productName}\n📊 Status: ${os.status}\n⚠️ Urgência: ${os.urgency}\n📅 Data Criação: ${os.creationDate}\n👤 Criado por: ${os.createdBy}\n📸 Tipo Foto: ${os.photoType}\n⚖️ Foto Balança: ${os.scalePhoto}\n📦 Desembalar: ${os.unpackProduct ? 'Sim' : 'Não'}\n🔄 Devolução: ${os.isReturn ? 'Sim' : 'Não'}\n🏷️ SKUs: ${skusText}\n📝 Observações: ${os.observations || 'Nenhuma'}\n📊 ${fotosEdicoes}\n✅ ${finalizacaoElaine}\n💰 ${finalizacaoVendas}`);
             }
         }
 
         function editOS(id) {
             const os = osList.find(os => os.id === id);
             if (os) {
+                currentEditingOS = os;
+                
                 // Preencher o formulário com os dados da OS
                 document.getElementById('productName').value = os.productName;
                 document.getElementById('urgency').value = os.urgency;
@@ -957,11 +969,6 @@
                 if (os.skus.length === 0) {
                     addSku();
                 }
-                
-                // Remover a OS original da lista
-                osList = osList.filter(item => item.id !== id);
-                saveData();
-                renderOSTable();
                 
                 // Atualizar o código exibido
                 osCodeDisplay.textContent = `OS: ${os.code}`;
@@ -1002,6 +1009,137 @@
             }
         }
 
+        function printOS(id) {
+            const os = osList.find(os => os.id === id);
+            if (os) {
+                // Criar uma nova janela para impressão
+                const printWindow = window.open('', '_blank');
+                printWindow.document.write(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <title>OS: ${os.code}</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; margin: 20px; }
+                            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
+                            .os-code { font-size: 24px; font-weight: bold; color: #8A2BE2; margin: 10px 0; }
+                            .section { margin-bottom: 20px; }
+                            .section h3 { background: #f0f0f0; padding: 8px; margin: 15px 0 10px 0; }
+                            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+                            .info-item { margin-bottom: 8px; }
+                            .label { font-weight: bold; }
+                            .urgent-alta { color: #FF4757; font-weight: bold; }
+                            .urgent-normal { color: #FFA500; }
+                            .urgent-baixa { color: #00D26A; }
+                            .return-flag { background: #ffeaea; padding: 5px; border-radius: 3px; font-weight: bold; }
+                            @media print { body { margin: 0; } }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="header">
+                            <h1>Ordem de Serviço - Fotografia</h1>
+                            <div class="os-code">${os.code}</div>
+                            <div>Emitida em: ${os.creationDate}</div>
+                        </div>
+                        
+                        <div class="section">
+                            <h3>Informações do Produto</h3>
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <span class="label">Produto:</span> ${os.productName}
+                                </div>
+                                <div class="info-item">
+                                    <span class="label">Criado por:</span> ${os.createdBy}
+                                </div>
+                                <div class="info-item">
+                                    <span class="label">Urgência:</span> 
+                                    <span class="urgent-${os.urgency}">${os.urgency.toUpperCase()}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="label">Status:</span> ${os.status.toUpperCase()}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section">
+                            <h3>Detalhes da Fotografia</h3>
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <span class="label">Tipo de Foto:</span> ${os.photoType === 'studio' ? 'Estúdio' : 'Na Bike'}
+                                </div>
+                                <div class="info-item">
+                                    <span class="label">Foto na Balança:</span> ${os.scalePhoto === 'sim' ? 'Sim' : 'Não'}
+                                </div>
+                                <div class="info-item">
+                                    <span class="label">Desembalar Produto:</span> ${os.unpackProduct ? 'Sim' : 'Não'}
+                                </div>
+                                ${os.isReturn ? '<div class="info-item"><span class="return-flag">🔄 É UMA DEVOLUÇÃO</span></div>' : ''}
+                            </div>
+                        </div>
+                        
+                        ${os.skus.length > 0 ? `
+                        <div class="section">
+                            <h3>SKUs</h3>
+                            <div>${os.skus.join(', ')}</div>
+                        </div>
+                        ` : ''}
+                        
+                        ${os.links ? `
+                        <div class="section">
+                            <h3>Links</h3>
+                            <div>${os.links}</div>
+                        </div>
+                        ` : ''}
+                        
+                        ${os.observations ? `
+                        <div class="section">
+                            <h3>Observações</h3>
+                            <div>${os.observations}</div>
+                        </div>
+                        ` : ''}
+                        
+                        ${os.status === 'finalizado' ? `
+                        <div class="section">
+                            <h3>Finalização</h3>
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <span class="label">Data Conclusão:</span> ${os.conclusionDate}
+                                </div>
+                                <div class="info-item">
+                                    <span class="label">Fotos Tiradas:</span> ${os.photosCount}
+                                </div>
+                                <div class="info-item">
+                                    <span class="label">Edições Feitas:</span> ${os.editsCount}
+                                </div>
+                                ${os.elaineCompletion ? `<div class="info-item"><span class="label">Finalizado por Elaine:</span> ${os.elaineCompletion}</div>` : ''}
+                                ${os.salesCompletion ? `<div class="info-item"><span class="label">Finalizado por Vendas:</span> ${os.salesCompletion}</div>` : ''}
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ccc; text-align: center; font-size: 12px; color: #666;">
+                            Sistema de Ordem de Serviço - Fotografia | ${new Date().toLocaleDateString('pt-BR')}
+                        </div>
+                        
+                        <script>
+                            window.onload = function() {
+                                window.print();
+                                setTimeout(function() {
+                                    window.close();
+                                }, 500);
+                            }
+                        <\/script>
+                    </body>
+                    </html>
+                `);
+                printWindow.document.close();
+            }
+        }
+
+        function printCurrentOS() {
+            alert('📝 Para imprimir uma OS específica, use o botão de impressão na lista de OS já criadas.');
+        }
+
         function deleteOS(id) {
             if (confirm('❓ Tem certeza que deseja excluir esta Ordem de Serviço?')) {
                 osList = osList.filter(os => os.id !== id);
@@ -1009,10 +1147,6 @@
                 renderOSTable();
                 alert('🗑️ OS excluída com sucesso!');
             }
-        }
-
-        function printOS() {
-            window.print();
         }
 
         function saveData() {
