@@ -504,6 +504,72 @@
             animation-delay: -4s;
         }
         
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e9ecef;
+        }
+        
+        .modal-title {
+            color: var(--primary);
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .close-modal {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--danger);
+        }
+        
+        .modal-form-group {
+            margin-bottom: 20px;
+        }
+        
+        .modal-form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--dark);
+        }
+        
+        .modal-form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
         @keyframes float {
             0%, 100% { transform: translateY(0px) rotate(0deg); }
             50% { transform: translateY(-20px) rotate(180deg); }
@@ -534,6 +600,35 @@
     <div class="floating-bg bg-1"></div>
     <div class="floating-bg bg-2"></div>
     <div class="floating-bg bg-3"></div>
+
+    <!-- Modal de Finalização -->
+    <div id="finalizarModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title"><i class="fas fa-flag-checkered"></i> Finalizar Ordem de Serviço</h3>
+                <button class="close-modal" onclick="closeFinalizarModal()">&times;</button>
+            </div>
+            <form id="finalizarForm">
+                <input type="hidden" id="finalizarOSId">
+                <div class="modal-form-group">
+                    <label for="fotosCount"><i class="fas fa-camera"></i> Quantidade de Fotos Tiradas</label>
+                    <input type="number" id="fotosCount" min="1" required placeholder="Digite a quantidade de fotos">
+                </div>
+                <div class="modal-form-group">
+                    <label for="edicoesCount"><i class="fas fa-edit"></i> Quantidade de Edições Feitas</label>
+                    <input type="number" id="edicoesCount" min="0" required placeholder="Digite a quantidade de edições">
+                </div>
+                <div class="btn-group" style="justify-content: flex-end; margin-top: 25px;">
+                    <button type="button" class="btn btn-warning" onclick="closeFinalizarModal()">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-check"></i> Finalizar OS
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Tela de Login -->
     <div id="loginScreen" class="login-container">
@@ -734,6 +829,9 @@
         const isReturnCheckbox = document.getElementById('isReturn');
         const urgencySelect = document.getElementById('urgency');
         const osTableBody = document.getElementById('osTableBody');
+        const finalizarModal = document.getElementById('finalizarModal');
+        const finalizarForm = document.getElementById('finalizarForm');
+        const finalizarOSId = document.getElementById('finalizarOSId');
 
         // Usuários do sistema - Elaine, Arthur e Laura
         const users = [
@@ -747,6 +845,7 @@
         logoutBtn.addEventListener('click', handleLogout);
         osForm.addEventListener('submit', handleOSSubmit);
         isReturnCheckbox.addEventListener('change', handleReturnChange);
+        finalizarForm.addEventListener('submit', handleFinalizarOS);
 
         // Funções de Login
         function handleLogin(e) {
@@ -887,6 +986,22 @@
                     urgencyBadge = '<span class="badge badge-danger">🔴 Alta</span>';
                 }
                 
+                // Botões baseados no status
+                let actionButtons = '';
+                if (os.status === 'pendente') {
+                    actionButtons = `
+                        <button class="btn btn-success action-btn" onclick="updateStatus(${os.id}, 'andamento')" title="Iniciar OS">
+                            <i class="fas fa-play"></i>
+                        </button>
+                    `;
+                } else if (os.status === 'andamento') {
+                    actionButtons = `
+                        <button class="btn btn-info action-btn" onclick="openFinalizarModal(${os.id})" title="Finalizar OS">
+                            <i class="fas fa-flag-checkered"></i>
+                        </button>
+                    `;
+                }
+                
                 row.innerHTML = `
                     <td><strong>${os.code}</strong></td>
                     <td>${os.productName}</td>
@@ -902,10 +1017,8 @@
                             <button class="btn btn-warning action-btn" onclick="editOS(${os.id})" title="Editar">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn btn-success action-btn" onclick="updateStatus(${os.id}, 'andamento')" title="Iniciar">
-                                <i class="fas fa-play"></i>
-                            </button>
-                            <button class="btn btn-info action-btn" onclick="printOS(${os.id})" title="Imprimir">
+                            ${actionButtons}
+                            <button class="btn btn-secondary action-btn" onclick="printOS(${os.id})" title="Imprimir">
                                 <i class="fas fa-print"></i>
                             </button>
                             <button class="btn btn-danger action-btn" onclick="deleteOS(${os.id})" title="Excluir">
@@ -983,29 +1096,51 @@
                 if (status === 'andamento' && os.status === 'pendente') {
                     os.status = 'andamento';
                     alert('🚀 OS iniciada com sucesso!');
-                } else if (status === 'finalizado' && os.status === 'andamento') {
-                    const photosCount = prompt('📸 Quantidade de fotos tiradas:');
-                    const editsCount = prompt('🎨 Quantidade de edições feitas:');
-                    
-                    if (photosCount !== null && editsCount !== null) {
-                        os.status = 'finalizado';
-                        os.photosCount = parseInt(photosCount);
-                        os.editsCount = parseInt(editsCount);
-                        os.conclusionDate = new Date().toLocaleDateString('pt-BR');
-                        
-                        // Definir finalização com base no usuário atual
-                        if (currentUser.name === 'Elaine') {
-                            os.elaineCompletion = new Date().toLocaleDateString('pt-BR');
-                        } else {
-                            os.salesCompletion = new Date().toLocaleDateString('pt-BR');
-                        }
-                        
-                        alert('✅ OS finalizada com sucesso!');
-                    }
+                    saveData();
+                    renderOSTable();
+                }
+            }
+        }
+
+        function openFinalizarModal(id) {
+            const os = osList.find(os => os.id === id);
+            if (os && os.status === 'andamento') {
+                finalizarOSId.value = id;
+                document.getElementById('fotosCount').value = '';
+                document.getElementById('edicoesCount').value = '';
+                finalizarModal.style.display = 'flex';
+            }
+        }
+
+        function closeFinalizarModal() {
+            finalizarModal.style.display = 'none';
+        }
+
+        function handleFinalizarOS(e) {
+            e.preventDefault();
+            
+            const osId = parseInt(finalizarOSId.value);
+            const fotosCount = parseInt(document.getElementById('fotosCount').value);
+            const edicoesCount = parseInt(document.getElementById('edicoesCount').value);
+            
+            const os = osList.find(os => os.id === osId);
+            if (os) {
+                os.status = 'finalizado';
+                os.photosCount = fotosCount;
+                os.editsCount = edicoesCount;
+                os.conclusionDate = new Date().toLocaleDateString('pt-BR');
+                
+                // Definir finalização com base no usuário atual
+                if (currentUser.name === 'Elaine') {
+                    os.elaineCompletion = new Date().toLocaleDateString('pt-BR');
+                } else {
+                    os.salesCompletion = new Date().toLocaleDateString('pt-BR');
                 }
                 
                 saveData();
                 renderOSTable();
+                closeFinalizarModal();
+                alert('✅ OS finalizada com sucesso!\n\n📸 Fotos: ' + fotosCount + '\n🎨 Edições: ' + edicoesCount);
             }
         }
 
