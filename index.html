@@ -922,6 +922,7 @@
         
         // Configuração da API - USE SUA URL CORRETA AQUI!
         const API_URL = 'https://script.google.com/macros/s/AKfycbwyFddV4vWa6_iopYOl616B8Nk-QcTu3sEpi5QfLnJsTjkO_Wx2qTrzdKdzcKLQPnIN5A/exec';
+        const API_ORIGIN = 'github'; // ← ADICIONE ESTA LINHA
 
         // Elementos DOM
         const loginScreen = document.getElementById('loginScreen');
@@ -1023,7 +1024,7 @@
                 console.log('🔄 Carregando OS da planilha...');
                 
                 // Usando timestamp para evitar cache
-                const response = await fetch(API_URL + '?action=carregarSistema&timestamp=' + Date.now());
+                const response = await fetch(API_URL + '?action=carregarSistema&timestamp=' + Date.now() + '&origin=github');
                 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -1303,12 +1304,10 @@
                     os: os
                 };
                 
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
+                const response = await fetch(API_URL + '?origin=github', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
                 });
                 
                 const result = await response.json();
@@ -1468,7 +1467,7 @@
             try {
                 console.log('🔧 Testando API...');
                 
-                const testResponse = await fetch(API_URL + '?test=true&timestamp=' + Date.now());
+                const testResponse = await fetch(API_URL + '?test=true&timestamp=' + Date.now() + '&origin=github');
                 const testData = await testResponse.json();
                 
                 console.log('📡 Resposta do teste:', testData);
