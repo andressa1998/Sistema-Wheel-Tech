@@ -962,12 +962,12 @@
             { username: 'bruna', password: 'bruna123', name: 'Bruna', avatar: 'B' }
         ];
 
-        // Event Listeners
+        // Event Listeners - CORRIGIDO: Removi o event listener do finalizarForm
         loginForm.addEventListener('submit', handleLogin);
         logoutBtn.addEventListener('click', handleLogout);
         osForm.addEventListener('submit', handleOSSubmit);
         isReturnCheckbox.addEventListener('change', handleReturnChange);
-        finalizarForm.addEventListener('submit', handleFinalizarOS);
+        // NÃO ADICIONA event listener ao finalizarForm - vamos usar onclick
 
         // ============================================
         // FUNÇÕES DE LOGIN E CARREGAMENTO
@@ -1282,6 +1282,7 @@
                     os: os
                 };
                 
+                // Usando mode: 'no-cors' - SEM event listener de response
                 await fetch(API_URL, {
                     method: 'POST',
                     mode: 'no-cors',
@@ -1307,23 +1308,32 @@
             }, 3000);
         }
 
+        // FUNÇÃO CORRIGIDA: Atualizar status na planilha (SEM event listener)
         async function atualizarStatusNaPlanilha(id, status, dadosAdicionais = {}) {
             try {
-                let url = `${API_URL}?action=atualizarStatus&id=${id}&status=${status}`;
+                // Cria a OS completa para enviar
+                const os = osList.find(os => os.id.toString() === id.toString());
+                if (!os) return { success: false, error: "OS não encontrada" };
                 
-                if (dadosAdicionais.lastEditedBy) {
-                    url += `&lastEditedBy=${encodeURIComponent(dadosAdicionais.lastEditedBy)}`;
-                }
-                if (dadosAdicionais.photosCount !== undefined) {
-                    url += `&photosCount=${dadosAdicionais.photosCount}`;
-                }
-                if (dadosAdicionais.editsCount !== undefined) {
-                    url += `&editsCount=${dadosAdicionais.editsCount}`;
+                // Atualiza os dados da OS
+                os.status = status;
+                os.lastEditedBy = dadosAdicionais.lastEditedBy || currentUser.name;
+                os.lastUpdate = new Date().toISOString();
+                
+                if (status === 'finalizado') {
+                    os.conclusionDate = new Date().toLocaleDateString('pt-BR');
+                    if (dadosAdicionais.photosCount !== undefined) os.photosCount = dadosAdicionais.photosCount;
+                    if (dadosAdicionais.editsCount !== undefined) os.editsCount = dadosAdicionais.editsCount;
+                    
+                    if (currentUser.name === 'Elaine') {
+                        os.elaineCompletion = new Date().toLocaleDateString('pt-BR');
+                    } else {
+                        os.salesCompletion = new Date().toLocaleDateString('pt-BR');
+                    }
                 }
                 
-                const response = await fetch(url);
-                const result = await response.json();
-                return result;
+                // Usa a mesma função de salvar/atualizar
+                return await salvarOuAtualizarOSNaPlanilha(os);
                 
             } catch (error) {
                 console.error('Erro ao atualizar status:', error);
@@ -1589,7 +1599,7 @@
                 let actionButtons = '';
                 if (os.status === 'pendente') {
                     actionButtons = `
-                        <button class="btn btn-success action-btn" onclick="updateStatus('${os.id}', 'andamento')" title="Iniciar OS">
+                        <button class="btn btn-success action-btn" onclick="iniciarOS('${os.id}')" title="Iniciar OS">
                             <i class="fas fa-play"></i> Iniciar
                         </button>
                     `;
@@ -1656,11 +1666,12 @@
             }
         }
 
-        // FUNÇÃO: Atualizar status (Iniciar OS)
-        async function updateStatus(id, status) {
+        // FUNÇÃO CORRIGIDA: Iniciar OS (não usa mais event listener)
+        async function iniciarOS(id) {
             const os = osList.find(os => os.id.toString() === id.toString());
             if (os && currentUser) {
-                if (status === 'andamento' && os.status === 'pendente') {
+                if (os.status === 'pendente') {
+                    // Atualiza localmente
                     os.status = 'andamento';
                     os.lastEditedBy = currentUser.name;
                     os.lastUpdate = new Date().toISOString();
@@ -1672,7 +1683,10 @@
                     try {
                         updateSyncStatus('Atualizando status...', 'loading');
                         
-                        const result = await atualizarStatusNaPlanilha(id, status, { lastEditedBy: currentUser.name });
+                        // Usa a função corrigida
+                        const result = await atualizarStatusNaPlanilha(id, 'andamento', { 
+                            lastEditedBy: currentUser.name 
+                        });
                         
                         if (result.success) {
                             showToast(`✅ OS "${os.productName}" iniciada!`, 'success');
@@ -1703,12 +1717,11 @@
             finalizarModal.style.display = 'none';
         }
 
-        // FUNÇÃO: Finalizar OS (CORRIGIDA - NÃO DESLOGA)
-        async function handleFinalizarOS(e) {
-            e.preventDefault();
-            
+        // FUNÇÃO CORRIGIDA: Finalizar OS - usa onclick no botão
+        async function finalizarOS() {
             if (!currentUser) {
                 showToast('⚠️ Faça login primeiro!', 'warning');
+                closeFinalizarModal();
                 return;
             }
             
@@ -1758,6 +1771,7 @@
                         showToast(`💾 OS finalizada localmente`, 'info');
                     }
                     
+                    // Recarrega da planilha
                     setTimeout(() => {
                         carregarOSDaPlanilha();
                     }, 1000);
@@ -1772,6 +1786,21 @@
                 }
             }
         }
+
+        // MODIFIQUE o botão de finalizar no modal para usar onclick
+        // Adicione esta linha no final do body para corrigir o botão
+        document.addEventListener('DOMContentLoaded', function() {
+            // Corrige o botão de finalizar para usar onclick
+            const finalizarForm = document.getElementById('finalizarForm');
+            if (finalizarForm) {
+                // Remove qualquer event listener existente
+                finalizarForm.onsubmit = null;
+                finalizarForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    finalizarOS();
+                });
+            }
+        });
 
         function exportToExcel(filter) {
             let dataToExport;
