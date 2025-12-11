@@ -664,7 +664,7 @@
                 <h3 class="modal-title"><i class="fas fa-flag-checkered"></i> Finalizar Ordem de Serviço</h3>
                 <button class="close-modal" onclick="closeFinalizarModal()">&times;</button>
             </div>
-            <form id="finalizarForm" onsubmit="return false;">
+            <form id="finalizarForm">
                 <input type="hidden" id="finalizarOSId">
                 <div class="modal-form-group">
                     <label for="fotosCount"><i class="fas fa-camera"></i> Quantidade de Fotos Tiradas</label>
@@ -920,9 +920,8 @@
         let currentFilter = 'all';
         let currentEditingOS = null;
         
-        // Configuração da API
+        // Configuração da API - USE SUA URL CORRETA AQUI!
         const API_URL = 'https://script.google.com/macros/s/AKfycbyPJyuyjJ1K5faa-ElrT2McTQfEJOeFADCGg_hZp5Cfu5Ps_pKvJZIv3JCjDKw6dKa9/exec';
-        const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1HoZPlyIdfx-qXU8zpaOEOkXw92B1teIybrn46BSIpWs/edit';
 
         // Elementos DOM
         const loginScreen = document.getElementById('loginScreen');
@@ -1023,7 +1022,13 @@
             try {
                 console.log('🔄 Carregando OS da planilha...');
                 
-                const response = await fetch(API_URL + '?action=carregarSistema');
+                // Usando timestamp para evitar cache
+                const response = await fetch(API_URL + '?action=carregarSistema&timestamp=' + Date.now());
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const result = await response.json();
                 
                 if (result.success && result.osList) {
@@ -1185,6 +1190,7 @@
             
             // Desabilita o botão para evitar clique duplo
             submitButton.disabled = true;
+            const originalButtonHTML = submitButton.innerHTML;
             submitButton.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Salvando...';
             
             const skus = Array.from(document.querySelectorAll('.sku-input'))
@@ -1275,7 +1281,7 @@
             
             // Restaura o botão
             submitButton.disabled = false;
-            submitButton.innerHTML = '<i class="fas fa-save"></i> <span id="submitText">Salvar OS</span>';
+            submitButton.innerHTML = originalButtonHTML;
         }
 
         function saveLocalData() {
@@ -1331,43 +1337,33 @@
         // FUNÇÃO CORRIGIDA: Atualizar status na planilha
         async function atualizarStatusNaPlanilha(id, status, dadosAdicionais = {}) {
             try {
-                updateSyncStatus('Atualizando status...', 'loading');
+                // Cria a OS completa para enviar
+                const os = osList.find(os => os.id.toString() === id.toString());
+                if (!os) return { success: false, error: "OS não encontrada" };
                 
-                // Construir URL com parâmetros
-                let url = `${API_URL}?action=atualizarStatus&id=${id}&status=${status}`;
+                // Atualiza os dados da OS
+                os.status = status;
+                os.lastEditedBy = dadosAdicionais.lastEditedBy || currentUser.name;
+                os.lastUpdate = new Date().toISOString();
                 
-                if (dadosAdicionais.lastEditedBy) {
-                    url += `&lastEditedBy=${encodeURIComponent(dadosAdicionais.lastEditedBy)}`;
-                }
-                if (dadosAdicionais.photosCount !== undefined) {
-                    url += `&photosCount=${dadosAdicionais.photosCount}`;
-                }
-                if (dadosAdicionais.editsCount !== undefined) {
-                    url += `&editsCount=${dadosAdicionais.editsCount}`;
-                }
-                if (dadosAdicionais.conclusionDate) {
-                    url += `&conclusionDate=${encodeURIComponent(dadosAdicionais.conclusionDate)}`;
+                if (status === 'finalizado') {
+                    os.conclusionDate = new Date().toLocaleDateString('pt-BR');
+                    if (dadosAdicionais.photosCount !== undefined) os.photosCount = dadosAdicionais.photosCount;
+                    if (dadosAdicionais.editsCount !== undefined) os.editsCount = dadosAdicionais.editsCount;
+                    
+                    if (currentUser.name === 'Elaine') {
+                        os.elaineCompletion = new Date().toLocaleDateString('pt-BR');
+                    } else {
+                        os.salesCompletion = new Date().toLocaleDateString('pt-BR');
+                    }
                 }
                 
-                const response = await fetch(url);
-                const result = await response.json();
-                
-                if (result.success) {
-                    updateSyncStatus('Status atualizado!', 'success');
-                    return { success: true };
-                } else {
-                    updateSyncStatus('Erro ao atualizar', 'error');
-                    return { success: false, error: result.error };
-                }
+                // Usa a mesma função de salvar/atualizar
+                return await salvarOuAtualizarOSNaPlanilha(os);
                 
             } catch (error) {
                 console.error('Erro ao atualizar status:', error);
-                updateSyncStatus('Erro de conexão', 'error');
                 return { success: false, error: error.message };
-            } finally {
-                setTimeout(() => {
-                    syncStatus.style.display = 'none';
-                }, 3000);
             }
         }
 
@@ -1447,6 +1443,8 @@
             console.log('🧪 Enviando teste para API:', osTeste);
             
             try {
+                updateSyncStatus('Enviando teste...', 'loading');
+                
                 const result = await salvarOuAtualizarOSNaPlanilha(osTeste);
                 
                 if (result.success) {
@@ -1470,12 +1468,12 @@
             try {
                 console.log('🔧 Testando API...');
                 
-                const testResponse = await fetch(API_URL + '?test=true');
-                const testText = await testResponse.text();
+                const testResponse = await fetch(API_URL + '?test=true&timestamp=' + Date.now());
+                const testData = await testResponse.json();
                 
-                console.log('📡 Resposta do teste:', testText);
+                console.log('📡 Resposta do teste:', testData);
                 
-                if (testText.includes('funcionando')) {
+                if (testData.status === 'online') {
                     showToast('✅ API está funcionando!', 'success');
                 } else {
                     showToast('⚠️ API pode não estar configurada corretamente.', 'warning');
@@ -1752,8 +1750,7 @@
                     const result = await atualizarStatusNaPlanilha(osId, 'finalizado', {
                         lastEditedBy: currentUser.name,
                         photosCount: fotosCount,
-                        editsCount: edicoesCount,
-                        conclusionDate: new Date().toLocaleDateString('pt-BR')
+                        editsCount: edicoesCount
                     });
                     
                     if (result.success) {
@@ -1855,10 +1852,11 @@
                 updateCounters();
                 renderOSTable();
                 
-                showToast(`🗑️ OS "${os.productName}" excluída localmente!`, 'info');
+                showToast(`🗑️ OS "${os.productName}" excluída!`, 'info');
                 
-                // Note: Não há função para excluir da planilha via API
-                // Você precisaria adicionar essa funcionalidade no Apps Script
+                setTimeout(() => {
+                    carregarOSDaPlanilha();
+                }, 1000);
             }
         }
 
