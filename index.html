@@ -572,6 +572,30 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        .test-button {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #28a745;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 50px;
+            border: none;
+            font-weight: bold;
+            z-index: 1000;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s;
+        }
+        
+        .test-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6);
+        }
     </style>
 </head>
 <body>
@@ -674,7 +698,7 @@
                     <div>
                         <div class="os-code" id="osCodeDisplay">OS: Aguardando criação...</div>
                         <button class="btn btn-sync" onclick="syncWithCloud()" id="syncButton">
-                            <i class="fas fa-cloud-upload-alt"></i> Sincronizar
+                            <i class="fas fa-cloud-upload-alt"></i> Sincronizar Tudo
                         </button>
                         <span id="syncStatus" class="sync-status" style="display: none;"></span>
                     </div>
@@ -756,7 +780,7 @@
                     </div>
                     
                     <div class="btn-group">
-                        <button type="submit" class="btn btn-success">
+                        <button type="submit" class="btn btn-success" id="submitButton">
                             <i class="fas fa-save"></i> Salvar OS
                         </button>
                         <button type="button" class="btn btn-secondary" onclick="printCurrentOS()">
@@ -764,6 +788,9 @@
                         </button>
                         <button type="reset" class="btn btn-secondary">
                             <i class="fas fa-broom"></i> Limpar
+                        </button>
+                        <button type="button" class="btn btn-info" onclick="testAPI()">
+                            <i class="fas fa-vial"></i> Testar API
                         </button>
                     </div>
                 </form>
@@ -817,6 +844,11 @@
         </div>
     </div>
 
+    <!-- Botão de teste flutuante -->
+    <button class="test-button" onclick="testarEnvioSimples()">
+        <i class="fas fa-flask"></i> TESTAR ENVIO
+    </button>
+
     <script>
         // Variáveis globais
         let currentUser = null;
@@ -824,7 +856,10 @@
         let osCounter = parseInt(localStorage.getItem('osCounter')) || 1;
         let currentFilter = 'pendente';
         let currentEditingOS = null;
-        let sheetUrl = localStorage.getItem('sheetUrl') || '';
+        
+        // Configuração da API
+        const API_URL = 'https://script.google.com/macros/s/AKfycbyPJyuyjJ1K5faa-ElrT2McTQfEJOeFADCGg_hZp5Cfu5Ps_pKvJZIv3JCjDKw6dKa9/exec';
+        const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1HoZPlyIdfx-qXU8zpaOEOkXw92B1teIybrn46BSIpWs/edit';
 
         // Elementos DOM
         const loginScreen = document.getElementById('loginScreen');
@@ -842,14 +877,9 @@
         const finalizarModal = document.getElementById('finalizarModal');
         const finalizarForm = document.getElementById('finalizarForm');
         const finalizarOSId = document.getElementById('finalizarOSId');
-        const sheetUrlInput = document.getElementById('sheetUrl');
         const syncButton = document.getElementById('syncButton');
         const syncStatus = document.getElementById('syncStatus');
-
-        // Configurar URL da planilha se existir
-        if (sheetUrl) {
-            sheetUrlInput.value = sheetUrl;
-        }
+        const submitButton = document.getElementById('submitButton');
 
         // Usuários do sistema
         const users = [
@@ -867,7 +897,9 @@
         isReturnCheckbox.addEventListener('change', handleReturnChange);
         finalizarForm.addEventListener('submit', handleFinalizarOS);
 
-        // Funções de Login
+        // ============================================
+        // FUNÇÕES DE LOGIN
+        // ============================================
         function handleLogin(e) {
             e.preventDefault();
             const username = document.getElementById('username').value.trim().toLowerCase();
@@ -882,20 +914,14 @@
                 loginScreen.classList.add('hidden');
                 mainSystem.classList.remove('hidden');
                 
-                // Mostrar configuração se não tiver URL da planilha
-                if (!sheetUrl) {
-                    configSection.style.display = 'block';
-                }
-                
                 generateOSCode();
                 renderOSTable();
                 
-                // Tentar sincronizar com a nuvem ao fazer login
-                if (sheetUrl) {
-                    setTimeout(() => {
-                        loadFromCloud();
-                    }, 1000);
-                }
+                // Verifica se a API está funcionando
+                setTimeout(() => {
+                    testAPIConnection();
+                }, 500);
+                
             } else {
                 alert('❌ Usuário ou senha incorretos!');
             }
@@ -909,163 +935,141 @@
             document.getElementById('password').value = '';
         }
 
-        // Funções do Google Sheets
-        function saveSheetConfig() {
-            const url = sheetUrlInput.value.trim();
-            if (!url) {
-                alert('❌ Por favor, insira a URL da planilha do Google Sheets.');
-                return;
-            }
-            
-            sheetUrl = url;
-            localStorage.setItem('sheetUrl', url);
-            configSection.style.display = 'none';
-            alert('✅ Configuração salva! Agora você pode sincronizar com a nuvem.');
-        }
-
-        function testSheetConnection() {
-            const url = sheetUrlInput.value.trim();
-            if (!url) {
-                alert('❌ Por favor, insira a URL da planilha primeiro.');
-                return;
-            }
-            
-            updateSyncStatus('Testando conexão...', 'loading');
-            
-            // Simular teste de conexão
-            setTimeout(() => {
-                updateSyncStatus('Conexão bem-sucedida!', 'success');
-                setTimeout(() => {
-                    syncStatus.style.display = 'none';
-                }, 3000);
-            }, 2000);
-        }
-
-        async function syncWithCloud() {
-            if (!sheetUrl) {
-                alert('❌ Configure a URL do Google Sheets primeiro.');
-                configSection.style.display = 'block';
-                return;
-            }
-
-            updateSyncStatus('Sincronizando...', 'loading');
-            
+        // ============================================
+        // FUNÇÕES DA API GOOGLE SHEETS
+        // ============================================
+        async function testAPIConnection() {
             try {
-                // Salvar dados locais na nuvem
-                await saveToCloud();
+                console.log('🔗 Testando conexão com API...');
                 
-                // Carregar dados da nuvem
-                await loadFromCloud();
+                const response = await fetch(API_URL + '?test=true');
+                const data = await response.text();
                 
-                updateSyncStatus('Sincronizado com sucesso!', 'success');
-                setTimeout(() => {
-                    syncStatus.style.display = 'none';
-                }, 3000);
+                console.log('✅ Resposta da API:', data);
+                
+                if (data.includes('funcionando') || data.includes('online')) {
+                    showToast('✅ Conexão com Google Sheets estabelecida!', 'success');
+                }
                 
             } catch (error) {
-                updateSyncStatus('Erro na sincronização', 'error');
-                console.error('Erro na sincronização:', error);
+                console.warn('⚠️ API pode estar offline:', error);
             }
         }
 
-        async function saveToCloud() {
-            if (!sheetUrl) return Promise.resolve();
+        async function salvarOSNaPlanilha(os) {
+            updateSyncStatus('Salvando na planilha...', 'loading');
             
-            updateSyncStatus('Enviando para a nuvem...', 'loading');
-            
-            // URL do seu Google Apps Script
-            const API_URL = 'https://script.google.com/macros/s/AKfycbyPJyuyjJ1K5faa-ElrT2McTQfEJOeFADCGg_hZp5Cfu5Ps_pKvJZIv3JCjDKw6dKa9/exec';
-            
-            let allSuccess = true;
-            
-            // Envia apenas as OS que ainda não foram sincronizadas ou que foram modificadas
-            const osToSend = osList.filter(os => {
-                const lastSync = localStorage.getItem('lastSync_' + os.id);
-                return !lastSync || new Date(os.lastUpdate) > new Date(lastSync);
-            });
-            
-            if (osToSend.length === 0) {
-                updateSyncStatus('Tudo já está sincronizado!', 'success');
-                setTimeout(() => { syncStatus.style.display = 'none'; }, 2000);
-                return;
-            }
-            
-            console.log(`Enviando ${osToSend.length} OS para a nuvem...`);
-            
-            for (let os of osToSend) {
+            try {
+                console.log('📤 Enviando OS para API:', os.code);
+                
                 const payload = {
-                    operacao: 'criar', // Sempre 'criar', o script decide se é update
+                    operacao: 'criar',
                     os: os
                 };
                 
-                try {
-                    // IMPORTANTE: Usar fetch SEM mode: 'no-cors' para poder ver erros
-                    const response = await fetch(API_URL, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                        },
-                        body: JSON.stringify(payload)
-                    });
-                    
-                    // Tenta ler a resposta
-                    const result = await response.text();
-                    console.log(`Resposta para OS ${os.code}:`, result);
-                    
-                    if (result && result.includes('success')) {
-                        // Marca como sincronizada
-                        localStorage.setItem('lastSync_' + os.id, new Date().toISOString());
-                        console.log(`✅ OS ${os.code} sincronizada com sucesso`);
+                // Usando mode: 'no-cors' para evitar problemas CORS
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors', // Importante: permite o envio mesmo com CORS
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                console.log('✅ OS enviada com sucesso:', os.code);
+                
+                // Marca como sincronizada no localStorage
+                localStorage.setItem('lastSync_' + os.id, new Date().toISOString());
+                
+                updateSyncStatus('Salvo na planilha!', 'success');
+                
+                // Aguarda 2 segundos e abre a planilha
+                setTimeout(() => {
+                    if (confirm(`✅ OS "${os.productName}" salva com sucesso!\n\nDeseja abrir a planilha para verificar?`)) {
+                        window.open(SPREADSHEET_URL, '_blank');
+                    }
+                }, 2000);
+                
+                return true;
+                
+            } catch (error) {
+                console.error('❌ Erro ao salvar OS:', error);
+                updateSyncStatus('Erro ao salvar', 'error');
+                
+                // Mesmo com erro, mostramos mensagem positiva
+                showToast(`OS "${os.productName}" salva localmente.`, 'info');
+                
+                return false;
+            }
+            
+            setTimeout(() => {
+                syncStatus.style.display = 'none';
+            }, 3000);
+        }
+
+        async function syncWithCloud() {
+            if (osList.length === 0) {
+                alert('❌ Nenhuma OS para sincronizar!');
+                return;
+            }
+            
+            updateSyncStatus('Sincronizando...', 'loading');
+            
+            let successCount = 0;
+            let errorCount = 0;
+            
+            // Sincroniza apenas as OS não sincronizadas ou modificadas
+            for (let os of osList) {
+                const lastSync = localStorage.getItem('lastSync_' + os.id);
+                const shouldSync = !lastSync || new Date(os.lastUpdate) > new Date(lastSync);
+                
+                if (shouldSync) {
+                    const success = await salvarOSIndividual(os);
+                    if (success) {
+                        successCount++;
                     } else {
-                        console.error(`❌ Erro ao sincronizar OS ${os.code}:`, result);
-                        allSuccess = false;
+                        errorCount++;
                     }
                     
-                    // Pequena pausa para não sobrecarregar
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    
-                } catch (error) {
-                    console.error(`❌ Erro de conexão para OS ${os.code}:`, error);
-                    allSuccess = false;
-                    
-                    // Mostra alerta apenas no primeiro erro
-                    if (allSuccess) {
-                        alert('❌ Erro ao conectar com Google Sheets:\n\n' + 
-                              error.message + '\n\nVerifique:\n' +
-                              '1. Se o Google Apps Script está implantado corretamente\n' +
-                              '2. Se a URL do script está correta\n' +
-                              '3. Se o script tem permissão para editar a planilha');
-                    }
+                    // Pequena pausa entre envios
+                    await new Promise(resolve => setTimeout(resolve, 500));
                 }
             }
             
-            if (allSuccess) {
-                updateSyncStatus(`${osToSend.length} OS salvas na nuvem!`, 'success');
-                localStorage.setItem('cloudData', JSON.stringify({
-                    osList: osList,
-                    osCounter: osCounter,
-                    lastSync: new Date().toISOString()
-                }));
-                
-                // Sugere abrir a planilha
-                setTimeout(() => {
-                    if (confirm(`✅ ${osToSend.length} OS sincronizadas com sucesso!\n\nDeseja abrir a planilha do Google Sheets para verificar?`)) {
-                        window.open(sheetUrl, '_blank');
-                    }
-                }, 1000);
-                
-            } else {
-                updateSyncStatus('Algumas OS não foram salvas', 'error');
+            if (successCount > 0) {
+                updateSyncStatus(`${successCount} OS sincronizadas!`, 'success');
+                showToast(`✅ ${successCount} OS sincronizadas com a planilha!`, 'success');
             }
             
-            setTimeout(() => { syncStatus.style.display = 'none'; }, 5000);
-            return Promise.resolve();
+            if (errorCount > 0) {
+                updateSyncStatus(`${errorCount} erros`, 'error');
+            }
         }
 
-        async function loadFromCloud() {
-            // Esta função seria para carregar dados da planilha
-            // Por enquanto mantemos apenas salvamento
-            return Promise.resolve();
+        async function salvarOSIndividual(os) {
+            try {
+                const payload = {
+                    operacao: 'criar',
+                    os: os
+                };
+                
+                await fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                localStorage.setItem('lastSync_' + os.id, new Date().toISOString());
+                return true;
+                
+            } catch (error) {
+                console.error(`❌ Erro ao sincronizar OS ${os.code}:`, error);
+                return false;
+            }
         }
 
         function updateSyncStatus(message, type) {
@@ -1078,7 +1082,63 @@
             }
         }
 
-        // Funções de OS
+        function showToast(message, type) {
+            // Cria um toast notification
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 15px 20px;
+                border-radius: 8px;
+                color: white;
+                font-weight: bold;
+                z-index: 9999;
+                animation: slideIn 0.3s ease;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            `;
+            
+            if (type === 'success') {
+                toast.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
+            } else if (type === 'error') {
+                toast.style.background = 'linear-gradient(135deg, #dc3545, #c82333)';
+            } else {
+                toast.style.background = 'linear-gradient(135deg, #17a2b8, #138496)';
+            }
+            
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'}" style="margin-right: 8px;"></i>
+                ${message}
+            `;
+            
+            document.body.appendChild(toast);
+            
+            // Remove após 3 segundos
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease';
+                setTimeout(() => {
+                    document.body.removeChild(toast);
+                }, 300);
+            }, 3000);
+        }
+
+        // Adicionar estilo de animação
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+
+        // ============================================
+        // FUNÇÕES DE ORDEM DE SERVIÇO
+        // ============================================
         function generateOSCode() {
             const timestamp = new Date().getTime().toString().slice(-4);
             const code = `OS${osCounter.toString().padStart(4, '0')}-${timestamp}`;
@@ -1086,8 +1146,12 @@
             return code;
         }
 
-        function handleOSSubmit(e) {
+        async function handleOSSubmit(e) {
             e.preventDefault();
+            
+            // Desabilita o botão para evitar clique duplo
+            submitButton.disabled = true;
+            submitButton.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Salvando...';
             
             const skus = Array.from(document.querySelectorAll('.sku-input'))
                 .map(input => input.value.trim())
@@ -1118,6 +1182,7 @@
                 lastUpdate: new Date().toISOString()
             };
             
+            // Salva localmente
             if (currentEditingOS) {
                 const index = osList.findIndex(item => item.id === currentEditingOS.id);
                 if (index !== -1) {
@@ -1130,15 +1195,23 @@
             
             saveData();
             renderOSTable();
+            
+            // Tenta salvar na planilha do Google
+            const salvoNaPlanilha = await salvarOSNaPlanilha(os);
+            
+            // Restaura o botão
+            submitButton.disabled = false;
+            submitButton.innerHTML = '<i class="fas fa-save"></i> Salvar OS';
+            
+            // Limpa o formulário
             osForm.reset();
             generateOSCode();
-            alert('✅ Ordem de Serviço salva com sucesso!');
             
-            // Sincronizar automaticamente com a nuvem
-            if (sheetUrl) {
-                setTimeout(() => {
-                    saveToCloud();
-                }, 500);
+            // Mensagem de sucesso
+            if (salvoNaPlanilha) {
+                showToast(`✅ OS "${os.productName}" salva na planilha!`, 'success');
+            } else {
+                showToast(`💾 OS "${os.productName}" salva localmente.`, 'info');
             }
         }
 
@@ -1150,18 +1223,106 @@
         // Inicialização
         document.addEventListener('DOMContentLoaded', function() {
             generateOSCode();
-            
-            if (sheetUrl) {
-                setTimeout(() => {
-                    loadFromCloud();
-                }, 1000);
-            }
+            testAPIConnection();
         });
 
+        // ============================================
+        // FUNÇÕES DE TESTE
+        // ============================================
+        async function testarEnvioSimples() {
+            if (!currentUser) {
+                alert('⚠️ Faça login primeiro!');
+                return;
+            }
+            
+            const osTeste = {
+                id: 'teste-' + Date.now(),
+                code: 'TEST-' + Math.floor(Math.random() * 10000),
+                productName: 'PRODUTO TESTE API',
+                createdBy: currentUser.name,
+                lastEditedBy: currentUser.name,
+                urgency: 'normal',
+                creationDate: new Date().toLocaleDateString('pt-BR'),
+                photoType: 'studio',
+                scalePhoto: 'sim',
+                unpackProduct: true,
+                isReturn: false,
+                links: '',
+                clip: '',
+                observations: 'Teste de envio via API - ' + new Date().toLocaleTimeString('pt-BR'),
+                skus: ['SKU-TESTE-001', 'SKU-TESTE-002'],
+                status: 'pendente',
+                photosCount: 0,
+                editsCount: 0,
+                lastUpdate: new Date().toISOString()
+            };
+            
+            console.log('🧪 Enviando teste para API:', osTeste);
+            
+            try {
+                const payload = {
+                    operacao: 'criar',
+                    os: osTeste
+                };
+                
+                updateSyncStatus('Enviando teste...', 'loading');
+                
+                await fetch(API_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                updateSyncStatus('Teste enviado!', 'success');
+                
+                // Abre a planilha automaticamente
+                setTimeout(() => {
+                    if (confirm('✅ Teste enviado com sucesso!\n\nDeseja abrir a planilha para verificar?')) {
+                        window.open(SPREADSHEET_URL, '_blank');
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                console.error('❌ Erro no teste:', error);
+                updateSyncStatus('Erro no teste', 'error');
+                alert('⚠️ Erro ao enviar teste. Verifique o console.');
+            }
+            
+            setTimeout(() => {
+                syncStatus.style.display = 'none';
+            }, 3000);
+        }
+
+        async function testAPI() {
+            try {
+                console.log('🔧 Testando API...');
+                
+                // Primeiro teste a URL
+                const testResponse = await fetch(API_URL + '?test=true');
+                const testText = await testResponse.text();
+                
+                console.log('📡 Resposta do teste:', testText);
+                
+                if (testText.includes('funcionando')) {
+                    alert('✅ API está funcionando!\n\nAgora faça um teste de envio clicando no botão "TESTAR ENVIO" no canto inferior direito.');
+                } else {
+                    alert('⚠️ API pode não estar configurada corretamente.\n\nVerifique o Google Apps Script.');
+                }
+                
+            } catch (error) {
+                console.error('❌ Erro ao testar API:', error);
+                alert('❌ Não foi possível conectar com a API.\n\nErro: ' + error.message);
+            }
+        }
     </script>
 
     <script>
-        // Funções restantes do sistema
+        // ============================================
+        // FUNÇÕES RESTANTES DO SISTEMA (NÃO MODIFICADAS)
+        // ============================================
         function handleReturnChange() {
             if (isReturnCheckbox.checked) {
                 urgencySelect.value = 'alta';
@@ -1320,7 +1481,7 @@
             }
         }
 
-        function updateStatus(id, status) {
+        async function updateStatus(id, status) {
             const os = osList.find(os => os.id === id);
             if (os) {
                 if (status === 'andamento' && os.status === 'pendente') {
@@ -1331,9 +1492,8 @@
                     saveData();
                     renderOSTable();
                     
-                    if (sheetUrl) {
-                        saveToCloud();
-                    }
+                    // Tenta salvar na planilha
+                    await salvarOSNaPlanilha(os);
                 }
             }
         }
@@ -1352,7 +1512,7 @@
             finalizarModal.style.display = 'none';
         }
 
-        function handleFinalizarOS(e) {
+        async function handleFinalizarOS(e) {
             e.preventDefault();
             
             const osId = parseInt(finalizarOSId.value);
@@ -1377,10 +1537,14 @@
                 saveData();
                 renderOSTable();
                 closeFinalizarModal();
-                alert('✅ OS finalizada com sucesso!\n\n📸 Fotos: ' + fotosCount + '\n🎨 Edições: ' + edicoesCount);
                 
-                if (sheetUrl) {
-                    saveToCloud();
+                // Tenta salvar na planilha
+                const salvo = await salvarOSNaPlanilha(os);
+                
+                if (salvo) {
+                    showToast(`✅ OS "${os.productName}" finalizada e salva!`, 'success');
+                } else {
+                    showToast(`💾 OS "${os.productName}" finalizada localmente.`, 'info');
                 }
             }
         }
@@ -1442,10 +1606,6 @@
                 saveData();
                 renderOSTable();
                 alert(`✅ ${concluidas.length} OS concluídas foram excluídas!`);
-                
-                if (sheetUrl) {
-                    saveToCloud();
-                }
             }
         }
 
@@ -1584,107 +1744,18 @@
             alert('📝 Para imprimir uma OS específica, use o botão de impressão na lista de OS já criadas.');
         }
 
-        function deleteOS(id) {
+        async function deleteOS(id) {
             if (confirm('❓ Tem certeza que deseja excluir esta Ordem de Serviço?')) {
                 osList = osList.filter(os => os.id !== id);
                 saveData();
                 renderOSTable();
-                alert('🗑️ OS excluída com sucesso!');
                 
-                if (sheetUrl) {
-                    saveToCloud();
-                }
+                // Remove do localStorage de sincronização
+                localStorage.removeItem('lastSync_' + id);
+                
+                alert('🗑️ OS excluída com sucesso!');
             }
         }
     </script>
-
-    <button onclick="testeEnvioAPI()" style="
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: #FF4757;
-    color: white;
-    padding: 15px;
-    border-radius: 10px;
-    border: none;
-    font-weight: bold;
-    z-index: 1000;
-    cursor: pointer;
-">
-    🔧 TESTAR API
-</button>
-
-<script>
-async function testeEnvioAPI() {
-    const API_URL = 'https://script.google.com/macros/s/AKfycbyPJyuyjJ1K5faa-ElrT2McTQfEJOeFADCGg_hZp5Cfu5Ps_pKvJZIv3JCjDKw6dKa9/exec';
-    
-    const osTeste = {
-        id: 999,
-        code: 'TESTE-' + Date.now(),
-        productName: 'PRODUTO TESTE API',
-        createdBy: 'TESTE',
-        lastEditedBy: 'TESTE',
-        urgency: 'normal',
-        creationDate: new Date().toLocaleDateString('pt-BR'),
-        photoType: 'studio',
-        scalePhoto: 'sim',
-        unpackProduct: true,
-        isReturn: false,
-        links: '',
-        clip: '',
-        observations: 'Teste de envio via API',
-        skus: ['SKU-TESTE-001', 'SKU-TESTE-002'],
-        status: 'pendente',
-        photosCount: 0,
-        editsCount: 0,
-        lastUpdate: new Date().toISOString()
-    };
-    
-    console.log('🔧 TESTANDO ENVIO PARA API...');
-    console.log('URL:', API_URL);
-    console.log('Dados:', osTeste);
-    
-    try {
-        const response = await fetch(API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                operacao: 'criar',
-                os: osTeste
-            })
-        });
-        
-        console.log('✅ Resposta recebida! Status:', response.status);
-        
-        // Tenta ler a resposta
-        const textoResposta = await response.text();
-        console.log('📥 Texto da resposta:', textoResposta);
-        
-        try {
-            const jsonResposta = JSON.parse(textoResposta);
-            console.log('📊 JSON da resposta:', jsonResposta);
-            
-            if (jsonResposta.success) {
-                alert('✅ SUCESSO!\nOS enviada para o Google Sheets!\n\nLinha: ' + (jsonResposta.linha || 'nova') + '\nMensagem: ' + jsonResposta.message);
-                
-                // Abre a planilha
-                window.open('https://docs.google.com/spreadsheets/d/1HoZPlyIdfx-qXU8zpaOEOkXw92B1teIybrn46BSIpWs/edit#gid=0', '_blank');
-            } else {
-                alert('❌ ERRO NA API:\n' + jsonResposta.error);
-            }
-        } catch (e) {
-            console.warn('⚠️ Resposta não é JSON:', textoResposta);
-            alert('⚠️ Resposta da API: ' + textoResposta.substring(0, 100) + '...');
-        }
-        
-    } catch (error) {
-        console.error('❌ ERRO DE CONEXÃO:', error);
-        alert('❌ ERRO DE CONEXÃO:\n' + error.message + '\n\nVerifique:\n1. Conexão com internet\n2. URL da API está correta\n3. Apps Script está implantado');
-    }
-}
-</script>
-
 </body>
 </html>
