@@ -644,6 +644,16 @@
             from { transform: translateX(0); opacity: 1; }
             to { transform: translateX(100%); opacity: 0; }
         }
+        
+        .editing-badge {
+            background: linear-gradient(135deg, var(--warning), var(--orange));
+            color: white;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
     </style>
 </head>
 <body>
@@ -668,7 +678,7 @@
                     <button type="button" class="btn btn-secondary" onclick="closeFinalizarModal()">
                         <i class="fas fa-times"></i> Cancelar
                     </button>
-                    <button type="submit" class="btn btn-success">
+                    <button type="submit" class="btn btn-success" id="finalizarBtn">
                         <i class="fas fa-check"></i> Finalizar OS
                     </button>
                 </div>
@@ -724,6 +734,7 @@
                         <i class="fas fa-info-circle" style="color: var(--info); margin-right: 8px;"></i>
                         <span style="color: var(--dark); font-size: 14px;">
                             Sistema carregado com <span id="osCount" style="font-weight: bold;">0</span> OS ativas
+                            <span id="editingBadge" class="editing-badge" style="display: none;">Editando OS</span>
                         </span>
                     </div>
                     <div class="btn-group">
@@ -741,7 +752,9 @@
             <!-- Formulário de Nova OS -->
             <div class="card no-print">
                 <div class="card-header">
-                    <h2><i class="fas fa-plus-circle"></i> Nova Ordem de Serviço</h2>
+                    <h2><i class="fas fa-plus-circle"></i> 
+                        <span id="formTitle">Nova Ordem de Serviço</span>
+                    </h2>
                     <div>
                         <div class="os-code" id="osCodeDisplay">OS: Aguardando criação...</div>
                     </div>
@@ -824,9 +837,12 @@
                     
                     <div class="btn-group">
                         <button type="submit" class="btn btn-success" id="submitButton">
-                            <i class="fas fa-save"></i> Salvar OS
+                            <i class="fas fa-save"></i> <span id="submitText">Salvar OS</span>
                         </button>
-                        <button type="reset" class="btn btn-secondary">
+                        <button type="button" class="btn btn-secondary" onclick="cancelarEdicao()" id="cancelButton" style="display: none;">
+                            <i class="fas fa-times"></i> Cancelar Edição
+                        </button>
+                        <button type="reset" class="btn btn-secondary" onclick="limparFormulario()">
                             <i class="fas fa-broom"></i> Limpar
                         </button>
                         <button type="button" class="btn btn-info" onclick="testAPI()">
@@ -897,9 +913,10 @@
         // VARIÁVEIS GLOBAIS
         // ============================================
         let currentUser = null;
-        let osList = []; // AGORA VAI CARREGAR DA PLANILHA!
+        let osList = [];
         let osCounter = 1;
         let currentFilter = 'all';
+        let currentEditingOS = null;
         
         // Configuração da API
         const API_URL = 'https://script.google.com/macros/s/AKfycbyPJyuyjJ1K5faa-ElrT2McTQfEJOeFADCGg_hZp5Cfu5Ps_pKvJZIv3JCjDKw6dKa9/exec';
@@ -920,9 +937,11 @@
         const finalizarModal = document.getElementById('finalizarModal');
         const finalizarForm = document.getElementById('finalizarForm');
         const finalizarOSId = document.getElementById('finalizarOSId');
+        const finalizarBtn = document.getElementById('finalizarBtn');
         const syncButton = document.getElementById('syncButton');
         const syncStatus = document.getElementById('syncStatus');
         const submitButton = document.getElementById('submitButton');
+        const submitText = document.getElementById('submitText');
         const reloadButton = document.getElementById('reloadButton');
         const emptyMessage = document.getElementById('emptyMessage');
         const osCount = document.getElementById('osCount');
@@ -930,6 +949,9 @@
         const countAndamento = document.getElementById('countAndamento');
         const countFinalizadas = document.getElementById('countFinalizadas');
         const countTodas = document.getElementById('countTodas');
+        const formTitle = document.getElementById('formTitle');
+        const cancelButton = document.getElementById('cancelButton');
+        const editingBadge = document.getElementById('editingBadge');
 
         // Usuários do sistema
         const users = [
@@ -964,10 +986,7 @@
                 loginScreen.classList.add('hidden');
                 mainSystem.classList.remove('hidden');
                 
-                // Gera código para nova OS
                 generateOSCode();
-                
-                // CARREGA AS OS DA PLANILHA AO FAZER LOGIN
                 await carregarOSDaPlanilha();
                 
                 showToast('✅ Login realizado com sucesso!', 'success');
@@ -979,6 +998,7 @@
 
         function handleLogout() {
             currentUser = null;
+            currentEditingOS = null;
             mainSystem.classList.add('hidden');
             loginScreen.classList.remove('hidden');
             document.getElementById('username').value = '';
@@ -987,7 +1007,7 @@
         }
 
         // ============================================
-        // FUNÇÃO CRÍTICA: Carregar OS da planilha para o sistema
+        // FUNÇÃO: Carregar OS da planilha para o sistema
         // ============================================
         async function carregarOSDaPlanilha() {
             if (!currentUser) {
@@ -1002,29 +1022,23 @@
             try {
                 console.log('🔄 Carregando OS da planilha...');
                 
-                // Chama a API para carregar TODAS as OS da planilha
                 const response = await fetch(API_URL + '?action=carregarSistema');
                 const result = await response.json();
                 
                 if (result.success && result.osList) {
-                    // Substitui a lista local pelas OS da planilha
                     osList = result.osList;
                     
-                    // Atualiza o contador com base no maior ID encontrado
                     if (osList.length > 0) {
                         const maxId = Math.max(...osList.map(os => {
-                            // Converte IDs para número se possível
                             const idNum = parseInt(os.id);
                             return isNaN(idNum) ? 0 : idNum;
                         }));
                         osCounter = maxId + 1;
                     }
                     
-                    // Salva localmente também (backup)
                     localStorage.setItem('osList', JSON.stringify(osList));
                     localStorage.setItem('osCounter', osCounter.toString());
                     
-                    // Atualiza a tabela
                     updateCounters();
                     renderOSTable();
                     
@@ -1040,7 +1054,6 @@
                 console.error('❌ Erro de conexão:', error);
                 showToast('⚠️ Carregando do backup local...', 'warning');
                 
-                // Tenta carregar do localStorage como backup
                 const backupList = JSON.parse(localStorage.getItem('osList')) || [];
                 osList = backupList;
                 osCounter = parseInt(localStorage.getItem('osCounter')) || 1;
@@ -1062,14 +1075,12 @@
             const finalizadas = osList.filter(os => os.status === 'finalizado').length;
             const total = osList.length;
             
-            // Atualiza os contadores
             countPendentes.textContent = pendentes;
             countAndamento.textContent = andamento;
             countFinalizadas.textContent = finalizadas;
             countTodas.textContent = total;
-            osCount.textContent = pendentes + andamento; // OS ativas (não finalizadas)
+            osCount.textContent = pendentes + andamento;
             
-            // Mostra/oculta mensagem de lista vazia
             if (total === 0) {
                 emptyMessage.style.display = 'block';
                 document.querySelector('table').style.display = 'none';
@@ -1090,13 +1101,11 @@
         }
 
         function showToast(message, type) {
-            // Remove toast anterior se existir
             const existingToast = document.querySelector('.toast');
             if (existingToast) {
                 existingToast.remove();
             }
             
-            // Cria novo toast
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
             toast.innerHTML = `
@@ -1108,7 +1117,6 @@
             
             document.body.appendChild(toast);
             
-            // Remove após 4 segundos
             setTimeout(() => {
                 toast.style.animation = 'slideOut 0.3s ease';
                 setTimeout(() => {
@@ -1129,6 +1137,38 @@
             return code;
         }
 
+        function limparFormulario() {
+            osForm.reset();
+            currentEditingOS = null;
+            updateFormForNewOS();
+            generateOSCode();
+            showToast('🧹 Formulário limpo!', 'info');
+        }
+
+        function cancelarEdicao() {
+            currentEditingOS = null;
+            updateFormForNewOS();
+            osForm.reset();
+            generateOSCode();
+            showToast('❌ Edição cancelada!', 'info');
+        }
+
+        function updateFormForNewOS() {
+            formTitle.textContent = 'Nova Ordem de Serviço';
+            submitText.textContent = 'Salvar OS';
+            cancelButton.style.display = 'none';
+            editingBadge.style.display = 'none';
+        }
+
+        function updateFormForEditing(os) {
+            formTitle.textContent = `Editando OS: ${os.code}`;
+            submitText.textContent = 'Atualizar OS';
+            cancelButton.style.display = 'inline-flex';
+            editingBadge.style.display = 'inline-block';
+            editingBadge.textContent = `Editando: ${os.code}`;
+        }
+
+        // FUNÇÃO: Salvar OS (corrigida para edição)
         async function handleOSSubmit(e) {
             e.preventDefault();
             
@@ -1145,20 +1185,30 @@
                 .map(input => input.value.trim())
                 .filter(sku => sku !== '');
             
-            const osId = osCounter++;
-            const osCode = generateOSCode();
+            let osId, osCode;
+            
+            if (currentEditingOS) {
+                // EDITANDO OS EXISTENTE - USA O MESMO ID E CÓDIGO
+                osId = currentEditingOS.id;
+                osCode = currentEditingOS.code;
+            } else {
+                // NOVA OS
+                osId = osCounter.toString();
+                osCode = generateOSCode();
+                osCounter++;
+            }
             
             const os = {
                 id: osId.toString(),
                 code: osCode,
                 productName: document.getElementById('productName').value,
-                createdBy: currentUser.name,
+                createdBy: currentEditingOS ? currentEditingOS.createdBy : currentUser.name,
                 lastEditedBy: currentUser.name,
                 urgency: document.getElementById('urgency').value,
-                creationDate: new Date().toLocaleDateString('pt-BR'),
-                conclusionDate: null,
-                elaineCompletion: null,
-                salesCompletion: null,
+                creationDate: currentEditingOS ? currentEditingOS.creationDate : new Date().toLocaleDateString('pt-BR'),
+                conclusionDate: currentEditingOS ? currentEditingOS.conclusionDate : null,
+                elaineCompletion: currentEditingOS ? currentEditingOS.elaineCompletion : null,
+                salesCompletion: currentEditingOS ? currentEditingOS.salesCompletion : null,
                 photoType: document.getElementById('photoType').value,
                 scalePhoto: document.getElementById('scalePhoto').value,
                 unpackProduct: document.getElementById('unpackProduct').checked,
@@ -1167,24 +1217,33 @@
                 clip: document.getElementById('clip').value,
                 observations: document.getElementById('observations').value,
                 skus: skus,
-                status: 'pendente', // SEMPRE começa como pendente
-                photosCount: 0,
-                editsCount: 0,
+                status: currentEditingOS ? currentEditingOS.status : 'pendente',
+                photosCount: currentEditingOS ? currentEditingOS.photosCount : 0,
+                editsCount: currentEditingOS ? currentEditingOS.editsCount : 0,
                 lastUpdate: new Date().toISOString()
             };
             
-            // Adiciona à lista local
-            osList.push(os);
+            // Adiciona ou atualiza na lista local
+            if (currentEditingOS) {
+                const index = osList.findIndex(item => item.id.toString() === currentEditingOS.id.toString());
+                if (index !== -1) {
+                    osList[index] = os;
+                }
+                currentEditingOS = null;
+            } else {
+                osList.push(os);
+            }
             
             // Salva localmente (backup)
             saveLocalData();
             
-            // Tenta salvar na planilha do Google
-            const salvoNaPlanilha = await salvarOSNaPlanilha(os);
+            // Tenta salvar/atualizar na planilha do Google
+            const salvoNaPlanilha = await salvarOuAtualizarOSNaPlanilha(os);
             
             // Atualiza a interface
             updateCounters();
             renderOSTable();
+            updateFormForNewOS();
             
             // Limpa o formulário
             osForm.reset();
@@ -1192,10 +1251,12 @@
             
             // Restaura o botão
             submitButton.disabled = false;
-            submitButton.innerHTML = '<i class="fas fa-save"></i> Salvar OS';
+            submitButton.innerHTML = '<i class="fas fa-save"></i> <span id="submitText">Salvar OS</span>';
             
             // Mensagem de sucesso
-            if (salvoNaPlanilha) {
+            if (salvoNaPlanilha.updated) {
+                showToast(`✅ OS "${os.productName}" ATUALIZADA na planilha!`, 'success');
+            } else if (salvoNaPlanilha.success) {
                 showToast(`✅ OS "${os.productName}" salva na planilha!`, 'success');
             } else {
                 showToast(`💾 OS "${os.productName}" salva localmente.`, 'info');
@@ -1210,7 +1271,7 @@
         // ============================================
         // FUNÇÕES DE COMUNICAÇÃO COM A PLANILHA
         // ============================================
-        async function salvarOSNaPlanilha(os) {
+        async function salvarOuAtualizarOSNaPlanilha(os) {
             updateSyncStatus('Salvando na planilha...', 'loading');
             
             try {
@@ -1218,39 +1279,6 @@
                 
                 const payload = {
                     operacao: 'criar',
-                    os: os
-                };
-                
-                // Usando mode: 'no-cors' para evitar problemas CORS
-                await fetch(API_URL, {
-                    method: 'POST',
-                    mode: 'no-cors', // Importante: permite o envio mesmo com CORS
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                console.log('✅ OS enviada com sucesso:', os.code);
-                updateSyncStatus('Salvo na planilha!', 'success');
-                
-                return true;
-                
-            } catch (error) {
-                console.error('❌ Erro ao salvar OS:', error);
-                updateSyncStatus('Erro ao salvar', 'error');
-                return false;
-            }
-            
-            setTimeout(() => {
-                syncStatus.style.display = 'none';
-            }, 3000);
-        }
-
-        async function atualizarOSNaPlanilha(os) {
-            try {
-                const payload = {
-                    operacao: 'criar', // O script decide se é update pelo ID
                     os: os
                 };
                 
@@ -1263,12 +1291,43 @@
                     body: JSON.stringify(payload)
                 });
                 
-                console.log(`✅ OS ${os.code} atualizada na planilha`);
-                return true;
+                console.log('✅ OS enviada com sucesso:', os.code);
+                updateSyncStatus('Salvo na planilha!', 'success');
+                
+                return { success: true, updated: true };
                 
             } catch (error) {
-                console.error(`❌ Erro ao atualizar OS ${os.code}:`, error);
-                return false;
+                console.error('❌ Erro ao salvar OS:', error);
+                updateSyncStatus('Erro ao salvar', 'error');
+                return { success: false, updated: false };
+            }
+            
+            setTimeout(() => {
+                syncStatus.style.display = 'none';
+            }, 3000);
+        }
+
+        async function atualizarStatusNaPlanilha(id, status, dadosAdicionais = {}) {
+            try {
+                let url = `${API_URL}?action=atualizarStatus&id=${id}&status=${status}`;
+                
+                if (dadosAdicionais.lastEditedBy) {
+                    url += `&lastEditedBy=${encodeURIComponent(dadosAdicionais.lastEditedBy)}`;
+                }
+                if (dadosAdicionais.photosCount !== undefined) {
+                    url += `&photosCount=${dadosAdicionais.photosCount}`;
+                }
+                if (dadosAdicionais.editsCount !== undefined) {
+                    url += `&editsCount=${dadosAdicionais.editsCount}`;
+                }
+                
+                const response = await fetch(url);
+                const result = await response.json();
+                return result;
+                
+            } catch (error) {
+                console.error('Erro ao atualizar status:', error);
+                return { success: false, error: error.message };
             }
         }
 
@@ -1285,16 +1344,14 @@
             let successCount = 0;
             let errorCount = 0;
             
-            // Sincroniza todas as OS
             for (let os of osList) {
-                const success = await atualizarOSNaPlanilha(os);
-                if (success) {
+                const success = await salvarOuAtualizarOSNaPlanilha(os);
+                if (success.success) {
                     successCount++;
                 } else {
                     errorCount++;
                 }
                 
-                // Pequena pausa entre envios
                 await new Promise(resolve => setTimeout(resolve, 300));
             }
             
@@ -1367,7 +1424,6 @@
                 
                 updateSyncStatus('Teste enviado!', 'success');
                 
-                // Recarrega as OS da planilha
                 setTimeout(() => {
                     carregarOSDaPlanilha();
                 }, 1000);
@@ -1409,7 +1465,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             generateOSCode();
             
-            // Tenta carregar do localStorage como backup inicial
             const backupList = JSON.parse(localStorage.getItem('osList')) || [];
             if (backupList.length > 0) {
                 osList = backupList;
@@ -1421,7 +1476,7 @@
 
     <script>
         // ============================================
-        // FUNÇÕES DA INTERFACE (NÃO MODIFICADAS)
+        // FUNÇÕES DA INTERFACE
         // ============================================
         function handleReturnChange() {
             if (isReturnCheckbox.checked) {
@@ -1446,10 +1501,53 @@
             }
         }
 
+        // FUNÇÃO: Editar OS existente
+        function editOS(id) {
+            const os = osList.find(os => os.id.toString() === id.toString());
+            if (os) {
+                currentEditingOS = os;
+                
+                // Preenche o formulário
+                document.getElementById('productName').value = os.productName;
+                document.getElementById('urgency').value = os.urgency;
+                document.getElementById('photoType').value = os.photoType;
+                document.getElementById('scalePhoto').value = os.scalePhoto;
+                document.getElementById('unpackProduct').checked = os.unpackProduct;
+                document.getElementById('isReturn').checked = os.isReturn;
+                document.getElementById('links').value = os.links || '';
+                document.getElementById('clip').value = os.clip || '';
+                document.getElementById('observations').value = os.observations || '';
+                
+                // Preenche SKUs
+                const skuList = document.getElementById('skuList');
+                skuList.innerHTML = '';
+                
+                if (os.skus && os.skus.length > 0) {
+                    os.skus.forEach(sku => {
+                        const skuItem = document.createElement('div');
+                        skuItem.className = 'sku-item';
+                        skuItem.innerHTML = `
+                            <input type="text" class="sku-input" value="${sku}">
+                            <button type="button" class="btn btn-danger action-btn" onclick="removeSku(this)"><i class="fas fa-times"></i></button>
+                        `;
+                        skuList.appendChild(skuItem);
+                    });
+                } else {
+                    addSku();
+                }
+                
+                // Atualiza interface
+                updateFormForEditing(os);
+                osCodeDisplay.textContent = `OS: ${os.code} (Editando)`;
+                
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                showToast(`✏️ Editando OS: ${os.code}`, 'info');
+            }
+        }
+
         function renderOSTable() {
             osTableBody.innerHTML = '';
             
-            // Filtra as OS conforme o filtro atual
             let filteredOS = [];
             if (currentFilter === 'all') {
                 filteredOS = osList;
@@ -1457,7 +1555,6 @@
                 filteredOS = osList.filter(os => os.status === currentFilter);
             }
             
-            // Ordena por data de criação (mais recente primeiro)
             filteredOS.sort((a, b) => {
                 return new Date(b.creationDate || b.lastUpdate) - new Date(a.creationDate || a.lastUpdate);
             });
@@ -1484,7 +1581,6 @@
                     urgencyBadge = '<span class="badge badge-danger">Alta</span>';
                 }
                 
-                // Formata a data de última atualização
                 const lastUpdate = os.lastUpdate ? 
                     new Date(os.lastUpdate).toLocaleDateString('pt-BR') + ' ' + 
                     new Date(os.lastUpdate).toLocaleTimeString('pt-BR').substring(0, 5) : 
@@ -1524,6 +1620,9 @@
                             <button class="btn btn-primary action-btn" onclick="viewOS('${os.id}')" title="Visualizar">
                                 <i class="fas fa-eye"></i>
                             </button>
+                            <button class="btn btn-warning action-btn" onclick="editOS('${os.id}')" title="Editar">
+                                <i class="fas fa-edit"></i>
+                            </button>
                             ${actionButtons}
                             <button class="btn btn-secondary action-btn" onclick="printOS('${os.id}')" title="Imprimir">
                                 <i class="fas fa-print"></i>
@@ -1545,7 +1644,7 @@
         }
 
         function viewOS(id) {
-            const os = osList.find(os => os.id === id);
+            const os = osList.find(os => os.id.toString() === id.toString());
             if (os) {
                 const skusText = os.skus.length > 0 ? os.skus.join(', ') : 'Nenhum SKU informado';
                 const finalizacaoElaine = os.elaineCompletion ? `Elaine: ${os.elaineCompletion}` : 'Não finalizada por Elaine';
@@ -1557,33 +1656,41 @@
             }
         }
 
+        // FUNÇÃO: Atualizar status (Iniciar OS)
         async function updateStatus(id, status) {
-            const os = osList.find(os => os.id === id);
+            const os = osList.find(os => os.id.toString() === id.toString());
             if (os && currentUser) {
                 if (status === 'andamento' && os.status === 'pendente') {
                     os.status = 'andamento';
                     os.lastEditedBy = currentUser.name;
                     os.lastUpdate = new Date().toISOString();
                     
-                    // Atualiza localmente
                     saveLocalData();
                     updateCounters();
                     renderOSTable();
                     
-                    // Tenta salvar na planilha
-                    const salvo = await atualizarOSNaPlanilha(os);
-                    
-                    if (salvo) {
-                        showToast(`✅ OS "${os.productName}" iniciada!`, 'success');
-                    } else {
-                        showToast(`💾 OS "${os.productName}" iniciada localmente.`, 'info');
+                    try {
+                        updateSyncStatus('Atualizando status...', 'loading');
+                        
+                        const result = await atualizarStatusNaPlanilha(id, status, { lastEditedBy: currentUser.name });
+                        
+                        if (result.success) {
+                            showToast(`✅ OS "${os.productName}" iniciada!`, 'success');
+                        } else {
+                            showToast(`⚠️ OS iniciada localmente`, 'warning');
+                        }
+                    } catch (error) {
+                        console.error('Erro ao atualizar status:', error);
+                        showToast(`💾 OS "${os.productName}" iniciada localmente`, 'info');
                     }
+                    
+                    updateSyncStatus('', '');
                 }
             }
         }
 
         function openFinalizarModal(id) {
-            const os = osList.find(os => os.id === id);
+            const os = osList.find(os => os.id.toString() === id.toString());
             if (os && os.status === 'andamento') {
                 finalizarOSId.value = id;
                 document.getElementById('fotosCount').value = os.photosCount || 0;
@@ -1596,47 +1703,73 @@
             finalizarModal.style.display = 'none';
         }
 
+        // FUNÇÃO: Finalizar OS (CORRIGIDA - NÃO DESLOGA)
         async function handleFinalizarOS(e) {
             e.preventDefault();
+            
+            if (!currentUser) {
+                showToast('⚠️ Faça login primeiro!', 'warning');
+                return;
+            }
             
             const osId = finalizarOSId.value;
             const fotosCount = parseInt(document.getElementById('fotosCount').value);
             const edicoesCount = parseInt(document.getElementById('edicoesCount').value);
             
-            const os = osList.find(os => os.id === osId);
+            const os = osList.find(os => os.id.toString() === osId.toString());
             if (os && currentUser) {
-                os.status = 'finalizado';
-                os.photosCount = fotosCount;
-                os.editsCount = edicoesCount;
-                os.conclusionDate = new Date().toLocaleDateString('pt-BR');
-                os.lastEditedBy = currentUser.name;
-                os.lastUpdate = new Date().toISOString();
+                // Desabilita o botão para evitar clique duplo
+                finalizarBtn.disabled = true;
+                const originalText = finalizarBtn.innerHTML;
+                finalizarBtn.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Finalizando...';
                 
-                if (currentUser.name === 'Elaine') {
-                    os.elaineCompletion = new Date().toLocaleDateString('pt-BR');
-                } else {
-                    os.salesCompletion = new Date().toLocaleDateString('pt-BR');
+                try {
+                    // Atualiza localmente
+                    os.status = 'finalizado';
+                    os.photosCount = fotosCount;
+                    os.editsCount = edicoesCount;
+                    os.conclusionDate = new Date().toLocaleDateString('pt-BR');
+                    os.lastEditedBy = currentUser.name;
+                    os.lastUpdate = new Date().toISOString();
+                    
+                    if (currentUser.name === 'Elaine') {
+                        os.elaineCompletion = new Date().toLocaleDateString('pt-BR');
+                    } else {
+                        os.salesCompletion = new Date().toLocaleDateString('pt-BR');
+                    }
+                    
+                    saveLocalData();
+                    updateCounters();
+                    renderOSTable();
+                    
+                    // Fecha o modal
+                    closeFinalizarModal();
+                    
+                    // Atualiza na planilha
+                    const result = await atualizarStatusNaPlanilha(osId, 'finalizado', {
+                        lastEditedBy: currentUser.name,
+                        photosCount: fotosCount,
+                        editsCount: edicoesCount
+                    });
+                    
+                    if (result.success) {
+                        showToast(`✅ OS "${os.productName}" finalizada com sucesso!`, 'success');
+                    } else {
+                        showToast(`💾 OS finalizada localmente`, 'info');
+                    }
+                    
+                    setTimeout(() => {
+                        carregarOSDaPlanilha();
+                    }, 1000);
+                    
+                } catch (error) {
+                    console.error('Erro ao finalizar OS:', error);
+                    showToast(`❌ Erro ao finalizar OS`, 'error');
+                } finally {
+                    // Restaura o botão
+                    finalizarBtn.disabled = false;
+                    finalizarBtn.innerHTML = originalText;
                 }
-                
-                // Atualiza localmente
-                saveLocalData();
-                updateCounters();
-                renderOSTable();
-                closeFinalizarModal();
-                
-                // Tenta salvar na planilha
-                const salvo = await atualizarOSNaPlanilha(os);
-                
-                if (salvo) {
-                    showToast(`✅ OS "${os.productName}" finalizada e salva!`, 'success');
-                } else {
-                    showToast(`💾 OS "${os.productName}" finalizada localmente.`, 'info');
-                }
-                
-                // Recarrega da planilha para garantir sincronia
-                setTimeout(() => {
-                    carregarOSDaPlanilha();
-                }, 1000);
             }
         }
 
@@ -1686,21 +1819,18 @@
         }
 
         async function deleteOS(id) {
-            const os = osList.find(os => os.id === id);
+            const os = osList.find(os => os.id.toString() === id.toString());
             if (!os) return;
             
             if (confirm(`❓ Tem certeza que deseja excluir a OS "${os.productName}" (${os.code})?`)) {
-                // Remove da lista local
-                osList = osList.filter(os => os.id !== id);
+                osList = osList.filter(os => os.id.toString() !== id.toString());
                 
-                // Atualiza localmente
                 saveLocalData();
                 updateCounters();
                 renderOSTable();
                 
                 showToast(`🗑️ OS "${os.productName}" excluída!`, 'info');
                 
-                // Recarrega da planilha para remover também de lá
                 setTimeout(() => {
                     carregarOSDaPlanilha();
                 }, 1000);
@@ -1708,7 +1838,7 @@
         }
 
         function printOS(id) {
-            const os = osList.find(os => os.id === id);
+            const os = osList.find(os => os.id.toString() === id.toString());
             if (os) {
                 const printWindow = window.open('', '_blank');
                 printWindow.document.write(`
@@ -1836,10 +1966,6 @@
                 `);
                 printWindow.document.close();
             }
-        }
-
-        function printCurrentOS() {
-            showToast('📝 Para imprimir uma OS específica, use o botão de impressão na lista de OS já criadas.', 'info');
         }
     </script>
 </body>
