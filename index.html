@@ -7,7 +7,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        /* [TODO SEU CSS AQUI - MANTENHA IGUAL] */
         :root {
             --primary: #8A2BE2;
             --secondary: #FF6B8B;
@@ -921,12 +920,8 @@
         let currentFilter = 'all';
         let currentEditingOS = null;
         
-        // CONFIGURAÇÃO DA API - CORRIGIDA PARA CORS
-        // URL DIRETA do seu Google Apps Script (use a SUA URL)
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwyFddV4vWa6_iopY0161688Nk-QcTu3sEpi5QftnJsTjk0_Wx2qTrzdkdzckLQPnIN5A/exec';
-        
-        // Proxy CORS para GitHub Pages (SOLUÇÃO)
-        const API_URL = 'https://corsproxy.io/?' + encodeURIComponent(APPS_SCRIPT_URL);
+        // Configuração da API - USE SUA URL CORRETA AQUI!
+        const API_URL = 'https://script.google.com/macros/s/AKfycbwyFddV4vWa6_iopYOl616B8Nk-QcTu3sEpi5QfLnJsTjkO_Wx2qTrzdKdzcKLQPnIN5A/exec';
 
         // Elementos DOM
         const loginScreen = document.getElementById('loginScreen');
@@ -975,19 +970,6 @@
         isReturnCheckbox.addEventListener('change', handleReturnChange);
 
         // ============================================
-        // FUNÇÕES AUXILIARES PARA CORS
-        // ============================================
-        async function safeFetch(url, options = {}) {
-            // Para requisições POST, precisamos usar um proxy CORS
-            if (options.method === 'POST') {
-                const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
-                return await fetch(proxyUrl, options);
-            }
-            // Para GET, podemos usar a URL normal com proxy
-            return await fetch(url, options);
-        }
-
-        // ============================================
         // FUNÇÕES DE LOGIN E CARREGAMENTO
         // ============================================
         async function handleLogin(e) {
@@ -1025,7 +1007,7 @@
         }
 
         // ============================================
-        // FUNÇÃO: Carregar OS da planilha para o sistema (CORRIGIDA)
+        // FUNÇÃO: Carregar OS da planilha para o sistema
         // ============================================
         async function carregarOSDaPlanilha() {
             if (!currentUser) {
@@ -1033,33 +1015,21 @@
                 return;
             }
             
-            updateSyncStatus('Conectando com a planilha...', 'loading');
-            reloadButton.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Conectando...';
+            updateSyncStatus('Carregando OS da planilha...', 'loading');
+            reloadButton.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Carregando...';
             reloadButton.disabled = true;
             
             try {
                 console.log('🔄 Carregando OS da planilha...');
                 
-                // URL com proxy CORS e parâmetros
-                const url = API_URL + '?action=carregarSistema&timestamp=' + Date.now() + '&origin=github';
-                
-                console.log('📤 URL:', url);
-                
-                const response = await fetch(url, {
-                    mode: 'cors',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-                
-                console.log('📥 Status:', response.status, response.statusText);
+                // Usando timestamp para evitar cache
+                const response = await fetch(API_URL + '?action=carregarSistema&timestamp=' + Date.now());
                 
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 
                 const result = await response.json();
-                console.log('📦 Dados recebidos:', result);
                 
                 if (result.success && result.osList) {
                     osList = result.osList;
@@ -1080,43 +1050,26 @@
                     
                     console.log(`✅ ${osList.length} OS carregadas da planilha`);
                     showToast(`✅ ${osList.length} OS carregadas da planilha!`, 'success');
-                    updateSyncStatus('Conectado!', 'success');
                     
                 } else {
                     console.error('❌ Erro ao carregar OS:', result.error);
-                    showToast('❌ ' + (result.error || 'Erro ao carregar OS'), 'error');
-                    updateSyncStatus('Erro na resposta', 'error');
-                    
-                    // Fallback para dados locais
-                    const backupList = JSON.parse(localStorage.getItem('osList')) || [];
-                    if (backupList.length > 0) {
-                        osList = backupList;
-                        osCounter = parseInt(localStorage.getItem('osCounter')) || 1;
-                        updateCounters();
-                        renderOSTable();
-                        showToast('⚠️ Usando dados locais', 'warning');
-                    }
+                    showToast('❌ Erro ao carregar OS da planilha', 'error');
                 }
                 
             } catch (error) {
                 console.error('❌ Erro de conexão:', error);
-                showToast('❌ Erro: ' + error.message, 'error');
-                updateSyncStatus('Erro de conexão', 'error');
+                showToast('⚠️ Carregando do backup local...', 'warning');
                 
-                // Fallback para dados locais
                 const backupList = JSON.parse(localStorage.getItem('osList')) || [];
                 osList = backupList;
                 osCounter = parseInt(localStorage.getItem('osCounter')) || 1;
                 updateCounters();
                 renderOSTable();
-                showToast('⚠️ Carregando do backup local', 'warning');
-            } finally {
-                setTimeout(() => {
-                    syncStatus.style.display = 'none';
-                }, 3000);
-                reloadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Recarregar da Planilha';
-                reloadButton.disabled = false;
             }
+            
+            updateSyncStatus('', '');
+            reloadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Recarregar da Planilha';
+            reloadButton.disabled = false;
         }
 
         // ============================================
@@ -1226,7 +1179,7 @@
             osIdInput.value = os.id;
         }
 
-        // FUNÇÃO: Salvar OS (corrigida para CORS)
+        // FUNÇÃO: Salvar OS (corrigida para edição)
         async function handleOSSubmit(e) {
             e.preventDefault();
             
@@ -1249,7 +1202,7 @@
             let isNewOS = false;
             
             if (currentEditingOS) {
-                // EDITANDO OS EXISTENTE
+                // EDITANDO OS EXISTENTE - USA O MESMO ID E CÓDIGO
                 osId = currentEditingOS.id;
                 osCode = currentEditingOS.code;
             } else {
@@ -1337,7 +1290,7 @@
         }
 
         // ============================================
-        // FUNÇÕES DE COMUNICAÇÃO COM A PLANILHA (CORRIGIDAS)
+        // FUNÇÕES DE COMUNICAÇÃO COM A PLANILHA
         // ============================================
         async function salvarOuAtualizarOSNaPlanilha(os) {
             updateSyncStatus('Salvando na planilha...', 'loading');
@@ -1350,10 +1303,7 @@
                     os: os
                 };
                 
-                // URL com proxy CORS
-                const url = API_URL + '?origin=github';
-                
-                const response = await fetch(url, {
+                const response = await fetch(API_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
@@ -1384,12 +1334,14 @@
             }
         }
 
-        // FUNÇÃO: Atualizar status na planilha
+        // FUNÇÃO CORRIGIDA: Atualizar status na planilha
         async function atualizarStatusNaPlanilha(id, status, dadosAdicionais = {}) {
             try {
+                // Cria a OS completa para enviar
                 const os = osList.find(os => os.id.toString() === id.toString());
                 if (!os) return { success: false, error: "OS não encontrada" };
                 
+                // Atualiza os dados da OS
                 os.status = status;
                 os.lastEditedBy = dadosAdicionais.lastEditedBy || currentUser.name;
                 os.lastUpdate = new Date().toISOString();
@@ -1406,6 +1358,7 @@
                     }
                 }
                 
+                // Usa a mesma função de salvar/atualizar
                 return await salvarOuAtualizarOSNaPlanilha(os);
                 
             } catch (error) {
@@ -1435,7 +1388,7 @@
                     errorCount++;
                 }
                 
-                // Pequeno delay
+                // Pequeno delay para evitar sobrecarga
                 await new Promise(resolve => setTimeout(resolve, 300));
             }
             
@@ -1515,8 +1468,7 @@
             try {
                 console.log('🔧 Testando API...');
                 
-                const url = API_URL + '?test=true&timestamp=' + Date.now() + '&origin=github';
-                const testResponse = await fetch(url);
+                const testResponse = await fetch(API_URL + '?test=true&timestamp=' + Date.now());
                 const testData = await testResponse.json();
                 
                 console.log('📡 Resposta do teste:', testData);
@@ -1539,7 +1491,6 @@
         document.addEventListener('DOMContentLoaded', function() {
             generateOSCode();
             
-            // Carregar dados locais como fallback
             const backupList = JSON.parse(localStorage.getItem('osList')) || [];
             if (backupList.length > 0) {
                 osList = backupList;
@@ -1575,11 +1526,13 @@
             }
         }
 
+        // FUNÇÃO: Editar OS existente
         function editOS(id) {
             const os = osList.find(os => os.id.toString() === id.toString());
             if (os) {
                 currentEditingOS = os;
                 
+                // Preenche o formulário
                 document.getElementById('productName').value = os.productName;
                 document.getElementById('urgency').value = os.urgency;
                 document.getElementById('photoType').value = os.photoType;
@@ -1590,6 +1543,7 @@
                 document.getElementById('clip').value = os.clip || '';
                 document.getElementById('observations').value = os.observations || '';
                 
+                // Preenche SKUs
                 const skuList = document.getElementById('skuList');
                 skuList.innerHTML = '';
                 
@@ -1607,6 +1561,7 @@
                     addSku();
                 }
                 
+                // Atualiza interface
                 updateFormForEditing(os);
                 
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1725,6 +1680,7 @@
             }
         }
 
+        // FUNÇÃO CORRIGIDA: Iniciar OS
         async function iniciarOS(id) {
             const os = osList.find(os => os.id.toString() === id.toString());
             if (os && currentUser) {
@@ -1735,6 +1691,7 @@
                         });
                         
                         if (result.success) {
+                            // Atualiza localmente
                             os.status = 'andamento';
                             os.lastEditedBy = currentUser.name;
                             os.lastUpdate = new Date().toISOString();
@@ -1769,6 +1726,7 @@
             finalizarModal.style.display = 'none';
         }
 
+        // FUNÇÃO CORRIGIDA: Finalizar OS
         async function finalizarOS() {
             if (!currentUser) {
                 showToast('⚠️ Faça login primeiro!', 'warning');
@@ -1782,11 +1740,13 @@
             
             const os = osList.find(os => os.id.toString() === osId.toString());
             if (os && currentUser) {
+                // Desabilita o botão para evitar clique duplo
                 finalizarBtn.disabled = true;
                 const originalText = finalizarBtn.innerHTML;
                 finalizarBtn.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Finalizando...';
                 
                 try {
+                    // Atualiza na planilha primeiro
                     const result = await atualizarStatusNaPlanilha(osId, 'finalizado', {
                         lastEditedBy: currentUser.name,
                         photosCount: fotosCount,
@@ -1794,6 +1754,7 @@
                     });
                     
                     if (result.success) {
+                        // Atualiza localmente
                         os.status = 'finalizado';
                         os.photosCount = fotosCount;
                         os.editsCount = edicoesCount;
@@ -1811,10 +1772,12 @@
                         updateCounters();
                         renderOSTable();
                         
+                        // Fecha o modal
                         closeFinalizarModal();
                         
                         showToast(`✅ OS "${os.productName}" finalizada com sucesso!`, 'success');
                         
+                        // Recarrega da planilha
                         setTimeout(() => {
                             carregarOSDaPlanilha();
                         }, 1000);
@@ -1826,6 +1789,7 @@
                     console.error('Erro ao finalizar OS:', error);
                     showToast(`❌ Erro ao finalizar OS`, 'error');
                 } finally {
+                    // Restaura o botão
                     finalizarBtn.disabled = false;
                     finalizarBtn.innerHTML = originalText;
                 }
