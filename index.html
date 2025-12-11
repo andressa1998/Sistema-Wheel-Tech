@@ -1597,5 +1597,94 @@
             }
         }
     </script>
+
+    <button onclick="testeEnvioAPI()" style="
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #FF4757;
+    color: white;
+    padding: 15px;
+    border-radius: 10px;
+    border: none;
+    font-weight: bold;
+    z-index: 1000;
+    cursor: pointer;
+">
+    🔧 TESTAR API
+</button>
+
+<script>
+async function testeEnvioAPI() {
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyPJyuyjJ1K5faa-ElrT2McTQfEJOeFADCGg_hZp5Cfu5Ps_pKvJZIv3JCjDKw6dKa9/exec';
+    
+    const osTeste = {
+        id: 999,
+        code: 'TESTE-' + Date.now(),
+        productName: 'PRODUTO TESTE API',
+        createdBy: 'TESTE',
+        lastEditedBy: 'TESTE',
+        urgency: 'normal',
+        creationDate: new Date().toLocaleDateString('pt-BR'),
+        photoType: 'studio',
+        scalePhoto: 'sim',
+        unpackProduct: true,
+        isReturn: false,
+        links: '',
+        clip: '',
+        observations: 'Teste de envio via API',
+        skus: ['SKU-TESTE-001', 'SKU-TESTE-002'],
+        status: 'pendente',
+        photosCount: 0,
+        editsCount: 0,
+        lastUpdate: new Date().toISOString()
+    };
+    
+    console.log('🔧 TESTANDO ENVIO PARA API...');
+    console.log('URL:', API_URL);
+    console.log('Dados:', osTeste);
+    
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                operacao: 'criar',
+                os: osTeste
+            })
+        });
+        
+        console.log('✅ Resposta recebida! Status:', response.status);
+        
+        // Tenta ler a resposta
+        const textoResposta = await response.text();
+        console.log('📥 Texto da resposta:', textoResposta);
+        
+        try {
+            const jsonResposta = JSON.parse(textoResposta);
+            console.log('📊 JSON da resposta:', jsonResposta);
+            
+            if (jsonResposta.success) {
+                alert('✅ SUCESSO!\nOS enviada para o Google Sheets!\n\nLinha: ' + (jsonResposta.linha || 'nova') + '\nMensagem: ' + jsonResposta.message);
+                
+                // Abre a planilha
+                window.open('https://docs.google.com/spreadsheets/d/1HoZPlyIdfx-qXU8zpaOEOkXw92B1teIybrn46BSIpWs/edit#gid=0', '_blank');
+            } else {
+                alert('❌ ERRO NA API:\n' + jsonResposta.error);
+            }
+        } catch (e) {
+            console.warn('⚠️ Resposta não é JSON:', textoResposta);
+            alert('⚠️ Resposta da API: ' + textoResposta.substring(0, 100) + '...');
+        }
+        
+    } catch (error) {
+        console.error('❌ ERRO DE CONEXÃO:', error);
+        alert('❌ ERRO DE CONEXÃO:\n' + error.message + '\n\nVerifique:\n1. Conexão com internet\n2. URL da API está correta\n3. Apps Script está implantado');
+    }
+}
+</script>
+
 </body>
 </html>
