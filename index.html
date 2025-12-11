@@ -969,77 +969,67 @@
         }
 
         async function saveToCloud() {
-            // Em um ambiente real, aqui você faria uma requisição para uma API
-            // que salvaria os dados no Google Sheets usando Google Apps Script
-            
-            // Simulando o salvamento na nuvem
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    localStorage.setItem('cloudData', JSON.stringify({
-                        osList: osList,
-                        osCounter: osCounter,
-                        lastSync: new Date().toISOString()
-                    }));
-                    resolve();
-                }, 1000);
-            });
-        }
+    if (!sheetUrl) return Promise.resolve(); // Se não configurou, ignora
 
-        async function loadFromCloud() {
-            // Em um ambiente real, aqui você faria uma requisição para uma API
-            // que buscaria os dados do Google Sheets
-            
-            return new Promise((resolve) => {
-                setTimeout(() => {
-                    const cloudData = localStorage.getItem('cloudData');
-                    if (cloudData) {
-                        const data = JSON.parse(cloudData);
-                        
-                        // Mesclar dados locais com dados da nuvem
-                        osList = mergeOSLists(osList, data.osList);
-                        osCounter = Math.max(osCounter, data.osCounter);
-                        
-                        saveData();
-                        renderOSTable();
-                    }
-                    resolve();
-                }, 1000);
-            });
-        }
+    updateSyncStatus('Enviando para a nuvem...', 'loading');
+    
+    // 1. PEGAR A URL DO SEU SCRIPT (API) QUE VOCÊ COPIOU
+    // SUBSTITUA A STRING ABAIXO PELA SUA URL!
+    const API_URL = 'https://script.google.com/macros/s/AKfycbyPJyuyjJ1K5faa-ElrT2McTQfEJOeFADCGg_hZp5Cfu5Ps_pKvJZIv3JCjDKw6dKa9/exec';
 
-        function mergeOSLists(localList, cloudList) {
-            const merged = [...localList];
-            
-            cloudList.forEach(cloudOS => {
-                const localIndex = merged.findIndex(localOS => localOS.id === cloudOS.id);
-                
-                if (localIndex === -1) {
-                    // OS nova da nuvem
-                    merged.push(cloudOS);
-                } else {
-                    // Mesclar OS existente (manter a mais recente)
-                    const localOS = merged[localIndex];
-                    const cloudDate = new Date(cloudOS.lastUpdate || cloudOS.creationDate);
-                    const localDate = new Date(localOS.lastUpdate || localOS.creationDate);
-                    
-                    if (cloudDate > localDate) {
-                        merged[localIndex] = cloudOS;
-                    }
-                }
+    // 2. Preparar os dados de TODAS as OS para enviar
+    //    Vamos enviar uma por uma para garantir sincronia
+    let allSuccess = true;
+    
+    for (let os of osList) {
+        // Determina a operação (na prática, sempre 'atualizar' após a primeira vez)
+        const operacao = os.lastUpdate === os.creationDate ? 'criar' : 'atualizar';
+        
+        const payload = {
+            operacao: operacao,
+            os: os // Envia o objeto completo da OS
+        };
+
+        try {
+            // 3. Fazer a requisição POST para sua API
+            const response = await fetch(API_URL, {
+                method: 'POST',
+                mode: 'no-cors', // IMPORTANTE para Apps Script público
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload)
             });
             
-            return merged;
-        }
-
-        function updateSyncStatus(message, type) {
-            syncStatus.textContent = message;
-            syncStatus.className = `sync-status sync-${type}`;
-            syncStatus.style.display = 'inline-block';
+            // Como usamos 'no-cors', não podemos ler a resposta diretamente.
+            // Assumimos sucesso se não houver erro de rede.
+            console.log(`OS ${os.code} enviada.`);
             
-            if (type === 'loading') {
-                syncStatus.innerHTML = `<div class="loading" style="display: inline-block; margin-right: 5px;"></div> ${message}`;
-            }
+            // Pequena pausa para não sobrecarregar a API
+            await new Promise(resolve => setTimeout(resolve, 200));
+            
+        } catch (error) {
+            console.error(`Erro ao enviar OS ${os.code}:`, error);
+            allSuccess = false;
         }
+    }
+
+    // 4. Atualizar o status na interface
+    if (allSuccess) {
+        updateSyncStatus('Todas OS salvas na nuvem!', 'success');
+        localStorage.setItem('cloudData', JSON.stringify({
+            osList: osList,
+            osCounter: osCounter,
+            lastSync: new Date().toISOString()
+        }));
+    } else {
+        updateSyncStatus('Algumas OS não foram salvas.', 'error');
+    }
+    
+    // Esconder o status após 3 segundos
+    setTimeout(() => { syncStatus.style.display = 'none'; }, 3000);
+    return Promise.resolve();
+}
 
         // Funções de OS (mantidas as mesmas, com pequenas adaptações)
         function generateOSCode() {
