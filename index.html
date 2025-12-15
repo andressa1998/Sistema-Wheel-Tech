@@ -510,10 +510,6 @@
                 <i class="fas fa-sign-in-alt"></i> Entrar no Sistema
             </button>
             
-            <div class="mt-4 text-center" style="font-size: 13px; color: #6c757d;">
-                <p><strong>Usuários de teste:</strong></p>
-                <p>• elaine / 180998</p>
-                <p>• arthur / arthur123</p>
             </div>
         </form>
     </div>
@@ -1295,8 +1291,9 @@
             // Usuários de teste (em produção, isso viria do Supabase)
             const users = [
                 { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E' },
-                { username: 'arthur', password: 'arthur123', name: 'Arthur', avatar: 'A' },
+                { username: 'arthur', password: '040869', name: 'Arthur', avatar: 'A' },
                 { username: 'admin', password: 'admin123', name: 'Administrador', avatar: 'A' }
+                { username: 'ronald', password: '2101', name: 'Administrador', avatar: 'R' }
             ];
             
             const user = users.find(u => u.username === username && u.password === password);
@@ -1496,7 +1493,6 @@
         // Mostra mensagem inicial
         console.log('🚀 Sistema OS Fotografia inicializado');
         console.log('🔗 Supabase URL:', window.SUPABASE_URL);
-        console.log('👤 Usuários de teste: elaine/180998 ou arthur/arthur123');
     </script>
 </body>
 </html>
