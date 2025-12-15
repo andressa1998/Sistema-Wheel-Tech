@@ -446,6 +446,9 @@ function updateCounters() {
 // ============================================
 // FUNÇÃO RENDERIZAR TABELA
 // ============================================
+// ============================================
+// FUNÇÃO RENDERIZAR TABELA (ATUALIZADA)
+// ============================================
 function renderOrdersTable() {
     osTableBody.innerHTML = '';
     
@@ -528,6 +531,16 @@ function renderOrdersTable() {
             statusBadge = '<span class="status-completed">Concluída</span>';
         }
         
+        // Informação do criador (sempre visível para o responsável)
+        let creatorInfo = '';
+        if (order.createdBy && order.createdBy !== 'Sistema') {
+            creatorInfo = `
+                <div style="font-size: 11px; color: #6c757d; margin-top: 2px;">
+                    <i class="fas fa-user-plus"></i> Criado por: ${order.createdBy}
+                </div>
+            `;
+        }
+        
         // Botões de ação (apenas se tiver permissão)
         let actionButtons = '';
         if (hasPermission) {
@@ -554,12 +567,15 @@ function renderOrdersTable() {
                 <strong>${order.code}</strong>
                 ${permissionBadge}
                 ${typeBadge}
+                ${creatorInfo}
             </td>
             <td>${order.productName}</td>
             <td>
-                ${order.responsibleName}
-                ${order.responsibleName.toLowerCase() === currentUser.name.toLowerCase() ? 
-                  '<i class="fas fa-user-check" style="color: var(--primary); margin-left: 5px;"></i>' : ''}
+                <div>
+                    ${order.responsibleName}
+                    ${order.responsibleName.toLowerCase() === currentUser.name.toLowerCase() ? 
+                      '<i class="fas fa-user-check" style="color: var(--primary); margin-left: 5px;"></i>' : ''}
+                </div>
             </td>
             <td>${urgencyBadge}</td>
             <td>${statusBadge}</td>
