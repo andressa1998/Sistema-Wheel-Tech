@@ -3,25 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Ordem de Serviço - Fotografia</title>
+    <title>Sistema OS Fotografia | Supabase</title>
+    
+    <!-- Bibliotecas -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    
+    <!-- Configuração Privada -->
+    <script src="config.js"></script>
+    
     <style>
+        /* ===== ESTILOS GERAIS ===== */
         :root {
             --primary: #8A2BE2;
             --secondary: #FF6B8B;
-            --success: #00D26A;
-            --warning: #FFA500;
-            --danger: #FF4757;
-            --info: #00CED1;
-            --light: #F8F9FA;
-            --dark: #2C3E50;
-            --purple: #9B59B6;
-            --teal: #20B2AA;
-            --orange: #FF7F50;
-            --pink: #FF69B4;
-            --blue: #4169E1;
-            --neutral: #6c757d;
+            --success: #28a745;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --info: #17a2b8;
+            --light: #f8f9fa;
+            --dark: #343a40;
         }
         
         * {
@@ -32,104 +34,55 @@
         }
         
         body {
-            background: #f8f9fa;
+            background: #f5f7fa;
             color: #333;
-            line-height: 1.6;
             min-height: 100vh;
         }
         
+        /* ===== LAYOUT ===== */
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
         
-        header {
+        /* ===== LOGIN ===== */
+        .login-container {
+            max-width: 400px;
+            margin: 100px auto;
+            padding: 40px 30px;
             background: white;
-            color: var(--dark);
-            padding: 20px 0;
-            border-radius: 10px;
-            margin-bottom: 25px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            border: 1px solid #e9ecef;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            text-align: center;
+            border: 1px solid #e1e5eb;
         }
         
-        .header-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0 25px;
+        .login-header {
+            margin-bottom: 30px;
         }
         
-        h1 {
-            font-size: 28px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            color: var(--dark);
-        }
-        
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 8px 16px;
-            border-radius: 20px;
-            border: 1px solid #e9ecef;
-        }
-        
-        .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--primary), var(--purple));
+        .login-header h1 {
+            color: var(--primary);
+            margin-bottom: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: white;
-            font-weight: bold;
-            font-size: 16px;
+            gap: 10px;
         }
         
-        .card {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-            padding: 25px;
-            margin-bottom: 25px;
-            border: 1px solid #e9ecef;
+        .login-header p {
+            color: #6c757d;
+            font-size: 14px;
         }
         
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid #e9ecef;
-        }
-        
-        h2 {
-            color: var(--dark);
-            font-size: 22px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .form-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        
+        /* ===== FORMULÁRIOS ===== */
         .form-group {
-            flex: 1;
-            min-width: 250px;
+            margin-bottom: 20px;
+            text-align: left;
         }
         
-        label {
+        .form-group label {
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
@@ -137,508 +90,298 @@
             font-size: 14px;
         }
         
-        input, select, textarea {
+        .form-control {
             width: 100%;
-            padding: 12px;
+            padding: 12px 15px;
             border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            background: white;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: all 0.3s;
         }
         
-        input:focus, select:focus, textarea:focus {
+        .form-control:focus {
             outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 2px rgba(138, 43, 226, 0.1);
+            box-shadow: 0 0 0 3px rgba(138, 43, 226, 0.15);
         }
         
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        
-        .checkbox-group input {
-            width: auto;
-        }
-        
+        /* ===== BOTÕES ===== */
         .btn {
-            padding: 12px 20px;
+            padding: 12px 24px;
             border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
+            border-radius: 8px;
+            font-size: 15px;
             font-weight: 600;
-            transition: all 0.3s ease;
+            cursor: pointer;
+            transition: all 0.3s;
             display: inline-flex;
             align-items: center;
             gap: 8px;
         }
         
         .btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
         }
         
         .btn-primary {
-            background: linear-gradient(135deg, var(--primary), var(--purple));
+            background: linear-gradient(135deg, var(--primary), #9d4edd);
             color: white;
         }
         
         .btn-success {
-            background: linear-gradient(135deg, var(--success), var(--teal));
+            background: var(--success);
             color: white;
         }
         
         .btn-warning {
-            background: linear-gradient(135deg, var(--warning), var(--orange));
-            color: white;
+            background: var(--warning);
+            color: #212529;
         }
         
         .btn-danger {
-            background: linear-gradient(135deg, var(--danger), var(--pink));
-            color: white;
-        }
-        
-        .btn-secondary {
-            background: var(--neutral);
+            background: var(--danger);
             color: white;
         }
         
         .btn-info {
-            background: linear-gradient(135deg, var(--info), var(--blue));
+            background: var(--info);
             color: white;
         }
         
-        .btn-export {
-            background: linear-gradient(135deg, #28a745, #20c997);
+        .btn-secondary {
+            background: #6c757d;
             color: white;
         }
         
-        .btn-clean {
-            background: linear-gradient(135deg, #6c757d, #868e96);
-            color: white;
-        }
-        
-        .btn-sync {
-            background: linear-gradient(135deg, #17a2b8, #138496);
-            color: white;
-        }
-        
-        .btn-group {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-        
-        .badge {
-            display: inline-block;
+        .btn-sm {
             padding: 6px 12px;
-            border-radius: 15px;
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 13px;
         }
         
-        .badge-primary {
-            background: linear-gradient(135deg, var(--primary), var(--purple));
-            color: white;
-        }
-        
-        .badge-success {
-            background: linear-gradient(135deg, var(--success), var(--teal));
-            color: white;
-        }
-        
-        .badge-warning {
-            background: linear-gradient(135deg, var(--warning), var(--orange));
-            color: white;
-        }
-        
-        .badge-danger {
-            background: linear-gradient(135deg, var(--danger), var(--pink));
-            color: white;
-        }
-        
-        .badge-info {
-            background: linear-gradient(135deg, var(--info), var(--blue));
-            color: white;
-        }
-        
-        .badge-secondary {
-            background: var(--neutral);
-            color: white;
-        }
-        
-        .table-container {
-            overflow-x: auto;
-            border-radius: 8px;
-            box-shadow: 0 1px 5px rgba(0,0,0,0.05);
-        }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
+        /* ===== CARDS ===== */
+        .card {
             background: white;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        
-        th, td {
-            padding: 14px 12px;
-            text-align: left;
-            border-bottom: 1px solid #e9ecef;
-        }
-        
-        th {
-            background: #f8f9fa;
-            font-weight: 600;
-            color: var(--dark);
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        tr:hover {
-            background: #f8f9fa;
-        }
-        
-        .urgent-high {
-            border-left: 4px solid var(--danger);
-        }
-        
-        .urgent-normal {
-            border-left: 4px solid var(--warning);
-        }
-        
-        .urgent-low {
-            border-left: 4px solid var(--success);
-        }
-        
-        .return-flag {
-            background: #fff5f5 !important;
-            position: relative;
-        }
-        
-        .return-flag::after {
-            content: '🔄 DEVOLUÇÃO';
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            background: var(--danger);
-            color: white;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 9px;
-            font-weight: bold;
-        }
-
-        /* Caixa branca do login */ 
-        
-        .login-container {
-            max-width: 600px;
-            margin: 100px auto;
-            padding: 30px;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
-            text-align: center;
-            border: 1px solid #e9ecef;
-        }
-
-        /* Cabeçalho do login */
-        
-        .login-header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        /* Texto 1 do login (Sistema OS - Wheel Tech Bicycling) */
-        
-        .login-header h1 {
-            color: var(--primary);
-            margin-bottom: 10px;
-            font-size: 28px;
-        }
-        
-        .login-header p {
-            color: var(--dark);
-            font-size: 14px;
-            opacity: 0.8;
-        }
-        
-        .hidden {
-            display: none;
-        }
-        
-        .os-code {
-            font-size: 18px;
-            font-weight: bold;
-            color: var(--primary);
-            background: #f8f9fa;
-            padding: 10px 16px;
-            border-radius: 6px;
-            display: inline-block;
-            margin-bottom: 15px;
-            border: 1px solid #e9ecef;
-        }
-        
-        .print-only {
-            display: none;
-        }
-        
-        .sku-list {
-            margin-top: 12px;
-        }
-        
-        .sku-item {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-            align-items: center;
-        }
-        
-        .sku-item input {
-            flex: 1;
-        }
-        
-        .action-buttons {
-            display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-        }
-        
-        .action-btn {
-            padding: 6px 10px;
-            font-size: 11px;
-            border-radius: 5px;
-        }
-        
-        .status-badge {
-            padding: 6px 12px;
-            border-radius: 15px;
-            font-size: 10px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .status-pendente {
-            background: linear-gradient(135deg, var(--warning), var(--orange));
-            color: white;
-        }
-        
-        .status-andamento {
-            background: linear-gradient(135deg, var(--info), var(--blue));
-            color: white;
-        }
-        
-        .status-finalizado {
-            background: linear-gradient(135deg, var(--success), var(--teal));
-            color: white;
-        }
-        
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.5);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .modal-content {
-            background: white;
+            border-radius: 12px;
             padding: 25px;
-            border-radius: 10px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
-            max-width: 450px;
-            width: 90%;
+            margin-bottom: 25px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            border: 1px solid #e1e5eb;
         }
         
-        .modal-header {
+        .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
             padding-bottom: 15px;
-            border-bottom: 1px solid #e9ecef;
+            border-bottom: 2px solid #f1f3f5;
         }
         
-        .modal-title {
-            color: var(--primary);
-            font-size: 18px;
+        .card-title {
+            font-size: 20px;
+            color: var(--dark);
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
         
-        .close-modal {
-            background: none;
-            border: none;
-            font-size: 20px;
-            cursor: pointer;
+        /* ===== HEADER ===== */
+        .main-header {
+            background: white;
+            padding: 20px 0;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #e1e5eb;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .user-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), #9d4edd);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 18px;
+        }
+        
+        /* ===== TABELA ===== */
+        .table-responsive {
+            overflow-x: auto;
+            border-radius: 10px;
+            border: 1px solid #e1e5eb;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            padding: 15px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--dark);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #e1e5eb;
+        }
+        
+        .table td {
+            padding: 14px 12px;
+            border-bottom: 1px solid #e1e5eb;
+        }
+        
+        .table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        /* ===== BADGES ===== */
+        .badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .badge-primary {
+            background: rgba(138, 43, 226, 0.1);
+            color: var(--primary);
+        }
+        
+        .badge-success {
+            background: rgba(40, 167, 69, 0.1);
+            color: var(--success);
+        }
+        
+        .badge-warning {
+            background: rgba(255, 193, 7, 0.1);
+            color: #b58900;
+        }
+        
+        .badge-danger {
+            background: rgba(220, 53, 69, 0.1);
             color: var(--danger);
         }
         
-        .modal-form-group {
+        .badge-info {
+            background: rgba(23, 162, 184, 0.1);
+            color: var(--info);
+        }
+        
+        /* ===== UTILITÁRIOS ===== */
+        .hidden {
+            display: none !important;
+        }
+        
+        .text-center {
+            text-align: center;
+        }
+        
+        .mb-3 {
             margin-bottom: 15px;
         }
         
-        .modal-form-group label {
-            display: block;
-            margin-bottom: 6px;
-            font-weight: 600;
-            color: var(--dark);
+        .mb-4 {
+            margin-bottom: 20px;
         }
         
-        .modal-form-group input {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 14px;
+        .mt-3 {
+            margin-top: 15px;
         }
         
-        .user-badge {
-            background: linear-gradient(135deg, var(--primary), var(--purple));
-            color: white;
+        .mt-4 {
+            margin-top: 20px;
         }
         
-        .edited-by {
-            font-size: 10px;
-            color: var(--neutral);
-            font-style: italic;
-            margin-top: 2px;
+        .d-flex {
+            display: flex;
         }
         
-        .sync-status {
-            padding: 8px 12px;
-            border-radius: 5px;
-            font-size: 12px;
-            margin-left: 10px;
+        .align-items-center {
+            align-items: center;
         }
         
-        .sync-success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+        .justify-content-between {
+            justify-content: space-between;
         }
         
-        .sync-error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+        .gap-2 {
+            gap: 10px;
         }
         
-        .sync-loading {
-            background: #cce5ff;
-            color: #004085;
-            border: 1px solid #b8daff;
+        .gap-3 {
+            gap: 15px;
         }
         
-        @media print {
-            .no-print {
-                display: none !important;
-            }
-            
-            .print-only {
-                display: block;
-            }
-            
-            body {
-                background: white;
-            }
-            
-            .card {
-                box-shadow: none;
-                border: 1px solid #ddd;
-            }
-        }
-
-        .loading {
+        /* ===== LOADING ===== */
+        .spinner {
             display: inline-block;
             width: 20px;
             height: 20px;
             border: 3px solid #f3f3f3;
-            border-top: 3px solid #3498db;
+            border-top: 3px solid var(--primary);
             border-radius: 50%;
             animation: spin 1s linear infinite;
         }
-
+        
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
         
-        .test-button {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #28a745;
-            color: white;
-            padding: 15px 20px;
-            border-radius: 50px;
-            border: none;
-            font-weight: bold;
-            z-index: 1000;
-            cursor: pointer;
-            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.3s;
-        }
-        
-        .test-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.6);
-        }
-        
-        .reload-button {
-            background: linear-gradient(135deg, var(--primary), var(--purple));
-            color: white;
-        }
-        
-        /* Toast notifications */
+        /* ===== TOAST ===== */
         .toast {
             position: fixed;
-            top: 20px;
-            right: 20px;
+            top: 25px;
+            right: 25px;
             padding: 15px 20px;
             border-radius: 8px;
             color: white;
-            font-weight: bold;
+            font-weight: 600;
             z-index: 9999;
             animation: slideIn 0.3s ease;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
             display: flex;
             align-items: center;
             gap: 10px;
         }
         
         .toast-success {
-            background: linear-gradient(135deg, #28a745, #20c997);
-        }
-        
-        .toast-info {
-            background: linear-gradient(135deg, #17a2b8, #138496);
-        }
-        
-        .toast-warning {
-            background: linear-gradient(135deg, #ffc107, #fd7e14);
+            background: var(--success);
         }
         
         .toast-error {
-            background: linear-gradient(135deg, #dc3545, #c82333);
+            background: var(--danger);
+        }
+        
+        .toast-warning {
+            background: var(--warning);
+            color: #212529;
+        }
+        
+        .toast-info {
+            background: var(--info);
         }
         
         @keyframes slideIn {
@@ -646,84 +389,151 @@
             to { transform: translateX(0); opacity: 1; }
         }
         
-        @keyframes slideOut {
-            from { transform: translateX(0); opacity: 1; }
-            to { transform: translateX(100%); opacity: 0; }
+        /* ===== MODAL ===== */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
         }
         
-        .editing-badge {
-            background: linear-gradient(135deg, var(--warning), var(--orange));
-            color: white;
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+        }
+        
+        /* ===== RESPONSIVO ===== */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .card-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .user-info {
+                flex-direction: column;
+            }
+        }
+        
+        /* ===== ESTILOS ESPECÍFICOS ===== */
+        .os-code {
+            font-family: 'Courier New', monospace;
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--primary);
+            background: #f8f9fa;
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #e1e5eb;
+        }
+        
+        .urgent-high {
+            border-left: 4px solid var(--danger);
+        }
+        
+        .urgent-medium {
+            border-left: 4px solid var(--warning);
+        }
+        
+        .urgent-low {
+            border-left: 4px solid var(--success);
+        }
+        
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
             padding: 4px 10px;
             border-radius: 4px;
             font-size: 12px;
-            font-weight: bold;
-            margin-left: 10px;
+            font-weight: 600;
+        }
+        
+        .status-progress {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-completed {
+            background: #d4edda;
+            color: #155724;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
-    <!-- Modal de Finalização -->
-    <div id="finalizarModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title"><i class="fas fa-flag-checkered"></i> Finalizar Ordem de Serviço</h3>
-                <button class="close-modal" onclick="closeFinalizarModal()">&times;</button>
-            </div>
-            <form id="finalizarForm">
-                <input type="hidden" id="finalizarOSId">
-                <div class="modal-form-group">
-                    <label for="fotosCount"><i class="fas fa-camera"></i> Quantidade de Fotos Tiradas</label>
-                    <input type="number" id="fotosCount" min="0" value="0" required>
-                </div>
-                <div class="modal-form-group">
-                    <label for="edicoesCount"><i class="fas fa-edit"></i> Quantidade de Edições Feitas</label>
-                    <input type="number" id="edicoesCount" min="0" value="0" required>
-                </div>
-                <div class="btn-group" style="justify-content: flex-end; margin-top: 20px;">
-                    <button type="button" class="btn btn-secondary" onclick="closeFinalizarModal()">
-                        <i class="fas fa-times"></i> Cancelar
-                    </button>
-                    <button type="submit" class="btn btn-success" id="finalizarBtn">
-                        <i class="fas fa-check"></i> Finalizar OS
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Tela de Login -->
+    <!-- ===== TELA DE LOGIN ===== -->
     <div id="loginScreen" class="login-container">
         <div class="login-header">
-            <h1><i class="fas fa-camera"></i> Sistema OS - Wheel Tech Bicycling</h1>
-            <p>Faça login para acessar o sistema</p>
+            <h1><i class="fas fa-camera"></i> Sistema OS Fotografia</h1>
+            <p>Gerencie ordens de serviço com Supabase</p>
         </div>
+        
         <form id="loginForm">
             <div class="form-group">
-                <label for="username">Usuário</label>
-                <input type="text" id="username" required placeholder="Digite seu usuário">
+                <label for="username"><i class="fas fa-user"></i> Usuário</label>
+                <input type="text" id="username" class="form-control" placeholder="Digite seu usuário" required>
             </div>
+            
             <div class="form-group">
-                <label for="password">Senha</label>
-                <input type="password" id="password" required placeholder="Digite sua senha">
+                <label for="password"><i class="fas fa-lock"></i> Senha</label>
+                <input type="password" id="password" class="form-control" placeholder="Digite sua senha" required>
             </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 20px;">
+            
+            <button type="submit" class="btn btn-primary" style="width: 100%;">
                 <i class="fas fa-sign-in-alt"></i> Entrar no Sistema
             </button>
+            
+            <div class="mt-4 text-center" style="font-size: 13px; color: #6c757d;">
+                <p><strong>Usuários de teste:</strong></p>
+                <p>• elaine / 180998</p>
+                <p>• arthur / arthur123</p>
+            </div>
         </form>
     </div>
-
-    <!-- Sistema Principal -->
+    
+    <!-- ===== SISTEMA PRINCIPAL ===== -->
     <div id="mainSystem" class="hidden">
-        <header>
+        <!-- Header -->
+        <header class="main-header">
             <div class="container">
                 <div class="header-content">
-                    <h1><i class="fas fa-camera"></i> Sistema de OS - Wheel Tech Bicycling</h1>
+                    <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-camera" style="color: var(--primary);"></i>
+                        Sistema de Ordem de Serviço
+                    </h1>
+                    
                     <div class="user-info">
                         <div class="user-avatar" id="userAvatar">U</div>
                         <div>
-                            <div id="userName" style="font-weight: bold;">Usuário</div>
-                            <button id="logoutBtn" class="btn btn-secondary" style="padding: 4px 8px; font-size: 10px; margin-top: 4px;">
+                            <div style="font-weight: 600;" id="userName">Usuário</div>
+                            <button id="logoutBtn" class="btn btn-secondary btn-sm mt-2">
                                 <i class="fas fa-sign-out-alt"></i> Sair
                             </button>
                         </div>
@@ -731,128 +541,111 @@
                 </div>
             </div>
         </header>
-
+        
         <div class="container">
-            <!-- Botão para recarregar OS da planilha -->
-            <div class="card no-print" style="background: #f8f9fa; padding: 15px; margin-bottom: 15px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
+            <!-- Status do Sistema -->
+            <div class="card mb-4">
+                <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <i class="fas fa-info-circle" style="color: var(--info); margin-right: 8px;"></i>
-                        <span style="color: var(--dark); font-size: 14px;">
-                            Sistema carregado com <span id="osCount" style="font-weight: bold;">0</span> OS ativas
-                            <span id="editingBadge" class="editing-badge" style="display: none;">Editando OS</span>
-                        </span>
+                        <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                            <i class="fas fa-info-circle" style="color: var(--info);"></i>
+                            Sistema Conectado ao Supabase
+                        </h3>
+                        <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
+                            <span id="osCount">0</span> ordens de serviço ativas
+                            <span id="syncStatus" class="badge badge-info ml-2" style="margin-left: 10px;"></span>
+                        </p>
                     </div>
-                    <div class="btn-group">
-                        <button class="btn reload-button" onclick="carregarOSDaPlanilha()" id="reloadButton">
-                            <i class="fas fa-sync-alt"></i> Recarregar da Planilha
+                    
+                    <div class="d-flex gap-2">
+                        <button id="testSupabaseBtn" class="btn btn-info">
+                            <i class="fas fa-database"></i> Testar Conexão
                         </button>
-                        <button class="btn btn-sync" onclick="syncWithCloud()" id="syncButton">
-                            <i class="fas fa-cloud-upload-alt"></i> Sincronizar Tudo
+                        <button id="reloadBtn" class="btn btn-primary">
+                            <i class="fas fa-sync-alt"></i> Recarregar
                         </button>
                     </div>
                 </div>
-                <span id="syncStatus" class="sync-status" style="display: none; margin-top: 10px;"></span>
             </div>
-
+            
             <!-- Formulário de Nova OS -->
-            <div class="card no-print">
+            <div class="card mb-4">
                 <div class="card-header">
-                    <h2><i class="fas fa-plus-circle"></i> 
+                    <h2 class="card-title">
+                        <i class="fas fa-plus-circle"></i>
                         <span id="formTitle">Nova Ordem de Serviço</span>
                     </h2>
-                    <div>
-                        <div class="os-code" id="osCodeDisplay">OS: Aguardando criação...</div>
-                    </div>
+                    <div class="os-code" id="osCodeDisplay">OS: Gerando código...</div>
                 </div>
                 
                 <form id="osForm">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="productName">Nome do Produto *</label>
-                            <input type="text" id="productName" required placeholder="Digite o nome do produto">
-                        </div>
-                        <div class="form-group">
-                            <label for="urgency">Grau de Urgência *</label>
-                            <select id="urgency" required>
-                                <option value="baixa">Baixa</option>
-                                <option value="normal" selected>Normal</option>
-                                <option value="alta">Alta</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="photoType">Tipo de Foto</label>
-                            <select id="photoType">
-                                <option value="studio">Estúdio</option>
-                                <option value="bike">Na Bike</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="scalePhoto">Foto na Balança</label>
-                            <select id="scalePhoto">
-                                <option value="nao">Não</option>
-                                <option value="sim">Sim</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>SKUs</label>
-                            <div class="sku-list" id="skuList">
-                                <div class="sku-item">
-                                    <input type="text" class="sku-input" placeholder="Código SKU">
-                                    <button type="button" class="btn btn-danger action-btn" onclick="removeSku(this)"><i class="fas fa-times"></i></button>
-                                </div>
+                    <div class="d-flex flex-wrap gap-3 mb-4">
+                        <div style="flex: 1; min-width: 250px;">
+                            <div class="form-group">
+                                <label for="productName"><i class="fas fa-box"></i> Nome do Produto *</label>
+                                <input type="text" id="productName" class="form-control" placeholder="Ex: Bicicleta Mountain Bike" required>
                             </div>
-                            <button type="button" class="btn btn-secondary" onclick="addSku()" style="margin-top: 8px;">
-                                <i class="fas fa-plus"></i> Adicionar SKU
-                            </button>
+                        </div>
+                        
+                        <div style="flex: 1; min-width: 250px;">
+                            <div class="form-group">
+                                <label for="urgency"><i class="fas fa-exclamation-triangle"></i> Urgência *</label>
+                                <select id="urgency" class="form-control" required>
+                                    <option value="baixa">Baixa</option>
+                                    <option value="normal" selected>Normal</option>
+                                    <option value="alta">Alta</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="links">Links (opcional)</label>
-                            <input type="text" id="links" placeholder="Links relacionados ao produto">
+                    <div class="d-flex flex-wrap gap-3 mb-4">
+                        <div style="flex: 1; min-width: 250px;">
+                            <div class="form-group">
+    <label for="responsibleName"><i class="fas fa-user-check"></i> Responsável *</label>
+    <select id="responsibleName" class="form-control" required>
+        <option value="">Selecione o responsável</option>
+        <option value="Elaine">Elaine</option>
+        <option value="Arthur">Arthur</option>
+        <option value="Laura">Laura</option>
+        <option value="Ronald">Ronald</option>
+        <option value="Bruna">Bruna</option>
+        <option value="Outro">Outra pessoa</option>
+    </select>
+</div>
                         </div>
-                        <div class="form-group">
-                            <label for="clip">Clip (opcional)</label>
-                            <input type="text" id="clip" placeholder="Número do clip">
+                        
+                        <div style="flex: 1; min-width: 250px;">
+                            <div class="form-group">
+                                <label for="photoType"><i class="fas fa-camera"></i> Tipo de Foto</label>
+                                <select id="photoType" class="form-control">
+                                    <option value="estudio">Estúdio</option>
+                                    <option value="bike">Na Bike</option>
+                                    <option value="ambos">Ambos</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     
-                    <div class="form-row">
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="unpackProduct">
-                            <label for="unpackProduct">Tirar produto da embalagem para foto</label>
-                        </div>
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="isReturn">
-                            <label for="isReturn">É uma devolução</label>
-                        </div>
+                    <div class="form-group mb-4">
+                        <label><i class="fas fa-barcode"></i> SKUs (separados por vírgula)</label>
+                        <input type="text" id="skus" class="form-control" placeholder="Ex: SKU001, SKU002, SKU003">
                     </div>
                     
-                    <div class="form-group">
-                        <label for="observations">Observações</label>
-                        <textarea id="observations" rows="3" placeholder="Observações adicionais..."></textarea>
+                    <div class="form-group mb-4">
+                        <label for="observations"><i class="fas fa-sticky-note"></i> Observações</label>
+                        <textarea id="observations" class="form-control" rows="3" placeholder="Detalhes importantes..."></textarea>
                     </div>
                     
-                    <div class="btn-group">
-                        <button type="submit" class="btn btn-success" id="submitButton">
-                            <i class="fas fa-save"></i> <span id="submitText">Salvar OS</span>
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>
                         </button>
-                        <button type="button" class="btn btn-secondary" onclick="cancelarEdicao()" id="cancelButton" style="display: none;">
+                        <button type="button" id="cancelEditBtn" class="btn btn-secondary hidden">
                             <i class="fas fa-times"></i> Cancelar Edição
                         </button>
-                        <button type="reset" class="btn btn-secondary" onclick="limparFormulario()">
+                        <button type="reset" class="btn btn-warning">
                             <i class="fas fa-broom"></i> Limpar
-                        </button>
-                        <button type="button" class="btn btn-info" onclick="testAPI()">
-                            <i class="fas fa-vial"></i> Testar API
                         </button>
                     </div>
                 </form>
@@ -861,257 +654,615 @@
             <!-- Lista de Ordens de Serviço -->
             <div class="card">
                 <div class="card-header">
-                    <h2><i class="fas fa-list"></i> Ordens de Serviço Ativas</h2>
-                    <div class="btn-group">
-                        <button class="btn btn-warning" onclick="filterOS('pendente')">
-                            <i class="fas fa-clock"></i> Pendentes (<span id="countPendentes">0</span>)
+                    <h2 class="card-title">
+                        <i class="fas fa-list"></i> Ordens de Serviço
+                    </h2>
+                    
+                    <div class="d-flex flex-wrap gap-2">
+                        <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">
+                            Pendentes (<span id="countPending">0</span>)
                         </button>
-                        <button class="btn btn-info" onclick="filterOS('andamento')">
-                            <i class="fas fa-play-circle"></i> Em Andamento (<span id="countAndamento">0</span>)
+                        <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">
+                            Andamento (<span id="countProgress">0</span>)
                         </button>
-                        <button class="btn btn-success" onclick="filterOS('finalizado')">
-                            <i class="fas fa-check-circle"></i> Finalizadas (<span id="countFinalizadas">0</span>)
+                        <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
+                            Concluídas (<span id="countCompleted">0</span>)
                         </button>
-                        <button class="btn btn-primary" onclick="filterOS('all')">
-                            <i class="fas fa-layer-group"></i> Todas (<span id="countTodas">0</span>)
-                        </button>
-                        <button class="btn btn-export" onclick="exportToExcel('ativas')">
-                            <i class="fas fa-file-excel"></i> Exportar
+                        <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
+                            Todas (<span id="countTotal">0</span>)
                         </button>
                     </div>
                 </div>
                 
-                <div class="table-container">
-                    <table id="osTable">
+                <div class="table-responsive">
+                    <table class="table" id="osTable">
                         <thead>
                             <tr>
                                 <th>Código</th>
                                 <th>Produto</th>
-                                <th>Criado por</th>
+                                <th>Responsável</th>
                                 <th>Urgência</th>
                                 <th>Status</th>
-                                <th>Data Criação</th>
-                                <th>Última Atualização</th>
+                                <th>Criado em</th>
                                 <th>Ações</th>
                             </tr>
                         </thead>
                         <tbody id="osTableBody">
-                            <!-- As OS serão inseridas aqui via JavaScript -->
+                            <!-- As OS serão carregadas aqui -->
                         </tbody>
                     </table>
                 </div>
-                <div id="emptyMessage" style="text-align: center; padding: 40px; color: #6c757d; display: none;">
-                    <i class="fas fa-inbox" style="font-size: 48px; margin-bottom: 15px; opacity: 0.5;"></i>
-                    <h3 style="margin-bottom: 10px;">Nenhuma Ordem de Serviço</h3>
-                    <p>Crie uma nova OS usando o formulário acima.</p>
+                
+                <div id="emptyMessage" class="text-center py-5 hidden">
+                    <i class="fas fa-inbox fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                    <h4 style="color: #6c757d;">Nenhuma ordem de serviço</h4>
+                    <p style="color: #6c757d;">Crie sua primeira OS usando o formulário acima.</p>
                 </div>
+            </div>
+        </div>
+        
+        <!-- Modal para Finalizar OS -->
+        <div id="completeModal" class="modal hidden">
+            <div class="modal-content">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0;">
+                        <i class="fas fa-flag-checkered"></i> Finalizar OS
+                    </h3>
+                    <button onclick="closeCompleteModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
+                        &times;
+                    </button>
+                </div>
+                
+                <form id="completeForm">
+                    <input type="hidden" id="completeOSId">
+                    
+                    <div class="form-group mb-3">
+                        <label for="photosTaken"><i class="fas fa-camera"></i> Fotos tiradas</label>
+                        <input type="number" id="photosTaken" class="form-control" min="0" value="0" required>
+                    </div>
+                    
+                    <div class="form-group mb-4">
+                        <label for="editsMade"><i class="fas fa-edit"></i> Edições realizadas</label>
+                        <input type="number" id="editsMade" class="form-control" min="0" value="0" required>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-secondary" onclick="closeCompleteModal()">
+                            Cancelar
+                        </button>
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-check"></i> Finalizar
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
 
-    <!-- Botão de teste flutuante -->
-    <button class="test-button" onclick="testarEnvioSimples()">
-        <i class="fas fa-flask"></i> TESTAR ENVIO
-    </button>
-
     <script>
+        // ============================================
+        // CONFIGURAÇÕES E INICIALIZAÇÃO
+        // ============================================
+        
+        // Verifica se as configurações foram carregadas
+        if (!window.SUPABASE_URL || !window.SUPABASE_KEY) {
+            console.warn('⚠️ Configurações não encontradas. Usando valores padrão.');
+            window.SUPABASE_URL = 'https://nvlmtinpcayrpkhulefs.supabase.co';
+            window.SUPABASE_KEY = 'sb_publishable_7AaXEKbS9roL57PO5lQkuQ_fkVWnGoL';
+        }
+        
+        // Inicializa o Supabase
+        const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY);
+        
         // ============================================
         // VARIÁVEIS GLOBAIS
         // ============================================
         let currentUser = null;
-        let osList = [];
-        let osCounter = 1;
-        let currentFilter = 'all';
-        let currentEditingOS = null;
+        let orders = [];
+        let orderCounter = 1;
+        let currentFilter = 'todos';
+        let editingOrderId = null;
         
-        // Configuração da API
-        const API_URL = 'https://script.google.com/macros/s/AKfycbwyFddV4vWa6_iopYOl616B8Nk-QcTu3sEpi5QfLnJsTjkO_Wx2qTrzdKdzcKLQPnIN5A/exec';
-        const SPREADSHEET_URL = 'https://docs.google.com/spreadsheets/d/1HoZPlyIdfx-qXU8zpaOEOkXw92B1teIybrn46BSIpWs/edit?usp=sharing';
-
         // Elementos DOM
         const loginScreen = document.getElementById('loginScreen');
         const mainSystem = document.getElementById('mainSystem');
         const loginForm = document.getElementById('loginForm');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const userName = document.getElementById('userName');
-        const userAvatar = document.getElementById('userAvatar');
         const osForm = document.getElementById('osForm');
         const osCodeDisplay = document.getElementById('osCodeDisplay');
-        const isReturnCheckbox = document.getElementById('isReturn');
-        const urgencySelect = document.getElementById('urgency');
         const osTableBody = document.getElementById('osTableBody');
-        const finalizarModal = document.getElementById('finalizarModal');
-        const finalizarForm = document.getElementById('finalizarForm');
-        const finalizarOSId = document.getElementById('finalizarOSId');
-        const finalizarBtn = document.getElementById('finalizarBtn');
-        const syncButton = document.getElementById('syncButton');
-        const syncStatus = document.getElementById('syncStatus');
-        const submitButton = document.getElementById('submitButton');
-        const submitText = document.getElementById('submitText');
-        const reloadButton = document.getElementById('reloadButton');
         const emptyMessage = document.getElementById('emptyMessage');
-        const osCount = document.getElementById('osCount');
-        const countPendentes = document.getElementById('countPendentes');
-        const countAndamento = document.getElementById('countAndamento');
-        const countFinalizadas = document.getElementById('countFinalizadas');
-        const countTodas = document.getElementById('countTodas');
+        const userName = document.getElementById('userName');
+        const userAvatar = document.getElementById('userAvatar');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const testSupabaseBtn = document.getElementById('testSupabaseBtn');
+        const reloadBtn = document.getElementById('reloadBtn');
+        const cancelEditBtn = document.getElementById('cancelEditBtn');
         const formTitle = document.getElementById('formTitle');
-        const cancelButton = document.getElementById('cancelButton');
-        const editingBadge = document.getElementById('editingBadge');
-
-        // Usuários do sistema
-        const users = [
-            { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E' },
-            { username: 'arthur', password: '241101', name: 'Arthur', avatar: 'A' },
-            { username: 'laura', password: '040869', name: 'Laura', avatar: 'L' },
-            { username: 'ronald', password: '270194', name: 'Ronald', avatar: 'R' },
-            { username: 'bruna', password: '300377', name: 'Bruna', avatar: 'B' }
-        ];
-
-        // Event Listeners - CORRIGIDO: Removi o event listener do finalizarForm
-        loginForm.addEventListener('submit', handleLogin);
-        logoutBtn.addEventListener('click', handleLogout);
-        osForm.addEventListener('submit', handleOSSubmit);
-        isReturnCheckbox.addEventListener('change', handleReturnChange);
-        // NÃO ADICIONA event listener ao finalizarForm - vamos usar onclick
-
+        const submitBtnText = document.getElementById('submitBtnText');
+        const completeModal = document.getElementById('completeModal');
+        const completeForm = document.getElementById('completeForm');
+        const completeOSId = document.getElementById('completeOSId');
+        
+        // Contadores
+        const osCount = document.getElementById('osCount');
+        const countPending = document.getElementById('countPending');
+        const countProgress = document.getElementById('countProgress');
+        const countCompleted = document.getElementById('countCompleted');
+        const countTotal = document.getElementById('countTotal');
+        const syncStatus = document.getElementById('syncStatus');
+        
         // ============================================
-        // FUNÇÕES DE LOGIN E CARREGAMENTO
+        // FUNÇÕES DO SUPABASE
         // ============================================
-        async function handleLogin(e) {
-            e.preventDefault();
-            const username = document.getElementById('username').value.trim().toLowerCase();
-            const password = document.getElementById('password').value;
-            
-            const user = users.find(u => u.username === username && u.password === password);
-            
-            if (user) {
-                currentUser = user;
-                userName.textContent = user.name;
-                userAvatar.textContent = user.avatar;
-                loginScreen.classList.add('hidden');
-                mainSystem.classList.remove('hidden');
-                
-                generateOSCode();
-                await carregarOSDaPlanilha();
-                
-                showToast('✅ Login realizado com sucesso!', 'success');
-                
-            } else {
-                showToast('❌ Usuário ou senha incorretos!', 'error');
-            }
-        }
-
-        function handleLogout() {
-            currentUser = null;
-            currentEditingOS = null;
-            mainSystem.classList.add('hidden');
-            loginScreen.classList.remove('hidden');
-            document.getElementById('username').value = '';
-            document.getElementById('password').value = '';
-            showToast('👋 Logout realizado!', 'info');
-        }
-
-        // ============================================
-        // FUNÇÃO: Carregar OS da planilha para o sistema
-        // ============================================
-        async function carregarOSDaPlanilha() {
-            if (!currentUser) {
-                showToast('⚠️ Faça login primeiro!', 'warning');
-                return;
-            }
-            
-            updateSyncStatus('Carregando OS da planilha...', 'loading');
-            reloadButton.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Carregando...';
-            reloadButton.disabled = true;
+        
+        // Testar conexão com Supabase
+        async function testSupabaseConnection() {
+            showToast('🔗 Testando conexão com Supabase...', 'info');
+            testSupabaseBtn.innerHTML = '<span class="spinner"></span> Testando...';
+            testSupabaseBtn.disabled = true;
             
             try {
-                console.log('🔄 Carregando OS da planilha...');
+                const { data, error } = await supabase
+                    .from('ordens_servico')
+                    .select('count')
+                    .limit(1);
                 
-                const response = await fetch(API_URL + '?action=carregarSistema');
-                const result = await response.json();
+                if (error) throw error;
                 
-                if (result.success && result.osList) {
-                    osList = result.osList;
-                    
-                    if (osList.length > 0) {
-                        const maxId = Math.max(...osList.map(os => {
-                            const idNum = parseInt(os.id);
-                            return isNaN(idNum) ? 0 : idNum;
-                        }));
-                        osCounter = maxId + 1;
-                    }
-                    
-                    localStorage.setItem('osList', JSON.stringify(osList));
-                    localStorage.setItem('osCounter', osCounter.toString());
-                    
-                    updateCounters();
-                    renderOSTable();
-                    
-                    console.log(`✅ ${osList.length} OS carregadas da planilha`);
-                    showToast(`✅ ${osList.length} OS carregadas da planilha!`, 'success');
-                    
-                } else {
-                    console.error('❌ Erro ao carregar OS:', result.error);
-                    showToast('❌ Erro ao carregar OS da planilha', 'error');
-                }
+                showToast('✅ Conexão com Supabase estabelecida!', 'success');
+                syncStatus.textContent = 'Conectado';
+                syncStatus.className = 'badge badge-success ml-2';
+                
+                // Carrega os dados após teste bem-sucedido
+                await loadOrders();
                 
             } catch (error) {
-                console.error('❌ Erro de conexão:', error);
-                showToast('⚠️ Carregando do backup local...', 'warning');
+                console.error('❌ Erro na conexão:', error);
+                showToast('❌ Falha na conexão com Supabase', 'error');
+                syncStatus.textContent = 'Desconectado';
+                syncStatus.className = 'badge badge-danger ml-2';
+            } finally {
+                testSupabaseBtn.innerHTML = '<i class="fas fa-database"></i> Testar Conexão';
+                testSupabaseBtn.disabled = false;
+            }
+        }
+        
+        // Carregar ordens do Supabase (VERSÃO CORRIGIDA)
+        async function loadOrders() {
+            showToast('🔄 Carregando ordens...', 'info');
+            reloadBtn.innerHTML = '<span class="spinner"></span> Carregando...';
+            reloadBtn.disabled = true;
+            
+            try {
+                const { data, error } = await supabase
+                    .from('ordens_servico')
+                    .select('*')
+                    .order('data_criacao', { ascending: false });
                 
-                const backupList = JSON.parse(localStorage.getItem('osList')) || [];
-                osList = backupList;
-                osCounter = parseInt(localStorage.getItem('osCounter')) || 1;
+                if (error) throw error;
+                
+                // Converte para o formato interno CORRETAMENTE
+                orders = data.map(order => ({
+                    id: order.id,
+                    code: order.codigo || `OS-${order.id.toString().padStart(4, '0')}`,
+                    productName: order.produto_nome,
+                    // CORREÇÃO: usa 'responsavel' (minúsculo) do banco
+                    responsibleName: order.responsavel || currentUser?.name || 'A definir',
+                    urgency: order.urgencia || 'normal',
+                    status: order.status || 'pendente',
+                    photoType: order.tipo_foto || 'estudio',
+                    skus: order.skus || [],
+                    observations: order.observacoes || '',
+                    photosTaken: order.qtd_fotos || 0,
+                    editsMade: order.qtd_edicoes || 0,
+                    createdBy: order.criado_por || 'Sistema',
+                    createdAt: order.data_criacao ? new Date(order.data_criacao).toLocaleDateString('pt-BR') : 'N/D',
+                    updatedAt: order.ultima_atualizacao || order.data_criacao
+                }));
+                
+                // Atualiza contador
+                orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
+                
+                // Atualiza interface
                 updateCounters();
-                renderOSTable();
+                renderOrdersTable();
+                
+                showToast(`✅ ${orders.length} ordens carregadas`, 'success');
+                
+            } catch (error) {
+                console.error('❌ Erro ao carregar ordens:', error);
+                showToast('❌ Erro ao carregar ordens', 'error');
+            } finally {
+                reloadBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Recarregar';
+                reloadBtn.disabled = false;
             }
-            
-            updateSyncStatus('', '');
-            reloadButton.innerHTML = '<i class="fas fa-sync-alt"></i> Recarregar da Planilha';
-            reloadButton.disabled = false;
         }
-
+        
+        // Salvar ordem no Supabase (VERSÃO SIMPLIFICADA E FUNCIONAL)
+        async function saveOrder(order) {
+            console.log('💾 Salvando OS no Supabase:', order);
+            
+            try {
+                // Dados para enviar ao Supabase
+                const orderData = {
+                    codigo: order.code,
+                    produto_nome: order.productName,
+                    // CORREÇÃO: envia para coluna 'responsavel'
+                    responsavel: order.responsibleName || currentUser.name,
+                    criado_por: order.createdBy || currentUser.name,
+                    urgencia: order.urgency || 'normal',
+                    status: order.status || 'pendente',
+                    tipo_foto: order.photoType || 'estudio',
+                    observacoes: order.observations || '',
+                    skus: order.skus || [],
+                    qtd_fotos: order.photosTaken || 0,
+                    qtd_edicoes: order.editsMade || 0,
+                    data_criacao: new Date().toISOString(),
+                    ultima_atualizacao: new Date().toISOString()
+                };
+                
+                let result;
+                
+                if (editingOrderId) {
+                    // Atualizar ordem existente
+                    console.log('📝 Atualizando OS ID:', editingOrderId);
+                    const { data, error } = await supabase
+                        .from('ordens_servico')
+                        .update(orderData)
+                        .eq('id', editingOrderId)
+                        .select();
+                    
+                    if (error) throw error;
+                    result = { success: true, updated: true, data };
+                } else {
+                    // Criar nova ordem
+                    console.log('➕ Criando nova OS');
+                    const { data, error } = await supabase
+                        .from('ordens_servico')
+                        .insert([orderData])
+                        .select();
+                    
+                    if (error) throw error;
+                    result = { success: true, updated: false, data };
+                }
+                
+                console.log('✅ OS salva com sucesso:', result);
+                return result;
+                
+            } catch (error) {
+                console.error('❌ Erro ao salvar ordem:', error);
+                showToast('❌ Erro ao salvar: ' + error.message, 'error');
+                return { success: false, error: error.message };
+            }
+        }
+        
+        // Atualizar status da ordem
+        async function updateOrderStatus(orderId, status, additionalData = {}) {
+            try {
+                const updateData = {
+                    status: status,
+                    ultima_atualizacao: new Date().toISOString()
+                };
+                
+                if (status === 'concluida') {
+                    updateData.qtd_fotos = additionalData.photosTaken || 0;
+                    updateData.qtd_edicoes = additionalData.editsMade || 0;
+                    updateData.data_conclusao = new Date().toISOString();
+                }
+                
+                const { data, error } = await supabase
+                    .from('ordens_servico')
+                    .update(updateData)
+                    .eq('id', orderId)
+                    .select();
+                
+                if (error) throw error;
+                return { success: true, data };
+                
+            } catch (error) {
+                console.error('❌ Erro ao atualizar status:', error);
+                return { success: false, error: error.message };
+            }
+        }
+        
+        // Excluir ordem
+        async function deleteOrder(orderId) {
+            try {
+                const { error } = await supabase
+                    .from('ordens_servico')
+                    .delete()
+                    .eq('id', orderId);
+                
+                if (error) throw error;
+                return { success: true };
+                
+            } catch (error) {
+                console.error('❌ Erro ao excluir ordem:', error);
+                return { success: false, error: error.message };
+            }
+        }
+        
         // ============================================
-        // FUNÇÕES DE ATUALIZAÇÃO DE INTERFACE
+        // FUNÇÕES DO SISTEMA
         // ============================================
+        
+        // Gerar código da OS
+        function generateOSCode() {
+            const timestamp = Date.now().toString().slice(-4);
+            const code = `OS${orderCounter.toString().padStart(4, '0')}-${timestamp}`;
+            osCodeDisplay.textContent = `Código: ${code}`;
+            return code;
+        }
+        
+        // Atualizar contadores
         function updateCounters() {
-            const pendentes = osList.filter(os => os.status === 'pendente').length;
-            const andamento = osList.filter(os => os.status === 'andamento').length;
-            const finalizadas = osList.filter(os => os.status === 'finalizado').length;
-            const total = osList.length;
+            const pending = orders.filter(o => o.status === 'pendente').length;
+            const progress = orders.filter(o => o.status === 'andamento').length;
+            const completed = orders.filter(o => o.status === 'concluida').length;
+            const total = orders.length;
             
-            countPendentes.textContent = pendentes;
-            countAndamento.textContent = andamento;
-            countFinalizadas.textContent = finalizadas;
-            countTodas.textContent = total;
-            osCount.textContent = pendentes + andamento;
+            countPending.textContent = pending;
+            countProgress.textContent = progress;
+            countCompleted.textContent = completed;
+            countTotal.textContent = total;
+            osCount.textContent = pending + progress; // Ativas
             
+            // Mostra/oculta mensagem de lista vazia
             if (total === 0) {
-                emptyMessage.style.display = 'block';
-                document.querySelector('table').style.display = 'none';
+                emptyMessage.classList.remove('hidden');
+                document.querySelector('.table-responsive').classList.add('hidden');
             } else {
-                emptyMessage.style.display = 'none';
-                document.querySelector('table').style.display = 'table';
+                emptyMessage.classList.add('hidden');
+                document.querySelector('.table-responsive').classList.remove('hidden');
             }
         }
-
-        function updateSyncStatus(message, type) {
-            syncStatus.textContent = message;
-            syncStatus.className = `sync-status sync-${type}`;
-            syncStatus.style.display = message ? 'inline-block' : 'none';
+        
+        // Renderizar tabela de ordens
+        function renderOrdersTable() {
+            osTableBody.innerHTML = '';
             
-            if (type === 'loading') {
-                syncStatus.innerHTML = `<div class="loading" style="display: inline-block; margin-right: 5px;"></div> ${message}`;
+            // Filtrar ordens
+            let filteredOrders = [];
+            if (currentFilter === 'todos') {
+                filteredOrders = orders;
+            } else {
+                filteredOrders = orders.filter(order => order.status === currentFilter);
+            }
+            
+            // Ordenar por data (mais recente primeiro)
+            filteredOrders.sort((a, b) => {
+                return new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt);
+            });
+            
+            // Renderizar cada ordem
+            filteredOrders.forEach(order => {
+                const row = document.createElement('tr');
+                
+                // Classe de urgência
+                let urgencyClass = '';
+                if (order.urgency === 'alta') urgencyClass = 'urgent-high';
+                else if (order.urgency === 'normal') urgencyClass = 'urgent-medium';
+                else urgencyClass = 'urgent-low';
+                
+                // Badge de status
+                let statusBadge = '';
+                if (order.status === 'pendente') {
+                    statusBadge = '<span class="status-pending">Pendente</span>';
+                } else if (order.status === 'andamento') {
+                    statusBadge = '<span class="status-progress">Em Andamento</span>';
+                } else {
+                    statusBadge = '<span class="status-completed">Concluída</span>';
+                }
+                
+                // Badge de urgência
+                let urgencyText = '';
+                if (order.urgency === 'alta') urgencyText = '<span class="badge badge-danger">Alta</span>';
+                else if (order.urgency === 'normal') urgencyText = '<span class="badge badge-warning">Normal</span>';
+                else urgencyText = '<span class="badge badge-success">Baixa</span>';
+                
+                // Botões de ação
+                let actionButtons = '';
+                if (order.status === 'pendente') {
+                    actionButtons = `
+                        <button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar">
+                            <i class="fas fa-play"></i>
+                        </button>
+                    `;
+                } else if (order.status === 'andamento') {
+                    actionButtons = `
+                        <button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar">
+                            <i class="fas fa-flag-checkered"></i>
+                        </button>
+                    `;
+                }
+                
+                row.className = urgencyClass;
+                row.innerHTML = `
+                    <td><strong>${order.code}</strong></td>
+                    <td>${order.productName}</td>
+                    <td>${order.responsibleName}</td>
+                    <td>${urgencyText}</td>
+                    <td>${statusBadge}</td>
+                    <td>${order.createdAt}</td>
+                    <td>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary btn-sm" onclick="viewOrder('${order.id}')" title="Visualizar">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')" title="Editar">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            ${actionButtons}
+                            <button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')" title="Excluir">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                
+                osTableBody.appendChild(row);
+            });
+        }
+        
+        // Filtrar ordens
+        function filterOS(filter) {
+            currentFilter = filter;
+            renderOrdersTable();
+        }
+        
+        // Visualizar ordem
+        function viewOrder(orderId) {
+            const order = orders.find(o => o.id == orderId);
+            if (order) {
+                alert(`📋 Detalhes da OS:\n\n` +
+                      `🏷️ Código: ${order.code}\n` +
+                      `📦 Produto: ${order.productName}\n` +
+                      `👤 Responsável: ${order.responsibleName}\n` +
+                      `⚠️ Urgência: ${order.urgency}\n` +
+                      `📊 Status: ${order.status}\n` +
+                      `📸 Tipo Foto: ${order.photoType}\n` +
+                      `🏷️ SKUs: ${order.skus.join(', ') || 'Nenhum'}\n` +
+                      `📝 Observações: ${order.observations || 'Nenhuma'}\n` +
+                      `📅 Criada em: ${order.createdAt}\n` +
+                      `👤 Criada por: ${order.createdBy}`);
             }
         }
-
-        function showToast(message, type) {
+        
+        // Editar ordem
+        function editOrder(orderId) {
+            const order = orders.find(o => o.id == orderId);
+            if (order) {
+                editingOrderId = orderId;
+                
+                // Preencher formulário
+                document.getElementById('productName').value = order.productName;
+                document.getElementById('responsibleName').value = order.responsibleName;
+                document.getElementById('urgency').value = order.urgency;
+                document.getElementById('photoType').value = order.photoType;
+                document.getElementById('skus').value = order.skus.join(', ');
+                document.getElementById('observations').value = order.observations;
+                
+                // Atualizar interface
+                formTitle.textContent = `Editando: ${order.code}`;
+                submitBtnText.textContent = 'Atualizar OS';
+                cancelEditBtn.classList.remove('hidden');
+                osCodeDisplay.textContent = `Código: ${order.code}`;
+                
+                // Rolar para o formulário
+                document.getElementById('osForm').scrollIntoView({ behavior: 'smooth' });
+                
+                showToast(`✏️ Editando OS: ${order.code}`, 'info');
+            }
+        }
+        
+        // Cancelar edição
+        function cancelEdit() {
+            editingOrderId = null;
+            formTitle.textContent = 'Nova Ordem de Serviço';
+            submitBtnText.textContent = 'Salvar OS';
+            cancelEditBtn.classList.add('hidden');
+            osForm.reset();
+            generateOSCode();
+            
+            showToast('❌ Edição cancelada', 'info');
+        }
+        
+        // Iniciar ordem
+        async function startOrder(orderId) {
+            const order = orders.find(o => o.id == orderId);
+            if (order && confirm(`Iniciar a OS "${order.productName}"?`)) {
+                const result = await updateOrderStatus(orderId, 'andamento');
+                
+                if (result.success) {
+                    order.status = 'andamento';
+                    updateCounters();
+                    renderOrdersTable();
+                    showToast(`✅ OS "${order.productName}" iniciada`, 'success');
+                } else {
+                    showToast('❌ Erro ao iniciar OS', 'error');
+                }
+            }
+        }
+        
+        // Abrir modal para finalizar
+        function openCompleteModal(orderId) {
+            const order = orders.find(o => o.id == orderId);
+            if (order) {
+                completeOSId.value = orderId;
+                document.getElementById('photosTaken').value = order.photosTaken || 0;
+                document.getElementById('editsMade').value = order.editsMade || 0;
+                completeModal.classList.remove('hidden');
+            }
+        }
+        
+        // Fechar modal
+        function closeCompleteModal() {
+            completeModal.classList.add('hidden');
+            completeForm.reset();
+        }
+        
+        // Finalizar ordem
+        async function completeOrder(e) {
+            e.preventDefault();
+            
+            const orderId = completeOSId.value;
+            const photosTaken = parseInt(document.getElementById('photosTaken').value);
+            const editsMade = parseInt(document.getElementById('editsMade').value);
+            
+            const order = orders.find(o => o.id == orderId);
+            if (order) {
+                const result = await updateOrderStatus(orderId, 'concluida', {
+                    photosTaken: photosTaken,
+                    editsMade: editsMade
+                });
+                
+                if (result.success) {
+                    order.status = 'concluida';
+                    order.photosTaken = photosTaken;
+                    order.editsMade = editsMade;
+                    
+                    updateCounters();
+                    renderOrdersTable();
+                    closeCompleteModal();
+                    
+                    showToast(`✅ OS "${order.productName}" finalizada`, 'success');
+                } else {
+                    showToast('❌ Erro ao finalizar OS', 'error');
+                }
+            }
+        }
+        
+        // Excluir ordem (com confirmação)
+        async function deleteOrderPrompt(orderId) {
+            const order = orders.find(o => o.id == orderId);
+            if (order && confirm(`Excluir a OS "${order.productName}"?\nEsta ação não pode ser desfeita.`)) {
+                const result = await deleteOrder(orderId);
+                
+                if (result.success) {
+                    // Remove da lista local
+                    orders = orders.filter(o => o.id != orderId);
+                    
+                    updateCounters();
+                    renderOrdersTable();
+                    
+                    showToast(`🗑️ OS "${order.productName}" excluída`, 'success');
+                } else {
+                    showToast('❌ Erro ao excluir OS', 'error');
+                }
+            }
+        }
+        
+        // ============================================
+        // FUNÇÕES DE INTERFACE
+        // ============================================
+        
+        // Mostrar toast (notificação)
+        function showToast(message, type = 'info') {
+            // Remove toast existente
             const existingToast = document.querySelector('.toast');
-            if (existingToast) {
-                existingToast.remove();
-            }
+            if (existingToast) existingToast.remove();
             
+            // Cria novo toast
             const toast = document.createElement('div');
             toast.className = `toast toast-${type}`;
             toast.innerHTML = `
@@ -1123,885 +1274,229 @@
             
             document.body.appendChild(toast);
             
+            // Remove após 4 segundos
             setTimeout(() => {
-                toast.style.animation = 'slideOut 0.3s ease';
-                setTimeout(() => {
-                    if (toast.parentNode) {
-                        toast.parentNode.removeChild(toast);
-                    }
-                }, 300);
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
             }, 4000);
         }
-
+        
         // ============================================
-        // FUNÇÕES DE ORDEM DE SERVIÇO
+        // EVENT LISTENERS
         // ============================================
-        function generateOSCode() {
-            const timestamp = new Date().getTime().toString().slice(-4);
-            const code = `OS${osCounter.toString().padStart(4, '0')}-${timestamp}`;
-            osCodeDisplay.textContent = `OS: ${code}`;
-            return code;
-        }
-
-        function limparFormulario() {
-            osForm.reset();
-            currentEditingOS = null;
-            updateFormForNewOS();
-            generateOSCode();
-            showToast('🧹 Formulário limpo!', 'info');
-        }
-
-        function cancelarEdicao() {
-            currentEditingOS = null;
-            updateFormForNewOS();
-            osForm.reset();
-            generateOSCode();
-            showToast('❌ Edição cancelada!', 'info');
-        }
-
-        function updateFormForNewOS() {
-            formTitle.textContent = 'Nova Ordem de Serviço';
-            submitText.textContent = 'Salvar OS';
-            cancelButton.style.display = 'none';
-            editingBadge.style.display = 'none';
-        }
-
-        function updateFormForEditing(os) {
-            formTitle.textContent = `Editando OS: ${os.code}`;
-            submitText.textContent = 'Atualizar OS';
-            cancelButton.style.display = 'inline-flex';
-            editingBadge.style.display = 'inline-block';
-            editingBadge.textContent = `Editando: ${os.code}`;
-        }
-
-        // FUNÇÃO: Salvar OS (corrigida para edição)
-        async function handleOSSubmit(e) {
+        
+        // Login
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('username').value.trim().toLowerCase();
+            const password = document.getElementById('password').value;
+            
+            // Usuários de teste (em produção, isso viria do Supabase)
+            const users = [
+                { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E' },
+                { username: 'arthur', password: 'arthur123', name: 'Arthur', avatar: 'A' },
+                { username: 'admin', password: 'admin123', name: 'Administrador', avatar: 'A' }
+            ];
+            
+            const user = users.find(u => u.username === username && u.password === password);
+            
+            if (user) {
+                currentUser = user;
+                userName.textContent = user.name;
+                userAvatar.textContent = user.avatar;
+                
+                // Transição para o sistema
+                loginScreen.classList.add('hidden');
+                mainSystem.classList.remove('hidden');
+                
+                showToast(`✅ Bem-vindo(a), ${user.name}!`, 'success');
+                
+                // Testa conexão e carrega dados
+                await testSupabaseConnection();
+                
+            } else {
+                showToast('❌ Usuário ou senha incorretos', 'error');
+            }
+        });
+        
+        // Logout
+        logoutBtn.addEventListener('click', function() {
+            currentUser = null;
+            mainSystem.classList.add('hidden');
+            loginScreen.classList.remove('hidden');
+            loginForm.reset();
+            showToast('👋 Até logo!', 'info');
+        });
+        
+        // Salvar/Editar OS
+        osForm.addEventListener('submit', async function(e) {
             e.preventDefault();
             
             if (!currentUser) {
-                showToast('⚠️ Faça login primeiro!', 'warning');
+                showToast('⚠️ Faça login primeiro', 'warning');
                 return;
             }
             
-            // Desabilita o botão para evitar clique duplo
-            submitButton.disabled = true;
-            submitButton.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Salvando...';
-            
-            const skus = Array.from(document.querySelectorAll('.sku-input'))
-                .map(input => input.value.trim())
-                .filter(sku => sku !== '');
-            
-            let osId, osCode;
-            
-            if (currentEditingOS) {
-                // EDITANDO OS EXISTENTE - USA O MESMO ID E CÓDIGO
-                osId = currentEditingOS.id;
-                osCode = currentEditingOS.code;
-            } else {
-                // NOVA OS
-                osId = osCounter.toString();
-                osCode = generateOSCode();
-                osCounter++;
-            }
-            
-            const os = {
-                id: osId.toString(),
-                code: osCode,
+            // Coletar dados do formulário CORRETAMENTE
+            const orderData = {
+                id: editingOrderId || orderCounter,
+                code: editingOrderId ? orders.find(o => o.id == editingOrderId).code : generateOSCode(),
                 productName: document.getElementById('productName').value,
-                createdBy: currentEditingOS ? currentEditingOS.createdBy : currentUser.name,
-                lastEditedBy: currentUser.name,
+                // CORREÇÃO: pega do campo correto
+                responsibleName: document.getElementById('responsibleName').value || currentUser.name,
                 urgency: document.getElementById('urgency').value,
-                creationDate: currentEditingOS ? currentEditingOS.creationDate : new Date().toLocaleDateString('pt-BR'),
-                conclusionDate: currentEditingOS ? currentEditingOS.conclusionDate : null,
-                elaineCompletion: currentEditingOS ? currentEditingOS.elaineCompletion : null,
-                salesCompletion: currentEditingOS ? currentEditingOS.salesCompletion : null,
-                photoType: document.getElementById('photoType').value,
-                scalePhoto: document.getElementById('scalePhoto').value,
-                unpackProduct: document.getElementById('unpackProduct').checked,
-                isReturn: document.getElementById('isReturn').checked,
-                links: document.getElementById('links').value,
-                clip: document.getElementById('clip').value,
-                observations: document.getElementById('observations').value,
-                skus: skus,
-                status: currentEditingOS ? currentEditingOS.status : 'pendente',
-                photosCount: currentEditingOS ? currentEditingOS.photosCount : 0,
-                editsCount: currentEditingOS ? currentEditingOS.editsCount : 0,
-                lastUpdate: new Date().toISOString()
-            };
-            
-            // Adiciona ou atualiza na lista local
-            if (currentEditingOS) {
-                const index = osList.findIndex(item => item.id.toString() === currentEditingOS.id.toString());
-                if (index !== -1) {
-                    osList[index] = os;
-                }
-                currentEditingOS = null;
-            } else {
-                osList.push(os);
-            }
-            
-            // Salva localmente (backup)
-            saveLocalData();
-            
-            // Tenta salvar/atualizar na planilha do Google
-            const salvoNaPlanilha = await salvarOuAtualizarOSNaPlanilha(os);
-            
-            // Atualiza a interface
-            updateCounters();
-            renderOSTable();
-            updateFormForNewOS();
-            
-            // Limpa o formulário
-            osForm.reset();
-            generateOSCode();
-            
-            // Restaura o botão
-            submitButton.disabled = false;
-            submitButton.innerHTML = '<i class="fas fa-save"></i> <span id="submitText">Salvar OS</span>';
-            
-            // Mensagem de sucesso
-            if (salvoNaPlanilha.updated) {
-                showToast(`✅ OS "${os.productName}" ATUALIZADA na planilha!`, 'success');
-            } else if (salvoNaPlanilha.success) {
-                showToast(`✅ OS "${os.productName}" salva na planilha!`, 'success');
-            } else {
-                showToast(`💾 OS "${os.productName}" salva localmente.`, 'info');
-            }
-        }
-
-        function saveLocalData() {
-            localStorage.setItem('osList', JSON.stringify(osList));
-            localStorage.setItem('osCounter', osCounter.toString());
-        }
-
-        // ============================================
-        // FUNÇÕES DE COMUNICAÇÃO COM A PLANILHA
-        // ============================================
-        async function salvarOuAtualizarOSNaPlanilha(os) {
-            updateSyncStatus('Salvando na planilha...', 'loading');
-            
-            try {
-                console.log('📤 Enviando OS para API:', os.code);
-                
-                const payload = {
-                    operacao: 'criar',
-                    os: os
-                };
-                
-                // Usando mode: 'no-cors' - SEM event listener de response
-                await fetch(API_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                console.log('✅ OS enviada com sucesso:', os.code);
-                updateSyncStatus('Salvo na planilha!', 'success');
-                
-                return { success: true, updated: true };
-                
-            } catch (error) {
-                console.error('❌ Erro ao salvar OS:', error);
-                updateSyncStatus('Erro ao salvar', 'error');
-                return { success: false, updated: false };
-            }
-            
-            setTimeout(() => {
-                syncStatus.style.display = 'none';
-            }, 3000);
-        }
-
-        // FUNÇÃO CORRIGIDA: Atualizar status na planilha (SEM event listener)
-        async function atualizarStatusNaPlanilha(id, status, dadosAdicionais = {}) {
-            try {
-                // Cria a OS completa para enviar
-                const os = osList.find(os => os.id.toString() === id.toString());
-                if (!os) return { success: false, error: "OS não encontrada" };
-                
-                // Atualiza os dados da OS
-                os.status = status;
-                os.lastEditedBy = dadosAdicionais.lastEditedBy || currentUser.name;
-                os.lastUpdate = new Date().toISOString();
-                
-                if (status === 'finalizado') {
-                    os.conclusionDate = new Date().toLocaleDateString('pt-BR');
-                    if (dadosAdicionais.photosCount !== undefined) os.photosCount = dadosAdicionais.photosCount;
-                    if (dadosAdicionais.editsCount !== undefined) os.editsCount = dadosAdicionais.editsCount;
-                    
-                    if (currentUser.name === 'Elaine') {
-                        os.elaineCompletion = new Date().toLocaleDateString('pt-BR');
-                    } else {
-                        os.salesCompletion = new Date().toLocaleDateString('pt-BR');
-                    }
-                }
-                
-                // Usa a mesma função de salvar/atualizar
-                return await salvarOuAtualizarOSNaPlanilha(os);
-                
-            } catch (error) {
-                console.error('Erro ao atualizar status:', error);
-                return { success: false, error: error.message };
-            }
-        }
-
-        async function syncWithCloud() {
-            if (osList.length === 0) {
-                showToast('❌ Nenhuma OS para sincronizar!', 'error');
-                return;
-            }
-            
-            updateSyncStatus('Sincronizando tudo...', 'loading');
-            syncButton.disabled = true;
-            syncButton.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Sincronizando...';
-            
-            let successCount = 0;
-            let errorCount = 0;
-            
-            for (let os of osList) {
-                const success = await salvarOuAtualizarOSNaPlanilha(os);
-                if (success.success) {
-                    successCount++;
-                } else {
-                    errorCount++;
-                }
-                
-                await new Promise(resolve => setTimeout(resolve, 300));
-            }
-            
-            syncButton.disabled = false;
-            syncButton.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Sincronizar Tudo';
-            
-            if (successCount > 0) {
-                updateSyncStatus(`${successCount} OS sincronizadas!`, 'success');
-                showToast(`✅ ${successCount} OS sincronizadas com a planilha!`, 'success');
-            }
-            
-            if (errorCount > 0) {
-                updateSyncStatus(`${errorCount} erros`, 'error');
-            }
-            
-            setTimeout(() => {
-                syncStatus.style.display = 'none';
-            }, 3000);
-        }
-
-        // ============================================
-        // FUNÇÕES DE TESTE
-        // ============================================
-        async function testarEnvioSimples() {
-            if (!currentUser) {
-                showToast('⚠️ Faça login primeiro!', 'warning');
-                return;
-            }
-            
-            const osTeste = {
-                id: 'teste-' + Date.now(),
-                code: 'TEST-' + Math.floor(Math.random() * 10000),
-                productName: 'PRODUTO TESTE API',
-                createdBy: currentUser.name,
-                lastEditedBy: currentUser.name,
-                urgency: 'normal',
-                creationDate: new Date().toLocaleDateString('pt-BR'),
-                photoType: 'studio',
-                scalePhoto: 'sim',
-                unpackProduct: true,
-                isReturn: false,
-                links: '',
-                clip: '',
-                observations: 'Teste de envio via API - ' + new Date().toLocaleTimeString('pt-BR'),
-                skus: ['SKU-TESTE-001', 'SKU-TESTE-002'],
                 status: 'pendente',
-                photosCount: 0,
-                editsCount: 0,
-                lastUpdate: new Date().toISOString()
+                photoType: document.getElementById('photoType').value,
+                skus: document.getElementById('skus').value.split(',').map(s => s.trim()).filter(s => s),
+                observations: document.getElementById('observations').value,
+                photosTaken: 0,
+                editsMade: 0,
+                createdBy: currentUser.name,
+                createdAt: new Date().toLocaleDateString('pt-BR'),
+                updatedAt: new Date().toISOString()
             };
             
-            console.log('🧪 Enviando teste para API:', osTeste);
+            // Desabilita botão durante o salvamento
+            const submitBtn = osForm.querySelector('button[type="submit"]');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.innerHTML = '<span class="spinner"></span> Salvando...';
+            submitBtn.disabled = true;
             
-            try {
-                const payload = {
-                    operacao: 'criar',
-                    os: osTeste
-                };
-                
-                updateSyncStatus('Enviando teste...', 'loading');
-                
-                await fetch(API_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                updateSyncStatus('Teste enviado!', 'success');
-                
-                setTimeout(() => {
-                    carregarOSDaPlanilha();
-                }, 1000);
-                
-            } catch (error) {
-                console.error('❌ Erro no teste:', error);
-                updateSyncStatus('Erro no teste', 'error');
-            }
+            // Salvar no Supabase
+            const result = await saveOrder(orderData);
             
-            setTimeout(() => {
-                syncStatus.style.display = 'none';
-            }, 3000);
-        }
-
-        async function testAPI() {
-            try {
-                console.log('🔧 Testando API...');
-                
-                const testResponse = await fetch(API_URL + '?test=true');
-                const testText = await testResponse.text();
-                
-                console.log('📡 Resposta do teste:', testText);
-                
-                if (testText.includes('funcionando')) {
-                    showToast('✅ API está funcionando!', 'success');
+            if (result.success) {
+                if (editingOrderId) {
+                    // Atualiza ordem existente
+                    const index = orders.findIndex(o => o.id == editingOrderId);
+                    if (index !== -1) {
+                        orders[index] = orderData;
+                    }
+                    editingOrderId = null;
+                    
+                    showToast(`✅ OS "${orderData.productName}" atualizada`, 'success');
                 } else {
-                    showToast('⚠️ API pode não estar configurada corretamente.', 'warning');
-                }
-                
-            } catch (error) {
-                console.error('❌ Erro ao testar API:', error);
-                showToast('❌ Não foi possível conectar com a API.', 'error');
-            }
-        }
-
-        // ============================================
-        // INICIALIZAÇÃO
-        // ============================================
-        document.addEventListener('DOMContentLoaded', function() {
-            generateOSCode();
-            
-            const backupList = JSON.parse(localStorage.getItem('osList')) || [];
-            if (backupList.length > 0) {
-                osList = backupList;
-                osCounter = parseInt(localStorage.getItem('osCounter')) || 1;
-                updateCounters();
-            }
-        });
-    </script>
-
-    <script>
-        // ============================================
-        // FUNÇÕES DA INTERFACE
-        // ============================================
-        function handleReturnChange() {
-            if (isReturnCheckbox.checked) {
-                urgencySelect.value = 'alta';
-            }
-        }
-
-        function addSku() {
-            const skuList = document.getElementById('skuList');
-            const skuItem = document.createElement('div');
-            skuItem.className = 'sku-item';
-            skuItem.innerHTML = `
-                <input type="text" class="sku-input" placeholder="Código SKU">
-                <button type="button" class="btn btn-danger action-btn" onclick="removeSku(this)"><i class="fas fa-times"></i></button>
-            `;
-            skuList.appendChild(skuItem);
-        }
-
-        function removeSku(button) {
-            if (document.querySelectorAll('.sku-item').length > 1) {
-                button.parentElement.remove();
-            }
-        }
-
-        // FUNÇÃO: Editar OS existente
-        function editOS(id) {
-            const os = osList.find(os => os.id.toString() === id.toString());
-            if (os) {
-                currentEditingOS = os;
-                
-                // Preenche o formulário
-                document.getElementById('productName').value = os.productName;
-                document.getElementById('urgency').value = os.urgency;
-                document.getElementById('photoType').value = os.photoType;
-                document.getElementById('scalePhoto').value = os.scalePhoto;
-                document.getElementById('unpackProduct').checked = os.unpackProduct;
-                document.getElementById('isReturn').checked = os.isReturn;
-                document.getElementById('links').value = os.links || '';
-                document.getElementById('clip').value = os.clip || '';
-                document.getElementById('observations').value = os.observations || '';
-                
-                // Preenche SKUs
-                const skuList = document.getElementById('skuList');
-                skuList.innerHTML = '';
-                
-                if (os.skus && os.skus.length > 0) {
-                    os.skus.forEach(sku => {
-                        const skuItem = document.createElement('div');
-                        skuItem.className = 'sku-item';
-                        skuItem.innerHTML = `
-                            <input type="text" class="sku-input" value="${sku}">
-                            <button type="button" class="btn btn-danger action-btn" onclick="removeSku(this)"><i class="fas fa-times"></i></button>
-                        `;
-                        skuList.appendChild(skuItem);
-                    });
-                } else {
-                    addSku();
+                    // Adiciona nova ordem
+                    orders.unshift(orderData);
+                    orderCounter++;
+                    
+                    showToast(`✅ OS "${orderData.productName}" criada`, 'success');
                 }
                 
                 // Atualiza interface
-                updateFormForEditing(os);
-                osCodeDisplay.textContent = `OS: ${os.code} (Editando)`;
+                updateCounters();
+                renderOrdersTable();
                 
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-                showToast(`✏️ Editando OS: ${os.code}`, 'info');
-            }
-        }
-
-        function renderOSTable() {
-            osTableBody.innerHTML = '';
-            
-            let filteredOS = [];
-            if (currentFilter === 'all') {
-                filteredOS = osList;
+                // Limpa formulário
+                osForm.reset();
+                generateOSCode();
+                formTitle.textContent = 'Nova Ordem de Serviço';
+                submitBtnText.textContent = 'Salvar OS';
+                cancelEditBtn.classList.add('hidden');
+                
             } else {
-                filteredOS = osList.filter(os => os.status === currentFilter);
+                showToast('❌ Erro ao salvar OS', 'error');
             }
             
-            filteredOS.sort((a, b) => {
-                return new Date(b.creationDate || b.lastUpdate) - new Date(a.creationDate || a.lastUpdate);
-            });
-            
-            filteredOS.forEach(os => {
-                const row = document.createElement('tr');
-                row.className = `urgent-${os.urgency} ${os.isReturn ? 'return-flag' : ''}`;
-                
-                let statusBadge = '';
-                if (os.status === 'pendente') {
-                    statusBadge = '<span class="status-badge status-pendente">Pendente</span>';
-                } else if (os.status === 'andamento') {
-                    statusBadge = '<span class="status-badge status-andamento">Em Andamento</span>';
-                } else if (os.status === 'finalizado') {
-                    statusBadge = '<span class="status-badge status-finalizado">Finalizado</span>';
-                }
-                
-                let urgencyBadge = '';
-                if (os.urgency === 'baixa') {
-                    urgencyBadge = '<span class="badge badge-success">Baixa</span>';
-                } else if (os.urgency === 'normal') {
-                    urgencyBadge = '<span class="badge badge-warning">Normal</span>';
-                } else if (os.urgency === 'alta') {
-                    urgencyBadge = '<span class="badge badge-danger">Alta</span>';
-                }
-                
-                const lastUpdate = os.lastUpdate ? 
-                    new Date(os.lastUpdate).toLocaleDateString('pt-BR') + ' ' + 
-                    new Date(os.lastUpdate).toLocaleTimeString('pt-BR').substring(0, 5) : 
-                    'Nunca';
-                
-                let actionButtons = '';
-                if (os.status === 'pendente') {
-                    actionButtons = `
-                        <button class="btn btn-success action-btn" onclick="iniciarOS('${os.id}')" title="Iniciar OS">
-                            <i class="fas fa-play"></i> Iniciar
-                        </button>
-                    `;
-                } else if (os.status === 'andamento') {
-                    actionButtons = `
-                        <button class="btn btn-info action-btn" onclick="openFinalizarModal('${os.id}')" title="Finalizar OS">
-                            <i class="fas fa-flag-checkered"></i> Finalizar
-                        </button>
-                    `;
-                }
-                
-                const editedInfo = os.lastEditedBy !== os.createdBy ? 
-                    `<div class="edited-by">Editado por: ${os.lastEditedBy}</div>` : '';
-                
-                row.innerHTML = `
-                    <td><strong>${os.code}</strong></td>
-                    <td>${os.productName}</td>
-                    <td>
-                        <span class="badge user-badge">${os.createdBy}</span>
-                        ${editedInfo}
-                    </td>
-                    <td>${urgencyBadge}</td>
-                    <td>${statusBadge}</td>
-                    <td>${os.creationDate}</td>
-                    <td>${lastUpdate}</td>
-                    <td>
-                        <div class="action-buttons">
-                            <button class="btn btn-primary action-btn" onclick="viewOS('${os.id}')" title="Visualizar">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                            <button class="btn btn-warning action-btn" onclick="editOS('${os.id}')" title="Editar">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            ${actionButtons}
-                            <button class="btn btn-secondary action-btn" onclick="printOS('${os.id}')" title="Imprimir">
-                                <i class="fas fa-print"></i>
-                            </button>
-                            <button class="btn btn-danger action-btn" onclick="deleteOS('${os.id}')" title="Excluir">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </td>
-                `;
-                
-                osTableBody.appendChild(row);
-            });
-        }
-
-        function filterOS(status) {
-            currentFilter = status;
-            renderOSTable();
-        }
-
-        function viewOS(id) {
-            const os = osList.find(os => os.id.toString() === id.toString());
-            if (os) {
-                const skusText = os.skus.length > 0 ? os.skus.join(', ') : 'Nenhum SKU informado';
-                const finalizacaoElaine = os.elaineCompletion ? `Elaine: ${os.elaineCompletion}` : 'Não finalizada por Elaine';
-                const finalizacaoVendas = os.salesCompletion ? `Vendas: ${os.salesCompletion}` : 'Não finalizada por Vendas';
-                const fotosEdicoes = os.photosCount || os.editsCount ? `Fotos: ${os.photosCount}, Edições: ${os.editsCount}` : 'Não informado';
-                const editedInfo = os.lastEditedBy !== os.createdBy ? `\n✏️ Última edição por: ${os.lastEditedBy}` : '';
-                
-                alert(`📋 Detalhes da OS:\n\n🏷️ Código: ${os.code}\n📦 Produto: ${os.productName}\n📊 Status: ${os.status}\n⚠️ Urgência: ${os.urgency}\n📅 Data Criação: ${os.creationDate}\n👤 Criado por: ${os.createdBy}${editedInfo}\n📸 Tipo Foto: ${os.photoType}\n⚖️ Foto Balança: ${os.scalePhoto}\n📦 Desembalar: ${os.unpackProduct ? 'Sim' : 'Não'}\n🔄 Devolução: ${os.isReturn ? 'Sim' : 'Não'}\n🏷️ SKUs: ${skusText}\n📝 Observações: ${os.observations || 'Nenhuma'}\n📊 ${fotosEdicoes}\n✅ ${finalizacaoElaine}\n💰 ${finalizacaoVendas}`);
+            // Restaura botão
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+        });
+        
+        // Cancelar edição
+        cancelEditBtn.addEventListener('click', cancelEdit);
+        
+        // Testar Supabase
+        testSupabaseBtn.addEventListener('click', testSupabaseConnection);
+        
+        // Recarregar
+        reloadBtn.addEventListener('click', loadOrders);
+        
+        // Finalizar OS (modal)
+        completeForm.addEventListener('submit', completeOrder);
+        
+        // ============================================
+        // INICIALIZAÇÃO
+        // ============================================
+        
+        // Gera código inicial
+        generateOSCode();
+        
+        // Fecha modal ao clicar fora
+        completeModal.addEventListener('click', function(e) {
+            if (e.target === completeModal) {
+                closeCompleteModal();
             }
-        }
-
-        // FUNÇÃO CORRIGIDA: Iniciar OS (não usa mais event listener)
-        async function iniciarOS(id) {
-            const os = osList.find(os => os.id.toString() === id.toString());
-            if (os && currentUser) {
-                if (os.status === 'pendente') {
-                    // Atualiza localmente
-                    os.status = 'andamento';
-                    os.lastEditedBy = currentUser.name;
-                    os.lastUpdate = new Date().toISOString();
-                    
-                    saveLocalData();
-                    updateCounters();
-                    renderOSTable();
-                    
-                    try {
-                        updateSyncStatus('Atualizando status...', 'loading');
-                        
-                        // Usa a função corrigida
-                        const result = await atualizarStatusNaPlanilha(id, 'andamento', { 
-                            lastEditedBy: currentUser.name 
-                        });
-                        
-                        if (result.success) {
-                            showToast(`✅ OS "${os.productName}" iniciada!`, 'success');
-                        } else {
-                            showToast(`⚠️ OS iniciada localmente`, 'warning');
-                        }
-                    } catch (error) {
-                        console.error('Erro ao atualizar status:', error);
-                        showToast(`💾 OS "${os.productName}" iniciada localmente`, 'info');
-                    }
-                    
-                    updateSyncStatus('', '');
-                }
-            }
-        }
-
-        function openFinalizarModal(id) {
-            const os = osList.find(os => os.id.toString() === id.toString());
-            if (os && os.status === 'andamento') {
-                finalizarOSId.value = id;
-                document.getElementById('fotosCount').value = os.photosCount || 0;
-                document.getElementById('edicoesCount').value = os.editsCount || 0;
-                finalizarModal.style.display = 'flex';
-            }
-        }
-
-        function closeFinalizarModal() {
-            finalizarModal.style.display = 'none';
-        }
-
-        // FUNÇÃO CORRIGIDA: Finalizar OS - usa onclick no botão
-        async function finalizarOS() {
-            if (!currentUser) {
-                showToast('⚠️ Faça login primeiro!', 'warning');
-                closeFinalizarModal();
-                return;
-            }
-            
-            const osId = finalizarOSId.value;
-            const fotosCount = parseInt(document.getElementById('fotosCount').value);
-            const edicoesCount = parseInt(document.getElementById('edicoesCount').value);
-            
-            const os = osList.find(os => os.id.toString() === osId.toString());
-            if (os && currentUser) {
-                // Desabilita o botão para evitar clique duplo
-                finalizarBtn.disabled = true;
-                const originalText = finalizarBtn.innerHTML;
-                finalizarBtn.innerHTML = '<div class="loading" style="margin-right: 8px;"></div> Finalizando...';
-                
-                try {
-                    // Atualiza localmente
-                    os.status = 'finalizado';
-                    os.photosCount = fotosCount;
-                    os.editsCount = edicoesCount;
-                    os.conclusionDate = new Date().toLocaleDateString('pt-BR');
-                    os.lastEditedBy = currentUser.name;
-                    os.lastUpdate = new Date().toISOString();
-                    
-                    if (currentUser.name === 'Elaine') {
-                        os.elaineCompletion = new Date().toLocaleDateString('pt-BR');
-                    } else {
-                        os.salesCompletion = new Date().toLocaleDateString('pt-BR');
-                    }
-                    
-                    saveLocalData();
-                    updateCounters();
-                    renderOSTable();
-                    
-                    // Fecha o modal
-                    closeFinalizarModal();
-                    
-                    // Atualiza na planilha
-                    const result = await atualizarStatusNaPlanilha(osId, 'finalizado', {
-                        lastEditedBy: currentUser.name,
-                        photosCount: fotosCount,
-                        editsCount: edicoesCount
-                    });
-                    
-                    if (result.success) {
-                        showToast(`✅ OS "${os.productName}" finalizada com sucesso!`, 'success');
-                    } else {
-                        showToast(`💾 OS finalizada localmente`, 'info');
-                    }
-                    
-                    // Recarrega da planilha
-                    setTimeout(() => {
-                        carregarOSDaPlanilha();
-                    }, 1000);
-                    
-                } catch (error) {
-                    console.error('Erro ao finalizar OS:', error);
-                    showToast(`❌ Erro ao finalizar OS`, 'error');
-                } finally {
-                    // Restaura o botão
-                    finalizarBtn.disabled = false;
-                    finalizarBtn.innerHTML = originalText;
-                }
-            }
-        }
-
-        // MODIFIQUE o botão de finalizar no modal para usar onclick
-        // Adicione esta linha no final do body para corrigir o botão
-        document.addEventListener('DOMContentLoaded', function() {
-            // Corrige o botão de finalizar para usar onclick
-            const finalizarForm = document.getElementById('finalizarForm');
-            if (finalizarForm) {
-                // Remove qualquer event listener existente
-                finalizarForm.onsubmit = null;
-                finalizarForm.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    finalizarOS();
-                });
+        });
+        
+        // Adiciona listener para tecla ESC no modal
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && !completeModal.classList.contains('hidden')) {
+                closeCompleteModal();
             }
         });
 
-        function exportToExcel(filter) {
-            let dataToExport;
-            
-            if (filter === 'ativas') {
-                dataToExport = osList.filter(os => os.status !== 'finalizado');
-            } else {
-                dataToExport = osList;
-            }
-            
-            if (dataToExport.length === 0) {
-                showToast('❌ Nenhuma OS encontrada para exportar!', 'error');
+        // ============================================
+        // TESTES E DEBUG (TEMPORÁRIO)
+        // ============================================
+        
+        // Função de teste direto
+        async function testarSalvamentoDireto() {
+            if (!currentUser) {
+                alert('Faça login primeiro!');
                 return;
             }
             
-            const excelData = dataToExport.map(os => ({
-                'Código OS': os.code,
-                'Produto': os.productName,
-                'Criado por': os.createdBy,
-                'Última edição por': os.lastEditedBy,
-                'Urgência': os.urgency,
-                'Status': os.status,
-                'Data Criação': os.creationDate,
-                'Data Conclusão': os.conclusionDate || 'Não concluída',
-                'Tipo Foto': os.photoType === 'studio' ? 'Estúdio' : 'Na Bike',
-                'Foto Balança': os.scalePhoto === 'sim' ? 'Sim' : 'Não',
-                'Desembalar': os.unpackProduct ? 'Sim' : 'Não',
-                'Devolução': os.isReturn ? 'Sim' : 'Não',
-                'Fotos Tiradas': os.photosCount,
-                'Edições Feitas': os.editsCount,
-                'SKUs': os.skus.join(', '),
-                'Links': os.links || '',
-                'Clip': os.clip || '',
-                'Observações': os.observations || ''
-            }));
+            const testData = {
+                codigo: 'TEST-' + Date.now(),
+                produto_nome: 'PRODUTO TESTE DIRETO',
+                responsavel: 'TESTE-' + currentUser.name,
+                criado_por: currentUser.name,
+                status: 'pendente',
+                data_criacao: new Date().toISOString()
+            };
             
-            const ws = XLSX.utils.json_to_sheet(excelData);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Ordens de Serviço');
+            console.log('🧪 Teste direto:', testData);
             
-            const fileName = filter === 'ativas' ? 'os_ativas.xlsx' : 'todas_os.xlsx';
-            XLSX.writeFile(wb, fileName);
-            
-            showToast(`✅ ${dataToExport.length} OS exportadas!`, 'success');
-        }
-
-        async function deleteOS(id) {
-            const os = osList.find(os => os.id.toString() === id.toString());
-            if (!os) return;
-            
-            if (confirm(`❓ Tem certeza que deseja excluir a OS "${os.productName}" (${os.code})?`)) {
-                osList = osList.filter(os => os.id.toString() !== id.toString());
+            try {
+                const { data, error } = await supabase
+                    .from('ordens_servico')
+                    .insert([testData])
+                    .select();
                 
-                saveLocalData();
-                updateCounters();
-                renderOSTable();
-                
-                showToast(`🗑️ OS "${os.productName}" excluída!`, 'info');
-                
-                setTimeout(() => {
-                    carregarOSDaPlanilha();
-                }, 1000);
+                if (error) {
+                    alert('❌ Erro: ' + error.message);
+                    console.error('Erro detalhado:', error);
+                } else {
+                    alert('✅ Teste salvo! ID: ' + data[0].id);
+                    console.log('Resposta Supabase:', data);
+                    loadOrders();
+                }
+            } catch (error) {
+                alert('❌ Falha: ' + error.message);
+                console.error('Erro completo:', error);
             }
         }
-
-        function printOS(id) {
-            const os = osList.find(os => os.id.toString() === id.toString());
-            if (os) {
-                const printWindow = window.open('', '_blank');
-                printWindow.document.write(`
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <title>OS: ${os.code}</title>
-                        <style>
-                            body { font-family: Arial, sans-serif; margin: 20px; }
-                            .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 10px; }
-                            .os-code { font-size: 24px; font-weight: bold; color: #8A2BE2; margin: 10px 0; }
-                            .section { margin-bottom: 20px; }
-                            .section h3 { background: #f0f0f0; padding: 8px; margin: 15px 0 10px 0; }
-                            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-                            .info-item { margin-bottom: 8px; }
-                            .label { font-weight: bold; }
-                            .urgent-alta { color: #FF4757; font-weight: bold; }
-                            .urgent-normal { color: #FFA500; }
-                            .urgent-baixa { color: #00D26A; }
-                            .return-flag { background: #ffeaea; padding: 5px; border-radius: 3px; font-weight: bold; }
-                            @media print { body { margin: 0; } }
-                        </style>
-                    </head>
-                    <body>
-                        <div class="header">
-                            <h1>Ordem de Serviço - Fotografia</h1>
-                            <div class="os-code">${os.code}</div>
-                            <div>Emitida em: ${os.creationDate}</div>
-                        </div>
-                        
-                        <div class="section">
-                            <h3>Informações do Produto</h3>
-                            <div class="info-grid">
-                                <div class="info-item">
-                                    <span class="label">Produto:</span> ${os.productName}
-                                </div>
-                                <div class="info-item">
-                                    <span class="label">Criado por:</span> ${os.createdBy}
-                                </div>
-                                ${os.lastEditedBy !== os.createdBy ? `
-                                <div class="info-item">
-                                    <span class="label">Última edição por:</span> ${os.lastEditedBy}
-                                </div>
-                                ` : ''}
-                                <div class="info-item">
-                                    <span class="label">Urgência:</span> 
-                                    <span class="urgent-${os.urgency}">${os.urgency.toUpperCase()}</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="label">Status:</span> ${os.status.toUpperCase()}
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="section">
-                            <h3>Detalhes da Fotografia</h3>
-                            <div class="info-grid">
-                                <div class="info-item">
-                                    <span class="label">Tipo de Foto:</span> ${os.photoType === 'studio' ? 'Estúdio' : 'Na Bike'}
-                                </div>
-                                <div class="info-item">
-                                    <span class="label">Foto na Balança:</span> ${os.scalePhoto === 'sim' ? 'Sim' : 'Não'}
-                                </div>
-                                <div class="info-item">
-                                    <span class="label">Desembalar Produto:</span> ${os.unpackProduct ? 'Sim' : 'Não'}
-                                </div>
-                                ${os.isReturn ? '<div class="info-item"><span class="return-flag">🔄 É UMA DEVOLUÇÃO</span></div>' : ''}
-                            </div>
-                        </div>
-                        
-                        ${os.skus.length > 0 ? `
-                        <div class="section">
-                            <h3>SKUs</h3>
-                            <div>${os.skus.join(', ')}</div>
-                        </div>
-                        ` : ''}
-                        
-                        ${os.links ? `
-                        <div class="section">
-                            <h3>Links</h3>
-                            <div>${os.links}</div>
-                        </div>
-                        ` : ''}
-                        
-                        ${os.observations ? `
-                        <div class="section">
-                            <h3>Observações</h3>
-                            <div>${os.observations}</div>
-                        </div>
-                        ` : ''}
-                        
-                        ${os.status === 'finalizado' ? `
-                        <div class="section">
-                            <h3>Finalização</h3>
-                            <div class="info-grid">
-                                <div class="info-item">
-                                    <span class="label">Data Conclusão:</span> ${os.conclusionDate}
-                                </div>
-                                <div class="info-item">
-                                    <span class="label">Fotos Tiradas:</span> ${os.photosCount}
-                                </div>
-                                <div class="info-item">
-                                    <span class="label">Edições Feitas:</span> ${os.editsCount}
-                                </div>
-                                ${os.elaineCompletion ? `<div class="info-item"><span class="label">Finalizado por Elaine:</span> ${os.elaineCompletion}</div>` : ''}
-                                ${os.salesCompletion ? `<div class="info-item"><span class="label">Finalizado por Vendas:</span> ${os.salesCompletion}</div>` : ''}
-                            </div>
-                        </div>
-                        ` : ''}
-                        
-                        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ccc; text-align: center; font-size: 12px; color: #666;">
-                            Sistema de Ordem de Serviço - Fotografia | ${new Date().toLocaleDateString('pt-BR')}
-                        </div>
-                        
-                        <script>
-                            window.onload = function() {
-                                window.print();
-                                setTimeout(function() {
-                                    window.close();
-                                }, 500);
-                            }
-                        <\/script>
-                    </body>
-                    </html>
-                `);
-                printWindow.document.close();
-            }
-        }
+        
+        // Adiciona botão de teste (temporário)
+        document.addEventListener('DOMContentLoaded', function() {
+            const testBtn = document.createElement('button');
+            testBtn.innerHTML = '🧪 TESTAR SUPABASE';
+            testBtn.style.cssText = `
+                position: fixed; bottom: 80px; right: 20px;
+                background: #28a745; color: white; padding: 12px 18px;
+                border-radius: 8px; z-index: 9999; border: none;
+                font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(40,167,69,0.4);
+            `;
+            testBtn.onclick = testarSalvamentoDireto;
+            document.body.appendChild(testBtn);
+        });
+        
+        // Mostra mensagem inicial
+        console.log('🚀 Sistema OS Fotografia inicializado');
+        console.log('🔗 Supabase URL:', window.SUPABASE_URL);
+        console.log('👤 Usuários de teste: elaine/180998 ou arthur/arthur123');
     </script>
 </body>
 </html>

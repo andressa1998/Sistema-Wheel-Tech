@@ -1,0 +1,44 @@
+{
+  "usuarios": [
+    {
+      "id": "1",
+      "username": "elaine",
+      "nome": "Elaine",
+      "role": "fotografo",
+      "avatar": "E",
+      "password": "180998"
+    },
+    {
+      "id": "2",
+      "username": "arthur",
+      "nome": "Arthur",
+      "role": "Comercial",
+      "avatar": "A",
+      "password": "040869"
+    },
+    {
+      "id": "3",
+      "username": "laura",
+      "nome": "Laura",
+      "role": "Midia",
+      "avatar": "L",
+      "password": "laura123"
+    },
+    {
+      "id": "4",
+      "username": "ronald",
+      "nome": "Ronald",
+      "role": "admin",
+      "avatar": "R",
+      "password": "ronald123"
+    },
+    {
+      "id": "5",
+      "username": "bruna",
+      "nome": "Bruna",
+      "role": "assistente",
+      "avatar": "B",
+      "password": "bruna123"
+    }
+  ]
+}
