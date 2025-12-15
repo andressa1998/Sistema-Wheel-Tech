@@ -509,8 +509,6 @@
             <button type="submit" class="btn btn-primary" style="width: 100%;">
                 <i class="fas fa-sign-in-alt"></i> Entrar no Sistema
             </button>
-            
-            </div>
         </form>
     </div>
     
@@ -1291,9 +1289,8 @@
             // Usuários de teste (em produção, isso viria do Supabase)
             const users = [
                 { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E' },
-                { username: 'arthur', password: '040869', name: 'Arthur', avatar: 'A' },
+                { username: 'arthur', password: 'arthur123', name: 'Arthur', avatar: 'A' },
                 { username: 'admin', password: 'admin123', name: 'Administrador', avatar: 'A' }
-                { username: 'ronald', password: '2101', name: 'Administrador', avatar: 'R' }
             ];
             
             const user = users.find(u => u.username === username && u.password === password);
