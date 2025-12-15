@@ -10,7 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     
-    <!-- Configuração Privada -->
+    <!-- Configuração -->
     <script src="config.js"></script>
     
     <style>
@@ -485,6 +485,34 @@
             font-size: 12px;
             font-weight: 600;
         }
+        
+        /* ===== ESTILOS PARA DEVOLUÇÃO ===== */
+        .return-highlight {
+            background: linear-gradient(45deg, #fff5f5, #ffe6e6) !important;
+            border-left: 4px solid #dc3545 !important;
+            animation: pulseReturn 2s infinite;
+        }
+        
+        @keyframes pulseReturn {
+            0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+        }
+        
+        /* ===== ESTILOS PARA PERMISSÃO ===== */
+        .no-permission {
+            background: linear-gradient(45deg, #f8f9fa, #e9ecef) !important;
+            opacity: 0.8;
+        }
+        
+        .no-permission:hover {
+            background: #f8f9fa !important;
+        }
+        
+        .view-only {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
     </style>
 </head>
 <body>
@@ -527,6 +555,7 @@
                         <div class="user-avatar" id="userAvatar">U</div>
                         <div>
                             <div style="font-weight: 600;" id="userName">Usuário</div>
+                            <div style="font-size: 12px; color: #6c757d;" id="userRole"></div>
                             <button id="logoutBtn" class="btn btn-secondary btn-sm mt-2">
                                 <i class="fas fa-sign-out-alt"></i> Sair
                             </button>
@@ -543,10 +572,11 @@
                     <div>
                         <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
                             <i class="fas fa-info-circle" style="color: var(--info);"></i>
-                            Sistema Conectado ao Supabase
+                            <span id="welcomeMessage">Bem-vindo(a)</span>
                         </h3>
                         <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
-                            <span id="osCount">0</span> ordens de serviço ativas
+                            <span id="myOrdersCount">0</span> minhas ordens •
+                            <span id="totalOrdersCount">0</span> total no sistema
                             <span id="syncStatus" class="badge badge-info ml-2" style="margin-left: 10px;"></span>
                         </p>
                     </div>
@@ -572,7 +602,8 @@
                     <div class="os-code" id="osCodeDisplay">OS: Gerando código...</div>
                 </div>
                 
-                <form id="osForm">
+                <!-- FORMULÁRIO SIMPLES SEM TAG <form> -->
+                <div id="osFormContainer">
                     <div class="d-flex flex-wrap gap-3 mb-4">
                         <div style="flex: 1; min-width: 250px;">
                             <div class="form-group">
@@ -596,19 +627,31 @@
                     <div class="d-flex flex-wrap gap-3 mb-4">
                         <div style="flex: 1; min-width: 250px;">
                             <div class="form-group">
-    <label for="responsibleName"><i class="fas fa-user-check"></i> Responsável *</label>
-    <select id="responsibleName" class="form-control" required>
-        <option value="">Selecione o responsável</option>
-        <option value="Elaine">Elaine</option>
-        <option value="Arthur">Arthur</option>
-        <option value="Laura">Laura</option>
-        <option value="Ronald">Ronald</option>
-        <option value="Bruna">Bruna</option>
-        <option value="Outro">Outra pessoa</option>
-    </select>
-</div>
+                                <label for="responsibleName"><i class="fas fa-user-check"></i> Responsável *</label>
+                                <select id="responsibleName" class="form-control" required>
+                                    <option value="">Selecione o responsável</option>
+                                    <option value="Elaine">Elaine</option>
+                                    <option value="Arthur">Arthur</option>
+                                    <option value="Laura">Laura</option>
+                                    <option value="Ronald">Ronald</option>
+                                    <option value="Bruna">Bruna</option>
+                                    <option value="Outro">Outra pessoa</option>
+                                </select>
+                            </div>
                         </div>
                         
+                        <div style="flex: 1; min-width: 250px;">
+                            <div class="form-group">
+                                <label for="osType"><i class="fas fa-exchange-alt"></i> Tipo de OS *</label>
+                                <select id="osType" class="form-control" required>
+                                    <option value="normal" selected>Normal</option>
+                                    <option value="devolucao">Devolução</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex flex-wrap gap-3 mb-4">
                         <div style="flex: 1; min-width: 250px;">
                             <div class="form-group">
                                 <label for="photoType"><i class="fas fa-camera"></i> Tipo de Foto</label>
@@ -617,6 +660,13 @@
                                     <option value="bike">Na Bike</option>
                                     <option value="ambos">Ambos</option>
                                 </select>
+                            </div>
+                        </div>
+                        
+                        <div style="flex: 1; min-width: 250px;">
+                            <div class="form-group">
+                                <label for="createdBy"><i class="fas fa-user-tag"></i> Criado por</label>
+                                <input type="text" id="createdBy" class="form-control" readonly>
                             </div>
                         </div>
                     </div>
@@ -632,24 +682,24 @@
                     </div>
                     
                     <div class="d-flex flex-wrap gap-2">
-                        <button type="submit" class="btn btn-success">
+                        <button id="saveOSBtn" class="btn btn-success">
                             <i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>
                         </button>
-                        <button type="button" id="cancelEditBtn" class="btn btn-secondary hidden">
+                        <button id="cancelEditBtn" class="btn btn-secondary hidden">
                             <i class="fas fa-times"></i> Cancelar Edição
                         </button>
-                        <button type="reset" class="btn btn-warning">
+                        <button id="clearFormBtn" class="btn btn-warning">
                             <i class="fas fa-broom"></i> Limpar
                         </button>
                     </div>
-                </form>
+                </div>
             </div>
             
             <!-- Lista de Ordens de Serviço -->
             <div class="card">
                 <div class="card-header">
                     <h2 class="card-title">
-                        <i class="fas fa-list"></i> Ordens de Serviço
+                        <i class="fas fa-list"></i> Minhas Ordens de Serviço
                     </h2>
                     
                     <div class="d-flex flex-wrap gap-2">
@@ -688,9 +738,13 @@
                 </div>
                 
                 <div id="emptyMessage" class="text-center py-5 hidden">
-                    <i class="fas fa-inbox fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                    <h4 style="color: #6c757d;">Nenhuma ordem de serviço</h4>
-                    <p style="color: #6c757d;">Crie sua primeira OS usando o formulário acima.</p>
+                    <i class="fas fa-user-lock fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                    <h4 style="color: #6c757d;">Nenhuma ordem disponível</h4>
+                    <p style="color: #6c757d;">Você não tem permissão para visualizar ordens ou não há ordens com seu filtro atual.</p>
+                    <p style="color: #6c757d; font-size: 12px; margin-top: 10px;">
+                        <i class="fas fa-info-circle"></i>
+                        Você só vê ordens onde é <strong>responsável</strong> ou <strong>criador</strong>
+                    </p>
                 </div>
             </div>
         </div>
@@ -707,7 +761,7 @@
                     </button>
                 </div>
                 
-                <form id="completeForm">
+                <div id="completeFormContainer">
                     <input type="hidden" id="completeOSId">
                     
                     <div class="form-group mb-3">
@@ -724,773 +778,16 @@
                         <button type="button" class="btn btn-secondary" onclick="closeCompleteModal()">
                             Cancelar
                         </button>
-                        <button type="submit" class="btn btn-success">
+                        <button id="finalizarOSBtn" class="btn btn-success">
                             <i class="fas fa-check"></i> Finalizar
                         </button>
                     </div>
-                </form>
+                </div>
             </div>
         </div>
     </div>
 
-    <script>
-        // ============================================
-        // CONFIGURAÇÕES E INICIALIZAÇÃO
-        // ============================================
-        
-        // Verifica se as configurações foram carregadas
-        if (!window.SUPABASE_URL || !window.SUPABASE_KEY) {
-            console.warn('⚠️ Configurações não encontradas. Usando valores padrão.');
-            window.SUPABASE_URL = 'https://nvlmtinpcayrpkhulefs.supabase.co';
-            window.SUPABASE_KEY = 'sb_publishable_7AaXEKbS9roL57PO5lQkuQ_fkVWnGoL';
-        }
-        
-        // Inicializa o Supabase
-        const supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY);
-        
-        // ============================================
-        // VARIÁVEIS GLOBAIS
-        // ============================================
-        let currentUser = null;
-        let orders = [];
-        let orderCounter = 1;
-        let currentFilter = 'todos';
-        let editingOrderId = null;
-        
-        // Elementos DOM
-        const loginScreen = document.getElementById('loginScreen');
-        const mainSystem = document.getElementById('mainSystem');
-        const loginForm = document.getElementById('loginForm');
-        const osForm = document.getElementById('osForm');
-        const osCodeDisplay = document.getElementById('osCodeDisplay');
-        const osTableBody = document.getElementById('osTableBody');
-        const emptyMessage = document.getElementById('emptyMessage');
-        const userName = document.getElementById('userName');
-        const userAvatar = document.getElementById('userAvatar');
-        const logoutBtn = document.getElementById('logoutBtn');
-        const testSupabaseBtn = document.getElementById('testSupabaseBtn');
-        const reloadBtn = document.getElementById('reloadBtn');
-        const cancelEditBtn = document.getElementById('cancelEditBtn');
-        const formTitle = document.getElementById('formTitle');
-        const submitBtnText = document.getElementById('submitBtnText');
-        const completeModal = document.getElementById('completeModal');
-        const completeForm = document.getElementById('completeForm');
-        const completeOSId = document.getElementById('completeOSId');
-        
-        // Contadores
-        const osCount = document.getElementById('osCount');
-        const countPending = document.getElementById('countPending');
-        const countProgress = document.getElementById('countProgress');
-        const countCompleted = document.getElementById('countCompleted');
-        const countTotal = document.getElementById('countTotal');
-        const syncStatus = document.getElementById('syncStatus');
-        
-        // ============================================
-        // FUNÇÕES DO SUPABASE
-        // ============================================
-        
-        // Testar conexão com Supabase
-        async function testSupabaseConnection() {
-            showToast('🔗 Testando conexão com Supabase...', 'info');
-            testSupabaseBtn.innerHTML = '<span class="spinner"></span> Testando...';
-            testSupabaseBtn.disabled = true;
-            
-            try {
-                const { data, error } = await supabase
-                    .from('ordens_servico')
-                    .select('count')
-                    .limit(1);
-                
-                if (error) throw error;
-                
-                showToast('✅ Conexão com Supabase estabelecida!', 'success');
-                syncStatus.textContent = 'Conectado';
-                syncStatus.className = 'badge badge-success ml-2';
-                
-                // Carrega os dados após teste bem-sucedido
-                await loadOrders();
-                
-            } catch (error) {
-                console.error('❌ Erro na conexão:', error);
-                showToast('❌ Falha na conexão com Supabase', 'error');
-                syncStatus.textContent = 'Desconectado';
-                syncStatus.className = 'badge badge-danger ml-2';
-            } finally {
-                testSupabaseBtn.innerHTML = '<i class="fas fa-database"></i> Testar Conexão';
-                testSupabaseBtn.disabled = false;
-            }
-        }
-        
-        // Carregar ordens do Supabase (VERSÃO CORRIGIDA)
-        async function loadOrders() {
-            showToast('🔄 Carregando ordens...', 'info');
-            reloadBtn.innerHTML = '<span class="spinner"></span> Carregando...';
-            reloadBtn.disabled = true;
-            
-            try {
-                const { data, error } = await supabase
-                    .from('ordens_servico')
-                    .select('*')
-                    .order('data_criacao', { ascending: false });
-                
-                if (error) throw error;
-                
-                // Converte para o formato interno CORRETAMENTE
-                orders = data.map(order => ({
-                    id: order.id,
-                    code: order.codigo || `OS-${order.id.toString().padStart(4, '0')}`,
-                    productName: order.produto_nome,
-                    // CORREÇÃO: usa 'responsavel' (minúsculo) do banco
-                    responsibleName: order.responsavel || currentUser?.name || 'A definir',
-                    urgency: order.urgencia || 'normal',
-                    status: order.status || 'pendente',
-                    photoType: order.tipo_foto || 'estudio',
-                    skus: order.skus || [],
-                    observations: order.observacoes || '',
-                    photosTaken: order.qtd_fotos || 0,
-                    editsMade: order.qtd_edicoes || 0,
-                    createdBy: order.criado_por || 'Sistema',
-                    createdAt: order.data_criacao ? new Date(order.data_criacao).toLocaleDateString('pt-BR') : 'N/D',
-                    updatedAt: order.ultima_atualizacao || order.data_criacao
-                }));
-                
-                // Atualiza contador
-                orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
-                
-                // Atualiza interface
-                updateCounters();
-                renderOrdersTable();
-                
-                showToast(`✅ ${orders.length} ordens carregadas`, 'success');
-                
-            } catch (error) {
-                console.error('❌ Erro ao carregar ordens:', error);
-                showToast('❌ Erro ao carregar ordens', 'error');
-            } finally {
-                reloadBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Recarregar';
-                reloadBtn.disabled = false;
-            }
-        }
-        
-        // Salvar ordem no Supabase (VERSÃO SIMPLIFICADA E FUNCIONAL)
-        async function saveOrder(order) {
-            console.log('💾 Salvando OS no Supabase:', order);
-            
-            try {
-                // Dados para enviar ao Supabase
-                const orderData = {
-                    codigo: order.code,
-                    produto_nome: order.productName,
-                    // CORREÇÃO: envia para coluna 'responsavel'
-                    responsavel: order.responsibleName || currentUser.name,
-                    criado_por: order.createdBy || currentUser.name,
-                    urgencia: order.urgency || 'normal',
-                    status: order.status || 'pendente',
-                    tipo_foto: order.photoType || 'estudio',
-                    observacoes: order.observations || '',
-                    skus: order.skus || [],
-                    qtd_fotos: order.photosTaken || 0,
-                    qtd_edicoes: order.editsMade || 0,
-                    data_criacao: new Date().toISOString(),
-                    ultima_atualizacao: new Date().toISOString()
-                };
-                
-                let result;
-                
-                if (editingOrderId) {
-                    // Atualizar ordem existente
-                    console.log('📝 Atualizando OS ID:', editingOrderId);
-                    const { data, error } = await supabase
-                        .from('ordens_servico')
-                        .update(orderData)
-                        .eq('id', editingOrderId)
-                        .select();
-                    
-                    if (error) throw error;
-                    result = { success: true, updated: true, data };
-                } else {
-                    // Criar nova ordem
-                    console.log('➕ Criando nova OS');
-                    const { data, error } = await supabase
-                        .from('ordens_servico')
-                        .insert([orderData])
-                        .select();
-                    
-                    if (error) throw error;
-                    result = { success: true, updated: false, data };
-                }
-                
-                console.log('✅ OS salva com sucesso:', result);
-                return result;
-                
-            } catch (error) {
-                console.error('❌ Erro ao salvar ordem:', error);
-                showToast('❌ Erro ao salvar: ' + error.message, 'error');
-                return { success: false, error: error.message };
-            }
-        }
-        
-        // Atualizar status da ordem
-        async function updateOrderStatus(orderId, status, additionalData = {}) {
-            try {
-                const updateData = {
-                    status: status,
-                    ultima_atualizacao: new Date().toISOString()
-                };
-                
-                if (status === 'concluida') {
-                    updateData.qtd_fotos = additionalData.photosTaken || 0;
-                    updateData.qtd_edicoes = additionalData.editsMade || 0;
-                    updateData.data_conclusao = new Date().toISOString();
-                }
-                
-                const { data, error } = await supabase
-                    .from('ordens_servico')
-                    .update(updateData)
-                    .eq('id', orderId)
-                    .select();
-                
-                if (error) throw error;
-                return { success: true, data };
-                
-            } catch (error) {
-                console.error('❌ Erro ao atualizar status:', error);
-                return { success: false, error: error.message };
-            }
-        }
-        
-        // Excluir ordem
-        async function deleteOrder(orderId) {
-            try {
-                const { error } = await supabase
-                    .from('ordens_servico')
-                    .delete()
-                    .eq('id', orderId);
-                
-                if (error) throw error;
-                return { success: true };
-                
-            } catch (error) {
-                console.error('❌ Erro ao excluir ordem:', error);
-                return { success: false, error: error.message };
-            }
-        }
-        
-        // ============================================
-        // FUNÇÕES DO SISTEMA
-        // ============================================
-        
-        // Gerar código da OS
-        function generateOSCode() {
-            const timestamp = Date.now().toString().slice(-4);
-            const code = `OS${orderCounter.toString().padStart(4, '0')}-${timestamp}`;
-            osCodeDisplay.textContent = `Código: ${code}`;
-            return code;
-        }
-        
-        // Atualizar contadores
-        function updateCounters() {
-            const pending = orders.filter(o => o.status === 'pendente').length;
-            const progress = orders.filter(o => o.status === 'andamento').length;
-            const completed = orders.filter(o => o.status === 'concluida').length;
-            const total = orders.length;
-            
-            countPending.textContent = pending;
-            countProgress.textContent = progress;
-            countCompleted.textContent = completed;
-            countTotal.textContent = total;
-            osCount.textContent = pending + progress; // Ativas
-            
-            // Mostra/oculta mensagem de lista vazia
-            if (total === 0) {
-                emptyMessage.classList.remove('hidden');
-                document.querySelector('.table-responsive').classList.add('hidden');
-            } else {
-                emptyMessage.classList.add('hidden');
-                document.querySelector('.table-responsive').classList.remove('hidden');
-            }
-        }
-        
-        // Renderizar tabela de ordens
-        function renderOrdersTable() {
-            osTableBody.innerHTML = '';
-            
-            // Filtrar ordens
-            let filteredOrders = [];
-            if (currentFilter === 'todos') {
-                filteredOrders = orders;
-            } else {
-                filteredOrders = orders.filter(order => order.status === currentFilter);
-            }
-            
-            // Ordenar por data (mais recente primeiro)
-            filteredOrders.sort((a, b) => {
-                return new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt);
-            });
-            
-            // Renderizar cada ordem
-            filteredOrders.forEach(order => {
-                const row = document.createElement('tr');
-                
-                // Classe de urgência
-                let urgencyClass = '';
-                if (order.urgency === 'alta') urgencyClass = 'urgent-high';
-                else if (order.urgency === 'normal') urgencyClass = 'urgent-medium';
-                else urgencyClass = 'urgent-low';
-                
-                // Badge de status
-                let statusBadge = '';
-                if (order.status === 'pendente') {
-                    statusBadge = '<span class="status-pending">Pendente</span>';
-                } else if (order.status === 'andamento') {
-                    statusBadge = '<span class="status-progress">Em Andamento</span>';
-                } else {
-                    statusBadge = '<span class="status-completed">Concluída</span>';
-                }
-                
-                // Badge de urgência
-                let urgencyText = '';
-                if (order.urgency === 'alta') urgencyText = '<span class="badge badge-danger">Alta</span>';
-                else if (order.urgency === 'normal') urgencyText = '<span class="badge badge-warning">Normal</span>';
-                else urgencyText = '<span class="badge badge-success">Baixa</span>';
-                
-                // Botões de ação
-                let actionButtons = '';
-                if (order.status === 'pendente') {
-                    actionButtons = `
-                        <button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar">
-                            <i class="fas fa-play"></i>
-                        </button>
-                    `;
-                } else if (order.status === 'andamento') {
-                    actionButtons = `
-                        <button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar">
-                            <i class="fas fa-flag-checkered"></i>
-                        </button>
-                    `;
-                }
-                
-                row.className = urgencyClass;
-                row.innerHTML = `
-                    <td><strong>${order.code}</strong></td>
-                    <td>${order.productName}</td>
-                    <td>${order.responsibleName}</td>
-                    <td>${urgencyText}</td>
-                    <td>${statusBadge}</td>
-                    <td>${order.createdAt}</td>
-                    <td>
-                        <div class="d-flex gap-2">
-                            <button class="btn btn-primary btn-sm" onclick="viewOrder('${order.id}')" title="Visualizar">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                            <button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')" title="Editar">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            ${actionButtons}
-                            <button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')" title="Excluir">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </td>
-                `;
-                
-                osTableBody.appendChild(row);
-            });
-        }
-        
-        // Filtrar ordens
-        function filterOS(filter) {
-            currentFilter = filter;
-            renderOrdersTable();
-        }
-        
-        // Visualizar ordem
-        function viewOrder(orderId) {
-            const order = orders.find(o => o.id == orderId);
-            if (order) {
-                alert(`📋 Detalhes da OS:\n\n` +
-                      `🏷️ Código: ${order.code}\n` +
-                      `📦 Produto: ${order.productName}\n` +
-                      `👤 Responsável: ${order.responsibleName}\n` +
-                      `⚠️ Urgência: ${order.urgency}\n` +
-                      `📊 Status: ${order.status}\n` +
-                      `📸 Tipo Foto: ${order.photoType}\n` +
-                      `🏷️ SKUs: ${order.skus.join(', ') || 'Nenhum'}\n` +
-                      `📝 Observações: ${order.observations || 'Nenhuma'}\n` +
-                      `📅 Criada em: ${order.createdAt}\n` +
-                      `👤 Criada por: ${order.createdBy}`);
-            }
-        }
-        
-        // Editar ordem
-        function editOrder(orderId) {
-            const order = orders.find(o => o.id == orderId);
-            if (order) {
-                editingOrderId = orderId;
-                
-                // Preencher formulário
-                document.getElementById('productName').value = order.productName;
-                document.getElementById('responsibleName').value = order.responsibleName;
-                document.getElementById('urgency').value = order.urgency;
-                document.getElementById('photoType').value = order.photoType;
-                document.getElementById('skus').value = order.skus.join(', ');
-                document.getElementById('observations').value = order.observations;
-                
-                // Atualizar interface
-                formTitle.textContent = `Editando: ${order.code}`;
-                submitBtnText.textContent = 'Atualizar OS';
-                cancelEditBtn.classList.remove('hidden');
-                osCodeDisplay.textContent = `Código: ${order.code}`;
-                
-                // Rolar para o formulário
-                document.getElementById('osForm').scrollIntoView({ behavior: 'smooth' });
-                
-                showToast(`✏️ Editando OS: ${order.code}`, 'info');
-            }
-        }
-        
-        // Cancelar edição
-        function cancelEdit() {
-            editingOrderId = null;
-            formTitle.textContent = 'Nova Ordem de Serviço';
-            submitBtnText.textContent = 'Salvar OS';
-            cancelEditBtn.classList.add('hidden');
-            osForm.reset();
-            generateOSCode();
-            
-            showToast('❌ Edição cancelada', 'info');
-        }
-        
-        // Iniciar ordem
-        async function startOrder(orderId) {
-            const order = orders.find(o => o.id == orderId);
-            if (order && confirm(`Iniciar a OS "${order.productName}"?`)) {
-                const result = await updateOrderStatus(orderId, 'andamento');
-                
-                if (result.success) {
-                    order.status = 'andamento';
-                    updateCounters();
-                    renderOrdersTable();
-                    showToast(`✅ OS "${order.productName}" iniciada`, 'success');
-                } else {
-                    showToast('❌ Erro ao iniciar OS', 'error');
-                }
-            }
-        }
-        
-        // Abrir modal para finalizar
-        function openCompleteModal(orderId) {
-            const order = orders.find(o => o.id == orderId);
-            if (order) {
-                completeOSId.value = orderId;
-                document.getElementById('photosTaken').value = order.photosTaken || 0;
-                document.getElementById('editsMade').value = order.editsMade || 0;
-                completeModal.classList.remove('hidden');
-            }
-        }
-        
-        // Fechar modal
-        function closeCompleteModal() {
-            completeModal.classList.add('hidden');
-            completeForm.reset();
-        }
-        
-        // Finalizar ordem
-        async function completeOrder(e) {
-            e.preventDefault();
-            
-            const orderId = completeOSId.value;
-            const photosTaken = parseInt(document.getElementById('photosTaken').value);
-            const editsMade = parseInt(document.getElementById('editsMade').value);
-            
-            const order = orders.find(o => o.id == orderId);
-            if (order) {
-                const result = await updateOrderStatus(orderId, 'concluida', {
-                    photosTaken: photosTaken,
-                    editsMade: editsMade
-                });
-                
-                if (result.success) {
-                    order.status = 'concluida';
-                    order.photosTaken = photosTaken;
-                    order.editsMade = editsMade;
-                    
-                    updateCounters();
-                    renderOrdersTable();
-                    closeCompleteModal();
-                    
-                    showToast(`✅ OS "${order.productName}" finalizada`, 'success');
-                } else {
-                    showToast('❌ Erro ao finalizar OS', 'error');
-                }
-            }
-        }
-        
-        // Excluir ordem (com confirmação)
-        async function deleteOrderPrompt(orderId) {
-            const order = orders.find(o => o.id == orderId);
-            if (order && confirm(`Excluir a OS "${order.productName}"?\nEsta ação não pode ser desfeita.`)) {
-                const result = await deleteOrder(orderId);
-                
-                if (result.success) {
-                    // Remove da lista local
-                    orders = orders.filter(o => o.id != orderId);
-                    
-                    updateCounters();
-                    renderOrdersTable();
-                    
-                    showToast(`🗑️ OS "${order.productName}" excluída`, 'success');
-                } else {
-                    showToast('❌ Erro ao excluir OS', 'error');
-                }
-            }
-        }
-        
-        // ============================================
-        // FUNÇÕES DE INTERFACE
-        // ============================================
-        
-        // Mostrar toast (notificação)
-        function showToast(message, type = 'info') {
-            // Remove toast existente
-            const existingToast = document.querySelector('.toast');
-            if (existingToast) existingToast.remove();
-            
-            // Cria novo toast
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            toast.innerHTML = `
-                <i class="fas fa-${type === 'success' ? 'check-circle' : 
-                                  type === 'error' ? 'exclamation-circle' : 
-                                  type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
-                <span>${message}</span>
-            `;
-            
-            document.body.appendChild(toast);
-            
-            // Remove após 4 segundos
-            setTimeout(() => {
-                toast.style.opacity = '0';
-                setTimeout(() => toast.remove(), 300);
-            }, 4000);
-        }
-        
-        // ============================================
-        // EVENT LISTENERS
-        // ============================================
-        
-        // Login
-        loginForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const username = document.getElementById('username').value.trim().toLowerCase();
-            const password = document.getElementById('password').value;
-            
-            // Usuários de teste (em produção, isso viria do Supabase)
-            const users = [
-                { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E' },
-                { username: 'arthur', password: 'arthur123', name: 'Arthur', avatar: 'A' },
-                { username: 'admin', password: 'admin123', name: 'Administrador', avatar: 'A' }
-            ];
-            
-            const user = users.find(u => u.username === username && u.password === password);
-            
-            if (user) {
-                currentUser = user;
-                userName.textContent = user.name;
-                userAvatar.textContent = user.avatar;
-                
-                // Transição para o sistema
-                loginScreen.classList.add('hidden');
-                mainSystem.classList.remove('hidden');
-                
-                showToast(`✅ Bem-vindo(a), ${user.name}!`, 'success');
-                
-                // Testa conexão e carrega dados
-                await testSupabaseConnection();
-                
-            } else {
-                showToast('❌ Usuário ou senha incorretos', 'error');
-            }
-        });
-        
-        // Logout
-        logoutBtn.addEventListener('click', function() {
-            currentUser = null;
-            mainSystem.classList.add('hidden');
-            loginScreen.classList.remove('hidden');
-            loginForm.reset();
-            showToast('👋 Até logo!', 'info');
-        });
-        
-        // Salvar/Editar OS
-        osForm.addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            if (!currentUser) {
-                showToast('⚠️ Faça login primeiro', 'warning');
-                return;
-            }
-            
-            // Coletar dados do formulário CORRETAMENTE
-            const orderData = {
-                id: editingOrderId || orderCounter,
-                code: editingOrderId ? orders.find(o => o.id == editingOrderId).code : generateOSCode(),
-                productName: document.getElementById('productName').value,
-                // CORREÇÃO: pega do campo correto
-                responsibleName: document.getElementById('responsibleName').value || currentUser.name,
-                urgency: document.getElementById('urgency').value,
-                status: 'pendente',
-                photoType: document.getElementById('photoType').value,
-                skus: document.getElementById('skus').value.split(',').map(s => s.trim()).filter(s => s),
-                observations: document.getElementById('observations').value,
-                photosTaken: 0,
-                editsMade: 0,
-                createdBy: currentUser.name,
-                createdAt: new Date().toLocaleDateString('pt-BR'),
-                updatedAt: new Date().toISOString()
-            };
-            
-            // Desabilita botão durante o salvamento
-            const submitBtn = osForm.querySelector('button[type="submit"]');
-            const originalText = submitBtn.innerHTML;
-            submitBtn.innerHTML = '<span class="spinner"></span> Salvando...';
-            submitBtn.disabled = true;
-            
-            // Salvar no Supabase
-            const result = await saveOrder(orderData);
-            
-            if (result.success) {
-                if (editingOrderId) {
-                    // Atualiza ordem existente
-                    const index = orders.findIndex(o => o.id == editingOrderId);
-                    if (index !== -1) {
-                        orders[index] = orderData;
-                    }
-                    editingOrderId = null;
-                    
-                    showToast(`✅ OS "${orderData.productName}" atualizada`, 'success');
-                } else {
-                    // Adiciona nova ordem
-                    orders.unshift(orderData);
-                    orderCounter++;
-                    
-                    showToast(`✅ OS "${orderData.productName}" criada`, 'success');
-                }
-                
-                // Atualiza interface
-                updateCounters();
-                renderOrdersTable();
-                
-                // Limpa formulário
-                osForm.reset();
-                generateOSCode();
-                formTitle.textContent = 'Nova Ordem de Serviço';
-                submitBtnText.textContent = 'Salvar OS';
-                cancelEditBtn.classList.add('hidden');
-                
-            } else {
-                showToast('❌ Erro ao salvar OS', 'error');
-            }
-            
-            // Restaura botão
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-        });
-        
-        // Cancelar edição
-        cancelEditBtn.addEventListener('click', cancelEdit);
-        
-        // Testar Supabase
-        testSupabaseBtn.addEventListener('click', testSupabaseConnection);
-        
-        // Recarregar
-        reloadBtn.addEventListener('click', loadOrders);
-        
-        // Finalizar OS (modal)
-        completeForm.addEventListener('submit', completeOrder);
-        
-        // ============================================
-        // INICIALIZAÇÃO
-        // ============================================
-        
-        // Gera código inicial
-        generateOSCode();
-        
-        // Fecha modal ao clicar fora
-        completeModal.addEventListener('click', function(e) {
-            if (e.target === completeModal) {
-                closeCompleteModal();
-            }
-        });
-        
-        // Adiciona listener para tecla ESC no modal
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && !completeModal.classList.contains('hidden')) {
-                closeCompleteModal();
-            }
-        });
-
-        // ============================================
-        // TESTES E DEBUG (TEMPORÁRIO)
-        // ============================================
-        
-        // Função de teste direto
-        async function testarSalvamentoDireto() {
-            if (!currentUser) {
-                alert('Faça login primeiro!');
-                return;
-            }
-            
-            const testData = {
-                codigo: 'TEST-' + Date.now(),
-                produto_nome: 'PRODUTO TESTE DIRETO',
-                responsavel: 'TESTE-' + currentUser.name,
-                criado_por: currentUser.name,
-                status: 'pendente',
-                data_criacao: new Date().toISOString()
-            };
-            
-            console.log('🧪 Teste direto:', testData);
-            
-            try {
-                const { data, error } = await supabase
-                    .from('ordens_servico')
-                    .insert([testData])
-                    .select();
-                
-                if (error) {
-                    alert('❌ Erro: ' + error.message);
-                    console.error('Erro detalhado:', error);
-                } else {
-                    alert('✅ Teste salvo! ID: ' + data[0].id);
-                    console.log('Resposta Supabase:', data);
-                    loadOrders();
-                }
-            } catch (error) {
-                alert('❌ Falha: ' + error.message);
-                console.error('Erro completo:', error);
-            }
-        }
-        
-        // Adiciona botão de teste (temporário)
-        document.addEventListener('DOMContentLoaded', function() {
-            const testBtn = document.createElement('button');
-            testBtn.innerHTML = '🧪 TESTAR SUPABASE';
-            testBtn.style.cssText = `
-                position: fixed; bottom: 80px; right: 20px;
-                background: #28a745; color: white; padding: 12px 18px;
-                border-radius: 8px; z-index: 9999; border: none;
-                font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(40,167,69,0.4);
-            `;
-            testBtn.onclick = testarSalvamentoDireto;
-            document.body.appendChild(testBtn);
-        });
-        
-        // Mostra mensagem inicial
-        console.log('🚀 Sistema OS Fotografia inicializado');
-        console.log('🔗 Supabase URL:', window.SUPABASE_URL);
-        console.log('👤 Usuários de teste: elaine/180998 ou arthur/arthur123');
-    </script>
+    <!-- SCRIPT PRINCIPAL -->
+    <script src="script.js"></script>
 </body>
 </html>
