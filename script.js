@@ -53,8 +53,8 @@ const SYSTEM_USERS = [
     { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E' },
     { username: 'arthur', password: '040869', name: 'Arthur', avatar: 'A' },
     { username: 'laura', password: '123456', name: 'Laura', avatar: 'L' },
-    { username: 'ronald', password: '123456', name: 'Ronald', avatar: 'R' },
-    { username: 'bruna', password: '123456', name: 'Bruna', avatar: 'B' }
+    { username: 'ronald', password: '210188', name: 'Ronald', avatar: 'R' },
+    { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B' }
 ];
 
 // ============================================
