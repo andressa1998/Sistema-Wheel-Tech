@@ -13,6 +13,7 @@ let orders = [];
 let orderCounter = 1;
 let currentFilter = 'todos';
 let editingOrderId = null;
+let currentOSForPrint = null;
 
 // ===== ELEMENTOS DOM =====
 const loginScreen = document.getElementById('loginScreen');
@@ -56,58 +57,27 @@ const SYSTEM_USERS = [
     { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Assistente' }
 ];
 
-// ===== FUNÇÃO DE TESTE (REMOVA DEPOIS) =====
-function testeLoginRapido() {
-    console.log('🧪 Teste rápido de login disponível');
-    console.log('👥 Usuários disponíveis:', SYSTEM_USERS.map(u => u.username));
-}
-
 // ===== INICIALIZAÇÃO =====
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Sistema OS Fotografia iniciado!');
-    testeLoginRapido();
-    
-    // Verificar elementos DOM
-    console.log('📋 Verificando elementos DOM:');
-    console.log('- loginForm:', document.getElementById('loginForm') ? '✅ OK' : '❌ NÃO ENCONTRADO');
-    console.log('- loginScreen:', document.getElementById('loginScreen') ? '✅ OK' : '❌ NÃO ENCONTRADO');
-    console.log('- mainSystem:', document.getElementById('mainSystem') ? '✅ OK' : '❌ NÃO ENCONTRADO');
-    console.log('- username input:', document.getElementById('username') ? '✅ OK' : '❌ NÃO ENCONTRADO');
-    console.log('- password input:', document.getElementById('password') ? '✅ OK' : '❌ NÃO ENCONTRADO');
     
     generateOSCode();
     initSupabase();
     setupEventListeners();
     
-    // Adicionar botão de teste (remova depois)
-    adicionarBotaoTeste();
+    // Adicionar evento de tecla ESC para fechar modais
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const printModal = document.getElementById('printModal');
+            if (printModal && !printModal.classList.contains('hidden')) {
+                closePrintModal();
+            }
+            if (completeModal && !completeModal.classList.contains('hidden')) {
+                closeCompleteModal();
+            }
+        }
+    });
 });
-
-// ===== BOTÃO DE TESTE (REMOVA DEPOIS) =====
-function adicionarBotaoTeste() {
-    const testBtn = document.createElement('button');
-    testBtn.textContent = '🧪 Teste Login Rápido';
-    testBtn.style.position = 'fixed';
-    testBtn.style.top = '10px';
-    testBtn.style.right = '10px';
-    testBtn.style.zIndex = '9999';
-    testBtn.style.padding = '8px 12px';
-    testBtn.style.background = '#4CAF50';
-    testBtn.style.color = 'white';
-    testBtn.style.border = 'none';
-    testBtn.style.borderRadius = '4px';
-    testBtn.style.cursor = 'pointer';
-    testBtn.style.fontSize = '12px';
-    
-    testBtn.onclick = function() {
-        console.log('🧪 Executando teste de login...');
-        document.getElementById('username').value = 'elaine';
-        document.getElementById('password').value = '180998';
-        handleLogin({preventDefault: () => {}});
-    };
-    
-    document.body.appendChild(testBtn);
-}
 
 // ============================================
 // FUNÇÕES DE INICIALIZAÇÃO
@@ -129,9 +99,6 @@ function setupEventListeners() {
     // Login
     if (loginForm) {
         loginForm.addEventListener('submit', handleLogin);
-        console.log('✅ Listener de login adicionado');
-    } else {
-        console.error('❌ loginForm não encontrado para adicionar listener');
     }
     
     // Tecla Enter no campo de senha
@@ -140,7 +107,6 @@ function setupEventListeners() {
         passwordInput.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                console.log('Enter pressionado no campo de senha');
                 loginForm.dispatchEvent(new Event('submit'));
             }
         });
@@ -184,13 +150,6 @@ function setupEventListeners() {
         });
     }
     
-    // Tecla Escape fecha modal
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && completeModal && !completeModal.classList.contains('hidden')) {
-            closeCompleteModal();
-        }
-    });
-    
     // Foco no campo de usuário ao carregar
     const usernameInput = document.getElementById('username');
     if (usernameInput) {
@@ -199,31 +158,19 @@ function setupEventListeners() {
 }
 
 // ============================================
-// FUNÇÃO DE LOGIN (ATUALIZADA)
+// FUNÇÃO DE LOGIN
 // ============================================
 function handleLogin(e) {
-    console.log('🔐 Iniciando processo de login...');
-    
-    if (e && e.preventDefault) {
-        e.preventDefault();
-    }
+    e.preventDefault();
     
     const usernameInput = document.getElementById('username');
     const passwordInput = document.getElementById('password');
     
-    if (!usernameInput || !passwordInput) {
-        console.error('❌ Campos de login não encontrados');
-        showToast('Erro no sistema de login', 'error');
-        return;
-    }
-    
     const username = usernameInput.value.trim().toLowerCase();
     const password = passwordInput.value;
     
-    console.log(`📝 Dados inseridos - Usuário: "${username}", Senha: "${password ? '***' : 'vazia'}"`);
-    
     // Feedback visual
-    const submitBtn = loginForm ? loginForm.querySelector('button[type="submit"]') : null;
+    const submitBtn = loginForm.querySelector('button[type="submit"]');
     let originalBtnText = '';
     if (submitBtn) {
         originalBtnText = submitBtn.innerHTML;
@@ -242,18 +189,13 @@ function handleLogin(e) {
         return;
     }
     
-    console.log('🔍 Buscando usuário no sistema...');
-    
     // Verificar usuário
-    const foundUser = SYSTEM_USERS.find(user => {
-        const match = user.username === username && user.password === password;
-        if (match) console.log(`✅ Usuário correspondente encontrado: ${user.name}`);
-        return match;
-    });
+    const foundUser = SYSTEM_USERS.find(user => 
+        user.username === username && user.password === password
+    );
     
     setTimeout(() => {
         if (foundUser) {
-            console.log(`✅ Login bem-sucedido para: ${foundUser.name}`);
             currentUser = foundUser;
             
             // Atualizar interface do usuário
@@ -280,7 +222,6 @@ function handleLogin(e) {
             }, 500);
             
         } else {
-            console.log('❌ Credenciais inválidas');
             showToast('❌ Usuário ou senha incorretos', 'error');
             passwordInput.value = '';
             passwordInput.focus();
@@ -291,7 +232,7 @@ function handleLogin(e) {
             submitBtn.innerHTML = originalBtnText;
             submitBtn.disabled = false;
         }
-    }, 300); // Pequeno delay para feedback visual
+    }, 300);
 }
 
 // ============================================
@@ -405,8 +346,8 @@ async function loadOrders() {
                 photosTaken: order.qtd_fotos || 0,
                 editsMade: order.qtd_edicoes || 0,
                 createdBy: order.criado_por || 'Sistema',
-                createdAt: order.data_criacao ? 
-                    new Date(order.data_criacao).toLocaleDateString('pt-BR') : 'N/D',
+                createdAt: order.data_criacao,
+                completionDate: order.data_conclusao,
                 updatedAt: order.ultima_atualizacao || order.data_criacao
             }));
             
@@ -468,7 +409,7 @@ async function saveOrder() {
         photosTaken: 0,
         editsMade: 0,
         createdBy: currentUser.name,
-        createdAt: new Date().toLocaleDateString('pt-BR'),
+        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
     
@@ -668,7 +609,7 @@ function updateCounters() {
 }
 
 // ============================================
-// RENDERIZAR TABELA
+// RENDERIZAR TABELA (ATUALIZADA COM BOTÃO DE IMPRESSÃO)
 // ============================================
 function renderOrdersTable() {
     if (!osTableBody) return;
@@ -732,16 +673,39 @@ function renderOrdersTable() {
         else if (order.status === 'andamento') statusBadge = '<span class="status-progress">Em Andamento</span>';
         else statusBadge = '<span class="status-completed">Concluída</span>';
         
+        // Formatar data
+        const createdDate = order.createdAt ? new Date(order.createdAt) : new Date();
+        const formattedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
+                             createdDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+        
         // Botões
         let actionButtons = '';
         if (hasPermission) {
             if (order.status === 'pendente') {
-                actionButtons = `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')"><i class="fas fa-play"></i></button>`;
+                actionButtons = `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS">
+                    <i class="fas fa-play"></i>
+                </button>`;
             } else if (order.status === 'andamento') {
-                actionButtons = `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')"><i class="fas fa-flag-checkered"></i></button>`;
+                actionButtons = `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS">
+                    <i class="fas fa-flag-checkered"></i>
+                </button>`;
             }
             
-            actionButtons += `<button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')"><i class="fas fa-edit"></i></button>`;
+            actionButtons += `<button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')" title="Editar OS">
+                <i class="fas fa-edit"></i>
+            </button>`;
+        }
+        
+        // SEMPRE adicionar botão de impressão
+        actionButtons += `<button class="btn btn-primary btn-sm" onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})" title="Imprimir OS">
+            <i class="fas fa-print"></i>
+        </button>`;
+        
+        // Botão de excluir apenas para admin ou criador
+        if (currentUser.role === 'Administrador' || order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
+            actionButtons += `<button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')" title="Excluir OS">
+                <i class="fas fa-trash"></i>
+            </button>`;
         }
         
         row.innerHTML = `
@@ -757,12 +721,10 @@ function renderOrdersTable() {
             </td>
             <td>${urgencyBadge}</td>
             <td>${statusBadge}</td>
-            <td>${order.createdAt}</td>
+            <td>${formattedDate}</td>
             <td>
                 <div class="d-flex gap-2">
-                    <button class="btn btn-primary btn-sm" onclick="viewOrder('${order.id}')"><i class="fas fa-eye"></i></button>
                     ${actionButtons}
-                    ${hasPermission ? `<button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')"><i class="fas fa-trash"></i></button>` : ''}
                 </div>
             </td>
         `;
@@ -885,6 +847,7 @@ async function completeOrder() {
         order.status = 'concluida';
         order.photosTaken = photosTaken;
         order.editsMade = editsMade;
+        order.completionDate = new Date().toISOString();
         
         updateCounters();
         renderOrdersTable();
@@ -913,6 +876,446 @@ window.deleteOrderPrompt = async function(orderId) {
             showToast('❌ Erro ao excluir', 'error');
         }
     }
+};
+
+// ============================================
+// FUNÇÕES DE IMPRESSÃO
+// ============================================
+window.openPrintModal = function(osData) {
+    currentOSForPrint = osData;
+    
+    // Construir conteúdo para impressão
+    const printContent = document.getElementById('printContent');
+    
+    // Formatar data
+    const createdDate = new Date(osData.createdAt);
+    const formattedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
+                         createdDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+    
+    // Determinar status em português
+    let statusText = '';
+    switch(osData.status) {
+        case 'pendente':
+            statusText = 'Pendente';
+            break;
+        case 'andamento':
+            statusText = 'Em Andamento';
+            break;
+        case 'concluida':
+            statusText = 'Concluída';
+            break;
+        default:
+            statusText = osData.status;
+    }
+    
+    // Determinar urgência em português
+    let urgencyText = '';
+    switch(osData.urgency) {
+        case 'alta':
+            urgencyText = 'Alta';
+            break;
+        case 'normal':
+            urgencyText = 'Normal';
+            break;
+        case 'baixa':
+            urgencyText = 'Baixa';
+            break;
+        default:
+            urgencyText = osData.urgency;
+    }
+    
+    // Determinar tipo de OS
+    let osTypeText = osData.osType === 'devolucao' ? 'Devolução' : 'Normal';
+    
+    // Determinar tipo de foto
+    let photoTypeText = '';
+    switch(osData.photoType) {
+        case 'estudio':
+            photoTypeText = 'Estúdio';
+            break;
+        case 'bike':
+            photoTypeText = 'Na Bike';
+            break;
+        case 'ambos':
+            photoTypeText = 'Ambos';
+            break;
+        default:
+            photoTypeText = osData.photoType || 'Não especificado';
+    }
+    
+    // HTML da OS para impressão
+    printContent.innerHTML = `
+        <div class="print-header">
+            <div class="company-info">
+                <h1 style="color: #8A2BE2; margin-bottom: 5px;">Sistema OS Fotografia</h1>
+                <p style="color: #666; margin-bottom: 5px;">Controle de Ordens de Serviço</p>
+                <p style="color: #888; font-size: 14px;">Emitido em: ${new Date().toLocaleString('pt-BR')}</p>
+            </div>
+            
+            <div class="os-code-large">
+                ORDEM DE SERVIÇO: ${osData.code}
+            </div>
+        </div>
+        
+        <div class="print-details">
+            <div class="detail-row">
+                <div class="detail-label">Produto:</div>
+                <div class="detail-value"><strong>${osData.productName}</strong></div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Responsável:</div>
+                <div class="detail-value">
+                    <strong>${osData.responsibleName}</strong>
+                    ${osData.osType === 'devolucao' ? '<span style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px;">DEVOLUÇÃO</span>' : ''}
+                </div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Criado por:</div>
+                <div class="detail-value">${osData.createdBy}</div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Status:</div>
+                <div class="detail-value">
+                    <span class="status-badge-print ${
+                        osData.status === 'pendente' ? 'status-pending-print' : 
+                        osData.status === 'andamento' ? 'status-progress-print' : 
+                        'status-completed-print'
+                    }">
+                        ${statusText}
+                    </span>
+                </div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Urgência:</div>
+                <div class="detail-value">
+                    <span class="${
+                        osData.urgency === 'alta' ? 'urgent-high-print' : 
+                        osData.urgency === 'normal' ? 'urgent-normal-print' : 
+                        'urgent-low-print'
+                    }">
+                        ${urgencyText}
+                    </span>
+                </div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Tipo de Foto:</div>
+                <div class="detail-value">${photoTypeText}</div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Tipo de OS:</div>
+                <div class="detail-value">${osTypeText}</div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Criado em:</div>
+                <div class="detail-value">${formattedDate}</div>
+            </div>
+            
+            ${osData.skus && osData.skus.length > 0 ? `
+            <div class="detail-row">
+                <div class="detail-label">SKUs:</div>
+                <div class="detail-value">${Array.isArray(osData.skus) ? osData.skus.join(', ') : osData.skus}</div>
+            </div>
+            ` : ''}
+            
+            <div class="detail-row" style="flex-direction: column; align-items: flex-start;">
+                <div class="detail-label">Observações:</div>
+                <div class="observations-box">
+                    ${osData.observations || 'Nenhuma observação registrada.'}
+                </div>
+            </div>
+            
+            ${osData.status === 'concluida' ? `
+            <div class="detail-row">
+                <div class="detail-label">Concluído em:</div>
+                <div class="detail-value">${new Date(osData.completionDate).toLocaleString('pt-BR')}</div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Fotos tiradas:</div>
+                <div class="detail-value">${osData.photosTaken || '0'}</div>
+            </div>
+            
+            <div class="detail-row">
+                <div class="detail-label">Edições realizadas:</div>
+                <div class="detail-value">${osData.editsMade || '0'}</div>
+            </div>
+            ` : ''}
+        </div>
+        
+        <div class="signature-area">
+            <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
+                <div>
+                    <div class="signature-line">Assinatura do Responsável</div>
+                    <div style="text-align: center; margin-top: 5px; color: #666;">
+                        ${osData.responsibleName}
+                    </div>
+                </div>
+                
+                <div>
+                    <div class="signature-line">Assinatura do Fotógrafo</div>
+                    <div style="text-align: center; margin-top: 5px; color: #666;">
+                        ______________________________
+                    </div>
+                </div>
+                
+                <div>
+                    <div class="signature-line">Assinatura do Cliente</div>
+                    <div style="text-align: center; margin-top: 5px; color: #666;">
+                        ______________________________
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="print-footer">
+            <p>Documento gerado automaticamente pelo Sistema OS Fotografia</p>
+            <p>OS Code: ${osData.code} | ID: ${osData.id} | Data de criação: ${formattedDate}</p>
+            ${osData.completionDate ? `<p>Data de conclusão: ${new Date(osData.completionDate).toLocaleString('pt-BR')}</p>` : ''}
+        </div>
+    `;
+    
+    // Mostrar modal
+    document.getElementById('printModal').classList.remove('hidden');
+};
+
+window.closePrintModal = function() {
+    document.getElementById('printModal').classList.add('hidden');
+    currentOSForPrint = null;
+};
+
+window.printOS = function() {
+    const printContent = document.getElementById('printContent').innerHTML;
+    
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html lang="pt-br">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>OS ${currentOSForPrint.code}</title>
+            <style>
+                @media print {
+                    @page {
+                        margin: 20mm;
+                    }
+                    
+                    body {
+                        font-family: Arial, sans-serif;
+                        margin: 0;
+                        padding: 0;
+                        color: #000;
+                        font-size: 12pt;
+                        line-height: 1.4;
+                    }
+                    
+                    .no-print {
+                        display: none !important;
+                    }
+                    
+                    .print-header {
+                        text-align: center;
+                        margin-bottom: 30px;
+                        padding-bottom: 20px;
+                        border-bottom: 2px solid #8A2BE2;
+                    }
+                    
+                    .os-code-large {
+                        font-size: 24px;
+                        font-weight: bold;
+                        color: #8A2BE2;
+                        background: #f8f9fa;
+                        padding: 10px;
+                        text-align: center;
+                        border-radius: 5px;
+                        margin: 15px 0;
+                        border: 2px dashed #8A2BE2;
+                    }
+                    
+                    .print-details {
+                        background: #f8f9fa;
+                        padding: 25px;
+                        border-radius: 10px;
+                        border: 1px solid #ddd;
+                        margin: 20px 0;
+                    }
+                    
+                    .detail-row {
+                        display: flex;
+                        margin-bottom: 10px;
+                        padding-bottom: 10px;
+                        border-bottom: 1px solid #eee;
+                        page-break-inside: avoid;
+                    }
+                    
+                    .detail-label {
+                        font-weight: bold;
+                        width: 180px;
+                        color: #555;
+                    }
+                    
+                    .detail-value {
+                        flex: 1;
+                        color: #333;
+                    }
+                    
+                    .status-badge-print {
+                        display: inline-block;
+                        padding: 4px 12px;
+                        border-radius: 20px;
+                        font-weight: bold;
+                        font-size: 12px;
+                    }
+                    
+                    .status-pending-print {
+                        background: #fff3cd;
+                        color: #856404;
+                        border: 1px solid #ffeaa7;
+                    }
+                    
+                    .status-progress-print {
+                        background: #d1ecf1;
+                        color: #0c5460;
+                        border: 1px solid #bee5eb;
+                    }
+                    
+                    .status-completed-print {
+                        background: #d4edda;
+                        color: #155724;
+                        border: 1px solid #c3e6cb;
+                    }
+                    
+                    .observations-box {
+                        background: white;
+                        border: 1px solid #ddd;
+                        padding: 12px;
+                        border-radius: 5px;
+                        margin-top: 8px;
+                        min-height: 80px;
+                    }
+                    
+                    .signature-area {
+                        margin-top: 40px;
+                        padding-top: 15px;
+                        border-top: 2px dashed #ddd;
+                        page-break-inside: avoid;
+                    }
+                    
+                    .signature-line {
+                        width: 250px;
+                        border-top: 1px solid #000;
+                        margin-top: 30px;
+                        text-align: center;
+                        padding-top: 5px;
+                        font-size: 12px;
+                        color: #666;
+                    }
+                    
+                    .print-footer {
+                        margin-top: 25px;
+                        text-align: center;
+                        font-size: 10px;
+                        color: #666;
+                        border-top: 1px solid #ddd;
+                        padding-top: 8px;
+                    }
+                }
+                
+                @media screen {
+                    body {
+                        font-family: Arial, sans-serif;
+                        margin: 20px;
+                        color: #333;
+                    }
+                    
+                    .print-header {
+                        text-align: center;
+                        margin-bottom: 30px;
+                        padding-bottom: 20px;
+                        border-bottom: 2px solid #8A2BE2;
+                    }
+                    
+                    .os-code-large {
+                        font-size: 28px;
+                        font-weight: bold;
+                        color: #8A2BE2;
+                        background: #f8f9fa;
+                        padding: 10px;
+                        text-align: center;
+                        border-radius: 5px;
+                        margin: 15px 0;
+                        border: 2px dashed #8A2BE2;
+                    }
+                    
+                    .print-details {
+                        background: #f8f9fa;
+                        padding: 25px;
+                        border-radius: 10px;
+                        border: 1px solid #ddd;
+                        margin: 20px 0;
+                    }
+                    
+                    .detail-row {
+                        display: flex;
+                        margin-bottom: 12px;
+                        padding-bottom: 12px;
+                        border-bottom: 1px solid #eee;
+                    }
+                    
+                    .detail-label {
+                        font-weight: bold;
+                        width: 180px;
+                        color: #555;
+                    }
+                    
+                    .detail-value {
+                        flex: 1;
+                        color: #333;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            ${printContent}
+            <div style="text-align: center; margin-top: 30px;" class="no-print">
+                <button onclick="window.print()" style="padding: 10px 20px; background: #8A2BE2; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    <i class="fas fa-print"></i> Imprimir Documento
+                </button>
+                <button onclick="window.close()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 10px;">
+                    Fechar
+                </button>
+            </div>
+            <script>
+                // Auto-print quando a janela carregar
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 500);
+                };
+                
+                // Fechar após impressão
+                window.onafterprint = function() {
+                    setTimeout(function() {
+                        window.close();
+                    }, 500);
+                };
+            <\/script>
+        </body>
+        </html>
+    `);
+    
+    printWindow.document.close();
+    
+    // Fechar modal
+    closePrintModal();
 };
 
 // ============================================
@@ -954,38 +1357,10 @@ function showToast(message, type = 'info') {
 }
 
 // ============================================
-// FUNÇÃO DE IMPRESSÃO (SIMPLIFICADA)
-// ============================================
-window.printOrder = function(orderId) {
-    const order = orders.find(o => o.id == orderId);
-    if (!order) {
-        showToast('OS não encontrada', 'error');
-        return;
-    }
-    
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
-    printWindow.document.write(`
-        <html><head><title>OS ${order.code}</title>
-        <style>body{font-family:Arial;padding:20px}</style></head>
-        <body>
-            <h1>Ordem de Serviço: ${order.code}</h1>
-            <p><strong>Produto:</strong> ${order.productName}</p>
-            <p><strong>Responsável:</strong> ${order.responsibleName}</p>
-            <p><strong>Status:</strong> ${order.status}</p>
-            <p><strong>Criado em:</strong> ${order.createdAt}</p>
-            <button onclick="window.print();window.close()">Imprimir</button>
-        </body></html>
-    `);
-    printWindow.document.close();
-    
-    showToast(`Preparando impressão`, 'info');
-};
-
-// ============================================
-// FUNÇÃO PARA TESTE RÁPIDO (REMOVA DEPOIS)
+// FUNÇÃO PARA TESTE RÁPIDO
 // ============================================
 window.testarLogin = function() {
-    console.log('🧪 Executando teste de login...');
+    
     document.getElementById('username').value = 'elaine';
     document.getElementById('password').value = '180998';
     handleLogin({preventDefault: () => {}});

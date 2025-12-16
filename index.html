@@ -789,5 +789,29 @@
 
     <!-- SCRIPT PRINCIPAL -->
     <script src="script.js"></script>
+
+    <!-- Modal para Impressão da OS -->
+<div id="printModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">
+                <i class="fas fa-print"></i> Imprimir Ordem de Serviço
+            </h3>
+            <div class="d-flex gap-2">
+                <button onclick="printOS()" class="btn btn-primary btn-sm">
+                    <i class="fas fa-print"></i> Imprimir
+                </button>
+                <button onclick="closePrintModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
+                    &times;
+                </button>
+            </div>
+        </div>
+        
+        <div id="printContent" style="background: white; padding: 30px; border-radius: 8px; border: 1px solid #ddd;">
+            <!-- Conteúdo da OS será inserido aqui -->
+        </div>
+    </div>
+</div>
+
 </body>
 </html>
