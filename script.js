@@ -1,11 +1,11 @@
 // ============================================
-// SISTEMA OS FOTOGRAFIA - VERSÃO COMPLETA
+// SISTEMA OS FOTOGRAFIA - VERSÃO COMPLETA ATUALIZADA
 // ============================================
 
 // ===== CONFIGURAÇÃO SUPABASE =====
-const SUPABASE_URL = window.SUPABASE_URL || 'https://nvlmtinpcayrpkhulefs.supabase.co';
-const SUPABASE_KEY = window.SUPABASE_KEY || 'sb_publishable_7AaXEKbS9roL57PO5lQkuQ_fkVWnGoL';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const SUPABASE_URL = 'https://nvlmtinpcayrpkhulefs.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_7AaXEKbS9roL57PO5lQkuQ_fkVWnGoL';
+let supabaseClient = null;
 
 // ===== VARIÁVEIS GLOBAIS =====
 let currentUser = null;
@@ -18,7 +18,6 @@ let editingOrderId = null;
 const loginScreen = document.getElementById('loginScreen');
 const mainSystem = document.getElementById('mainSystem');
 const loginForm = document.getElementById('loginForm');
-const osFormContainer = document.getElementById('osFormContainer');
 const osCodeDisplay = document.getElementById('osCodeDisplay');
 const osTableBody = document.getElementById('osTableBody');
 const emptyMessage = document.getElementById('emptyMessage');
@@ -50,101 +49,424 @@ const syncStatus = document.getElementById('syncStatus');
 
 // ===== USUÁRIOS DO SISTEMA =====
 const SYSTEM_USERS = [
-    { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E' },
-    { username: 'arthur', password: '040869', name: 'Arthur', avatar: 'A' },
-    { username: 'laura', password: '123456', name: 'Laura', avatar: 'L' },
-    { username: 'ronald', password: '210188', name: 'Ronald', avatar: 'R' },
-    { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B' }
+    { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E', role: 'Fotógrafa' },
+    { username: 'arthur', password: '040869', name: 'Arthur', avatar: 'A', role: 'Fotógrafo' },
+    { username: 'laura', password: '123456', name: 'Laura', avatar: 'L', role: 'Editora' },
+    { username: 'ronald', password: '210188', name: 'Ronald', avatar: 'R', role: 'Administrador' },
+    { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Coordenadora' },
+    { username: 'admin', password: 'admin123', name: 'Admin', avatar: 'AD', role: 'Administrador' },
+    { username: 'teste', password: 'teste123', name: 'Teste', avatar: 'T', role: 'Usuário Teste' }
 ];
 
-// ============================================
-// FUNÇÃO DE LOGIN
-// ============================================
-loginForm.addEventListener('submit', function(e) {
-    e.preventDefault();
+// ===== FUNÇÃO DE TESTE (REMOVA DEPOIS) =====
+function testeLoginRapido() {
+    console.log('🧪 Teste rápido de login disponível');
+    console.log('👥 Usuários disponíveis:', SYSTEM_USERS.map(u => u.username));
+}
+
+// ===== INICIALIZAÇÃO =====
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Sistema OS Fotografia iniciado!');
+    testeLoginRapido();
     
-    const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value;
+    // Verificar elementos DOM
+    console.log('📋 Verificando elementos DOM:');
+    console.log('- loginForm:', document.getElementById('loginForm') ? '✅ OK' : '❌ NÃO ENCONTRADO');
+    console.log('- loginScreen:', document.getElementById('loginScreen') ? '✅ OK' : '❌ NÃO ENCONTRADO');
+    console.log('- mainSystem:', document.getElementById('mainSystem') ? '✅ OK' : '❌ NÃO ENCONTRADO');
+    console.log('- username input:', document.getElementById('username') ? '✅ OK' : '❌ NÃO ENCONTRADO');
+    console.log('- password input:', document.getElementById('password') ? '✅ OK' : '❌ NÃO ENCONTRADO');
     
-    if (!username || !password) {
-        showToast('Por favor, preencha usuário e senha!', 'warning');
+    generateOSCode();
+    initSupabase();
+    setupEventListeners();
+    
+    // Adicionar botão de teste (remova depois)
+    adicionarBotaoTeste();
+});
+
+// ===== BOTÃO DE TESTE (REMOVA DEPOIS) =====
+function adicionarBotaoTeste() {
+    const testBtn = document.createElement('button');
+    testBtn.textContent = '🧪 Teste Login Rápido';
+    testBtn.style.position = 'fixed';
+    testBtn.style.top = '10px';
+    testBtn.style.right = '10px';
+    testBtn.style.zIndex = '9999';
+    testBtn.style.padding = '8px 12px';
+    testBtn.style.background = '#4CAF50';
+    testBtn.style.color = 'white';
+    testBtn.style.border = 'none';
+    testBtn.style.borderRadius = '4px';
+    testBtn.style.cursor = 'pointer';
+    testBtn.style.fontSize = '12px';
+    
+    testBtn.onclick = function() {
+        console.log('🧪 Executando teste de login...');
+        document.getElementById('username').value = 'elaine';
+        document.getElementById('password').value = '180998';
+        handleLogin({preventDefault: () => {}});
+    };
+    
+    document.body.appendChild(testBtn);
+}
+
+// ============================================
+// FUNÇÕES DE INICIALIZAÇÃO
+// ============================================
+function initSupabase() {
+    try {
+        if (window.supabase) {
+            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            console.log('✅ Supabase inicializado');
+        } else {
+            console.error('❌ Biblioteca Supabase não carregada');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao inicializar Supabase:', error);
+    }
+}
+
+function setupEventListeners() {
+    // Login
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
+        console.log('✅ Listener de login adicionado');
+    } else {
+        console.error('❌ loginForm não encontrado para adicionar listener');
+    }
+    
+    // Tecla Enter no campo de senha
+    const passwordInput = document.getElementById('password');
+    if (passwordInput) {
+        passwordInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                console.log('Enter pressionado no campo de senha');
+                loginForm.dispatchEvent(new Event('submit'));
+            }
+        });
+    }
+    
+    // Logout
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', handleLogout);
+    }
+    
+    // Supabase
+    if (testSupabaseBtn) {
+        testSupabaseBtn.addEventListener('click', testSupabaseConnection);
+    }
+    
+    if (reloadBtn) {
+        reloadBtn.addEventListener('click', loadOrders);
+    }
+    
+    // Formulário OS
+    if (saveOSBtn) {
+        saveOSBtn.addEventListener('click', saveOrder);
+    }
+    
+    if (clearFormBtn) {
+        clearFormBtn.addEventListener('click', clearForm);
+    }
+    
+    if (cancelEditBtn) {
+        cancelEditBtn.addEventListener('click', cancelEdit);
+    }
+    
+    // Modal de finalização
+    if (finalizarOSBtn) {
+        finalizarOSBtn.addEventListener('click', completeOrder);
+    }
+    
+    if (completeModal) {
+        completeModal.addEventListener('click', function(e) {
+            if (e.target === completeModal) closeCompleteModal();
+        });
+    }
+    
+    // Tecla Escape fecha modal
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && completeModal && !completeModal.classList.contains('hidden')) {
+            closeCompleteModal();
+        }
+    });
+    
+    // Foco no campo de usuário ao carregar
+    const usernameInput = document.getElementById('username');
+    if (usernameInput) {
+        setTimeout(() => usernameInput.focus(), 100);
+    }
+}
+
+// ============================================
+// FUNÇÃO DE LOGIN (ATUALIZADA)
+// ============================================
+function handleLogin(e) {
+    console.log('🔐 Iniciando processo de login...');
+    
+    if (e && e.preventDefault) {
+        e.preventDefault();
+    }
+    
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    
+    if (!usernameInput || !passwordInput) {
+        console.error('❌ Campos de login não encontrados');
+        showToast('Erro no sistema de login', 'error');
         return;
     }
     
+    const username = usernameInput.value.trim().toLowerCase();
+    const password = passwordInput.value;
+    
+    console.log(`📝 Dados inseridos - Usuário: "${username}", Senha: "${password ? '***' : 'vazia'}"`);
+    
+    // Feedback visual
+    const submitBtn = loginForm ? loginForm.querySelector('button[type="submit"]') : null;
+    let originalBtnText = '';
+    if (submitBtn) {
+        originalBtnText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<span class="spinner"></span> Verificando...';
+        submitBtn.disabled = true;
+    }
+    
+    // Validação
+    if (!username || !password) {
+        showToast('Por favor, preencha usuário e senha!', 'warning');
+        if (submitBtn) {
+            submitBtn.innerHTML = originalBtnText;
+            submitBtn.disabled = false;
+        }
+        passwordInput.focus();
+        return;
+    }
+    
+    console.log('🔍 Buscando usuário no sistema...');
+    
+    // Verificar usuário
     const foundUser = SYSTEM_USERS.find(user => {
-        return user.username === username && user.password === password;
+        const match = user.username === username && user.password === password;
+        if (match) console.log(`✅ Usuário correspondente encontrado: ${user.name}`);
+        return match;
     });
     
-    if (foundUser) {
-        currentUser = foundUser;
-        userName.textContent = foundUser.name;
-        userAvatar.textContent = foundUser.avatar;
-        userRole.textContent = 'Usuário';
-        welcomeMessage.textContent = `Bem-vindo(a), ${foundUser.name}!`;
-        createdByInput.value = foundUser.name;
+    setTimeout(() => {
+        if (foundUser) {
+            console.log(`✅ Login bem-sucedido para: ${foundUser.name}`);
+            currentUser = foundUser;
+            
+            // Atualizar interface do usuário
+            if (userName) userName.textContent = foundUser.name;
+            if (userAvatar) userAvatar.textContent = foundUser.avatar;
+            if (userRole) userRole.textContent = foundUser.role;
+            if (welcomeMessage) welcomeMessage.textContent = `Bem-vindo(a), ${foundUser.name}!`;
+            if (createdByInput) createdByInput.value = foundUser.name;
+            
+            // Mostrar sistema, esconder login
+            if (loginScreen) loginScreen.classList.add('hidden');
+            if (mainSystem) mainSystem.classList.remove('hidden');
+            
+            showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
+            
+            // Inicializar sistema após login
+            setTimeout(() => {
+                if (supabaseClient) {
+                    testSupabaseConnection();
+                } else {
+                    updateCounters();
+                    renderOrdersTable();
+                }
+            }, 500);
+            
+        } else {
+            console.log('❌ Credenciais inválidas');
+            showToast('❌ Usuário ou senha incorretos', 'error');
+            passwordInput.value = '';
+            passwordInput.focus();
+        }
         
-        loginScreen.classList.add('hidden');
-        mainSystem.classList.remove('hidden');
-        
-        showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
-        testSupabaseConnection();
-        
-    } else {
-        showToast('❌ Usuário ou senha incorretos', 'error');
-        document.getElementById('password').value = '';
-    }
-});
+        // Restaurar botão
+        if (submitBtn) {
+            submitBtn.innerHTML = originalBtnText;
+            submitBtn.disabled = false;
+        }
+    }, 300); // Pequeno delay para feedback visual
+}
 
 // ============================================
 // FUNÇÃO DE LOGOUT
 // ============================================
-logoutBtn.addEventListener('click', function() {
-    currentUser = null;
-    mainSystem.classList.add('hidden');
-    loginScreen.classList.remove('hidden');
-    loginForm.reset();
-    showToast('👋 Até logo!', 'info');
-});
+function handleLogout() {
+    if (confirm('Deseja realmente sair do sistema?')) {
+        currentUser = null;
+        orders = [];
+        
+        if (mainSystem) mainSystem.classList.add('hidden');
+        if (loginScreen) loginScreen.classList.remove('hidden');
+        
+        if (loginForm) loginForm.reset();
+        
+        // Foco no usuário
+        const usernameInput = document.getElementById('username');
+        if (usernameInput) setTimeout(() => usernameInput.focus(), 100);
+        
+        showToast('👋 Até logo!', 'info');
+    }
+}
 
 // ============================================
-// FUNÇÃO SALVAR OS
+// FUNÇÃO TESTAR CONEXÃO SUPABASE
 // ============================================
-saveOSBtn.addEventListener('click', async function() {
-    console.log('💾 SALVANDO OS...');
+async function testSupabaseConnection() {
+    showToast('🔗 Testando conexão...', 'info');
+    if (testSupabaseBtn) {
+        testSupabaseBtn.innerHTML = '<span class="spinner"></span> Testando...';
+        testSupabaseBtn.disabled = true;
+    }
     
+    try {
+        if (!supabaseClient) {
+            initSupabase();
+        }
+        
+        const { data, error } = await supabaseClient
+            .from('ordens_service')
+            .select('id')
+            .limit(1);
+        
+        if (error) throw error;
+        
+        showToast('✅ Conexão estabelecida!', 'success');
+        if (syncStatus) {
+            syncStatus.textContent = 'Conectado';
+            syncStatus.className = 'badge badge-success ml-2';
+        }
+        
+        await loadOrders();
+        
+    } catch (error) {
+        console.error('❌ Erro de conexão:', error);
+        showToast('❌ Falha na conexão', 'error');
+        if (syncStatus) {
+            syncStatus.textContent = 'Desconectado';
+            syncStatus.className = 'badge badge-danger ml-2';
+        }
+        
+        updateCounters();
+        renderOrdersTable();
+    } finally {
+        if (testSupabaseBtn) {
+            testSupabaseBtn.innerHTML = '<i class="fas fa-database"></i> Testar Conexão';
+            testSupabaseBtn.disabled = false;
+        }
+    }
+}
+
+// ============================================
+// FUNÇÃO CARREGAR ORDENS
+// ============================================
+async function loadOrders() {
     if (!currentUser) {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
     
-    // Validação básica
-    const productName = document.getElementById('productName').value.trim();
-    const responsibleName = document.getElementById('responsibleName').value;
+    showToast('🔄 Carregando ordens...', 'info');
+    if (reloadBtn) {
+        reloadBtn.innerHTML = '<span class="spinner"></span> Carregando...';
+        reloadBtn.disabled = true;
+    }
     
-    if (!productName) {
-        showToast('⚠️ Digite o nome do produto', 'warning');
-        document.getElementById('productName').focus();
+    try {
+        if (!supabaseClient) {
+            throw new Error('Supabase não conectado');
+        }
+        
+        const { data, error } = await supabaseClient
+            .from('ordens_service')
+            .select('*')
+            .order('data_criacao', { ascending: false });
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+            orders = data.map(order => ({
+                id: order.id,
+                code: order.codigo || `OS-${order.id.toString().padStart(4, '0')}`,
+                productName: order.produto_nome || 'Sem nome',
+                responsibleName: order.responsavel || currentUser.name,
+                urgency: order.urgencia || 'normal',
+                osType: order.tipo_os || 'normal',
+                status: order.status || 'pendente',
+                photoType: order.tipo_foto || 'estudio',
+                skus: order.skus || [],
+                observations: order.observacoes || '',
+                photosTaken: order.qtd_fotos || 0,
+                editsMade: order.qtd_edicoes || 0,
+                createdBy: order.criado_por || 'Sistema',
+                createdAt: order.data_criacao ? 
+                    new Date(order.data_criacao).toLocaleDateString('pt-BR') : 'N/D',
+                updatedAt: order.ultima_atualizacao || order.data_criacao
+            }));
+            
+            orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
+            
+            showToast(`✅ ${orders.length} ordens carregadas`, 'success');
+        } else {
+            orders = [];
+            showToast('📭 Nenhuma ordem encontrada', 'info');
+        }
+        
+        updateCounters();
+        renderOrdersTable();
+        
+    } catch (error) {
+        console.error('❌ Erro ao carregar ordens:', error);
+        showToast('❌ Erro ao carregar ordens', 'error');
+        
+        orders = [];
+        updateCounters();
+        renderOrdersTable();
+        
+    } finally {
+        if (reloadBtn) {
+            reloadBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Recarregar';
+            reloadBtn.disabled = false;
+        }
+    }
+}
+
+// ============================================
+// FUNÇÃO SALVAR OS
+// ============================================
+async function saveOrder() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
     
-    if (!responsibleName) {
-        showToast('⚠️ Selecione o responsável', 'warning');
-        document.getElementById('responsibleName').focus();
+    const productName = document.getElementById('productName')?.value.trim();
+    const responsibleName = document.getElementById('responsibleName')?.value;
+    
+    if (!productName || !responsibleName) {
+        showToast('⚠️ Preencha produto e responsável', 'warning');
         return;
     }
     
-    // Coleta dados
     const orderData = {
         id: editingOrderId || orderCounter,
-        code: editingOrderId ? orders.find(o => o.id == editingOrderId).code : generateOSCode(),
+        code: editingOrderId ? orders.find(o => o.id == editingOrderId)?.code : generateOSCode(),
         productName: productName,
         responsibleName: responsibleName,
-        urgency: document.getElementById('urgency').value,
-        osType: document.getElementById('osType').value,
+        urgency: document.getElementById('urgency')?.value || 'normal',
+        osType: document.getElementById('osType')?.value || 'normal',
         status: 'pendente',
-        photoType: document.getElementById('photoType').value,
-        skus: document.getElementById('skus').value.split(',').map(s => s.trim()).filter(s => s),
-        observations: document.getElementById('observations').value,
+        photoType: document.getElementById('photoType')?.value || 'estudio',
+        skus: document.getElementById('skus')?.value.split(',').map(s => s.trim()).filter(s => s) || [],
+        observations: document.getElementById('observations')?.value || '',
         photosTaken: 0,
         editsMade: 0,
         createdBy: currentUser.name,
@@ -152,33 +474,32 @@ saveOSBtn.addEventListener('click', async function() {
         updatedAt: new Date().toISOString()
     };
     
-    console.log('📦 Dados da OS:', orderData);
-    
-    // Desabilita botão
-    saveOSBtn.innerHTML = '<span class="spinner"></span> Salvando...';
-    saveOSBtn.disabled = true;
+    if (saveOSBtn) {
+        saveOSBtn.innerHTML = '<span class="spinner"></span> Salvando...';
+        saveOSBtn.disabled = true;
+    }
     
     try {
-        // Salva no Supabase
-        const result = await saveOrderToSupabase(orderData);
+        let result;
+        
+        if (supabaseClient) {
+            result = await saveOrderToSupabase(orderData);
+        } else {
+            result = { success: true, offline: true };
+        }
         
         if (result.success) {
             if (editingOrderId) {
-                // Atualiza localmente
                 const index = orders.findIndex(o => o.id == editingOrderId);
-                if (index !== -1) {
-                    orders[index] = orderData;
-                }
+                if (index !== -1) orders[index] = orderData;
                 editingOrderId = null;
                 showToast(`✅ OS "${orderData.productName}" atualizada`, 'success');
             } else {
-                // Adiciona localmente
                 orders.unshift(orderData);
                 orderCounter++;
                 showToast(`✅ OS "${orderData.productName}" criada`, 'success');
             }
             
-            // Atualiza interface
             updateCounters();
             renderOrdersTable();
             clearForm();
@@ -189,20 +510,19 @@ saveOSBtn.addEventListener('click', async function() {
         
     } catch (error) {
         console.error('❌ Erro:', error);
-        showToast('❌ Erro inesperado ao salvar', 'error');
+        showToast('❌ Erro inesperado', 'error');
     } finally {
-        // Restaura botão
-        saveOSBtn.innerHTML = '<i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>';
-        saveOSBtn.disabled = false;
+        if (saveOSBtn) {
+            saveOSBtn.innerHTML = '<i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>';
+            saveOSBtn.disabled = false;
+        }
     }
-});
+}
 
 // ============================================
 // FUNÇÃO SALVAR NO SUPABASE
 // ============================================
 async function saveOrderToSupabase(order) {
-    console.log('📤 Enviando para Supabase...');
-    
     try {
         const orderData = {
             codigo: order.code,
@@ -221,32 +541,31 @@ async function saveOrderToSupabase(order) {
             ultima_atualizacao: new Date().toISOString()
         };
         
-        console.log('📊 Dados para Supabase:', orderData);
-        
         let result;
         
         if (editingOrderId) {
-            // Atualizar
-            const { data, error } = await supabase
-                .from('ordens_servico')
+            const { data, error } = await supabaseClient
+                .from('ordens_service')
                 .update(orderData)
                 .eq('id', editingOrderId)
                 .select();
             
             if (error) throw error;
-            result = { success: true, updated: true, data };
+            result = { success: true, data };
         } else {
-            // Criar novo
-            const { data, error } = await supabase
-                .from('ordens_servico')
+            const { data, error } = await supabaseClient
+                .from('ordens_service')
                 .insert([orderData])
                 .select();
             
             if (error) throw error;
-            result = { success: true, updated: false, data };
+            result = { success: true, data };
+            
+            if (data && data[0]) {
+                order.id = data[0].id;
+            }
         }
         
-        console.log('✅ Sucesso no Supabase:', result);
         return result;
         
     } catch (error) {
@@ -256,206 +575,116 @@ async function saveOrderToSupabase(order) {
 }
 
 // ============================================
-// FUNÇÃO TESTAR CONEXÃO
+// FUNÇÕES DO FORMULÁRIO
 // ============================================
-async function testSupabaseConnection() {
-    showToast('🔗 Testando conexão...', 'info');
-    testSupabaseBtn.innerHTML = '<span class="spinner"></span> Testando...';
-    testSupabaseBtn.disabled = true;
-    
-    try {
-        // Teste simples
-        const { data, error } = await supabase
-            .from('ordens_servico')
-            .select('id')
-            .limit(1);
-        
-        if (error) throw error;
-        
-        showToast('✅ Conexão estabelecida!', 'success');
-        syncStatus.textContent = 'Conectado';
-        syncStatus.className = 'badge badge-success ml-2';
-        
-        // Carrega ordens
-        await loadOrders();
-        
-    } catch (error) {
-        console.error('❌ Erro de conexão:', error);
-        showToast('❌ Falha na conexão: ' + error.message, 'error');
-        syncStatus.textContent = 'Desconectado';
-        syncStatus.className = 'badge badge-danger ml-2';
-    } finally {
-        testSupabaseBtn.innerHTML = '<i class="fas fa-database"></i> Testar Conexão';
-        testSupabaseBtn.disabled = false;
-    }
-}
-
-// ============================================
-// FUNÇÃO CARREGAR ORDENS
-// ============================================
-async function loadOrders() {
-    showToast('🔄 Carregando ordens...', 'info');
-    reloadBtn.innerHTML = '<span class="spinner"></span> Carregando...';
-    reloadBtn.disabled = true;
-    
-    try {
-        const { data, error } = await supabase
-            .from('ordens_servico')
-            .select('*')
-            .order('data_criacao', { ascending: false });
-        
-        if (error) throw error;
-        
-        console.log(`✅ ${data.length} ordens carregadas`);
-        
-        // Processa os dados
-        orders = data.map(order => ({
-            id: order.id,
-            code: order.codigo || `OS-${order.id.toString().padStart(4, '0')}`,
-            productName: order.produto_nome || 'Sem nome',
-            responsibleName: order.responsavel || currentUser?.name || 'A definir',
-            urgency: order.urgencia || 'normal',
-            osType: order.tipo_os || 'normal',
-            status: order.status || 'pendente',
-            photoType: order.tipo_foto || 'estudio',
-            skus: order.skus || [],
-            observations: order.observacoes || '',
-            photosTaken: order.qtd_fotos || 0,
-            editsMade: order.qtd_edicoes || 0,
-            createdBy: order.criado_por || 'Sistema',
-            createdAt: order.data_criacao ? new Date(order.data_criacao).toLocaleDateString('pt-BR') : 'N/D',
-            updatedAt: order.ultima_atualizacao || order.data_criacao
-        }));
-        
-        // Atualiza contador
-        orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
-        
-        // Atualiza interface
-        updateCounters();
-        renderOrdersTable();
-        
-        showToast(`✅ ${orders.length} ordens carregadas`, 'success');
-        
-    } catch (error) {
-        console.error('❌ Erro ao carregar:', error);
-        showToast('❌ Erro ao carregar ordens', 'error');
-    } finally {
-        reloadBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Recarregar';
-        reloadBtn.disabled = false;
-    }
-}
-
-// ============================================
-// FUNÇÃO LIMPAR FORMULÁRIO
-// ============================================
-clearFormBtn.addEventListener('click', clearForm);
-
 function clearForm() {
-    document.getElementById('productName').value = '';
-    document.getElementById('responsibleName').value = '';
-    document.getElementById('urgency').value = 'normal';
-    document.getElementById('osType').value = 'normal';
-    document.getElementById('photoType').value = 'estudio';
-    document.getElementById('skus').value = '';
-    document.getElementById('observations').value = '';
+    const productNameInput = document.getElementById('productName');
+    const responsibleNameInput = document.getElementById('responsibleName');
+    const urgencySelect = document.getElementById('urgency');
+    const osTypeSelect = document.getElementById('osType');
+    const photoTypeSelect = document.getElementById('photoType');
+    const skusInput = document.getElementById('skus');
+    const observationsInput = document.getElementById('observations');
+    
+    if (productNameInput) productNameInput.value = '';
+    if (responsibleNameInput) responsibleNameInput.value = '';
+    if (urgencySelect) urgencySelect.value = 'normal';
+    if (osTypeSelect) osTypeSelect.value = 'normal';
+    if (photoTypeSelect) photoTypeSelect.value = 'estudio';
+    if (skusInput) skusInput.value = '';
+    if (observationsInput) observationsInput.value = '';
     
     editingOrderId = null;
-    formTitle.textContent = 'Nova Ordem de Serviço';
-    submitBtnText.textContent = 'Salvar OS';
-    cancelEditBtn.classList.add('hidden');
+    if (formTitle) formTitle.textContent = 'Nova Ordem de Serviço';
+    if (submitBtnText) submitBtnText.textContent = 'Salvar OS';
+    if (cancelEditBtn) cancelEditBtn.classList.add('hidden');
     
     generateOSCode();
 }
 
-// ============================================
-// FUNÇÃO GERAR CÓDIGO
-// ============================================
+function cancelEdit() {
+    editingOrderId = null;
+    if (formTitle) formTitle.textContent = 'Nova Ordem de Serviço';
+    if (submitBtnText) submitBtnText.textContent = 'Salvar OS';
+    if (cancelEditBtn) cancelEditBtn.classList.add('hidden');
+    clearForm();
+    showToast('❌ Edição cancelada', 'info');
+}
+
 function generateOSCode() {
     const timestamp = Date.now().toString().slice(-4);
     const code = `OS${orderCounter.toString().padStart(4, '0')}-${timestamp}`;
-    osCodeDisplay.textContent = `Código: ${code}`;
+    if (osCodeDisplay) osCodeDisplay.textContent = `Código: ${code}`;
     return code;
 }
 
 // ============================================
-// FUNÇÃO FILTRAR ORDENS POR USUÁRIO
+// FUNÇÕES DE FILTRO E PERMISSÃO
 // ============================================
 function filterOrdersByUser(ordersList) {
     if (!currentUser) return [];
     
     return ordersList.filter(order => {
-        // Verifica se o usuário atual é:
-        // 1. O responsável pela OS
-        // 2. O criador da OS
-        const isResponsible = order.responsibleName.toLowerCase() === currentUser.name.toLowerCase();
-        const isCreator = order.createdBy.toLowerCase() === currentUser.name.toLowerCase();
-        
+        const isResponsible = order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase());
+        const isCreator = order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase());
         return isResponsible || isCreator;
     });
 }
 
-// ============================================
-// FUNÇÃO VERIFICAR PERMISSÃO
-// ============================================
 function checkOrderPermission(order) {
     if (!currentUser) return false;
     
-    const isResponsible = order.responsibleName.toLowerCase() === currentUser.name.toLowerCase();
-    const isCreator = order.createdBy.toLowerCase() === currentUser.name.toLowerCase();
-    
+    const isResponsible = order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase());
+    const isCreator = order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase());
     return isResponsible || isCreator;
 }
 
-// ============================================
-// FUNÇÃO ATUALIZAR CONTADORES
-// ============================================
 function updateCounters() {
-    // Todas as ordens do sistema
-    const pending = orders.filter(o => o.status === 'pendente').length;
-    const progress = orders.filter(o => o.status === 'andamento').length;
-    const completed = orders.filter(o => o.status === 'concluida').length;
-    const total = orders.length;
+    if (!currentUser) return;
     
-    // Ordens do usuário atual
     const userOrders = filterOrdersByUser(orders);
     const myPending = userOrders.filter(o => o.status === 'pendente').length;
     const myProgress = userOrders.filter(o => o.status === 'andamento').length;
     const myCompleted = userOrders.filter(o => o.status === 'concluida').length;
     const myTotal = userOrders.length;
     
-    // Atualiza contadores
-    countPending.textContent = myPending;
-    countProgress.textContent = myProgress;
-    countCompleted.textContent = myCompleted;
-    countTotal.textContent = myTotal;
+    if (countPending) countPending.textContent = myPending;
+    if (countProgress) countProgress.textContent = myProgress;
+    if (countCompleted) countCompleted.textContent = myCompleted;
+    if (countTotal) countTotal.textContent = myTotal;
     
-    // Atualiza contadores gerais
-    myOrdersCount.textContent = myTotal;
-    totalOrdersCount.textContent = total;
+    if (myOrdersCount) myOrdersCount.textContent = myTotal;
+    if (totalOrdersCount) totalOrdersCount.textContent = orders.length;
     
-    // Mostra/oculta mensagem de vazio
-    if (myTotal === 0) {
-        emptyMessage.classList.remove('hidden');
-        document.querySelector('.table-responsive').classList.add('hidden');
-    } else {
-        emptyMessage.classList.add('hidden');
-        document.querySelector('.table-responsive').classList.remove('hidden');
+    if (emptyMessage) {
+        if (myTotal === 0) {
+            emptyMessage.classList.remove('hidden');
+            const tableResponsive = document.querySelector('.table-responsive');
+            if (tableResponsive) tableResponsive.classList.add('hidden');
+        } else {
+            emptyMessage.classList.add('hidden');
+            const tableResponsive = document.querySelector('.table-responsive');
+            if (tableResponsive) tableResponsive.classList.remove('hidden');
+        }
     }
 }
 
 // ============================================
-// FUNÇÃO RENDERIZAR TABELA
-// ============================================
-// ============================================
-// FUNÇÃO RENDERIZAR TABELA (ATUALIZADA)
+// RENDERIZAR TABELA
 // ============================================
 function renderOrdersTable() {
+    if (!osTableBody) return;
+    
     osTableBody.innerHTML = '';
     
-    // Primeiro filtra por usuário
-    let userOrders = filterOrdersByUser(orders);
+    if (!currentUser) {
+        if (emptyMessage) emptyMessage.classList.remove('hidden');
+        const tableResponsive = document.querySelector('.table-responsive');
+        if (tableResponsive) tableResponsive.classList.add('hidden');
+        return;
+    }
     
-    // Depois aplica o filtro de status
+    let userOrders = filterOrdersByUser(orders);
     let filteredOrders = currentFilter === 'todos' ? userOrders : 
                          userOrders.filter(order => order.status === currentFilter);
     
@@ -466,82 +695,46 @@ function renderOrdersTable() {
                     <i class="fas fa-user-lock fa-3x" style="color: #6c757d; opacity: 0.5; margin-bottom: 15px;"></i>
                     <h4 style="color: #6c757d;">Nenhuma ordem disponível</h4>
                     <p style="color: #6c757d;">Você não tem permissão para visualizar ordens ou não há ordens com seu filtro atual.</p>
-                    <p style="color: #6c757d; font-size: 12px; margin-top: 10px;">
-                        <i class="fas fa-info-circle"></i>
-                        Você só vê ordens onde é <strong>responsável</strong> ou <strong>criador</strong>
-                    </p>
                 </td>
             </tr>
         `;
         return;
     }
     
-    // Ordena por data
-    filteredOrders.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+    filteredOrders.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     
-    // Renderiza
     filteredOrders.forEach(order => {
         const row = document.createElement('tr');
-        
-        // Verifica permissão para ações
         const hasPermission = checkOrderPermission(order);
         
-        // Estilo por urgência e tipo
-        if (order.osType === 'devolucao') {
-            row.className = 'return-highlight';
-        } else if (order.urgency === 'alta') {
-            row.className = 'urgent-high';
-        } else if (order.urgency === 'normal') {
-            row.className = 'urgent-medium';
-        } else {
-            row.className = 'urgent-low';
-        }
+        // Estilo
+        if (order.osType === 'devolucao') row.className = 'return-highlight';
+        else if (order.urgency === 'alta') row.className = 'urgent-high';
+        else if (order.urgency === 'normal') row.className = 'urgent-medium';
+        else row.className = 'urgent-low';
         
-        // Adiciona indicador de permissão
+        // Badges
         let permissionBadge = '';
-        if (order.responsibleName.toLowerCase() === currentUser.name.toLowerCase()) {
+        if (order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase())) {
             permissionBadge = '<span class="badge badge-primary" style="margin-left: 5px;"><i class="fas fa-user-check"></i> Responsável</span>';
-        } else if (order.createdBy.toLowerCase() === currentUser.name.toLowerCase()) {
+        } else if (order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
             permissionBadge = '<span class="badge badge-info" style="margin-left: 5px;"><i class="fas fa-user-edit"></i> Criador</span>';
         }
         
-        // Badge do tipo
-        let typeBadge = '';
-        if (order.osType === 'devolucao') {
-            typeBadge = '<span class="badge badge-danger" style="margin-left: 5px;"><i class="fas fa-exchange-alt"></i> Devolução</span>';
-        }
+        let typeBadge = order.osType === 'devolucao' ? 
+            '<span class="badge badge-danger" style="margin-left: 5px;"><i class="fas fa-exchange-alt"></i> Devolução</span>' : '';
         
-        // Badge de urgência
         let urgencyBadge = '';
-        if (order.urgency === 'alta') {
-            urgencyBadge = '<span class="badge badge-danger">Alta</span>';
-        } else if (order.urgency === 'normal') {
-            urgencyBadge = '<span class="badge badge-warning">Normal</span>';
-        } else {
-            urgencyBadge = '<span class="badge badge-success">Baixa</span>';
-        }
+        if (order.urgency === 'alta') urgencyBadge = '<span class="badge badge-danger">Alta</span>';
+        else if (order.urgency === 'normal') urgencyBadge = '<span class="badge badge-warning">Normal</span>';
+        else urgencyBadge = '<span class="badge badge-success">Baixa</span>';
         
-        // Badge de status
         let statusBadge = '';
-        if (order.status === 'pendente') {
-            statusBadge = '<span class="status-pending">Pendente</span>';
-        } else if (order.status === 'andamento') {
-            statusBadge = '<span class="status-progress">Em Andamento</span>';
-        } else {
-            statusBadge = '<span class="status-completed">Concluída</span>';
-        }
+        if (order.status === 'pendente') statusBadge = '<span class="status-pending">Pendente</span>';
+        else if (order.status === 'andamento') statusBadge = '<span class="status-progress">Em Andamento</span>';
+        else statusBadge = '<span class="status-completed">Concluída</span>';
         
-        // Informação do criador (sempre visível para o responsável)
-        let creatorInfo = '';
-        if (order.createdBy && order.createdBy !== 'Sistema') {
-            creatorInfo = `
-                <div style="font-size: 11px; color: #6c757d; margin-top: 2px;">
-                    <i class="fas fa-user-plus"></i> Criado por: ${order.createdBy}
-                </div>
-            `;
-        }
-        
-        // Botões de ação (apenas se tiver permissão)
+        // Botões
         let actionButtons = '';
         if (hasPermission) {
             if (order.status === 'pendente') {
@@ -550,16 +743,7 @@ function renderOrdersTable() {
                 actionButtons = `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')"><i class="fas fa-flag-checkered"></i></button>`;
             }
             
-            actionButtons += `
-                <button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')">
-                    <i class="fas fa-trash"></i>
-                </button>
-            `;
-        } else {
-            actionButtons = '<span class="badge badge-secondary">Sem permissão</span>';
+            actionButtons += `<button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')"><i class="fas fa-edit"></i></button>`;
         }
         
         row.innerHTML = `
@@ -567,25 +751,20 @@ function renderOrdersTable() {
                 <strong>${order.code}</strong>
                 ${permissionBadge}
                 ${typeBadge}
-                ${creatorInfo}
             </td>
             <td>${order.productName}</td>
             <td>
-                <div>
-                    ${order.responsibleName}
-                    ${order.responsibleName.toLowerCase() === currentUser.name.toLowerCase() ? 
-                      '<i class="fas fa-user-check" style="color: var(--primary); margin-left: 5px;"></i>' : ''}
-                </div>
+                <div>${order.responsibleName}</div>
+                <small><i class="fas fa-user-plus"></i> Criado por: ${order.createdBy || 'Sistema'}</small>
             </td>
             <td>${urgencyBadge}</td>
             <td>${statusBadge}</td>
             <td>${order.createdAt}</td>
             <td>
                 <div class="d-flex gap-2">
-                    <button class="btn btn-primary btn-sm" onclick="viewOrder('${order.id}')">
-                        <i class="fas fa-eye"></i>
-                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="viewOrder('${order.id}')"><i class="fas fa-eye"></i></button>
                     ${actionButtons}
+                    ${hasPermission ? `<button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')"><i class="fas fa-trash"></i></button>` : ''}
                 </div>
             </td>
         `;
@@ -595,146 +774,115 @@ function renderOrdersTable() {
 }
 
 // ============================================
-// FUNÇÕES DE AÇÃO
+// FUNÇÕES DE AÇÃO (GLOBAIS)
 // ============================================
-function filterOS(filter) {
+window.filterOS = function(filter) {
     currentFilter = filter;
     renderOrdersTable();
-}
+};
 
-function viewOrder(orderId) {
+window.viewOrder = function(orderId) {
     const order = orders.find(o => o.id == orderId);
     if (order) {
-        let message = `📋 Detalhes da OS:\n\n`;
-        message += `🏷️ Código: ${order.code}\n`;
-        message += `📦 Produto: ${order.productName}\n`;
-        message += `👤 Responsável: ${order.responsibleName}\n`;
-        message += `👤 Criado por: ${order.createdBy}\n`;
-        message += `⚠️ Urgência: ${order.urgency}\n`;
-        message += `📌 Tipo: ${order.osType}\n`;
-        message += `📷 Tipo de Foto: ${order.photoType}\n`;
-        message += `📊 Status: ${order.status}\n`;
-        message += `📸 Fotos tiradas: ${order.photosTaken}\n`;
-        message += `✏️ Edições realizadas: ${order.editsMade}\n`;
-        message += `📅 Criado em: ${order.createdAt}\n`;
-        
-        if (order.skus && order.skus.length > 0) {
-            message += `🏷️ SKUs: ${order.skus.join(', ')}\n`;
-        }
-        
-        if (order.observations) {
-            message += `📝 Observações: ${order.observations}\n`;
-        }
-        
-        alert(message);
+        alert(`📋 Detalhes da OS:\n\n🏷️ Código: ${order.code}\n📦 Produto: ${order.productName}\n👤 Responsável: ${order.responsibleName}\n📊 Status: ${order.status}`);
     }
-}
+};
 
-function editOrder(orderId) {
+window.editOrder = function(orderId) {
     const order = orders.find(o => o.id == orderId);
     if (order && checkOrderPermission(order)) {
         editingOrderId = orderId;
         
-        document.getElementById('productName').value = order.productName;
-        document.getElementById('responsibleName').value = order.responsibleName;
-        document.getElementById('urgency').value = order.urgency;
-        document.getElementById('osType').value = order.osType;
-        document.getElementById('photoType').value = order.photoType;
-        document.getElementById('skus').value = order.skus.join(', ');
-        document.getElementById('observations').value = order.observations;
+        const productNameInput = document.getElementById('productName');
+        const responsibleNameInput = document.getElementById('responsibleName');
+        const urgencySelect = document.getElementById('urgency');
+        const osTypeSelect = document.getElementById('osType');
+        const photoTypeSelect = document.getElementById('photoType');
+        const skusInput = document.getElementById('skus');
+        const observationsInput = document.getElementById('observations');
         
-        formTitle.textContent = `Editando: ${order.code}`;
-        submitBtnText.textContent = 'Atualizar OS';
-        cancelEditBtn.classList.remove('hidden');
-        osCodeDisplay.textContent = `Código: ${order.code}`;
+        if (productNameInput) productNameInput.value = order.productName;
+        if (responsibleNameInput) responsibleNameInput.value = order.responsibleName;
+        if (urgencySelect) urgencySelect.value = order.urgency;
+        if (osTypeSelect) osTypeSelect.value = order.osType;
+        if (photoTypeSelect) photoTypeSelect.value = order.photoType;
+        if (skusInput) skusInput.value = order.skus.join(', ');
+        if (observationsInput) observationsInput.value = order.observations;
+        
+        if (formTitle) formTitle.textContent = `Editando: ${order.code}`;
+        if (submitBtnText) submitBtnText.textContent = 'Atualizar OS';
+        if (cancelEditBtn) cancelEditBtn.classList.remove('hidden');
+        if (osCodeDisplay) osCodeDisplay.textContent = `Código: ${order.code}`;
         
         showToast(`✏️ Editando OS: ${order.code}`, 'info');
     } else {
-        showToast('⚠️ Você não tem permissão para editar esta OS', 'warning');
+        showToast('⚠️ Sem permissão para editar', 'warning');
     }
-}
+};
 
-cancelEditBtn.addEventListener('click', function() {
-    editingOrderId = null;
-    formTitle.textContent = 'Nova Ordem de Serviço';
-    submitBtnText.textContent = 'Salvar OS';
-    cancelEditBtn.classList.add('hidden');
-    clearForm();
-    showToast('❌ Edição cancelada', 'info');
-});
-
-// ============================================
-// FUNÇÕES DE STATUS
-// ============================================
-async function startOrder(orderId) {
+window.startOrder = async function(orderId) {
     const order = orders.find(o => o.id == orderId);
-    if (order && checkOrderPermission(order) && confirm(`Iniciar a OS "${order.productName}"?`)) {
+    if (order && checkOrderPermission(order) && confirm(`Iniciar "${order.productName}"?`)) {
         try {
-            const { error } = await supabase
-                .from('ordens_servico')
-                .update({ 
-                    status: 'andamento',
-                    ultima_atualizacao: new Date().toISOString()
-                })
-                .eq('id', orderId);
-            
-            if (error) throw error;
+            if (supabaseClient) {
+                await supabaseClient.from('ordens_service')
+                    .update({ status: 'andamento', ultima_atualizacao: new Date().toISOString() })
+                    .eq('id', orderId);
+            }
             
             order.status = 'andamento';
             updateCounters();
             renderOrdersTable();
-            showToast(`✅ OS "${order.productName}" iniciada`, 'success');
+            showToast(`✅ OS iniciada`, 'success');
         } catch (error) {
-            showToast('❌ Erro ao iniciar OS', 'error');
+            showToast('❌ Erro ao iniciar', 'error');
         }
-    } else if (!checkOrderPermission(order)) {
-        showToast('⚠️ Você não tem permissão para iniciar esta OS', 'warning');
     }
-}
+};
 
-function openCompleteModal(orderId) {
+window.openCompleteModal = function(orderId) {
     const order = orders.find(o => o.id == orderId);
     if (order && checkOrderPermission(order)) {
         completeOSId.value = orderId;
-        document.getElementById('photosTaken').value = order.photosTaken || 0;
-        document.getElementById('editsMade').value = order.editsMade || 0;
-        completeModal.classList.remove('hidden');
-    } else if (!checkOrderPermission(order)) {
-        showToast('⚠️ Você não tem permissão para finalizar esta OS', 'warning');
+        const photosTakenInput = document.getElementById('photosTaken');
+        const editsMadeInput = document.getElementById('editsMade');
+        if (photosTakenInput) photosTakenInput.value = order.photosTaken || 0;
+        if (editsMadeInput) editsMadeInput.value = order.editsMade || 0;
+        if (completeModal) completeModal.classList.remove('hidden');
     }
-}
+};
 
-function closeCompleteModal() {
-    completeModal.classList.add('hidden');
-    document.getElementById('photosTaken').value = 0;
-    document.getElementById('editsMade').value = 0;
-}
+window.closeCompleteModal = function() {
+    if (completeModal) completeModal.classList.add('hidden');
+};
 
-finalizarOSBtn.addEventListener('click', async function() {
+async function completeOrder() {
     const orderId = completeOSId.value;
     const order = orders.find(o => o.id == orderId);
     
     if (!order || !checkOrderPermission(order)) {
-        showToast('⚠️ Você não tem permissão para finalizar esta OS', 'warning');
+        showToast('⚠️ Sem permissão', 'warning');
         return;
     }
     
-    const photosTaken = parseInt(document.getElementById('photosTaken').value) || 0;
-    const editsMade = parseInt(document.getElementById('editsMade').value) || 0;
+    const photosTakenInput = document.getElementById('photosTaken');
+    const editsMadeInput = document.getElementById('editsMade');
+    
+    const photosTaken = photosTakenInput ? parseInt(photosTakenInput.value) || 0 : 0;
+    const editsMade = editsMadeInput ? parseInt(editsMadeInput.value) || 0 : 0;
     
     try {
-        const { error } = await supabase
-            .from('ordens_servico')
-            .update({ 
-                status: 'concluida',
-                qtd_fotos: photosTaken,
-                qtd_edicoes: editsMade,
-                data_conclusao: new Date().toISOString(),
-                ultima_atualizacao: new Date().toISOString()
-            })
-            .eq('id', orderId);
-        
-        if (error) throw error;
+        if (supabaseClient) {
+            await supabaseClient.from('ordens_service')
+                .update({ 
+                    status: 'concluida',
+                    qtd_fotos: photosTaken,
+                    qtd_edicoes: editsMade,
+                    data_conclusao: new Date().toISOString(),
+                    ultima_atualizacao: new Date().toISOString()
+                })
+                .eq('id', orderId);
+        }
         
         order.status = 'concluida';
         order.photosTaken = photosTaken;
@@ -745,32 +893,29 @@ finalizarOSBtn.addEventListener('click', async function() {
         closeCompleteModal();
         showToast(`✅ OS finalizada`, 'success');
     } catch (error) {
-        showToast('❌ Erro ao finalizar OS', 'error');
+        showToast('❌ Erro ao finalizar', 'error');
     }
-});
+}
 
-async function deleteOrderPrompt(orderId) {
+window.deleteOrderPrompt = async function(orderId) {
     const order = orders.find(o => o.id == orderId);
-    if (order && checkOrderPermission(order) && confirm(`Excluir a OS "${order.productName}"?`)) {
+    if (order && checkOrderPermission(order) && confirm(`Excluir "${order.productName}"?`)) {
         try {
-            const { error } = await supabase
-                .from('ordens_servico')
-                .delete()
-                .eq('id', orderId);
-            
-            if (error) throw error;
+            if (supabaseClient) {
+                await supabaseClient.from('ordens_service')
+                    .delete()
+                    .eq('id', orderId);
+            }
             
             orders = orders.filter(o => o.id != orderId);
             updateCounters();
             renderOrdersTable();
-            showToast(`🗑️ OS "${order.productName}" excluída`, 'success');
+            showToast(`🗑️ OS excluída`, 'success');
         } catch (error) {
-            showToast('❌ Erro ao excluir OS', 'error');
+            showToast('❌ Erro ao excluir', 'error');
         }
-    } else if (!checkOrderPermission(order)) {
-        showToast('⚠️ Você não tem permissão para excluir esta OS', 'warning');
     }
-}
+};
 
 // ============================================
 // FUNÇÃO DE NOTIFICAÇÃO
@@ -781,41 +926,69 @@ function showToast(message, type = 'info') {
     
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
+    
+    let icon = 'info-circle';
+    if (type === 'success') icon = 'check-circle';
+    else if (type === 'error') icon = 'exclamation-circle';
+    else if (type === 'warning') icon = 'exclamation-triangle';
+    
     toast.innerHTML = `
-        <i class="fas fa-${type === 'success' ? 'check-circle' : 
-                          type === 'error' ? 'exclamation-circle' : 
-                          type === 'warning' ? 'exclamation-triangle' : 'info-circle'}"></i>
+        <i class="fas fa-${icon}"></i>
         <span>${message}</span>
     `;
     
     document.body.appendChild(toast);
     
+    // Mostrar toast
+    setTimeout(() => {
+        toast.style.opacity = '1';
+    }, 10);
+    
+    // Remover depois de 4 segundos
     setTimeout(() => {
         toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 300);
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300);
     }, 4000);
 }
 
 // ============================================
-// EVENT LISTENERS
+// FUNÇÃO DE IMPRESSÃO (SIMPLIFICADA)
 // ============================================
-testSupabaseBtn.addEventListener('click', testSupabaseConnection);
-reloadBtn.addEventListener('click', loadOrders);
-
-completeModal.addEventListener('click', function(e) {
-    if (e.target === completeModal) closeCompleteModal();
-});
-
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && !completeModal.classList.contains('hidden')) {
-        closeCompleteModal();
+window.printOrder = function(orderId) {
+    const order = orders.find(o => o.id == orderId);
+    if (!order) {
+        showToast('OS não encontrada', 'error');
+        return;
     }
-});
+    
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    printWindow.document.write(`
+        <html><head><title>OS ${order.code}</title>
+        <style>body{font-family:Arial;padding:20px}</style></head>
+        <body>
+            <h1>Ordem de Serviço: ${order.code}</h1>
+            <p><strong>Produto:</strong> ${order.productName}</p>
+            <p><strong>Responsável:</strong> ${order.responsibleName}</p>
+            <p><strong>Status:</strong> ${order.status}</p>
+            <p><strong>Criado em:</strong> ${order.createdAt}</p>
+            <button onclick="window.print();window.close()">Imprimir</button>
+        </body></html>
+    `);
+    printWindow.document.close();
+    
+    showToast(`Preparando impressão`, 'info');
+};
 
 // ============================================
-// INICIALIZAÇÃO
+// FUNÇÃO PARA TESTE RÁPIDO (REMOVA DEPOIS)
 // ============================================
-console.log('🚀 Sistema OS Fotografia iniciado!');
-
-// Gera código inicial
-generateOSCode();
+window.testarLogin = function() {
+    console.log('🧪 Executando teste de login...');
+    document.getElementById('username').value = 'elaine';
+    document.getElementById('password').value = '180998';
+    handleLogin({preventDefault: () => {}});
+};
