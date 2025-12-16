@@ -50,12 +50,10 @@ const syncStatus = document.getElementById('syncStatus');
 // ===== USUÁRIOS DO SISTEMA =====
 const SYSTEM_USERS = [
     { username: 'elaine', password: '180998', name: 'Elaine', avatar: 'E', role: 'Fotógrafa' },
-    { username: 'arthur', password: '040869', name: 'Arthur', avatar: 'A', role: 'Fotógrafo' },
-    { username: 'laura', password: '123456', name: 'Laura', avatar: 'L', role: 'Editora' },
+    { username: 'arthur', password: '040869', name: 'Arthur', avatar: 'A', role: 'Comercial' },
+    { username: 'laura', password: '123456', name: 'Laura', avatar: 'L', role: 'Midia' },
     { username: 'ronald', password: '210188', name: 'Ronald', avatar: 'R', role: 'Administrador' },
-    { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Coordenadora' },
-    { username: 'admin', password: 'admin123', name: 'Admin', avatar: 'AD', role: 'Administrador' },
-    { username: 'teste', password: 'teste123', name: 'Teste', avatar: 'T', role: 'Usuário Teste' }
+    { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Assistente' }
 ];
 
 // ===== FUNÇÃO DE TESTE (REMOVA DEPOIS) =====
