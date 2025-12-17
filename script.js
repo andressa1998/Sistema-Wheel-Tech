@@ -1100,11 +1100,7 @@ window.filterOS = function(filter) {
     renderOrdersTable();
 };
 
-// Na função renderOrdersTable(), atualize a lógica de filtro:
-let filteredOrders = currentFilter === 'todos' ? userOrders : 
-                     currentFilter === 'nao_conferidas' ? 
-                         userOrders.filter(order => order.status === 'concluida' && !order.conferido) :
-                     userOrders.filter(order => order.status === currentFilter);
+
 
 window.viewOrder = function(orderId) {
     const order = orders.find(o => o.id == orderId);
@@ -2163,14 +2159,6 @@ function generateDetailsTab() {
                            completionDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
     }
     
-    // Formatar data de conferência (se houver)
-    let conferenciaDateText = '';
-    if (order.dataConferencia) {
-        const conferenciaDate = new Date(order.dataConferencia);
-        conferenciaDateText = conferenciaDate.toLocaleDateString('pt-BR') + ' ' + 
-                             conferenciaDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
-    }
-    
     return `
         <div class="tab-content active">
             <div class="info-grid">
@@ -2238,43 +2226,6 @@ function generateDetailsTab() {
                             '<span style="background: #dc3545; color: white; padding: 3px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px;">DEVOLUÇÃO</span>' : ''}
                         </div>
                     </div>
-                    
-                    <!-- CONFERÊNCIA -->
-                    ${order.status === 'concluida' ? `
-                    <div class="info-item">
-                        <div class="info-label">Conferência</div>
-                        <div class="info-value">
-                            ${order.conferido ? 
-                                `<span class="badge-view" style="background: #28a745; color: white;">
-                                    <i class="fas fa-check-double"></i> Conferido
-                                </span>
-                                ${order.conferidoPor ? `
-                                <div style="margin-top: 8px; padding: 10px; background: #d4edda; border-radius: 6px; border: 1px solid #c3e6cb;">
-                                    <div style="font-size: 14px; color: #155724;">
-                                        <i class="fas fa-user-check"></i> Conferido por: <strong>${order.conferidoPor}</strong>
-                                    </div>
-                                    ${conferenciaDateText ? `
-                                    <div style="font-size: 13px; color: #0c5460; margin-top: 5px;">
-                                        <i class="far fa-calendar-alt"></i> Data: ${conferenciaDateText}
-                                    </div>
-                                    ` : ''}
-                                </div>
-                                ` : ''}`
-                                :
-                                `<span class="badge-view" style="background: #ffc107; color: #212529; animation: pulse 1.5s infinite;">
-                                    <i class="fas fa-exclamation-circle"></i> Aguardando conferência
-                                </span>
-                                ${(checkOrderPermission(order) || currentUser.role === 'Administrador') ? `
-                                <div style="margin-top: 10px;">
-                                    <button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}'); closeViewOSModal();" title="Marcar como Conferido">
-                                        <i class="fas fa-check-double"></i> Marcar como Conferido
-                                    </button>
-                                </div>
-                                ` : ''}`
-                            }
-                        </div>
-                    </div>
-                    ` : ''}
                 </div>
                 
                 <!-- Responsáveis -->
@@ -2296,14 +2247,6 @@ function generateDetailsTab() {
                     </div>
                     
                     <div class="info-item">
-                        <div class="info-label">Finalizado por</div>
-                        <div class="info-value">
-                            <i class="fas fa-flag-checkered" style="margin-right: 8px;"></i>
-                            ${order.status === 'concluida' ? order.responsibleName : 'Não finalizada'}
-                        </div>
-                    </div>
-                    
-                    <div class="info-item">
                         <div class="info-label">Data de Criação</div>
                         <div class="info-value">
                             <i class="far fa-calendar-alt" style="margin-right: 8px;"></i>
@@ -2312,13 +2255,12 @@ function generateDetailsTab() {
                     </div>
                 </div>
                 
-                <!-- Datas e Métricas -->
+                <!-- Datas -->
                 <div class="info-card">
-                    <h4><i class="fas fa-chart-line"></i> Datas e Métricas</h4>
+                    <h4><i class="fas fa-calendar-alt"></i> Datas</h4>
                     <div class="info-item">
                         <div class="info-label">Criado em</div>
                         <div class="info-value">
-                            <i class="far fa-calendar-alt" style="margin-right: 8px;"></i>
                             ${formattedCreatedDate}
                         </div>
                     </div>
@@ -2326,7 +2268,6 @@ function generateDetailsTab() {
                     <div class="info-item">
                         <div class="info-label">Última atualização</div>
                         <div class="info-value">
-                            <i class="fas fa-sync-alt" style="margin-right: 8px;"></i>
                             ${new Date(order.updatedAt).toLocaleString('pt-BR')}
                         </div>
                     </div>
@@ -2335,7 +2276,6 @@ function generateDetailsTab() {
                     <div class="info-item">
                         <div class="info-label">Concluído em</div>
                         <div class="info-value">
-                            <i class="fas fa-flag-checkered" style="margin-right: 8px;"></i>
                             ${completionDateText}
                         </div>
                     </div>
@@ -2343,66 +2283,19 @@ function generateDetailsTab() {
                     <div class="info-item">
                         <div class="info-label">Fotos tiradas</div>
                         <div class="info-value">
-                            <i class="fas fa-camera-retro" style="margin-right: 8px;"></i> ${order.photosTaken || '0'}
+                            <i class="fas fa-camera-retro"></i> ${order.photosTaken || '0'}
                         </div>
                     </div>
                     
                     <div class="info-item">
                         <div class="info-label">Edições realizadas</div>
                         <div class="info-value">
-                            <i class="fas fa-edit" style="margin-right: 8px;"></i> ${order.editsMade || '0'}
+                            <i class="fas fa-edit"></i> ${order.editsMade || '0'}
                         </div>
                     </div>
-                    
-                    <!-- Métricas de eficiência (opcional) -->
-                    ${order.photosTaken > 0 && order.editsMade > 0 ? `
-                    <div class="info-item">
-                        <div class="info-label">Relação Fotos/Edições</div>
-                        <div class="info-value">
-                            <i class="fas fa-percentage" style="margin-right: 8px;"></i>
-                            ${((order.editsMade / order.photosTaken) * 100).toFixed(1)}% das fotos editadas
-                        </div>
-                    </div>
-                    ` : ''}
                     ` : ''}
                 </div>
             </div>
-            
-            <!-- Seção de Fotos (resumo) -->
-            ${order.photos && order.photos.length > 0 ? `
-            <div class="info-card" style="margin-top: 20px;">
-                <h4><i class="fas fa-images"></i> Fotos de Referência (${order.photos.length})</h4>
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 15px;">
-                    ${order.photos.slice(0, 6).map((photo, index) => `
-                        <div style="text-align: center; cursor: pointer;" onclick="viewPhotoInModal(${index})">
-                            <img src="${photo.data || photo.thumbnail}" 
-                                 alt="${photo.name}"
-                                 style="width: 100%; height: 100px; object-fit: cover; border-radius: 5px; border: 1px solid #dee2e6;">
-                            <div style="font-size: 11px; color: #6c757d; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                ${photo.name}
-                            </div>
-                        </div>
-                    `).join('')}
-                    ${order.photos.length > 6 ? `
-                    <div style="text-align: center; display: flex; align-items: center; justify-content: center;">
-                        <div style="background: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 5px; width: 100%; height: 100px; display: flex; align-items: center; justify-content: center;">
-                            <div>
-                                <i class="fas fa-ellipsis-h fa-2x" style="color: #adb5bd;"></i>
-                                <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">
-                                    +${order.photos.length - 6} fotos
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    ` : ''}
-                </div>
-                <div style="margin-top: 15px; text-align: center;">
-                    <button class="btn btn-info btn-sm" onclick="switchViewOSTab('photos')">
-                        <i class="fas fa-images"></i> Ver todas as fotos (${order.photos.length})
-                    </button>
-                </div>
-            </div>
-            ` : ''}
             
             <!-- Observações -->
             <div class="info-card" style="margin-top: 20px;">
@@ -2415,34 +2308,7 @@ function generateDetailsTab() {
                     '</div>'}
                 </div>
             </div>
-            
-            <!-- Botão de conferência (se aplicável) -->
-            ${order.status === 'concluida' && !order.conferido && (checkOrderPermission(order) || currentUser.role === 'Administrador') ? `
-            <div class="info-card" style="margin-top: 20px; background: linear-gradient(45deg, #fff5f5, #ffe6e6); border: 2px solid #dc3545;">
-                <h4 style="color: #dc3545;"><i class="fas fa-exclamation-triangle"></i> Ação Pendente</h4>
-                <div style="text-align: center; padding: 20px;">
-                    <p style="color: #856404; margin-bottom: 20px; font-size: 16px;">
-                        <i class="fas fa-info-circle"></i> Esta ordem de serviço está aguardando conferência.
-                    </p>
-                    <button class="btn btn-success btn-lg" onclick="conferirOS('${order.id}'); closeViewOSModal();">
-                        <i class="fas fa-check-double"></i> Confirmar Conferência
-                    </button>
-                    <p style="color: #6c757d; font-size: 12px; margin-top: 15px;">
-                        Ao clicar, você estará confirmando que verificou e aprovou esta OS.
-                    </p>
-                </div>
-            </div>
-            ` : ''}
         </div>
-        
-        <!-- Adicionar animação CSS -->
-        <style>
-            @keyframes pulse {
-                0% { opacity: 1; }
-                50% { opacity: 0.7; }
-                100% { opacity: 1; }
-            }
-        </style>
     `;
 }
 
