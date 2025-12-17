@@ -14,6 +14,7 @@ let orderCounter = 1;
 let currentFilter = 'todos';
 let editingOrderId = null;
 let currentOSForPrint = null;
+let currentPrintStyle = 'detailed';
 
 // ===== ELEMENTOS DOM =====
 const loginScreen = document.getElementById('loginScreen');
@@ -74,6 +75,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (completeModal && !completeModal.classList.contains('hidden')) {
                 closeCompleteModal();
+            }
+        }
+        
+        // Atalho Ctrl+P para imprimir
+        if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+            e.preventDefault();
+            if (currentOSForPrint) {
+                printOS();
             }
         }
     });
@@ -879,221 +888,358 @@ window.deleteOrderPrompt = async function(orderId) {
 };
 
 // ============================================
-// FUNÇÕES DE IMPRESSÃO
+// FUNÇÕES DE IMPRESSÃO MELHORADAS
 // ============================================
 window.openPrintModal = function(osData) {
     currentOSForPrint = osData;
     
-    // Construir conteúdo para impressão
-    const printContent = document.getElementById('printContent');
+    // Mapear valores para texto
+    const statusMap = {
+        'pendente': 'Pendente',
+        'andamento': 'Em Andamento',
+        'concluida': 'Concluída'
+    };
     
-    // Formatar data
-    const createdDate = new Date(osData.createdAt);
-    const formattedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
-                         createdDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+    const urgencyMap = {
+        'alta': 'Alta',
+        'normal': 'Normal',
+        'baixa': 'Baixa'
+    };
     
-    // Determinar status em português
-    let statusText = '';
-    switch(osData.status) {
-        case 'pendente':
-            statusText = 'Pendente';
-            break;
-        case 'andamento':
-            statusText = 'Em Andamento';
-            break;
-        case 'concluida':
-            statusText = 'Concluída';
-            break;
-        default:
-            statusText = osData.status;
-    }
+    const photoTypeMap = {
+        'estudio': 'Estúdio',
+        'bike': 'Na Bike',
+        'ambos': 'Ambos'
+    };
     
-    // Determinar urgência em português
-    let urgencyText = '';
-    switch(osData.urgency) {
-        case 'alta':
-            urgencyText = 'Alta';
-            break;
-        case 'normal':
-            urgencyText = 'Normal';
-            break;
-        case 'baixa':
-            urgencyText = 'Baixa';
-            break;
-        default:
-            urgencyText = osData.urgency;
-    }
+    const osTypeMap = {
+        'normal': 'Normal',
+        'devolucao': 'Devolução',
+        'urgente': 'Urgente'
+    };
     
-    // Determinar tipo de OS
-    let osTypeText = osData.osType === 'devolucao' ? 'Devolução' : 'Normal';
+    const statusText = statusMap[osData.status] || osData.status;
+    const urgencyText = urgencyMap[osData.urgency] || osData.urgency;
+    const photoTypeText = photoTypeMap[osData.photoType] || osData.photoType;
+    const osTypeText = osTypeMap[osData.osType] || osData.osType;
+    const formattedDate = new Date(osData.createdAt).toLocaleString('pt-BR');
     
-    // Determinar tipo de foto
-    let photoTypeText = '';
-    switch(osData.photoType) {
-        case 'estudio':
-            photoTypeText = 'Estúdio';
-            break;
-        case 'bike':
-            photoTypeText = 'Na Bike';
-            break;
-        case 'ambos':
-            photoTypeText = 'Ambos';
-            break;
-        default:
-            photoTypeText = osData.photoType || 'Não especificado';
-    }
-    
-    // HTML da OS para impressão
-    printContent.innerHTML = `
-        <div class="print-header">
-            <div class="company-info">
-                <h1 style="color: #8A2BE2; margin-bottom: 5px;">Sistema OS Fotografia</h1>
-                <p style="color: #666; margin-bottom: 5px;">Controle de Ordens de Serviço</p>
-                <p style="color: #888; font-size: 14px;">Emitido em: ${new Date().toLocaleString('pt-BR')}</p>
-            </div>
-            
-            <div class="os-code-large">
-                ORDEM DE SERVIÇO: ${osData.code}
-            </div>
-        </div>
-        
-        <div class="print-details">
-            <div class="detail-row">
-                <div class="detail-label">Produto:</div>
-                <div class="detail-value"><strong>${osData.productName}</strong></div>
-            </div>
-            
-            <div class="detail-row">
-                <div class="detail-label">Responsável:</div>
-                <div class="detail-value">
-                    <strong>${osData.responsibleName}</strong>
-                    ${osData.osType === 'devolucao' ? '<span style="background: #dc3545; color: white; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px;">DEVOLUÇÃO</span>' : ''}
-                </div>
-            </div>
-            
-            <div class="detail-row">
-                <div class="detail-label">Criado por:</div>
-                <div class="detail-value">${osData.createdBy}</div>
-            </div>
-            
-            <div class="detail-row">
-                <div class="detail-label">Status:</div>
-                <div class="detail-value">
-                    <span class="status-badge-print ${
-                        osData.status === 'pendente' ? 'status-pending-print' : 
-                        osData.status === 'andamento' ? 'status-progress-print' : 
-                        'status-completed-print'
-                    }">
-                        ${statusText}
-                    </span>
-                </div>
-            </div>
-            
-            <div class="detail-row">
-                <div class="detail-label">Urgência:</div>
-                <div class="detail-value">
-                    <span class="${
-                        osData.urgency === 'alta' ? 'urgent-high-print' : 
-                        osData.urgency === 'normal' ? 'urgent-normal-print' : 
-                        'urgent-low-print'
-                    }">
-                        ${urgencyText}
-                    </span>
-                </div>
-            </div>
-            
-            <div class="detail-row">
-                <div class="detail-label">Tipo de Foto:</div>
-                <div class="detail-value">${photoTypeText}</div>
-            </div>
-            
-            <div class="detail-row">
-                <div class="detail-label">Tipo de OS:</div>
-                <div class="detail-value">${osTypeText}</div>
-            </div>
-            
-            <div class="detail-row">
-                <div class="detail-label">Criado em:</div>
-                <div class="detail-value">${formattedDate}</div>
-            </div>
-            
-            ${osData.skus && osData.skus.length > 0 ? `
-            <div class="detail-row">
-                <div class="detail-label">SKUs:</div>
-                <div class="detail-value">${Array.isArray(osData.skus) ? osData.skus.join(', ') : osData.skus}</div>
-            </div>
-            ` : ''}
-            
-            <div class="detail-row" style="flex-direction: column; align-items: flex-start;">
-                <div class="detail-label">Observações:</div>
-                <div class="observations-box">
-                    ${osData.observations || 'Nenhuma observação registrada.'}
-                </div>
-            </div>
-            
-            ${osData.status === 'concluida' ? `
-            <div class="detail-row">
-                <div class="detail-label">Concluído em:</div>
-                <div class="detail-value">${new Date(osData.completionDate).toLocaleString('pt-BR')}</div>
-            </div>
-            
-            <div class="detail-row">
-                <div class="detail-label">Fotos tiradas:</div>
-                <div class="detail-value">${osData.photosTaken || '0'}</div>
-            </div>
-            
-            <div class="detail-row">
-                <div class="detail-label">Edições realizadas:</div>
-                <div class="detail-value">${osData.editsMade || '0'}</div>
-            </div>
-            ` : ''}
-        </div>
-        
-        <div class="signature-area">
-            <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 20px;">
-                <div>
-                    <div class="signature-line">Assinatura do Responsável</div>
-                    <div style="text-align: center; margin-top: 5px; color: #666;">
-                        ${osData.responsibleName}
-                    </div>
-                </div>
-                
-                <div>
-                    <div class="signature-line">Assinatura do Fotógrafo</div>
-                    <div style="text-align: center; margin-top: 5px; color: #666;">
-                        ______________________________
-                    </div>
-                </div>
-                
-                <div>
-                    <div class="signature-line">Assinatura do Cliente</div>
-                    <div style="text-align: center; margin-top: 5px; color: #666;">
-                        ______________________________
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="print-footer">
-            <p>Documento gerado automaticamente pelo Sistema OS Fotografia</p>
-            <p>OS Code: ${osData.code} | ID: ${osData.id} | Data de criação: ${formattedDate}</p>
-            ${osData.completionDate ? `<p>Data de conclusão: ${new Date(osData.completionDate).toLocaleString('pt-BR')}</p>` : ''}
-        </div>
-    `;
+    // Gerar preview
+    generatePrintPreview(osData, statusText, urgencyText, photoTypeText, osTypeText, formattedDate);
     
     // Mostrar modal
     document.getElementById('printModal').classList.remove('hidden');
+    
+    // Adicionar listener para Ctrl+P
+    document.addEventListener('keydown', handlePrintShortcut);
 };
+
+function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, osTypeText, formattedDate) {
+    const previewContainer = document.getElementById('printPreviewContent');
+    
+    let statusBadgeClass = 'badge-pending';
+    if (osData.status === 'andamento') statusBadgeClass = 'badge-progress';
+    if (osData.status === 'concluida') statusBadgeClass = 'badge-completed';
+    
+    let urgencyBadgeClass = 'badge-normal';
+    if (osData.urgency === 'alta') urgencyBadgeClass = 'badge-high';
+    if (osData.urgency === 'baixa') urgencyBadgeClass = 'badge-low';
+    
+    previewContainer.innerHTML = `
+        <div class="print-preview ${currentPrintStyle === 'compact' ? 'compact-view' : ''}">
+            <!-- Cabeçalho -->
+            <div class="preview-header">
+                <div class="header-gradient">
+                    <h1 style="font-size: 42px; margin: 0 0 10px 0; font-weight: 800;">
+                        <i class="fas fa-camera"></i> Sistema OS Fotografia
+                    </h1>
+                    <p style="font-size: 18px; opacity: 0.9; margin: 0 0 20px 0;">
+                        Ordem de Serviço Profissional
+                    </p>
+                    <div class="os-code-preview">
+                        OS-${osData.code}
+                    </div>
+                </div>
+                
+                <div style="margin-top: 25px; display: flex; justify-content: space-between; align-items: center; padding: 0 20px;">
+                    <div style="text-align: left;">
+                        <div style="font-size: 14px; color: #6c757d;">Emitido em</div>
+                        <div style="font-size: 16px; font-weight: 600; color: #495057;">
+                            ${new Date().toLocaleString('pt-BR')}
+                        </div>
+                    </div>
+                    
+                    <div style="text-align: center;">
+                        <div style="font-size: 14px; color: #6c757d;">Tipo de Documento</div>
+                        <div style="font-size: 16px; font-weight: 600; color: #495057;">
+                            Ordem de Serviço ${osData.osType === 'devolucao' ? '- Devolução' : ''}
+                        </div>
+                    </div>
+                    
+                    <div style="text-align: right;">
+                        <div style="font-size: 14px; color: #6c757d;">Página</div>
+                        <div style="font-size: 16px; font-weight: 600; color: #495057;">
+                            1 de 1
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Grid de Informações -->
+            <div class="preview-grid">
+                <!-- Card: Informações do Produto -->
+                <div class="preview-card">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <i class="fas fa-box"></i>
+                        </div>
+                        <h3 class="card-title">Informações do Produto</h3>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Produto:</div>
+                        <div class="info-value" style="font-size: 18px; font-weight: 700; color: #8A2BE2;">
+                            ${osData.productName}
+                        </div>
+                    </div>
+                    ${osData.skus && osData.skus.length > 0 ? `
+                    <div class="info-row">
+                        <div class="info-label">SKUs:</div>
+                        <div class="info-value">
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                ${Array.isArray(osData.skus) ? osData.skus.map(sku => `
+                                    <span style="background: #e9ecef; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
+                                        ${sku}
+                                    </span>
+                                `).join('') : osData.skus}
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+                    <div class="info-row">
+                        <div class="info-label">Tipo de Foto:</div>
+                        <div class="info-value">
+                            <i class="fas fa-camera" style="margin-right: 8px;"></i>
+                            ${photoTypeText}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Card: Responsáveis -->
+                <div class="preview-card">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <h3 class="card-title">Responsáveis</h3>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Responsável:</div>
+                        <div class="info-value" style="font-size: 16px; font-weight: 600;">
+                            ${osData.responsibleName}
+                            ${osData.osType === 'devolucao' ? 
+                            '<span style="background: #dc3545; color: white; padding: 3px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px;">DEVOLUÇÃO</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Criado por:</div>
+                        <div class="info-value">
+                            <i class="fas fa-user-edit" style="margin-right: 8px;"></i>
+                            ${osData.createdBy}
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Data de Criação:</div>
+                        <div class="info-value">
+                            <i class="far fa-calendar-alt" style="margin-right: 8px;"></i>
+                            ${formattedDate}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Card: Status e Prioridade -->
+                <div class="preview-card">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <i class="fas fa-tasks"></i>
+                        </div>
+                        <h3 class="card-title">Status e Prioridade</h3>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Status:</div>
+                        <div class="info-value">
+                            <span class="badge-preview ${statusBadgeClass}">
+                                <i class="fas fa-circle" style="font-size: 8px; margin-right: 5px;"></i>
+                                ${statusText}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Urgência:</div>
+                        <div class="info-value">
+                            <span class="badge-preview ${urgencyBadgeClass}">
+                                <i class="fas fa-exclamation-triangle" style="margin-right: 5px;"></i>
+                                ${urgencyText}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-label">Tipo de OS:</div>
+                        <div class="info-value">
+                            <i class="fas fa-file-alt" style="margin-right: 8px;"></i>
+                            ${osTypeText}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Card: Observações -->
+                <div class="preview-card" style="grid-column: span ${currentPrintStyle === 'compact' ? 1 : 2}">
+                    <div class="card-header">
+                        <div class="card-icon">
+                            <i class="fas fa-sticky-note"></i>
+                        </div>
+                        <h3 class="card-title">Observações e Detalhes</h3>
+                    </div>
+                    <div class="observations-box-preview">
+                        ${osData.observations || 
+                        '<div style="text-align: center; color: #adb5bd; padding: 20px;">' +
+                        '<i class="fas fa-info-circle" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>' +
+                        'Nenhuma observação registrada para esta ordem de serviço.' +
+                        '</div>'}
+                    </div>
+                    
+                    <!-- Detalhes de Conclusão (se aplicável) -->
+                    ${osData.status === 'concluida' ? `
+                    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px dashed #dee2e6;">
+                        <h4 style="color: #28a745; margin-bottom: 15px;">
+                            <i class="fas fa-check-circle"></i> Detalhes da Conclusão
+                        </h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+                            <div>
+                                <div style="font-size: 12px; color: #6c757d;">Concluído em</div>
+                                <div style="font-weight: 600; color: #495057;">
+                                    ${new Date(osData.completionDate).toLocaleString('pt-BR')}
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: #6c757d;">Fotos Tiradas</div>
+                                <div style="font-weight: 600; color: #495057;">
+                                    <i class="fas fa-camera-retro"></i> ${osData.photosTaken || '0'}
+                                </div>
+                            </div>
+                            <div>
+                                <div style="font-size: 12px; color: #6c757d;">Edições Realizadas</div>
+                                <div style="font-weight: 600; color: #495057;">
+                                    <i class="fas fa-edit"></i> ${osData.editsMade || '0'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+            
+            <!-- Seção de Assinaturas -->
+            <div class="signature-section">
+                <h3 style="text-align: center; color: #495057; margin-bottom: 30px;">
+                    <i class="fas fa-signature"></i> Aprovações e Assinaturas
+                </h3>
+                <div class="signature-grid">
+                    <div class="signature-box">
+                        <div class="signature-label">Responsável pela OS</div>
+                        <div class="signature-line"></div>
+                        <div class="signature-name">${osData.responsibleName}</div>
+                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">
+                            Data: ________________
+                        </div>
+                    </div>
+                    
+                    <div class="signature-box">
+                        <div class="signature-label">Fotógrafo Responsável</div>
+                        <div class="signature-line"></div>
+                        <div class="signature-name" style="color: #6c757d; font-style: italic;">
+                            ______________________________
+                        </div>
+                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">
+                            Data: ________________
+                        </div>
+                    </div>
+                    
+                    <div class="signature-box">
+                        <div class="signature-label">Cliente / Requisitante</div>
+                        <div class="signature-line"></div>
+                        <div class="signature-name" style="color: #6c757d; font-style: italic;">
+                            ______________________________
+                        </div>
+                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">
+                            Data: ________________
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Rodapé -->
+            <div class="footer-preview">
+                <p style="margin: 5px 0;">
+                    <strong>Documento válido somente para registro interno</strong>
+                </p>
+                <p style="margin: 5px 0; font-size: 11px;">
+                    OS Code: ${osData.code} | ID: ${osData.id} | Emitido: ${formattedDate}
+                    ${osData.completionDate ? `| Concluído: ${new Date(osData.completionDate).toLocaleString('pt-BR')}` : ''}
+                </p>
+                <p style="margin: 5px 0; font-size: 10px; color: #adb5bd;">
+                    Documento gerado automaticamente pelo Sistema OS Fotografia - v2.0
+                </p>
+            </div>
+            
+            <!-- Watermark -->
+            <div class="watermark">
+                OS-${osData.code}
+            </div>
+        </div>
+    `;
+}
+
+// Funções auxiliares para impressão
+window.togglePrintStyle = function(style) {
+    currentPrintStyle = style;
+    if (currentOSForPrint) {
+        const osData = currentOSForPrint;
+        
+        // Mapear valores (como na função principal)
+        const statusMap = { 'pendente': 'Pendente', 'andamento': 'Em Andamento', 'concluida': 'Concluída' };
+        const urgencyMap = { 'alta': 'Alta', 'normal': 'Normal', 'baixa': 'Baixa' };
+        const photoTypeMap = { 'estudio': 'Estúdio', 'bike': 'Na Bike', 'ambos': 'Ambos' };
+        const osTypeMap = { 'normal': 'Normal', 'devolucao': 'Devolução', 'urgente': 'Urgente' };
+        
+        const statusText = statusMap[osData.status] || osData.status;
+        const urgencyText = urgencyMap[osData.urgency] || osData.urgency;
+        const photoTypeText = photoTypeMap[osData.photoType] || osData.photoType;
+        const osTypeText = osTypeMap[osData.osType] || osData.osType;
+        const formattedDate = new Date(osData.createdAt).toLocaleString('pt-BR');
+        
+        generatePrintPreview(osData, statusText, urgencyText, photoTypeText, osTypeText, formattedDate);
+    }
+};
+
+// Atalho para impressão
+function handlePrintShortcut(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        e.preventDefault();
+        printOS();
+    }
+}
 
 window.closePrintModal = function() {
     document.getElementById('printModal').classList.add('hidden');
     currentOSForPrint = null;
+    document.removeEventListener('keydown', handlePrintShortcut);
 };
 
 window.printOS = function() {
-    const printContent = document.getElementById('printContent').innerHTML;
+    // Criar uma janela de impressão com o conteúdo formatado
+    const printContent = document.getElementById('printPreviewContent').innerHTML;
     
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
     
     printWindow.document.write(`
         <!DOCTYPE html>
@@ -1101,211 +1247,307 @@ window.printOS = function() {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>OS ${currentOSForPrint.code}</title>
+            <title>Ordem de Serviço - OS-${currentOSForPrint.code}</title>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
             <style>
                 @media print {
                     @page {
                         margin: 20mm;
+                        size: A4;
                     }
                     
                     body {
-                        font-family: Arial, sans-serif;
+                        font-family: 'Segoe UI', Arial, sans-serif;
                         margin: 0;
                         padding: 0;
-                        color: #000;
+                        color: #333;
                         font-size: 12pt;
-                        line-height: 1.4;
+                        line-height: 1.5;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    
+                    .print-only {
+                        display: block !important;
                     }
                     
                     .no-print {
                         display: none !important;
                     }
                     
+                    .page-break {
+                        page-break-before: always;
+                    }
+                    
+                    .avoid-break {
+                        page-break-inside: avoid;
+                    }
+                    
+                    /* Estilos específicos para impressão */
                     .print-header {
                         text-align: center;
                         margin-bottom: 30px;
                         padding-bottom: 20px;
-                        border-bottom: 2px solid #8A2BE2;
+                        border-bottom: 3px solid #8A2BE2;
                     }
                     
-                    .os-code-large {
-                        font-size: 24px;
-                        font-weight: bold;
-                        color: #8A2BE2;
-                        background: #f8f9fa;
-                        padding: 10px;
-                        text-align: center;
-                        border-radius: 5px;
-                        margin: 15px 0;
-                        border: 2px dashed #8A2BE2;
-                    }
-                    
-                    .print-details {
-                        background: #f8f9fa;
+                    .header-gradient {
+                        background: linear-gradient(135deg, #8A2BE2 0%, #4B0082 100%) !important;
+                        color: white;
                         padding: 25px;
-                        border-radius: 10px;
-                        border: 1px solid #ddd;
-                        margin: 20px 0;
+                        border-radius: 12px;
+                        margin-bottom: 25px;
+                        box-shadow: 0 4px 15px rgba(138, 43, 226, 0.2);
                     }
                     
-                    .detail-row {
+                    .os-code-preview {
+                        font-size: 28px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                        background: rgba(255,255,255,0.15);
+                        padding: 12px 25px;
+                        border-radius: 10px;
+                        display: inline-block;
+                        margin: 15px 0;
+                        border: 2px solid rgba(255,255,255,0.3);
+                    }
+                    
+                    .preview-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                        gap: 15px;
+                        margin: 25px 0;
+                    }
+                    
+                    .preview-card {
+                        background: #f8f9fa;
+                        border: 1px solid #e9ecef;
+                        border-radius: 8px;
+                        padding: 15px;
+                        page-break-inside: avoid;
+                    }
+                    
+                    .card-header {
+                        display: flex;
+                        align-items: center;
+                        margin-bottom: 12px;
+                        padding-bottom: 10px;
+                        border-bottom: 2px solid #dee2e6;
+                    }
+                    
+                    .card-icon {
+                        width: 35px;
+                        height: 35px;
+                        background: #8A2BE2;
+                        border-radius: 8px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        margin-right: 12px;
+                        color: white;
+                        font-size: 16px;
+                    }
+                    
+                    .card-title {
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: #495057;
+                        margin: 0;
+                    }
+                    
+                    .info-row {
                         display: flex;
                         margin-bottom: 10px;
                         padding-bottom: 10px;
-                        border-bottom: 1px solid #eee;
-                        page-break-inside: avoid;
+                        border-bottom: 1px dashed #dee2e6;
                     }
                     
-                    .detail-label {
-                        font-weight: bold;
-                        width: 180px;
-                        color: #555;
+                    .info-label {
+                        font-weight: 600;
+                        color: #6c757d;
+                        width: 120px;
+                        min-width: 120px;
+                        font-size: 11pt;
                     }
                     
-                    .detail-value {
+                    .info-value {
                         flex: 1;
-                        color: #333;
+                        color: #212529;
+                        font-size: 11pt;
                     }
                     
-                    .status-badge-print {
-                        display: inline-block;
+                    .badge-preview {
                         padding: 4px 12px;
                         border-radius: 20px;
-                        font-weight: bold;
-                        font-size: 12px;
+                        font-weight: 600;
+                        font-size: 11px;
+                        display: inline-block;
                     }
                     
-                    .status-pending-print {
-                        background: #fff3cd;
-                        color: #856404;
-                        border: 1px solid #ffeaa7;
-                    }
-                    
-                    .status-progress-print {
-                        background: #d1ecf1;
-                        color: #0c5460;
-                        border: 1px solid #bee5eb;
-                    }
-                    
-                    .status-completed-print {
-                        background: #d4edda;
-                        color: #155724;
-                        border: 1px solid #c3e6cb;
-                    }
-                    
-                    .observations-box {
+                    .observations-box-preview {
                         background: white;
-                        border: 1px solid #ddd;
-                        padding: 12px;
-                        border-radius: 5px;
+                        border: 2px dashed #dee2e6;
+                        padding: 15px;
+                        border-radius: 8px;
                         margin-top: 8px;
                         min-height: 80px;
+                        font-style: italic;
+                        color: #495057;
+                        font-size: 11pt;
                     }
                     
-                    .signature-area {
+                    .signature-section {
                         margin-top: 40px;
-                        padding-top: 15px;
-                        border-top: 2px dashed #ddd;
+                        padding-top: 25px;
+                        border-top: 3px solid #dee2e6;
                         page-break-inside: avoid;
+                    }
+                    
+                    .signature-grid {
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 20px;
+                        margin-top: 25px;
+                    }
+                    
+                    .signature-box {
+                        text-align: center;
+                        padding: 15px;
+                        border: 2px solid #e9ecef;
+                        border-radius: 8px;
+                        background: #f8f9fa;
                     }
                     
                     .signature-line {
-                        width: 250px;
-                        border-top: 1px solid #000;
-                        margin-top: 30px;
-                        text-align: center;
-                        padding-top: 5px;
-                        font-size: 12px;
-                        color: #666;
+                        width: 80%;
+                        height: 1px;
+                        background: #495057;
+                        margin: 30px auto 10px;
                     }
                     
-                    .print-footer {
-                        margin-top: 25px;
+                    .signature-label {
+                        font-size: 12px;
+                        color: #6c757d;
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
+                        margin-bottom: 8px;
+                    }
+                    
+                    .signature-name {
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: #495057;
+                        margin-top: 12px;
+                    }
+                    
+                    .footer-preview {
+                        margin-top: 40px;
                         text-align: center;
                         font-size: 10px;
-                        color: #666;
-                        border-top: 1px solid #ddd;
-                        padding-top: 8px;
+                        color: #6c757d;
+                        padding-top: 15px;
+                        border-top: 1px solid #dee2e6;
+                    }
+                    
+                    .watermark {
+                        position: absolute;
+                        bottom: 30mm;
+                        right: 30mm;
+                        opacity: 0.05;
+                        font-size: 60px;
+                        font-weight: 800;
+                        color: #8A2BE2;
+                        transform: rotate(-45deg);
+                        pointer-events: none;
+                        user-select: none;
                     }
                 }
                 
+                /* Estilos para visualização na tela */
                 @media screen {
                     body {
-                        font-family: Arial, sans-serif;
+                        font-family: 'Segoe UI', Arial, sans-serif;
                         margin: 20px;
                         color: #333;
+                        background: #f5f5f5;
                     }
                     
-                    .print-header {
+                    .print-container {
+                        background: white;
+                        width: 210mm;
+                        min-height: 297mm;
+                        margin: 0 auto;
+                        padding: 25mm;
+                        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                        border-radius: 3px;
+                    }
+                    
+                    .print-controls {
                         text-align: center;
-                        margin-bottom: 30px;
-                        padding-bottom: 20px;
-                        border-bottom: 2px solid #8A2BE2;
-                    }
-                    
-                    .os-code-large {
-                        font-size: 28px;
-                        font-weight: bold;
-                        color: #8A2BE2;
-                        background: #f8f9fa;
-                        padding: 10px;
-                        text-align: center;
-                        border-radius: 5px;
-                        margin: 15px 0;
-                        border: 2px dashed #8A2BE2;
-                    }
-                    
-                    .print-details {
-                        background: #f8f9fa;
-                        padding: 25px;
-                        border-radius: 10px;
-                        border: 1px solid #ddd;
                         margin: 20px 0;
+                        padding: 15px;
+                        background: white;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
                     }
                     
-                    .detail-row {
-                        display: flex;
-                        margin-bottom: 12px;
-                        padding-bottom: 12px;
-                        border-bottom: 1px solid #eee;
+                    .print-btn {
+                        padding: 12px 30px;
+                        background: #8A2BE2;
+                        color: white;
+                        border: none;
+                        border-radius: 5px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        margin: 0 10px;
+                        transition: all 0.3s;
                     }
                     
-                    .detail-label {
-                        font-weight: bold;
-                        width: 180px;
-                        color: #555;
+                    .print-btn:hover {
+                        background: #7a1bd2;
+                        transform: translateY(-2px);
+                        box-shadow: 0 4px 8px rgba(138, 43, 226, 0.3);
                     }
                     
-                    .detail-value {
-                        flex: 1;
-                        color: #333;
+                    .close-btn {
+                        background: #6c757d;
+                    }
+                    
+                    .close-btn:hover {
+                        background: #5a6268;
                     }
                 }
             </style>
         </head>
         <body>
-            ${printContent}
-            <div style="text-align: center; margin-top: 30px;" class="no-print">
-                <button onclick="window.print()" style="padding: 10px 20px; background: #8A2BE2; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            <div class="print-controls no-print">
+                <h2>Pronto para imprimir</h2>
+                <p>Visualize como ficará a impressão antes de imprimir.</p>
+                <button class="print-btn" onclick="window.print()">
                     <i class="fas fa-print"></i> Imprimir Documento
                 </button>
-                <button onclick="window.close()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 10px;">
-                    Fechar
+                <button class="print-btn close-btn" onclick="window.close()">
+                    <i class="fas fa-times"></i> Fechar
                 </button>
             </div>
+            
+            <div class="print-container">
+                ${printContent}
+            </div>
+            
             <script>
                 // Auto-print quando a janela carregar
                 window.onload = function() {
                     setTimeout(function() {
                         window.print();
-                    }, 500);
+                    }, 1000);
                 };
                 
-                // Fechar após impressão
+                // Fechar após impressão (opcional)
                 window.onafterprint = function() {
                     setTimeout(function() {
                         window.close();
-                    }, 500);
+                    }, 1000);
                 };
             <\/script>
         </body>
@@ -1314,7 +1556,7 @@ window.printOS = function() {
     
     printWindow.document.close();
     
-    // Fechar modal
+    // Fechar o modal de preview
     closePrintModal();
 };
 
@@ -1360,8 +1602,294 @@ function showToast(message, type = 'info') {
 // FUNÇÃO PARA TESTE RÁPIDO
 // ============================================
 window.testarLogin = function() {
-    
     document.getElementById('username').value = 'elaine';
     document.getElementById('password').value = '180998';
     handleLogin({preventDefault: () => {}});
 };
+
+// Adicionar estilos CSS para o sistema de impressão
+const printStyles = document.createElement('style');
+printStyles.innerHTML = `
+    .print-preview {
+        font-family: 'Segoe UI', Arial, sans-serif;
+        color: #333;
+    }
+    
+    .preview-header {
+        text-align: center;
+        margin-bottom: 40px;
+        padding-bottom: 20px;
+        border-bottom: 3px solid #8A2BE2;
+        position: relative;
+    }
+    
+    .header-gradient {
+        background: linear-gradient(135deg, #8A2BE2 0%, #4B0082 100%);
+        color: white;
+        padding: 25px;
+        border-radius: 12px;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 15px rgba(138, 43, 226, 0.2);
+    }
+    
+    .os-code-preview {
+        font-size: 32px;
+        font-weight: 800;
+        letter-spacing: 2px;
+        background: rgba(255,255,255,0.15);
+        padding: 15px 30px;
+        border-radius: 10px;
+        display: inline-block;
+        margin: 15px 0;
+        border: 2px solid rgba(255,255,255,0.3);
+    }
+    
+    .preview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin: 30px 0;
+    }
+    
+    .preview-card {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 10px;
+        padding: 20px;
+        transition: all 0.3s ease;
+    }
+    
+    .preview-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+    }
+    
+    .card-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #dee2e6;
+    }
+    
+    .card-icon {
+        width: 40px;
+        height: 40px;
+        background: #8A2BE2;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 15px;
+        color: white;
+        font-size: 18px;
+    }
+    
+    .card-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #495057;
+        margin: 0;
+    }
+    
+    .info-row {
+        display: flex;
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px dashed #dee2e6;
+    }
+    
+    .info-label {
+        font-weight: 600;
+        color: #6c757d;
+        width: 140px;
+        min-width: 140px;
+    }
+    
+    .info-value {
+        flex: 1;
+        color: #212529;
+    }
+    
+    .badge-preview {
+        padding: 6px 15px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 13px;
+        display: inline-block;
+    }
+    
+    .badge-pending {
+        background: linear-gradient(135deg, #ffc107, #ff9800);
+        color: #856404;
+    }
+    
+    .badge-progress {
+        background: linear-gradient(135deg, #17a2b8, #138496);
+        color: white;
+    }
+    
+    .badge-completed {
+        background: linear-gradient(135deg, #28a745, #218838);
+        color: white;
+    }
+    
+    .badge-high {
+        background: linear-gradient(135deg, #dc3545, #c82333);
+        color: white;
+    }
+    
+    .badge-normal {
+        background: linear-gradient(135deg, #28a745, #218838);
+        color: white;
+    }
+    
+    .badge-low {
+        background: linear-gradient(135deg, #6c757d, #545b62);
+        color: white;
+    }
+    
+    .observations-box-preview {
+        background: white;
+        border: 2px dashed #dee2e6;
+        padding: 20px;
+        border-radius: 10px;
+        margin-top: 10px;
+        min-height: 100px;
+        font-style: italic;
+        color: #495057;
+    }
+    
+    .signature-section {
+        margin-top: 60px;
+        padding-top: 30px;
+        border-top: 3px solid #dee2e6;
+        page-break-inside: avoid;
+    }
+    
+    .signature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 30px;
+        margin-top: 30px;
+    }
+    
+    .signature-box {
+        text-align: center;
+        padding: 20px;
+        border: 2px solid #e9ecef;
+        border-radius: 10px;
+        background: #f8f9fa;
+    }
+    
+    .signature-line {
+        width: 80%;
+        height: 2px;
+        background: #495057;
+        margin: 40px auto 15px;
+    }
+    
+    .signature-label {
+        font-size: 14px;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 10px;
+    }
+    
+    .signature-name {
+        font-size: 16px;
+        font-weight: 600;
+        color: #495057;
+        margin-top: 15px;
+    }
+    
+    .footer-preview {
+        margin-top: 50px;
+        text-align: center;
+        font-size: 12px;
+        color: #6c757d;
+        padding-top: 20px;
+        border-top: 1px solid #dee2e6;
+    }
+    
+    .watermark {
+        position: absolute;
+        bottom: 20mm;
+        right: 20mm;
+        opacity: 0.1;
+        font-size: 80px;
+        font-weight: 800;
+        color: #8A2BE2;
+        transform: rotate(-45deg);
+        pointer-events: none;
+        user-select: none;
+    }
+    
+    /* Estilos para versão compacta */
+    .compact-view .preview-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .compact-view .preview-card {
+        padding: 15px;
+    }
+    
+    .compact-view .card-header {
+        margin-bottom: 10px;
+    }
+    
+    .compact-view .signature-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+    }
+    
+    .print-crop-marks {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+    }
+    
+    .crop-mark {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        border: 1px solid rgba(0,0,0,0.2);
+    }
+    
+    .crop-mark.top-left {
+        top: 10mm;
+        left: 10mm;
+        border-bottom: none;
+        border-right: none;
+    }
+    
+    .crop-mark.top-right {
+        top: 10mm;
+        right: 10mm;
+        border-bottom: none;
+        border-left: none;
+    }
+    
+    .crop-mark.bottom-left {
+        bottom: 10mm;
+        left: 10mm;
+        border-top: none;
+        border-right: none;
+    }
+    
+    .crop-mark.bottom-right {
+        bottom: 10mm;
+        right: 10mm;
+        border-top: none;
+        border-left: none;
+    }
+`;
+
+document.head.appendChild(printStyles);
+
+console.log('✅ Script carregado com sucesso!');
