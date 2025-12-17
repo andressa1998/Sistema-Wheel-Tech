@@ -1,5 +1,5 @@
 // ============================================
-// SISTEMA OS FOTOGRAFIA - VERSÃO COMPLETA ATUALIZADA
+// SISTEMA OS FOTOGRAFIA - VERSÃO COMPLETA COM FOTOS
 // ============================================
 
 // ===== CONFIGURAÇÃO SUPABASE =====
@@ -15,6 +15,11 @@ let currentFilter = 'todos';
 let editingOrderId = null;
 let currentOSForPrint = null;
 let currentPrintStyle = 'detailed';
+
+// ===== VARIÁVEIS PARA FOTOS =====
+let selectedPhotos = [];
+const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_PHOTOS_PER_OS = 10;
 
 // ===== ELEMENTOS DOM =====
 const loginScreen = document.getElementById('loginScreen');
@@ -65,6 +70,7 @@ document.addEventListener('DOMContentLoaded', function() {
     generateOSCode();
     initSupabase();
     setupEventListeners();
+    setupPhotoUpload();
     
     // Adicionar evento de tecla ESC para fechar modais
     document.addEventListener('keydown', function(e) {
@@ -72,6 +78,10 @@ document.addEventListener('DOMContentLoaded', function() {
             const printModal = document.getElementById('printModal');
             if (printModal && !printModal.classList.contains('hidden')) {
                 closePrintModal();
+            }
+            const photoViewerModal = document.getElementById('photoViewerModal');
+            if (photoViewerModal && !photoViewerModal.classList.contains('hidden')) {
+                closePhotoViewer();
             }
             if (completeModal && !completeModal.classList.contains('hidden')) {
                 closeCompleteModal();
@@ -167,6 +177,137 @@ function setupEventListeners() {
 }
 
 // ============================================
+// FUNÇÕES PARA MANIPULAÇÃO DE FOTOS
+// ============================================
+function setupPhotoUpload() {
+    const uploadArea = document.getElementById('photoUploadArea');
+    const fileInput = document.getElementById('photoUploadInput');
+    
+    if (!uploadArea || !fileInput) return;
+    
+    // Clique na área de upload
+    uploadArea.addEventListener('click', () => fileInput.click());
+    
+    // Arrastar e soltar
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('drag-over');
+    });
+    
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('drag-over');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('drag-over');
+        
+        if (e.dataTransfer.files.length > 0) {
+            handlePhotoFiles(e.dataTransfer.files);
+        }
+    });
+    
+    // Mudança no input de arquivo
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handlePhotoFiles(e.target.files);
+        }
+    });
+}
+
+function handlePhotoFiles(files) {
+    const previewArea = document.getElementById('photoPreviews');
+    
+    for (let file of files) {
+        if (selectedPhotos.length >= MAX_PHOTOS_PER_OS) {
+            showToast(`Limite de ${MAX_PHOTOS_PER_OS} fotos atingido`, 'warning');
+            break;
+        }
+        
+        if (!file.type.startsWith('image/')) {
+            showToast('Apenas imagens são permitidas', 'error');
+            continue;
+        }
+        
+        if (file.size > MAX_PHOTO_SIZE) {
+            showToast(`Arquivo muito grande (máx. 5MB): ${file.name}`, 'error');
+            continue;
+        }
+        
+        // Converter para base64
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const photoData = {
+                id: Date.now() + Math.random(),
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                data: e.target.result,
+                thumbnail: createThumbnail(e.target.result)
+            };
+            
+            selectedPhotos.push(photoData);
+            updatePhotoPreviews();
+        };
+        reader.readAsDataURL(file);
+    }
+    
+    // Resetar input
+    document.getElementById('photoUploadInput').value = '';
+}
+
+function createThumbnail(base64Data) {
+    // Para simplificar, usamos a mesma imagem
+    // Em produção, você pode criar um thumbnail menor aqui
+    return base64Data;
+}
+
+function updatePhotoPreviews() {
+    const previewArea = document.getElementById('photoPreviews');
+    if (!previewArea) return;
+    
+    previewArea.innerHTML = '';
+    
+    selectedPhotos.forEach((photo, index) => {
+        const photoElement = document.createElement('div');
+        photoElement.className = 'photo-preview';
+        
+        photoElement.innerHTML = `
+            <img src="${photo.thumbnail || photo.data}" 
+                 alt="${photo.name}"
+                 style="width: 100%; height: 100%; object-fit: cover;">
+            <div style="position: absolute; top: 5px; right: 5px; background: rgba(0,0,0,0.7); color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer;"
+                 onclick="removePhoto(${index})">
+                ×
+            </div>
+            <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: white; padding: 3px 5px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                ${photo.name}
+            </div>
+        `;
+        
+        previewArea.appendChild(photoElement);
+    });
+    
+    if (selectedPhotos.length > 0) {
+        previewArea.style.display = 'flex';
+        
+        // Atualizar contador
+        const uploadArea = document.getElementById('photoUploadArea');
+        if (uploadArea) {
+            const countText = `<span style="color: #8A2BE2; font-weight: bold;">${selectedPhotos.length}</span> foto(s) selecionada(s)`;
+            uploadArea.querySelector('p:first-of-type').innerHTML = countText;
+        }
+    } else {
+        previewArea.style.display = 'none';
+    }
+}
+
+window.removePhoto = function(index) {
+    selectedPhotos.splice(index, 1);
+    updatePhotoPreviews();
+};
+
+// ============================================
 // FUNÇÃO DE LOGIN
 // ============================================
 function handleLogin(e) {
@@ -251,6 +392,7 @@ function handleLogout() {
     if (confirm('Deseja realmente sair do sistema?')) {
         currentUser = null;
         orders = [];
+        selectedPhotos = [];
         
         if (mainSystem) mainSystem.classList.add('hidden');
         if (loginScreen) loginScreen.classList.remove('hidden');
@@ -314,7 +456,7 @@ async function testSupabaseConnection() {
 }
 
 // ============================================
-// FUNÇÃO CARREGAR ORDENS
+// FUNÇÃO CARREGAR ORDENS (ATUALIZADA COM FOTOS)
 // ============================================
 async function loadOrders() {
     if (!currentUser) {
@@ -352,6 +494,7 @@ async function loadOrders() {
                 photoType: order.tipo_foto || 'estudio',
                 skus: order.skus || [],
                 observations: order.observacoes || '',
+                photos: order.fotos || [], // ← FOTOS CARREGADAS AQUI
                 photosTaken: order.qtd_fotos || 0,
                 editsMade: order.qtd_edicoes || 0,
                 createdBy: order.criado_por || 'Sistema',
@@ -388,7 +531,7 @@ async function loadOrders() {
 }
 
 // ============================================
-// FUNÇÃO SALVAR OS
+// FUNÇÃO SALVAR OS (ATUALIZADA COM FOTOS)
 // ============================================
 async function saveOrder() {
     if (!currentUser) {
@@ -415,6 +558,7 @@ async function saveOrder() {
         photoType: document.getElementById('photoType')?.value || 'estudio',
         skus: document.getElementById('skus')?.value.split(',').map(s => s.trim()).filter(s => s) || [],
         observations: document.getElementById('observations')?.value || '',
+        photos: selectedPhotos, // ← FOTOS ADICIONADAS AQUI
         photosTaken: 0,
         editsMade: 0,
         createdBy: currentUser.name,
@@ -468,10 +612,21 @@ async function saveOrder() {
 }
 
 // ============================================
-// FUNÇÃO SALVAR NO SUPABASE
+// FUNÇÃO SALVAR NO SUPABASE (ATUALIZADA COM FOTOS)
 // ============================================
 async function saveOrderToSupabase(order) {
     try {
+        // Preparar fotos para salvar (limitar dados se necessário)
+        let fotosParaSalvar = [];
+        if (order.photos && order.photos.length > 0) {
+            fotosParaSalvar = order.photos.map(photo => ({
+                name: photo.name,
+                size: photo.size,
+                type: photo.type,
+                data: photo.data // Base64 da imagem
+            }));
+        }
+        
         const orderData = {
             codigo: order.code,
             produto_nome: order.productName,
@@ -483,6 +638,7 @@ async function saveOrderToSupabase(order) {
             tipo_foto: order.photoType,
             observacoes: order.observations,
             skus: order.skus,
+            fotos: fotosParaSalvar, // ← FOTOS SALVAS AQUI
             qtd_fotos: order.photosTaken,
             qtd_edicoes: order.editsMade,
             data_criacao: new Date().toISOString(),
@@ -523,7 +679,7 @@ async function saveOrderToSupabase(order) {
 }
 
 // ============================================
-// FUNÇÕES DO FORMULÁRIO
+// FUNÇÕES DO FORMULÁRIO (ATUALIZADAS COM FOTOS)
 // ============================================
 function clearForm() {
     const productNameInput = document.getElementById('productName');
@@ -541,6 +697,19 @@ function clearForm() {
     if (photoTypeSelect) photoTypeSelect.value = 'estudio';
     if (skusInput) skusInput.value = '';
     if (observationsInput) observationsInput.value = '';
+    
+    // Limpar fotos
+    selectedPhotos = [];
+    const previewArea = document.getElementById('photoPreviews');
+    if (previewArea) {
+        previewArea.innerHTML = '';
+        previewArea.style.display = 'none';
+    }
+    
+    const uploadArea = document.getElementById('photoUploadArea');
+    if (uploadArea) {
+        uploadArea.querySelector('p:first-of-type').textContent = 'Clique ou arraste fotos aqui';
+    }
     
     editingOrderId = null;
     if (formTitle) formTitle.textContent = 'Nova Ordem de Serviço';
@@ -618,9 +787,11 @@ function updateCounters() {
 }
 
 // ============================================
-// RENDERIZAR TABELA (ATUALIZADA COM BOTÃO DE IMPRESSÃO)
+// RENDERIZAR TABELA (ATUALIZADA COM BOTÃO DE FOTOS)
 // ============================================
 function renderOrdersTable() {
+    console.log('Renderizando tabela... Número de ordens:', orders.length);
+    
     if (!osTableBody) return;
     
     osTableBody.innerHTML = '';
@@ -652,6 +823,12 @@ function renderOrdersTable() {
     filteredOrders.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     
     filteredOrders.forEach(order => {
+        console.log(`Ordem ${order.id}:`, {
+            productName: order.productName,
+            photos: order.photos,
+            photosCount: order.photos ? order.photos.length : 0
+        });
+        
         const row = document.createElement('tr');
         const hasPermission = checkOrderPermission(order);
         
@@ -689,13 +866,21 @@ function renderOrdersTable() {
         
         // Botões
         let actionButtons = '';
+
+        // Botão para visualizar fotos (sempre visível se houver fotos)
+        if (order.photos && order.photos.length > 0) {
+            actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos">
+                <i class="fas fa-images"></i> ${order.photos.length}
+            </button>`;
+        }
+
         if (hasPermission) {
             if (order.status === 'pendente') {
-                actionButtons = `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS">
+                actionButtons += `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS">
                     <i class="fas fa-play"></i>
                 </button>`;
             } else if (order.status === 'andamento') {
-                actionButtons = `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS">
+                actionButtons += `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS">
                     <i class="fas fa-flag-checkered"></i>
                 </button>`;
             }
@@ -704,7 +889,7 @@ function renderOrdersTable() {
                 <i class="fas fa-edit"></i>
             </button>`;
         }
-        
+
         // SEMPRE adicionar botão de impressão
         actionButtons += `<button class="btn btn-primary btn-sm" onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})" title="Imprimir OS">
             <i class="fas fa-print"></i>
@@ -775,8 +960,12 @@ window.editOrder = function(orderId) {
         if (urgencySelect) urgencySelect.value = order.urgency;
         if (osTypeSelect) osTypeSelect.value = order.osType;
         if (photoTypeSelect) photoTypeSelect.value = order.photoType;
-        if (skusInput) skusInput.value = order.skus.join(', ');
+        if (skusInput) skusInput.value = Array.isArray(order.skus) ? order.skus.join(', ') : order.skus;
         if (observationsInput) observationsInput.value = order.observations;
+        
+        // Carregar fotos existentes
+        selectedPhotos = order.photos || [];
+        updatePhotoPreviews();
         
         if (formTitle) formTitle.textContent = `Editando: ${order.code}`;
         if (submitBtnText) submitBtnText.textContent = 'Atualizar OS';
@@ -788,6 +977,91 @@ window.editOrder = function(orderId) {
         showToast('⚠️ Sem permissão para editar', 'warning');
     }
 };
+
+window.viewOrderPhotos = function(orderId) {
+    const order = orders.find(o => o.id == orderId);
+    if (order && order.photos && order.photos.length > 0) {
+        openPhotoViewer(order.photos, order.productName);
+    } else {
+        showToast('Nenhuma foto disponível para esta OS', 'info');
+    }
+};
+
+function openPhotoViewer(photos, orderName) {
+    const modal = document.getElementById('photoViewerModal');
+    const gallery = document.getElementById('photoGallery');
+    const title = document.getElementById('photoViewerTitle');
+    
+    if (!modal || !gallery) return;
+    
+    if (title) {
+        title.textContent = `Fotos da OS: ${orderName}`;
+    }
+    
+    gallery.innerHTML = '';
+    
+    photos.forEach((photo, index) => {
+        const photoElement = document.createElement('div');
+        photoElement.className = 'photo-item';
+        
+        photoElement.innerHTML = `
+            <img src="${photo.data || photo.thumbnail}" 
+                 alt="${photo.name}"
+                 style="width: 100%; height: 180px; object-fit: cover;"
+                 onclick="viewFullPhoto(${index}, ${JSON.stringify(photos).replace(/"/g, '&quot;')})">
+            <div style="padding: 10px; background: white;">
+                <div style="font-size: 12px; color: #6c757d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    ${photo.name}
+                </div>
+                <div style="font-size: 10px; color: #adb5bd; margin-top: 5px;">
+                    ${formatFileSize(photo.size)}
+                </div>
+            </div>
+        `;
+        
+        gallery.appendChild(photoElement);
+    });
+    
+    modal.classList.remove('hidden');
+}
+
+window.viewFullPhoto = function(index, photosData) {
+    const photos = typeof photosData === 'string' ? JSON.parse(photosData) : photosData;
+    const photo = photos[index];
+    
+    if (photo) {
+        const viewer = window.open('');
+        viewer.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>${photo.name}</title>
+                <style>
+                    body { margin: 0; padding: 20px; background: #000; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+                    img { max-width: 100%; max-height: 90vh; object-fit: contain; }
+                    .close-btn { position: fixed; top: 20px; right: 20px; background: rgba(0,0,0,0.7); color: white; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer; }
+                </style>
+            </head>
+            <body>
+                <button class="close-btn" onclick="window.close()">×</button>
+                <img src="${photo.data}" alt="${photo.name}">
+            </body>
+            </html>
+        `);
+    }
+};
+
+function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function closePhotoViewer() {
+    document.getElementById('photoViewerModal').classList.add('hidden');
+}
 
 window.startOrder = async function(orderId) {
     const order = orders.find(o => o.id == orderId);
@@ -888,7 +1162,7 @@ window.deleteOrderPrompt = async function(orderId) {
 };
 
 // ============================================
-// FUNÇÕES DE IMPRESSÃO MELHORADAS
+// FUNÇÕES DE IMPRESSÃO MELHORADAS (COM FOTOS)
 // ============================================
 window.openPrintModal = function(osData) {
     currentOSForPrint = osData;
@@ -944,6 +1218,33 @@ function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, os
     let urgencyBadgeClass = 'badge-normal';
     if (osData.urgency === 'alta') urgencyBadgeClass = 'badge-high';
     if (osData.urgency === 'baixa') urgencyBadgeClass = 'badge-low';
+    
+    // Seção de fotos se houver
+    let photosSection = '';
+    if (osData.photos && osData.photos.length > 0) {
+        photosSection = `
+            <div class="preview-card" style="grid-column: span ${currentPrintStyle === 'compact' ? 1 : 2}">
+                <div class="card-header">
+                    <div class="card-icon">
+                        <i class="fas fa-images"></i>
+                    </div>
+                    <h3 class="card-title">Fotos de Referência (${osData.photos.length})</h3>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px;">
+                    ${osData.photos.map((photo, index) => `
+                        <div style="text-align: center;">
+                            <img src="${photo.data || photo.thumbnail}" 
+                                 alt="${photo.name}"
+                                 style="width: 100%; height: 80px; object-fit: cover; border-radius: 5px; border: 1px solid #dee2e6;">
+                            <div style="font-size: 10px; color: #6c757d; margin-top: 5px; overflow: hidden; text-overflow: ellipsis;">
+                                ${photo.name}
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
     
     previewContainer.innerHTML = `
         <div class="print-preview ${currentPrintStyle === 'compact' ? 'compact-view' : ''}">
@@ -1091,6 +1392,8 @@ function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, os
                     </div>
                 </div>
                 
+                ${photosSection}
+                
                 <!-- Card: Observações -->
                 <div class="preview-card" style="grid-column: span ${currentPrintStyle === 'compact' ? 1 : 2}">
                     <div class="card-header">
@@ -1135,45 +1438,6 @@ function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, os
                         </div>
                     </div>
                     ` : ''}
-                </div>
-            </div>
-            
-            <!-- Seção de Assinaturas -->
-            <div class="signature-section">
-                <h3 style="text-align: center; color: #495057; margin-bottom: 30px;">
-                    <i class="fas fa-signature"></i> Aprovações e Assinaturas
-                </h3>
-                <div class="signature-grid">
-                    <div class="signature-box">
-                        <div class="signature-label">Responsável pela OS</div>
-                        <div class="signature-line"></div>
-                        <div class="signature-name">${osData.responsibleName}</div>
-                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">
-                            Data: ________________
-                        </div>
-                    </div>
-                    
-                    <div class="signature-box">
-                        <div class="signature-label">Fotógrafo Responsável</div>
-                        <div class="signature-line"></div>
-                        <div class="signature-name" style="color: #6c757d; font-style: italic;">
-                            ______________________________
-                        </div>
-                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">
-                            Data: ________________
-                        </div>
-                    </div>
-                    
-                    <div class="signature-box">
-                        <div class="signature-label">Cliente / Requisitante</div>
-                        <div class="signature-line"></div>
-                        <div class="signature-name" style="color: #6c757d; font-style: italic;">
-                            ______________________________
-                        </div>
-                        <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">
-                            Data: ________________
-                        </div>
-                    </div>
                 </div>
             </div>
             
@@ -1659,11 +1923,6 @@ printStyles.innerHTML = `
         transition: all 0.3s ease;
     }
     
-    .preview-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-    }
-    
     .card-header {
         display: flex;
         align-items: center;
@@ -1844,50 +2103,7 @@ printStyles.innerHTML = `
         grid-template-columns: 1fr;
         gap: 20px;
     }
-    
-    .print-crop-marks {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        pointer-events: none;
-    }
-    
-    .crop-mark {
-        position: absolute;
-        width: 15px;
-        height: 15px;
-        border: 1px solid rgba(0,0,0,0.2);
-    }
-    
-    .crop-mark.top-left {
-        top: 10mm;
-        left: 10mm;
-        border-bottom: none;
-        border-right: none;
-    }
-    
-    .crop-mark.top-right {
-        top: 10mm;
-        right: 10mm;
-        border-bottom: none;
-        border-left: none;
-    }
-    
-    .crop-mark.bottom-left {
-        bottom: 10mm;
-        left: 10mm;
-        border-top: none;
-        border-right: none;
-    }
-    
-    .crop-mark.bottom-right {
-        bottom: 10mm;
-        right: 10mm;
-        border-top: none;
-        border-left: none;
-    }
+
 `;
 
 document.head.appendChild(printStyles);
