@@ -494,13 +494,17 @@ async function loadOrders() {
                 photoType: order.tipo_foto || 'estudio',
                 skus: order.skus || [],
                 observations: order.observacoes || '',
-                photos: order.fotos || [], // ← FOTOS CARREGADAS AQUI
+                photos: order.fotos || [],
                 photosTaken: order.qtd_fotos || 0,
                 editsMade: order.qtd_edicoes || 0,
                 createdBy: order.criado_por || 'Sistema',
                 createdAt: order.data_criacao,
                 completionDate: order.data_conclusao,
-                updatedAt: order.ultima_atualizacao || order.data_criacao
+                updatedAt: order.ultima_atualizacao || order.data_criacao,
+                // NOVOS CAMPOS PARA CONFERÊNCIA
+                conferido: order.conferido || false,
+                conferidoPor: order.conferido_por || null,
+                dataConferencia: order.data_conferencia || null
             }));
             
             orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
@@ -611,19 +615,16 @@ async function saveOrder() {
     }
 }
 
-// ============================================
-// FUNÇÃO SALVAR NO SUPABASE (ATUALIZADA COM FOTOS)
-// ============================================
 async function saveOrderToSupabase(order) {
     try {
-        // Preparar fotos para salvar (limitar dados se necessário)
+        // Preparar fotos para salvar
         let fotosParaSalvar = [];
         if (order.photos && order.photos.length > 0) {
             fotosParaSalvar = order.photos.map(photo => ({
                 name: photo.name,
                 size: photo.size,
                 type: photo.type,
-                data: photo.data // Base64 da imagem
+                data: photo.data
             }));
         }
         
@@ -638,9 +639,13 @@ async function saveOrderToSupabase(order) {
             tipo_foto: order.photoType,
             observacoes: order.observations,
             skus: order.skus,
-            fotos: fotosParaSalvar, // ← FOTOS SALVAS AQUI
+            fotos: fotosParaSalvar,
             qtd_fotos: order.photosTaken,
             qtd_edicoes: order.editsMade,
+            // NOVOS CAMPOS PARA CONFERÊNCIA
+            conferido: order.conferido || false,
+            conferido_por: order.conferidoPor || null,
+            data_conferencia: order.dataConferencia || null,
             data_criacao: new Date().toISOString(),
             ultima_atualizacao: new Date().toISOString()
         };
@@ -677,6 +682,56 @@ async function saveOrderToSupabase(order) {
         return { success: false, error: error.message };
     }
 }
+
+// ============================================
+// FUNÇÃO PARA CONFERIR OS
+// ============================================
+window.conferirOS = async function(orderId) {
+    const order = orders.find(o => o.id == orderId);
+    
+    if (!order) {
+        showToast('Ordem não encontrada', 'error');
+        return;
+    }
+    
+    // Verificar se a OS está concluída
+    if (order.status !== 'concluida') {
+        showToast('⚠️ Apenas OS concluídas podem ser conferidas', 'warning');
+        return;
+    }
+    
+    // Verificar se já foi conferida
+    if (order.conferido) {
+        showToast('⚠️ Esta OS já foi conferida', 'warning');
+        return;
+    }
+    
+    if (confirm(`Deseja marcar a OS "${order.productName}" como conferida?\n\nVocê não poderá desfazer esta ação.`)) {
+        try {
+            if (supabaseClient) {
+                await supabaseClient.from('ordens_service')
+                    .update({ 
+                        conferido: true,
+                        conferido_por: currentUser.name,
+                        data_conferencia: new Date().toISOString(),
+                        ultima_atualizacao: new Date().toISOString()
+                    })
+                    .eq('id', orderId);
+            }
+            
+            order.conferido = true;
+            order.conferidoPor = currentUser.name;
+            order.dataConferencia = new Date().toISOString();
+            
+            updateCounters();
+            renderOrdersTable();
+            showToast(`✅ OS conferida por ${currentUser.name}`, 'success');
+        } catch (error) {
+            console.error('❌ Erro ao conferir OS:', error);
+            showToast('❌ Erro ao conferir OS', 'error');
+        }
+    }
+};
 
 // ============================================
 // FUNÇÕES DO FORMULÁRIO (ATUALIZADAS COM FOTOS)
@@ -735,12 +790,18 @@ function generateOSCode() {
     return code;
 }
 
-// ============================================
-// FUNÇÕES DE FILTRO E PERMISSÃO
+/// ============================================
+// FUNÇÕES DE FILTRO E PERMISSÃO (ATUALIZADO)
 // ============================================
 function filterOrdersByUser(ordersList) {
     if (!currentUser) return [];
     
+    // Administrador vê TODAS as ordens
+    if (currentUser.role === 'Administrador') {
+        return ordersList;
+    }
+    
+    // Outros usuários só veem as ordens onde são responsáveis ou criadores
     return ordersList.filter(order => {
         const isResponsible = order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase());
         const isCreator = order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase());
@@ -751,6 +812,12 @@ function filterOrdersByUser(ordersList) {
 function checkOrderPermission(order) {
     if (!currentUser) return false;
     
+    // Administrador tem permissão para TUDO
+    if (currentUser.role === 'Administrador') {
+        return true;
+    }
+    
+    // Outros usuários só têm permissão se forem responsáveis ou criadores
     const isResponsible = order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase());
     const isCreator = order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase());
     return isResponsible || isCreator;
@@ -764,13 +831,30 @@ function updateCounters() {
     const myProgress = userOrders.filter(o => o.status === 'andamento').length;
     const myCompleted = userOrders.filter(o => o.status === 'concluida').length;
     const myTotal = userOrders.length;
+
+    // Contar OS concluídas não conferidas (para destaque)
+    const completedNotChecked = userOrders.filter(o => o.status === 'concluida' && !o.conferido).length;
     
     if (countPending) countPending.textContent = myPending;
     if (countProgress) countProgress.textContent = myProgress;
-    if (countCompleted) countCompleted.textContent = myCompleted;
+    if (countCompleted) {
+        countCompleted.textContent = `${myCompleted}`;
+        // Adicionar badge se houver OS não conferidas
+        if (completedNotChecked > 0) {
+            countCompleted.innerHTML = `${myCompleted} <span class="badge badge-warning" style="margin-left: 5px;">${completedNotChecked} não conferidas</span>`;
+        }
+    }
     if (countTotal) countTotal.textContent = myTotal;
     
-    if (myOrdersCount) myOrdersCount.textContent = myTotal;
+    if (myOrdersCount) {
+        // Se for administrador, mostrar "todas as ordens" em vez de "minhas ordens"
+        if (currentUser.role === 'Administrador') {
+            myOrdersCount.textContent = `${myTotal} (todas)`;
+        } else {
+            myOrdersCount.textContent = myTotal;
+        }
+    }
+    
     if (totalOrdersCount) totalOrdersCount.textContent = orders.length;
     
     if (emptyMessage) {
@@ -778,6 +862,18 @@ function updateCounters() {
             emptyMessage.classList.remove('hidden');
             const tableResponsive = document.querySelector('.table-responsive');
             if (tableResponsive) tableResponsive.classList.add('hidden');
+            
+            if (currentUser.role === 'Administrador') {
+                emptyMessage.innerHTML = `
+                    <i class="fas fa-user-lock fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                    <h4 style="color: #6c757d;">Nenhuma ordem no sistema</h4>
+                    <p style="color: #6c757d;">Não há ordens de serviço cadastradas no momento.</p>
+                    <p style="color: #6c757d; font-size: 12px; margin-top: 10px;">
+                        <i class="fas fa-info-circle"></i>
+                        Como administrador, você vê todas as ordens do sistema.
+                    </p>
+                `;
+            }
         } else {
             emptyMessage.classList.add('hidden');
             const tableResponsive = document.querySelector('.table-responsive');
@@ -786,12 +882,8 @@ function updateCounters() {
     }
 }
 
-// ============================================
-// RENDERIZAR TABELA (ATUALIZADA COM BOTÃO DE FOTOS)
-// ============================================
+
 function renderOrdersTable() {
-    console.log('Renderizando tabela... Número de ordens:', orders.length);
-    
     if (!osTableBody) return;
     
     osTableBody.innerHTML = '';
@@ -810,40 +902,90 @@ function renderOrdersTable() {
     if (filteredOrders.length === 0) {
         osTableBody.innerHTML = `
             <tr>
-                <td colspan="7" class="text-center" style="padding: 40px;">
+                <td colspan="8" class="text-center" style="padding: 40px;">
                     <i class="fas fa-user-lock fa-3x" style="color: #6c757d; opacity: 0.5; margin-bottom: 15px;"></i>
                     <h4 style="color: #6c757d;">Nenhuma ordem disponível</h4>
-                    <p style="color: #6c757d;">Você não tem permissão para visualizar ordens ou não há ordens com seu filtro atual.</p>
+                    ${currentUser.role === 'Administrador' ? 
+                    '<p style="color: #6c757d;">Não há ordens no sistema com seu filtro atual.</p>' :
+                    '<p style="color: #6c757d;">Você não tem permissão para visualizar ordens ou não há ordens com seu filtro atual.</p>'}
                 </td>
             </tr>
         `;
         return;
     }
     
-    filteredOrders.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    // Ordenar: OS finalizadas não conferidas primeiro, depois por data
+    filteredOrders.sort((a, b) => {
+        // Primeiro: OS concluídas não conferidas
+        const aIsCompletedNotChecked = a.status === 'concluida' && !a.conferido;
+        const bIsCompletedNotChecked = b.status === 'concluida' && !b.conferido;
+        
+        if (aIsCompletedNotChecked && !bIsCompletedNotChecked) return -1;
+        if (!aIsCompletedNotChecked && bIsCompletedNotChecked) return 1;
+        
+        // Depois: por data de atualização (mais recente primeiro)
+        return new Date(b.updatedAt) - new Date(a.updatedAt);
+    });
     
     filteredOrders.forEach(order => {
-        console.log(`Ordem ${order.id}:`, {
-            productName: order.productName,
-            photos: order.photos,
-            photosCount: order.photos ? order.photos.length : 0
-        });
-        
         const row = document.createElement('tr');
         const hasPermission = checkOrderPermission(order);
+        const isAdmin = currentUser.role === 'Administrador';
         
-        // Estilo
-        if (order.osType === 'devolucao') row.className = 'return-highlight';
-        else if (order.urgency === 'alta') row.className = 'urgent-high';
-        else if (order.urgency === 'normal') row.className = 'urgent-medium';
-        else row.className = 'urgent-low';
+        // ESTILO ESPECIAL PARA OS FINALIZADAS NÃO CONFERIDAS
+        if (order.status === 'concluida' && !order.conferido) {
+            row.className = 'urgent-high'; // Destaque vermelho
+            row.style.animation = 'pulseReturn 2s infinite'; // Pulsação para chamar atenção
+            row.style.backgroundColor = '#fff5f5'; // Fundo vermelho claro
+        } else if (order.osType === 'devolucao') {
+            row.className = 'return-highlight';
+        } else if (order.urgency === 'alta') {
+            row.className = 'urgent-high';
+        } else if (order.urgency === 'normal') {
+            row.className = 'urgent-medium';
+        } else {
+            row.className = 'urgent-low';
+        }
         
-        // Badges
+        // Badge de Conferência
+        let conferenciaBadge = '';
+        if (order.status === 'concluida') {
+            if (order.conferido) {
+                conferenciaBadge = `
+                    <span class="badge badge-success" style="margin-left: 5px;">
+                        <i class="fas fa-check-double"></i> Conferido
+                    </span>
+                    ${order.conferidoPor ? `<small style="display: block; color: #28a745; margin-top: 2px;">
+                        <i class="fas fa-user-check"></i> ${order.conferidoPor}
+                    </small>` : ''}
+                `;
+            } else {
+                conferenciaBadge = `
+                    <span class="badge badge-warning" style="margin-left: 5px; animation: pulse 1.5s infinite;">
+                        <i class="fas fa-exclamation-circle"></i> Aguardando conferência
+                    </span>
+                `;
+            }
+        }
+        
+        // Badges de permissão
         let permissionBadge = '';
-        if (order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase())) {
+        if (isAdmin) {
+            permissionBadge = '<span class="badge badge-danger" style="margin-left: 5px;"><i class="fas fa-crown"></i> Admin</span>';
+        } else if (order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase())) {
             permissionBadge = '<span class="badge badge-primary" style="margin-left: 5px;"><i class="fas fa-user-check"></i> Responsável</span>';
         } else if (order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
             permissionBadge = '<span class="badge badge-info" style="margin-left: 5px;"><i class="fas fa-user-edit"></i> Criador</span>';
+        }
+        
+        // Badge de acesso admin
+        let accessBadge = '';
+        if (isAdmin) {
+            const isDirectAccess = order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) || 
+                                  order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase());
+            if (!isDirectAccess) {
+                accessBadge = '<span class="badge badge-secondary" style="margin-left: 5px;"><i class="fas fa-user-shield"></i> Acesso Admin</span>';
+            }
         }
         
         let typeBadge = order.osType === 'devolucao' ? 
@@ -867,26 +1009,30 @@ function renderOrdersTable() {
         // Botões
         let actionButtons = '';
 
-        // Botão de VISUALIZAR (sempre visível)
-        actionButtons += `<button class="btn btn-primary btn-sm" onclick="viewOrderDetails('${order.id}')" title="Visualizar OS">
-            <i class="fas fa-eye"></i>
-        </button>`;
+        // Botão de VISUALIZAR
+        if (hasPermission || isAdmin) {
+            actionButtons += `<button class="btn btn-primary btn-sm" onclick="viewOrderDetails('${order.id}')" title="Visualizar OS">
+                <i class="fas fa-eye"></i>
+            </button>`;
+        }
 
         // Botão para visualizar fotos (se houver fotos)
         if (order.photos && order.photos.length > 0) {
-            actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos">
-                <i class="fas fa-images"></i> ${order.photos.length}
+            if (hasPermission || isAdmin) {
+                actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos">
+                    <i class="fas fa-images"></i> ${order.photos.length}
+                </button>`;
+            }
+        }
+
+        // BOTÃO DE CONFERIR (apenas para OS concluídas não conferidas)
+        if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
+            actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Marcar como Conferido">
+                <i class="fas fa-check-double"></i>
             </button>`;
         }
 
-        // Botão para visualizar fotos (sempre visível se houver fotos)
-        if (order.photos && order.photos.length > 0) {
-            actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos">
-                <i class="fas fa-images"></i> ${order.photos.length}
-            </button>`;
-        }
-
-        if (hasPermission) {
+        if (hasPermission || isAdmin) {
             if (order.status === 'pendente') {
                 actionButtons += `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS">
                     <i class="fas fa-play"></i>
@@ -902,13 +1048,13 @@ function renderOrdersTable() {
             </button>`;
         }
 
-        // SEMPRE adicionar botão de impressão
+        // Botão de impressão
         actionButtons += `<button class="btn btn-primary btn-sm" onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})" title="Imprimir OS">
             <i class="fas fa-print"></i>
         </button>`;
         
         // Botão de excluir apenas para admin ou criador
-        if (currentUser.role === 'Administrador' || order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
+        if (isAdmin || order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
             actionButtons += `<button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')" title="Excluir OS">
                 <i class="fas fa-trash"></i>
             </button>`;
@@ -917,13 +1063,20 @@ function renderOrdersTable() {
         row.innerHTML = `
             <td>
                 <strong>${order.code}</strong>
+                ${conferenciaBadge}
                 ${permissionBadge}
+                ${accessBadge}
                 ${typeBadge}
             </td>
             <td>${order.productName}</td>
             <td>
                 <div>${order.responsibleName}</div>
                 <small><i class="fas fa-user-plus"></i> Criado por: ${order.createdBy || 'Sistema'}</small>
+                ${order.status === 'concluida' && order.conferidoPor ? `
+                <small style="display: block; color: #28a745; margin-top: 2px;">
+                    <i class="fas fa-user-check"></i> Conferido por: ${order.conferidoPor}
+                </small>
+                ` : ''}
             </td>
             <td>${urgencyBadge}</td>
             <td>${statusBadge}</td>
@@ -946,6 +1099,12 @@ window.filterOS = function(filter) {
     currentFilter = filter;
     renderOrdersTable();
 };
+
+// Na função renderOrdersTable(), atualize a lógica de filtro:
+let filteredOrders = currentFilter === 'todos' ? userOrders : 
+                     currentFilter === 'nao_conferidas' ? 
+                         userOrders.filter(order => order.status === 'concluida' && !order.conferido) :
+                     userOrders.filter(order => order.status === currentFilter);
 
 window.viewOrder = function(orderId) {
     const order = orders.find(o => o.id == orderId);
@@ -1134,6 +1293,10 @@ async function completeOrder() {
                     qtd_fotos: photosTaken,
                     qtd_edicoes: editsMade,
                     data_conclusao: new Date().toISOString(),
+                    // Resetar conferência quando finalizar novamente
+                    conferido: false,
+                    conferido_por: null,
+                    data_conferencia: null,
                     ultima_atualizacao: new Date().toISOString()
                 })
                 .eq('id', orderId);
@@ -1143,6 +1306,10 @@ async function completeOrder() {
         order.photosTaken = photosTaken;
         order.editsMade = editsMade;
         order.completionDate = new Date().toISOString();
+        // Resetar conferência
+        order.conferido = false;
+        order.conferidoPor = null;
+        order.dataConferencia = null;
         
         updateCounters();
         renderOrdersTable();
@@ -1996,6 +2163,14 @@ function generateDetailsTab() {
                            completionDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
     }
     
+    // Formatar data de conferência (se houver)
+    let conferenciaDateText = '';
+    if (order.dataConferencia) {
+        const conferenciaDate = new Date(order.dataConferencia);
+        conferenciaDateText = conferenciaDate.toLocaleDateString('pt-BR') + ' ' + 
+                             conferenciaDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+    }
+    
     return `
         <div class="tab-content active">
             <div class="info-grid">
@@ -2063,6 +2238,43 @@ function generateDetailsTab() {
                             '<span style="background: #dc3545; color: white; padding: 3px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px;">DEVOLUÇÃO</span>' : ''}
                         </div>
                     </div>
+                    
+                    <!-- CONFERÊNCIA -->
+                    ${order.status === 'concluida' ? `
+                    <div class="info-item">
+                        <div class="info-label">Conferência</div>
+                        <div class="info-value">
+                            ${order.conferido ? 
+                                `<span class="badge-view" style="background: #28a745; color: white;">
+                                    <i class="fas fa-check-double"></i> Conferido
+                                </span>
+                                ${order.conferidoPor ? `
+                                <div style="margin-top: 8px; padding: 10px; background: #d4edda; border-radius: 6px; border: 1px solid #c3e6cb;">
+                                    <div style="font-size: 14px; color: #155724;">
+                                        <i class="fas fa-user-check"></i> Conferido por: <strong>${order.conferidoPor}</strong>
+                                    </div>
+                                    ${conferenciaDateText ? `
+                                    <div style="font-size: 13px; color: #0c5460; margin-top: 5px;">
+                                        <i class="far fa-calendar-alt"></i> Data: ${conferenciaDateText}
+                                    </div>
+                                    ` : ''}
+                                </div>
+                                ` : ''}`
+                                :
+                                `<span class="badge-view" style="background: #ffc107; color: #212529; animation: pulse 1.5s infinite;">
+                                    <i class="fas fa-exclamation-circle"></i> Aguardando conferência
+                                </span>
+                                ${(checkOrderPermission(order) || currentUser.role === 'Administrador') ? `
+                                <div style="margin-top: 10px;">
+                                    <button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}'); closeViewOSModal();" title="Marcar como Conferido">
+                                        <i class="fas fa-check-double"></i> Marcar como Conferido
+                                    </button>
+                                </div>
+                                ` : ''}`
+                            }
+                        </div>
+                    </div>
+                    ` : ''}
                 </div>
                 
                 <!-- Responsáveis -->
@@ -2084,6 +2296,14 @@ function generateDetailsTab() {
                     </div>
                     
                     <div class="info-item">
+                        <div class="info-label">Finalizado por</div>
+                        <div class="info-value">
+                            <i class="fas fa-flag-checkered" style="margin-right: 8px;"></i>
+                            ${order.status === 'concluida' ? order.responsibleName : 'Não finalizada'}
+                        </div>
+                    </div>
+                    
+                    <div class="info-item">
                         <div class="info-label">Data de Criação</div>
                         <div class="info-value">
                             <i class="far fa-calendar-alt" style="margin-right: 8px;"></i>
@@ -2092,12 +2312,13 @@ function generateDetailsTab() {
                     </div>
                 </div>
                 
-                <!-- Datas -->
+                <!-- Datas e Métricas -->
                 <div class="info-card">
-                    <h4><i class="fas fa-calendar-alt"></i> Datas</h4>
+                    <h4><i class="fas fa-chart-line"></i> Datas e Métricas</h4>
                     <div class="info-item">
                         <div class="info-label">Criado em</div>
                         <div class="info-value">
+                            <i class="far fa-calendar-alt" style="margin-right: 8px;"></i>
                             ${formattedCreatedDate}
                         </div>
                     </div>
@@ -2105,6 +2326,7 @@ function generateDetailsTab() {
                     <div class="info-item">
                         <div class="info-label">Última atualização</div>
                         <div class="info-value">
+                            <i class="fas fa-sync-alt" style="margin-right: 8px;"></i>
                             ${new Date(order.updatedAt).toLocaleString('pt-BR')}
                         </div>
                     </div>
@@ -2113,6 +2335,7 @@ function generateDetailsTab() {
                     <div class="info-item">
                         <div class="info-label">Concluído em</div>
                         <div class="info-value">
+                            <i class="fas fa-flag-checkered" style="margin-right: 8px;"></i>
                             ${completionDateText}
                         </div>
                     </div>
@@ -2120,19 +2343,66 @@ function generateDetailsTab() {
                     <div class="info-item">
                         <div class="info-label">Fotos tiradas</div>
                         <div class="info-value">
-                            <i class="fas fa-camera-retro"></i> ${order.photosTaken || '0'}
+                            <i class="fas fa-camera-retro" style="margin-right: 8px;"></i> ${order.photosTaken || '0'}
                         </div>
                     </div>
                     
                     <div class="info-item">
                         <div class="info-label">Edições realizadas</div>
                         <div class="info-value">
-                            <i class="fas fa-edit"></i> ${order.editsMade || '0'}
+                            <i class="fas fa-edit" style="margin-right: 8px;"></i> ${order.editsMade || '0'}
+                        </div>
+                    </div>
+                    
+                    <!-- Métricas de eficiência (opcional) -->
+                    ${order.photosTaken > 0 && order.editsMade > 0 ? `
+                    <div class="info-item">
+                        <div class="info-label">Relação Fotos/Edições</div>
+                        <div class="info-value">
+                            <i class="fas fa-percentage" style="margin-right: 8px;"></i>
+                            ${((order.editsMade / order.photosTaken) * 100).toFixed(1)}% das fotos editadas
+                        </div>
+                    </div>
+                    ` : ''}
+                    ` : ''}
+                </div>
+            </div>
+            
+            <!-- Seção de Fotos (resumo) -->
+            ${order.photos && order.photos.length > 0 ? `
+            <div class="info-card" style="margin-top: 20px;">
+                <h4><i class="fas fa-images"></i> Fotos de Referência (${order.photos.length})</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 15px;">
+                    ${order.photos.slice(0, 6).map((photo, index) => `
+                        <div style="text-align: center; cursor: pointer;" onclick="viewPhotoInModal(${index})">
+                            <img src="${photo.data || photo.thumbnail}" 
+                                 alt="${photo.name}"
+                                 style="width: 100%; height: 100px; object-fit: cover; border-radius: 5px; border: 1px solid #dee2e6;">
+                            <div style="font-size: 11px; color: #6c757d; margin-top: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                ${photo.name}
+                            </div>
+                        </div>
+                    `).join('')}
+                    ${order.photos.length > 6 ? `
+                    <div style="text-align: center; display: flex; align-items: center; justify-content: center;">
+                        <div style="background: #f8f9fa; border: 2px dashed #dee2e6; border-radius: 5px; width: 100%; height: 100px; display: flex; align-items: center; justify-content: center;">
+                            <div>
+                                <i class="fas fa-ellipsis-h fa-2x" style="color: #adb5bd;"></i>
+                                <div style="font-size: 12px; color: #6c757d; margin-top: 5px;">
+                                    +${order.photos.length - 6} fotos
+                                </div>
+                            </div>
                         </div>
                     </div>
                     ` : ''}
                 </div>
+                <div style="margin-top: 15px; text-align: center;">
+                    <button class="btn btn-info btn-sm" onclick="switchViewOSTab('photos')">
+                        <i class="fas fa-images"></i> Ver todas as fotos (${order.photos.length})
+                    </button>
+                </div>
             </div>
+            ` : ''}
             
             <!-- Observações -->
             <div class="info-card" style="margin-top: 20px;">
@@ -2145,7 +2415,34 @@ function generateDetailsTab() {
                     '</div>'}
                 </div>
             </div>
+            
+            <!-- Botão de conferência (se aplicável) -->
+            ${order.status === 'concluida' && !order.conferido && (checkOrderPermission(order) || currentUser.role === 'Administrador') ? `
+            <div class="info-card" style="margin-top: 20px; background: linear-gradient(45deg, #fff5f5, #ffe6e6); border: 2px solid #dc3545;">
+                <h4 style="color: #dc3545;"><i class="fas fa-exclamation-triangle"></i> Ação Pendente</h4>
+                <div style="text-align: center; padding: 20px;">
+                    <p style="color: #856404; margin-bottom: 20px; font-size: 16px;">
+                        <i class="fas fa-info-circle"></i> Esta ordem de serviço está aguardando conferência.
+                    </p>
+                    <button class="btn btn-success btn-lg" onclick="conferirOS('${order.id}'); closeViewOSModal();">
+                        <i class="fas fa-check-double"></i> Confirmar Conferência
+                    </button>
+                    <p style="color: #6c757d; font-size: 12px; margin-top: 15px;">
+                        Ao clicar, você estará confirmando que verificou e aprovou esta OS.
+                    </p>
+                </div>
+            </div>
+            ` : ''}
         </div>
+        
+        <!-- Adicionar animação CSS -->
+        <style>
+            @keyframes pulse {
+                0% { opacity: 1; }
+                50% { opacity: 0.7; }
+                100% { opacity: 1; }
+            }
+        </style>
     `;
 }
 
