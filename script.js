@@ -867,6 +867,18 @@ function renderOrdersTable() {
         // Botões
         let actionButtons = '';
 
+        // Botão de VISUALIZAR (sempre visível)
+        actionButtons += `<button class="btn btn-primary btn-sm" onclick="viewOrderDetails('${order.id}')" title="Visualizar OS">
+            <i class="fas fa-eye"></i>
+        </button>`;
+
+        // Botão para visualizar fotos (se houver fotos)
+        if (order.photos && order.photos.length > 0) {
+            actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos">
+                <i class="fas fa-images"></i> ${order.photos.length}
+            </button>`;
+        }
+
         // Botão para visualizar fotos (sempre visível se houver fotos)
         if (order.photos && order.photos.length > 0) {
             actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos">
@@ -1472,7 +1484,7 @@ window.togglePrintStyle = function(style) {
         // Mapear valores (como na função principal)
         const statusMap = { 'pendente': 'Pendente', 'andamento': 'Em Andamento', 'concluida': 'Concluída' };
         const urgencyMap = { 'alta': 'Alta', 'normal': 'Normal', 'baixa': 'Baixa' };
-        const photoTypeMap = { 'estudio': 'Estúdio', 'bike': 'Na Bike', 'ambos': 'Ambos' };
+        const photoTypeMap = { 'estudio': 'Estúdio', 'bike': 'Na Bike', 'ambos': 'Ambos', 'Apenas edição': 'Apenas edição' };
         const osTypeMap = { 'normal': 'Normal', 'devolucao': 'Devolução', 'urgente': 'Urgente' };
         
         const statusText = statusMap[osData.status] || osData.status;
@@ -1861,6 +1873,502 @@ function showToast(message, type = 'info') {
         }, 300);
     }, 4000);
 }
+
+// ============================================
+// VARIÁVEIS PARA VISUALIZAÇÃO DA OS
+// ============================================
+let currentViewingOS = null;
+
+// ============================================
+// FUNÇÕES PARA VISUALIZAÇÃO DA OS
+// ============================================
+window.viewOrderDetails = function(orderId) {
+    const order = orders.find(o => o.id == orderId);
+    if (!order) {
+        showToast('Ordem não encontrada', 'error');
+        return;
+    }
+    
+    currentViewingOS = order;
+    openViewOSModal(order);
+};
+
+function openViewOSModal(order) {
+    // Atualizar cabeçalho
+    document.getElementById('viewOSCode').textContent = order.code;
+    
+    // Atualizar contador de fotos
+    const photoCount = order.photos ? order.photos.length : 0;
+    document.getElementById('viewPhotosCount').textContent = photoCount;
+    
+    // Atualizar data de criação
+    const createdDate = new Date(order.createdAt);
+    document.getElementById('viewCreatedAt').textContent = createdDate.toLocaleString('pt-BR');
+    
+    // Carregar conteúdo inicial (aba de detalhes)
+    switchViewOSTab('details');
+    
+    // Mostrar modal
+    document.getElementById('viewOSModal').classList.remove('hidden');
+}
+
+function closeViewOSModal() {
+    document.getElementById('viewOSModal').classList.add('hidden');
+    currentViewingOS = null;
+}
+
+function switchViewOSTab(tabName) {
+    // Atualizar botões das abas
+    const tabButtons = document.querySelectorAll('#viewOSTabs .tab-button');
+    tabButtons.forEach(button => {
+        button.classList.remove('active');
+        button.style.borderBottomColor = 'transparent';
+        button.style.color = '#6c757d';
+    });
+    
+    // Ativar botão atual
+    const activeButton = document.querySelector(`#viewOSTabs button[onclick*="${tabName}"]`);
+    if (activeButton) {
+        activeButton.classList.add('active');
+        activeButton.style.borderBottomColor = '#8A2BE2';
+        activeButton.style.color = '#8A2BE2';
+    }
+    
+    // Carregar conteúdo da aba
+    const contentContainer = document.getElementById('viewOSContent');
+    
+    switch(tabName) {
+        case 'details':
+            contentContainer.innerHTML = generateDetailsTab();
+            break;
+        case 'photos':
+            contentContainer.innerHTML = generatePhotosTab();
+            break;
+        case 'timeline':
+            contentContainer.innerHTML = generateTimelineTab();
+            break;
+    }
+}
+
+function generateDetailsTab() {
+    if (!currentViewingOS) return '<p>Carregando...</p>';
+    
+    const order = currentViewingOS;
+    
+    // Mapear valores para texto amigável
+    const statusMap = {
+        'pendente': { text: 'Pendente', class: 'status-pending-view' },
+        'andamento': { text: 'Em Andamento', class: 'status-progress-view' },
+        'concluida': { text: 'Concluída', class: 'status-completed-view' }
+    };
+    
+    const urgencyMap = {
+        'baixa': { text: 'Baixa', color: '#28a745' },
+        'normal': { text: 'Normal', color: '#ffc107' },
+        'alta': { text: 'Alta', color: '#dc3545' }
+    };
+    
+    const photoTypeMap = {
+        'estudio': 'Estúdio',
+        'bike': 'Na Bike',
+        'ambos': 'Ambos'
+    };
+    
+    const osTypeMap = {
+        'normal': 'Normal',
+        'devolucao': 'Devolução'
+    };
+    
+    const statusInfo = statusMap[order.status] || { text: order.status, class: '' };
+    const urgencyInfo = urgencyMap[order.urgency] || { text: order.urgency, color: '#6c757d' };
+    const photoTypeText = photoTypeMap[order.photoType] || order.photoType;
+    const osTypeText = osTypeMap[order.osType] || order.osType;
+    
+    // Formatar datas
+    const createdDate = new Date(order.createdAt);
+    const formattedCreatedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
+                                createdDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+    
+    let completionDateText = 'Não concluída';
+    if (order.completionDate) {
+        const completionDate = new Date(order.completionDate);
+        completionDateText = completionDate.toLocaleDateString('pt-BR') + ' ' + 
+                           completionDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+    }
+    
+    return `
+        <div class="tab-content active">
+            <div class="info-grid">
+                <!-- Informações do Produto -->
+                <div class="info-card">
+                    <h4><i class="fas fa-box"></i> Informações do Produto</h4>
+                    <div class="info-item">
+                        <div class="info-label">Produto</div>
+                        <div class="info-value" style="font-size: 18px; font-weight: 700; color: #8A2BE2;">
+                            ${order.productName}
+                        </div>
+                    </div>
+                    
+                    ${order.skus && order.skus.length > 0 ? `
+                    <div class="info-item">
+                        <div class="info-label">SKUs</div>
+                        <div class="info-value">
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                ${Array.isArray(order.skus) ? order.skus.map(sku => `
+                                    <span style="background: #e9ecef; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
+                                        ${sku}
+                                    </span>
+                                `).join('') : order.skus}
+                            </div>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="info-item">
+                        <div class="info-label">Tipo de Foto</div>
+                        <div class="info-value">
+                            <i class="fas fa-camera" style="margin-right: 8px;"></i>
+                            ${photoTypeText}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Status e Prioridade -->
+                <div class="info-card">
+                    <h4><i class="fas fa-tasks"></i> Status e Prioridade</h4>
+                    <div class="info-item">
+                        <div class="info-label">Status</div>
+                        <div class="info-value">
+                            <span class="status-badge-view ${statusInfo.class}">
+                                ${statusInfo.text}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="info-item">
+                        <div class="info-label">Urgência</div>
+                        <div class="info-value">
+                            <span class="badge-view" style="background: ${urgencyInfo.color}; color: white;">
+                                ${urgencyInfo.text}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="info-item">
+                        <div class="info-label">Tipo de OS</div>
+                        <div class="info-value">
+                            <i class="fas fa-file-alt" style="margin-right: 8px;"></i>
+                            ${osTypeText}
+                            ${order.osType === 'devolucao' ? 
+                            '<span style="background: #dc3545; color: white; padding: 3px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px;">DEVOLUÇÃO</span>' : ''}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Responsáveis -->
+                <div class="info-card">
+                    <h4><i class="fas fa-users"></i> Responsáveis</h4>
+                    <div class="info-item">
+                        <div class="info-label">Responsável</div>
+                        <div class="info-value" style="font-size: 16px; font-weight: 600;">
+                            ${order.responsibleName}
+                        </div>
+                    </div>
+                    
+                    <div class="info-item">
+                        <div class="info-label">Criado por</div>
+                        <div class="info-value">
+                            <i class="fas fa-user-edit" style="margin-right: 8px;"></i>
+                            ${order.createdBy}
+                        </div>
+                    </div>
+                    
+                    <div class="info-item">
+                        <div class="info-label">Data de Criação</div>
+                        <div class="info-value">
+                            <i class="far fa-calendar-alt" style="margin-right: 8px;"></i>
+                            ${formattedCreatedDate}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Datas -->
+                <div class="info-card">
+                    <h4><i class="fas fa-calendar-alt"></i> Datas</h4>
+                    <div class="info-item">
+                        <div class="info-label">Criado em</div>
+                        <div class="info-value">
+                            ${formattedCreatedDate}
+                        </div>
+                    </div>
+                    
+                    <div class="info-item">
+                        <div class="info-label">Última atualização</div>
+                        <div class="info-value">
+                            ${new Date(order.updatedAt).toLocaleString('pt-BR')}
+                        </div>
+                    </div>
+                    
+                    ${order.status === 'concluida' ? `
+                    <div class="info-item">
+                        <div class="info-label">Concluído em</div>
+                        <div class="info-value">
+                            ${completionDateText}
+                        </div>
+                    </div>
+                    
+                    <div class="info-item">
+                        <div class="info-label">Fotos tiradas</div>
+                        <div class="info-value">
+                            <i class="fas fa-camera-retro"></i> ${order.photosTaken || '0'}
+                        </div>
+                    </div>
+                    
+                    <div class="info-item">
+                        <div class="info-label">Edições realizadas</div>
+                        <div class="info-value">
+                            <i class="fas fa-edit"></i> ${order.editsMade || '0'}
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            </div>
+            
+            <!-- Observações -->
+            <div class="info-card" style="margin-top: 20px;">
+                <h4><i class="fas fa-sticky-note"></i> Observações</h4>
+                <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; min-height: 100px;">
+                    ${order.observations || 
+                    '<div style="text-align: center; color: #adb5bd; padding: 20px;">' +
+                    '<i class="fas fa-info-circle" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>' +
+                    'Nenhuma observação registrada para esta ordem de serviço.' +
+                    '</div>'}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function generatePhotosTab() {
+    if (!currentViewingOS) return '<p>Carregando...</p>';
+    
+    const order = currentViewingOS;
+    const photos = order.photos || [];
+    
+    if (photos.length === 0) {
+        return `
+            <div class="tab-content active">
+                <div style="text-align: center; padding: 50px 20px;">
+                    <i class="fas fa-images fa-4x" style="color: #e9ecef; margin-bottom: 20px;"></i>
+                    <h4 style="color: #6c757d;">Nenhuma foto anexada</h4>
+                    <p style="color: #adb5bd;">Esta ordem de serviço não possui fotos de referência.</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    return `
+        <div class="tab-content active">
+            <div style="margin-bottom: 20px;">
+                <p style="color: #6c757d; margin-bottom: 10px;">
+                    <i class="fas fa-info-circle"></i>
+                    ${photos.length} foto(s) de referência anexada(s)
+                </p>
+            </div>
+            
+            <div class="photo-gallery-view">
+                ${photos.map((photo, index) => `
+                    <div class="photo-card-view">
+                        <img src="${photo.data || photo.thumbnail}" 
+                             alt="${photo.name}"
+                             style="width: 100%; height: 150px; object-fit: cover; cursor: pointer;"
+                             onclick="viewPhotoInModal(${index})">
+                        <div style="padding: 10px; background: white;">
+                            <div style="font-size: 12px; color: #6c757d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                ${photo.name}
+                            </div>
+                            <div style="font-size: 10px; color: #adb5bd; margin-top: 5px;">
+                                ${formatFileSize(photo.size)}
+                            </div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+            
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e9ecef;">
+                <p style="color: #6c757d; font-size: 14px;">
+                    <i class="fas fa-lightbulb"></i>
+                    <strong>Dica:</strong> Clique em qualquer foto para visualizá-la em tamanho maior.
+                </p>
+            </div>
+        </div>
+    `;
+}
+
+function generateTimelineTab() {
+    if (!currentViewingOS) return '<p>Carregando...</p>';
+    
+    const order = currentViewingOS;
+    const timeline = [];
+    
+    // Evento: Criação
+    timeline.push({
+        date: order.createdAt,
+        title: 'OS Criada',
+        description: `Ordem de serviço criada por ${order.createdBy}`,
+        icon: 'plus-circle',
+        color: '#8A2BE2'
+    });
+    
+    // Evento: Atualização (se diferente da criação)
+    if (order.updatedAt && order.updatedAt !== order.createdAt) {
+        timeline.push({
+            date: order.updatedAt,
+            title: 'OS Atualizada',
+            description: 'Última atualização do sistema',
+            icon: 'sync-alt',
+            color: '#17a2b8'
+        });
+    }
+    
+    // Evento: Início (se em andamento ou concluída)
+    if (order.status === 'andamento' || order.status === 'concluida') {
+        timeline.push({
+            date: order.updatedAt, // Usar updatedAt como proxy
+            title: 'OS Iniciada',
+            description: `Iniciada por ${order.responsibleName}`,
+            icon: 'play-circle',
+            color: '#28a745'
+        });
+    }
+    
+    // Evento: Conclusão (se concluída)
+    if (order.status === 'concluida' && order.completionDate) {
+        timeline.push({
+            date: order.completionDate,
+            title: 'OS Concluída',
+            description: `Concluída com ${order.photosTaken || 0} fotos tiradas e ${order.editsMade || 0} edições`,
+            icon: 'check-circle',
+            color: '#28a745'
+        });
+    }
+    
+    // Ordenar por data (mais recente primeiro)
+    timeline.sort((a, b) => new Date(b.date) - new Date(a.date));
+    
+    return `
+        <div class="tab-content active">
+            <div class="info-card">
+                <h4><i class="fas fa-history"></i> Histórico da OS</h4>
+                
+                ${timeline.length === 0 ? `
+                    <div style="text-align: center; padding: 40px 20px;">
+                        <i class="fas fa-history fa-3x" style="color: #e9ecef; margin-bottom: 15px;"></i>
+                        <p style="color: #6c757d;">Nenhum evento registrado no histórico.</p>
+                    </div>
+                ` : `
+                    <div class="timeline">
+                        ${timeline.map((event, index) => {
+                            const eventDate = new Date(event.date);
+                            const formattedDate = eventDate.toLocaleDateString('pt-BR') + ' ' + 
+                                                eventDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+                            
+                            return `
+                                <div class="timeline-item">
+                                    <div class="timeline-date">
+                                        <i class="far fa-clock"></i> ${formattedDate}
+                                    </div>
+                                    <div class="timeline-content">
+                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                            <i class="fas fa-${event.icon}" style="color: ${event.color};"></i>
+                                            <strong style="color: #495057;">${event.title}</strong>
+                                        </div>
+                                        <p style="color: #6c757d; margin: 0; font-size: 14px;">
+                                            ${event.description}
+                                        </p>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `}
+            </div>
+        </div>
+    `;
+}
+
+window.viewPhotoInModal = function(photoIndex) {
+    if (!currentViewingOS || !currentViewingOS.photos) return;
+    
+    const photos = currentViewingOS.photos;
+    const photo = photos[photoIndex];
+    
+    if (!photo) return;
+    
+    // Criar modal para visualização da foto
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.9);
+        z-index: 2000;
+    `;
+    
+    modal.innerHTML = `
+        <div style="position: relative; max-width: 90vw; max-height: 90vh;">
+            <button onclick="this.parentElement.parentElement.remove()" 
+                    style="position: absolute; top: -40px; right: 0; background: none; border: none; color: white; font-size: 30px; cursor: pointer; z-index: 10;">
+                &times;
+            </button>
+            <img src="${photo.data || photo.thumbnail}" 
+                 alt="${photo.name}"
+                 style="max-width: 90vw; max-height: 90vh; object-fit: contain;">
+            <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: white; padding: 10px; font-size: 12px;">
+                <div>${photo.name}</div>
+                <div>${formatFileSize(photo.size)} • Foto ${photoIndex + 1} de ${photos.length}</div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Fechar modal ao pressionar ESC
+    const closeOnEsc = (e) => {
+        if (e.key === 'Escape') {
+            modal.remove();
+            document.removeEventListener('keydown', closeOnEsc);
+        }
+    };
+    document.addEventListener('keydown', closeOnEsc);
+};
+
+function printCurrentOS() {
+    if (!currentViewingOS) return;
+    
+    // Usar a função de impressão existente
+    openPrintModal(currentViewingOS);
+}
+
+function editCurrentOS() {
+    if (!currentViewingOS) return;
+    
+    // Fechar modal de visualização
+    closeViewOSModal();
+    
+    // Abrir edição
+    setTimeout(() => {
+        editOrder(currentViewingOS.id);
+    }, 300);
+}
+
+// Adicionar listener para fechar modal ao clicar fora
+document.getElementById('viewOSModal')?.addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeViewOSModal();
+    }
+});
 
 // ============================================
 // FUNÇÃO PARA TESTE RÁPIDO

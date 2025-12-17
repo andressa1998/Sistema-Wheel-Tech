@@ -721,6 +721,7 @@
                                     <option value="estudio">Estúdio</option>
                                     <option value="bike">Na Bike</option>
                                     <option value="ambos">Ambos</option>
+                                    <option value="edicao">Apenas edição</option>
                                 </select>
                             </div>
                         </div>
@@ -959,6 +960,231 @@
             </div>
         </div>
     </div>
+
+    <!-- Modal para Visualização Completa da OS -->
+<div id="viewOSModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 90%; max-height: 90vh; width: 1200px; padding: 0;">
+        <!-- Cabeçalho do Modal -->
+        <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h3 style="margin: 0; font-weight: 600;">
+                    <i class="fas fa-eye"></i> Visualizar Ordem de Serviço
+                </h3>
+                <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
+                    <span id="viewOSCode">Carregando...</span>
+                </p>
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+                <button onclick="printCurrentOS()" class="btn btn-primary btn-sm">
+                    <i class="fas fa-print"></i> Imprimir
+                </button>
+                <button onclick="closeViewOSModal()" style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; color: white; font-size: 20px; display: flex; align-items: center; justify-content: center;">
+                    &times;
+                </button>
+            </div>
+        </div>
+        
+        <!-- Navegação por Abas -->
+        <div style="background: #f8f9fa; padding: 0 30px; border-bottom: 1px solid #dee2e6;">
+            <div class="d-flex" id="viewOSTabs">
+                <button class="tab-button active" onclick="switchViewOSTab('details')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid #8A2BE2; font-weight: 600; color: #8A2BE2; cursor: pointer;">
+                    <i class="fas fa-info-circle"></i> Detalhes
+                </button>
+                <button class="tab-button" onclick="switchViewOSTab('photos')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; color: #6c757d; cursor: pointer;">
+                    <i class="fas fa-images"></i> Fotos <span id="viewPhotosCount" class="badge badge-info" style="margin-left: 5px;">0</span>
+                </button>
+                <button class="tab-button" onclick="switchViewOSTab('timeline')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; color: #6c757d; cursor: pointer;">
+                    <i class="fas fa-history"></i> Histórico
+                </button>
+            </div>
+        </div>
+        
+        <!-- Conteúdo do Modal -->
+        <div id="viewOSContent" style="padding: 30px; max-height: 65vh; overflow-y: auto;">
+            <!-- As abas serão carregadas dinamicamente aqui -->
+        </div>
+        
+        <!-- Rodapé do Modal -->
+        <div style="background: #f8f9fa; padding: 15px 30px; border-top: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <span style="color: #6c757d; font-size: 14px;">
+                    <i class="far fa-calendar-alt"></i>
+                    Criado em: <span id="viewCreatedAt">-</span>
+                </span>
+            </div>
+            <div class="d-flex gap-2">
+                <button onclick="editCurrentOS()" class="btn btn-warning btn-sm">
+                    <i class="fas fa-edit"></i> Editar
+                </button>
+                <button onclick="closeViewOSModal()" class="btn btn-secondary btn-sm">
+                    <i class="fas fa-times"></i> Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Estilos para as abas -->
+<style>
+    .tab-button:hover {
+        background-color: rgba(138, 43, 226, 0.1) !important;
+    }
+    
+    .tab-button.active {
+        color: #8A2BE2 !important;
+    }
+    
+    .tab-content {
+        display: none;
+    }
+    
+    .tab-content.active {
+        display: block;
+    }
+    
+    .info-card {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        border: 1px solid #e9ecef;
+    }
+    
+    .info-card h4 {
+        color: #495057;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #dee2e6;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+    }
+    
+    .info-item {
+        margin-bottom: 12px;
+    }
+    
+    .info-label {
+        font-weight: 600;
+        color: #6c757d;
+        font-size: 13px;
+        margin-bottom: 5px;
+    }
+    
+    .info-value {
+        color: #212529;
+        font-size: 15px;
+    }
+    
+    .badge-view {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 12px;
+        display: inline-block;
+    }
+    
+    .photo-gallery-view {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+    }
+    
+    .photo-card-view {
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        transition: transform 0.3s;
+    }
+    
+    .photo-card-view:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+    
+    .timeline {
+        position: relative;
+        padding-left: 30px;
+    }
+    
+    .timeline::before {
+        content: '';
+        position: absolute;
+        left: 15px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #dee2e6;
+    }
+    
+    .timeline-item {
+        position: relative;
+        margin-bottom: 25px;
+        padding-bottom: 25px;
+        border-bottom: 1px dashed #e9ecef;
+    }
+    
+    .timeline-item:last-child {
+        border-bottom: none;
+    }
+    
+    .timeline-item::before {
+        content: '';
+        position: absolute;
+        left: -23px;
+        top: 0;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #8A2BE2;
+        border: 3px solid white;
+        box-shadow: 0 0 0 3px rgba(138, 43, 226, 0.2);
+    }
+    
+    .timeline-date {
+        font-size: 12px;
+        color: #6c757d;
+        margin-bottom: 5px;
+    }
+    
+    .timeline-content {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+    }
+    
+    .status-badge-view {
+        display: inline-block;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 13px;
+        margin-right: 10px;
+    }
+    
+    .status-pending-view {
+        background: #fff3cd;
+        color: #856404;
+    }
+    
+    .status-progress-view {
+        background: #d1ecf1;
+        color: #0c5460;
+    }
+    
+    .status-completed-view {
+        background: #d4edda;
+        color: #155724;
+    }
+</style>
 
     <!-- SCRIPT PRINCIPAL -->
     <script src="script.js"></script>
