@@ -61,8 +61,8 @@ const SYSTEM_USERS = [
     { username: 'laura', password: '123456', name: 'Laura', avatar: 'L', role: 'Midia' },
     { username: 'ronald', password: '210188', name: 'Ronald', avatar: 'R', role: 'Administrador' },
     { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Assistente' },
-    { username: 'andressa', password: '220922', name: 'Bruna', avatar: 'B', role: 'Assistente' },
-    { username: 'thalyta', password: '300377', name: 'Bruna', avatar: 'B', role: 'Assistente' }
+    { username: 'andressa', password: '220922', name: 'Andressa', avatar: 'A', role: 'Assistente' },
+    { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente' }
 ];
 
 // ===== INICIALIZAÇÃO =====
