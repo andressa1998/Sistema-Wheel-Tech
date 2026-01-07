@@ -489,6 +489,7 @@ async function loadOrders() {
                 id: order.id,
                 code: order.codigo || `OS-${order.id.toString().padStart(4, '0')}`,
                 productName: order.produto_nome || 'Sem nome',
+                linkAnuncio: order.link_anuncio || '',
                 responsibleName: order.responsavel || currentUser.name,
                 urgency: order.urgencia || 'normal',
                 osType: order.tipo_os || 'normal',
@@ -547,6 +548,7 @@ async function saveOrder() {
     
     const productName = document.getElementById('productName')?.value.trim();
     const responsibleName = document.getElementById('responsibleName')?.value;
+    const linkAnuncio = document.getElementById('linkAnuncio')?.value.trim();
     
     if (!productName || !responsibleName) {
         showToast('⚠️ Preencha produto e responsável', 'warning');
@@ -558,6 +560,7 @@ async function saveOrder() {
         code: editingOrderId ? orders.find(o => o.id == editingOrderId)?.code : generateOSCode(),
         productName: productName,
         responsibleName: responsibleName,
+        linkAnuncio: linkAnuncio || '',
         urgency: document.getElementById('urgency')?.value || 'normal',
         osType: document.getElementById('osType')?.value || 'normal',
         status: 'pendente',
@@ -634,6 +637,7 @@ async function saveOrderToSupabase(order) {
             codigo: order.code,
             produto_nome: order.productName,
             responsavel: order.responsibleName,
+            link_anuncio: order.linkAnuncio || '',
             criado_por: order.createdBy,
             urgencia: order.urgency,
             tipo_os: order.osType,
@@ -741,6 +745,7 @@ window.conferirOS = async function(orderId) {
 function clearForm() {
     const productNameInput = document.getElementById('productName');
     const responsibleNameInput = document.getElementById('responsibleName');
+    const linkAnuncioInput = document.getElementById('linkAnuncio');
     const urgencySelect = document.getElementById('urgency');
     const osTypeSelect = document.getElementById('osType');
     const photoTypeSelect = document.getElementById('photoType');
@@ -749,6 +754,7 @@ function clearForm() {
     
     if (productNameInput) productNameInput.value = '';
     if (responsibleNameInput) responsibleNameInput.value = '';
+    if (linkAnuncioInput) linkAnuncioInput.value = '';
     if (urgencySelect) urgencySelect.value = 'normal';
     if (osTypeSelect) osTypeSelect.value = 'normal';
     if (photoTypeSelect) photoTypeSelect.value = 'estudio';
@@ -1118,6 +1124,7 @@ window.editOrder = function(orderId) {
         
         const productNameInput = document.getElementById('productName');
         const responsibleNameInput = document.getElementById('responsibleName');
+        const linkAnuncioInput = document.getElementById('linkAnuncio');
         const urgencySelect = document.getElementById('urgency');
         const osTypeSelect = document.getElementById('osType');
         const photoTypeSelect = document.getElementById('photoType');
@@ -1126,6 +1133,7 @@ window.editOrder = function(orderId) {
         
         if (productNameInput) productNameInput.value = order.productName;
         if (responsibleNameInput) responsibleNameInput.value = order.responsibleName;
+        if (linkAnuncioInput) linkAnuncioInput.value = order.linkAnuncio || '';
         if (urgencySelect) urgencySelect.value = order.urgency;
         if (osTypeSelect) osTypeSelect.value = order.osType;
         if (photoTypeSelect) photoTypeSelect.value = order.photoType;
@@ -1479,17 +1487,15 @@ function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, os
                             ${osData.productName}
                         </div>
                     </div>
-                    ${osData.skus && osData.skus.length > 0 ? `
+                    
+                    <!-- ADICIONE ESTE BLOCO -->
+                    ${osData.linkAnuncio ? `
                     <div class="info-row">
-                        <div class="info-label">SKUs:</div>
-                        <div class="info-value">
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                                ${Array.isArray(osData.skus) ? osData.skus.map(sku => `
-                                    <span style="background: #e9ecef; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
-                                        ${sku}
-                                    </span>
-                                `).join('') : osData.skus}
-                            </div>
+                        <div class="info-label">Link do Anúncio:</div>
+                        <div class="info-value" style="word-break: break-all; font-size: 11pt;">
+                            <a href="${osData.linkAnuncio}" style="color: #8A2BE2; text-decoration: none;">
+                                <i class="fas fa-link"></i> ${osData.linkAnuncio}
+                            </a>
                         </div>
                     </div>
                     ` : ''}
@@ -2174,17 +2180,19 @@ function generateDetailsTab() {
                         </div>
                     </div>
                     
-                    ${order.skus && order.skus.length > 0 ? `
+                    <!-- ADICIONE ESTE BLOCO PARA O LINK -->
+                    ${order.linkAnuncio ? `
                     <div class="info-item">
-                        <div class="info-label">SKUs</div>
+                        <div class="info-label">Link do Anúncio</div>
                         <div class="info-value">
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                                ${Array.isArray(order.skus) ? order.skus.map(sku => `
-                                    <span style="background: #e9ecef; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;">
-                                        ${sku}
-                                    </span>
-                                `).join('') : order.skus}
-                            </div>
+                            <a href="${order.linkAnuncio}" target="_blank" rel="noopener noreferrer" 
+                               style="color: #8A2BE2; text-decoration: none; display: flex; align-items: center; gap: 5px;">
+                                <i class="fas fa-external-link-alt"></i>
+                                Ver anúncio
+                            </a>
+                            <small style="display: block; color: #6c757d; margin-top: 5px; font-size: 12px; word-break: break-all;">
+                                ${order.linkAnuncio}
+                            </small>
                         </div>
                     </div>
                     ` : ''}
