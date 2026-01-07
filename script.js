@@ -1358,8 +1358,8 @@ window.openPrintModal = function(osData) {
     };
     
     const photoTypeMap = {
-        'estudio': 'Estúdio',
-        'bike': 'Na Bike',
+        'estudio': 'Foto Estúdio',
+        'bike': 'Foto Bike',
         'ambos': 'Ambos'
     };
     
@@ -1494,7 +1494,7 @@ function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, os
                     </div>
                     ` : ''}
                     <div class="info-row">
-                        <div class="info-label">Tipo de Foto:</div>
+                        <div class="info-label">Serviço(s):</div>
                         <div class="info-value">
                             <i class="fas fa-camera" style="margin-right: 8px;"></i>
                             ${photoTypeText}
@@ -2190,7 +2190,7 @@ function generateDetailsTab() {
                     ` : ''}
                     
                     <div class="info-item">
-                        <div class="info-label">Tipo de Foto</div>
+                        <div class="info-label">Serviço(s)</div>
                         <div class="info-value">
                             <i class="fas fa-camera" style="margin-right: 8px;"></i>
                             ${photoTypeText}
