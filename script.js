@@ -27,6 +27,12 @@ const NOTIFICATION_TYPES = {
     OS_CONFERIDA: 'os_conferida'
 };
 
+// ===== VARIÁVEIS PARA MODO OFFLINE =====
+let isOfflineMode = false;
+let pendingSync = [];
+const OFFLINE_STORAGE_KEY = 'sistema_os_pendentes';
+const OFFLINE_ORDERS_KEY = 'sistema_os_local';
+
 // ===== VARIÁVEIS PARA FOTOS =====
 let selectedPhotos = [];
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
@@ -117,76 +123,87 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================================
 function initSupabase() {
     try {
-        if (window.supabase) {
-            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            console.log('✅ Supabase inicializado');
-        } else {
+        // Verificar se a biblioteca foi carregada
+        if (typeof window.supabase === 'undefined') {
             console.error('❌ Biblioteca Supabase não carregada');
+            
+            // Tentar carregar dinamicamente
+            loadSupabaseLibrary();
+            return;
         }
+        
+        // Configurar cliente com opções de reconexão
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+            },
+            realtime: {
+                params: {
+                    eventsPerSecond: 10
+                }
+            },
+            global: {
+                headers: {
+                    'x-application-name': 'sistema-os-fotografia'
+                }
+            }
+        });
+        
+        console.log('✅ Supabase inicializado com reconexão automática');
+        
+        // Configurar listeners de rede
+        setupNetworkListeners();
+        
     } catch (error) {
-        console.error('❌ Erro ao inicializar Supabase:', error);
+        console.error('❌ Erro crítico ao inicializar Supabase:', error);
+        showToast('⚠️ Modo offline ativado', 'warning');
+        isOfflineMode = true;
     }
 }
 
-function setupEventListeners() {
-    // Login
-    if (loginForm) {
-        loginForm.addEventListener('submit', handleLogin);
-    }
+// Adicione esta função para carregar a biblioteca dinamicamente:
+function loadSupabaseLibrary() {
+    console.log('📚 Carregando biblioteca Supabase...');
     
-    // Tecla Enter no campo de senha
-    const passwordInput = document.getElementById('password');
-    if (passwordInput) {
-        passwordInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                loginForm.dispatchEvent(new Event('submit'));
-            }
-        });
-    }
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/@supabase/supabase-js@2';
+    script.onload = function() {
+        console.log('✅ Biblioteca carregada com sucesso');
+        initSupabase(); // Reinicializar
+    };
+    script.onerror = function() {
+        console.error('❌ Falha ao carregar biblioteca');
+        showToast('❌ Não foi possível carregar o sistema', 'error');
+    };
     
-    // Logout
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', handleLogout);
-    }
+    document.head.appendChild(script);
+}
+
+// Adicione esta função para monitorar rede:
+function setupNetworkListeners() {
+    // Monitorar mudanças na conexão
+    window.addEventListener('online', function() {
+        console.log('🌐 Conexão restaurada');
+        showToast('🌐 Conexão com internet restaurada', 'success');
+        
+        if (isOfflineMode) {
+            isOfflineMode = false;
+            testSupabaseConnection();
+        }
+    });
     
-    // Supabase
-    if (testSupabaseBtn) {
-        testSupabaseBtn.addEventListener('click', testSupabaseConnection);
-    }
+    window.addEventListener('offline', function() {
+        console.log('📴 Conexão perdida');
+        showToast('⚠️ Conexão com internet perdida', 'warning');
+        isOfflineMode = true;
+    });
     
-    if (reloadBtn) {
-        reloadBtn.addEventListener('click', loadOrders);
-    }
-    
-    // Formulário OS
-    if (saveOSBtn) {
-        saveOSBtn.addEventListener('click', saveOrder);
-    }
-    
-    if (clearFormBtn) {
-        clearFormBtn.addEventListener('click', clearForm);
-    }
-    
-    if (cancelEditBtn) {
-        cancelEditBtn.addEventListener('click', cancelEdit);
-    }
-    
-    // Modal de finalização
-    if (finalizarOSBtn) {
-        finalizarOSBtn.addEventListener('click', completeOrder);
-    }
-    
-    if (completeModal) {
-        completeModal.addEventListener('click', function(e) {
-            if (e.target === completeModal) closeCompleteModal();
-        });
-    }
-    
-    // Foco no campo de usuário ao carregar
-    const usernameInput = document.getElementById('username');
-    if (usernameInput) {
-        setTimeout(() => usernameInput.focus(), 100);
+    // Verificar status inicial
+    if (!navigator.onLine) {
+        console.log('📴 Iniciando offline');
+        isOfflineMode = true;
+        showToast('📴 Modo offline - Sem conexão com internet', 'info');
     }
 }
 
@@ -426,6 +443,7 @@ function handleLogout() {
 // ============================================
 async function testSupabaseConnection() {
     showToast('🔗 Testando conexão...', 'info');
+    
     if (testSupabaseBtn) {
         testSupabaseBtn.innerHTML = '<span class="spinner"></span> Testando...';
         testSupabaseBtn.disabled = true;
@@ -436,37 +454,106 @@ async function testSupabaseConnection() {
             initSupabase();
         }
         
+        // Teste mais simples e direto
         const { data, error } = await supabaseClient
             .from('ordens_service')
-            .select('id')
-            .limit(1);
+            .select('count')
+            .limit(1)
+            .single();
         
-        if (error) throw error;
-        
-        showToast('✅ Conexão estabelecida!', 'success');
-        if (syncStatus) {
-            syncStatus.textContent = 'Conectado';
-            syncStatus.className = 'badge badge-success ml-2';
+        if (error) {
+            console.error('❌ Erro detalhado:', {
+                message: error.message,
+                code: error.code,
+                details: error.details,
+                hint: error.hint
+            });
+            
+            // Tentar método alternativo
+            await testAlternativeConnection();
+            
+        } else {
+            showToast('✅ Conexão estabelecida!', 'success');
+            if (syncStatus) {
+                syncStatus.textContent = 'Conectado';
+                syncStatus.className = 'badge badge-success ml-2';
+            }
+            
+            await loadOrders();
         }
-        
-        await loadOrders();
         
     } catch (error) {
-        console.error('❌ Erro de conexão:', error);
-        showToast('❌ Falha na conexão', 'error');
-        if (syncStatus) {
-            syncStatus.textContent = 'Desconectado';
-            syncStatus.className = 'badge badge-danger ml-2';
-        }
+        console.error('❌ Erro inesperado:', error);
         
-        updateCounters();
-        renderOrdersTable();
+        // Tentar conexão simplificada
+        const simpleTest = await testSimpleConnection();
+        if (!simpleTest) {
+            showToast('❌ Falha na conexão. Modo offline ativado.', 'error');
+            if (syncStatus) {
+                syncStatus.textContent = 'Offline';
+                syncStatus.className = 'badge badge-warning ml-2';
+            }
+            
+            // Ativar modo offline
+            isOfflineMode = true;
+            loadOrders(); // Carregar do localStorage
+        }
     } finally {
         if (testSupabaseBtn) {
             testSupabaseBtn.innerHTML = '<i class="fas fa-database"></i> Testar Conexão';
             testSupabaseBtn.disabled = false;
         }
     }
+}
+
+// Adicione estas funções auxiliares:
+async function testAlternativeConnection() {
+    try {
+        // Método alternativo usando fetch direto
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+            headers: {
+                'apikey': SUPABASE_KEY,
+                'Authorization': `Bearer ${SUPABASE_KEY}`
+            }
+        });
+        
+        if (response.ok) {
+            console.log('✅ Conexão alternativa funcionou');
+            return true;
+        } else {
+            console.log('❌ Conexão alternativa falhou:', response.status);
+            return false;
+        }
+    } catch (e) {
+        console.error('❌ Erro na conexão alternativa:', e);
+        return false;
+    }
+}
+
+async function testSimpleConnection() {
+    return new Promise((resolve) => {
+        // Timeout de 5 segundos
+        const timeout = setTimeout(() => {
+            console.log('⏱️ Timeout na conexão');
+            resolve(false);
+        }, 5000);
+        
+        // Tentar ping simples
+        const img = new Image();
+        img.onload = function() {
+            clearTimeout(timeout);
+            console.log('✅ Ping bem sucedido');
+            resolve(true);
+        };
+        img.onerror = function() {
+            clearTimeout(timeout);
+            console.log('❌ Ping falhou');
+            resolve(false);
+        };
+        
+        // Usar o favicon do Supabase como teste de ping
+        img.src = `${SUPABASE_URL}/favicon.ico?t=${Date.now()}`;
+    });
 }
 
 // ============================================
