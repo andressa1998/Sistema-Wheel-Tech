@@ -16,23 +16,6 @@ let editingOrderId = null;
 let currentOSForPrint = null;
 let currentPrintStyle = 'detailed';
 
-// ===== VARIÁVEIS PARA NOTIFICAÇÕES =====
-let notifications = [];
-let notificationInterval = null;
-const NOTIFICATION_TYPES = {
-    NEW_OS: 'new_os',
-    OS_COMPLETED: 'os_completed',
-    OS_STARTED: 'os_started',
-    OS_EDITED: 'os_edited',
-    OS_CONFERIDA: 'os_conferida'
-};
-
-// ===== VARIÁVEIS PARA MODO OFFLINE =====
-let isOfflineMode = false;
-let pendingSync = [];
-const OFFLINE_STORAGE_KEY = 'sistema_os_pendentes';
-const OFFLINE_ORDERS_KEY = 'sistema_os_local';
-
 // ===== VARIÁVEIS PARA FOTOS =====
 let selectedPhotos = [];
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
@@ -90,7 +73,6 @@ document.addEventListener('DOMContentLoaded', function() {
     initSupabase();
     setupEventListeners();
     setupPhotoUpload();
-    initNotifications();
     
     // Adicionar evento de tecla ESC para fechar modais
     document.addEventListener('keydown', function(e) {
@@ -123,87 +105,76 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================================
 function initSupabase() {
     try {
-        // Verificar se a biblioteca foi carregada
-        if (typeof window.supabase === 'undefined') {
+        if (window.supabase) {
+            supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            console.log('✅ Supabase inicializado');
+        } else {
             console.error('❌ Biblioteca Supabase não carregada');
-            
-            // Tentar carregar dinamicamente
-            loadSupabaseLibrary();
-            return;
         }
-        
-        // Configurar cliente com opções de reconexão
-        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-            auth: {
-                persistSession: true,
-                autoRefreshToken: true,
-            },
-            realtime: {
-                params: {
-                    eventsPerSecond: 10
-                }
-            },
-            global: {
-                headers: {
-                    'x-application-name': 'sistema-os-fotografia'
-                }
-            }
-        });
-        
-        console.log('✅ Supabase inicializado com reconexão automática');
-        
-        // Configurar listeners de rede
-        setupNetworkListeners();
-        
     } catch (error) {
-        console.error('❌ Erro crítico ao inicializar Supabase:', error);
-        showToast('⚠️ Modo offline ativado', 'warning');
-        isOfflineMode = true;
+        console.error('❌ Erro ao inicializar Supabase:', error);
     }
 }
 
-// Adicione esta função para carregar a biblioteca dinamicamente:
-function loadSupabaseLibrary() {
-    console.log('📚 Carregando biblioteca Supabase...');
+function setupEventListeners() {
+    // Login
+    if (loginForm) {
+        loginForm.addEventListener('submit', handleLogin);
+    }
     
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/@supabase/supabase-js@2';
-    script.onload = function() {
-        console.log('✅ Biblioteca carregada com sucesso');
-        initSupabase(); // Reinicializar
-    };
-    script.onerror = function() {
-        console.error('❌ Falha ao carregar biblioteca');
-        showToast('❌ Não foi possível carregar o sistema', 'error');
-    };
+    // Tecla Enter no campo de senha
+    const passwordInput = document.getElementById('password');
+    if (passwordInput) {
+        passwordInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                loginForm.dispatchEvent(new Event('submit'));
+            }
+        });
+    }
     
-    document.head.appendChild(script);
-}
-
-// Adicione esta função para monitorar rede:
-function setupNetworkListeners() {
-    // Monitorar mudanças na conexão
-    window.addEventListener('online', function() {
-        console.log('🌐 Conexão restaurada');
-        showToast('🌐 Conexão com internet restaurada', 'success');
-        
-        if (isOfflineMode) {
-            isOfflineMode = false;
-            testSupabaseConnection();
-        }
-    });
+    // Logout
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', handleLogout);
+    }
     
-    window.addEventListener('offline', function() {
-        console.log('📴 Conexão perdida');
-        showToast('⚠️ Conexão com internet perdida', 'warning');
-        isOfflineMode = true;
-    });
+    // Supabase
+    if (testSupabaseBtn) {
+        testSupabaseBtn.addEventListener('click', testSupabaseConnection);
+    }
     
-    // Verificar status inicial
-    if (!navigator.onLine) {
-        console.log('📴 Iniciando offline');
-        isOfflineMode = true;
-        showToast('📴 Modo offline - Sem conexão com internet', 'info');
+    if (reloadBtn) {
+        reloadBtn.addEventListener('click', loadOrders);
+    }
+    
+    // Formulário OS
+    if (saveOSBtn) {
+        saveOSBtn.addEventListener('click', saveOrder);
+    }
+    
+    if (clearFormBtn) {
+        clearFormBtn.addEventListener('click', clearForm);
+    }
+    
+    if (cancelEditBtn) {
+        cancelEditBtn.addEventListener('click', cancelEdit);
+    }
+    
+    // Modal de finalização
+    if (finalizarOSBtn) {
+        finalizarOSBtn.addEventListener('click', completeOrder);
+    }
+    
+    if (completeModal) {
+        completeModal.addEventListener('click', function(e) {
+            if (e.target === completeModal) closeCompleteModal();
+        });
+    }
+    
+    // Foco no campo de usuário ao carregar
+    const usernameInput = document.getElementById('username');
+    if (usernameInput) {
+        setTimeout(() => usernameInput.focus(), 100);
     }
 }
 
@@ -443,7 +414,6 @@ function handleLogout() {
 // ============================================
 async function testSupabaseConnection() {
     showToast('🔗 Testando conexão...', 'info');
-    
     if (testSupabaseBtn) {
         testSupabaseBtn.innerHTML = '<span class="spinner"></span> Testando...';
         testSupabaseBtn.disabled = true;
@@ -454,106 +424,37 @@ async function testSupabaseConnection() {
             initSupabase();
         }
         
-        // Teste mais simples e direto
         const { data, error } = await supabaseClient
             .from('ordens_service')
-            .select('count')
-            .limit(1)
-            .single();
+            .select('id')
+            .limit(1);
         
-        if (error) {
-            console.error('❌ Erro detalhado:', {
-                message: error.message,
-                code: error.code,
-                details: error.details,
-                hint: error.hint
-            });
-            
-            // Tentar método alternativo
-            await testAlternativeConnection();
-            
-        } else {
-            showToast('✅ Conexão estabelecida!', 'success');
-            if (syncStatus) {
-                syncStatus.textContent = 'Conectado';
-                syncStatus.className = 'badge badge-success ml-2';
-            }
-            
-            await loadOrders();
+        if (error) throw error;
+        
+        showToast('✅ Conexão estabelecida!', 'success');
+        if (syncStatus) {
+            syncStatus.textContent = 'Conectado';
+            syncStatus.className = 'badge badge-success ml-2';
         }
+        
+        await loadOrders();
         
     } catch (error) {
-        console.error('❌ Erro inesperado:', error);
-        
-        // Tentar conexão simplificada
-        const simpleTest = await testSimpleConnection();
-        if (!simpleTest) {
-            showToast('❌ Falha na conexão. Modo offline ativado.', 'error');
-            if (syncStatus) {
-                syncStatus.textContent = 'Offline';
-                syncStatus.className = 'badge badge-warning ml-2';
-            }
-            
-            // Ativar modo offline
-            isOfflineMode = true;
-            loadOrders(); // Carregar do localStorage
+        console.error('❌ Erro de conexão:', error);
+        showToast('❌ Falha na conexão', 'error');
+        if (syncStatus) {
+            syncStatus.textContent = 'Desconectado';
+            syncStatus.className = 'badge badge-danger ml-2';
         }
+        
+        updateCounters();
+        renderOrdersTable();
     } finally {
         if (testSupabaseBtn) {
             testSupabaseBtn.innerHTML = '<i class="fas fa-database"></i> Testar Conexão';
             testSupabaseBtn.disabled = false;
         }
     }
-}
-
-// Adicione estas funções auxiliares:
-async function testAlternativeConnection() {
-    try {
-        // Método alternativo usando fetch direto
-        const response = await fetch(`${SUPABASE_URL}/rest/v1/`, {
-            headers: {
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`
-            }
-        });
-        
-        if (response.ok) {
-            console.log('✅ Conexão alternativa funcionou');
-            return true;
-        } else {
-            console.log('❌ Conexão alternativa falhou:', response.status);
-            return false;
-        }
-    } catch (e) {
-        console.error('❌ Erro na conexão alternativa:', e);
-        return false;
-    }
-}
-
-async function testSimpleConnection() {
-    return new Promise((resolve) => {
-        // Timeout de 5 segundos
-        const timeout = setTimeout(() => {
-            console.log('⏱️ Timeout na conexão');
-            resolve(false);
-        }, 5000);
-        
-        // Tentar ping simples
-        const img = new Image();
-        img.onload = function() {
-            clearTimeout(timeout);
-            console.log('✅ Ping bem sucedido');
-            resolve(true);
-        };
-        img.onerror = function() {
-            clearTimeout(timeout);
-            console.log('❌ Ping falhou');
-            resolve(false);
-        };
-        
-        // Usar o favicon do Supabase como teste de ping
-        img.src = `${SUPABASE_URL}/favicon.ico?t=${Date.now()}`;
-    });
 }
 
 // ============================================
@@ -2107,671 +2008,41 @@ window.printOS = function() {
 };
 
 // ============================================
-// FUNÇÕES DE NOTIFICAÇÃO
+// FUNÇÃO DE NOTIFICAÇÃO
 // ============================================
-function initNotifications() {
-    // Carregar notificações do localStorage
-    loadNotifications();
+function showToast(message, type = 'info') {
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) existingToast.remove();
     
-    // Configurar evento para o sininho
-    const notificationBell = document.getElementById('notificationBell');
-    if (notificationBell) {
-        notificationBell.addEventListener('click', toggleNotificationDropdown);
-    }
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
     
-    // Fechar dropdown ao clicar fora
-    document.addEventListener('click', function(e) {
-        const dropdown = document.getElementById('notificationDropdown');
-        if (dropdown && dropdown.classList.contains('show') && 
-            !notificationBell.contains(e.target) && 
-            !dropdown.contains(e.target)) {
-            dropdown.classList.remove('show');
-        }
-    });
+    let icon = 'info-circle';
+    if (type === 'success') icon = 'check-circle';
+    else if (type === 'error') icon = 'exclamation-circle';
+    else if (type === 'warning') icon = 'exclamation-triangle';
     
-    // Verificar novas notificações periodicamente (apenas se logado)
-    notificationInterval = setInterval(() => {
-        if (currentUser) {
-            checkForNewNotifications();
-        }
-    }, 30000); // Verifica a cada 30 segundos
-}
-
-function toggleNotificationDropdown() {
-    const dropdown = document.getElementById('notificationDropdown');
-    if (dropdown) {
-        dropdown.classList.toggle('show');
-        
-        // Quando abrir, marcar como lidas visualmente
-        if (dropdown.classList.contains('show')) {
-            markNotificationsAsSeen();
-        }
-    }
-}
-
-function loadNotifications() {
-    try {
-        const savedNotifications = localStorage.getItem(`notifications_${currentUser?.username}`);
-        if (savedNotifications) {
-            notifications = JSON.parse(savedNotifications);
-            updateNotificationUI();
-        }
-    } catch (error) {
-        console.error('Erro ao carregar notificações:', error);
-        notifications = [];
-    }
-}
-
-function saveNotifications() {
-    if (!currentUser) return;
-    
-    try {
-        localStorage.setItem(`notifications_${currentUser.username}`, JSON.stringify(notifications));
-    } catch (error) {
-        console.error('Erro ao salvar notificações:', error);
-    }
-}
-
-function updateNotificationUI() {
-    const unreadCount = notifications.filter(n => !n.read).length;
-    const countElement = document.getElementById('notificationCount');
-    const listElement = document.getElementById('notificationList');
-    
-    // Atualizar contador
-    if (countElement) {
-        countElement.textContent = unreadCount;
-        countElement.style.display = unreadCount > 0 ? 'flex' : 'none';
-    }
-    
-    // Atualizar lista
-    if (listElement) {
-        if (notifications.length === 0) {
-            listElement.innerHTML = `
-                <div class="notification-empty">
-                    <i class="far fa-bell-slash fa-2x"></i>
-                    <p>Nenhuma notificação</p>
-                </div>
-            `;
-        } else {
-            // Mostrar apenas as 5 mais recentes
-            const recentNotifications = notifications.slice(0, 5);
-            listElement.innerHTML = recentNotifications.map(notification => 
-                createNotificationHTML(notification)
-            ).join('');
-        }
-    }
-}
-
-function createNotificationHTML(notification) {
-    const timeAgo = getTimeAgo(notification.timestamp);
-    let iconClass = 'fa-bell';
-    let iconTypeClass = '';
-    let actionButtons = '';
-    
-    // Configurar ícone e ações baseado no tipo
-    switch (notification.type) {
-        case NOTIFICATION_TYPES.NEW_OS:
-            iconClass = 'fa-plus-circle';
-            iconTypeClass = 'new-os';
-            if (notification.data?.osId) {
-                actionButtons = `
-                    <div class="notification-actions">
-                        <button class="btn btn-primary btn-sm" onclick="viewNotificationOS('${notification.data.osId}', '${notification.id}')">
-                            Ver OS
-                        </button>
-                    </div>
-                `;
-            }
-            break;
-            
-        case NOTIFICATION_TYPES.OS_COMPLETED:
-            iconClass = 'fa-flag-checkered';
-            iconTypeClass = 'os-completed';
-            if (notification.data?.osId) {
-                actionButtons = `
-                    <div class="notification-actions">
-                        <button class="btn btn-success btn-sm" onclick="viewNotificationOS('${notification.data.osId}', '${notification.id}')">
-                            Ver OS
-                        </button>
-                    </div>
-                `;
-            }
-            break;
-            
-        case NOTIFICATION_TYPES.OS_CONFERIDA:
-            iconClass = 'fa-check-double';
-            iconTypeClass = 'os-conferida';
-            break;
-            
-        case NOTIFICATION_TYPES.OS_EDITED:
-            iconClass = 'fa-edit';
-            iconTypeClass = 'os-editada';
-            break;
-            
-        case NOTIFICATION_TYPES.OS_STARTED:
-            iconClass = 'fa-play-circle';
-            iconTypeClass = 'new-os';
-            break;
-    }
-    
-    return `
-        <div class="notification-item ${notification.read ? '' : 'unread'}" 
-             onclick="viewNotification('${notification.id}')">
-            <div class="notification-icon ${iconTypeClass}">
-                <i class="fas ${iconClass}"></i>
-            </div>
-            <div class="notification-content">
-                <div class="notification-title">${notification.title}</div>
-                <div class="notification-message">${notification.message}</div>
-                ${notification.data?.duration ? `
-                <div class="notification-message" style="color: var(--primary); font-weight: 600;">
-                    <i class="far fa-clock"></i> Tempo: ${notification.data.duration}
-                </div>
-                ` : ''}
-                <div class="notification-time">
-                    <i class="far fa-clock"></i> ${timeAgo}
-                </div>
-                ${actionButtons}
-            </div>
-        </div>
-    `;
-}
-
-function getTimeAgo(timestamp) {
-    const now = new Date();
-    const past = new Date(timestamp);
-    const diffMs = now - past;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-    
-    if (diffMins < 1) return 'Agora mesmo';
-    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} atrás`;
-    if (diffHours < 24) return `${diffHours} hora${diffHours > 1 ? 's' : ''} atrás`;
-    if (diffDays < 7) return `${diffDays} dia${diffDays > 1 ? 's' : ''} atrás`;
-    return past.toLocaleDateString('pt-BR');
-}
-
-// ============================================
-// FUNÇÕES PARA CRIAR NOTIFICAÇÕES
-// ============================================
-function createNotification(type, title, message, data = {}) {
-    const notification = {
-        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-        type: type,
-        title: title,
-        message: message,
-        data: data,
-        timestamp: new Date().toISOString(),
-        read: false,
-        userId: currentUser?.username
-    };
-    
-    notifications.unshift(notification); // Adicionar no início
-    saveNotifications();
-    updateNotificationUI();
-    
-    // Mostrar toast para notificação importante
-    if (!document.getElementById('notificationDropdown')?.classList.contains('show')) {
-        showNotificationToast(title, message, type);
-    }
-    
-    return notification;
-}
-
-function showNotificationToast(title, message, type) {
-    let icon = 'bell';
-    let color = '#8A2BE2';
-    
-    switch(type) {
-        case NOTIFICATION_TYPES.NEW_OS:
-            icon = 'plus-circle';
-            color = '#28a745';
-            break;
-        case NOTIFICATION_TYPES.OS_COMPLETED:
-            icon = 'flag-checkered';
-            color = '#007bff';
-            break;
-        case NOTIFICATION_TYPES.OS_CONFERIDA:
-            icon = 'check-double';
-            color = '#6c757d';
-            break;
-    }
-    
-    showToast(`${title}: ${message}`, 'info');
-}
-
-// ============================================
-// NOTIFICAÇÕES PARA OS
-// ============================================
-async function sendOSNotification(order, type, extraData = {}) {
-    if (!currentUser) return;
-    
-    let targetUsers = [];
-    let notificationData = {
-        osId: order.id,
-        osCode: order.code,
-        productName: order.productName,
-        ...extraData
-    };
-    
-    switch(type) {
-        case NOTIFICATION_TYPES.NEW_OS:
-            // Notificar o RESPONSÁVEL quando uma OS é criada
-            const responsibleUser = SYSTEM_USERS.find(u => 
-                u.name.toLowerCase() === order.responsibleName.toLowerCase()
-            );
-            if (responsibleUser && responsibleUser.username !== currentUser.username) {
-                targetUsers = [responsibleUser];
-            }
-            break;
-            
-        case NOTIFICATION_TYPES.OS_COMPLETED:
-            // Notificar o CRIADOR quando a OS é concluída
-            const creatorUser = SYSTEM_USERS.find(u => 
-                u.name.toLowerCase() === order.createdBy.toLowerCase()
-            );
-            if (creatorUser && creatorUser.username !== currentUser.username) {
-                // Calcular duração
-                const createdDate = new Date(order.createdAt);
-                const completedDate = new Date(order.completionDate || new Date());
-                const durationMs = completedDate - createdDate;
-                const durationHours = Math.floor(durationMs / 3600000);
-                const durationMinutes = Math.floor((durationMs % 3600000) / 60000);
-                
-                let durationText = '';
-                if (durationHours > 0) {
-                    durationText = `${durationHours}h ${durationMinutes}min`;
-                } else {
-                    durationText = `${durationMinutes}min`;
-                }
-                
-                notificationData.duration = durationText;
-                targetUsers = [creatorUser];
-            }
-            break;
-            
-        case NOTIFICATION_TYPES.OS_STARTED:
-            // Notificar o CRIADOR quando a OS é iniciada
-            const creatorUserStarted = SYSTEM_USERS.find(u => 
-                u.name.toLowerCase() === order.createdBy.toLowerCase()
-            );
-            if (creatorUserStarted && creatorUserStarted.username !== currentUser.username) {
-                targetUsers = [creatorUserStarted];
-            }
-            break;
-            
-        case NOTIFICATION_TYPES.OS_CONFERIDA:
-            // Notificar o RESPONSÁVEL quando a OS é conferida
-            const responsibleUserChecked = SYSTEM_USERS.find(u => 
-                u.name.toLowerCase() === order.responsibleName.toLowerCase()
-            );
-            if (responsibleUserChecked) {
-                targetUsers = [responsibleUserChecked];
-            }
-            break;
-            
-        case NOTIFICATION_TYPES.OS_EDITED:
-            // Notificar o RESPONSÁVEL quando a OS é editada
-            const responsibleUserEdited = SYSTEM_USERS.find(u => 
-                u.name.toLowerCase() === order.responsibleName.toLowerCase()
-            );
-            if (responsibleUserEdited && responsibleUserEdited.username !== currentUser.username) {
-                targetUsers = [responsibleUserEdited];
-            }
-            break;
-    }
-    
-    // Para cada usuário alvo, criar notificação
-    targetUsers.forEach(user => {
-        // Em um sistema real, você salvaria no Supabase para notificações em tempo real
-        // Por enquanto, salvaremos no localStorage do usuário alvo
-        saveNotificationForUser(user.username, {
-            type: type,
-            title: getNotificationTitle(type, order),
-            message: getNotificationMessage(type, order, notificationData),
-            data: notificationData,
-            timestamp: new Date().toISOString(),
-            read: false
-        });
-    });
-}
-
-function getNotificationTitle(type, order) {
-    switch(type) {
-        case NOTIFICATION_TYPES.NEW_OS:
-            return 'Nova OS Atribuída';
-        case NOTIFICATION_TYPES.OS_COMPLETED:
-            return 'OS Concluída';
-        case NOTIFICATION_TYPES.OS_STARTED:
-            return 'OS Iniciada';
-        case NOTIFICATION_TYPES.OS_CONFERIDA:
-            return 'OS Conferida';
-        case NOTIFICATION_TYPES.OS_EDITED:
-            return 'OS Editada';
-        default:
-            return 'Nova Notificação';
-    }
-}
-
-function getNotificationMessage(type, order, data) {
-    switch(type) {
-        case NOTIFICATION_TYPES.NEW_OS:
-            return `${order.createdBy} criou uma OS para você: "${order.productName}"`;
-        case NOTIFICATION_TYPES.OS_COMPLETED:
-            return `${order.responsibleName} concluiu a OS "${order.productName}"`;
-        case NOTIFICATION_TYPES.OS_STARTED:
-            return `${order.responsibleName} iniciou a OS "${order.productName}"`;
-        case NOTIFICATION_TYPES.OS_CONFERIDA:
-            return `${data.checkedBy || 'Administrador'} conferiu a OS "${order.productName}"`;
-        case NOTIFICATION_TYPES.OS_EDITED:
-            return `${order.createdBy} editou a OS "${order.productName}"`;
-        default:
-            return 'Você tem uma nova notificação';
-    }
-}
-
-function saveNotificationForUser(username, notification) {
-    try {
-        const userNotifications = JSON.parse(localStorage.getItem(`notifications_${username}`) || '[]');
-        userNotifications.unshift(notification);
-        
-        // Manter apenas as 100 notificações mais recentes
-        if (userNotifications.length > 100) {
-            userNotifications.splice(100);
-        }
-        
-        localStorage.setItem(`notifications_${username}`, JSON.stringify(userNotifications));
-        
-        // Se o usuário estiver logado, atualizar a UI
-        if (currentUser && currentUser.username === username) {
-            loadNotifications();
-        }
-    } catch (error) {
-        console.error('Erro ao salvar notificação para usuário:', error);
-    }
-}
-
-function checkForNewNotifications() {
-    // Em um sistema real, você buscaria notificações do Supabase
-    // Por enquanto, apenas recarrega do localStorage
-    loadNotifications();
-}
-
-// ============================================
-// FUNÇÕES DE INTERAÇÃO COM NOTIFICAÇÕES
-// ============================================
-function viewNotification(notificationId) {
-    const notification = notifications.find(n => n.id === notificationId);
-    if (!notification) return;
-    
-    // Marcar como lida
-    notification.read = true;
-    saveNotifications();
-    updateNotificationUI();
-    
-    // Fechar dropdown
-    const dropdown = document.getElementById('notificationDropdown');
-    if (dropdown) dropdown.classList.remove('show');
-    
-    // Se tiver OS associada, abrir
-    if (notification.data?.osId) {
-        viewOrderDetails(notification.data.osId);
-    }
-}
-
-function viewNotificationOS(osId, notificationId) {
-    // Marcar notificação como lida
-    if (notificationId) {
-        const notification = notifications.find(n => n.id === notificationId);
-        if (notification) {
-            notification.read = true;
-            saveNotifications();
-            updateNotificationUI();
-        }
-    }
-    
-    // Fechar dropdown e abrir OS
-    const dropdown = document.getElementById('notificationDropdown');
-    if (dropdown) dropdown.classList.remove('show');
-    
-    viewOrderDetails(osId);
-}
-
-function markAllAsRead() {
-    notifications.forEach(notification => {
-        notification.read = true;
-    });
-    
-    saveNotifications();
-    updateNotificationUI();
-    
-    showToast('✅ Todas as notificações marcadas como lidas', 'success');
-}
-
-function markNotificationsAsSeen() {
-    // Marcar apenas como vistas (não lidas), mas não marcar como lidas completamente
-    const unread = notifications.filter(n => !n.read);
-    if (unread.length > 0) {
-        // Aqui você poderia marcar como "vistas" mas não "lidas"
-        // Por enquanto, apenas atualizamos a UI
-        updateNotificationUI();
-    }
-}
-
-function viewAllNotifications() {
-    // Fechar dropdown
-    const dropdown = document.getElementById('notificationDropdown');
-    if (dropdown) dropdown.classList.remove('show');
-    
-    // Abrir modal com histórico completo
-    openNotificationHistory();
-}
-
-function openNotificationHistory() {
-    const modalHTML = `
-        <div id="notificationHistoryModal" class="modal">
-            <div class="modal-content notification-history-modal">
-                <div class="notification-history-header">
-                    <div>
-                        <h3 style="margin: 0; font-weight: 600;">
-                            <i class="fas fa-history"></i> Histórico de Notificações
-                        </h3>
-                        <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
-                            ${notifications.length} notificações no total
-                        </p>
-                    </div>
-                    <button onclick="closeNotificationHistory()" style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; color: white; font-size: 20px;">
-                        &times;
-                    </button>
-                </div>
-                
-                <div class="notification-filter">
-                    <button class="btn btn-sm ${getNotificationFilterClass('all')}" onclick="filterNotifications('all')">
-                        Todas (${notifications.length})
-                    </button>
-                    <button class="btn btn-sm ${getNotificationFilterClass('unread')}" onclick="filterNotifications('unread')">
-                        Não lidas (${notifications.filter(n => !n.read).length})
-                    </button>
-                    <button class="btn btn-sm ${getNotificationFilterClass(NOTIFICATION_TYPES.NEW_OS)}" onclick="filterNotifications('${NOTIFICATION_TYPES.NEW_OS}')">
-                        Novas OS
-                    </button>
-                    <button class="btn btn-sm ${getNotificationFilterClass(NOTIFICATION_TYPES.OS_COMPLETED)}" onclick="filterNotifications('${NOTIFICATION_TYPES.OS_COMPLETED}')">
-                        OS Concluídas
-                    </button>
-                </div>
-                
-                <div class="notification-history-body">
-                    <div id="notificationHistoryList">
-                        ${generateNotificationHistoryHTML()}
-                    </div>
-                </div>
-            </div>
-        </div>
+    toast.innerHTML = `
+        <i class="fas fa-${icon}"></i>
+        <span>${message}</span>
     `;
     
-    // Remover modal existente
-    const existingModal = document.getElementById('notificationHistoryModal');
-    if (existingModal) existingModal.remove();
+    document.body.appendChild(toast);
     
-    // Adicionar novo modal
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
-}
-
-function getNotificationFilterClass(filter) {
-    const currentFilter = localStorage.getItem('notificationFilter') || 'all';
-    return currentFilter === filter ? 'btn-primary' : 'btn-outline-secondary';
-}
-
-function filterNotifications(filter) {
-    localStorage.setItem('notificationFilter', filter);
-    const filtered = filter === 'all' ? notifications : 
-                    filter === 'unread' ? notifications.filter(n => !n.read) :
-                    notifications.filter(n => n.type === filter);
+    // Mostrar toast
+    setTimeout(() => {
+        toast.style.opacity = '1';
+    }, 10);
     
-    const historyList = document.getElementById('notificationHistoryList');
-    if (historyList) {
-        historyList.innerHTML = filtered.map(notification => 
-            createNotificationHTML(notification)
-        ).join('');
-        
-        if (filtered.length === 0) {
-            historyList.innerHTML = `
-                <div class="notification-empty">
-                    <i class="far fa-bell-slash fa-2x"></i>
-                    <p>Nenhuma notificação encontrada</p>
-                </div>
-            `;
-        }
-    }
-}
-
-function generateNotificationHistoryHTML() {
-    if (notifications.length === 0) {
-        return `
-            <div class="notification-empty">
-                <i class="far fa-bell-slash fa-2x"></i>
-                <p>Nenhuma notificação no histórico</p>
-            </div>
-        `;
-    }
-    
-    return notifications.map(notification => 
-        createNotificationHTML(notification)
-    ).join('');
-}
-
-function closeNotificationHistory() {
-    const modal = document.getElementById('notificationHistoryModal');
-    if (modal) modal.remove();
-}
-
-// ============================================
-// ATUALIZE AS FUNÇÕES EXISTENTES PARA ENVIAR NOTIFICAÇÕES
-// ============================================
-
-// 1. Na função saveOrder (quando criar nova OS):
-async function saveOrder() {
-    // ... código existente ...
-    
-    try {
-        if (result.success) {
-            if (editingOrderId) {
-                // ... código para edição ...
-                
-                // NOTIFICAÇÃO: OS Editada
-                if (supabaseClient) {
-                    await sendOSNotification(orderData, NOTIFICATION_TYPES.OS_EDITED);
-                }
-                
-            } else {
-                // ... código para nova OS ...
-                
-                // NOTIFICAÇÃO: Nova OS Criada
-                if (supabaseClient) {
-                    await sendOSNotification(orderData, NOTIFICATION_TYPES.NEW_OS);
-                }
+    // Remover depois de 4 segundos
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
             }
-            
-            // ... resto do código ...
-        }
-    } catch (error) {
-        // ... tratamento de erro ...
-    }
-}
-
-// 2. Na função startOrder (quando iniciar OS):
-window.startOrder = async function(orderId) {
-    const order = orders.find(o => o.id == orderId);
-    if (order && checkOrderPermission(order) && confirm(`Iniciar "${order.productName}"?`)) {
-        try {
-            // ... código existente ...
-            
-            // NOTIFICAÇÃO: OS Iniciada
-            if (supabaseClient) {
-                await sendOSNotification(order, NOTIFICATION_TYPES.OS_STARTED);
-            }
-            
-            // ... resto do código ...
-        } catch (error) {
-            // ... tratamento de erro ...
-        }
-    }
-};
-
-// 3. Na função completeOrder (quando concluir OS):
-async function completeOrder() {
-    // ... código existente ...
-    
-    try {
-        // ... código para concluir OS ...
-        
-        // NOTIFICAÇÃO: OS Concluída
-        if (supabaseClient) {
-            await sendOSNotification(order, NOTIFICATION_TYPES.OS_COMPLETED, {
-                completionDate: new Date().toISOString()
-            });
-        }
-        
-        // ... resto do código ...
-    } catch (error) {
-        // ... tratamento de erro ...
-    }
-}
-
-// 4. Na função conferirOS (quando conferir OS):
-window.conferirOS = async function(orderId) {
-    // ... código existente ...
-    
-    if (confirm(`Deseja marcar a OS "${order.productName}" como conferida?`)) {
-        try {
-            // ... código para conferir ...
-            
-            // NOTIFICAÇÃO: OS Conferida
-            if (supabaseClient) {
-                await sendOSNotification(order, NOTIFICATION_TYPES.OS_CONFERIDA, {
-                    checkedBy: currentUser.name
-                });
-            }
-            
-            // ... resto do código ...
-        } catch (error) {
-            // ... tratamento de erro ...
-        }
-    }
-};
-
-// 5. No logout, limpar intervalo de verificação
-function handleLogout() {
-    if (confirm('Deseja realmente sair do sistema?')) {
-        // Limpar intervalo de verificação
-        if (notificationInterval) {
-            clearInterval(notificationInterval);
-            notificationInterval = null;
-        }
-        
-        // ... resto do código de logout ...
-    }
+        }, 300);
+    }, 4000);
 }
 
 // ============================================
