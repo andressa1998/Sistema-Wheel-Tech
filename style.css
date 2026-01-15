@@ -11,3 +11,25 @@
     transform: translateY(-2px) !important;
     box-shadow: 0 5px 15px rgba(23, 162, 184, 0.3) !important;
 }
+
+.btn-pink {
+    background: linear-gradient(135deg, #e91e63, #ad1457) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.btn-pink:hover {
+    background: linear-gradient(135deg, #d81b60, #880e4f) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 5px 15px rgba(233, 30, 99, 0.3) !important;
+}
+
+/* Estilo especial para OS que precisam de foto */
+.os-precisa-foto {
+    border-left: 4px solid #e91e63 !important;
+    background: linear-gradient(45deg, #fff0f5, #ffeef8) !important;
+}
+
+.os-precisa-foto:hover {
+    background: linear-gradient(45deg, #ffeef8, #ffebf3) !important;
+}

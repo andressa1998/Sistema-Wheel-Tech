@@ -16,7 +16,7 @@ let editingOrderId = null;
 let currentOSForPrint = null;
 let currentPrintStyle = 'detailed';
 
- // ===== VARIÁVEIS PARA REEMBOLSOS =====
+// ===== VARIÁVEIS PARA REEMBOLSOS =====
 let reembolsos = [];
 let currentReembolsoFilter = 'a_verificar';
 let editingReembolsoId = null;
@@ -123,6 +123,9 @@ function initSupabase() {
     }
 }
 
+// ============================================
+// FUNÇÃO SETUP EVENT LISTENERS (COMPLETA E ATUALIZADA)
+// ============================================
 function setupEventListeners() {
     // Login
     if (loginForm) {
@@ -178,11 +181,285 @@ function setupEventListeners() {
         });
     }
     
+    // Event listener para mostrar/ocultar campos de anúncio
+    const photoTypeSelect = document.getElementById('photoType');
+    if (photoTypeSelect) {
+        photoTypeSelect.addEventListener('change', toggleCamposAnuncio);
+    }
+    
+    // NOVO: Event listener para campo "precisa de foto"
+    const precisaFotoSelect = document.getElementById('precisaFoto');
+    if (precisaFotoSelect) {
+        precisaFotoSelect.addEventListener('change', function() {
+            const photoType = document.getElementById('photoType').value;
+            const precisaFoto = this.value;
+            
+            if ((photoType === 'criar_anuncio' || photoType === 'replicar_anuncio') && precisaFoto === 'sim') {
+                // Mostrar aviso visual
+                const responsibleSelect = document.getElementById('responsibleName');
+                if (responsibleSelect) {
+                    // Verificar se Elaine já está selecionada
+                    if (responsibleSelect.value === 'Elaine') {
+                        showToast('📸 Elaine já é a responsável selecionada', 'info');
+                    } else {
+                        showToast('📸 Elaine será adicionada como responsável junto com o selecionado', 'info');
+                    }
+                }
+            }
+            
+            // NOVO: Destacar visualmente o campo de responsável quando precisa de foto
+            const responsibleField = document.getElementById('responsibleName');
+            if (responsibleField) {
+                if (precisaFoto === 'sim' && (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio')) {
+                    responsibleField.style.borderColor = '#e91e63';
+                    responsibleField.style.boxShadow = '0 0 0 3px rgba(233, 30, 99, 0.15)';
+                    responsibleField.style.transition = 'all 0.3s';
+                    
+                    // Adicionar tooltip visual
+                    const tooltip = document.createElement('div');
+                    tooltip.id = 'fotoTooltip';
+                    tooltip.innerHTML = '<i class="fas fa-info-circle"></i> Elaine será adicionada automaticamente';
+                    tooltip.style.cssText = 'font-size: 12px; color: #e91e63; margin-top: 5px; display: flex; align-items: center; gap: 5px;';
+                    
+                    // Verificar se o tooltip já existe
+                    const existingTooltip = document.getElementById('fotoTooltip');
+                    if (existingTooltip) existingTooltip.remove();
+                    
+                    responsibleField.parentNode.appendChild(tooltip);
+                } else {
+                    // Remover destaque
+                    responsibleField.style.borderColor = '';
+                    responsibleField.style.boxShadow = '';
+                    
+                    // Remover tooltip
+                    const tooltip = document.getElementById('fotoTooltip');
+                    if (tooltip) tooltip.remove();
+                }
+            }
+        });
+    }
+    
+    // Event listener para botão de adicionar foto por link
+    const addPhotoLinkBtn = document.getElementById('addPhotoLinkBtn');
+    if (addPhotoLinkBtn) {
+        addPhotoLinkBtn.addEventListener('click', addPhotoFromLink);
+    }
+    
+    // Event listener para tecla Enter no campo de link de foto
+    const photoLinkInput = document.getElementById('photoLinkInput');
+    if (photoLinkInput) {
+        photoLinkInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addPhotoFromLink();
+            }
+        });
+    }
+    
+    // Event listener para mudança no campo de responsável quando "precisa de foto" estiver ativo
+    const responsibleSelect = document.getElementById('responsibleName');
+    if (responsibleSelect) {
+        responsibleSelect.addEventListener('change', function() {
+            const photoType = document.getElementById('photoType').value;
+            const precisaFoto = document.getElementById('precisaFoto')?.value;
+            
+            if (precisaFoto === 'sim' && (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio')) {
+                // Atualizar mensagem baseada no responsável selecionado
+                if (this.value === 'Elaine') {
+                    showToast('📸 Elaine já é a responsável principal', 'info');
+                } else if (this.value) {
+                    showToast(`📸 Elaine será adicionada junto com ${this.value}`, 'info');
+                }
+            }
+        });
+    }
+    
     // Foco no campo de usuário ao carregar
     const usernameInput = document.getElementById('username');
     if (usernameInput) {
         setTimeout(() => usernameInput.focus(), 100);
     }
+    
+    // Event listener para notificações
+    const notificationBell = document.getElementById('notificationBell');
+    if (notificationBell) {
+        notificationBell.addEventListener('click', toggleNotificacoes);
+    }
+    
+    // Event listener para fechar notificações ao clicar fora
+    document.addEventListener('click', function(e) {
+        const dropdown = document.getElementById('notificacoesDropdown');
+        const bell = document.getElementById('notificationBell');
+        
+        if (dropdown && !dropdown.classList.contains('hidden') && 
+            !dropdown.contains(e.target) && 
+            !bell.contains(e.target)) {
+            dropdown.classList.add('hidden');
+        }
+    });
+    
+    // Event listener para tecla ESC em modais
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            // Fechar modal de print
+            const printModal = document.getElementById('printModal');
+            if (printModal && !printModal.classList.contains('hidden')) {
+                closePrintModal();
+            }
+            
+            // Fechar visualizador de fotos
+            const photoViewerModal = document.getElementById('photoViewerModal');
+            if (photoViewerModal && !photoViewerModal.classList.contains('hidden')) {
+                closePhotoViewer();
+            }
+            
+            // Fechar modal de finalização
+            if (completeModal && !completeModal.classList.contains('hidden')) {
+                closeCompleteModal();
+            }
+            
+            // Fechar modal de visualização da OS
+            const viewOSModal = document.getElementById('viewOSModal');
+            if (viewOSModal && !viewOSModal.classList.contains('hidden')) {
+                closeViewOSModal();
+            }
+            
+            // Fechar modal de reembolso
+            const reembolsoModal = document.getElementById('reembolsoModal');
+            if (reembolsoModal && !reembolsoModal.classList.contains('hidden')) {
+                closeReembolsoModal();
+            }
+            
+            // Fechar dropdown de notificações
+            const notificacoesDropdown = document.getElementById('notificacoesDropdown');
+            if (notificacoesDropdown && !notificacoesDropdown.classList.contains('hidden')) {
+                notificacoesDropdown.classList.add('hidden');
+            }
+        }
+        
+        // Atalho Ctrl+P para imprimir
+        if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+            e.preventDefault();
+            if (currentOSForPrint) {
+                printOS();
+            }
+        }
+        
+        // Atalho Ctrl+S para salvar (no formulário OS)
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            const activeElement = document.activeElement;
+            
+            // Verificar se estamos em um campo de texto do formulário OS
+            const formElements = ['productName', 'skus', 'observations', 'descricaoAnuncio'];
+            if (activeElement && formElements.includes(activeElement.id)) {
+                saveOrder();
+            }
+        }
+        
+        // Atalho Ctrl+E para limpar formulário
+        if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+            e.preventDefault();
+            if (!editingOrderId) {
+                clearForm();
+            }
+        }
+    });
+    
+    // Event listeners para modais de reembolso (se existirem)
+    setupReembolsoEventListeners();
+    
+    // Configurar drag and drop para fotos
+    setupPhotoUpload();
+    
+    // Inicializar botão de reembolsos
+    inicializarBotaoReembolsos();
+    
+    // Configurar evento para botão de impressão na tabela
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('[onclick*="openPrintModal"]')) {
+            e.preventDefault();
+            const onclickAttr = e.target.closest('[onclick*="openPrintModal"]').getAttribute('onclick');
+            const match = onclickAttr.match(/openPrintModal\(([^)]+)\)/);
+            if (match) {
+                try {
+                    const osData = JSON.parse(match[1].replace(/&quot;/g, '"'));
+                    openPrintModal(osData);
+                } catch (error) {
+                    console.error('Erro ao processar dados da OS:', error);
+                }
+            }
+        }
+    });
+    
+    console.log('✅ Event listeners configurados com sucesso!');
+}
+
+// ===== FUNÇÃO PARA MOSTRAR/OCULTAR CAMPOS DE ANÚNCIO =====
+function toggleCamposAnuncio() {
+    const photoType = document.getElementById('photoType').value;
+    const camposAnuncio = document.getElementById('camposAnuncio');
+    
+    if (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio') {
+        camposAnuncio.classList.remove('hidden');
+    } else {
+        camposAnuncio.classList.add('hidden');
+    }
+    
+    // Se for criar/replicar anúncio, definir opções padrão
+    if (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio') {
+        // Garantir que o campo "precisa de foto" esteja visível
+        const precisaFotoSelect = document.getElementById('precisaFoto');
+        if (precisaFotoSelect) {
+            precisaFotoSelect.value = 'nao'; // Valor padrão
+        }
+    }
+}
+
+// ===== FUNÇÃO PARA ADICIONAR FOTO POR LINK =====
+function addPhotoFromLink() {
+    const photoLinkInput = document.getElementById('photoLinkInput');
+    const link = photoLinkInput.value.trim();
+    
+    if (!link) {
+        showToast('Por favor, insira um link válido', 'warning');
+        return;
+    }
+    
+    // Validar se é uma URL válida
+    try {
+        new URL(link);
+    } catch (e) {
+        showToast('Link inválido. Por favor, insira uma URL válida', 'error');
+        return;
+    }
+    
+    // Validar se é uma imagem
+    if (!link.match(/\.(jpg|jpeg|png|gif|webp|bmp)(\?.*)?$/i)) {
+        showToast('Link deve ser de uma imagem (JPG, PNG, GIF, etc.)', 'warning');
+        return;
+    }
+    
+    if (selectedPhotos.length >= MAX_PHOTOS_PER_OS) {
+        showToast(`Limite de ${MAX_PHOTOS_PER_OS} fotos atingido`, 'warning');
+        return;
+    }
+    
+    // Adicionar foto por link
+    const photoData = {
+        id: Date.now() + Math.random(),
+        name: `Foto do link: ${link.substring(0, 30)}...`,
+        type: 'image/url',
+        size: 0,
+        data: link, // Salva o link diretamente
+        thumbnail: link,
+        isLink: true // Marcar que é uma foto por link
+    };
+    
+    selectedPhotos.push(photoData);
+    updatePhotoPreviews();
+    photoLinkInput.value = '';
+    showToast('✅ Foto adicionada por link', 'success');
 }
 
 // Reenviar reembolso para verificação (do pendente para a verificar)
@@ -252,22 +529,22 @@ async function loadReembolsos() {
         if (error) throw error;
         
         reembolsos = (data || []).map(item => ({
-    id: item.id,
-    numero_venda: item.numero_venda,
-    numero_operacao: item.numero_operacao,
-    valor: item.valor,
-    data_operacao: item.data_operacao,
-    tipo: item.tipo || (item.tem_frete ? 'frete' : 'normal'), // Mantém compatibilidade
-    tem_frete: item.tem_frete || item.tipo === 'frete',
-    observacoes: item.observacoes,
-    criado_por: item.criado_por,
-    status: item.status,
-    verificado_por: item.verificado_por,
-    data_criacao: item.data_criacao,
-    data_atualizacao: item.data_atualizacao,
-    notificado_admin: item.notificado_admin,
-    notificado_usuario: item.notificado_usuario
-}));
+            id: item.id,
+            numero_venda: item.numero_venda,
+            numero_operacao: item.numero_operacao,
+            valor: item.valor,
+            data_operacao: item.data_operacao,
+            tipo: item.tipo || (item.tem_frete ? 'frete' : 'normal'),
+            tem_frete: item.tem_frete || item.tipo === 'frete',
+            observacoes: item.observacoes,
+            criado_por: item.criado_por,
+            status: item.status,
+            verificado_por: item.verificado_por,
+            data_criacao: item.data_criacao,
+            data_atualizacao: item.data_atualizacao,
+            notificado_admin: item.notificado_admin,
+            notificado_usuario: item.notificado_usuario
+        }));
         
         // Verificar se o usuário atual é admin
         const isAdmin = currentUser.role === 'Administrador';
@@ -431,68 +708,68 @@ function renderReembolsosTable() {
         }
         
         // FRETE:
-let tipoInfo = '';
-if (reembolso.tipo === 'frete') {
-    tipoInfo = `
-        <div style="margin-top: 5px;">
-            <span class="badge badge-warning" style="background: #ffc107; color: #212529;">
-                <i class="fas fa-shipping-fast"></i> Frete
-            </span>
-        </div>
-    `;
-} else if (reembolso.tipo === 'outro') {
-    tipoInfo = `
-        <div style="margin-top: 5px;">
-            <span class="badge badge-info">
-                <i class="fas fa-question-circle"></i> Outro
-            </span>
-        </div>
-    `;
-}
+        let tipoInfo = '';
+        if (reembolso.tipo === 'frete') {
+            tipoInfo = `
+                <div style="margin-top: 5px;">
+                    <span class="badge badge-warning" style="background: #ffc107; color: #212529;">
+                        <i class="fas fa-shipping-fast"></i> Frete
+                    </span>
+                </div>
+            `;
+        } else if (reembolso.tipo === 'outro') {
+            tipoInfo = `
+                <div style="margin-top: 5px;">
+                    <span class="badge badge-info">
+                        <i class="fas fa-question-circle"></i> Outro
+                    </span>
+                </div>
+            `;
+        }
         
         // Ações
         let acoes = '';
         
         // Se for admin ou criador do reembolso
-if (isAdmin || reembolso.criado_por === currentUser.name) {
-    if (reembolso.status === 'a_verificar' && isAdmin) {
-        acoes = `
-            <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
-                <i class="fas fa-check"></i> OK
-            </button>
-            <button class="btn btn-danger btn-sm" onclick="rejeitarReembolso(${reembolso.id})" title="Marcar como Pendente">
-                <i class="fas fa-times"></i> Pendente
-            </button>
-        `;
-    }
-    
-    // ADICIONE ESTE BLOCO PARA REENVIO
-    if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser.name) {
-    acoes += `
-        <button class="btn btn-info btn-sm btn-reenviar" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação">
-            <i class="fas fa-paper-plane"></i> Reenviar
-        </button>
-    `;
-}
-    
-    acoes += `
-        <button class="btn btn-warning btn-sm" onclick="editarReembolso(${reembolso.id})" title="Editar">
-            <i class="fas fa-edit"></i>
-        </button>
-    `;
-    
-    // Se for admin ou criador, pode excluir
-    if (isAdmin || reembolso.criado_por === currentUser.name) {
-        acoes += `
-            <button class="btn btn-danger btn-sm" onclick="excluirReembolso(${reembolso.id})" title="Excluir">
-                <i class="fas fa-trash"></i>
-            </button>
-        `;
-    }
-} else {
-    // Se não tiver permissão, mostrar apenas visualização
-    acoes = '<span class="text-muted">Sem permissão</span>';
-}
+        if (isAdmin || reembolso.criado_por === currentUser.name) {
+            if (reembolso.status === 'a_verificar' && isAdmin) {
+                acoes = `
+                    <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
+                        <i class="fas fa-check"></i> OK
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="rejeitarReembolso(${reembolso.id})" title="Marcar como Pendente">
+                        <i class="fas fa-times"></i> Pendente
+                    </button>
+                `;
+            }
+            
+            // ADICIONE ESTE BLOCO PARA REENVIO
+            if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser.name) {
+                acoes += `
+                    <button class="btn btn-info btn-sm btn-reenviar" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação">
+                        <i class="fas fa-paper-plane"></i> Reenviar
+                    </button>
+                `;
+            }
+            
+            acoes += `
+                <button class="btn btn-warning btn-sm" onclick="editarReembolso(${reembolso.id})" title="Editar">
+                    <i class="fas fa-edit"></i>
+                </button>
+            `;
+            
+            // Se for admin ou criador, pode excluir
+            if (isAdmin || reembolso.criado_por === currentUser.name) {
+                acoes += `
+                    <button class="btn btn-danger btn-sm" onclick="excluirReembolso(${reembolso.id})" title="Excluir">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                `;
+            }
+        } else {
+            // Se não tiver permissão, mostrar apenas visualização
+            acoes = '<span class="text-muted">Sem permissão</span>';
+        }
         
         row.innerHTML = `
             <td><strong>${reembolso.numero_venda}</strong></td>
@@ -634,7 +911,6 @@ window.novoReembolso = function() {
 };
 
 // Adicione esta função no arquivo script.js (pode ser na seção de funções para reembolsos):
-
 window.reenviarParaVerificacao = async function(id) {
     if (!confirm('Reenviar este reembolso para verificação?\n\nO administrador será notificado para verificar novamente.')) return;
     
@@ -767,15 +1043,15 @@ window.aprovarReembolso = async function(id) {
         console.log('Aprovando reembolso ID:', id);
         
         const { data, error } = await supabaseClient
-    .from('reembolsos_ml')
-    .update({ 
-        status: 'reembolsado',
-        verificado_por: currentUser.name,
-        data_atualizacao: new Date().toISOString(),
-        notificado_admin: true // Marcar como notificado
-    })
-    .eq('id', id)
-    .select();
+            .from('reembolsos_ml')
+            .update({ 
+                status: 'reembolsado',
+                verificado_por: currentUser.name,
+                data_atualizacao: new Date().toISOString(),
+                notificado_admin: true // Marcar como notificado
+            })
+            .eq('id', id)
+            .select();
         
         if (error) {
             console.error('Erro Supabase:', error);
@@ -812,15 +1088,15 @@ window.rejeitarReembolso = async function(id) {
         console.log('Rejeitando reembolso ID:', id);
         
         const { data, error } = await supabaseClient
-    .from('reembolsos_ml')
-    .update({ 
-        status: 'pendente',
-        verificado_por: currentUser.name,
-        data_atualizacao: new Date().toISOString(),
-        notificado_usuario: false // Resetar notificação para usuário
-    })
-    .eq('id', id)
-    .select();
+            .from('reembolsos_ml')
+            .update({ 
+                status: 'pendente',
+                verificado_por: currentUser.name,
+                data_atualizacao: new Date().toISOString(),
+                notificado_usuario: false // Resetar notificação para usuário
+            })
+            .eq('id', id)
+            .select();
         
         if (error) {
             console.error('Erro Supabase:', error);
@@ -1132,21 +1408,113 @@ function getTimeAgo(date) {
     return date.toLocaleDateString('pt-BR');
 }
 
-// Enviar notificação por email (simulação)
-function enviarNotificacaoEmail(reembolsoData) {
-    // Em produção, você implementaria uma integração com serviço de email
-    console.log('📧 Notificação de email seria enviada para:', {
-        to: 'admin@empresa.com',
-        subject: 'Novo Reembolso para Verificar',
-        body: `Novo reembolso criado por ${reembolsoData.criado_por}:
-               Venda: ${reembolsoData.numero_venda}
-               Operação: ${reembolsoData.numero_operacao}
-               Valor: R$ ${reembolsoData.valor.toFixed(2)}`
-    });
+// ===== FUNÇÃO PARA ENVIAR NOTIFICAÇÃO POR EMAIL =====
+async function enviarNotificacaoEmail(destinatario, assunto, mensagem, tipo = 'os') {
+    // Esta função enviaria uma notificação por email
+    // Como não temos um servidor de email configurado, vamos apenas simular
     
-    // Aqui você pode integrar com um serviço real de email
-    // Por exemplo, usando EmailJS, SendGrid, ou uma função serverless
-    // fetch('/api/send-email', { method: 'POST', body: JSON.stringify(emailData) });
+    console.log(`📧 Email para ${destinatario}: ${assunto}`);
+    console.log(`Mensagem: ${mensagem}`);
+    
+    // Em produção, você integraria com um serviço de email como:
+    // - SendGrid
+    // - Amazon SES
+    // - Mailgun
+    // - Serviço próprio SMTP
+    
+    // Exemplo de implementação com fetch (substitua pela sua API real):
+    /*
+    try {
+        const response = await fetch('/api/send-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                to: destinatario,
+                subject: assunto,
+                body: mensagem,
+                type: tipo
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Falha ao enviar email');
+        }
+        
+        console.log('✅ Email enviado com sucesso');
+        return true;
+    } catch (error) {
+        console.error('❌ Erro ao enviar email:', error);
+        return false;
+    }
+    */
+    
+    // Por enquanto, apenas logamos a simulação
+    showToast(`📧 Notificação enviada para ${destinatario}`, 'info');
+    return true;
+}
+
+// ===== FUNÇÃO PARA NOTIFICAR ELAINE SOBRE FOTOS =====
+async function notificarElaineSobreFotos(osData) {
+    // Verificar se precisa de foto
+    const precisaFoto = document.getElementById('precisaFoto')?.value === 'sim';
+    
+    if (precisaFoto) {
+        const assunto = `📸 Nova OS precisa de fotos - ${osData.code}`;
+        const mensagem = `
+            Nova Ordem de Serviço criada que precisa de fotos:
+            
+            📋 OS: ${osData.code}
+            📦 Produto: ${osData.productName}
+            👤 Responsável: ${osData.responsibleName}
+            💰 Valor do Anúncio: R$ ${document.getElementById('valorAnuncio')?.value || '0,00'}
+            📝 Descrição: ${document.getElementById('descricaoAnuncio')?.value || 'Nenhuma'}
+            
+            Por favor, verifique o sistema para mais detalhes.
+            
+            Sistema Wheel Tech
+        `;
+        
+        // Enviar notificação para Elaine
+        await enviarNotificacaoEmail('elaine@empresa.com', assunto, mensagem, 'foto_os');
+        
+        // Também podemos enviar uma notificação no sistema
+        showToast('📧 Notificação enviada para Elaine sobre necessidade de fotos', 'success');
+    }
+}
+
+// ===== FUNÇÃO PARA NOTIFICAR ADMIN SOBRE NOVA OS =====
+async function notificarAdminSobreNovaOS(osData) {
+    const assunto = `🆕 Nova Ordem de Serviço criada - ${osData.code}`;
+    const mensagem = `
+        Nova Ordem de Serviço criada no sistema:
+        
+        📋 Código: ${osData.code}
+        📦 Produto: ${osData.productName}
+        👤 Criado por: ${osData.createdBy}
+        👥 Responsável: ${osData.responsibleName}
+        🚨 Urgência: ${osData.urgency}
+        📷 Tipo: ${osData.photoType}
+        
+        ${osData.photoType === 'criar_anuncio' || osData.photoType === 'replicar_anuncio' ? `
+        💰 Valor: R$ ${document.getElementById('valorAnuncio')?.value || '0,00'}
+        📝 Descrição: ${document.getElementById('descricaoAnuncio')?.value.substring(0, 100)}...
+        🔗 Link: ${document.getElementById('linkNovoAnuncio')?.value || 'Não informado'}
+        ` : ''}
+        
+        Acesse o sistema para mais detalhes.
+        
+        Sistema Wheel Tech
+    `;
+    
+    // Enviar para todos os administradores
+    const admins = SYSTEM_USERS.filter(user => user.role === 'Administrador');
+    
+    for (const admin of admins) {
+        // Aqui você usaria o email real do admin
+        await enviarNotificacaoEmail(`${admin.username}@empresa.com`, assunto, mensagem, 'nova_os');
+    }
 }
 
 // ============================================
@@ -1476,178 +1844,6 @@ window.imprimirRelatorio = function() {
 // ============================================
 // FUNÇÕES EXISTENTES DO SISTEMA OS
 // ============================================
-// [Todas as funções existentes do sistema OS permanecem aqui]
-// Como: handleLogin, handleLogout, saveOrder, loadOrders, etc.
-// Elas são mantidas exatamente como estavam antes
-
-// ============================================
-// FUNÇÃO DE NOTIFICAÇÃO (existente)
-// ============================================
-function showToast(message, type = 'info') {
-    const existingToast = document.querySelector('.toast');
-    if (existingToast) existingToast.remove();
-    
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    
-    let icon = 'info-circle';
-    if (type === 'success') icon = 'check-circle';
-    else if (type === 'error') icon = 'exclamation-circle';
-    else if (type === 'warning') icon = 'exclamation-triangle';
-    
-    toast.innerHTML = `
-        <i class="fas fa-${icon}"></i>
-        <span>${message}</span>
-    `;
-    
-    document.body.appendChild(toast);
-    
-    // Mostrar toast
-    setTimeout(() => {
-        toast.style.opacity = '1';
-    }, 10);
-    
-    // Remover depois de 4 segundos
-    setTimeout(() => {
-        toast.style.opacity = '0';
-        setTimeout(() => {
-            if (toast.parentNode) {
-                toast.parentNode.removeChild(toast);
-            }
-        }, 300);
-    }, 4000);
-}
-
-// ============================================
-// FUNÇÕES PARA MANIPULAÇÃO DE FOTOS
-// ============================================
-function setupPhotoUpload() {
-    const uploadArea = document.getElementById('photoUploadArea');
-    const fileInput = document.getElementById('photoUploadInput');
-    
-    if (!uploadArea || !fileInput) return;
-    
-    // Clique na área de upload
-    uploadArea.addEventListener('click', () => fileInput.click());
-    
-    // Arrastar e soltar
-    uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.classList.add('drag-over');
-    });
-    
-    uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('drag-over');
-    });
-    
-    uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.classList.remove('drag-over');
-        
-        if (e.dataTransfer.files.length > 0) {
-            handlePhotoFiles(e.dataTransfer.files);
-        }
-    });
-    
-    // Mudança no input de arquivo
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            handlePhotoFiles(e.target.files);
-        }
-    });
-}
-
-function handlePhotoFiles(files) {
-    const previewArea = document.getElementById('photoPreviews');
-    
-    for (let file of files) {
-        if (selectedPhotos.length >= MAX_PHOTOS_PER_OS) {
-            showToast(`Limite de ${MAX_PHOTOS_PER_OS} fotos atingido`, 'warning');
-            break;
-        }
-        
-        if (!file.type.startsWith('image/')) {
-            showToast('Apenas imagens são permitidas', 'error');
-            continue;
-        }
-        
-        if (file.size > MAX_PHOTO_SIZE) {
-            showToast(`Arquivo muito grande (máx. 5MB): ${file.name}`, 'error');
-            continue;
-        }
-        
-        // Converter para base64
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const photoData = {
-                id: Date.now() + Math.random(),
-                name: file.name,
-                type: file.type,
-                size: file.size,
-                data: e.target.result,
-                thumbnail: createThumbnail(e.target.result)
-            };
-            
-            selectedPhotos.push(photoData);
-            updatePhotoPreviews();
-        };
-        reader.readAsDataURL(file);
-    }
-    
-    // Resetar input
-    document.getElementById('photoUploadInput').value = '';
-}
-
-function createThumbnail(base64Data) {
-    // Para simplificar, usamos a mesma imagem
-    // Em produção, você pode criar um thumbnail menor aqui
-    return base64Data;
-}
-
-function updatePhotoPreviews() {
-    const previewArea = document.getElementById('photoPreviews');
-    if (!previewArea) return;
-    
-    previewArea.innerHTML = '';
-    
-    selectedPhotos.forEach((photo, index) => {
-        const photoElement = document.createElement('div');
-        photoElement.className = 'photo-preview';
-        
-        photoElement.innerHTML = `
-            <img src="${photo.thumbnail || photo.data}" 
-                 alt="${photo.name}"
-                 style="width: 100%; height: 100%; object-fit: cover;">
-            <div style="position: absolute; top: 5px; right: 5px; background: rgba(0,0,0,0.7); color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer;"
-                 onclick="removePhoto(${index})">
-                ×
-            </div>
-            <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: white; padding: 3px 5px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                ${photo.name}
-            </div>
-        `;
-        
-        previewArea.appendChild(photoElement);
-    });
-    
-    if (selectedPhotos.length > 0) {
-        previewArea.style.display = 'flex';
-        
-        // Atualizar contador
-        const uploadArea = document.getElementById('photoUploadArea');
-        if (uploadArea) {
-            const countText = `<span style="color: #8A2BE2; font-weight: bold;">${selectedPhotos.length}</span> foto(s) selecionada(s)`;
-            uploadArea.querySelector('p:first-of-type').innerHTML = countText;
-        }
-    } else {
-        previewArea.style.display = 'none';
-    }
-}
-
-window.removePhoto = function(index) {
-    selectedPhotos.splice(index, 1);
-    updatePhotoPreviews();
-};
 
 function handleLogin(e) {
     e.preventDefault();
@@ -1891,7 +2087,12 @@ async function loadOrders() {
                 // NOVOS CAMPOS PARA CONFERÊNCIA
                 conferido: order.conferido || false,
                 conferidoPor: order.conferido_por || null,
-                dataConferencia: order.data_conferencia || null
+                dataConferencia: order.data_conferencia || null,
+                // NOVOS CAMPOS PARA ANÚNCIO
+                valorAnuncio: order.valor_anuncio || 0,
+                descricaoAnuncio: order.descricao_anuncio || '',
+                linkNovoAnuncio: order.link_novo_anuncio || '',
+                precisaFoto: order.precisa_foto || 'nao'
             }));
             
             orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
@@ -1922,7 +2123,7 @@ async function loadOrders() {
 }
 
 // ============================================
-// FUNÇÃO SALVAR OS (ATUALIZADA COM FOTOS)
+// FUNÇÃO SALVAR OS (ATUALIZADA COM NOVOS CAMPOS)
 // ============================================
 async function saveOrder() {
     if (!currentUser) {
@@ -1933,30 +2134,56 @@ async function saveOrder() {
     const productName = document.getElementById('productName')?.value.trim();
     const responsibleName = document.getElementById('responsibleName')?.value;
     const linkAnuncio = document.getElementById('linkAnuncio')?.value.trim();
+    const photoType = document.getElementById('photoType')?.value;
     
     if (!productName || !responsibleName) {
         showToast('⚠️ Preencha produto e responsável', 'warning');
         return;
     }
     
+    // Coletar dados específicos para criar/replicar anúncio
+    const valorAnuncio = document.getElementById('valorAnuncio')?.value || 0;
+    const descricaoAnuncio = document.getElementById('descricaoAnuncio')?.value || '';
+    const linkNovoAnuncio = document.getElementById('linkNovoAnuncio')?.value || '';
+    const precisaFoto = document.getElementById('precisaFoto')?.value || 'nao';
+
+    // VERIFICAR SE PRECISA DE FOTO E É CRIAR/REPLICAR ANÚNCIO
+    let finalResponsibleName = responsibleName;
+    if ((photoType === 'criar_anuncio' || photoType === 'replicar_anuncio') && precisaFoto === 'sim') {
+
+        // Adicionar Elaine como responsável junto com o responsável selecionado
+        if (responsibleName && responsibleName !== 'Elaine') {
+            finalResponsibleName = `${responsibleName} e Elaine`;
+            showToast('📸 Elaine adicionada como responsável (precisa de foto)', 'info');
+        } else if (responsibleName !== 'Elaine') {
+            finalResponsibleName = 'Elaine';
+            showToast('📸 Elaine definida como responsável (precisa de foto)', 'info');
+        }
+    }
+    
     const orderData = {
         id: editingOrderId || orderCounter,
         code: editingOrderId ? orders.find(o => o.id == editingOrderId)?.code : generateOSCode(),
         productName: productName,
-        responsibleName: responsibleName,
+        responsibleName: finalResponsibleName, // Usar o responsável ajustado
         linkAnuncio: linkAnuncio || '',
         urgency: document.getElementById('urgency')?.value || 'normal',
         osType: document.getElementById('osType')?.value || 'normal',
         status: 'pendente',
-        photoType: document.getElementById('photoType')?.value || 'estudio',
+        photoType: photoType,
         skus: document.getElementById('skus')?.value.split(',').map(s => s.trim()).filter(s => s) || [],
         observations: document.getElementById('observations')?.value || '',
-        photos: selectedPhotos, // ← FOTOS ADICIONADAS AQUI
+        photos: selectedPhotos,
         photosTaken: 0,
         editsMade: 0,
         createdBy: currentUser.name,
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        // NOVOS CAMPOS
+        valorAnuncio: parseFloat(valorAnuncio),
+        descricaoAnuncio: descricaoAnuncio,
+        linkNovoAnuncio: linkNovoAnuncio,
+        precisaFoto: precisaFoto
     };
     
     if (saveOSBtn) {
@@ -1983,6 +2210,14 @@ async function saveOrder() {
                 orders.unshift(orderData);
                 orderCounter++;
                 showToast(`✅ OS "${orderData.productName}" criada`, 'success');
+                
+                // NOTIFICAR ADMIN SOBRE NOVA OS
+                await notificarAdminSobreNovaOS(orderData);
+                
+                // NOTIFICAR ELAINE SE PRECISAR DE FOTOS
+                if (precisaFoto === 'sim' && (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio')) {
+                    await notificarElaineSobreFotos(orderData);
+                }
             }
             
             updateCounters();
@@ -2013,7 +2248,8 @@ async function saveOrderToSupabase(order) {
                 name: photo.name,
                 size: photo.size,
                 type: photo.type,
-                data: photo.data
+                data: photo.data,
+                isLink: photo.isLink || false
             }));
         }
         
@@ -2036,6 +2272,11 @@ async function saveOrderToSupabase(order) {
             conferido: order.conferido || false,
             conferido_por: order.conferidoPor || null,
             data_conferencia: order.dataConferencia || null,
+            // NOVOS CAMPOS PARA ANÚNCIO
+            valor_anuncio: order.valorAnuncio || 0,
+            descricao_anuncio: order.descricaoAnuncio || '',
+            link_novo_anuncio: order.linkNovoAnuncio || '',
+            precisa_foto: order.precisaFoto || 'nao',
             data_criacao: new Date().toISOString(),
             ultima_atualizacao: new Date().toISOString()
         };
@@ -2135,6 +2376,11 @@ function clearForm() {
     const photoTypeSelect = document.getElementById('photoType');
     const skusInput = document.getElementById('skus');
     const observationsInput = document.getElementById('observations');
+    const valorAnuncioInput = document.getElementById('valorAnuncio');
+    const descricaoAnuncioInput = document.getElementById('descricaoAnuncio');
+    const linkNovoAnuncioInput = document.getElementById('linkNovoAnuncio');
+    const precisaFotoSelect = document.getElementById('precisaFoto');
+    const photoLinkInput = document.getElementById('photoLinkInput');
     
     if (productNameInput) productNameInput.value = '';
     if (responsibleNameInput) responsibleNameInput.value = '';
@@ -2144,6 +2390,14 @@ function clearForm() {
     if (photoTypeSelect) photoTypeSelect.value = 'estudio';
     if (skusInput) skusInput.value = '';
     if (observationsInput) observationsInput.value = '';
+    if (valorAnuncioInput) valorAnuncioInput.value = '';
+    if (descricaoAnuncioInput) descricaoAnuncioInput.value = '';
+    if (linkNovoAnuncioInput) linkNovoAnuncioInput.value = '';
+    if (precisaFotoSelect) precisaFotoSelect.value = 'nao';
+    if (photoLinkInput) photoLinkInput.value = '';
+    
+    // Ocultar campos de anúncio
+    document.getElementById('camposAnuncio').classList.add('hidden');
     
     // Limpar fotos
     selectedPhotos = [];
@@ -2182,7 +2436,7 @@ function generateOSCode() {
     return code;
 }
 
-/// ============================================
+// ============================================
 // FUNÇÕES DE FILTRO E PERMISSÃO (ATUALIZADO)
 // ============================================
 function filterOrdersByUser(ordersList) {
@@ -2273,7 +2527,6 @@ function updateCounters() {
         }
     }
 }
-
 
 function renderOrdersTable() {
     if (!osTableBody) return;
@@ -2492,8 +2745,6 @@ window.filterOS = function(filter) {
     renderOrdersTable();
 };
 
-
-
 window.viewOrder = function(orderId) {
     const order = orders.find(o => o.id == orderId);
     if (order) {
@@ -2514,6 +2765,21 @@ window.editOrder = function(orderId) {
         const photoTypeSelect = document.getElementById('photoType');
         const skusInput = document.getElementById('skus');
         const observationsInput = document.getElementById('observations');
+        const valorAnuncioInput = document.getElementById('valorAnuncio');
+        const descricaoAnuncioInput = document.getElementById('descricaoAnuncio');
+        const linkNovoAnuncioInput = document.getElementById('linkNovoAnuncio');
+        const precisaFotoSelect = document.getElementById('precisaFoto');
+
+        // LÓGICA PARA EXTRAIR O RESPONSÁVEL CORRETO
+        let responsibleToShow = order.responsibleName;
+        // Verificar se Elaine foi adicionada automaticamente
+        if (order.responsibleName && order.responsibleName.includes(' e Elaine')) {
+            // Extrair o nome original (remover " e Elaine")
+            responsibleToShow = order.responsibleName.replace(' e Elaine', '').trim();
+        } else if (order.responsibleName === 'Elaine' && order.precisaFoto === 'sim') {
+            // Se for apenas Elaine por causa das fotos, mostrar como estava
+            responsibleToShow = order.createdBy !== 'Elaine' ? order.createdBy : 'Elaine';
+        }
         
         if (productNameInput) productNameInput.value = order.productName;
         if (responsibleNameInput) responsibleNameInput.value = order.responsibleName;
@@ -2523,6 +2789,13 @@ window.editOrder = function(orderId) {
         if (photoTypeSelect) photoTypeSelect.value = order.photoType;
         if (skusInput) skusInput.value = Array.isArray(order.skus) ? order.skus.join(', ') : order.skus;
         if (observationsInput) observationsInput.value = order.observations;
+        if (valorAnuncioInput) valorAnuncioInput.value = order.valorAnuncio || '';
+        if (descricaoAnuncioInput) descricaoAnuncioInput.value = order.descricaoAnuncio || '';
+        if (linkNovoAnuncioInput) linkNovoAnuncioInput.value = order.linkNovoAnuncio || '';
+        if (precisaFotoSelect) precisaFotoSelect.value = order.precisaFoto || 'nao';
+        
+        // Mostrar/ocultar campos de anúncio
+        toggleCamposAnuncio();
         
         // Carregar fotos existentes
         selectedPhotos = order.photos || [];
@@ -2548,6 +2821,141 @@ window.viewOrderPhotos = function(orderId) {
     }
 };
 
+// ============================================
+// FUNÇÕES PARA MANIPULAÇÃO DE FOTOS
+// ============================================
+function setupPhotoUpload() {
+    const uploadArea = document.getElementById('photoUploadArea');
+    const fileInput = document.getElementById('photoUploadInput');
+    
+    if (!uploadArea || !fileInput) return;
+    
+    // Clique na área de upload
+    uploadArea.addEventListener('click', () => fileInput.click());
+    
+    // Arrastar e soltar
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('drag-over');
+    });
+    
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('drag-over');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('drag-over');
+        
+        if (e.dataTransfer.files.length > 0) {
+            handlePhotoFiles(e.dataTransfer.files);
+        }
+    });
+    
+    // Mudança no input de arquivo
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handlePhotoFiles(e.target.files);
+        }
+    });
+}
+
+function handlePhotoFiles(files) {
+    const previewArea = document.getElementById('photoPreviews');
+    
+    for (let file of files) {
+        if (selectedPhotos.length >= MAX_PHOTOS_PER_OS) {
+            showToast(`Limite de ${MAX_PHOTOS_PER_OS} fotos atingido`, 'warning');
+            break;
+        }
+        
+        if (!file.type.startsWith('image/')) {
+            showToast('Apenas imagens são permitidas', 'error');
+            continue;
+        }
+        
+        if (file.size > MAX_PHOTO_SIZE) {
+            showToast(`Arquivo muito grande (máx. 5MB): ${file.name}`, 'error');
+            continue;
+        }
+        
+        // Converter para base64
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const photoData = {
+                id: Date.now() + Math.random(),
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                data: e.target.result,
+                thumbnail: createThumbnail(e.target.result),
+                isLink: false
+            };
+            
+            selectedPhotos.push(photoData);
+            updatePhotoPreviews();
+        };
+        reader.readAsDataURL(file);
+    }
+    
+    // Resetar input
+    document.getElementById('photoUploadInput').value = '';
+}
+
+function createThumbnail(base64Data) {
+    // Para simplificar, usamos a mesma imagem
+    // Em produção, você pode criar um thumbnail menor aqui
+    return base64Data;
+}
+
+function updatePhotoPreviews() {
+    const previewArea = document.getElementById('photoPreviews');
+    if (!previewArea) return;
+    
+    previewArea.innerHTML = '';
+    
+    selectedPhotos.forEach((photo, index) => {
+        const photoElement = document.createElement('div');
+        photoElement.className = 'photo-preview';
+        
+        // Ícone diferente para fotos por link
+        const icon = photo.isLink ? 'fa-link' : 'fa-image';
+        
+        photoElement.innerHTML = `
+            <img src="${photo.thumbnail || photo.data}" 
+                 alt="${photo.name}"
+                 style="width: 100%; height: 100%; object-fit: cover;">
+            <div style="position: absolute; top: 5px; right: 5px; background: rgba(0,0,0,0.7); color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer;"
+                 onclick="removePhoto(${index})">
+                ×
+            </div>
+            <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: white; padding: 3px 5px; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                <i class="fas ${icon}"></i> ${photo.name}
+            </div>
+        `;
+        
+        previewArea.appendChild(photoElement);
+    });
+    
+    if (selectedPhotos.length > 0) {
+        previewArea.style.display = 'flex';
+        
+        // Atualizar contador
+        const uploadArea = document.getElementById('photoUploadArea');
+        if (uploadArea) {
+            const countText = `<span style="color: #8A2BE2; font-weight: bold;">${selectedPhotos.length}</span> foto(s) selecionada(s)`;
+            uploadArea.querySelector('p:first-of-type').innerHTML = countText;
+        }
+    } else {
+        previewArea.style.display = 'none';
+    }
+}
+
+window.removePhoto = function(index) {
+    selectedPhotos.splice(index, 1);
+    updatePhotoPreviews();
+};
+
 function openPhotoViewer(photos, orderName) {
     const modal = document.getElementById('photoViewerModal');
     const gallery = document.getElementById('photoGallery');
@@ -2565,6 +2973,9 @@ function openPhotoViewer(photos, orderName) {
         const photoElement = document.createElement('div');
         photoElement.className = 'photo-item';
         
+        // Ícone diferente para fotos por link
+        const icon = photo.isLink ? 'fa-link' : 'fa-image';
+        
         photoElement.innerHTML = `
             <img src="${photo.data || photo.thumbnail}" 
                  alt="${photo.name}"
@@ -2572,10 +2983,10 @@ function openPhotoViewer(photos, orderName) {
                  onclick="viewFullPhoto(${index}, ${JSON.stringify(photos).replace(/"/g, '&quot;')})">
             <div style="padding: 10px; background: white;">
                 <div style="font-size: 12px; color: #6c757d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    ${photo.name}
+                    <i class="fas ${icon}"></i> ${photo.name}
                 </div>
                 <div style="font-size: 10px; color: #adb5bd; margin-top: 5px;">
-                    ${formatFileSize(photo.size)}
+                    ${photo.isLink ? 'Foto por link' : formatFileSize(photo.size)}
                 </div>
             </div>
         `;
@@ -2752,7 +3163,10 @@ window.openPrintModal = function(osData) {
     const photoTypeMap = {
         'estudio': 'Foto Estúdio',
         'bike': 'Foto Bike',
-        'ambos': 'Ambos'
+        'ambos': 'Ambos',
+        'edicao': 'Apenas edição',
+        'criar_anuncio': 'Criar anúncio',
+        'replicar_anuncio': 'Replicar anúncio'
     };
     
     const osTypeMap = {
@@ -2815,6 +3229,51 @@ function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, os
         `;
     }
     
+    // Seção para criar/replicar anúncio
+    let anuncioSection = '';
+    if (osData.photoType === 'criar_anuncio' || osData.photoType === 'replicar_anuncio') {
+        anuncioSection = `
+            <div class="preview-card" style="grid-column: span ${currentPrintStyle === 'compact' ? 1 : 2}">
+                <div class="card-header">
+                    <div class="card-icon">
+                        <i class="fas fa-ad"></i>
+                    </div>
+                    <h3 class="card-title">Detalhes do Anúncio</h3>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">Valor:</div>
+                    <div class="info-value" style="font-weight: 700; color: #28a745;">
+                        R$ ${parseFloat(osData.valorAnuncio || 0).toFixed(2)}
+                    </div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">Precisa de foto:</div>
+                    <div class="info-value">
+                        ${osData.precisaFoto === 'sim' ? 
+                        '<span class="badge badge-warning">Sim - Elaine notificada</span>' : 
+                        '<span class="badge badge-success">Não</span>'}
+                    </div>
+                </div>
+                <div class="info-row">
+                    <div class="info-label">Descrição:</div>
+                    <div class="info-value">
+                        ${osData.descricaoAnuncio || 'Nenhuma descrição fornecida'}
+                    </div>
+                </div>
+                ${osData.linkNovoAnuncio ? `
+                <div class="info-row">
+                    <div class="info-label">Link do novo anúncio:</div>
+                    <div class="info-value" style="word-break: break-all; font-size: 11pt;">
+                        <a href="${osData.linkNovoAnuncio}" style="color: #8A2BE2; text-decoration: none;">
+                            <i class="fas fa-link"></i> ${osData.linkNovoAnuncio}
+                        </a>
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    }
+    
     previewContainer.innerHTML = `
         <div class="print-preview ${currentPrintStyle === 'compact' ? 'compact-view' : ''}">
             <!-- Cabeçalho -->
@@ -2872,7 +3331,6 @@ function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, os
                         </div>
                     </div>
                     
-                    <!-- ADICIONE ESTE BLOCO -->
                     ${osData.linkAnuncio ? `
                     <div class="info-row">
                         <div class="info-label">Link do Anúncio:</div>
@@ -2960,6 +3418,7 @@ function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, os
                 </div>
                 
                 ${photosSection}
+                ${anuncioSection}
                 
                 <!-- Card: Observações -->
                 <div class="preview-card" style="grid-column: span ${currentPrintStyle === 'compact' ? 1 : 2}">
@@ -3039,7 +3498,7 @@ window.togglePrintStyle = function(style) {
         // Mapear valores (como na função principal)
         const statusMap = { 'pendente': 'Pendente', 'andamento': 'Em Andamento', 'concluida': 'Concluída' };
         const urgencyMap = { 'alta': 'Alta', 'normal': 'Normal', 'baixa': 'Baixa' };
-        const photoTypeMap = { 'estudio': 'Estúdio', 'bike': 'Na Bike', 'ambos': 'Ambos', 'Apenas edição': 'Apenas edição' };
+        const photoTypeMap = { 'estudio': 'Estúdio', 'bike': 'Na Bike', 'ambos': 'Ambos', 'Apenas edição': 'Apenas edição', 'criar_anuncio': 'Criar anúncio', 'replicar_anuncio': 'Replicar anúncio' };
         const osTypeMap = { 'normal': 'Normal', 'devolucao': 'Devolução', 'urgente': 'Urgente' };
         
         const statusText = statusMap[osData.status] || osData.status;
@@ -3526,7 +3985,10 @@ function generateDetailsTab() {
     const photoTypeMap = {
         'estudio': 'Estúdio',
         'bike': 'Na Bike',
-        'ambos': 'Ambos'
+        'ambos': 'Ambos',
+        'edicao': 'Apenas edição',
+        'criar_anuncio': 'Criar anúncio',
+        'replicar_anuncio': 'Replicar anúncio'
     };
     
     const osTypeMap = {
@@ -3551,6 +4013,55 @@ function generateDetailsTab() {
                            completionDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
     }
     
+    // Seção para criar/replicar anúncio
+    let anuncioSection = '';
+    if (order.photoType === 'criar_anuncio' || order.photoType === 'replicar_anuncio') {
+        anuncioSection = `
+            <div class="info-card" style="margin-top: 20px;">
+                <h4><i class="fas fa-ad"></i> Detalhes do Anúncio</h4>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">Valor do Anúncio</div>
+                        <div class="info-value" style="font-weight: 700; color: #28a745;">
+                            R$ ${parseFloat(order.valorAnuncio || 0).toFixed(2)}
+                        </div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Precisa de foto?</div>
+                        <div class="info-value">
+                            ${order.precisaFoto === 'sim' ? 
+                            '<span class="badge badge-warning">Sim - Elaine notificada</span>' : 
+                            '<span class="badge badge-success">Não</span>'}
+                        </div>
+                    </div>
+                </div>
+                <div class="info-item" style="margin-top: 10px;">
+                    <div class="info-label">Descrição</div>
+                    <div class="info-value">
+                        <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; margin-top: 5px;">
+                            ${order.descricaoAnuncio || 'Nenhuma descrição fornecida'}
+                        </div>
+                    </div>
+                </div>
+                ${order.linkNovoAnuncio ? `
+                <div class="info-item" style="margin-top: 10px;">
+                    <div class="info-label">Link do Novo Anúncio</div>
+                    <div class="info-value">
+                        <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" 
+                           style="color: #8A2BE2; text-decoration: none; display: flex; align-items: center; gap: 5px;">
+                            <i class="fas fa-external-link-alt"></i>
+                            Ver novo anúncio
+                        </a>
+                        <small style="display: block; color: #6c757d; margin-top: 5px; font-size: 12px; word-break: break-all;">
+                            ${order.linkNovoAnuncio}
+                        </small>
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+        `;
+    }
+    
     return `
         <div class="tab-content active">
             <div class="info-grid">
@@ -3564,7 +4075,6 @@ function generateDetailsTab() {
                         </div>
                     </div>
                     
-                    <!-- ADICIONE ESTE BLOCO PARA O LINK -->
                     ${order.linkAnuncio ? `
                     <div class="info-item">
                         <div class="info-label">Link do Anúncio</div>
@@ -3691,6 +4201,8 @@ function generateDetailsTab() {
                 </div>
             </div>
             
+            ${anuncioSection}
+            
             <!-- Observações -->
             <div class="info-card" style="margin-top: 20px;">
                 <h4><i class="fas fa-sticky-note"></i> Observações</h4>
@@ -3742,10 +4254,10 @@ function generatePhotosTab() {
                              onclick="viewPhotoInModal(${index})">
                         <div style="padding: 10px; background: white;">
                             <div style="font-size: 12px; color: #6c757d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                ${photo.name}
+                                <i class="fas ${photo.isLink ? 'fa-link' : 'fa-image'}"></i> ${photo.name}
                             </div>
                             <div style="font-size: 10px; color: #adb5bd; margin-top: 5px;">
-                                ${formatFileSize(photo.size)}
+                                ${photo.isLink ? 'Foto por link' : formatFileSize(photo.size)}
                             </div>
                         </div>
                     </div>
@@ -3884,7 +4396,7 @@ window.viewPhotoInModal = function(photoIndex) {
                  style="max-width: 90vw; max-height: 90vh; object-fit: contain;">
             <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.7); color: white; padding: 10px; font-size: 12px;">
                 <div>${photo.name}</div>
-                <div>${formatFileSize(photo.size)} • Foto ${photoIndex + 1} de ${photos.length}</div>
+                <div>${photo.isLink ? 'Foto por link' : formatFileSize(photo.size)} • Foto ${photoIndex + 1} de ${photos.length}</div>
             </div>
         </div>
     `;
@@ -3930,7 +4442,6 @@ document.getElementById('viewOSModal')?.addEventListener('click', function(e) {
 // ============================================
 // INICIALIZAÇÃO DO BOTÃO DE REEMBOLSOS
 // ============================================
-// Adicione esta função no final do arquivo, antes do console.log final
 function inicializarBotaoReembolsos() {
     const reembolsosBtn = document.getElementById('reembolsosBtn');
     if (reembolsosBtn) {
