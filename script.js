@@ -111,7 +111,7 @@ function handleLogin(e) {
 let currentUser = null;
 let orders = [];
 let orderCounter = 1;
-let currentFilter = 'todos';
+let currentFilter = 'pendente';
 let editingOrderId = null;
 let currentOSForPrint = null;
 let currentPrintStyle = 'detailed';
@@ -208,6 +208,8 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 updateCounters();
                 renderOrdersTable();
+                // NOVO: Destacar botão de pendentes após renderizar
+                setTimeout(() => highlightActiveFilterButton(), 100);
             }
             
             // Configurar botões
@@ -225,6 +227,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 500);
         
     } else {
+        
         // Usuário não logado - mostrar tela de login
         console.log('👤 Nenhuma sessão ativa');
         if (loginScreen) loginScreen.classList.remove('hidden');
@@ -2889,6 +2892,13 @@ function renderOrdersTable() {
     let userOrders = filterOrdersByUser(orders);
     let filteredOrders = currentFilter === 'todos' ? userOrders : 
                          userOrders.filter(order => order.status === currentFilter);
+
+                         // Adicione esta verificação para "nao_conferidas"
+    if (currentFilter === 'nao_conferidas') {
+        filteredOrders = userOrders.filter(order => 
+            order.status === 'concluida' && !order.conferido
+        );
+    }
     
     if (filteredOrders.length === 0) {
         osTableBody.innerHTML = `
@@ -3089,7 +3099,17 @@ function renderOrdersTable() {
 window.filterOS = function(filter) {
     currentFilter = filter;
     renderOrdersTable();
+    highlightActiveFilterButton();
 };
+
+// Mostrar mensagem do filtro ativo
+    const filterNames = {
+        'pendente': 'Pendentes',
+        'andamento': 'Em Andamento',
+        'concluida': 'Concluídas',
+        'nao_conferidas': 'Não Conferidas',
+        'todos': 'Todas'
+    };
 
 window.viewOrder = function(orderId) {
     const order = orders.find(o => o.id == orderId);
