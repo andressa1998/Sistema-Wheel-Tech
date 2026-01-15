@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema OS Fotografia | Supabase</title>
+    <title>Sistema Wheel Tech</title>
     
     <!-- Bibliotecas -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -575,14 +575,286 @@
             border-top: none;
             border-left: none;
         }
+
+        /* ===== ESTILOS PARA REEMBOLSOS ===== */
+        .notification-bell {
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: var(--danger);
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: pulse 1.5s infinite;
+        }
+        
+        .status-a_verificar {
+            background: #fff3cd;
+            color: #856404;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-reembolsado {
+            background: #d4edda;
+            color: #155724;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .status-pendente {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .reembolso-item {
+            transition: all 0.3s;
+        }
+        
+        .reembolso-item:hover {
+            background: #f8f9fa;
+        }
+        
+        .valor-cell {
+            font-weight: 600;
+            color: var(--success);
+        }
+        
+        .filtro-ativo {
+            background: var(--primary) !important;
+            color: white !important;
+        }
+
+        /* Estilos para as abas */
+        .tab-button:hover {
+            background-color: rgba(138, 43, 226, 0.1) !important;
+        }
+        
+        .tab-button.active {
+            color: #8A2BE2 !important;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .info-card {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .info-card h4 {
+            color: #495057;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #dee2e6;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .info-item {
+            margin-bottom: 12px;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            color: #6c757d;
+            font-size: 13px;
+            margin-bottom: 5px;
+        }
+        
+        .info-value {
+            color: #212529;
+            font-size: 15px;
+        }
+        
+        .badge-view {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 12px;
+            display: inline-block;
+        }
+        
+        .photo-gallery-view {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .photo-card-view {
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .photo-card-view:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .timeline {
+            position: relative;
+            padding-left: 30px;
+        }
+        
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 15px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #dee2e6;
+        }
+        
+        .timeline-item {
+            position: relative;
+            margin-bottom: 25px;
+            padding-bottom: 25px;
+            border-bottom: 1px dashed #e9ecef;
+        }
+        
+        .timeline-item:last-child {
+            border-bottom: none;
+        }
+        
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -23px;
+            top: 0;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #8A2BE2;
+            border: 3px solid white;
+            box-shadow: 0 0 0 3px rgba(138, 43, 226, 0.2);
+        }
+        
+        .timeline-date {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+        
+        .timeline-content {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .status-badge-view {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 13px;
+            margin-right: 10px;
+        }
+        
+        .status-pending-view {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-progress-view {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+        
+        .status-completed-view {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        /* Estilos para conferência */
+        .badge-conferido {
+            background: rgba(40, 167, 69, 0.1);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+
+        .badge-nao-conferido {
+            background: rgba(255, 193, 7, 0.1);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        /* Destaque para OS não conferidas */
+        .os-nao-conferida {
+            background: linear-gradient(45deg, #fff5f5, #ffe6e6) !important;
+            border-left: 4px solid #dc3545 !important;
+            animation: pulseWarning 2s infinite;
+        }
+
+        @keyframes pulseWarning {
+            0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+        }
+
+        /* ESTILO PARA LINKS */
+        .form-control[type="url"]:valid {
+            border-color: #28a745;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3e%3cpath fill='%2328a745' d='M2.3 6.73L.6 4.53c-.4-1.04.46-1.4 1.1-.8l1.1 1.4 3.4-3.8c.6-.63 1.6-.27 1.2.7l-4 4.6c-.43.5-.8.4-1.1.1z'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right calc(0.375em + 0.1875rem) center;
+            background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+        }
+
+        .form-control[type="url"]:invalid:not(:placeholder-shown) {
+            border-color: #dc3545;
+        }
     </style>
 </head>
 <body>
     <!-- ===== TELA DE LOGIN ===== -->
     <div id="loginScreen" class="login-container">
         <div class="login-header">
-            <h1><i class="fas fa-camera"></i> Sistema OS Fotografia</h1>
-            <p>Gerencie ordens de serviço com Supabase</p>
+            <h1><i class="fas fa-camera"></i> Sistema Wheel Tech</h1>
         </div>
         
         <form id="loginForm">
@@ -614,19 +886,48 @@
                     </h1>
                     
                     <div class="user-info">
+                        <div class="notification-bell" id="notificationBell" onclick="toggleNotificacoes()" style="display: none;">
+                            <i class="fas fa-bell fa-lg" style="color: #6c757d;"></i>
+                            <span class="notification-badge" id="notificationCount">0</span>
+                        </div>
                         
                         <div class="user-avatar" id="userAvatar">U</div>
                         <div>
                             <div style="font-weight: 600;" id="userName">Usuário</div>
                             <div style="font-size: 12px; color: #6c757d;" id="userRole"></div>
-                            <button id="logoutBtn" class="btn btn-secondary btn-sm mt-2">
-                                <i class="fas fa-sign-out-alt"></i> Sair
-                            </button>
+                            <div class="d-flex gap-2 mt-2">
+                                <button id="reembolsosBtn" class="btn btn-success btn-sm">
+                                <i class="fas fa-exchange-alt"></i> Reembolsos
+                                </button>
+                                <button id="logoutBtn" class="btn btn-secondary btn-sm">
+                                    <i class="fas fa-sign-out-alt"></i> Sair
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </header>
+        
+        <!-- Notificações Dropdown -->
+        <div id="notificacoesDropdown" class="hidden" style="position: fixed; top: 70px; right: 20px; width: 350px; background: white; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 1001; border: 1px solid #dee2e6;">
+            <div style="padding: 15px; border-bottom: 1px solid #e9ecef;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 style="margin: 0;"><i class="fas fa-bell"></i> Notificações</h5>
+                    <button onclick="toggleNotificacoes()" style="background: none; border: none; color: #6c757d; cursor: pointer;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="notificacoesContent" style="max-height: 400px; overflow-y: auto;">
+                <!-- Notificações serão carregadas aqui -->
+            </div>
+            <div style="padding: 10px; text-align: center; border-top: 1px solid #e9ecef;">
+                <button onclick="marcarTodasComoLidas()" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-check-double"></i> Marcar todas como lidas
+                </button>
+            </div>
+        </div>
         
         <div class="container">
             <!-- Status do Sistema -->
@@ -698,9 +999,8 @@
                                     <option value="Laura">Laura</option>
                                     <option value="Ronald">Ronald</option>
                                     <option value="Bruna">Bruna</option>
-                                    <option value="Bruna">Andressa</option>
-                                    <option value="Bruna">Thalyta</option>
-                                    <option value="Outro">Outra pessoa</option>
+                                    <option value="Andressa">Andressa</option>
+                                    <option value="Thalyta">Thalyta</option>                                   
                                 </select>
                             </div>
                         </div>
@@ -725,8 +1025,8 @@
                                     <option value="bike">Foto Bike</option>
                                     <option value="ambos">Foto em Ambos</option>
                                     <option value="edicao">Apenas edição</option>
-                                    <option value="edicao">Criar anúncio</option>
-                                    <option value="edicao">Replicar anúncio</option>
+                                    <option value="criar_anuncio">Criar anúncio</option>
+                                    <option value="replicar_anuncio">Replicar anúncio</option>
                                 </select>
                             </div>
                         </div>
@@ -752,6 +1052,46 @@
                             <i class="fas fa-info-circle"></i> Cole aqui o link do anúncio do produto
                         </small>
                     </div>
+
+                    <!-- CAMPOS PARA CRIAR/REPLICAR ANÚNCIO (APARECEM SOMENTE QUANDO SELECIONADO) -->
+    <div id="camposAnuncio" class="hidden">
+        <div class="d-flex flex-wrap gap-3 mb-4">
+            <div style="flex: 1; min-width: 200px;">
+                <div class="form-group">
+                    <label for="valorAnuncio"><i class="fas fa-money-bill-wave"></i> Valor do Anúncio</label>
+                    <input type="number" id="valorAnuncio" class="form-control" step="0.01" min="0" placeholder="R$ 0,00">
+                </div>
+            </div>
+            
+            <div style="flex: 1; min-width: 200px;">
+                <div class="form-group">
+                    <label for="precisaFoto"><i class="fas fa-camera"></i> Precisa de foto?</label>
+                    <select id="precisaFoto" class="form-control">
+                        <option value="nao">Não</option>
+                        <option value="sim">Sim</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <div class="form-group mb-4">
+            <label for="descricaoAnuncio"><i class="fas fa-align-left"></i> Descrição do Anúncio</label>
+            <textarea id="descricaoAnuncio" class="form-control" rows="3" placeholder="Descrição detalhada do anúncio..."></textarea>
+        </div>
+        
+        <div class="form-group mb-4">
+            <label for="linkNovoAnuncio"><i class="fas fa-link"></i> Link do Novo Anúncio</label>
+            <input type="url" id="linkNovoAnuncio" class="form-control" placeholder="https://exemplo.com/novo-anuncio">
+            <small style="color: #6c757d; font-size: 12px; display: block; margin-top: 5px;">
+                <i class="fas fa-info-circle"></i> Link onde será publicado o novo anúncio
+            </small>
+        </div>
+    </div>
+    
+    <div class="form-group mb-4">
+        <label for="observations"><i class="fas fa-sticky-note"></i> Observações</label>
+        <textarea id="observations" class="form-control" rows="3" placeholder="Detalhes importantes..."></textarea>
+    </div>
                                         
                     <div class="form-group mb-4">
                         <label for="observations"><i class="fas fa-sticky-note"></i> Observações</label>
@@ -803,12 +1143,11 @@
                         <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
                             Concluídas (<span id="countCompleted">0</span>)
                         </button>
-                        <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
-                            Todas (<span id="countTotal">0</span>)
-                        </button>
-                        <!-- No card-header da lista de OS, adicione este botão: -->
                         <button class="btn btn-danger btn-sm" onclick="filterOS('nao_conferidas')">
                             Não Conferidas (<span id="countNotChecked">0</span>)
+                        </button>
+                        <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
+                            Todas (<span id="countTotal">0</span>)
                         </button>
                     </div>
                 </div>
@@ -877,6 +1216,120 @@
                             <i class="fas fa-check"></i> Finalizar
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== SISTEMA DE REEMBOLSOS ===== -->
+    <div id="reembolsosSystem" class="hidden">
+        <header class="main-header">
+            <div class="container">
+                <div class="header-content">
+                    <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-exchange-alt" style="color: var(--primary);"></i>
+                        Sistema de Reembolsos ML
+                    </h1>
+                    
+                    <div class="user-info">
+                        <div class="notification-bell" id="reembolsoNotificationBell" onclick="toggleNotificacoesReembolso()" style="display: none;">
+                            <i class="fas fa-bell fa-lg" style="color: #6c757d;"></i>
+                            <span class="notification-badge" id="reembolsoNotificationCount">0</span>
+                        </div>
+                        
+                        <div class="user-avatar" id="reembolsoUserAvatar">U</div>
+                        <div>
+                            <div style="font-weight: 600;" id="reembolsoUserName">Usuário</div>
+                            <div style="font-size: 12px; color: #6c757d;" id="reembolsoUserRole"></div>
+                            <div class="d-flex gap-2 mt-2">
+                                <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
+                                    <i class="fas fa-arrow-left"></i> Voltar para OS
+                                </button>
+                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
+                                    <i class="fas fa-sign-out-alt"></i> Sair
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
+        <div class="container">
+            <!-- Status do Sistema de Reembolsos -->
+            <div class="card mb-4">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                            <i class="fas fa-money-check-alt" style="color: var(--success);"></i>
+                            Controle de Reembolsos
+                        </h3>
+                        <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
+                            <span id="countVerificar">0</span> a verificar •
+                            <span id="countReembolsados">0</span> reembolsados •
+                            <span id="countPendentes">0</span> pendentes •
+                            Total: R$ <span id="totalReembolsos">0,00</span>
+                        </p>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button onclick="openRelatorioReembolsos()" class="btn btn-info" id="btnRelatorio">
+                            <i class="fas fa-chart-line"></i> Relatório
+                        </button>
+                        <button onclick="novoReembolso()" class="btn btn-success">
+                            <i class="fas fa-plus-circle"></i> Novo Reembolso
+                        </button>
+                        <button onclick="atualizarReembolsos()" class="btn btn-primary">
+                            <i class="fas fa-sync-alt"></i> Atualizar
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Abas de Navegação -->
+            <div class="card mb-4">
+                <div class="d-flex flex-wrap gap-2" style="border-bottom: 2px solid #f1f3f5; padding-bottom: 15px;">
+                    <button class="btn btn-warning btn-sm" onclick="filtrarReembolsos('a_verificar')">
+                        <i class="fas fa-clock"></i> A Verificar (<span id="tabVerificar">0</span>)
+                        <span id="badgeNovos" class="badge badge-danger ml-1" style="display: none;">!</span>
+                    </button>
+                    <button class="btn btn-success btn-sm" onclick="filtrarReembolsos('reembolsado')">
+                        <i class="fas fa-check-circle"></i> Reembolsados (<span id="tabReembolsados">0</span>)
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="filtrarReembolsos('pendente')">
+                        <i class="fas fa-exclamation-circle"></i> Pendentes (<span id="tabPendentes">0</span>)
+                        <span id="badgePendentes" class="badge badge-warning ml-1" style="display: none;">!</span>
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="filtrarReembolsos('todos')">
+                        <i class="fas fa-list"></i> Todos (<span id="tabTodos">0</span>)
+                    </button>
+                </div>
+                
+                <!-- Lista de Reembolsos -->
+                <div class="table-responsive mt-3">
+                    <table class="table" id="reembolsosTable">
+                        <thead>
+                            <tr>
+                                <th>Venda</th>
+                                <th>Operação</th>
+                                <th>Valor</th>
+                                <th>Data</th>
+                                <th>Frete</th>
+                                <th>Status</th>
+                                <th>Criado por</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reembolsosTableBody">
+                            <!-- Reembolsos serão carregados aqui -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div id="reembolsosEmpty" class="text-center py-5 hidden">
+                    <i class="fas fa-exchange-alt fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                    <h4 style="color: #6c757d;">Nenhum reembolso encontrado</h4>
+                    <p style="color: #6c757d;">Clique em "Novo Reembolso" para começar.</p>
                 </div>
             </div>
         </div>
@@ -980,278 +1433,284 @@
     </div>
 
     <!-- Modal para Visualização Completa da OS -->
-<div id="viewOSModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 90%; max-height: 90vh; width: 1200px; padding: 0;">
-        <!-- Cabeçalho do Modal -->
-        <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <h3 style="margin: 0; font-weight: 600;">
-                    <i class="fas fa-eye"></i> Visualizar Ordem de Serviço
-                </h3>
-                <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
-                    <span id="viewOSCode">Carregando...</span>
-                </p>
+    <div id="viewOSModal" class="modal hidden">
+        <div class="modal-content" style="max-width: 90%; max-height: 90vh; width: 1200px; padding: 0;">
+            <!-- Cabeçalho do Modal -->
+            <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="margin: 0; font-weight: 600;">
+                        <i class="fas fa-eye"></i> Visualizar Ordem de Serviço
+                    </h3>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
+                        <span id="viewOSCode">Carregando...</span>
+                    </p>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <button onclick="printCurrentOS()" class="btn btn-primary btn-sm">
+                        <i class="fas fa-print"></i> Imprimir
+                    </button>
+                    <button onclick="closeViewOSModal()" style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; color: white; font-size: 20px; display: flex; align-items: center; justify-content: center;">
+                        &times;
+                    </button>
+                </div>
             </div>
-            <div class="d-flex gap-2 align-items-center">
-                <button onclick="printCurrentOS()" class="btn btn-primary btn-sm">
-                    <i class="fas fa-print"></i> Imprimir
-                </button>
-                <button onclick="closeViewOSModal()" style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; color: white; font-size: 20px; display: flex; align-items: center; justify-content: center;">
-                    &times;
-                </button>
+            
+            <!-- Navegação por Abas -->
+            <div style="background: #f8f9fa; padding: 0 30px; border-bottom: 1px solid #dee2e6;">
+                <div class="d-flex" id="viewOSTabs">
+                    <button class="tab-button active" onclick="switchViewOSTab('details')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid #8A2BE2; font-weight: 600; color: #8A2BE2; cursor: pointer;">
+                        <i class="fas fa-info-circle"></i> Detalhes
+                    </button>
+                    <button class="tab-button" onclick="switchViewOSTab('photos')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; color: #6c757d; cursor: pointer;">
+                        <i class="fas fa-images"></i> Fotos <span id="viewPhotosCount" class="badge badge-info" style="margin-left: 5px;">0</span>
+                    </button>
+                    <button class="tab-button" onclick="switchViewOSTab('timeline')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; color: #6c757d; cursor: pointer;">
+                        <i class="fas fa-history"></i> Histórico
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Conteúdo do Modal -->
+            <div id="viewOSContent" style="padding: 30px; max-height: 65vh; overflow-y: auto;">
+                <!-- As abas serão carregadas dinamicamente aqui -->
+            </div>
+            
+            <!-- Rodapé do Modal -->
+            <div style="background: #f8f9fa; padding: 15px 30px; border-top: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="color: #6c757d; font-size: 14px;">
+                        <i class="far fa-calendar-alt"></i>
+                        Criado em: <span id="viewCreatedAt">-</span>
+                    </span>
+                </div>
+                <div class="d-flex gap-2">
+                    <button onclick="editCurrentOS()" class="btn btn-warning btn-sm">
+                        <i class="fas fa-edit"></i> Editar
+                    </button>
+                    <button onclick="closeViewOSModal()" class="btn btn-secondary btn-sm">
+                        <i class="fas fa-times"></i> Fechar
+                    </button>
+                </div>
             </div>
         </div>
-        
-        <!-- Navegação por Abas -->
-        <div style="background: #f8f9fa; padding: 0 30px; border-bottom: 1px solid #dee2e6;">
-            <div class="d-flex" id="viewOSTabs">
-                <button class="tab-button active" onclick="switchViewOSTab('details')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid #8A2BE2; font-weight: 600; color: #8A2BE2; cursor: pointer;">
-                    <i class="fas fa-info-circle"></i> Detalhes
-                </button>
-                <button class="tab-button" onclick="switchViewOSTab('photos')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; color: #6c757d; cursor: pointer;">
-                    <i class="fas fa-images"></i> Fotos <span id="viewPhotosCount" class="badge badge-info" style="margin-left: 5px;">0</span>
-                </button>
-                <button class="tab-button" onclick="switchViewOSTab('timeline')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; color: #6c757d; cursor: pointer;">
-                    <i class="fas fa-history"></i> Histórico
-                </button>
-            </div>
+    </div>
+
+    <!-- Modal para Novo Reembolso - ATUALIZE ESTA PARTE -->
+<div id="reembolsoModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">
+                <i class="fas fa-exchange-alt"></i> <span id="reembolsoModalTitle">Novo Reembolso</span>
+            </h3>
+            <button onclick="closeReembolsoModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
+                &times;
+            </button>
         </div>
         
-        <!-- Conteúdo do Modal -->
-        <div id="viewOSContent" style="padding: 30px; max-height: 65vh; overflow-y: auto;">
-            <!-- As abas serão carregadas dinamicamente aqui -->
-        </div>
-        
-        <!-- Rodapé do Modal -->
-        <div style="background: #f8f9fa; padding: 15px 30px; border-top: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <span style="color: #6c757d; font-size: 14px;">
-                    <i class="far fa-calendar-alt"></i>
-                    Criado em: <span id="viewCreatedAt">-</span>
-                </span>
+        <div id="reembolsoFormContainer">
+            <input type="hidden" id="reembolsoId">
+            
+            <div class="form-group mb-3">
+                <label for="numeroVenda"><i class="fas fa-tag"></i> Número da Venda *</label>
+                <input type="text" id="numeroVenda" class="form-control" placeholder="Ex: VENDA123456" required>
             </div>
-            <div class="d-flex gap-2">
-                <button onclick="editCurrentOS()" class="btn btn-warning btn-sm">
-                    <i class="fas fa-edit"></i> Editar
+            
+            <div class="form-group mb-3">
+                <label for="numeroOperacao"><i class="fas fa-receipt"></i> Número da Operação *</label>
+                <input type="text" id="numeroOperacao" class="form-control" placeholder="Ex: OP789012" required>
+            </div>
+            
+            <div class="d-flex gap-3 mb-3">
+                <div style="flex: 1;">
+                    <div class="form-group">
+                        <label for="valorReembolso"><i class="fas fa-money-bill-wave"></i> Valor *</label>
+                        <input type="number" id="valorReembolso" class="form-control" step="0.01" min="0" placeholder="0,00" required>
+                    </div>
+                </div>
+                
+                <div style="flex: 1;">
+                    <div class="form-group">
+                        <label for="dataReembolso"><i class="fas fa-calendar"></i> Data *</label>
+                        <input type="date" id="dataReembolso" class="form-control" required>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- REMOVA O CHECKBOX ANTIGO E ADICIONE ESTE SELECT -->
+            <div class="form-group mb-3">
+                <label for="tipoReembolso"><i class="fas fa-shipping-fast"></i> Tipo de Reembolso</label>
+                <select id="tipoReembolso" class="form-control">
+                    <option value="normal" selected>Normal (Produto)</option>
+                    <option value="frete">Frete</option>
+                    <option value="outro">Outro</option>
+                </select>
+                <small style="color: #6c757d; font-size: 12px; display: block; margin-top: 5px;">
+                    <i class="fas fa-info-circle"></i> Selecione "Frete" se o reembolso for referente a custos de envio
+                </small>
+            </div>
+            
+            <div class="form-group mb-4">
+                <label for="observacoesReembolso"><i class="fas fa-sticky-note"></i> Observações</label>
+                <textarea id="observacoesReembolso" class="form-control" rows="2" placeholder="Detalhes sobre o reembolso..."></textarea>
+            </div>
+            
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="closeReembolsoModal()">
+                    Cancelar
                 </button>
-                <button onclick="closeViewOSModal()" class="btn btn-secondary btn-sm">
-                    <i class="fas fa-times"></i> Fechar
+                <button id="salvarReembolsoBtn" class="btn btn-success" onclick="salvarReembolso()">
+                    <i class="fas fa-save"></i> Salvar
                 </button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Estilos para as abas -->
-<style>
-    .tab-button:hover {
-        background-color: rgba(138, 43, 226, 0.1) !important;
-    }
-    
-    .tab-button.active {
-        color: #8A2BE2 !important;
-    }
-    
-    .tab-content {
-        display: none;
-    }
-    
-    .tab-content.active {
-        display: block;
-    }
-    
-    .info-card {
-        background: #f8f9fa;
-        border-radius: 10px;
-        padding: 20px;
-        margin-bottom: 20px;
-        border: 1px solid #e9ecef;
-    }
-    
-    .info-card h4 {
-        color: #495057;
-        margin-bottom: 15px;
-        padding-bottom: 10px;
-        border-bottom: 2px solid #dee2e6;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    
-    .info-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 20px;
-    }
-    
-    .info-item {
-        margin-bottom: 12px;
-    }
-    
-    .info-label {
-        font-weight: 600;
-        color: #6c757d;
-        font-size: 13px;
-        margin-bottom: 5px;
-    }
-    
-    .info-value {
-        color: #212529;
-        font-size: 15px;
-    }
-    
-    .badge-view {
-        padding: 6px 12px;
-        border-radius: 20px;
-        font-weight: 600;
-        font-size: 12px;
-        display: inline-block;
-    }
-    
-    .photo-gallery-view {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 15px;
-        margin-top: 20px;
-    }
-    
-    .photo-card-view {
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        transition: transform 0.3s;
-    }
-    
-    .photo-card-view:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
-    }
-    
-    .timeline {
-        position: relative;
-        padding-left: 30px;
-    }
-    
-    .timeline::before {
-        content: '';
-        position: absolute;
-        left: 15px;
-        top: 0;
-        bottom: 0;
-        width: 2px;
-        background: #dee2e6;
-    }
-    
-    .timeline-item {
-        position: relative;
-        margin-bottom: 25px;
-        padding-bottom: 25px;
-        border-bottom: 1px dashed #e9ecef;
-    }
-    
-    .timeline-item:last-child {
-        border-bottom: none;
-    }
-    
-    .timeline-item::before {
-        content: '';
-        position: absolute;
-        left: -23px;
-        top: 0;
-        width: 12px;
-        height: 12px;
-        border-radius: 50%;
-        background: #8A2BE2;
-        border: 3px solid white;
-        box-shadow: 0 0 0 3px rgba(138, 43, 226, 0.2);
-    }
-    
-    .timeline-date {
-        font-size: 12px;
-        color: #6c757d;
-        margin-bottom: 5px;
-    }
-    
-    .timeline-content {
-        background: white;
-        padding: 15px;
-        border-radius: 8px;
-        border: 1px solid #e9ecef;
-    }
-    
-    .status-badge-view {
-        display: inline-block;
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-weight: 600;
-        font-size: 13px;
-        margin-right: 10px;
-    }
-    
-    .status-pending-view {
-        background: #fff3cd;
-        color: #856404;
-    }
-    
-    .status-progress-view {
-        background: #d1ecf1;
-        color: #0c5460;
-    }
-    
-    .status-completed-view {
-        background: #d4edda;
-        color: #155724;
-    }
+    <!-- Modal para Relatório de Reembolsos -->
+    <div id="relatorioModal" class="modal hidden">
+        <div class="modal-content" style="max-width: 800px; max-height: 90vh; padding: 0;">
+            <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h3 style="margin: 0; font-weight: 600;">
+                        <i class="fas fa-chart-line"></i> Relatório de Reembolsos
+                    </h3>
+                    <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
+                        Análise de reembolsos por período
+                    </p>
+                </div>
+                <button onclick="closeRelatorioModal()" style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; color: white; font-size: 20px; display: flex; align-items: center; justify-content: center;">
+                    &times;
+                </button>
+            </div>
+            
+            <div style="padding: 20px;">
+                <!-- Filtros -->
+                <div class="card mb-4">
+                    <h4 style="margin-bottom: 15px;"><i class="fas fa-filter"></i> Filtros</h4>
+                    <div class="d-flex flex-wrap gap-3">
+                        <div style="flex: 1; min-width: 200px;">
+                            <div class="form-group">
+                                <label for="dataInicio"><i class="fas fa-calendar-alt"></i> Data Início</label>
+                                <input type="date" id="dataInicio" class="form-control">
+                            </div>
+                        </div>
+                        <div style="flex: 1; min-width: 200px;">
+                            <div class="form-group">
+                                <label for="dataFim"><i class="fas fa-calendar-alt"></i> Data Fim</label>
+                                <input type="date" id="dataFim" class="form-control">
+                            </div>
+                        </div>
+                        <div style="flex: 1; min-width: 150px;">
+                            <div class="form-group">
+                                <label for="filtroMes"><i class="fas fa-calendar-week"></i> Mês</label>
+                                <select id="filtroMes" class="form-control">
+                                    <option value="">Todos os meses</option>
+                                    <option value="1">Janeiro</option>
+                                    <option value="2">Fevereiro</option>
+                                    <option value="3">Março</option>
+                                    <option value="4">Abril</option>
+                                    <option value="5">Maio</option>
+                                    <option value="6">Junho</option>
+                                    <option value="7">Julho</option>
+                                    <option value="8">Agosto</option>
+                                    <option value="9">Setembro</option>
+                                    <option value="10">Outubro</option>
+                                    <option value="11">Novembro</option>
+                                    <option value="12">Dezembro</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end mt-3">
+                        <button onclick="gerarRelatorio()" class="btn btn-primary">
+                            <i class="fas fa-chart-bar"></i> Gerar Relatório
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Resumo -->
+                <div class="card mb-4">
+                    <h4 style="margin-bottom: 15px;"><i class="fas fa-chart-pie"></i> Resumo</h4>
+                    <div class="d-flex flex-wrap gap-4">
+                        <div class="text-center" style="flex: 1; min-width: 150px;">
+                            <div style="font-size: 24px; font-weight: 700; color: #28a745;">R$ <span id="totalPeriodo">0,00</span></div>
+                            <div style="font-size: 12px; color: #6c757d;">Total Reembolsado</div>
+                        </div>
+                        <div class="text-center" style="flex: 1; min-width: 150px;">
+                            <div style="font-size: 24px; font-weight: 700; color: #17a2b8;"><span id="quantidadePeriodo">0</span></div>
+                            <div style="font-size: 12px; color: #6c757d;">Quantidade</div>
+                        </div>
+                        <div class="text-center" style="flex: 1; min-width: 150px;">
+                            <div style="font-size: 24px; font-weight: 700; color: #ffc107;">R$ <span id="mediaPeriodo">0,00</span></div>
+                            <div style="font-size: 12px; color: #6c757d;">Média por Reembolso</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Gráfico -->
+                <div class="card mb-4">
+                    <h4 style="margin-bottom: 15px;"><i class="fas fa-chart-bar"></i> Distribuição por Mês</h4>
+                    <div id="graficoContainer" style="height: 300px; display: flex; align-items: center; justify-content: center; color: #6c757d;">
+                        <i class="fas fa-chart-bar fa-3x" style="opacity: 0.3;"></i>
+                        <span style="margin-left: 10px;">Clique em "Gerar Relatório" para visualizar</span>
+                    </div>
+                </div>
+                
+                <!-- Lista Detalhada -->
+                <div class="card">
+                    <h4 style="margin-bottom: 15px;"><i class="fas fa-list"></i> Detalhes</h4>
+                    <div class="table-responsive">
+                        <table class="table" id="relatorioTable">
+                            <thead>
+                                <tr>
+                                    <th>Venda</th>
+                                    <th>Data</th>
+                                    <th>Valor</th>
+                                    <th>Frete</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="relatorioTableBody">
+                                <!-- Dados do relatório serão carregados aqui -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <button onclick="exportarRelatorio()" class="btn btn-success btn-sm">
+                            <i class="fas fa-file-excel"></i> Exportar Excel
+                        </button>
+                        <button onclick="imprimirRelatorio()" class="btn btn-primary btn-sm">
+                            <i class="fas fa-print"></i> Imprimir
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    /* Estilos para conferência */
-.badge-conferido {
-    background: rgba(40, 167, 69, 0.1);
-    color: var(--success);
-    border: 1px solid var(--success);
-}
-
-.badge-nao-conferido {
-    background: rgba(255, 193, 7, 0.1);
-    color: var(--warning);
-    border: 1px solid var(--warning);
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.7; }
-    100% { opacity: 1; }
-}
-
-/* Destaque para OS não conferidas */
-.os-nao-conferida {
-    background: linear-gradient(45deg, #fff5f5, #ffe6e6) !important;
-    border-left: 4px solid #dc3545 !important;
-    animation: pulseWarning 2s infinite;
-}
-
-@keyframes pulseWarning {
-    0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }
-    70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
-}
-
-/* ESTILO PARA LINKS */
-.form-control[type="url"]:valid {
-    border-color: #28a745;
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'%3e%3cpath fill='%2328a745' d='M2.3 6.73L.6 4.53c-.4-1.04.46-1.4 1.1-.8l1.1 1.4 3.4-3.8c.6-.63 1.6-.27 1.2.7l-4 4.6c-.43.5-.8.4-1.1.1z'/%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right calc(0.375em + 0.1875rem) center;
-    background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
-}
-
-.form-control[type="url"]:invalid:not(:placeholder-shown) {
-    border-color: #dc3545;
-}
-
-</style>
+    <!-- Notificações Dropdown para Reembolsos -->
+    <div id="notificacoesReembolsoDropdown" class="hidden" style="position: fixed; top: 70px; right: 20px; width: 350px; background: white; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 1001; border: 1px solid #dee2e6;">
+        <div style="padding: 15px; border-bottom: 1px solid #e9ecef;">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 style="margin: 0;"><i class="fas fa-bell"></i> Notificações</h5>
+                <button onclick="toggleNotificacoesReembolso()" style="background: none; border: none; color: #6c757d; cursor: pointer;">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+        <div id="notificacoesReembolsoContent" style="max-height: 400px; overflow-y: auto;">
+            <!-- Notificações serão carregadas aqui -->
+        </div>
+        <div style="padding: 10px; text-align: center; border-top: 1px solid #e9ecef;">
+            <button onclick="marcarTodasComoLidasReembolso()" class="btn btn-sm btn-outline-secondary">
+                <i class="fas fa-check-double"></i> Marcar todas como lidas
+            </button>
+        </div>
+    </div>
+    
 
     <!-- SCRIPT PRINCIPAL -->
     <script src="script.js"></script>
+    
 </body>
 </html>

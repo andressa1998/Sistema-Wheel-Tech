@@ -16,6 +16,12 @@ let editingOrderId = null;
 let currentOSForPrint = null;
 let currentPrintStyle = 'detailed';
 
+ // ===== VARIÁVEIS PARA REEMBOLSOS =====
+let reembolsos = [];
+let currentReembolsoFilter = 'a_verificar';
+let editingReembolsoId = null;
+let notificacoes = [];
+
 // ===== VARIÁVEIS PARA FOTOS =====
 let selectedPhotos = [];
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
@@ -62,7 +68,8 @@ const SYSTEM_USERS = [
     { username: 'ronald', password: '210188', name: 'Ronald', avatar: 'R', role: 'Administrador' },
     { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Assistente' },
     { username: 'andressa', password: '220922', name: 'Andressa', avatar: 'A', role: 'Assistente 2' },
-    { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' }
+    { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' },
+    { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
 ];
 
 // ===== INICIALIZAÇÃO =====
@@ -176,6 +183,1339 @@ function setupEventListeners() {
     if (usernameInput) {
         setTimeout(() => usernameInput.focus(), 100);
     }
+}
+
+// Reenviar reembolso para verificação (do pendente para a verificar)
+window.reenviarParaVerificacao = async function(id) {
+    if (!confirm('Reenviar este reembolso para verificação?')) return;
+    
+    try {
+        console.log('Reenviando reembolso ID:', id, 'para verificação');
+        
+        const { data, error } = await supabaseClient
+            .from('reembolsos_ml')
+            .update({ 
+                status: 'a_verificar',
+                verificado_por: null,
+                data_atualizacao: new Date().toISOString(),
+                notificado_admin: false // Resetar notificação para admin
+            })
+            .eq('id', id)
+            .select();
+        
+        if (error) {
+            console.error('Erro Supabase:', error);
+            throw error;
+        }
+        
+        console.log('Reembolso reenviado para verificação:', data);
+        
+        // Atualizar lista local
+        const index = reembolsos.findIndex(r => r.id === id);
+        if (index !== -1) {
+            reembolsos[index].status = 'a_verificar';
+            reembolsos[index].verificado_por = null;
+            reembolsos[index].notificado_admin = false;
+        }
+        
+        showToast('↪️ Reembolso reenviado para verificação!', 'info');
+        
+        // Recarregar a tabela e voltar para aba "A Verificar"
+        currentReembolsoFilter = 'a_verificar';
+        updateReembolsoCounters();
+        renderReembolsosTable();
+        
+    } catch (error) {
+        console.error('❌ Erro ao reenviar reembolso:', error);
+        showToast('❌ Erro ao reenviar reembolso: ' + error.message, 'error');
+    }
+};
+
+// ============================================
+// FUNÇÕES PARA REEMBOLSOS
+// ============================================
+
+// Função para carregar reembolsos
+async function loadReembolsos() {
+    if (!currentUser) return;
+    
+    try {
+        if (!supabaseClient) {
+            throw new Error('Supabase não conectado');
+        }
+        
+        const { data, error } = await supabaseClient
+            .from('reembolsos_ml')
+            .select('*')
+            .order('data_criacao', { ascending: false });
+        
+        if (error) throw error;
+        
+        reembolsos = (data || []).map(item => ({
+    id: item.id,
+    numero_venda: item.numero_venda,
+    numero_operacao: item.numero_operacao,
+    valor: item.valor,
+    data_operacao: item.data_operacao,
+    tipo: item.tipo || (item.tem_frete ? 'frete' : 'normal'), // Mantém compatibilidade
+    tem_frete: item.tem_frete || item.tipo === 'frete',
+    observacoes: item.observacoes,
+    criado_por: item.criado_por,
+    status: item.status,
+    verificado_por: item.verificado_por,
+    data_criacao: item.data_criacao,
+    data_atualizacao: item.data_atualizacao,
+    notificado_admin: item.notificado_admin,
+    notificado_usuario: item.notificado_usuario
+}));
+        
+        // Verificar se o usuário atual é admin
+        const isAdmin = currentUser.role === 'Administrador';
+        
+        // Filtrar reembolsos se não for admin
+        if (!isAdmin) {
+            reembolsos = reembolsos.filter(reembolso => 
+                reembolso.criado_por === currentUser.name || 
+                currentUser.role === 'Administrador'
+            );
+        }
+        
+        updateReembolsoCounters();
+        renderReembolsosTable();
+        
+        // Verificar notificações
+        verificarNotificacoesReembolsos();
+        
+    } catch (error) {
+        console.error('❌ Erro ao carregar reembolsos:', error);
+        reembolsos = [];
+        updateReembolsoCounters();
+        renderReembolsosTable();
+    }
+}
+
+// Atualizar contadores de reembolsos
+function updateReembolsoCounters() {
+    if (!currentUser) return;
+    
+    const aVerificar = reembolsos.filter(r => r.status === 'a_verificar').length;
+    const reembolsados = reembolsos.filter(r => r.status === 'reembolsado').length;
+    const pendentes = reembolsos.filter(r => r.status === 'pendente').length;
+    const total = reembolsos.length;
+    
+    // Calcular total de valores reembolsados
+    const totalValor = reembolsos
+        .filter(r => r.status === 'reembolsado')
+        .reduce((sum, r) => sum + parseFloat(r.valor || 0), 0);
+    
+    if (countVerificar) countVerificar.textContent = aVerificar;
+    if (countReembolsados) countReembolsados.textContent = reembolsados;
+    if (countPendentes) countPendentes.textContent = pendentes;
+    if (totalReembolsos) totalReembolsos.textContent = totalValor.toFixed(2);
+    
+    if (tabVerificar) tabVerificar.textContent = aVerificar;
+    if (tabReembolsados) tabReembolsados.textContent = reembolsados;
+    if (tabPendentes) tabPendentes.textContent = pendentes;
+    if (tabTodos) tabTodos.textContent = total;
+    
+    // Mostrar badge se houver novos a verificar (para admin)
+    if (currentUser.role === 'Administrador' && aVerificar > 0) {
+        badgeNovos.style.display = 'inline-block';
+        badgeNovos.textContent = aVerificar;
+    } else {
+        badgeNovos.style.display = 'none';
+    }
+    
+    // Mostrar badge se houver pendentes (para usuário que criou)
+    const pendentesUsuario = reembolsos.filter(r => 
+        r.status === 'pendente' && r.criado_por === currentUser.name
+    ).length;
+    
+    if (pendentesUsuario > 0) {
+        badgePendentes.style.display = 'inline-block';
+        badgePendentes.textContent = pendentesUsuario;
+    } else {
+        badgePendentes.style.display = 'none';
+    }
+    
+    // Atualizar notificação do sino
+    updateNotificationBadge();
+}
+
+// Adicione esta função se não existir:
+function setupReembolsoEventListeners() {
+    // Event listener para o checkbox de frete (se ainda existir)
+    const temFreteCheckbox = document.getElementById('temFrete');
+    const freteContainer = document.getElementById('freteContainer');
+    
+    if (temFreteCheckbox && freteContainer) {
+        temFreteCheckbox.addEventListener('change', function() {
+            freteContainer.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+    
+    // Event listener para data - setar data atual se vazia
+    const dataReembolsoInput = document.getElementById('dataReembolso');
+    if (dataReembolsoInput && !dataReembolsoInput.value) {
+        dataReembolsoInput.value = new Date().toISOString().split('T')[0];
+    }
+    
+    // Fechar modal ao clicar fora
+    const reembolsoModal = document.getElementById('reembolsoModal');
+    if (reembolsoModal) {
+        reembolsoModal.addEventListener('click', function(e) {
+            if (e.target === reembolsoModal) {
+                closeReembolsoModal();
+            }
+        });
+    }
+}
+
+// Renderizar tabela de reembolsos
+function renderReembolsosTable() {
+    if (!reembolsosTableBody) return;
+    
+    reembolsosTableBody.innerHTML = '';
+    
+    if (reembolsos.length === 0) {
+        reembolsosTableBody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center" style="padding: 40px;">
+                    <i class="fas fa-exchange-alt fa-3x" style="color: #6c757d; opacity: 0.5; margin-bottom: 15px;"></i>
+                    <h4 style="color: #6c757d;">Nenhum reembolso encontrado</h4>
+                    <p style="color: #6c757d;">Clique em "Novo Reembolso" para começar.</p>
+                </td>
+            </tr>
+        `;
+        reembolsosEmpty.classList.add('hidden');
+        return;
+    }
+    
+    // Filtrar reembolsos baseado no filtro atual
+    let filteredReembolsos = reembolsos;
+    if (currentReembolsoFilter !== 'todos') {
+        filteredReembolsos = reembolsos.filter(r => r.status === currentReembolsoFilter);
+    }
+    
+    // Verificar se o usuário atual é admin
+    const isAdmin = currentUser.role === 'Administrador';
+    
+    filteredReembolsos.forEach(reembolso => {
+        const row = document.createElement('tr');
+        row.className = 'reembolso-item';
+        
+        // Formatar data
+        const dataOp = new Date(reembolso.data_operacao);
+        const dataFormatada = dataOp.toLocaleDateString('pt-BR');
+        
+        // Status
+        let statusBadge = '';
+        if (reembolso.status === 'a_verificar') {
+            statusBadge = '<span class="status-a_verificar">A Verificar</span>';
+        } else if (reembolso.status === 'reembolsado') {
+            statusBadge = '<span class="status-reembolsado">Reembolsado</span>';
+        } else {
+            statusBadge = '<span class="status-pendente">Pendente</span>';
+        }
+
+        // Mostrar badge se houver pendentes (para usuário que criou)
+        const pendentesUsuario = reembolsos.filter(r => 
+            r.status === 'pendente' && r.criado_por === currentUser.name
+        ).length;
+
+        if (pendentesUsuario > 0) {
+            badgePendentes.style.display = 'inline-block';
+            badgePendentes.textContent = pendentesUsuario;
+        } else {
+            badgePendentes.style.display = 'none';
+        }
+        
+        // FRETE:
+let tipoInfo = '';
+if (reembolso.tipo === 'frete') {
+    tipoInfo = `
+        <div style="margin-top: 5px;">
+            <span class="badge badge-warning" style="background: #ffc107; color: #212529;">
+                <i class="fas fa-shipping-fast"></i> Frete
+            </span>
+        </div>
+    `;
+} else if (reembolso.tipo === 'outro') {
+    tipoInfo = `
+        <div style="margin-top: 5px;">
+            <span class="badge badge-info">
+                <i class="fas fa-question-circle"></i> Outro
+            </span>
+        </div>
+    `;
+}
+        
+        // Ações
+        let acoes = '';
+        
+        // Se for admin ou criador do reembolso
+if (isAdmin || reembolso.criado_por === currentUser.name) {
+    if (reembolso.status === 'a_verificar' && isAdmin) {
+        acoes = `
+            <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
+                <i class="fas fa-check"></i> OK
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="rejeitarReembolso(${reembolso.id})" title="Marcar como Pendente">
+                <i class="fas fa-times"></i> Pendente
+            </button>
+        `;
+    }
+    
+    // ADICIONE ESTE BLOCO PARA REENVIO
+    if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser.name) {
+    acoes += `
+        <button class="btn btn-info btn-sm btn-reenviar" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação">
+            <i class="fas fa-paper-plane"></i> Reenviar
+        </button>
+    `;
+}
+    
+    acoes += `
+        <button class="btn btn-warning btn-sm" onclick="editarReembolso(${reembolso.id})" title="Editar">
+            <i class="fas fa-edit"></i>
+        </button>
+    `;
+    
+    // Se for admin ou criador, pode excluir
+    if (isAdmin || reembolso.criado_por === currentUser.name) {
+        acoes += `
+            <button class="btn btn-danger btn-sm" onclick="excluirReembolso(${reembolso.id})" title="Excluir">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+    }
+} else {
+    // Se não tiver permissão, mostrar apenas visualização
+    acoes = '<span class="text-muted">Sem permissão</span>';
+}
+        
+        row.innerHTML = `
+            <td><strong>${reembolso.numero_venda}</strong></td>
+            <td>${reembolso.numero_operacao}</td>
+            <td class="valor-cell">R$ ${parseFloat(reembolso.valor).toFixed(2)}</td>
+            <td>${dataFormatada}</td>
+            <td>${tipoInfo}</td>
+            <td>${statusBadge}</td>
+            <td>${reembolso.criado_por}</td>
+            <td>
+                <div class="d-flex gap-2">
+                    ${acoes}
+                </div>
+            </td>
+        `;
+        
+        reembolsosTableBody.appendChild(row);
+    });
+    
+    reembolsosEmpty.classList.add('hidden');
+}
+
+// ===== FUNÇÃO PARA EDITAR REEMBOLSO =====
+window.editarReembolso = async function(id) {
+    const reembolso = reembolsos.find(r => r.id === id);
+    if (!reembolso) {
+        showToast('Reembolso não encontrado', 'error');
+        return;
+    }
+    
+    // Verificar permissão - apenas admin ou criador pode editar
+    const isAdmin = currentUser.role === 'Administrador';
+    if (!isAdmin && reembolso.criado_por !== currentUser.name) {
+        showToast('Você não tem permissão para editar este reembolso', 'warning');
+        return;
+    }
+    
+    editingReembolsoId = id;
+    
+    // Preencher o formulário com os dados do reembolso
+    document.getElementById('reembolsoModalTitle').textContent = 'Editar Reembolso';
+    document.getElementById('reembolsoId').value = id;
+    document.getElementById('numeroVenda').value = reembolso.numero_venda || '';
+    document.getElementById('numeroOperacao').value = reembolso.numero_operacao || '';
+    document.getElementById('valorReembolso').value = reembolso.valor || '';
+    
+    // Formatar data para o input date (YYYY-MM-DD)
+    let dataOperacao = '';
+    if (reembolso.data_operacao) {
+        const data = new Date(reembolso.data_operacao);
+        dataOperacao = data.toISOString().split('T')[0];
+    } else {
+        dataOperacao = new Date().toISOString().split('T')[0];
+    }
+    document.getElementById('dataReembolso').value = dataOperacao;
+    
+    // Definir tipo do reembolso
+    document.getElementById('tipoReembolso').value = reembolso.tipo || 'normal';
+    
+    document.getElementById('observacoesReembolso').value = reembolso.observacoes || '';
+    
+    // Mostrar modal
+    document.getElementById('reembolsoModal').classList.remove('hidden');
+};
+
+// Filtrar reembolsos
+window.filtrarReembolsos = function(filter) {
+    currentReembolsoFilter = filter;
+    renderReembolsosTable();
+    
+    // Atualizar botões ativos
+    document.querySelectorAll('#reembolsosSystem .btn-sm').forEach(btn => {
+        btn.classList.remove('filtro-ativo');
+    });
+    
+    const activeButton = document.querySelector(`#reembolsosSystem .btn-sm[onclick*="${filter}"]`);
+    if (activeButton) {
+        activeButton.classList.add('filtro-ativo');
+    }
+};
+
+// ===== FUNÇÃO PARA EXCLUIR REEMBOLSO =====
+window.excluirReembolso = async function(id) {
+    const reembolso = reembolsos.find(r => r.id === id);
+    if (!reembolso) {
+        showToast('Reembolso não encontrado', 'error');
+        return;
+    }
+    
+    // Verificar permissão - apenas admin ou criador pode excluir
+    const isAdmin = currentUser.role === 'Administrador';
+    if (!isAdmin && reembolso.criado_por !== currentUser.name) {
+        showToast('Você não tem permissão para excluir este reembolso', 'warning');
+        return;
+    }
+    
+    if (!confirm(`Tem certeza que deseja excluir o reembolso da venda ${reembolso.numero_venda}?`)) {
+        return;
+    }
+    
+    try {
+        if (!supabaseClient) {
+            throw new Error('Conexão não disponível');
+        }
+        
+        const { error } = await supabaseClient
+            .from('reembolsos_ml')
+            .delete()
+            .eq('id', id);
+        
+        if (error) throw error;
+        
+        // Remover da lista local
+        reembolsos = reembolsos.filter(r => r.id !== id);
+        
+        updateReembolsoCounters();
+        renderReembolsosTable();
+        
+        showToast('🗑️ Reembolso excluído com sucesso!', 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro ao excluir reembolso:', error);
+        showToast('❌ Erro ao excluir reembolso: ' + error.message, 'error');
+    }
+};
+
+// ===== FUNÇÃO PARA NOVO REEMBOLSO =====
+window.novoReembolso = function() {
+    editingReembolsoId = null;
+    document.getElementById('reembolsoModalTitle').textContent = 'Novo Reembolso';
+    document.getElementById('reembolsoId').value = '';
+    document.getElementById('numeroVenda').value = '';
+    document.getElementById('numeroOperacao').value = '';
+    document.getElementById('valorReembolso').value = '';
+    document.getElementById('dataReembolso').value = new Date().toISOString().split('T')[0];
+    document.getElementById('tipoReembolso').value = 'normal'; // Valor padrão
+    document.getElementById('observacoesReembolso').value = '';
+    document.getElementById('reembolsoModal').classList.remove('hidden');
+};
+
+// Adicione esta função no arquivo script.js (pode ser na seção de funções para reembolsos):
+
+window.reenviarParaVerificacao = async function(id) {
+    if (!confirm('Reenviar este reembolso para verificação?\n\nO administrador será notificado para verificar novamente.')) return;
+    
+    try {
+        if (!supabaseClient) {
+            throw new Error('Conexão não disponível');
+        }
+        
+        const { data, error } = await supabaseClient
+            .from('reembolsos_ml')
+            .update({ 
+                status: 'a_verificar',
+                verificado_por: null,
+                data_atualizacao: new Date().toISOString(),
+                notificado_admin: false // Resetar notificação para admin
+            })
+            .eq('id', id)
+            .select();
+        
+        if (error) throw error;
+        
+        // Atualizar lista local
+        const index = reembolsos.findIndex(r => r.id === id);
+        if (index !== -1) {
+            reembolsos[index].status = 'a_verificar';
+            reembolsos[index].verificado_por = null;
+            reembolsos[index].notificado_admin = false;
+        }
+        
+        showToast('↪️ Reembolso reenviado para verificação!', 'success');
+        
+        // Recarregar a tabela
+        updateReembolsoCounters();
+        renderReembolsosTable();
+        
+        // Se for admin, mostrar notificação imediatamente
+        if (currentUser.role === 'Administrador') {
+            verificarNotificacoes();
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao reenviar reembolso:', error);
+        showToast('❌ Erro ao reenviar reembolso: ' + error.message, 'error');
+    }
+};
+
+// Fechar modal de reembolso
+window.closeReembolsoModal = function() {
+    document.getElementById('reembolsoModal').classList.add('hidden');
+};
+
+// Salvar reembolso - VERSÃO CORRIGIDA
+window.salvarReembolso = async function() {
+    const numeroVenda = document.getElementById('numeroVenda').value.trim();
+    const numeroOperacao = document.getElementById('numeroOperacao').value.trim();
+    const valor = document.getElementById('valorReembolso').value;
+    const dataOperacao = document.getElementById('dataReembolso').value;
+    const tipoReembolso = document.getElementById('tipoReembolso').value; // NOVO CAMPO
+    const observacoes = document.getElementById('observacoesReembolso').value.trim();
+    const reembolsoId = document.getElementById('reembolsoId').value;
+    
+    // Validação
+    if (!numeroVenda || !numeroOperacao || !valor || !dataOperacao) {
+        showToast('Preencha todos os campos obrigatórios!', 'warning');
+        return;
+    }
+    
+    const reembolsoData = {
+        numero_venda: numeroVenda,
+        numero_operacao: numeroOperacao,
+        valor: parseFloat(valor),
+        data_operacao: dataOperacao,
+        tipo: tipoReembolso, // 'normal', 'frete' ou 'outro'
+        tem_frete: tipoReembolso === 'frete', // Mantém compatibilidade
+        observacoes: observacoes,
+        criado_por: currentUser.name,
+        status: 'a_verificar',
+        notificado_admin: false,
+        notificado_usuario: false
+    };
+    
+    const btn = document.getElementById('salvarReembolsoBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Salvando...';
+    btn.disabled = true;
+    
+    try {
+        let result;
+        
+        if (editingReembolsoId) {
+            // Atualizar reembolso existente
+            const { data, error } = await supabaseClient
+                .from('reembolsos_ml')
+                .update(reembolsoData)
+                .eq('id', editingReembolsoId)
+                .select();
+            
+            if (error) throw error;
+            result = { success: true, data };
+        } else {
+            // Criar novo reembolso
+            const { data, error } = await supabaseClient
+                .from('reembolsos_ml')
+                .insert([reembolsoData])
+                .select();
+            
+            if (error) throw error;
+            result = { success: true, data };
+        }
+        
+        if (result.success) {
+            showToast(editingReembolsoId ? 'Reembolso atualizado!' : 'Reembolso criado!', 'success');
+            closeReembolsoModal();
+            await loadReembolsos();
+        }
+    } catch (error) {
+        console.error('❌ Erro ao salvar reembolso:', error);
+        showToast('Erro ao salvar reembolso: ' + error.message, 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+};
+
+// Aprovar reembolso (marcar como reembolsado) - VERSÃO CORRIGIDA
+window.aprovarReembolso = async function(id) {
+    if (!confirm('Marcar este reembolso como reembolsado?')) return;
+    
+    try {
+        console.log('Aprovando reembolso ID:', id);
+        
+        const { data, error } = await supabaseClient
+    .from('reembolsos_ml')
+    .update({ 
+        status: 'reembolsado',
+        verificado_por: currentUser.name,
+        data_atualizacao: new Date().toISOString(),
+        notificado_admin: true // Marcar como notificado
+    })
+    .eq('id', id)
+    .select();
+        
+        if (error) {
+            console.error('Erro Supabase:', error);
+            throw error;
+        }
+        
+        console.log('Reembolso atualizado:', data);
+        
+        // Atualizar lista local
+        const index = reembolsos.findIndex(r => r.id === id);
+        if (index !== -1) {
+            reembolsos[index].status = 'reembolsado';
+            reembolsos[index].verificado_por = currentUser.name;
+            reembolsos[index].notificado_admin = true;
+        }
+        
+        showToast('✅ Reembolso marcado como reembolsado!', 'success');
+        
+        // Recarregar a tabela
+        updateReembolsoCounters();
+        renderReembolsosTable();
+        
+    } catch (error) {
+        console.error('❌ Erro ao aprovar reembolso:', error);
+        showToast('❌ Erro ao aprovar reembolso: ' + error.message, 'error');
+    }
+};
+
+// Rejeitar reembolso (marcar como pendente) - VERSÃO CORRIGIDA
+window.rejeitarReembolso = async function(id) {
+    if (!confirm('Marcar este reembolso como pendente?')) return;
+    
+    try {
+        console.log('Rejeitando reembolso ID:', id);
+        
+        const { data, error } = await supabaseClient
+    .from('reembolsos_ml')
+    .update({ 
+        status: 'pendente',
+        verificado_por: currentUser.name,
+        data_atualizacao: new Date().toISOString(),
+        notificado_usuario: false // Resetar notificação para usuário
+    })
+    .eq('id', id)
+    .select();
+        
+        if (error) {
+            console.error('Erro Supabase:', error);
+            throw error;
+        }
+        
+        console.log('Reembolso atualizado:', data);
+        
+        // Atualizar lista local
+        const index = reembolsos.findIndex(r => r.id === id);
+        if (index !== -1) {
+            reembolsos[index].status = 'pendente';
+            reembolsos[index].verificado_por = currentUser.name;
+            reembolsos[index].notificado_usuario = false;
+        }
+        
+        showToast('⚠️ Reembolso marcado como pendente!', 'warning');
+        
+        // Recarregar a tabela
+        updateReembolsoCounters();
+        renderReembolsosTable();
+        
+    } catch (error) {
+        console.error('❌ Erro ao rejeitar reembolso:', error);
+        showToast('❌ Erro ao rejeitar reembolso: ' + error.message, 'error');
+    }
+};
+
+// ===== FUNÇÃO PARA ATUALIZAR REEMBOLSOS =====
+window.atualizarReembolsos = function() {
+    loadReembolsos();
+    showToast('🔄 Atualizando lista de reembolsos...', 'info');
+};
+
+// ============================================
+// FUNÇÕES DE NOTIFICAÇÃO
+// ============================================
+
+// Verificar notificações
+async function verificarNotificacoes() {
+    if (!currentUser || !supabaseClient) return;
+    
+    try {
+        // Para admin (ronald): verificar reembolsos "a_verificar" não notificados
+        if (currentUser.role === 'Administrador') {
+            const { data, error } = await supabaseClient
+                .from('reembolsos_ml')
+                .select('*')
+                .eq('status', 'a_verificar')
+                .eq('notificado_admin', false);
+            
+            if (error) throw error;
+            
+            if (data && data.length > 0) {
+                // Atualizar contador
+                if (notificationCount) {
+                    notificationCount.textContent = data.length;
+                    notificationBell.style.display = 'block';
+                }
+                
+                // Adicionar notificações
+                notificacoes = data.map(item => ({
+                    id: item.id,
+                    type: 'novo_reembolso',
+                    title: 'Novo Reembolso para Verificar',
+                    message: `${item.criado_por} adicionou um novo reembolso: ${item.numero_venda}`,
+                    date: new Date(item.data_criacao),
+                    read: false
+                }));
+                
+                updateNotificationsUI();
+            }
+        }
+        
+        // Para todos os usuários: verificar reembolsos "pendente" não notificados
+        const { data: pendentes, error: errorPendentes } = await supabaseClient
+            .from('reembolsos_ml')
+            .select('*')
+            .eq('status', 'pendente')
+            .eq('notificado_usuario', false)
+            .eq('criado_por', currentUser.name);
+        
+        if (errorPendentes) throw errorPendentes;
+        
+        if (pendentes && pendentes.length > 0) {
+            pendentes.forEach(item => {
+                notificacoes.push({
+                    id: item.id,
+                    type: 'reembolso_pendente',
+                    title: 'Reembolso Pendente',
+                    message: `Seu reembolso ${item.numero_venda} foi marcado como pendente`,
+                    date: new Date(item.data_atualizacao),
+                    read: false
+                });
+            });
+            
+            updateNotificationsUI();
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao verificar notificações:', error);
+    }
+}
+
+// Verificar notificações específicas para reembolsos
+async function verificarNotificacoesReembolsos() {
+    if (!currentUser) return;
+    
+    let count = 0;
+    
+    // Para admin: contar reembolsos a verificar
+    if (currentUser.role === 'Administrador') {
+        count += reembolsos.filter(r => r.status === 'a_verificar').length;
+    }
+    
+    // Para todos: contar reembolsos pendentes próprios
+    const pendentesProprios = reembolsos.filter(r => 
+        r.status === 'pendente' && r.criado_por === currentUser.name
+    ).length;
+    
+    count += pendentesProprios;
+    
+    // Atualizar badge
+    if (reembolsoNotificationCount && count > 0) {
+        reembolsoNotificationCount.textContent = count;
+        reembolsoNotificationBell.style.display = 'block';
+    } else if (reembolsoNotificationBell) {
+        reembolsoNotificationBell.style.display = 'none';
+    }
+}
+
+// Atualizar UI das notificações
+function updateNotificationsUI() {
+    if (!notificacoesContent) return;
+    
+    // Filtrar notificações não lidas
+    const unreadNotifications = notificacoes.filter(n => !n.read);
+    
+    if (unreadNotifications.length === 0) {
+        notificacoesContent.innerHTML = `
+            <div style="padding: 20px; text-align: center; color: #6c757d;">
+                <i class="fas fa-bell-slash fa-2x" style="margin-bottom: 10px;"></i>
+                <p>Nenhuma notificação</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Ordenar por data (mais recente primeiro)
+    unreadNotifications.sort((a, b) => b.date - a.date);
+    
+    let notificationsHTML = '';
+    
+    unreadNotifications.forEach((notif, index) => {
+        const timeAgo = getTimeAgo(notif.date);
+        
+        notificationsHTML += `
+            <div style="padding: 15px; border-bottom: 1px solid #e9ecef; cursor: pointer; transition: background 0.3s;" 
+                 onclick="marcarNotificacaoComoLida(${index})"
+                 onmouseover="this.style.background='#f8f9fa'" 
+                 onmouseout="this.style.background='white'">
+                <div style="display: flex; align-items: flex-start; gap: 10px;">
+                    <div style="color: ${notif.type === 'novo_reembolso' ? '#8A2BE2' : '#dc3545'};">
+                        <i class="fas ${notif.type === 'novo_reembolso' ? 'fa-exchange-alt' : 'fa-exclamation-circle'}"></i>
+                    </div>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; color: #495057; margin-bottom: 5px;">${notif.title}</div>
+                        <div style="font-size: 13px; color: #6c757d; margin-bottom: 5px;">${notif.message}</div>
+                        <div style="font-size: 11px; color: #adb5bd;">${timeAgo}</div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    notificacoesContent.innerHTML = notificationsHTML;
+    
+    // Atualizar contador
+    updateNotificationBadge();
+}
+
+// Atualizar badge de notificação
+function updateNotificationBadge() {
+    const unreadCount = notificacoes.filter(n => !n.read).length;
+    
+    if (notificationCount) {
+        notificationCount.textContent = unreadCount;
+        if (unreadCount > 0) {
+            notificationBell.style.display = 'block';
+        } else {
+            notificationBell.style.display = 'none';
+        }
+    }
+    
+    // Para reembolsos
+    if (reembolsoNotificationCount) {
+        reembolsoNotificationCount.textContent = unreadCount;
+        if (unreadCount > 0) {
+            reembolsoNotificationBell.style.display = 'block';
+        } else {
+            reembolsoNotificationBell.style.display = 'none';
+        }
+    }
+}
+
+// Marcar notificação como lida
+window.marcarNotificacaoComoLida = async function(index) {
+    if (index >= notificacoes.length) return;
+    
+    const notificacao = notificacoes[index];
+    notificacao.read = true;
+    
+    // Atualizar no banco de dados se aplicável
+    if (notificacao.type === 'novo_reembolso' && currentUser.role === 'Administrador') {
+        try {
+            await supabaseClient
+                .from('reembolsos_ml')
+                .update({ notificado_admin: true })
+                .eq('id', notificacao.id);
+        } catch (error) {
+            console.error('❌ Erro ao atualizar notificação:', error);
+        }
+    } else if (notificacao.type === 'reembolso_pendente') {
+        try {
+            await supabaseClient
+                .from('reembolsos_ml')
+                .update({ notificado_usuario: true })
+                .eq('id', notificacao.id);
+        } catch (error) {
+            console.error('❌ Erro ao atualizar notificação:', error);
+        }
+    }
+    
+    updateNotificationsUI();
+};
+
+// Marcar todas como lidas
+window.marcarTodasComoLidas = async function() {
+    // Marcar todas como lidas localmente
+    notificacoes.forEach(notif => notif.read = true);
+    
+    // Atualizar no banco de dados
+    try {
+        if (currentUser.role === 'Administrador') {
+            await supabaseClient
+                .from('reembolsos_ml')
+                .update({ notificado_admin: true })
+                .eq('status', 'a_verificar');
+        }
+        
+        // Marcar notificações de pendentes como lidas
+        await supabaseClient
+            .from('reembolsos_ml')
+            .update({ notificado_usuario: true })
+            .eq('status', 'pendente')
+            .eq('criado_por', currentUser.name);
+        
+    } catch (error) {
+        console.error('❌ Erro ao marcar notificações como lidas:', error);
+    }
+    
+    updateNotificationsUI();
+    showToast('Todas as notificações marcadas como lidas', 'success');
+};
+
+// Marcar todas como lidas (reembolsos)
+window.marcarTodasComoLidasReembolso = function() {
+    marcarTodasComoLidas();
+};
+
+// Alternar exibição de notificações
+window.toggleNotificacoes = function() {
+    if (notificacoesDropdown.classList.contains('hidden')) {
+        notificacoesDropdown.classList.remove('hidden');
+        // Carregar notificações se necessário
+        updateNotificationsUI();
+    } else {
+        notificacoesDropdown.classList.add('hidden');
+    }
+};
+
+// Alternar exibição de notificações (reembolsos)
+window.toggleNotificacoesReembolso = function() {
+    const dropdown = document.getElementById('notificacoesReembolsoDropdown');
+    const content = document.getElementById('notificacoesReembolsoContent');
+    
+    if (!dropdown || !content) return;
+    
+    if (dropdown.classList.contains('hidden')) {
+        dropdown.classList.remove('hidden');
+        content.innerHTML = notificacoesContent.innerHTML;
+    } else {
+        dropdown.classList.add('hidden');
+    }
+};
+
+// Função auxiliar para calcular tempo relativo
+function getTimeAgo(date) {
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'agora mesmo';
+    if (diffMins < 60) return `há ${diffMins} min`;
+    if (diffHours < 24) return `há ${diffHours} h`;
+    if (diffDays < 7) return `há ${diffDays} d`;
+    return date.toLocaleDateString('pt-BR');
+}
+
+// Enviar notificação por email (simulação)
+function enviarNotificacaoEmail(reembolsoData) {
+    // Em produção, você implementaria uma integração com serviço de email
+    console.log('📧 Notificação de email seria enviada para:', {
+        to: 'admin@empresa.com',
+        subject: 'Novo Reembolso para Verificar',
+        body: `Novo reembolso criado por ${reembolsoData.criado_por}:
+               Venda: ${reembolsoData.numero_venda}
+               Operação: ${reembolsoData.numero_operacao}
+               Valor: R$ ${reembolsoData.valor.toFixed(2)}`
+    });
+    
+    // Aqui você pode integrar com um serviço real de email
+    // Por exemplo, usando EmailJS, SendGrid, ou uma função serverless
+    // fetch('/api/send-email', { method: 'POST', body: JSON.stringify(emailData) });
+}
+
+// ============================================
+// FUNÇÕES DE RELATÓRIO DE REEMBOLSOS
+// ============================================
+
+// Abrir modal de relatório
+window.openRelatorioReembolsos = function() {
+    // Verificar se é admin
+    if (currentUser.role !== 'Administrador') {
+        showToast('Apenas o administrador pode acessar relatórios', 'warning');
+        return;
+    }
+    
+    // Configurar datas padrão (últimos 30 dias)
+    const hoje = new Date();
+    const umMesAtras = new Date();
+    umMesAtras.setDate(hoje.getDate() - 30);
+    
+    document.getElementById('dataInicio').value = umMesAtras.toISOString().split('T')[0];
+    document.getElementById('dataFim').value = hoje.toISOString().split('T')[0];
+    document.getElementById('filtroMes').value = '';
+    
+    document.getElementById('relatorioModal').classList.remove('hidden');
+};
+
+// Fechar modal de relatório
+window.closeRelatorioModal = function() {
+    document.getElementById('relatorioModal').classList.add('hidden');
+};
+
+// Gerar relatório
+window.gerarRelatorio = async function() {
+    const dataInicio = document.getElementById('dataInicio').value;
+    const dataFim = document.getElementById('dataFim').value;
+    const filtroMes = document.getElementById('filtroMes').value;
+    
+    // Validar datas
+    if (dataInicio && dataFim && new Date(dataInicio) > new Date(dataFim)) {
+        showToast('Data início não pode ser maior que data fim', 'warning');
+        return;
+    }
+    
+    try {
+        // Construir query baseada nos filtros
+        let query = supabaseClient
+            .from('reembolsos_ml')
+            .select('*')
+            .eq('status', 'reembolsado');
+        
+        // Aplicar filtro de data
+        if (dataInicio) {
+            query = query.gte('data_operacao', dataInicio);
+        }
+        if (dataFim) {
+            query = query.lte('data_operacao', dataFim);
+        }
+        
+        // Aplicar filtro de mês
+        if (filtroMes) {
+            // Para filtrar por mês, precisamos de uma lógica diferente
+            // Aqui simplificamos pegando todos e filtrando depois
+        }
+        
+        const { data, error } = await query;
+        
+        if (error) throw error;
+        
+        // Aplicar filtro de mês se necessário
+        let filteredData = data || [];
+        if (filtroMes) {
+            filteredData = filteredData.filter(item => {
+                const dataItem = new Date(item.data_operacao);
+                return (dataItem.getMonth() + 1) === parseInt(filtroMes);
+            });
+        }
+        
+        // Calcular estatísticas
+        const total = filteredData.reduce((sum, item) => sum + parseFloat(item.valor), 0);
+        const quantidade = filteredData.length;
+        const media = quantidade > 0 ? total / quantidade : 0;
+        
+        // Atualizar resumo
+        document.getElementById('totalPeriodo').textContent = total.toFixed(2);
+        document.getElementById('quantidadePeriodo').textContent = quantidade;
+        document.getElementById('mediaPeriodo').textContent = media.toFixed(2);
+        
+        // Atualizar tabela
+        const tbody = document.getElementById('relatorioTableBody');
+        tbody.innerHTML = '';
+        
+        if (filteredData.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center" style="padding: 20px;">
+                        Nenhum dado encontrado para o período selecionado
+                    </td>
+                </tr>
+            `;
+        } else {
+            filteredData.forEach(item => {
+                const dataOp = new Date(item.data_operacao);
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${item.numero_venda}</td>
+                    <td>${dataOp.toLocaleDateString('pt-BR')}</td>
+                    <td>R$ ${parseFloat(item.valor).toFixed(2)}</td>
+                    <td>${item.tem_frete ? `R$ ${parseFloat(item.valor_frete || 0).toFixed(2)}` : '-'}</td>
+                    <td><span class="status-reembolsado">Reembolsado</span></td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        // Gerar gráfico (simplificado)
+        gerarGraficoReembolsos(filteredData);
+        
+        showToast('Relatório gerado com sucesso!', 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro ao gerar relatório:', error);
+        showToast('Erro ao gerar relatório: ' + error.message, 'error');
+    }
+};
+
+// Gerar gráfico de reembolsos (simplificado)
+function gerarGraficoReembolsos(data) {
+    const container = document.getElementById('graficoContainer');
+    
+    if (!data || data.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center;">
+                <i class="fas fa-chart-bar fa-3x" style="color: #6c757d; opacity: 0.3;"></i>
+                <p style="color: #6c757d; margin-top: 10px;">Sem dados para exibir</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Agrupar por mês
+    const meses = {};
+    data.forEach(item => {
+        const dataItem = new Date(item.data_operacao);
+        const mesAno = `${dataItem.getMonth() + 1}/${dataItem.getFullYear()}`;
+        
+        if (!meses[mesAno]) {
+            meses[mesAno] = 0;
+        }
+        meses[mesAno] += parseFloat(item.valor);
+    });
+    
+    // Criar gráfico simples com HTML/CSS
+    const maxValor = Math.max(...Object.values(meses));
+    
+    let html = '<div style="width: 100%;">';
+    
+    Object.entries(meses).forEach(([mes, valor]) => {
+        const porcentagem = (valor / maxValor) * 100;
+        html += `
+            <div style="margin-bottom: 15px;">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                    <span style="font-size: 12px; color: #495057;">${mes}</span>
+                    <span style="font-size: 12px; color: #28a745; font-weight: 600;">R$ ${valor.toFixed(2)}</span>
+                </div>
+                <div style="height: 20px; background: #e9ecef; border-radius: 10px; overflow: hidden;">
+                    <div style="height: 100%; width: ${porcentagem}%; background: linear-gradient(90deg, #28a745, #20c997); border-radius: 10px;"></div>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+// Exportar relatório para Excel
+window.exportarRelatorio = function() {
+    const tbody = document.getElementById('relatorioTableBody');
+    const rows = tbody.querySelectorAll('tr');
+    
+    if (rows.length === 0 || (rows.length === 1 && rows[0].querySelector('td[colspan]'))) {
+        showToast('Nenhum dado para exportar', 'warning');
+        return;
+    }
+    
+    // Criar dados para Excel
+    const dados = [];
+    
+    // Cabeçalho
+    dados.push(['Venda', 'Data', 'Valor', 'Frete', 'Status']);
+    
+    // Dados
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 5) {
+            dados.push([
+                cells[0].textContent,
+                cells[1].textContent,
+                cells[2].textContent,
+                cells[3].textContent,
+                cells[4].textContent
+            ]);
+        }
+    });
+    
+    // Criar workbook
+    const ws = XLSX.utils.aoa_to_sheet(dados);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Reembolsos");
+    
+    // Gerar nome do arquivo
+    const dataInicio = document.getElementById('dataInicio').value || 'inicio';
+    const dataFim = document.getElementById('dataFim').value || 'fim';
+    const filename = `reembolsos_${dataInicio}_a_${dataFim}.xlsx`;
+    
+    // Baixar arquivo
+    XLSX.writeFile(wb, filename);
+    
+    showToast('Relatório exportado com sucesso!', 'success');
+};
+
+// Imprimir relatório
+window.imprimirRelatorio = function() {
+    const printWindow = window.open('', '_blank');
+    
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const dataInicio = document.getElementById('dataInicio').value || '-';
+    const dataFim = document.getElementById('dataFim').value || '-';
+    const totalPeriodo = document.getElementById('totalPeriodo').textContent;
+    const quantidadePeriodo = document.getElementById('quantidadePeriodo').textContent;
+    const mediaPeriodo = document.getElementById('mediaPeriodo').textContent;
+    
+    // Pegar dados da tabela
+    const tbody = document.getElementById('relatorioTableBody');
+    let tabelaHTML = '';
+    
+    tbody.querySelectorAll('tr').forEach(row => {
+        tabelaHTML += '<tr>';
+        row.querySelectorAll('td').forEach(cell => {
+            tabelaHTML += `<td>${cell.textContent}</td>`;
+        });
+        tabelaHTML += '</tr>';
+    });
+    
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Relatório de Reembolsos</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                h1 { color: #333; }
+                .info { background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th { background: #8A2BE2; color: white; padding: 10px; text-align: left; }
+                td { padding: 8px; border-bottom: 1px solid #ddd; }
+                .resumo { display: flex; justify-content: space-between; margin: 20px 0; }
+                .resumo-item { text-align: center; }
+                .resumo-valor { font-size: 24px; font-weight: bold; }
+                @media print {
+                    .no-print { display: none; }
+                    body { margin: 0; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>Relatório de Reembolsos</h1>
+            <div class="info">
+                <p><strong>Período:</strong> ${dataInicio} a ${dataFim}</p>
+                <p><strong>Gerado em:</strong> ${hoje}</p>
+                <p><strong>Gerado por:</strong> ${currentUser.name}</p>
+            </div>
+            
+            <div class="resumo">
+                <div class="resumo-item">
+                    <div class="resumo-valor" style="color: #28a745;">R$ ${totalPeriodo}</div>
+                    <div>Total Reembolsado</div>
+                </div>
+                <div class="resumo-item">
+                    <div class="resumo-valor" style="color: #17a2b8;">${quantidadePeriodo}</div>
+                    <div>Quantidade</div>
+                </div>
+                <div class="resumo-item">
+                    <div class="resumo-valor" style="color: #ffc107;">R$ ${mediaPeriodo}</div>
+                    <div>Média por Reembolso</div>
+                </div>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Venda</th>
+                        <th>Data</th>
+                        <th>Valor</th>
+                        <th>Frete</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tabelaHTML}
+                </tbody>
+            </table>
+            
+            <div class="no-print" style="margin-top: 30px;">
+                <button onclick="window.print()" style="padding: 10px 20px; background: #8A2BE2; color: white; border: none; cursor: pointer;">
+                    Imprimir
+                </button>
+                <button onclick="window.close()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; cursor: pointer; margin-left: 10px;">
+                    Fechar
+                </button>
+            </div>
+            
+            <script>
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 500);
+                };
+            </script>
+        </body>
+        </html>
+    `);
+    
+    printWindow.document.close();
+};
+
+// ============================================
+// FUNÇÕES EXISTENTES DO SISTEMA OS
+// ============================================
+// [Todas as funções existentes do sistema OS permanecem aqui]
+// Como: handleLogin, handleLogout, saveOrder, loadOrders, etc.
+// Elas são mantidas exatamente como estavam antes
+
+// ============================================
+// FUNÇÃO DE NOTIFICAÇÃO (existente)
+// ============================================
+function showToast(message, type = 'info') {
+    const existingToast = document.querySelector('.toast');
+    if (existingToast) existingToast.remove();
+    
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    let icon = 'info-circle';
+    if (type === 'success') icon = 'check-circle';
+    else if (type === 'error') icon = 'exclamation-circle';
+    else if (type === 'warning') icon = 'exclamation-triangle';
+    
+    toast.innerHTML = `
+        <i class="fas fa-${icon}"></i>
+        <span>${message}</span>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Mostrar toast
+    setTimeout(() => {
+        toast.style.opacity = '1';
+    }, 10);
+    
+    // Remover depois de 4 segundos
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.parentNode.removeChild(toast);
+            }
+        }, 300);
+    }, 4000);
 }
 
 // ============================================
@@ -309,9 +1649,6 @@ window.removePhoto = function(index) {
     updatePhotoPreviews();
 };
 
-// ============================================
-// FUNÇÃO DE LOGIN
-// ============================================
 function handleLogin(e) {
     e.preventDefault();
     
@@ -363,7 +1700,7 @@ function handleLogin(e) {
             
             showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
             
-            // Inicializar sistema após login
+            // INICIALIZAR SISTEMA APÓS LOGIN
             setTimeout(() => {
                 if (supabaseClient) {
                     testSupabaseConnection();
@@ -371,6 +1708,20 @@ function handleLogin(e) {
                     updateCounters();
                     renderOrdersTable();
                 }
+                
+                // Configurar botão de reembolsos (AGORA DENTRO DO LOGIN)
+                const reembolsosBtn = document.getElementById('reembolsosBtn');
+                if (reembolsosBtn) {
+                    reembolsosBtn.onclick = function() {
+                        abrirSistemaReembolsos();
+                    };
+                }
+                
+                // Configurar botão de logout (AGORA DENTRO DO LOGIN)
+                if (logoutBtn) {
+                    logoutBtn.onclick = handleLogout;
+                }
+                
             }, 500);
             
         } else {
@@ -385,6 +1736,39 @@ function handleLogin(e) {
             submitBtn.disabled = false;
         }
     }, 300);
+}
+
+// ============================================
+// FUNÇÃO PARA ABRIR SISTEMA DE REEMBOLSOS
+// ============================================
+function abrirSistemaReembolsos() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
+    }
+    
+    // Esconder sistema principal e mostrar sistema de reembolsos
+    if (mainSystem) mainSystem.classList.add('hidden');
+    if (reembolsosSystem) reembolsosSystem.classList.remove('hidden');
+    
+    // Atualizar informações do usuário na tela de reembolsos
+    if (reembolsoUserName) reembolsoUserName.textContent = currentUser.name;
+    if (reembolsoUserAvatar) reembolsoUserAvatar.textContent = currentUser.avatar;
+    if (reembolsoUserRole) reembolsoUserRole.textContent = currentUser.role;
+    
+    // Mostrar/ocultar botão de relatório baseado no usuário
+    const btnRelatorio = document.getElementById('btnRelatorio');
+    if (btnRelatorio) {
+        if (currentUser.role === 'Administrador') {
+            btnRelatorio.classList.remove('hidden');
+        } else {
+            btnRelatorio.classList.add('hidden');
+        }
+    }
+    
+    // Carregar reembolsos
+    loadReembolsos();
+    showToast('Sistema de Reembolsos carregado', 'info');
 }
 
 // ============================================
@@ -802,7 +2186,7 @@ function generateOSCode() {
 // FUNÇÕES DE FILTRO E PERMISSÃO (ATUALIZADO)
 // ============================================
 function filterOrdersByUser(ordersList) {
-    if (!currentUser) return [];
+    if (!currentUser) return [];    
     
     // Administrador vê TODAS as ordens
     if (currentUser.role === 'Administrador') {
@@ -820,8 +2204,8 @@ function filterOrdersByUser(ordersList) {
 function checkOrderPermission(order) {
     if (!currentUser) return false;
     
-    // Administrador tem permissão para TUDO
-    if (currentUser.role === 'Administrador') {
+    /// Administrador tem permissão para TUDO
+    if (currentUser.role === 'Administrador') { // ALTERADO AQUI
         return true;
     }
     
@@ -2544,12 +3928,37 @@ document.getElementById('viewOSModal')?.addEventListener('click', function(e) {
 });
 
 // ============================================
-// FUNÇÃO PARA TESTE RÁPIDO
+// INICIALIZAÇÃO DO BOTÃO DE REEMBOLSOS
 // ============================================
-window.testarLogin = function() {
-    document.getElementById('username').value = 'elaine';
-    document.getElementById('password').value = '180998';
-    handleLogin({preventDefault: () => {}});
+// Adicione esta função no final do arquivo, antes do console.log final
+function inicializarBotaoReembolsos() {
+    const reembolsosBtn = document.getElementById('reembolsosBtn');
+    if (reembolsosBtn) {
+        reembolsosBtn.addEventListener('click', function() {
+            abrirSistemaReembolsos();
+        });
+    }
+}
+
+// Chame esta função no DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Sistema OS Fotografia com Reembolsos iniciado!');
+    
+    generateOSCode();
+    initSupabase();
+    setupEventListeners();
+    setupPhotoUpload();
+    setupReembolsoEventListeners();
+    inicializarBotaoReembolsos(); // ADICIONE ESTA LINHA
+});
+
+// ============================================
+// FUNÇÃO PARA VOLTAR PARA SISTEMA OS
+// ============================================
+window.voltarParaOS = function() {
+    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
+    if (mainSystem) mainSystem.classList.remove('hidden');
+    showToast('Voltando para Sistema OS', 'info');
 };
 
 // Adicionar estilos CSS para o sistema de impressão
