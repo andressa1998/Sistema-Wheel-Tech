@@ -7,6 +7,106 @@ const SUPABASE_URL = 'https://nvlmtinpcayrpkhulefs.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_7AaXEKbS9roL57PO5lQkuQ_fkVWnGoL';
 let supabaseClient = null;
 
+// ===== VARIÁVEIS PARA CONTROLE DE SESSÃO =====
+const SESSION_TIMEOUT = 2 * 60 * 60 * 1000; // 24 horas em milissegundos
+let sessionTimer = null;
+let refreshTokenInterval = null;
+
+function handleLogin(e) {
+    e.preventDefault();
+    
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    
+    const username = usernameInput.value.trim().toLowerCase();
+    const password = passwordInput.value;
+    
+    // Feedback visual
+    const submitBtn = loginForm.querySelector('button[type="submit"]');
+    let originalBtnText = '';
+    if (submitBtn) {
+        originalBtnText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<span class="spinner"></span> Verificando...';
+        submitBtn.disabled = true;
+    }
+    
+    // Validação
+    if (!username || !password) {
+        showToast('Por favor, preencha usuário e senha!', 'warning');
+        if (submitBtn) {
+            submitBtn.innerHTML = originalBtnText;
+            submitBtn.disabled = false;
+        }
+        passwordInput.focus();
+        return;
+    }
+    
+    // Verificar usuário
+    const foundUser = SYSTEM_USERS.find(user => 
+        user.username === username && user.password === password
+    );
+    
+    setTimeout(() => {
+        if (foundUser) {
+            currentUser = foundUser;
+            
+            // SALVAR SESSÃO NO LOCALSTORAGE
+            saveSessionToStorage();
+            
+            // INICIAR TIMER DE SESSÃO
+            startSessionTimer();
+            
+            // Atualizar interface do usuário
+            if (userName) userName.textContent = foundUser.name;
+            if (userAvatar) userAvatar.textContent = foundUser.avatar;
+            if (userRole) userRole.textContent = foundUser.role;
+            if (welcomeMessage) welcomeMessage.textContent = `Bem-vindo(a), ${foundUser.name}!`;
+            if (createdByInput) createdByInput.value = foundUser.name;
+            
+            // Mostrar sistema, esconder login
+            if (loginScreen) loginScreen.classList.add('hidden');
+            if (mainSystem) mainSystem.classList.remove('hidden');
+            
+            showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
+            
+            // INICIALIZAR SISTEMA APÓS LOGIN
+            setTimeout(() => {
+                if (supabaseClient) {
+                    testSupabaseConnection();
+                } else {
+                    updateCounters();
+                    renderOrdersTable();
+                }
+                
+                // Configurar botão de reembolsos (AGORA DENTRO DO LOGIN)
+                const reembolsosBtn = document.getElementById('reembolsosBtn');
+                if (reembolsosBtn) {
+                    reembolsosBtn.onclick = function() {
+                        abrirSistemaReembolsos();
+                    };
+                }
+                
+                // Configurar botão de logout (AGORA DENTRO DO LOGIN)
+                if (logoutBtn) {
+                    logoutBtn.onclick = handleLogout;
+                }
+                
+            }, 500);
+            
+        } else {
+            showToast('❌ Usuário ou senha incorretos', 'error');
+            passwordInput.value = '';
+            passwordInput.focus();
+        }
+        
+        // Restaurar botão
+        if (submitBtn) {
+            submitBtn.innerHTML = originalBtnText;
+            submitBtn.disabled = false;
+        }
+    }, 300);
+}
+
 // ===== VARIÁVEIS GLOBAIS =====
 let currentUser = null;
 let orders = [];
@@ -26,6 +126,7 @@ let notificacoes = [];
 let selectedPhotos = [];
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_PHOTOS_PER_OS = 10;
+
 
 // ===== ELEMENTOS DOM =====
 const loginScreen = document.getElementById('loginScreen');
@@ -76,6 +177,60 @@ const SYSTEM_USERS = [
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Sistema OS Fotografia iniciado!');
     
+    // VERIFICAR SE HÁ SESSÃO SALVA
+    const hasValidSession = loadSessionFromStorage();
+    
+    if (hasValidSession && currentUser) {
+        // Usuário já logado - restaurar sessão
+        console.log('✅ Restaurando sessão existente');
+        
+        // Atualizar interface do usuário
+        if (userName) userName.textContent = currentUser.name;
+        if (userAvatar) userAvatar.textContent = currentUser.avatar;
+        if (userRole) userRole.textContent = currentUser.role;
+        if (welcomeMessage) welcomeMessage.textContent = `Bem-vindo(a) de volta, ${currentUser.name}!`;
+        if (createdByInput) createdByInput.value = currentUser.name;
+        
+        // Mostrar sistema, esconder login
+        if (loginScreen) loginScreen.classList.add('hidden');
+        if (mainSystem) mainSystem.classList.remove('hidden');
+        
+        // Iniciar timer de sessão
+        startSessionTimer();
+        
+        // Configurar detectores de atividade
+        setupActivityDetectors();
+        
+        // Carregar dados
+        setTimeout(() => {
+            if (supabaseClient) {
+                testSupabaseConnection();
+            } else {
+                updateCounters();
+                renderOrdersTable();
+            }
+            
+            // Configurar botões
+            const reembolsosBtn = document.getElementById('reembolsosBtn');
+            if (reembolsosBtn) {
+                reembolsosBtn.onclick = function() {
+                    abrirSistemaReembolsos();
+                };
+            }
+            
+            if (logoutBtn) {
+                logoutBtn.onclick = handleLogout;
+            }
+            
+        }, 500);
+        
+    } else {
+        // Usuário não logado - mostrar tela de login
+        console.log('👤 Nenhuma sessão ativa');
+        if (loginScreen) loginScreen.classList.remove('hidden');
+        if (mainSystem) mainSystem.classList.add('hidden');
+    }
+    
     generateOSCode();
     initSupabase();
     setupEventListeners();
@@ -121,6 +276,149 @@ function initSupabase() {
     } catch (error) {
         console.error('❌ Erro ao inicializar Supabase:', error);
     }
+}
+
+// ============================================
+// FUNÇÕES DE CONTROLE DE SESSÃO
+// ============================================
+
+function saveSessionToStorage() {
+    if (!currentUser) return;
+    
+    const sessionData = {
+        user: currentUser,
+        loginTime: Date.now(),
+        expiresAt: Date.now() + SESSION_TIMEOUT
+    };
+    
+    // Salvar no localStorage
+    localStorage.setItem('wheeltech_session', JSON.stringify(sessionData));
+    localStorage.setItem('wheeltech_user', JSON.stringify(currentUser));
+    
+    console.log('✅ Sessão salva no localStorage');
+}
+
+function loadSessionFromStorage() {
+    try {
+        const sessionData = localStorage.getItem('wheeltech_session');
+        const userData = localStorage.getItem('wheeltech_user');
+        
+        if (!sessionData || !userData) {
+            return false;
+        }
+        
+        const session = JSON.parse(sessionData);
+        const user = JSON.parse(userData);
+        
+        // Verificar se a sessão expirou
+        const now = Date.now();
+        if (now > session.expiresAt) {
+            console.log('❌ Sessão expirada');
+            clearSessionStorage();
+            return false;
+        }
+        
+        // Restaurar usuário
+        currentUser = user;
+        
+        // Calcular tempo restante
+        const timeLeft = session.expiresAt - now;
+        console.log(`🕒 Sessão válida por mais ${Math.round(timeLeft / 1000 / 60)} minutos`);
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Erro ao carregar sessão:', error);
+        clearSessionStorage();
+        return false;
+    }
+}
+
+function clearSessionStorage() {
+    localStorage.removeItem('wheeltech_session');
+    localStorage.removeItem('wheeltech_user');
+    localStorage.removeItem('wheeltech_orders');
+    console.log('🧹 Sessão limpa do localStorage');
+}
+
+function startSessionTimer() {
+    // Limpar timers anteriores
+    if (sessionTimer) {
+        clearTimeout(sessionTimer);
+    }
+    if (refreshTokenInterval) {
+        clearInterval(refreshTokenInterval);
+    }
+    
+    // Timer para logout automático após 24 horas
+    sessionTimer = setTimeout(() => {
+        showToast('⏰ Sua sessão expirou por inatividade', 'warning');
+        handleLogout();
+    }, SESSION_TIMEOUT);
+    
+    // Atualizar sessão a cada 30 minutos para manter ativa
+    refreshTokenInterval = setInterval(() => {
+        if (currentUser) {
+            console.log('🔄 Atualizando sessão...');
+            saveSessionToStorage();
+            
+            // Mostrar notificação a cada 4 horas
+            const hoursOnline = Math.floor((Date.now() - JSON.parse(localStorage.getItem('wheeltech_session')).loginTime) / (1000 * 60 * 60));
+            if (hoursOnline > 0 && hoursOnline % 4 === 0) {
+                showToast(`⏰ Você está online há ${hoursOnline} horas`, 'info');
+            }
+        }
+    }, 30 * 60 * 1000); // 30 minutos
+    
+    console.log('⏰ Timer de sessão iniciado (24 horas)');
+}
+
+function resetSessionTimer() {
+    if (currentUser) {
+        // Atualizar tempo de expiração
+        const sessionData = {
+            user: currentUser,
+            loginTime: Date.now(),
+            expiresAt: Date.now() + SESSION_TIMEOUT
+        };
+        
+        localStorage.setItem('wheeltech_session', JSON.stringify(sessionData));
+        
+        // Reiniciar timer
+        if (sessionTimer) {
+            clearTimeout(sessionTimer);
+        }
+        
+        sessionTimer = setTimeout(() => {
+            showToast('⏰ Sua sessão expirou por inatividade', 'warning');
+            handleLogout();
+        }, SESSION_TIMEOUT);
+        
+        console.log('🔄 Timer de sessão reiniciado');
+    }
+}
+
+// Detectar atividade do usuário para resetar timer
+function setupActivityDetectors() {
+    // Resetar timer em qualquer interação do usuário
+    const events = ['mousemove', 'keypress', 'click', 'scroll', 'touchstart'];
+    
+    events.forEach(event => {
+        document.addEventListener(event, () => {
+            if (currentUser) {
+                resetSessionTimer();
+            }
+        }, { passive: true });
+    });
+    
+    // Resetar timer quando a janela ganha foco
+    window.addEventListener('focus', () => {
+        if (currentUser) {
+            resetSessionTimer();
+        }
+    });
+    
+    console.log('👀 Detectores de atividade configurados');
 }
 
 // ============================================
@@ -1968,17 +2266,47 @@ function abrirSistemaReembolsos() {
 }
 
 // ============================================
-// FUNÇÃO DE LOGOUT
+// FUNÇÃO DE LOGOUT (ATUALIZADA)
 // ============================================
 function handleLogout() {
     if (confirm('Deseja realmente sair do sistema?')) {
+        // Limpar timers
+        if (sessionTimer) {
+            clearTimeout(sessionTimer);
+            sessionTimer = null;
+        }
+        if (sessionWarningTimer) {
+            clearTimeout(sessionWarningTimer);
+            sessionWarningTimer = null;
+        }
+        if (refreshTokenInterval) {
+            clearInterval(refreshTokenInterval);
+            refreshTokenInterval = null;
+        }
+        
+        isSessionExpiring = false;
+        
+        // Remover modal de aviso se existir
+        const warningModal = document.getElementById('sessionWarningModal');
+        if (warningModal) warningModal.remove();
+        
+        // Limpar localStorage
+        clearSessionStorage();
+        
+        // Limpar variáveis globais
         currentUser = null;
         orders = [];
         selectedPhotos = [];
         
+        // Esconder sistemas
         if (mainSystem) mainSystem.classList.add('hidden');
+        if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
         if (loginScreen) loginScreen.classList.remove('hidden');
         
+        // Fechar modais abertos
+        closeAllModals();
+        
+        // Limpar formulário de login
         if (loginForm) loginForm.reset();
         
         // Foco no usuário
@@ -1987,6 +2315,24 @@ function handleLogout() {
         
         showToast('👋 Até logo!', 'info');
     }
+}
+
+function closeAllModals() {
+    const modals = [
+        'printModal',
+        'photoViewerModal', 
+        'completeModal',
+        'viewOSModal',
+        'reembolsoModal',
+        'relatorioModal',
+        'notificacoesDropdown',
+        'notificacoesReembolsoDropdown'
+    ];
+    
+    modals.forEach(modalId => {
+        const modal = document.getElementById(modalId);
+        if (modal) modal.classList.add('hidden');
+    });
 }
 
 // ============================================
