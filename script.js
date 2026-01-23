@@ -127,6 +127,29 @@ let selectedPhotos = [];
 const MAX_PHOTO_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_PHOTOS_PER_OS = 10;
 
+// ===== CONFIGURAÇÃO DE EMAIL =====
+const EMAIL_CONFIG = {
+    service: 'gmail', // ou seu serviço de email
+    from: 'sistema@wheeltech.com',
+    // Em produção, você usaria um serviço como SendGrid, Mailgun, etc.
+};
+
+// Mapeamento de usuários para emails
+const USER_EMAILS = {
+    'Elaine': 'elaine@empresa.com',
+    'Arthur': 'arthur@empresa.com',
+    'Laura': 'laura@empresa.com',
+    'Ronald': 'ronald@empresa.com',
+    'Bruna': 'bruna@empresa.com',
+    'Andressa': 'andressa@empresa.com',
+    'Thalyta': 'thalyta@empresa.com',
+    'Andressa Miotto': 'andressamiotto@empresa.com'
+};
+
+// ===== VARIÁVEIS PARA NOTIFICAÇÕES DO SISTEMA =====
+let systemNotifications = [];
+let unreadNotifications = 0;
+
 
 // ===== ELEMENTOS DOM =====
 const loginScreen = document.getElementById('loginScreen');
@@ -172,6 +195,33 @@ const SYSTEM_USERS = [
     { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' },
     { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
 ];
+
+// ===== FUNÇÃO PARA INICIALIZAR BOTÕES DO HEADER =====
+function setupHeaderButtons() {
+    if (!currentUser) return;
+    
+    // Configurar botão de Vendas ML
+    const vendasBtn = document.getElementById('vendasBtn');
+    if (vendasBtn) {
+        vendasBtn.onclick = function() {
+            abrirSistemaVendas();
+        };
+    }
+    
+    // Configurar botão de Reembolsos
+    const reembolsosBtn = document.getElementById('reembolsosBtn');
+    if (reembolsosBtn) {
+        reembolsosBtn.onclick = function() {
+            abrirSistemaReembolsos();
+        };
+    }
+    
+    // Configurar botão de Logout
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.onclick = handleLogout;
+    }
+}
 
 // ===== INICIALIZAÇÃO =====
 document.addEventListener('DOMContentLoaded', function() {
@@ -227,7 +277,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 500);
         
     } else {
-        
+
         // Usuário não logado - mostrar tela de login
         console.log('👤 Nenhuma sessão ativa');
         if (loginScreen) loginScreen.classList.remove('hidden');
@@ -278,6 +328,131 @@ function initSupabase() {
         }
     } catch (error) {
         console.error('❌ Erro ao inicializar Supabase:', error);
+    }
+}
+
+// ============================================
+// FUNÇÃO PARA ENVIAR NOTIFICAÇÕES POR EMAIL
+// ============================================
+async function enviarNotificacaoEmail(recipientName, subject, message, osData = null) {
+    const recipientEmail = USER_EMAILS[recipientName];
+    
+    if (!recipientEmail) {
+        console.warn(`❌ Email não configurado para: ${recipientName}`);
+        return false;
+    }
+    
+    try {
+        // Em produção, você integraria com um serviço real de email
+        // Aqui está uma simulação que você pode implementar depois
+        
+        console.log(`📧 EMAIL SIMULADO para ${recipientName} (${recipientEmail})`);
+        console.log(`Assunto: ${subject}`);
+        console.log(`Mensagem: ${message}`);
+        
+        // Exemplo de implementação real com fetch (descomente e configure):
+        /*
+        const response = await fetch('/api/send-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                to: recipientEmail,
+                subject: subject,
+                html: generateEmailTemplate(message, osData),
+                type: 'os_notification'
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Falha ao enviar email');
+        }
+        
+        console.log('✅ Email enviado com sucesso');
+        */
+        
+        // Para simulação, mostramos um toast
+        showToast(`📧 Notificação enviada para ${recipientName}`, 'info');
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Erro ao enviar email:', error);
+        return false;
+    }
+}
+
+function generateEmailTemplate(message, osData) {
+    // Template HTML básico para o email
+    return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: #8A2BE2; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+                .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 10px 10px; }
+                .os-info { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #8A2BE2; }
+                .btn { display: inline-block; background: #8A2BE2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; margin-top: 15px; }
+                .footer { text-align: center; margin-top: 30px; color: #6c757d; font-size: 12px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>🚀 Sistema Wheel Tech</h1>
+                    <p>Notificação de Ordem de Serviço</p>
+                </div>
+                <div class="content">
+                    ${message}
+                    ${osData ? `
+                    <div class="os-info">
+                        <h3>📋 Detalhes da OS</h3>
+                        <p><strong>Código:</strong> ${osData.code}</p>
+                        <p><strong>Produto:</strong> ${osData.productName}</p>
+                        <p><strong>Criado por:</strong> ${osData.createdBy}</p>
+                        <p><strong>Responsável:</strong> ${osData.responsibleName}</p>
+                        <p><strong>Status:</strong> ${osData.status}</p>
+                        ${osData.completionTime ? `<p><strong>Tempo de execução:</strong> ${osData.completionTime}</p>` : ''}
+                    </div>
+                    ` : ''}
+                    <a href="${window.location.origin}" class="btn">Acessar Sistema</a>
+                </div>
+                <div class="footer">
+                    <p>Esta é uma notificação automática do Sistema Wheel Tech</p>
+                    <p>© ${new Date().getFullYear()} Wheel Tech - Todos os direitos reservados</p>
+                </div>
+            </div>
+        </body>
+        </html>
+    `;
+}
+
+// ============================================
+// FUNÇÃO SUPER SIMPLES PARA CONTADOR
+// ============================================
+
+function updateProductCounter(input, counterId) {
+    const counter = document.getElementById(counterId);
+    if (!counter) return;
+    
+    const currentLength = input.value.length;
+    const maxLength = 200;
+    
+    counter.textContent = `${currentLength}/${maxLength}`;
+    
+    // Muda a cor se estiver perto do limite
+    if (currentLength > 180) {
+        counter.style.color = '#dc3545';
+        counter.style.fontWeight = 'bold';
+    } else if (currentLength > 160) {
+        counter.style.color = '#ffc107';
+        counter.style.fontWeight = 'bold';
+    } else {
+        counter.style.color = '#6c757d';
+        counter.style.fontWeight = 'normal';
     }
 }
 
@@ -694,6 +869,356 @@ function setupEventListeners() {
     });
     
     console.log('✅ Event listeners configurados com sucesso!');
+}
+
+async function getTokenWithInitialCode() {
+    try {
+        console.log('🔑 Usando código inicial:', ML_CONFIG.INITIAL_CODE.substring(0, 20) + '...');
+        
+        const params = new URLSearchParams();
+        params.append('grant_type', 'authorization_code');
+        params.append('client_id', ML_CONFIG.CLIENT_ID);
+        params.append('client_secret', ML_CONFIG.CLIENT_SECRET);
+        params.append('code', ML_CONFIG.INITIAL_CODE);
+        params.append('redirect_uri', ML_CONFIG.REDIRECT_URI);
+        
+        console.log('📤 Enviando requisição para:', `${ML_CONFIG.API_BASE_URL}/oauth/token`);
+        console.log('Parâmetros:', {
+            grant_type: 'authorization_code',
+            client_id: ML_CONFIG.CLIENT_ID.substring(0, 10) + '...',
+            code_length: ML_CONFIG.INITIAL_CODE.length,
+            redirect_uri: ML_CONFIG.REDIRECT_URI
+        });
+        
+        const response = await fetch(`${ML_CONFIG.API_BASE_URL}/oauth/token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            },
+            body: params
+        });
+        
+        console.log('📥 Resposta recebida. Status:', response.status);
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('✅ Token obtido com sucesso!');
+            console.log('Access Token (primeiros 30 chars):', data.access_token.substring(0, 30) + '...');
+            console.log('Refresh Token (primeiros 30 chars):', data.refresh_token.substring(0, 30) + '...');
+            console.log('Expira em:', data.expires_in, 'segundos');
+            console.log('Escopos:', data.scope);
+            
+            return data;
+        } else {
+            const errorText = await response.text();
+            console.error('❌ Erro na resposta:', response.status, response.statusText);
+            console.error('Detalhes do erro:', errorText);
+            
+            // Tenta parsear como JSON se possível
+            try {
+                const errorJson = JSON.parse(errorText);
+                console.error('Erro JSON:', errorJson);
+            } catch (e) {
+                console.error('Erro não é JSON');
+            }
+            
+            return null;
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao obter token com código inicial:', error);
+        console.error('Detalhes:', error.message);
+        if (error.stack) {
+            console.error('Stack:', error.stack);
+        }
+        return null;
+    }
+}
+
+// ===== FUNÇÃO PARA OBTER TOKEN ML AUTOMATICAMENTE (VERSÃO DEPURADA) =====
+async function getMLTokenAutomatically() {
+    console.log('🔄 Tentando obter token ML automaticamente...');
+    
+    try {
+        // 1. Primeiro verifica se já tem um token válido
+        const existingToken = localStorage.getItem('ml_access_token');
+        const tokenExpiry = localStorage.getItem('ml_token_expiry');
+        
+        if (existingToken && tokenExpiry) {
+            const expiresIn = parseInt(tokenExpiry) - Date.now();
+            if (expiresIn > 300000) { // 5 minutos = ainda válido
+                console.log('✅ Usando token existente (válido por mais ' + Math.round(expiresIn/60000) + ' minutos)');
+                return existingToken;
+            }
+        }
+        
+        // 2. Tenta usar refresh_token se existir
+        const refreshToken = localStorage.getItem('ml_refresh_token');
+        let tokenData = null;
+        
+        if (refreshToken) {
+            console.log('🔄 Tentando renovar com refresh_token...');
+            tokenData = await renewTokenWithRefreshToken(refreshToken);
+            
+            if (tokenData && tokenData.access_token) {
+                console.log('✅ Token renovado com refresh_token!');
+            }
+        }
+        
+        // 3. Se não conseguiu com refresh_token, usa o código inicial
+        if (!tokenData || !tokenData.access_token) {
+            console.log('🔄 Usando código inicial...');
+            tokenData = await getTokenWithInitialCode();
+            
+            if (tokenData && tokenData.access_token) {
+                console.log('✅ Token obtido com código inicial!');
+            }
+        }
+        
+        if (tokenData && tokenData.access_token) {
+            // Salvar tokens no localStorage
+            localStorage.setItem('ml_access_token', tokenData.access_token);
+            localStorage.setItem('ml_refresh_token', tokenData.refresh_token);
+            localStorage.setItem('ml_token_expiry', Date.now() + (tokenData.expires_in * 1000));
+            
+            console.log('✅ Token salvo com sucesso!');
+            console.log('Access Token (início):', tokenData.access_token.substring(0, 30) + '...');
+            console.log('Refresh Token (início):', tokenData.refresh_token.substring(0, 30) + '...');
+            console.log('Expira em:', tokenData.expires_in, 'segundos');
+            
+            // Agendar renovação automática
+            scheduleMLTokenRenewal(tokenData.expires_in * 1000);
+            
+            return tokenData.access_token;
+        } else {
+            console.error('❌ TokenData vazio ou sem access_token');
+            return null;
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao obter token automaticamente:', error);
+        console.error('Detalhes do erro:', error.message);
+        return null;
+    }
+}
+
+// ===== FUNÇÃO PARA TESTAR O TOKEN =====
+async function testarTokenML() {
+    console.log('🧪 Testando token ML...');
+    
+    // Primeiro, limpe os tokens existentes para testar do zero
+    localStorage.removeItem('ml_access_token');
+    localStorage.removeItem('ml_refresh_token');
+    localStorage.removeItem('ml_token_expiry');
+    
+    // Tenta obter token com código inicial
+    const token = await getTokenWithInitialCode();
+    
+    if (token && token.access_token) {
+        console.log('✅ TESTE BEM SUCEDIDO!');
+        console.log('Access Token:', token.access_token);
+        console.log('Refresh Token:', token.refresh_token);
+        console.log('Expira em:', token.expires_in, 'segundos');
+        
+        // Salva no localStorage
+        localStorage.setItem('ml_access_token', token.access_token);
+        localStorage.setItem('ml_refresh_token', token.refresh_token);
+        localStorage.setItem('ml_token_expiry', Date.now() + (token.expires_in * 1000));
+        
+        // Testa o token na API
+        await testarConexaoComToken(token.access_token);
+        
+        return token.access_token;
+    } else {
+        console.error('❌ TESTE FALHOU! Não conseguiu obter token.');
+        return null;
+    }
+}
+
+// ===== FUNÇÃO PARA TESTAR CONEXÃO COM TOKEN =====
+async function testarConexaoComToken(token) {
+    try {
+        console.log('🔗 Testando conexão com token...');
+        
+        const response = await fetch(`${ML_CONFIG.API_BASE_URL}/users/me`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            const userData = await response.json();
+            console.log('✅ Conexão bem-sucedida!');
+            console.log('Usuário:', userData.nickname);
+            console.log('ID:', userData.id);
+            return true;
+        } else {
+            console.error('❌ Falha na conexão:', response.status, response.statusText);
+            return false;
+        }
+    } catch (error) {
+        console.error('❌ Erro ao testar conexão:', error);
+        return false;
+    }
+}
+
+// ===== FUNÇÃO PARA BUSCAR VENDAS AUTOMATICAMENTE =====
+async function fetchMLSalesAuto() {
+    console.log('🛒 Buscando vendas do Mercado Livre...');
+    
+    // 1. Obter token
+    let token = localStorage.getItem('ml_access_token');
+    
+    if (!token) {
+        console.log('🔑 Token não encontrado, obtendo novo...');
+        token = await getMLTokenAutomatically();
+    }
+    
+    if (!token) {
+        console.error('❌ Não foi possível obter token do ML');
+        return [];
+    }
+    
+    // 2. Buscar vendas dos últimos 3 dias
+    try {
+        const now = new Date();
+        const threeDaysAgo = new Date(now);
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        
+        const params = new URLSearchParams({
+            seller: 'me',
+            sort: 'date_desc',
+            'order.status': 'paid',
+            'order.date_created.from': threeDaysAgo.toISOString().split('T')[0],
+            limit: '20'
+        });
+        
+        const response = await fetch(`${ML_CONFIG.API_BASE_URL}/orders/search?${params.toString()}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (response.status === 401) {
+            // Token expirado, tentar renovar
+            console.log('🔄 Token expirado, tentando renovar...');
+            token = await getMLTokenAutomatically();
+            
+            if (token) {
+                // Tentar novamente com novo token
+                return await fetchMLSalesAuto();
+            }
+        }
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Processar resultados
+        if (data.results && data.results.length > 0) {
+            console.log(`✅ ${data.results.length} vendas encontradas`);
+            return processMLSales(data.results);
+        }
+        
+        return [];
+        
+    } catch (error) {
+        console.error('❌ Erro ao buscar vendas:', error);
+        return [];
+    }
+}
+
+function processMLSales(sales) {
+    return sales.map(sale => {
+        const order = sale.order_items && sale.order_items.length > 0 ? sale.order_items[0] : {};
+        
+        return {
+            id: sale.id,
+            numero_venda: sale.external_reference || `ML-${sale.id}`,
+            data_venda: new Date(sale.date_created).toLocaleString('pt-BR'),
+            valor_total: sale.total_amount || 0,
+            quantidade_itens: sale.order_items?.length || 0,
+            comprador: sale.buyer?.nickname || 'Não informado',
+            status: 'nova',
+            verificada: false,
+            
+            // Detalhes do item principal
+            item_titulo: order.item?.title || 'Produto não identificado',
+            item_sku: order.item?.seller_custom_field || 'N/A',
+            item_quantidade: order.quantity || 1,
+            item_preco_unitario: order.unit_price || 0,
+            
+            // Informações adicionais
+            metodo_pagamento: sale.payments?.[0]?.payment_type || 'Não informado',
+            tags: sale.tags || []
+        };
+    });
+}
+
+// ===== FUNÇÃO PARA RENDERIZAR VENDAS NA TELA =====
+function renderVendasML(vendas) {
+    const salesTableBody = document.getElementById('salesTableBody');
+    if (!salesTableBody) {
+        console.error('❌ Tabela de vendas não encontrada');
+        return;
+    }
+    
+    salesTableBody.innerHTML = '';
+    
+    if (vendas.length === 0) {
+        salesTableBody.innerHTML = `
+            <tr>
+                <td colspan="9" class="text-center" style="padding: 40px;">
+                    <i class="fas fa-store-slash fa-3x" style="color: #6c757d; opacity: 0.5; margin-bottom: 15px;"></i>
+                    <h4 style="color: #6c757d;">Nenhuma venda encontrada</h4>
+                    <p style="color: #6c757d;">Não há vendas recentes no Mercado Livre.</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    vendas.forEach((venda, index) => {
+        const row = document.createElement('tr');
+        row.className = 'venda-item';
+        
+        // Status badge
+        let statusBadge = '';
+        if (venda.verificada) {
+            statusBadge = '<span class="badge badge-success">Verificada</span>';
+        } else if (venda.status === 'fraude') {
+            statusBadge = '<span class="badge badge-danger">Fraude</span>';
+        } else {
+            statusBadge = '<span class="badge badge-warning">Nova</span>';
+        }
+        
+        row.innerHTML = `
+            <td><strong>${venda.numero_venda}</strong></td>
+            <td>${venda.data_venda}</td>
+            <td class="valor-cell">R$ ${parseFloat(venda.valor_total).toFixed(2)}</td>
+            <td>${venda.comprador}</td>
+            <td>${venda.quantidade_itens}</td>
+            <td>${statusBadge}</td>
+            <td>
+                <button class="btn btn-info btn-sm" onclick="verDetalhesVenda(${index})" title="Ver detalhes">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button class="btn btn-success btn-sm" onclick="verificarVenda('${venda.id}')" title="Marcar como verificada">
+                    <i class="fas fa-check"></i>
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="marcarComoFraude('${venda.id}')" title="Marcar como fraude">
+                    <i class="fas fa-times"></i>
+                </button>
+            </td>
+        `;
+        
+        salesTableBody.appendChild(row);
+    });
 }
 
 // ===== FUNÇÃO PARA MOSTRAR/OCULTAR CAMPOS DE ANÚNCIO =====
@@ -2300,6 +2825,9 @@ function handleLogout() {
         currentUser = null;
         orders = [];
         selectedPhotos = [];
+
+        // Limpar tokens do Mercado Livre
+        clearMLTokenStorage();
         
         // Esconder sistemas
         if (mainSystem) mainSystem.classList.add('hidden');
@@ -2319,6 +2847,13 @@ function handleLogout() {
         showToast('👋 Até logo!', 'info');
     }
 }
+
+// Adicionar ao final do setupEventListeners
+setInterval(() => {
+    if (currentUser && document.getElementById('mlTokenStatus')) {
+        updateMLTokenStatus();
+    }
+}, 60000); // Atualizar a cada minuto
 
 function closeAllModals() {
     const modals = [
@@ -2559,9 +3094,15 @@ async function saveOrder() {
                 orders.unshift(orderData);
                 orderCounter++;
                 showToast(`✅ OS "${orderData.productName}" criada`, 'success');
+
+                // NOTIFICAR O RESPONSÁVEL (SE NÃO FOR O PRÓPRIO CRIADOR)
+                if (responsibleName !== currentUser.name) {
+                    await notifyResponsibleNewOS(orderData, responsibleName);
+                }
                 
                 // NOTIFICAR ADMIN SOBRE NOVA OS
                 await notificarAdminSobreNovaOS(orderData);
+
                 
                 // NOTIFICAR ELAINE SE PRECISAR DE FOTOS
                 if (precisaFoto === 'sim' && (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio')) {
@@ -2731,7 +3272,9 @@ function clearForm() {
     const precisaFotoSelect = document.getElementById('precisaFoto');
     const photoLinkInput = document.getElementById('photoLinkInput');
     
-    if (productNameInput) productNameInput.value = '';
+    if (productNameInput) { productNameInput.value = '';
+    contarCaracteres();
+    }
     if (responsibleNameInput) responsibleNameInput.value = '';
     if (linkAnuncioInput) linkAnuncioInput.value = '';
     if (urgencySelect) urgencySelect.value = 'normal';
@@ -2744,6 +3287,7 @@ function clearForm() {
     if (linkNovoAnuncioInput) linkNovoAnuncioInput.value = '';
     if (precisaFotoSelect) precisaFotoSelect.value = 'nao';
     if (photoLinkInput) photoLinkInput.value = '';
+    updateProductCounter(productNameInput, 'productCounter');
     
     // Ocultar campos de anúncio
     document.getElementById('camposAnuncio').classList.add('hidden');
@@ -3135,6 +3679,7 @@ window.editOrder = function(orderId) {
         const descricaoAnuncioInput = document.getElementById('descricaoAnuncio');
         const linkNovoAnuncioInput = document.getElementById('linkNovoAnuncio');
         const precisaFotoSelect = document.getElementById('precisaFoto');
+        updateProductCounter(productNameInput, 'productCounter');
 
         // LÓGICA PARA EXTRAIR O RESPONSÁVEL CORRETO
         let responsibleToShow = order.responsibleName;
@@ -3147,7 +3692,11 @@ window.editOrder = function(orderId) {
             responsibleToShow = order.createdBy !== 'Elaine' ? order.createdBy : 'Elaine';
         }
         
-        if (productNameInput) productNameInput.value = order.productName;
+        if (productNameInput) { productNameInput.value = order.productName;
+            setTimeout(function() {
+                contarCaracteres();
+            }, 100);
+        }
         if (responsibleNameInput) responsibleNameInput.value = order.responsibleName;
         if (linkAnuncioInput) linkAnuncioInput.value = order.linkAnuncio || '';
         if (urgencySelect) urgencySelect.value = order.urgency;
@@ -4827,6 +5376,20 @@ document.addEventListener('DOMContentLoaded', function() {
     setupPhotoUpload();
     setupReembolsoEventListeners();
     inicializarBotaoReembolsos(); // ADICIONE ESTA LINHA
+
+    if (currentUser) {
+        setTimeout(() => {
+            // Verificar status do token ML
+            const tokenExpiry = localStorage.getItem('ml_token_expiry');
+            if (tokenExpiry) {
+                const expiresIn = parseInt(tokenExpiry) - Date.now();
+                if (expiresIn < 3600000) { // Se faltar menos de 1 hora
+                    console.log('🔄 Token ML prestes a expirar, renovando...');
+                    getMLTokenAutomatically();
+                }
+            }
+        }, 5000);
+    }
 });
 
 // ============================================
@@ -5073,6 +5636,397 @@ printStyles.innerHTML = `
 
 `;
 
+
+
 document.head.appendChild(printStyles);
+
+// ===== FUNÇÕES DE GERENCIAMENTO DE TOKEN =====
+
+function saveMLTokenToStorage(tokenData) {
+    try {
+        localStorage.setItem('ml_token_data', JSON.stringify(tokenData));
+        console.log('✅ Token ML salvo no localStorage');
+        
+        // Atualizar variáveis globais
+        mlAccessToken = tokenData.access_token;
+        mlTokenExpiresAt = tokenData.expires_at;
+        
+        // Atualizar status na interface
+        updateMLTokenStatus();
+        
+        return true;
+    } catch (error) {
+        console.error('❌ Erro ao salvar token ML:', error);
+        return false;
+    }
+}
+
+function loadMLTokenFromStorage() {
+    try {
+        const tokenData = localStorage.getItem('ml_token_data');
+        if (tokenData) {
+            return JSON.parse(tokenData);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao carregar token ML:', error);
+    }
+    return null;
+}
+
+function scheduleTokenRefresh() {
+    if (mlTokenTimer) {
+        clearTimeout(mlTokenTimer);
+    }
+    
+    if (!mlTokenExpiresAt) {
+        console.warn('⚠️ Não é possível agendar renovação - token não configurado');
+        return;
+    }
+    
+    const now = Date.now();
+    const expiresIn = mlTokenExpiresAt - now;
+    
+    // Renovar 1 hora antes de expirar
+    const refreshTime = expiresIn - 3600000;
+    
+    if (refreshTime > 0) {
+        mlTokenTimer = setTimeout(() => {
+            console.log('⏰ Token prestes a expirar, notificando usuário...');
+            showTokenExpiryWarning();
+        }, refreshTime);
+        
+        const hoursLeft = Math.round(refreshTime / 3600000);
+        console.log(`⏰ Token será verificado em ${hoursLeft} horas`);
+        
+    } else {
+        // Token está prestes a expirar
+        showTokenExpiryWarning();
+    }
+}
+
+function showTokenExpiryWarning() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.cssText = `
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0,0,0,0.7);
+        z-index: 2000;
+    `;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px; background: white;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0; color: #ffc107;">
+                    <i class="fas fa-exclamation-triangle"></i> Token ML Expirando
+                </h3>
+                <button onclick="this.parentElement.parentElement.parentElement.remove()" 
+                        style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
+                    &times;
+                </button>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <p style="color: #6c757d;">
+                    O seu token de acesso ao Mercado Livre está prestes a expirar.
+                </p>
+                
+                <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <p style="margin: 0; color: #856404;">
+                        <i class="fas fa-info-circle"></i> 
+                        Para continuar acessando as vendas, você precisa renovar o token.
+                    </p>
+                </div>
+                
+                <p style="color: #6c757d; font-size: 14px;">
+                    O token atual expira em aproximadamente <strong>1 hora</strong>.
+                </p>
+            </div>
+            
+            <div class="d-flex justify-content-between">
+                <button class="btn btn-secondary" onclick="this.parentElement.parentElement.parentElement.remove()">
+                    Lembrar mais tarde
+                </button>
+                <button class="btn btn-warning" onclick="renewMLToken()">
+                    <i class="fas fa-sync-alt"></i> Renovar Token Agora
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+window.renewMLToken = async function() {
+    // Fechar modal de aviso
+    const modals = document.querySelectorAll('.modal');
+    modals.forEach(modal => modal.remove());
+    
+    // Abrir modal para novo token
+    await requestTokenFromUser();
+};
+
+function checkMLTokenStatus() {
+    if (!mlAccessToken || !mlTokenExpiresAt) {
+        return { valid: false, message: 'Token não configurado' };
+    }
+    
+    const now = Date.now();
+    const expiresIn = mlTokenExpiresAt - now;
+    
+    if (expiresIn <= 0) {
+        return { valid: false, message: 'Token expirado' };
+    }
+    
+    const hoursLeft = Math.round(expiresIn / 3600000);
+    const minutesLeft = Math.round((expiresIn % 3600000) / 60000);
+    
+    return { 
+        valid: true, 
+        message: `Token válido por ${hoursLeft}h ${minutesLeft}m`,
+        expiresIn: expiresIn,
+        hoursLeft: hoursLeft,
+        minutesLeft: minutesLeft
+    };
+}
+
+// ===== TESTAR CONEXÃO COM ML =====
+async function testMLConnection() {
+    if (!mlAccessToken) {
+        showToast('⚠️ Token ML não configurado', 'warning');
+        return false;
+    }
+    
+    try {
+        showToast('🔗 Testando conexão com Mercado Livre...', 'info');
+        
+        const response = await fetch(`${ML_CONFIG.API_BASE_URL}/users/me`, {
+            headers: {
+                'Authorization': `Bearer ${mlAccessToken}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const userData = await response.json();
+        console.log('✅ Conexão ML bem-sucedida:', userData);
+        showToast(`✅ Conectado ao ML como ${userData.nickname}`, 'success');
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Erro na conexão ML:', error);
+        showToast('❌ Falha na conexão com Mercado Livre', 'error');
+        return false;
+    }
+}
+
+// ===== FUNÇÃO PARA TESTAR CONEXÃO COM ML =====
+async function testMLConnection() {
+    if (!mlAccessToken) {
+        showToast('⚠️ Token ML não configurado', 'warning');
+        return false;
+    }
+    
+    try {
+        showToast('🔗 Testando conexão com Mercado Livre...', 'info');
+        
+        const response = await fetch(`${ML_CONFIG.API_BASE_URL}/users/me`, {
+            headers: {
+                'Authorization': `Bearer ${mlAccessToken}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const userData = await response.json();
+        console.log('✅ Conexão ML bem-sucedida:', userData);
+        showToast(`✅ Conectado ao ML como ${userData.nickname}`, 'success');
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Erro na conexão ML:', error);
+        showToast('❌ Falha na conexão com Mercado Livre', 'error');
+        return false;
+    }
+}
+
+// ===== FUNÇÃO PARA ABRIR SISTEMA DE VENDAS =====
+window.abrirSistemaVendas = async function() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
+    }
+    
+    console.log('🛒 Iniciando sistema de vendas ML...');
+    
+    // Esconder outros sistemas
+    if (mainSystem) mainSystem.classList.add('hidden');
+    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
+    
+    // Mostrar sistema de vendas
+    const salesSystem = document.getElementById('salesSystem');
+    if (!salesSystem) {
+        showToast('❌ Sistema de vendas não encontrado', 'error');
+        return;
+    }
+    
+    salesSystem.classList.remove('hidden');
+    
+    // Atualizar informações do usuário
+    document.getElementById('salesUserName').textContent = currentUser.name;
+    document.getElementById('salesUserAvatar').textContent = currentUser.avatar;
+    document.getElementById('salesUserRole').textContent = currentUser.role;
+    
+    // Verificar se já temos token
+    const accessToken = localStorage.getItem('ml_access_token');
+    const tokenExpiry = localStorage.getItem('ml_token_expiry');
+    
+    if (accessToken && tokenExpiry) {
+        const expiresIn = parseInt(tokenExpiry) - Date.now();
+        
+        if (expiresIn > 300000) { // > 5 minutos
+            console.log('✅ Token válido por mais', Math.round(expiresIn/60000), 'minutos');
+            showToast('✅ Conectado ao Mercado Livre!', 'success');
+            
+            // Buscar vendas
+            await buscarVendasML(accessToken);
+            
+        } else if (expiresIn > 0) { // < 5 minutos
+            console.log('🔄 Token prestes a expirar, renovando...');
+            showToast('🔄 Renovando conexão...', 'info');
+            
+            const newToken = await renovarTokenML();
+            if (newToken) {
+                await buscarVendasML(newToken);
+            } else {
+                showToast('❌ Falha ao renovar conexão', 'error');
+            }
+            
+        } else { // Expirado
+            console.log('❌ Token expirado, tentando renovar...');
+            showToast('🔄 Reconectando ao Mercado Livre...', 'info');
+            
+            const newToken = await renovarTokenML();
+            if (newToken) {
+                await buscarVendasML(newToken);
+            } else {
+                // Pedir novo código de autorização
+                showToast('🔑 Precisa reautorizar o Mercado Livre', 'warning');
+                gerarURLAutorizacaoML();
+            }
+        }
+        
+    } else {
+        // Primeira vez - pedir autorização
+        console.log('❌ Nenhum token encontrado');
+        showToast('🔑 Autorize o Mercado Livre para continuar', 'info');
+        gerarURLAutorizacaoML();
+    }
+};
+// ============================================
+// FUNÇÃO SIMPLES PARA CONTADOR DE CARACTERES
+// ============================================
+
+// Adicione esta função no FINAL do seu arquivo script.js
+function initContadorCaracteres() {
+    console.log('Inicializando contador de caracteres...');
+    
+    // Aguardar o campo carregar
+    setTimeout(() => {
+        const campo = document.getElementById('productName');
+        const contador = document.getElementById('contadorProduto');
+        
+        if (!campo || !contador) {
+            console.log('Elementos não encontrados, tentando novamente...');
+            setTimeout(initContadorCaracteres, 500);
+            return;
+        }
+        
+        console.log('Campo e contador encontrados!');
+        
+        // Função para atualizar o contador
+        function atualizarContador() {
+            const digitado = campo.value.length;
+            const maximo = 200;
+            
+            contador.textContent = `${digitado}/${maximo}`;
+            
+            // Mudar cor conforme limite
+            if (digitado >= maximo) {
+                contador.style.color = '#dc3545';
+                contador.style.fontWeight = 'bold';
+            } else if (digitado >= 180) {
+                contador.style.color = '#ffc107';
+                contador.style.fontWeight = 'bold';
+            } else {
+                contador.style.color = '#6c757d';
+                contador.style.fontWeight = 'normal';
+            }
+        }
+        
+        // Adicionar eventos
+        campo.addEventListener('input', atualizarContador);
+        campo.addEventListener('keyup', atualizarContador);
+        campo.addEventListener('change', atualizarContador);
+        
+        // Atualizar valor inicial
+        atualizarContador();
+        
+        // Sobrescrever clearForm globalmente (sem modificar a função original)
+        const originalClearForm = window.clearForm;
+        if (originalClearForm) {
+            window.clearForm = function() {
+                originalClearForm();
+                setTimeout(atualizarContador, 100);
+            };
+        }
+        
+        // Sobrescrever editOrder globalmente (sem modificar a função original)
+        const originalEditOrder = window.editOrder;
+        if (originalEditOrder) {
+            window.editOrder = function(orderId) {
+                originalEditOrder(orderId);
+                setTimeout(atualizarContador, 200);
+            };
+        }
+        
+        console.log('Contador de caracteres inicializado com sucesso!');
+        
+    }, 1000);
+}
+
+// Inicializar quando o DOM estiver pronto
+document.addEventListener('DOMContentLoaded', function() {
+    // Chamar depois de um tempo para garantir que tudo carregou
+    setTimeout(initContadorCaracteres, 2000);
+});
+
+// ===== EXPORTAR FUNÇÕES PARA USO GLOBAL =====
+window.autoManageMLToken = autoManageMLToken;
+window.testMLConnection = testMLConnection;
+window.checkMLTokenStatus = checkMLTokenStatus;
+window.initializeMLAuth = initializeMLAuth;
+window.testMLConnection = testMLConnection;
+window.abrirSistemaVendas = abrirSistemaVendas;
+window.carregarVendasML = carregarVendasML;
+window.verDetalhesVenda = verDetalhesVenda;
+window.verificarVenda = verificarVenda;
+window.desverificarVenda = desverificarVenda;
+window.configurarVendas = configurarVendas;
+window.fecharConfigVendas = fecharConfigVendas;
+window.salvarConfigVendas = salvarConfigVendas;
+window.exportarVendas = exportarVendas;
+window.fecharDetalhesVenda = fecharDetalhesVenda;
+window.imprimirDetalhesVenda = imprimirDetalhesVenda;
+window.verificarVendaAtual = verificarVendaAtual;
 
 console.log('✅ Script carregado com sucesso!');

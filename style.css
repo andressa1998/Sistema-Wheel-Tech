@@ -33,3 +33,118 @@
 .os-precisa-foto:hover {
     background: linear-gradient(45deg, #ffeef8, #ffebf3) !important;
 }
+
+/* ===== ESTILOS PARA SISTEMA DE VENDAS ML ===== */
+
+/* Estilos para modal de autorização ML */
+#manualAuthCode {
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    letter-spacing: 1px;
+}
+
+/* Badge de status ML */
+#mlTokenStatus {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 10px;
+}
+
+/* Animações para status do token */
+@keyframes tokenWarning {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+.token-expiring {
+    animation: tokenWarning 2s infinite;
+}
+
+/* Responsividade para modal */
+@media (max-width: 600px) {
+    .modal-content {
+        width: 95% !important;
+        margin: 10px !important;
+        padding: 15px !important;
+    }
+}
+
+/* Estilos para o modal de token ML */
+#mlAccessTokenInput {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    padding: 12px;
+    background: #f8f9fa;
+    border: 2px solid #dee2e6;
+}
+
+#mlAccessTokenInput:focus {
+    border-color: #8A2BE2;
+    background: white;
+}
+
+.token-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.token-valid {
+    background: #d4edda;
+    color: #155724;
+}
+
+.token-expiring {
+    background: #fff3cd;
+    color: #856404;
+    animation: pulseWarning 2s infinite;
+}
+
+.token-expired {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+@keyframes pulseWarning {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+/* Status do token automático */
+.auto-token-status {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #28a745;
+    color: white;
+    animation: pulseAuto 3s infinite;
+}
+
+@keyframes pulseAuto {
+    0% { opacity: 0.8; }
+    50% { opacity: 1; }
+    100% { opacity: 0.8; }
+}
+
+/* Loading automático */
+.auto-loading {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #8A2BE2;
+    border-radius: 50%;
+    animation: spinAuto 1s linear infinite;
+}
+
+@keyframes spinAuto {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

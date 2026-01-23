@@ -875,6 +875,147 @@
             transform: translateY(-2px) !important;
             box-shadow: 0 5px 15px rgba(23, 162, 184, 0.3) !important;
         }
+
+        /* Estilos para o sistema de Vendas ML */
+.btn-success.btn-sm {
+    background: linear-gradient(135deg, #28a745, #218838) !important;
+}
+
+.btn-success.btn-sm:hover {
+    background: linear-gradient(135deg, #218838, #1e7e34) !important;
+}
+
+/* Estilos para as tabelas de vendas */
+#salesTable th {
+    background: #28a745 !important;
+    color: white !important;
+}
+
+#salesTable tr:hover {
+    background-color: #f8f9fa !important;
+}
+
+.valor-cell {
+    font-weight: 700 !important;
+    color: #28a745 !important;
+}
+
+/* Badges específicos para vendas */
+.badge-nova {
+    background: #ffc107;
+    color: #212529;
+}
+
+.badge-verificada {
+    background: #28a745;
+    color: white;
+}
+
+.badge-fraude {
+    background: #dc3545;
+    color: white;
+    animation: pulse 1.5s infinite;
+}
+
+/* Animações */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+/* Responsividade */
+@media (max-width: 768px) {
+    #salesSystem .d-flex.flex-wrap {
+        flex-direction: column;
+    }
+    
+    #salesSystem .btn-sm {
+        margin-bottom: 5px;
+        width: 100%;
+    }
+}
+
+/* Estilos para os modais de vendas */
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.info-card {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 20px;
+    border: 1px solid #e9ecef;
+}
+
+.info-card h4 {
+    color: #495057;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #dee2e6;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.info-item {
+    display: flex;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed #dee2e6;
+}
+
+.info-label {
+    font-weight: 600;
+    color: #6c757d;
+    width: 180px;
+    min-width: 180px;
+    font-size: 13px;
+}
+
+.info-value {
+    flex: 1;
+    color: #212529;
+    font-size: 14px;
+    word-break: break-word;
+}
+
+/* Estilos para os badges nos detalhes */
+.badge {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.badge-success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.badge-warning {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.badge-danger {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.badge-info {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
     </style>
 </head>
 <body>
@@ -911,6 +1052,13 @@
                         <i class="fas fa-camera" style="color: var(--primary);"></i>
                         Sistema de Ordem de Serviço
                     </h1>
+
+                        <div id="mlTokenStatus" class="hidden" style="position: fixed; bottom: 20px; right: 20px; 
+                                background: rgba(0,0,0,0.8); color: white; padding: 10px 15px; border-radius: 8px; 
+                                font-size: 12px; z-index: 9999;">
+                                <i class="fas fa-sync-alt"></i> 
+                                <span id="mlTokenText">Token ML: Carregando...</span>
+                            </div>
                     
                     <div class="user-info">
                         <div class="notification-bell" id="notificationBell" onclick="toggleNotificacoes()" style="display: none;">
@@ -922,7 +1070,10 @@
                         <div>
                             <div style="font-weight: 600;" id="userName">Usuário</div>
                             <div style="font-size: 12px; color: #6c757d;" id="userRole"></div>
-                            <div class="d-flex gap-2 mt-2">
+                            <div class="d-flex gap-2 mt-2"><!-- ADICIONE AQUI O BOTÃO DE VENDAS -->
+                            <button id="vendasBtn" class="btn btn-success btn-sm">
+                                <i class="fas fa-store"></i> Vendas ML
+                            </button>   
                                 <button id="reembolsosBtn" class="btn btn-success btn-sm">
                                 <i class="fas fa-exchange-alt"></i> Reembolsos
                                 </button>
@@ -997,12 +1148,17 @@
                 <div id="osFormContainer">
                     <div class="d-flex flex-wrap gap-3 mb-4">
                         <div style="flex: 1; min-width: 250px;">
-                            <div class="form-group">
-                                <label for="productName"><i class="fas fa-box"></i> Nome do Produto *</label>
-                                <input type="text" id="productName" class="form-control" placeholder="Ex: Bicicleta Mountain Bike" required>
-                            </div>
+                        <div class="form-group">
+                            <label for="productName"><i class="fas fa-box"></i> Nome do Produto *</label>
+                            <input type="text" id="productName" class="form-control" placeholder="Ex: Bicicleta Mountain Bike" required
+               maxlength="200">
+        <div style="height: 18px; padding-top: 2px;">
+            <small id="contadorProduto" style="float: right; font-size: 11px; color: #6c757d;">
+                0/200
+            </small>
                         </div>
-                        
+                        </div>
+                        </div>                        
                         <div style="flex: 1; min-width: 250px;">
                             <div class="form-group">
                                 <label for="urgency"><i class="fas fa-exclamation-triangle"></i> Urgência *</label>
@@ -1279,6 +1435,10 @@
                             <div class="d-flex gap-2 mt-2">
                                 <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
                                     <i class="fas fa-arrow-left"></i> Voltar para OS
+                                </button>
+                                <!-- ADICIONE ESTE BOTÃO -->
+                                <button onclick="abrirSistemaVendas()" class="btn btn-success btn-sm">
+                                    <i class="fas fa-store"></i> Vendas ML
                                 </button>
                                 <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
                                     <i class="fas fa-sign-out-alt"></i> Sair
@@ -1741,7 +1901,127 @@
             </button>
         </div>
     </div>
+
+    <!-- ===== SISTEMA DE VENDAS ML ===== -->
+<div id="salesSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-store" style="color: #28a745;"></i>
+                    Sistema de Vendas ML
+                </h1>
+                
+                <div class="user-info">
+                    <div class="user-avatar" id="salesUserAvatar">U</div>
+                    <div>
+                        <div style="font-weight: 600;" id="salesUserName">Usuário</div>
+                        <div style="font-size: 12px; color: #6c757d;" id="salesUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
+                                <i class="fas fa-arrow-left"></i> Voltar para OS
+                            </button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-sign-out-alt"></i> Sair
+                            </button>
+                            <div class="d-flex gap-2">
+    <button onclick="carregarVendasML()" class="btn btn-primary">
+        <i class="fas fa-sync-alt"></i> Atualizar
+    </button>
+    <button onclick="gerarURLAutorizacaoML()" class="btn btn-warning">
+        <i class="fas fa-key"></i> Configurar ML
+    </button>
+    <button onclick="exportarVendasCSV()" class="btn btn-success">
+        <i class="fas fa-file-export"></i> Exportar
+    </button>
+</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
     
+    <div class="container">
+        <!-- Status do Sistema -->
+        <div class="card mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                        <i class="fas fa-chart-line" style="color: #28a745;"></i>
+                        Vendas do Mercado Livre
+                    </h3>
+                    <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
+                        <span id="countNovasVendas">0</span> novas •
+                        <span id="countVerificadas">0</span> verificadas •
+                        <span id="totalVendas">0</span> vendas carregadas
+                    </p>
+                </div>
+                
+                <div class="d-flex gap-2">
+                    <button onclick="carregarVendasML()" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                    <button onclick="exportarVendasCSV()" class="btn btn-success">
+                        <i class="fas fa-file-export"></i> Exportar
+                    </button>
+                    <button onclick="configurarML()" class="btn btn-warning">
+                        <i class="fas fa-cog"></i> Configurar
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tabela de Vendas -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-shopping-cart"></i> Vendas Recentes
+                </h2>
+                
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-warning btn-sm" onclick="filtrarVendas('novas')">
+                        Novas (<span id="badgeNovas">0</span>)
+                    </button>
+                    <button class="btn btn-success btn-sm" onclick="filtrarVendas('verificadas')">
+                        Verificadas (<span id="badgeVerificadas">0</span>)
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="filtrarVendas('fraudes')">
+                        Fraudes (<span id="badgeFraudes">0</span>)
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="filtrarVendas('todas')">
+                        Todas (<span id="badgeTodas">0</span>)
+                    </button>
+                </div>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="table" id="salesTable">
+                    <thead>
+                        <tr>
+                            <th>Venda</th>
+                            <th>Data</th>
+                            <th>Valor</th>
+                            <th>Comprador</th>
+                            <th>Itens</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="salesTableBody">
+                        <!-- Vendas serão carregadas aqui -->
+                    </tbody>
+                </table>
+            </div>
+            
+            <div id="salesEmpty" class="text-center py-5 hidden">
+                <i class="fas fa-store-slash fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                <h4 style="color: #6c757d;">Nenhuma venda encontrada</h4>
+                <p style="color: #6c757d;">Clique em "Atualizar" para buscar vendas recentes.</p>
+            </div>
+        </div>
+    </div>
+</div>
 
     <!-- SCRIPT PRINCIPAL -->
     <script src="script.js"></script>
