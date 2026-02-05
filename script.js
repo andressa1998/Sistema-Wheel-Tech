@@ -7,6 +7,17 @@ const SUPABASE_URL = 'https://nvlmtinpcayrpkhulefs.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_7AaXEKbS9roL57PO5lQkuQ_fkVWnGoL';
 let supabaseClient = null;
 
+// ===== CONFIGURAÇÃO MERCADO LIVRE =====
+const ML_CONFIG = {
+    CLIENT_ID: '5767896809769647',
+    CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
+    REDIRECT_URI: 'https://homework-fees-saving-beliefs.trycloudflare.com/callback',
+    USER_ID: '415176739',
+    API_BASE_URL: 'https://api.mercadolibre.com',
+    // Código inicial do seu token_auto.py
+    INITIAL_CODE: 'TG-6983743d4a2f3e0001a5fee0-415176739'
+};
+
 // ===== VARIÁVEIS PARA CONTROLE DE SESSÃO =====
 const SESSION_TIMEOUT = 2 * 60 * 60 * 1000; // 24 horas em milissegundos
 let sessionTimer = null;
@@ -1333,6 +1344,133 @@ window.reenviarParaVerificacao = async function(id) {
         showToast('❌ Erro ao reenviar reembolso: ' + error.message, 'error');
     }
 };
+
+// ===== FUNÇÕES PARA TOKEN ML AUTOMÁTICO =====
+
+async function renewTokenWithRefreshToken(refreshToken) {
+    try {
+        console.log('🔄 Renovando token com refresh_token...');
+        
+        const params = new URLSearchParams();
+        params.append('grant_type', 'refresh_token');
+        params.append('client_id', ML_CONFIG.CLIENT_ID);
+        params.append('client_secret', ML_CONFIG.CLIENT_SECRET);
+        params.append('refresh_token', refreshToken);
+        
+        const response = await fetch(`${ML_CONFIG.API_BASE_URL}/oauth/token`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            },
+            body: params
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log('✅ Token renovado com refresh_token!');
+            return data;
+        } else {
+            console.error('❌ Erro na renovação:', response.status);
+            return null;
+        }
+    } catch (error) {
+        console.error('❌ Erro ao renovar token:', error);
+        return null;
+    }
+}
+
+// Função para buscar vendas usando token automático
+async function buscarVendasML(token = null) {
+    try {
+        let accessToken = token;
+        
+        if (!accessToken) {
+            accessToken = await autoManageMLToken();
+        }
+        
+        if (!accessToken) {
+            console.error('❌ Não foi possível obter token');
+            return [];
+        }
+        
+        // Buscar vendas dos últimos 3 dias
+        const now = new Date();
+        const threeDaysAgo = new Date(now);
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        
+        const params = new URLSearchParams({
+            seller: ML_CONFIG.USER_ID,
+            sort: 'date_desc',
+            'order.status': 'paid',
+            'order.date_created.from': threeDaysAgo.toISOString().split('T')[0],
+            limit: '50'
+        });
+        
+        console.log('🛒 Buscando vendas do ML...');
+        
+        const response = await fetch(`${ML_CONFIG.API_BASE_URL}/orders/search?${params.toString()}`, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Accept': 'application/json'
+            }
+        });
+        
+        if (response.status === 401) {
+            // Token expirado, tentar renovar
+            console.log('🔄 Token expirado, renovando...');
+            const newToken = await renewTokenAutomatically();
+            if (newToken) {
+                return await buscarVendasML(newToken);
+            }
+        }
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+            console.log(`✅ ${data.results.length} vendas encontradas`);
+            return processarVendasML(data.results);
+        }
+        
+        return [];
+        
+    } catch (error) {
+        console.error('❌ Erro ao buscar vendas:', error);
+        return [];
+    }
+}
+
+function processarVendasML(vendas) {
+    return vendas.map(venda => {
+        const item = venda.order_items && venda.order_items.length > 0 ? venda.order_items[0] : {};
+        
+        return {
+            id: venda.id,
+            numero_venda: venda.external_reference || `ML-${venda.id}`,
+            data_venda: new Date(venda.date_created).toLocaleString('pt-BR'),
+            valor_total: venda.total_amount || 0,
+            quantidade_itens: venda.order_items?.length || 0,
+            comprador: venda.buyer?.nickname || 'Não informado',
+            status: 'nova',
+            verificada: false,
+            
+            // Detalhes do item principal
+            item_titulo: item.item?.title || 'Produto não identificado',
+            item_sku: item.item?.seller_custom_field || 'N/A',
+            item_quantidade: item.quantity || 1,
+            item_preco_unitario: item.unit_price || 0,
+            
+            // Informações adicionais
+            metodo_pagamento: venda.payments?.[0]?.payment_type || 'Não informado',
+            tags: venda.tags || [],
+            dados_completos: venda
+        };
+    });
+}
 
 // ============================================
 // FUNÇÕES PARA REEMBOLSOS
@@ -2828,6 +2966,12 @@ function handleLogout() {
 
         // Limpar tokens do Mercado Livre
         clearMLTokenStorage();
+
+        // Limpar tokens do Mercado Livre
+        localStorage.removeItem('ml_access_token');
+        localStorage.removeItem('ml_refresh_token');
+        localStorage.removeItem('ml_token_expiry');
+        localStorage.removeItem('ml_vendas');
         
         // Esconder sistemas
         if (mainSystem) mainSystem.classList.add('hidden');
@@ -5886,52 +6030,84 @@ window.abrirSistemaVendas = async function() {
     document.getElementById('salesUserAvatar').textContent = currentUser.avatar;
     document.getElementById('salesUserRole').textContent = currentUser.role;
     
-    // Verificar se já temos token
-    const accessToken = localStorage.getItem('ml_access_token');
-    const tokenExpiry = localStorage.getItem('ml_token_expiry');
+    showToast('🔄 Conectando ao Mercado Livre...', 'info');
     
-    if (accessToken && tokenExpiry) {
-        const expiresIn = parseInt(tokenExpiry) - Date.now();
+    // Usar o sistema automático de token
+    const token = await autoManageMLToken();
+    
+    if (token) {
+        // Buscar vendas
+        const vendas = await buscarVendasML(token);
         
-        if (expiresIn > 300000) { // > 5 minutos
-            console.log('✅ Token válido por mais', Math.round(expiresIn/60000), 'minutos');
-            showToast('✅ Conectado ao Mercado Livre!', 'success');
-            
-            // Buscar vendas
-            await buscarVendasML(accessToken);
-            
-        } else if (expiresIn > 0) { // < 5 minutos
-            console.log('🔄 Token prestes a expirar, renovando...');
-            showToast('🔄 Renovando conexão...', 'info');
-            
-            const newToken = await renovarTokenML();
-            if (newToken) {
-                await buscarVendasML(newToken);
-            } else {
-                showToast('❌ Falha ao renovar conexão', 'error');
-            }
-            
-        } else { // Expirado
-            console.log('❌ Token expirado, tentando renovar...');
-            showToast('🔄 Reconectando ao Mercado Livre...', 'info');
-            
-            const newToken = await renovarTokenML();
-            if (newToken) {
-                await buscarVendasML(newToken);
-            } else {
-                // Pedir novo código de autorização
-                showToast('🔑 Precisa reautorizar o Mercado Livre', 'warning');
-                gerarURLAutorizacaoML();
-            }
+        if (vendas.length > 0) {
+            renderizarVendasML(vendas);
+            showToast(`✅ ${vendas.length} vendas carregadas`, 'success');
+        } else {
+            showToast('📭 Nenhuma venda recente encontrada', 'info');
         }
-        
     } else {
-        // Primeira vez - pedir autorização
-        console.log('❌ Nenhum token encontrado');
-        showToast('🔑 Autorize o Mercado Livre para continuar', 'info');
-        gerarURLAutorizacaoML();
+        showToast('❌ Falha na conexão com Mercado Livre', 'error');
     }
 };
+
+// ===== FUNÇÃO PARA RENDERIZAR VENDAS NA TABELA =====
+function renderizarVendasML(vendas) {
+    const salesTableBody = document.getElementById('salesTableBody');
+    if (!salesTableBody) {
+        console.error('❌ Tabela de vendas não encontrada');
+        return;
+    }
+    
+    salesTableBody.innerHTML = '';
+    
+    if (vendas.length === 0) {
+        salesTableBody.innerHTML = `
+            <tr>
+                <td colspan="9" class="text-center" style="padding: 40px;">
+                    <i class="fas fa-store-slash fa-3x" style="color: #6c757d; opacity: 0.5; margin-bottom: 15px;"></i>
+                    <h4 style="color: #6c757d;">Nenhuma venda encontrada</h4>
+                    <p style="color: #6c757d;">Não há vendas recentes no Mercado Livre.</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    vendas.forEach((venda, index) => {
+        const row = document.createElement('tr');
+        row.className = 'venda-item';
+        
+        // Status badge
+        let statusBadge = '';
+        if (venda.verificada) {
+            statusBadge = '<span class="badge badge-success">Verificada</span>';
+        } else if (venda.status === 'fraude') {
+            statusBadge = '<span class="badge badge-danger">Fraude</span>';
+        } else {
+            statusBadge = '<span class="badge badge-warning">Nova</span>';
+        }
+        
+        row.innerHTML = `
+            <td><strong>${venda.numero_venda}</strong></td>
+            <td>${venda.data_venda}</td>
+            <td class="valor-cell">R$ ${parseFloat(venda.valor_total).toFixed(2)}</td>
+            <td>${venda.comprador}</td>
+            <td>${venda.quantidade_itens}</td>
+            <td>${statusBadge}</td>
+            <td>
+                <button class="btn btn-info btn-sm" onclick="verDetalhesVenda(${index})" title="Ver detalhes">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button class="btn btn-success btn-sm" onclick="verificarVenda('${venda.id}')" title="Marcar como verificada">
+                    <i class="fas fa-check"></i>
+                </button>
+            </td>
+        `;
+        
+        salesTableBody.appendChild(row);
+    });
+}
+
 // ============================================
 // FUNÇÃO SIMPLES PARA CONTADOR DE CARACTERES
 // ============================================
@@ -6004,6 +6180,57 @@ function initContadorCaracteres() {
     }, 1000);
 }
 
+// ===== FUNÇÕES AUXILIARES PARA VENDAS =====
+
+window.atualizarVendas = async function() {
+    showToast('🔄 Atualizando vendas...', 'info');
+    
+    const token = await autoManageMLToken();
+    if (token) {
+        const vendas = await buscarVendasML(token);
+        if (vendas.length > 0) {
+            renderizarVendasML(vendas);
+            showToast(`✅ ${vendas.length} vendas atualizadas`, 'success');
+        } else {
+            showToast('📭 Nenhuma nova venda encontrada', 'info');
+        }
+    } else {
+        showToast('❌ Falha ao conectar ao ML', 'error');
+    }
+};
+
+window.filtrarVendas = function(filtro) {
+    // Esta função será implementada quando tivermos mais dados
+    showToast(`Filtrando por: ${filtro}`, 'info');
+};
+
+window.exportarVendasExcel = function() {
+    showToast('📊 Exportando vendas para Excel...', 'info');
+    // Implementar exportação Excel
+};
+
+window.verDetalhesVenda = function(index) {
+    // Mostrar modal com detalhes da venda
+    showToast(`Visualizando venda #${index + 1}`, 'info');
+};
+
+window.verificarVenda = function(vendaId) {
+    if (confirm('Marcar esta venda como verificada?')) {
+        // Marcar como verificada localmente
+        const vendas = JSON.parse(localStorage.getItem('ml_vendas') || '[]');
+        const index = vendas.findIndex(v => v.id === vendaId);
+        if (index !== -1) {
+            vendas[index].verificada = true;
+            vendas[index].status = 'verificada';
+            localStorage.setItem('ml_vendas', JSON.stringify(vendas));
+            
+            // Atualizar tabela
+            renderizarVendasML(vendas);
+            showToast('✅ Venda marcada como verificada', 'success');
+        }
+    }
+};
+
 // Inicializar quando o DOM estiver pronto
 document.addEventListener('DOMContentLoaded', function() {
     // Chamar depois de um tempo para garantir que tudo carregou
@@ -6028,5 +6255,3 @@ window.exportarVendas = exportarVendas;
 window.fecharDetalhesVenda = fecharDetalhesVenda;
 window.imprimirDetalhesVenda = imprimirDetalhesVenda;
 window.verificarVendaAtual = verificarVendaAtual;
-
-console.log('✅ Script carregado com sucesso!');
