@@ -5,7 +5,7 @@
 console.log('🛒 Sistema de Vendas ML iniciando...');
 
 // ml_sales_sync.js - LINHA 4
-const WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+const WORKER_URL = 'https://homework-fees-saving-beliefs.trycloudflare.com';
 
 // E também exponha globalmente
 window.WORKER_URL = WORKER_URL;
