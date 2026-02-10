@@ -206,59 +206,203 @@ async function fetchMLSalesViaWorker(token, limit = 20) {
 }
 
 // ===== FUNÇÃO PRINCIPAL PARA GERENCIAR TOKEN =====
+// NO ml_token_manager.js - Substitua a função autoManageMLToken:
+
 async function autoManageMLToken() {
-    console.log('🔄 Gerenciamento automático de token iniciado...');
+  console.log('🔄 Gerenciamento automático de token iniciado...');
+  
+  try {
+    // 1. Verificar se já tem token salvo
+    const accessToken = localStorage.getItem('ml_access_token');
+    const refreshToken = localStorage.getItem('ml_refresh_token');
+    const tokenExpiry = localStorage.getItem('ml_token_expiry');
     
-    try {
-        // 1. Verificar se já tem token salvo
-        const accessToken = localStorage.getItem('ml_access_token');
-        const refreshToken = localStorage.getItem('ml_refresh_token');
-        const tokenExpiry = localStorage.getItem('ml_token_expiry');
+    if (accessToken && refreshToken && tokenExpiry) {
+      const expiresIn = parseInt(tokenExpiry) - Date.now();
+      
+      if (expiresIn > 300000) { // > 5 minutos
+        console.log(`✅ Token válido por mais ${Math.round(expiresIn/60000)} minutos`);
         
-        if (accessToken && refreshToken && tokenExpiry) {
-            const expiresIn = parseInt(tokenExpiry) - Date.now();
-            
-            if (expiresIn > 300000) { // > 5 minutos
-                console.log(`✅ Token válido por mais ${Math.round(expiresIn/60000)} minutos`);
-                
-                mlTokenStatus = {
-                    access_token: accessToken,
-                    refresh_token: refreshToken,
-                    expires_at: parseInt(tokenExpiry),
-                    is_valid: true,
-                    last_update: new Date().toISOString(),
-                    user_info: mlTokenStatus.user_info
-                };
-                
-                updateTokenStatusUI();
-                return accessToken;
-            }
-            
-            if (expiresIn > 0) { // > 0 mas < 5 minutos
-                console.log(`🔄 Token expira em ${Math.round(expiresIn/60000)} minutos, renovando...`);
-                const newToken = await renewTokenWithRefreshToken(refreshToken);
-                if (newToken) {
-                    return newToken;
-                }
-            }
-            
-            // Token expirado
-            console.log('🔄 Token expirado, tentando renovar...');
-            const newToken = await renewTokenWithRefreshToken(refreshToken);
-            if (newToken) {
-                return newToken;
-            }
+        mlTokenStatus = {
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          expires_at: parseInt(tokenExpiry),
+          is_valid: true,
+          last_update: new Date().toISOString(),
+          user_info: mlTokenStatus.user_info
+        };
+        
+        updateTokenStatusUI();
+        return accessToken;
+      }
+      
+      if (expiresIn > 0) { // > 0 mas < 5 minutos
+        console.log(`🔄 Token expira em ${Math.round(expiresIn/60000)} minutos, renovando...`);
+        const newToken = await renewTokenWithRefreshToken(refreshToken);
+        if (newToken) {
+          return newToken;
         }
-        
-        // 2. Se não tem token válido, obter novo
-        console.log('🔄 Nenhum token válido encontrado, obtendo novo...');
-        return await getNewTokenWithCode();
-        
-    } catch (error) {
-        console.error('❌ Erro no autoManageMLToken:', error);
-        showTokenError('ERRO NO SISTEMA');
-        return null;
+      }
     }
+    
+    // 2. Se não tem token válido, obter NOVO token DIRETO
+    console.log('🔄 Nenhum token válido encontrado, obtendo novo DIRETAMENTE...');
+    return await getTokenDiretoDaAPI();
+    
+  } catch (error) {
+    console.error('❌ Erro no autoManageMLToken:', error);
+    showTokenError('ERRO NO SISTEMA');
+    return null;
+  }
+}
+
+// ADICIONE esta função:
+async function getTokenDiretoDaAPI() {
+  try {
+    console.log('🚀 Obtendo token DIRETAMENTE da API ML...');
+    
+    const params = new URLSearchParams();
+    params.append('grant_type', 'authorization_code');
+    params.append('client_id', ML_CONFIG.CLIENT_ID);
+    params.append('client_secret', ML_CONFIG.CLIENT_SECRET);
+    params.append('code', ML_CONFIG.INITIAL_CODE);
+    params.append('redirect_uri', ML_CONFIG.REDIRECT_URI);
+    
+    console.log('📤 Enviando para API ML diretamente...');
+    
+    const response = await fetch('https://api.mercadolibre.com/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': 'MercadoLivre-Browser-Client/1.0'
+      },
+      body: params
+    });
+    
+    console.log('📥 Status direto:', response.status);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Erro da API ML:', errorText);
+      
+      // Se der erro, tenta pelo Worker como fallback
+      console.log('🔄 Tentando pelo Worker como fallback...');
+      return await getNewTokenWithCode();
+    }
+    
+    const data = await response.json();
+    console.log('✅ Token obtido DIRETAMENTE!');
+    
+    // Salvar token
+    const expiresIn = data.expires_in || 21600;
+    const expiresAt = Date.now() + (expiresIn * 1000);
+    
+    localStorage.setItem('ml_access_token', data.access_token);
+    localStorage.setItem('ml_refresh_token', data.refresh_token);
+    localStorage.setItem('ml_token_expiry', expiresAt.toString());
+    localStorage.setItem('ml_user_id', data.user_id || ML_CONFIG.USER_ID);
+    
+    mlTokenStatus = {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: expiresAt,
+      is_valid: true,
+      last_update: new Date().toISOString(),
+      user_info: null
+    };
+    
+    updateTokenStatusUI();
+    scheduleTokenRenewal(expiresIn * 1000);
+    
+    return data.access_token;
+    
+  } catch (error) {
+    console.error('❌ Erro ao obter token direto:', error);
+    
+    // Última tentativa: Worker
+    console.log('🔄 Última tentativa: Worker...');
+    return await getNewTokenWithCode();
+  }
+}
+
+// MODIFIQUE renewTokenWithRefreshToken também:
+async function renewTokenWithRefreshToken(refreshToken) {
+  try {
+    console.log('🔄 Renovando token DIRETAMENTE...');
+    
+    const params = new URLSearchParams();
+    params.append('grant_type', 'refresh_token');
+    params.append('client_id', ML_CONFIG.CLIENT_ID);
+    params.append('client_secret', ML_CONFIG.CLIENT_SECRET);
+    params.append('refresh_token', refreshToken);
+    
+    const response = await fetch('https://api.mercadolibre.com/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': 'MercadoLivre-Browser-Client/1.0'
+      },
+      body: params
+    });
+    
+    if (!response.ok) {
+      console.log('🔄 Renovação direta falhou, tentando Worker...');
+      // Fallback para Worker
+      return await callWorker('/api/ml/refresh', 'POST', { refresh_token: refreshToken })
+        .then(data => {
+          if (data.access_token) {
+            const expiresIn = data.expires_in || 21600;
+            const expiresAt = Date.now() + (expiresIn * 1000);
+            
+            localStorage.setItem('ml_access_token', data.access_token);
+            localStorage.setItem('ml_refresh_token', data.refresh_token || refreshToken);
+            localStorage.setItem('ml_token_expiry', expiresAt.toString());
+            
+            mlTokenStatus.access_token = data.access_token;
+            mlTokenStatus.refresh_token = data.refresh_token || refreshToken;
+            mlTokenStatus.expires_at = expiresAt;
+            mlTokenStatus.is_valid = true;
+            mlTokenStatus.last_update = new Date().toISOString();
+            
+            updateTokenStatusUI();
+            scheduleTokenRenewal(expiresIn * 1000);
+            
+            return data.access_token;
+          }
+          return null;
+        })
+        .catch(() => null);
+    }
+    
+    const data = await response.json();
+    
+    // Salvar novo token
+    const expiresIn = data.expires_in || 21600;
+    const expiresAt = Date.now() + (expiresIn * 1000);
+    
+    localStorage.setItem('ml_access_token', data.access_token);
+    localStorage.setItem('ml_refresh_token', data.refresh_token || refreshToken);
+    localStorage.setItem('ml_token_expiry', expiresAt.toString());
+    
+    mlTokenStatus = {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token || refreshToken,
+      expires_at: expiresAt,
+      is_valid: true,
+      last_update: new Date().toISOString(),
+      user_info: mlTokenStatus.user_info
+    };
+    
+    updateTokenStatusUI();
+    scheduleTokenRenewal(expiresIn * 1000);
+    
+    return data.access_token;
+  } catch (error) {
+    console.error('❌ Erro na renovação direta:', error);
+    return null;
+  }
 }
 
 // ===== FUNÇÃO PARA ATUALIZAR INTERFACE =====
