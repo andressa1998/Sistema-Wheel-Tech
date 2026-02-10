@@ -2,7 +2,7 @@
 console.log('🔑 Sistema de Token ML para Cloudflare Worker inicializando...');
 
 // ml_token_manager.js - LINHA 7
-const WORKER_URL = 'https://homework-fees-saving-beliefs.trycloudflare.com';
+const WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
 
 // E garanta que esta função seja exportada
 window.WORKER_URL = WORKER_URL;
