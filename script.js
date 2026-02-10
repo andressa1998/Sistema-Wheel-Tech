@@ -7,17 +7,6 @@ const SUPABASE_URL = 'https://nvlmtinpcayrpkhulefs.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_7AaXEKbS9roL57PO5lQkuQ_fkVWnGoL';
 let supabaseClient = null;
 
-// ===== CONFIGURAÇÃO MERCADO LIVRE =====
-const ML_CONFIG = {
-    CLIENT_ID: '5767896809769647',
-    CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
-    REDIRECT_URI: 'https://homework-fees-saving-beliefs.trycloudflare.com/callback',
-    USER_ID: '415176739',
-    API_BASE_URL: 'https://api.mercadolibre.com',
-    // Código inicial do seu token_auto.py
-    INITIAL_CODE: 'TG-6983743d4a2f3e0001a5fee0-415176739'
-};
-
 // ===== VARIÁVEIS PARA CONTROLE DE SESSÃO =====
 const SESSION_TIMEOUT = 2 * 60 * 60 * 1000; // 24 horas em milissegundos
 let sessionTimer = null;
@@ -218,7 +207,7 @@ function setupHeaderButtons() {
             abrirSistemaVendas();
         };
     }
-    
+
     // Configurar botão de Reembolsos
     const reembolsosBtn = document.getElementById('reembolsosBtn');
     if (reembolsosBtn) {
@@ -667,6 +656,36 @@ function setupEventListeners() {
             if (e.target === completeModal) closeCompleteModal();
         });
     }
+
+    // Configurar botão de caixa
+const caixaBtn = document.getElementById('caixaBtn');
+if (caixaBtn) {
+    caixaBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        console.log('💰 Botão Caixa clicado');
+        window.abrirSistemaCaixa();
+    });
+}
+
+// Configurar botão de reembolsos (já no header principal)
+const reembolsosBtn = document.getElementById('reembolsosBtn');
+if (reembolsosBtn) {
+    reembolsosBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        console.log('💰 Botão Reembolsos clicado');
+        window.abrirSistemaReembolsos();
+    });
+}
+
+// Configurar botão de vendas
+const vendasBtn = document.getElementById('vendasBtn');
+if (vendasBtn) {
+    vendasBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        console.log('🛒 Botão Vendas clicado');
+        window.abrirSistemaVendas();
+    });
+}
     
     // Event listener para mostrar/ocultar campos de anúncio
     const photoTypeSelect = document.getElementById('photoType');
@@ -944,134 +963,6 @@ async function getTokenWithInitialCode() {
             console.error('Stack:', error.stack);
         }
         return null;
-    }
-}
-
-// ===== FUNÇÃO PARA OBTER TOKEN ML AUTOMATICAMENTE (VERSÃO DEPURADA) =====
-async function getMLTokenAutomatically() {
-    console.log('🔄 Tentando obter token ML automaticamente...');
-    
-    try {
-        // 1. Primeiro verifica se já tem um token válido
-        const existingToken = localStorage.getItem('ml_access_token');
-        const tokenExpiry = localStorage.getItem('ml_token_expiry');
-        
-        if (existingToken && tokenExpiry) {
-            const expiresIn = parseInt(tokenExpiry) - Date.now();
-            if (expiresIn > 300000) { // 5 minutos = ainda válido
-                console.log('✅ Usando token existente (válido por mais ' + Math.round(expiresIn/60000) + ' minutos)');
-                return existingToken;
-            }
-        }
-        
-        // 2. Tenta usar refresh_token se existir
-        const refreshToken = localStorage.getItem('ml_refresh_token');
-        let tokenData = null;
-        
-        if (refreshToken) {
-            console.log('🔄 Tentando renovar com refresh_token...');
-            tokenData = await renewTokenWithRefreshToken(refreshToken);
-            
-            if (tokenData && tokenData.access_token) {
-                console.log('✅ Token renovado com refresh_token!');
-            }
-        }
-        
-        // 3. Se não conseguiu com refresh_token, usa o código inicial
-        if (!tokenData || !tokenData.access_token) {
-            console.log('🔄 Usando código inicial...');
-            tokenData = await getTokenWithInitialCode();
-            
-            if (tokenData && tokenData.access_token) {
-                console.log('✅ Token obtido com código inicial!');
-            }
-        }
-        
-        if (tokenData && tokenData.access_token) {
-            // Salvar tokens no localStorage
-            localStorage.setItem('ml_access_token', tokenData.access_token);
-            localStorage.setItem('ml_refresh_token', tokenData.refresh_token);
-            localStorage.setItem('ml_token_expiry', Date.now() + (tokenData.expires_in * 1000));
-            
-            console.log('✅ Token salvo com sucesso!');
-            console.log('Access Token (início):', tokenData.access_token.substring(0, 30) + '...');
-            console.log('Refresh Token (início):', tokenData.refresh_token.substring(0, 30) + '...');
-            console.log('Expira em:', tokenData.expires_in, 'segundos');
-            
-            // Agendar renovação automática
-            scheduleMLTokenRenewal(tokenData.expires_in * 1000);
-            
-            return tokenData.access_token;
-        } else {
-            console.error('❌ TokenData vazio ou sem access_token');
-            return null;
-        }
-        
-    } catch (error) {
-        console.error('❌ Erro ao obter token automaticamente:', error);
-        console.error('Detalhes do erro:', error.message);
-        return null;
-    }
-}
-
-// ===== FUNÇÃO PARA TESTAR O TOKEN =====
-async function testarTokenML() {
-    console.log('🧪 Testando token ML...');
-    
-    // Primeiro, limpe os tokens existentes para testar do zero
-    localStorage.removeItem('ml_access_token');
-    localStorage.removeItem('ml_refresh_token');
-    localStorage.removeItem('ml_token_expiry');
-    
-    // Tenta obter token com código inicial
-    const token = await getTokenWithInitialCode();
-    
-    if (token && token.access_token) {
-        console.log('✅ TESTE BEM SUCEDIDO!');
-        console.log('Access Token:', token.access_token);
-        console.log('Refresh Token:', token.refresh_token);
-        console.log('Expira em:', token.expires_in, 'segundos');
-        
-        // Salva no localStorage
-        localStorage.setItem('ml_access_token', token.access_token);
-        localStorage.setItem('ml_refresh_token', token.refresh_token);
-        localStorage.setItem('ml_token_expiry', Date.now() + (token.expires_in * 1000));
-        
-        // Testa o token na API
-        await testarConexaoComToken(token.access_token);
-        
-        return token.access_token;
-    } else {
-        console.error('❌ TESTE FALHOU! Não conseguiu obter token.');
-        return null;
-    }
-}
-
-// ===== FUNÇÃO PARA TESTAR CONEXÃO COM TOKEN =====
-async function testarConexaoComToken(token) {
-    try {
-        console.log('🔗 Testando conexão com token...');
-        
-        const response = await fetch(`${ML_CONFIG.API_BASE_URL}/users/me`, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Accept': 'application/json'
-            }
-        });
-        
-        if (response.ok) {
-            const userData = await response.json();
-            console.log('✅ Conexão bem-sucedida!');
-            console.log('Usuário:', userData.nickname);
-            console.log('ID:', userData.id);
-            return true;
-        } else {
-            console.error('❌ Falha na conexão:', response.status, response.statusText);
-            return false;
-        }
-    } catch (error) {
-        console.error('❌ Erro ao testar conexão:', error);
-        return false;
     }
 }
 
@@ -2994,8 +2885,8 @@ function handleLogout() {
 
 // Adicionar ao final do setupEventListeners
 setInterval(() => {
-    if (currentUser && document.getElementById('mlTokenStatus')) {
-        updateMLTokenStatus();
+    if (currentUser && document.getElementById('mlTokenStatusUI')) {
+        updateMLTokenStatusUI();
     }
 }, 60000); // Atualizar a cada minuto
 
@@ -5796,7 +5687,7 @@ function saveMLTokenToStorage(tokenData) {
         mlTokenExpiresAt = tokenData.expires_at;
         
         // Atualizar status na interface
-        updateMLTokenStatus();
+        updateMLTokenStatusUI();
         
         return true;
     } catch (error) {
@@ -6003,7 +5894,6 @@ async function testMLConnection() {
     }
 }
 
-// ===== FUNÇÃO PARA ABRIR SISTEMA DE VENDAS =====
 window.abrirSistemaVendas = async function() {
     if (!currentUser) {
         showToast('⚠️ Faça login primeiro', 'warning');
@@ -6015,6 +5905,7 @@ window.abrirSistemaVendas = async function() {
     // Esconder outros sistemas
     if (mainSystem) mainSystem.classList.add('hidden');
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
+    if (caixaSystem) caixaSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -6030,25 +5921,49 @@ window.abrirSistemaVendas = async function() {
     document.getElementById('salesUserAvatar').textContent = currentUser.avatar;
     document.getElementById('salesUserRole').textContent = currentUser.role;
     
-    showToast('🔄 Conectando ao Mercado Livre...', 'info');
+    showToast('🔄 Carregando sistema de vendas...', 'info');
     
-    // Usar o sistema automático de token
-    const token = await autoManageMLToken();
-    
-    if (token) {
-        // Buscar vendas
-        const vendas = await buscarVendasML(token);
-        
-        if (vendas.length > 0) {
-            renderizarVendasML(vendas);
-            showToast(`✅ ${vendas.length} vendas carregadas`, 'success');
-        } else {
-            showToast('📭 Nenhuma venda recente encontrada', 'info');
+    try {
+        // 1. Verificar conexão ML
+        const token = await autoManageMLToken();
+        if (!token) {
+            showToast('❌ Falha na conexão com Mercado Livre', 'error');
+            return;
         }
-    } else {
-        showToast('❌ Falha na conexão com Mercado Livre', 'error');
+        
+        // 2. Inicializar sistema de sincronização
+        if (window.inicializarSistemaVendas) {
+            await window.inicializarSistemaVendas();
+        }
+        
+        // 3. Carregar dashboard
+        if (window.carregarVendasDashboard) {
+            await window.carregarVendasDashboard('hoje');
+        }
+        
+        showToast('✅ Sistema de vendas carregado!', 'success');
+        
+    } catch (error) {
+        console.error('Erro ao carregar sistema de vendas:', error);
+        showToast('❌ Erro ao carregar vendas: ' + error.message, 'error');
     }
 };
+
+// ===== CONFIGURAR BOTÃO DE VENDAS ML =====
+function configurarBotaoVendas() {
+    const vendasBtn = document.getElementById('vendasBtn');
+    if (vendasBtn) {
+        vendasBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('🛍️ Botão Vendas ML clicado');
+            window.abrirSistemaVendas();
+        });
+        
+        console.log('✅ Botão de vendas configurado');
+    } else {
+        console.log('❌ Botão de vendas não encontrado');
+    }
+}
 
 // ===== FUNÇÃO PARA RENDERIZAR VENDAS NA TABELA =====
 function renderizarVendasML(vendas) {
@@ -6180,54 +6095,246 @@ function initContadorCaracteres() {
     }, 1000);
 }
 
-// ===== FUNÇÕES AUXILIARES PARA VENDAS =====
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(configurarBotaoVendas, 1000);
+});
+
+async function sincronizarVendasML() {
+    if (salesSyncStatus.isRunning) return;
+
+    const sellerId = '415176739'; // Definido no topo da função
+    const token = window.mlTokenStatus ? window.mlTokenStatus.access_token : null;
+
+    if (!token) return;
+
+    salesSyncStatus.isRunning = true;
+
+    try {
+        const url = `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&sort=date_desc`;
+        const response = await fetch(`${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`);
+        
+        const data = await response.json();
+        if (data.results) {
+            for (const venda of data.results) {
+                const item = venda.order_items[0].item;
+                
+                await window.supabaseClient.from('vendas_ml').upsert({
+                    id: venda.id,
+                    sku: item.seller_sku || "SEM SKU",
+                    meio_envio: venda.shipping?.id ? "Mercado Envios" : "A combinar",
+                    buyer_nickname: venda.buyer?.nickname,
+                    total_amount: venda.total_amount,
+                    status: venda.status,
+                    date_created: venda.date_created
+                });
+            }
+        }
+    } catch (e) {
+        console.error("Erro na sync automática:", e);
+    } finally {
+        salesSyncStatus.isRunning = false;
+    }
+}
+
+// ============================================
+// FUNÇÕES PARA NAVEGAÇÃO ENTRE SISTEMAS
+// ============================================
+
+// Função para abrir sistema de reembolsos
+window.abrirSistemaReembolsos = function() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
+    }
+    
+    console.log('💰 Iniciando sistema de reembolsos...');
+    
+    // Esconder outros sistemas
+    if (mainSystem) mainSystem.classList.add('hidden');
+    if (caixaSystem) caixaSystem.classList.add('hidden');
+    if (salesSystem) salesSystem.classList.add('hidden');
+    
+    // Mostrar sistema de reembolsos
+    const reembolsosSystem = document.getElementById('reembolsosSystem');
+    if (!reembolsosSystem) {
+        showToast('❌ Sistema de reembolsos não encontrado', 'error');
+        return;
+    }
+    
+    reembolsosSystem.classList.remove('hidden');
+    
+    // Atualizar informações do usuário
+    const reembolsoUserName = document.getElementById('reembolsoUserName');
+    const reembolsoUserAvatar = document.getElementById('reembolsoUserAvatar');
+    const reembolsoUserRole = document.getElementById('reembolsoUserRole');
+    
+    if (reembolsoUserName) reembolsoUserName.textContent = currentUser.name;
+    if (reembolsoUserAvatar) reembolsoUserAvatar.textContent = currentUser.avatar;
+    if (reembolsoUserRole) reembolsoUserRole.textContent = currentUser.role;
+    
+    // Carregar reembolsos
+    if (window.loadReembolsos) {
+        loadReembolsos();
+    }
+    
+    showToast('💰 Sistema de Reembolsos carregado', 'info');
+};
+
+// Função para abrir sistema de conferência de caixa
+window.abrirSistemaCaixa = function() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
+    }
+    
+    console.log('💰 Iniciando sistema de conferência de caixa...');
+    
+    // Esconder outros sistemas
+    if (mainSystem) mainSystem.classList.add('hidden');
+    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
+    if (salesSystem) salesSystem.classList.add('hidden');
+    
+    // Mostrar sistema de caixa
+    const caixaSystem = document.getElementById('caixaSystem');
+    if (!caixaSystem) {
+        showToast('❌ Sistema de caixa não encontrado', 'error');
+        return;
+    }
+    
+    caixaSystem.classList.remove('hidden');
+    
+    // Atualizar informações do usuário
+    const caixaUserName = document.getElementById('caixaUserName');
+    const caixaUserAvatar = document.getElementById('caixaUserAvatar');
+    const caixaUserRole = document.getElementById('caixaUserRole');
+    
+    if (caixaUserName) caixaUserName.textContent = currentUser.name;
+    if (caixaUserAvatar) caixaUserAvatar.textContent = currentUser.avatar;
+    if (caixaUserRole) caixaUserRole.textContent = currentUser.role;
+    
+    // Carregar dados do caixa
+    if (window.carregarCaixaDia) {
+        carregarCaixaDia();
+    }
+    
+    showToast('💰 Sistema de Conferência de Caixa carregado', 'info');
+};
+
+// Função para voltar ao sistema principal (OS)
+window.voltarParaOS = function() {
+    // Esconder todos os outros sistemas
+    if (salesSystem) salesSystem.classList.add('hidden');
+    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
+    if (caixaSystem) caixaSystem.classList.add('hidden');
+    
+    // Mostrar sistema principal
+    if (mainSystem) mainSystem.classList.remove('hidden');
+    
+    showToast('Voltando para Sistema de Ordem de Serviço', 'info');
+};
+
+// ============================================
+// FUNÇÃO ATUALIZAR VENDAS - VERSÃO FINAL 
+// ============================================
 
 window.atualizarVendas = async function() {
-    showToast('🔄 Atualizando vendas...', 'info');
-    
-    const token = await autoManageMLToken();
-    if (token) {
-        const vendas = await buscarVendasML(token);
-        if (vendas.length > 0) {
-            renderizarVendasML(vendas);
-            showToast(`✅ ${vendas.length} vendas atualizadas`, 'success');
-        } else {
-            showToast('📭 Nenhuma nova venda encontrada', 'info');
-        }
-    } else {
-        showToast('❌ Falha ao conectar ao ML', 'error');
+    const btn = document.querySelector('button[onclick="atualizarVendas()"]');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Auditando Logística e Estoque...';
     }
-};
+    
+    try {
+        const sellerId = '415176739';
+        const token = window.mlTokenStatus?.access_token || localStorage.getItem('ml_access_token');
+        if (!token) return alert('Sessão expirada. Recarregue a página.');
 
-window.filtrarVendas = function(filtro) {
-    // Esta função será implementada quando tivermos mais dados
-    showToast(`Filtrando por: ${filtro}`, 'info');
-};
+        const workerUrl = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+        const mlUrl = `https://api.mercadolibre.com/orders/search?seller=${sellerId}&order.status=paid&sort=date_desc&limit=30`;
+        const proxyUrl = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(mlUrl)}&token=${token}`;
 
-window.exportarVendasExcel = function() {
-    showToast('📊 Exportando vendas para Excel...', 'info');
-    // Implementar exportação Excel
-};
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+        const vendasResumo = data.results || [];
 
-window.verDetalhesVenda = function(index) {
-    // Mostrar modal com detalhes da venda
-    showToast(`Visualizando venda #${index + 1}`, 'info');
-};
+        for (const resumo of vendasResumo) {
+            // 1. BUSCA DETALHADA DA ORDEM (Para não errar o meio de envio)
+            const orderDetailUrl = `https://api.mercadolibre.com/orders/${resumo.id}`;
+            const detailRes = await fetch(`${workerUrl}/api/ml/proxy?url=${encodeURIComponent(orderDetailUrl)}&token=${token}`);
+            const venda = await detailRes.json();
 
-window.verificarVenda = function(vendaId) {
-    if (confirm('Marcar esta venda como verificada?')) {
-        // Marcar como verificada localmente
-        const vendas = JSON.parse(localStorage.getItem('ml_vendas') || '[]');
-        const index = vendas.findIndex(v => v.id === vendaId);
-        if (index !== -1) {
-            vendas[index].verificada = true;
-            vendas[index].status = 'verificada';
-            localStorage.setItem('ml_vendas', JSON.stringify(vendas));
+            let meio = "MERCADO ENVIOS";
+            let estoqueReal = null;
+
+            // 2. IDENTIFICAÇÃO DE LOGÍSTICA (Baseada no Shipment ID)
+            const shipping = venda.shipping || {};
+            const tags = (venda.tags || []).map(t => t.toLowerCase());
             
-            // Atualizar tabela
-            renderizarVendasML(vendas);
-            showToast('✅ Venda marcada como verificada', 'success');
+            // Consultamos o Shipment para ter certeza absoluta entre FULL e FLEX
+            if (shipping.id) {
+                const shipUrl = `https://api.mercadolibre.com/shipments/${shipping.id}`;
+                const shipRes = await fetch(`${workerUrl}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${token}`);
+                const shipData = await shipRes.json();
+                
+                const logType = (shipData.logistic_type || "").toLowerCase();
+                if (logType === 'fulfillment') meio = "FULL";
+                else if (logType === 'self_service') meio = "FLEX";
+                else if (logType === 'cross_docking') meio = "COLETA";
+            } 
+            // Fallback por tags se o shipment falhar
+            else if (tags.includes('fulfillment')) meio = "FULL";
+            else if (tags.includes('self_service')) meio = "FLEX";
+
+            // 3. BUSCA DE ESTOQUE (Conforme o tipo de anúncio)
+            const orderItem = venda.order_items?.[0] || {};
+            const itemBase = orderItem.item || {};
+
+            if (itemBase.id) {
+                const itemUrl = `https://api.mercadolibre.com/items/${itemBase.id}`;
+                const itemRes = await fetch(`${workerUrl}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${token}`);
+                const itemData = await itemRes.json();
+
+                // Se for FULL, o estoque real costuma estar no inventory_id
+                if (meio === "FULL" && itemData.inventory_id) {
+                    const invUrl = `https://api.mercadolibre.com/inventories/${itemData.inventory_id}/stock`;
+                    const invRes = await fetch(`${workerUrl}/api/ml/proxy?url=${encodeURIComponent(invUrl)}&token=${token}`);
+                    const invData = await invRes.json();
+                    estoqueReal = invData.total?.available_quantity;
+                } else {
+                    // Estoque convencional (considerando variações)
+                    if (itemBase.variation_id && itemData.variations) {
+                        const v = itemData.variations.find(v => String(v.id) === String(itemBase.variation_id));
+                        estoqueReal = v ? v.available_quantity : itemData.available_quantity;
+                    } else {
+                        estoqueReal = itemData.available_quantity;
+                    }
+                }
+            }
+
+            // 4. SALVAMENTO NO SUPABASE
+            const dadosParaSalvar = {
+                order_id: String(venda.id),
+                buyer_nickname: venda.buyer?.nickname || 'N/A',
+                total_amount: venda.total_amount,
+                sku: itemBase.seller_sku || "SEM SKU",
+                meio_envio: meio,
+                produto_titulo: itemBase.title || "Sem título",
+                estoque_restante: estoqueReal !== null ? Number(estoqueReal) : null,
+                date_created: venda.date_created,
+                last_updated: new Date().toISOString()
+            };
+
+            await supabaseClient.from('vendas_ml').upsert(dadosParaSalvar, { onConflict: 'order_id' });
         }
+
+        alert('✅ Atualização concluída! Logística e Estoque auditados.');
+        if (window.carregarVendasDashboard) await window.carregarVendasDashboard('hoje');
+
+    } catch (err) {
+        console.error('Erro geral na atualização:', err);
+        alert('Erro ao atualizar. Verifique o console.');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = 'Atualizar Vendas'; }
     }
 };
 
@@ -6237,8 +6344,12 @@ document.addEventListener('DOMContentLoaded', function() {
     setTimeout(initContadorCaracteres, 2000);
 });
 
+// Adicionar script de conferência de vendas
+    const script = document.createElement('script');
+    script.src = 'vendas_conferencia.js';
+    document.body.appendChild(script);
+
 // ===== EXPORTAR FUNÇÕES PARA USO GLOBAL =====
-window.autoManageMLToken = autoManageMLToken;
 window.testMLConnection = testMLConnection;
 window.checkMLTokenStatus = checkMLTokenStatus;
 window.initializeMLAuth = initializeMLAuth;

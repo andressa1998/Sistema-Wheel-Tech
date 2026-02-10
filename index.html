@@ -1472,6 +1472,15 @@
                     <i class="fas fa-store" style="color: #28a745;"></i>
                     Sistema de Vendas Mercado Livre
                 </h1>
+
+                <div class="d-flex gap-2">
+                    <button onclick="forcarSincronizacaoVendas()" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Sincronizar Vendas ML
+                    </button>
+                    <button onclick="atualizarVendas()" class="btn btn-info">
+                        <i class="fas fa-redo"></i> Atualizar Lista
+                    </button>
+                </div>
                 
                 <div class="user-info">
                     <div class="user-avatar" id="salesUserAvatar">U</div>
@@ -1525,29 +1534,34 @@
         <!-- Filtros de Vendas -->
         <div class="card mb-4">
             <div class="d-flex flex-wrap gap-2" style="border-bottom: 2px solid #f1f3f5; padding-bottom: 15px;">
-                <button class="btn btn-warning btn-sm" onclick="filtrarVendas('novas')">
-                    <i class="fas fa-star"></i> Novas (<span id="tabNovas">0</span>)
+                <button class="btn btn-warning btn-sm" onclick="carregarVendasDashboard('hoje')">
+                    <i class="fas fa-star"></i> Hoje
                 </button>
-                <button class="btn btn-success btn-sm" onclick="filtrarVendas('verificadas')">
-                    <i class="fas fa-check-circle"></i> Verificadas (<span id="tabVerificadas">0</span>)
+                <button class="btn btn-info btn-sm" onclick="carregarVendasDashboard('semana')">
+                    <i class="fas fa-calendar-week"></i> Esta Semana
                 </button>
-                <button class="btn btn-primary btn-sm" onclick="filtrarVendas('todas')">
-                    <i class="fas fa-list"></i> Todas (<span id="tabTodasVendas">0</span>)
+                <button class="btn btn-primary btn-sm" onclick="carregarVendasDashboard('mes')">
+                    <i class="fas fa-calendar-alt"></i> Este Mês
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="carregarVendasDashboard('pendentes')">
+                    <i class="fas fa-clock"></i> Pendentes
+                </button>
+                <button class="btn btn-success btn-sm" onclick="carregarVendasDashboard('conferidas')">
+                    <i class="fas fa-check"></i> Conferidas
                 </button>
             </div>
-            
-            <!-- Lista de Vendas -->
-            <div class="table-responsive mt-3">
-                <table class="table" id="salesTable">
+            <!--tabela / lista de vendas-->
+            <<div id="container-vendas-ml" class="mt-3">
+                <table class="table" id="salesTable" style="margin-bottom: 0;">
                     <thead>
                         <tr>
-                            <th>Nº Venda</th>
-                            <th>Data</th>
-                            <th>Valor</th>
-                            <th>Comprador</th>
-                            <th>Itens</th>
-                            <th>Status</th>
-                            <th>Ações</th>
+                            <th style="text-align: left; padding-left: 20px;">PRODUTO / SKU</th>
+                            <th style="text-align: center;">VALOR</th>
+                            <th style="text-align: center;">COMPRADOR</th>
+                            <th style="text-align: center;">ESTOQUE</th>
+                            <th style="text-align: center;">ENVIO</th>
+                            <th style="text-align: center;">STATUS</th>
+                            <th style="text-align: center;">AÇÕES</th>
                         </tr>
                     </thead>
                     <tbody id="salesTableBody">
@@ -1555,141 +1569,139 @@
                     </tbody>
                 </table>
             </div>
-            
+
             <div id="salesEmpty" class="text-center py-5 hidden">
-                <i class="fas fa-store-slash fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                <h4 style="color: #6c757d;">Nenhuma venda encontrada</h4>
-                <p style="color: #6c757d;">Atualize a lista ou verifique a conexão com o Mercado Livre.</p>
+                <i class="fas fa-store-slash fa-2x mb-2" style="opacity: 0.5;"></i>
+                <p>Nenhuma venda encontrada.</p>
             </div>
         </div>
     </div>
 </div>
 
     <!-- ===== SISTEMA DE REEMBOLSOS ===== -->
-    <div id="reembolsosSystem" class="hidden">
-        <header class="main-header">
-            <div class="container">
-                <div class="header-content">
-                    <h1 style="display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-exchange-alt" style="color: var(--primary);"></i>
-                        Sistema de Reembolsos ML
-                    </h1>
-                    
-                    <div class="user-info">
-                        <div class="notification-bell" id="reembolsoNotificationBell" onclick="toggleNotificacoesReembolso()" style="display: none;">
-                            <i class="fas fa-bell fa-lg" style="color: #6c757d;"></i>
-                            <span class="notification-badge" id="reembolsoNotificationCount">0</span>
-                        </div>
-                        
-                        <div class="user-avatar" id="reembolsoUserAvatar">U</div>
-                        <div>
-                            <div style="font-weight: 600;" id="reembolsoUserName">Usuário</div>
-                            <div style="font-size: 12px; color: #6c757d;" id="reembolsoUserRole"></div>
-                            <div class="d-flex gap-2 mt-2">
-                                <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
-                                    <i class="fas fa-arrow-left"></i> Voltar para OS
-                                </button>
-                                <!-- ADICIONE ESTE BOTÃO -->
-                                <button onclick="abrirSistemaVendas()" class="btn btn-success btn-sm">
-                                    <i class="fas fa-store"></i> Vendas ML
-                                </button>
-                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
-                                    <i class="fas fa-sign-out-alt"></i> Sair
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </header>
-
-                    <!-- Status do Token ML -->
-                        <div id="mlTokenStatus" class="hidden" style="position: fixed; bottom: 20px; right: 20px; 
-                            background: rgba(0,0,0,0.8); color: white; padding: 10px 15px; border-radius: 8px; 
-                            font-size: 12px; z-index: 9999; border-left: 4px solid #ffc107;">
-                            <i class="fas fa-sync-alt"></i> 
-                            <span id="mlTokenText">Token ML: Carregando...</span>
-                        </div>
-        
+<div id="reembolsosSystem" class="hidden">
+    <header class="main-header">
         <div class="container">
-            <!-- Status do Sistema de Reembolsos -->
-            <div class="card mb-4">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
-                            <i class="fas fa-money-check-alt" style="color: var(--success);"></i>
-                            Controle de Reembolsos
-                        </h3>
-                        <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
-                            <span id="countVerificar">0</span> a verificar •
-                            <span id="countReembolsados">0</span> reembolsados •
-                            <span id="countPendentes">0</span> pendentes •
-                            Total: R$ <span id="totalReembolsos">0,00</span>
-                        </p>
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-exchange-alt" style="color: var(--primary);"></i>
+                    Sistema de Reembolsos ML
+                </h1>
+                
+                <div class="user-info">
+                    <div class="notification-bell" id="reembolsoNotificationBell" onclick="toggleNotificacoesReembolso()" style="display: none;">
+                        <i class="fas fa-bell fa-lg" style="color: #6c757d;"></i>
+                        <span class="notification-badge" id="reembolsoNotificationCount">0</span>
                     </div>
                     
-                    <div class="d-flex gap-2">
-                        <button onclick="openRelatorioReembolsos()" class="btn btn-info" id="btnRelatorio">
-                            <i class="fas fa-chart-line"></i> Relatório
-                        </button>
-                        <button onclick="novoReembolso()" class="btn btn-success">
-                            <i class="fas fa-plus-circle"></i> Novo Reembolso
-                        </button>
-                        <button onclick="atualizarReembolsos()" class="btn btn-primary">
-                            <i class="fas fa-sync-alt"></i> Atualizar
-                        </button>
+                    <div class="user-avatar" id="reembolsoUserAvatar">U</div>
+                    <div>
+                        <div style="font-weight: 600;" id="reembolsoUserName">Usuário</div>
+                        <div style="font-size: 12px; color: #6c757d;" id="reembolsoUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
+                                <i class="fas fa-arrow-left"></i> Voltar para OS
+                            </button>
+                            <button onclick="abrirSistemaVendas()" class="btn btn-success btn-sm">
+                                <i class="fas fa-store"></i> Vendas ML
+                            </button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-sign-out-alt"></i> Sair
+                            </button>
+                        </div>
                     </div>
-                </div>
-            </div>
-            
-            <!-- Abas de Navegação -->
-            <div class="card mb-4">
-                <div class="d-flex flex-wrap gap-2" style="border-bottom: 2px solid #f1f3f5; padding-bottom: 15px;">
-                    <button class="btn btn-warning btn-sm" onclick="filtrarReembolsos('a_verificar')">
-                        <i class="fas fa-clock"></i> A Verificar (<span id="tabVerificar">0</span>)
-                        <span id="badgeNovos" class="badge badge-danger ml-1" style="display: none;">!</span>
-                    </button>
-                    <button class="btn btn-success btn-sm" onclick="filtrarReembolsos('reembolsado')">
-                        <i class="fas fa-check-circle"></i> Reembolsados (<span id="tabReembolsados">0</span>)
-                    </button>
-                    <button class="btn btn-danger btn-sm" onclick="filtrarReembolsos('pendente')">
-                        <i class="fas fa-exclamation-circle"></i> Pendentes (<span id="tabPendentes">0</span>)
-                        <span id="badgePendentes" class="badge badge-warning ml-1" style="display: none;">!</span>
-                    </button>
-                    <button class="btn btn-primary btn-sm" onclick="filtrarReembolsos('todos')">
-                        <i class="fas fa-list"></i> Todos (<span id="tabTodos">0</span>)
-                    </button>
-                </div>
-                
-                <!-- Lista de Reembolsos -->
-                <div class="table-responsive mt-3">
-                    <table class="table" id="reembolsosTable">
-                        <thead>
-                            <tr>
-                                <th>Venda</th>
-                                <th>Operação</th>
-                                <th>Valor</th>
-                                <th>Data</th>
-                                <th>Frete</th>
-                                <th>Status</th>
-                                <th>Criado por</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="reembolsosTableBody">
-                            <!-- Reembolsos serão carregados aqui -->
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div id="reembolsosEmpty" class="text-center py-5 hidden">
-                    <i class="fas fa-exchange-alt fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                    <h4 style="color: #6c757d;">Nenhum reembolso encontrado</h4>
-                    <p style="color: #6c757d;">Clique em "Novo Reembolso" para começar.</p>
                 </div>
             </div>
         </div>
+    </header>
+
+                    <!-- Status do Token ML -->
+    <div id="mlTokenStatus" class="hidden" style="position: fixed; bottom: 20px; right: 20px; 
+        background: rgba(0,0,0,0.8); color: white; padding: 10px 15px; border-radius: 8px; 
+        font-size: 12px; z-index: 9999; border-left: 4px solid #ffc107;">
+        <i class="fas fa-sync-alt"></i> 
+        <span id="mlTokenText">Token ML: Carregando...</span>
     </div>
+    
+    <div class="container">
+        <!-- Status do Sistema de Reembolsos -->
+        <div class="card mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                        <i class="fas fa-money-check-alt" style="color: var(--success);"></i>
+                        Controle de Reembolsos
+                    </h3>
+                    <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
+                        <span id="countVerificar">0</span> a verificar •
+                        <span id="countReembolsados">0</span> reembolsados •
+                        <span id="countPendentes">0</span> pendentes •
+                        Total: R$ <span id="totalReembolsos">0,00</span>
+                    </p>
+                </div>
+                
+                <div class="d-flex gap-2">
+                    <button onclick="openRelatorioReembolsos()" class="btn btn-info" id="btnRelatorio">
+                        <i class="fas fa-chart-line"></i> Relatório
+                    </button>
+                    <button onclick="novoReembolso()" class="btn btn-success">
+                        <i class="fas fa-plus-circle"></i> Novo Reembolso
+                    </button>
+                    <button onclick="atualizarReembolsos()" class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                </div>
+            </div>
+        </div>
+            
+            <!-- Abas de Navegação -->
+        <div class="card mb-4">
+            <div class="d-flex flex-wrap gap-2" style="border-bottom: 2px solid #f1f3f5; padding-bottom: 15px;">
+                <button class="btn btn-warning btn-sm" onclick="filtrarReembolsos('a_verificar')">
+                    <i class="fas fa-clock"></i> A Verificar (<span id="tabVerificar">0</span>)
+                    <span id="badgeNovos" class="badge badge-danger ml-1" style="display: none;">!</span>
+                </button>
+                <button class="btn btn-success btn-sm" onclick="filtrarReembolsos('reembolsado')">
+                    <i class="fas fa-check-circle"></i> Reembolsados (<span id="tabReembolsados">0</span>)
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="filtrarReembolsos('pendente')">
+                    <i class="fas fa-exclamation-circle"></i> Pendentes (<span id="tabPendentes">0</span>)
+                    <span id="badgePendentes" class="badge badge-warning ml-1" style="display: none;">!</span>
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="filtrarReembolsos('todos')">
+                    <i class="fas fa-list"></i> Todos (<span id="tabTodos">0</span>)
+                </button>
+            </div>
+                
+                <!-- Lista de Reembolsos -->
+            <div class="table-responsive mt-3">
+                <table class="table" id="reembolsosTable">
+                    <thead>
+                        <tr>
+                            <th>Venda</th>
+                            <th>Operação</th>
+                            <th>Valor</th>
+                            <th>Data</th>
+                            <th>Frete</th>
+                            <th>Status</th>
+                            <th>Criado por</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reembolsosTableBody">
+                        <!-- Reembolsos serão carregados aqui -->
+                    </tbody>
+                </table>
+            </div>
+                
+                <div id="reembolsosEmpty" class="text-center py-5 hidden">
+                <i class="fas fa-exchange-alt fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                <h4 style="color: #6c757d;">Nenhum reembolso encontrado</h4>
+                <p style="color: #6c757d;">Clique em "Novo Reembolso" para começar.</p>
+            </div>
+        </div>
+    </div>
+</div>
 
     <!-- Modal para Impressão da OS -->
     <div id="printModal" class="modal hidden">
@@ -2405,11 +2417,46 @@
         </div>
     </div>
 </div>
+
+<div id="modalEdicaoML" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:white; padding:25px; border-radius:8px; width:90%; max-width:400px; box-shadow:0 4px 15px rgba(0,0,0,0.3);">
+        <h3 style="margin-bottom:15px; border-bottom:2px solid #ffdb15; padding-bottom:10px;">Editar no Mercado Livre</h3>
+        <p id="editTituloItem" style="font-weight:bold; font-size:0.9rem; color:#333; margin-bottom:15px;"></p>
+        
+        <input type="hidden" id="editItemId">
+        
+        <div style="margin-bottom:15px;">
+            <label style="display:block; font-size:0.8rem; color:#666;">Preço (R$)</label>
+            <input type="number" id="editPreco" class="form-control" step="0.01" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+        </div>
+        
+        <div style="margin-bottom:15px;">
+            <label style="display:block; font-size:0.8rem; color:#666;">Estoque Disponível</label>
+            <input type="number" id="editEstoque" class="form-control" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+        </div>
+        
+        <div style="margin-bottom:20px;">
+            <label style="display:block; font-size:0.8rem; color:#666;">Tipo de Anúncio</label>
+            <select id="editListingType" class="form-control" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:4px;">
+                <option value="gold_special">Clássico (Comissão Menor)</option>
+                <option value="gold_pro">Premium (Parcelamento sem juros)</option>
+            </select>
+        </div>
+        
+        <div style="display:flex; gap:10px;">
+            <button onclick="salvarAlteracoesML()" class="btn btn-primary" style="flex:1; background:#3483fa; border:none; color:white; padding:10px; border-radius:4px; cursor:pointer;">Salvar no ML</button>
+            <button onclick="document.getElementById('modalEdicaoML').style.display='none'" class="btn btn-secondary" style="flex:1; background:#eee; border:none; color:#333; padding:10px; border-radius:4px; cursor:pointer;">Cancelar</button>
+        </div>
+    </div>
+</div>
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="script.js"></script>
     <script src="ml_token_manager.js"></script>
     <script src="caixa-conferencia.js"></script>
+    <script src="ml_sales_sync.js"></script>
+    <script src="vendas_conferencia.js"></script>
+    <script src="sales_dashboard.js"></script>
     
 </body>
 </html>
