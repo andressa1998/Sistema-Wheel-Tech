@@ -35,7 +35,7 @@ async function carregarVendasDoBanco() {
     try {
         console.log('📦 Carregando vendas do banco...');
         
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('vendas_ml')
             .select('*')
             .order('created_at', { ascending: false }); // Usar created_at em vez de data_venda
@@ -61,6 +61,8 @@ async function carregarVendasDoBanco() {
 // Sincronizar vendas do ML
 // sales_dashboard.js - Função sincronizarVendasML atualizada
 
+// sales_dashboard.js - Função sincronizarVendasML melhorada
+
 async function sincronizarVendasML() {
     try {
         const btn = document.getElementById('btnSincronizar');
@@ -72,38 +74,47 @@ async function sincronizarVendasML() {
         console.log('🔄 Iniciando sincronização de vendas ML...');
         mostrarToast('Sincronizando vendas do Mercado Livre...', 'info');
         
-        let resultado = null;
+        // Buscar vendas
+        console.log('📡 Chamando buscarVendasML...');
+        const resultado = await window.buscarVendasML();
         
-        // Tentar primeiro método
-        if (window.buscarVendasML) {
-            resultado = await window.buscarVendasML();
-        }
-        
-        // Se falhar, tentar método alternativo
-        if ((!resultado || !resultado.success) && window.buscarVendasMLviaProxy) {
-            console.log('🔄 Tentando método alternativo...');
-            resultado = await window.buscarVendasMLviaProxy();
-        }
+        console.log('📊 Resultado de buscarVendasML:', {
+            success: resultado?.success,
+            vendasCount: resultado?.vendas?.length || 0,
+            total: resultado?.total || 0,
+            error: resultado?.error
+        });
         
         if (resultado && resultado.success && resultado.vendas && resultado.vendas.length > 0) {
             console.log(`✅ ${resultado.vendas.length} vendas recebidas do ML`);
             
-            // Log das primeiras vendas para debug
-            resultado.vendas.slice(0, 3).forEach((venda, i) => {
-                console.log(`  ${i + 1}. ID: ${venda.id}, SKU: ${venda.sku}, Valor: R$ ${venda.total_amount}`);
+            // Mostrar detalhes das vendas
+            resultado.vendas.forEach((venda, i) => {
+                console.log(`  ${i + 1}. ${venda.id} - ${venda.sku} - R$ ${venda.valor_total} - ${venda.cliente}`);
             });
             
             // Processar e salvar vendas
-            await processarESalvarVendas(resultado.vendas);
+            console.log('💾 Salvando vendas no Supabase...');
+            const vendasSalvas = await processarESalvarVendas(resultado.vendas);
             
             // Recarregar a lista
             await carregarVendasDoBanco();
             
-            mostrarToast(`${resultado.vendas.length} vendas sincronizadas com sucesso!`, 'success');
+            mostrarToast(`${vendasSalvas} vendas sincronizadas com sucesso!`, 'success');
+            
         } else {
             const mensagemErro = resultado?.error || 'Nenhuma venda encontrada';
-            console.warn('⚠️ Nenhuma venda sincronizada:', mensagemErro);
-            mostrarToast(mensagemErro, resultado ? 'warning' : 'error');
+            console.warn('⚠️ Nenhuma venda sincronizada:', {
+                mensagem: mensagemErro,
+                resultado: resultado,
+                temToken: !!localStorage.getItem('ml_access_token')
+            });
+            
+            if (resultado?.total === 0) {
+                mostrarToast('Não há vendas recentes para sincronizar.', 'info');
+            } else {
+                mostrarToast(mensagemErro, 'warning');
+            }
         }
         
     } catch (error) {
@@ -115,6 +126,132 @@ async function sincronizarVendasML() {
             btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sincronizar Agora';
             btn.disabled = false;
         }
+    }
+}
+
+// Função para processar e salvar vendas no Supabase
+async function processarESalvarVendas(vendasML) {
+    try {
+        console.log(`🔄 Processando ${vendasML.length} vendas para salvar...`);
+        
+        const vendasParaSalvar = [];
+        const agora = new Date().toISOString();
+        
+        for (const venda of vendasML) {
+            try {
+                // Criar ID único
+                const idVendaML = venda.id.startsWith('ML') ? venda.id : `ML${venda.id}`;
+                
+                // Extrair SKU corretamente
+                let sku = venda.sku || 'SEM_SKU';
+                if (sku === 'SEM_SKU' && venda.order_items && venda.order_items.length > 0) {
+                    const primeiroItem = venda.order_items[0];
+                    sku = primeiroItem.item?.seller_custom_field || 
+                          primeiroItem.item?.seller_sku || 
+                          'SEM_SKU';
+                }
+                
+                // Preparar dados da venda
+                const vendaProcessada = {
+                    id_venda_ml: idVendaML,
+                    titulo: venda.title || 'Venda sem título',
+                    cliente: venda.buyer?.nickname || 'Cliente não identificado',
+                    sku: sku,
+                    quantidade: venda.quantity || 1,
+                    valor_unitario: venda.unit_price || 0,
+                    valor_total: venda.total_amount || 0,
+                    created_at: venda.date_created || agora,
+                    status_ml: venda.status || 'paid',
+                    status_sistema: 'nova',
+                    link: venda.permalink || null,
+                    informacoes_pagamento: JSON.stringify(venda.payments || {}),
+                    informacoes_envio: JSON.stringify(venda.shipping || {}),
+                    updated_at: agora,
+                    dados_completos: JSON.stringify(venda) // Salvar dados completos para debug
+                };
+                
+                console.log(`➕ Processando venda ${idVendaML}:`, {
+                    sku: vendaProcessada.sku,
+                    quantidade: vendaProcessada.quantidade,
+                    valor: vendaProcessada.valor_total
+                });
+                
+                // Verificar se já existe
+                const { data: vendaExistente, error: erroBusca } = await supabaseClient
+                    .from('vendas_ml')
+                    .select('id')
+                    .eq('id_venda_ml', idVendaML)
+                    .single();
+                
+                if (erroBusca && erroBusca.code !== 'PGRST116') {
+                    console.warn(`⚠️ Erro buscar venda ${idVendaML}:`, erroBusca);
+                }
+                
+                if (vendaExistente) {
+                    // Atualizar
+                    const { error } = await supabaseClient
+                        .from('vendas_ml')
+                        .update(vendaProcessada)
+                        .eq('id_venda_ml', idVendaML);
+                    
+                    if (error) {
+                        console.warn(`⚠️ Erro atualizar venda ${idVendaML}:`, error);
+                    } else {
+                        console.log(`✅ Venda ${idVendaML} atualizada`);
+                    }
+                } else {
+                    vendasParaSalvar.push(vendaProcessada);
+                    console.log(`➕ Nova venda ${idVendaML} adicionada para salvar`);
+                }
+                
+            } catch (errorVenda) {
+                console.error(`❌ Erro processando venda ${venda.id}:`, errorVenda);
+            }
+        }
+        
+        // Salvar novas vendas
+        if (vendasParaSalvar.length > 0) {
+            console.log(`💾 Salvando ${vendasParaSalvar.length} novas vendas...`);
+            
+            const { error } = await supabaseClient
+                .from('vendas_ml')
+                .insert(vendasParaSalvar);
+            
+            if (error) {
+                console.error('❌ Erro ao salvar vendas:', error);
+                
+                // Tentar uma por uma
+                let sucessos = 0;
+                for (const venda of vendasParaSalvar) {
+                    try {
+                        const { error: singleError } = await supabaseClient
+                            .from('vendas_ml')
+                            .insert([venda]);
+                        
+                        if (singleError) {
+                            console.error(`❌ Erro salvar venda ${venda.id_venda_ml}:`, singleError);
+                        } else {
+                            sucessos++;
+                        }
+                    } catch (singleError) {
+                        console.error(`❌ Erro individual venda ${venda.id_venda_ml}:`, singleError);
+                    }
+                }
+                
+                console.log(`✅ ${sucessos}/${vendasParaSalvar.length} vendas salvas`);
+                return sucessos;
+            } else {
+                console.log(`✅ ${vendasParaSalvar.length} vendas salvas com sucesso`);
+                return vendasParaSalvar.length;
+            }
+        } else {
+            console.log('ℹ️ Nenhuma venda nova para salvar');
+            return 0;
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro processarESalvarVendas:', error);
+        throw error;
     }
 }
 
@@ -146,7 +283,7 @@ async function processarESalvarVendas(vendasML) {
             };
             
             // Verificar se a venda já existe
-            const { data: vendaExistente } = await supabase
+            const { data: vendaExistente } = await supabaseClient
                 .from('vendas_ml')
                 .select('id')
                 .eq('id_venda_ml', vendaProcessada.id_venda_ml)
@@ -154,7 +291,7 @@ async function processarESalvarVendas(vendasML) {
             
             if (vendaExistente) {
                 // Atualizar venda existente
-                const { error } = await supabase
+                const { error } = await supabaseClient
                     .from('vendas_ml')
                     .update(vendaProcessada)
                     .eq('id_venda_ml', vendaProcessada.id_venda_ml);
@@ -169,7 +306,7 @@ async function processarESalvarVendas(vendasML) {
         
         // Inserir vendas novas em lote
         if (vendasParaSalvar.length > 0) {
-            const { error } = await supabase
+            const { error } = await supabaseClient
                 .from('vendas_ml')
                 .insert(vendasParaSalvar);
             
@@ -178,7 +315,7 @@ async function processarESalvarVendas(vendasML) {
                 // Tentar inserir uma por uma para identificar o problema
                 for (const venda of vendasParaSalvar) {
                     try {
-                        const { error: singleError } = await supabase
+                        const { error: singleError } = await supabaseClient
                             .from('vendas_ml')
                             .insert([venda]);
                         
@@ -472,7 +609,7 @@ function filtrarPorBusca(termo) {
 // Funções de ação
 async function verificarVenda(idVenda) {
     try {
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('vendas_ml')
             .update({ 
                 status_sistema: 'verificada',
@@ -493,7 +630,7 @@ async function verificarVenda(idVenda) {
 
 async function marcarComoFraude(idVenda) {
     try {
-        const { error } = await supabase
+        const { error } = await supabaseClient
             .from('vendas_ml')
             .update({ 
                 status_sistema: 'fraude',
@@ -514,7 +651,7 @@ async function marcarComoFraude(idVenda) {
 
 async function verDetalhesVenda(idVenda) {
     try {
-        const { data: venda, error } = await supabase
+        const { data: venda, error } = await supabaseClient
             .from('vendas_ml')
             .select('*')
             .eq('id_venda_ml', idVenda)

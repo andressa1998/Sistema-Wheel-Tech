@@ -1271,6 +1271,29 @@ async function renewTokenWithRefreshToken(refreshToken) {
     }
 }
 
+// Adicione esta função em ml_token_manager.js
+async function getValidToken() {
+    try {
+        console.log('🔑 Obtendo token válido...');
+        
+        const token = await autoManageMLToken();
+        
+        if (!token) {
+            throw new Error('Não foi possível obter token válido');
+        }
+        
+        return {
+            access_token: token,
+            expires_at: mlTokenStatus.expires_at,
+            is_valid: true
+        };
+        
+    } catch (error) {
+        console.error('❌ Erro ao obter token válido:', error);
+        return null;
+    }
+}
+
 // Função para buscar vendas usando token automático
 async function buscarVendasML(limit = 50) {
     console.log('🛒 Buscando vendas do Mercado Livre...');

@@ -13,7 +13,8 @@ const ML_CONFIG = {
     CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
     REDIRECT_URI: 'https://homework-fees-saving-beliefs.trycloudflare.com/callback',
     INITIAL_CODE: 'TG-698b6032276d3c00011ce658-415176739', // SEU CÓDIGO ATUAL
-    USER_ID: '415176739'
+    USER_ID: '415176739',
+    WORKER_URL: 'https://purple-bonus-3b1c.andmiotto1998.workers.dev' // ADICIONE ESTA LINHA
 };
 
 // ===== ESTADO DO TOKEN =====
@@ -526,69 +527,477 @@ window.verificarTokenML = async function() {
 // FUNÇÃO PARA BUSCAR VENDAS DO ML
 // ============================================
 
-async function buscarVendasML(limit = 50) {
-    console.log('🛒 Buscando vendas do Mercado Livre...');
-    
+// ml_token_manager.js - Substitua a função buscarVendasML
+async function buscarVendasML(limit = 20) {
     try {
-        // 1. Obter token válido
-        const token = await autoManageMLToken();
+        console.log('🛒 Buscando vendas do Mercado Livre...');
         
-        if (!token) {
-            throw new Error('Não foi possível obter token válido');
+        const tokenData = await getValidToken();
+        if (!tokenData?.access_token) {
+            console.error('❌ Token de acesso não disponível');
+            return {
+                success: false,
+                error: 'Token de acesso não disponível',
+                vendas: []
+            };
         }
         
-        // 2. Buscar vendas
-        const response = await fetch(`https://purple-bonus-3b1c.andmiotto1998.workers.dev/api/ml/orders?token=${token}&limit=${limit}&seller=415176739`);
+        // Usar URL direta para orders/search
+        const agora = new Date();
+        const trintaDiasAtras = new Date(agora);
+        trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+        
+        const dataFormatada = trintaDiasAtras.toISOString().split('.')[0] + '-00:00';
+        
+        // URL da API ML para buscar ordens pagas
+        const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=${limit}`;
+        
+        console.log('📡 URL da API:', urlML);
+        
+        // Usar o proxy do worker
+        const encodedUrl = encodeURIComponent(urlML);
+        const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(tokenData.access_token)}`;
+        
+        console.log('🔗 Chamando proxy:', proxyUrl.substring(0, 100) + '...');
+        
+        const response = await fetch(proxyUrl);
         
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            const errorText = await response.text();
+            console.error('❌ Erro na resposta do proxy:', response.status, errorText);
+            return {
+                success: false,
+                error: `Erro ${response.status}: ${errorText}`,
+                vendas: []
+            };
         }
         
-        const data = await response.json();
+        const result = await response.json();
         
-        // 3. Processar resultados
-        if (data.results && data.results.length > 0) {
-            console.log(`✅ ${data.results.length} vendas encontradas`);
-            return processarVendasML(data.results);
+        console.log('📊 Resposta da API:', {
+            total: result.paging?.total || 0,
+            resultsCount: result.results?.length || 0
+        });
+        
+        if (!result.results || result.results.length === 0) {
+            console.log('📭 Nenhuma venda encontrada nos últimos 30 dias');
+            return {
+                success: true,
+                vendas: [],
+                total: 0
+            };
         }
         
-        return [];
+        // Processar vendas
+        const vendasProcessadas = processarVendasComDetalhes(result.results);
+        
+        console.log(`✅ ${vendasProcessadas.length} vendas processadas do ML`);
+        
+        return {
+            success: true,
+            vendas: vendasProcessadas,
+            total: result.paging?.total || vendasProcessadas.length,
+            paging: result.paging || {}
+        };
         
     } catch (error) {
-        console.error('❌ Erro ao buscar vendas:', error);
-        return [];
+        console.error('❌ Erro ao buscar vendas ML:', error);
+        return {
+            success: false,
+            error: error.message,
+            vendas: []
+        };
     }
 }
 
-function processarVendasML(vendas) {
-    return vendas.map(venda => {
-        const item = venda.order_items && venda.order_items.length > 0 ? venda.order_items[0] : {};
+// Adicione esta função para debug
+async function testarConexaoVendas() {
+    try {
+        console.log('🧪 Testando conexão para vendas...');
         
+        const tokenData = await getValidToken();
+        if (!tokenData?.access_token) {
+            console.error('❌ Sem token');
+            return false;
+        }
+        
+        // Testar endpoint direto
+        const testUrl = 'https://api.mercadolibre.com/users/me';
+        const encodedUrl = encodeURIComponent(testUrl);
+        const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(tokenData.access_token)}`;
+        
+        const response = await fetch(proxyUrl);
+        const userData = await response.json();
+        
+        if (userData.id) {
+            console.log('✅ Usuário conectado:', userData.nickname);
+            
+            // Testar endpoint de orders
+            const agora = new Date();
+            const trintaDiasAtras = new Date(agora);
+            trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 1); // Apenas 1 dia para teste
+            
+            const dataFormatada = trintaDiasAtras.toISOString().split('.')[0] + '-00:00';
+            const ordersUrl = `https://api.mercadolibre.com/orders/search?seller=${userData.id}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=5`;
+            
+            console.log('📡 Testando orders URL:', ordersUrl);
+            
+            const encodedOrdersUrl = encodeURIComponent(ordersUrl);
+            const ordersProxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedOrdersUrl}&token=${encodeURIComponent(tokenData.access_token)}`;
+            
+            const ordersResponse = await fetch(ordersProxyUrl);
+            const ordersData = await ordersResponse.json();
+            
+            console.log('📊 Resultado orders:', {
+                success: ordersResponse.ok,
+                total: ordersData.paging?.total || 0,
+                results: ordersData.results?.length || 0
+            });
+            
+            return ordersResponse.ok;
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('❌ Erro no teste:', error);
+        return false;
+    }
+}
+
+// Exporte para usar no console
+window.testarConexaoVendas = testarConexaoVendas;
+
+// Função para buscar detalhes das vendas
+async function buscarDetalhesVendas(vendas, token) {
+    const vendasComDetalhes = [];
+    
+    console.log(`🔍 Buscando detalhes de ${vendas.length} vendas...`);
+    
+    for (const venda of vendas) {
+        try {
+            // URL para buscar detalhes da ordem
+            const urlDetalhes = `https://api.mercadolibre.com/orders/${venda.id}`;
+            const encodedUrl = encodeURIComponent(urlDetalhes);
+            
+            const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(token)}`;
+            
+            const response = await fetch(proxyUrl);
+            const detalhes = await response.json();
+            
+            if (response.ok && detalhes) {
+                vendasComDetalhes.push({
+                    ...venda,
+                    full_details: detalhes
+                });
+                console.log(`✅ Detalhes da venda ${venda.id} obtidos`);
+            } else {
+                vendasComDetalhes.push(venda);
+                console.warn(`⚠️ Não foi possível obter detalhes da venda ${venda.id}`);
+            }
+            
+            // Aguardar um pouco para não sobrecarregar a API
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+        } catch (error) {
+            console.error(`❌ Erro buscar detalhes venda ${venda.id}:`, error);
+            vendasComDetalhes.push(venda);
+        }
+    }
+    
+    return vendasComDetalhes;
+}
+
+// Função para processar vendas com detalhes
+function processarVendasComDetalhes(vendasComDetalhes) {
+    if (!Array.isArray(vendasComDetalhes) || vendasComDetalhes.length === 0) {
+        return [];
+    }
+    
+    console.log(`🔄 Processando ${vendasComDetalhes.length} vendas com detalhes...`);
+    
+    return vendasComDetalhes.map(venda => {
+        try {
+            // Usar detalhes completos se disponível
+            const detalhes = venda.full_details || venda;
+            
+            console.log('📋 Dados da venda:', {
+                id: detalhes.id,
+                type: typeof detalhes.id,
+                hasId: !!detalhes.id
+            });
+            
+            // Extrair SKU dos itens
+            let sku = 'SEM_SKU';
+            let titulo = 'Venda sem título';
+            let quantidadeTotal = 0;
+            let valorTotal = 0;
+            
+            if (detalhes.order_items && Array.isArray(detalhes.order_items)) {
+                // Pegar dados do primeiro item
+                const primeiroItem = detalhes.order_items[0];
+                
+                // SKU
+                sku = primeiroItem.item?.seller_custom_field || 
+                      primeiroItem.item?.seller_sku || 
+                      'SEM_SKU';
+                
+                // Título
+                titulo = primeiroItem.item?.title || 'Venda sem título';
+                
+                // Quantidade total
+                quantidadeTotal = detalhes.order_items.reduce((total, item) => 
+                    total + (item.quantity || 0), 0);
+                
+                // Valor total (usar paid_amount se disponível)
+                valorTotal = detalhes.paid_amount || detalhes.total_amount || 0;
+            } else if (detalhes.order_items) {
+                // Tentar acessar diretamente se não for array
+                sku = detalhes.order_items.item?.seller_custom_field || 'SEM_SKU';
+                titulo = detalhes.order_items.item?.title || 'Venda sem título';
+                quantidadeTotal = detalhes.order_items.quantity || 1;
+                valorTotal = detalhes.total_amount || 0;
+            }
+            
+            // Valor unitário
+            const valorUnitario = quantidadeTotal > 0 ? valorTotal / quantidadeTotal : valorTotal;
+            
+            // Cliente
+            let cliente = 'Cliente não identificado';
+            if (detalhes.buyer?.nickname) {
+                cliente = detalhes.buyer.nickname;
+            } else if (detalhes.buyer?.id) {
+                cliente = `Cliente ID: ${detalhes.buyer.id}`;
+            }
+            
+            // Data da venda
+            const dataVenda = detalhes.date_closed || detalhes.date_created || new Date().toISOString();
+            
+            // ID CORRIGIDO: Remover caracteres inválidos
+            let idVenda = detalhes.id;
+            if (!idVenda || typeof idVenda !== 'string') {
+                // Se não tiver ID, usar timestamp sem caracteres especiais
+                idVenda = `ML${Date.now()}${Math.floor(Math.random() * 1000)}`;
+            } else {
+                // Limpar ID: manter apenas números e letras
+                idVenda = idVenda.toString().replace(/[^a-zA-Z0-9]/g, '');
+            }
+            
+            // Se o ID ainda estiver vazio, criar um novo
+            if (!idVenda || idVenda.length < 5) {
+                idVenda = `ML${Date.now()}${Math.floor(Math.random() * 10000)}`;
+            }
+            
+            // Garantir que comece com ML
+            if (!idVenda.startsWith('ML')) {
+                idVenda = `ML${idVenda}`;
+            }
+            
+            const vendaProcessada = {
+                id: idVenda,
+                id_venda_ml: typeof idVenda === 'string' && idVenda.startsWith('ML') ? idVenda : `ML${idVenda}`,
+                title: titulo,
+                titulo: titulo,
+                buyer: {
+                    nickname: cliente
+                },
+                cliente: cliente,
+                sku: sku,
+                codigo: sku,
+                quantity: quantidadeTotal,
+                quantidade: quantidadeTotal,
+                unit_price: valorUnitario,
+                preco_unitario: valorUnitario,
+                total_amount: valorTotal,
+                valor_total: valorTotal,
+                date_created: dataVenda,
+                data_venda: dataVenda,
+                created_at: dataVenda,
+                status: detalhes.status || 'paid',
+                status_ml: detalhes.status || 'paid',
+                status_sistema: 'nova',
+                permalink: null,
+                link: null,
+                order_items: detalhes.order_items || [],
+                payments: detalhes.payments || [],
+                shipping: detalhes.shipping || {},
+                raw_data: detalhes // Salvar dados brutos para debug
+            };
+            
+            console.log(`✅ Venda ${vendaProcessada.id} processada:`, {
+                sku: vendaProcessada.sku,
+                quantidade: vendaProcessada.quantidade,
+                valor: vendaProcessada.valor_total,
+                cliente: vendaProcessada.cliente
+            });
+            
+            return vendaProcessada;
+            
+        } catch (error) {
+            console.error('❌ Erro ao processar venda:', error);
+            console.error('Dados da venda que causaram erro:', venda);
+            return null;
+        }
+    }).filter(venda => venda !== null);
+}
+
+// ml_token_manager.js - Adicione esta função
+window.debugVendasRawData = async function() {
+    try {
+        console.log('=== DEBUG RAW DATA ===');
+        
+        const tokenData = await getValidToken();
+        if (!tokenData?.access_token) {
+            console.error('❌ Sem token');
+            return;
+        }
+        
+        // Buscar dados brutos
+        const agora = new Date();
+        const trintaDiasAtras = new Date(agora);
+        trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 1);
+        
+        const dataFormatada = trintaDiasAtras.toISOString().split('.')[0] + '-00:00';
+        const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=2`;
+        
+        const encodedUrl = encodeURIComponent(urlML);
+        const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(tokenData.access_token)}`;
+        
+        console.log('🔗 Buscando dados brutos...');
+        const response = await fetch(proxyUrl);
+        const result = await response.json();
+        
+        console.log('📊 Resultado bruto:');
+        console.log(JSON.stringify(result, null, 2));
+        
+        if (result.results && result.results.length > 0) {
+            console.log('\n📦 Primeiro resultado detalhado:');
+            const primeiro = result.results[0];
+            console.log('ID:', primeiro.id, 'Tipo:', typeof primeiro.id);
+            console.log('Estrutura:', Object.keys(primeiro));
+            console.log('Order items:', primeiro.order_items);
+            
+            // Buscar detalhes completos
+            const detalhesUrl = `https://api.mercadolibre.com/orders/${primeiro.id}`;
+            const encodedDetalhesUrl = encodeURIComponent(detalhesUrl);
+            const detalhesProxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedDetalhesUrl}&token=${encodeURIComponent(tokenData.access_token)}`;
+            
+            const detalhesResponse = await fetch(detalhesProxyUrl);
+            const detalhes = await detalhesResponse.json();
+            
+            console.log('\n🔍 Detalhes completos da ordem:');
+            console.log(JSON.stringify(detalhes, null, 2));
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro:', error);
+    }
+};
+
+// Adicione esta função em ml_token_manager.js
+window.debugVendasDetalhes = async function() {
+    console.log('=== DEBUG DETALHES VENDAS ===');
+    
+    try {
+        const resultado = await buscarVendasML(5);
+        console.log('Resultado:', resultado);
+        
+        if (resultado.success && resultado.vendas.length > 0) {
+            console.log('Primeira venda detalhada:', JSON.stringify(resultado.vendas[0], null, 2));
+            console.log('Estrutura da primeira venda:');
+            console.log('- ID:', resultado.vendas[0].id);
+            console.log('- SKU:', resultado.vendas[0].sku);
+            console.log('- Título:', resultado.vendas[0].title);
+            console.log('- Cliente:', resultado.vendas[0].cliente);
+            console.log('- Quantidade:', resultado.vendas[0].quantidade);
+            console.log('- Valor:', resultado.vendas[0].valor_total);
+            console.log('- Status:', resultado.vendas[0].status_sistema);
+        }
+    } catch (error) {
+        console.error('Erro:', error);
+    }
+    
+    console.log('=== FIM DEBUG ===');
+};
+
+// ml_token_manager.js - FUNÇÃO DE TESTE DIRETO
+async function testarAPIOrdenar() {
+    try {
+        console.log('🧪 Testando API de Orders diretamente...');
+        
+        const tokenData = await getValidToken();
+        if (!tokenData?.access_token) {
+            throw new Error('Token não disponível');
+        }
+        
+        // Teste simples: buscar minha conta
+        const testUrl = `https://api.mercadolibre.com/users/me`;
+        const encodedUrl = encodeURIComponent(testUrl);
+        
+        const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(tokenData.access_token)}`;
+        
+        console.log('📡 Testando conexão:', proxyUrl);
+        
+        const response = await fetch(proxyUrl);
+        const userData = await response.json();
+        
+        if (userData.id) {
+            console.log('✅ Usuário encontrado:', userData.nickname);
+            
+            // Agora testar buscar orders
+            const agora = new Date();
+            const trintaDiasAtras = new Date(agora);
+            trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+            
+            const params = new URLSearchParams({
+                seller: userData.id,
+                sort: 'date_desc',
+                'order.status': 'paid',
+                limit: '5',
+                offset: '0'
+            });
+            
+            const ordersUrl = `https://api.mercadolibre.com/orders/search?${params.toString()}`;
+            const encodedOrdersUrl = encodeURIComponent(ordersUrl);
+            
+            const ordersProxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedOrdersUrl}&token=${encodeURIComponent(tokenData.access_token)}`;
+            
+            console.log('📦 Buscando pedidos:', ordersProxyUrl.substring(0, 100) + '...');
+            
+            const ordersResponse = await fetch(ordersProxyUrl);
+            const ordersData = await ordersResponse.json();
+            
+            console.log('📊 Resultado do teste:', {
+                success: ordersResponse.ok,
+                total: ordersData.paging?.total || 0,
+                results: ordersData.results?.length || 0,
+                firstOrder: ordersData.results?.[0]?.id || 'Nenhuma'
+            });
+            
+            if (ordersData.results && ordersData.results.length > 0) {
+                // Mostrar detalhes da primeira order
+                const primeiraOrder = ordersData.results[0];
+                console.log('📋 Primeira order:', {
+                    id: primeiraOrder.id,
+                    status: primeiraOrder.status,
+                    total_amount: primeiraOrder.total_amount,
+                    date_created: primeiraOrder.date_created
+                });
+            }
+            
+            return {
+                success: true,
+                user: userData,
+                orders: ordersData
+            };
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro no teste:', error);
         return {
-            id: venda.id,
-            numero_venda: venda.external_reference || `ML-${venda.id}`,
-            data_venda: new Date(venda.date_created).toLocaleString('pt-BR'),
-            valor_total: venda.total_amount || 0,
-            quantidade_itens: venda.order_items?.length || 0,
-            comprador: venda.buyer?.nickname || 'Não informado',
-            status: 'nova',
-            verificada: false,
-            
-            // Detalhes do item principal
-            item_titulo: item.item?.title || 'Produto não identificado',
-            item_sku: item.item?.seller_custom_field || item.item?.seller_sku || 'N/A',
-            item_quantidade: item.quantity || 1,
-            item_preco_unitario: item.unit_price || 0,
-            
-            // Informações de envio
-            meio_envio: venda.shipping?.id ? "Mercado Envios" : "A combinar",
-            
-            // Informações adicionais
-            metodo_pagamento: venda.payments?.[0]?.payment_type || 'Não informado',
-            tags: venda.tags || [],
-            dados_completos: venda
+            success: false,
+            error: error.message
         };
-    });
+    }
 }
 
 // ============================================
