@@ -522,6 +522,217 @@ window.verificarTokenML = async function() {
   }
 };
 
+// ============================================
+// FUNÇÃO PARA BUSCAR VENDAS DO ML
+// ============================================
+
+async function buscarVendasML(limit = 50) {
+    console.log('🛒 Buscando vendas do Mercado Livre...');
+    
+    try {
+        // 1. Obter token válido
+        const token = await autoManageMLToken();
+        
+        if (!token) {
+            throw new Error('Não foi possível obter token válido');
+        }
+        
+        // 2. Buscar vendas
+        const response = await fetch(`https://purple-bonus-3b1c.andmiotto1998.workers.dev/api/ml/orders?token=${token}&limit=${limit}&seller=415176739`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // 3. Processar resultados
+        if (data.results && data.results.length > 0) {
+            console.log(`✅ ${data.results.length} vendas encontradas`);
+            return processarVendasML(data.results);
+        }
+        
+        return [];
+        
+    } catch (error) {
+        console.error('❌ Erro ao buscar vendas:', error);
+        return [];
+    }
+}
+
+function processarVendasML(vendas) {
+    return vendas.map(venda => {
+        const item = venda.order_items && venda.order_items.length > 0 ? venda.order_items[0] : {};
+        
+        return {
+            id: venda.id,
+            numero_venda: venda.external_reference || `ML-${venda.id}`,
+            data_venda: new Date(venda.date_created).toLocaleString('pt-BR'),
+            valor_total: venda.total_amount || 0,
+            quantidade_itens: venda.order_items?.length || 0,
+            comprador: venda.buyer?.nickname || 'Não informado',
+            status: 'nova',
+            verificada: false,
+            
+            // Detalhes do item principal
+            item_titulo: item.item?.title || 'Produto não identificado',
+            item_sku: item.item?.seller_custom_field || item.item?.seller_sku || 'N/A',
+            item_quantidade: item.quantity || 1,
+            item_preco_unitario: item.unit_price || 0,
+            
+            // Informações de envio
+            meio_envio: venda.shipping?.id ? "Mercado Envios" : "A combinar",
+            
+            // Informações adicionais
+            metodo_pagamento: venda.payments?.[0]?.payment_type || 'Não informado',
+            tags: venda.tags || [],
+            dados_completos: venda
+        };
+    });
+}
+
+// ============================================
+// FUNÇÃO PARA SINCRONIZAR VENDAS COM SUPABASE
+// ============================================
+
+async function sincronizarVendasComSupabase() {
+    console.log('🔄 Sincronizando vendas com Supabase...');
+    
+    try {
+        // 1. Buscar vendas do ML
+        const vendasML = await buscarVendasML(100);
+        
+        if (vendasML.length === 0) {
+            console.log('📭 Nenhuma venda para sincronizar');
+            return;
+        }
+        
+        // 2. Para cada venda, salvar no Supabase
+        for (const venda of vendasML) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('vendas_ml')
+                    .upsert({
+                        order_id: venda.id,
+                        numero_venda: venda.numero_venda,
+                        data_venda: new Date(venda.data_venda),
+                        valor_total: venda.valor_total,
+                        comprador: venda.comprador,
+                        item_titulo: venda.item_titulo,
+                        item_sku: venda.item_sku,
+                        item_quantidade: venda.item_quantidade,
+                        meio_envio: venda.meio_envio,
+                        status: 'nova',
+                        verificada: false,
+                        dados_completos: venda.dados_completos
+                    }, { 
+                        onConflict: 'order_id',
+                        ignoreDuplicates: false 
+                    });
+                
+                if (error) {
+                    console.error(`❌ Erro ao salvar venda ${venda.id}:`, error);
+                } else {
+                    console.log(`✅ Venda ${venda.id} sincronizada`);
+                }
+            } catch (error) {
+                console.error(`❌ Erro no processamento da venda ${venda.id}:`, error);
+            }
+        }
+        
+        console.log(`✅ Sincronização concluída: ${vendasML.length} vendas processadas`);
+        showToast(`✅ ${vendasML.length} vendas sincronizadas`, 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro na sincronização:', error);
+        showToast('❌ Erro ao sincronizar vendas', 'error');
+    }
+}
+
+// ============================================
+// FUNÇÃO PARA RENOVAÇÃO AUTOMÁTICA (A CADA 6H)
+// ============================================
+
+function iniciarRenovacaoAutomatica() {
+    console.log('⏰ Configurando renovação automática do token (6h)...');
+    
+    // Renovar token a cada 6 horas (21600000 ms)
+    setInterval(async () => {
+        console.log('🔄 Renovação automática do token iniciada...');
+        try {
+            const token = await autoManageMLToken();
+            if (token) {
+                console.log('✅ Token renovado automaticamente');
+                updateMLTokenStatusUI(true, 'Renovado automaticamente');
+            }
+        } catch (error) {
+            console.error('❌ Erro na renovação automática:', error);
+            updateMLTokenStatusUI(false, 'Falha na renovação');
+        }
+    }, 21600000); // 6 horas
+    
+    // Sincronizar vendas a cada 30 minutos
+    setInterval(() => {
+        sincronizarVendasComSupabase();
+    }, 1800000); // 30 minutos
+}
+
+// ============================================
+// INICIALIZAÇÃO COMPLETA
+// ============================================
+
+async function inicializarSistemaCompletoML() {
+    console.log('🚀 Inicializando sistema completo ML...');
+    
+    try {
+        // 1. Inicializar autenticação
+        const token = await initializeMLAuth();
+        
+        if (!token) {
+            console.error('❌ Falha na inicialização da autenticação ML');
+            return;
+        }
+        
+        // 2. Testar conexão
+        console.log('🔗 Testando conexão com ML...');
+        const response = await fetch(`https://purple-bonus-3b1c.andmiotto1998.workers.dev/api/ml/test?token=${token}`);
+        const testResult = await response.json();
+        
+        if (testResult.success) {
+            console.log(`✅ Conectado ao ML como: ${testResult.user.nickname}`);
+            showToast(`✅ Conectado ao ML como ${testResult.user.nickname}`, 'success');
+        }
+        
+        // 3. Iniciar renovação automática
+        iniciarRenovacaoAutomatica();
+        
+        // 4. Sincronizar vendas iniciais
+        setTimeout(() => {
+            sincronizarVendasComSupabase();
+        }, 5000);
+        
+        console.log('✅ Sistema ML inicializado com sucesso!');
+        
+    } catch (error) {
+        console.error('❌ Erro na inicialização do sistema ML:', error);
+    }
+}
+
+// Exportar funções
+window.buscarVendasML = buscarVendasML;
+window.sincronizarVendasComSupabase = sincronizarVendasComSupabase;
+window.inicializarSistemaCompletoML = inicializarSistemaCompletoML;
+
+// Inicializar quando a página carregar
+document.addEventListener('DOMContentLoaded', function() {
+    // Esperar um pouco para tudo carregar
+    setTimeout(() => {
+        if (currentUser) {
+            inicializarSistemaCompletoML();
+        }
+    }, 3000);
+});
+
 // ===== EXPORTAR FUNÇÕES =====
 window.autoManageMLToken = autoManageMLToken;
 window.renewTokenWithRefreshToken = renewTokenWithRefreshToken;

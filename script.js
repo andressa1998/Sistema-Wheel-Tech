@@ -6344,6 +6344,62 @@ document.addEventListener('DOMContentLoaded', function() {
     setTimeout(initContadorCaracteres, 2000);
 });
 
+// ============================================
+// BOTÃO PARA SINCRONIZAR VENDAS MANUALMENTE
+// ============================================
+
+window.forcarSincronizacaoVendas = async function() {
+    const btn = document.querySelector('button[onclick="forcarSincronizacaoVendas()"]');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> Sincronizando...';
+    }
+    
+    try {
+        if (window.sincronizarVendasComSupabase) {
+            await window.sincronizarVendasComSupabase();
+        } else {
+            showToast('❌ Função de sincronização não encontrada', 'error');
+        }
+    } catch (error) {
+        console.error('❌ Erro na sincronização:', error);
+        showToast('❌ Erro ao sincronizar: ' + error.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sincronizar Vendas ML';
+        }
+    }
+};
+
+// ============================================
+// BOTÃO PARA ATUALIZAR LISTA DE VENDAS
+// ============================================
+
+window.atualizarVendas = async function() {
+    showToast('🔄 Atualizando lista de vendas...', 'info');
+    
+    try {
+        if (window.buscarVendasML) {
+            const vendas = await window.buscarVendasML(50);
+            console.log('Vendas atualizadas:', vendas.length);
+            
+            // Aqui você pode chamar a função que renderiza as vendas
+            if (window.renderizarVendasML) {
+                window.renderizarVendasML(vendas);
+                showToast(`✅ ${vendas.length} vendas carregadas`, 'success');
+            } else {
+                showToast('⚠️ Função de renderização não encontrada', 'warning');
+            }
+        } else {
+            showToast('❌ Função de busca não encontrada', 'error');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao atualizar vendas:', error);
+        showToast('❌ Erro ao atualizar: ' + error.message, 'error');
+    }
+};
+
 // Adicionar script de conferência de vendas
     const script = document.createElement('script');
     script.src = 'vendas_conferencia.js';
