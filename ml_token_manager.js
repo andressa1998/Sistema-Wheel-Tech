@@ -12,7 +12,7 @@ const ML_CONFIG = {
     CLIENT_ID: '5767896809769647',
     CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
     REDIRECT_URI: 'https://homework-fees-saving-beliefs.trycloudflare.com/callback',
-    INITIAL_CODE: 'TG-6989d4331e5fc10001f31fae-415176739', // SEU CÓDIGO ATUAL
+    INITIAL_CODE: 'TG-698b3df415fdb5000158f6e5-415176739', // SEU CÓDIGO ATUAL
     USER_ID: '415176739'
 };
 
