@@ -1272,65 +1272,78 @@ async function renewTokenWithRefreshToken(refreshToken) {
 }
 
 // Função para buscar vendas usando token automático
-async function buscarVendasML(token = null) {
+async function buscarVendasML(limit = 50) {
+    console.log('🛒 Buscando vendas do Mercado Livre...');
+    
     try {
-        let accessToken = token;
+        // 1. Obter token válido
+        const token = await autoManageMLToken();
         
-        if (!accessToken) {
-            accessToken = await autoManageMLToken();
+        if (!token) {
+            throw new Error('Não foi possível obter token válido');
         }
         
-        if (!accessToken) {
-            console.error('❌ Não foi possível obter token');
-            return [];
-        }
-        
-        // Buscar vendas dos últimos 3 dias
-        const now = new Date();
-        const threeDaysAgo = new Date(now);
-        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        // 2. Buscar vendas DIRETAMENTE da API ML (fallback se Worker falhar)
+        const dataInicio = new Date();
+        dataInicio.setDate(dataInicio.getDate() - 30); // Últimos 30 dias
         
         const params = new URLSearchParams({
-            seller: ML_CONFIG.USER_ID,
+            seller: '415176739',
             sort: 'date_desc',
             'order.status': 'paid',
-            'order.date_created.from': threeDaysAgo.toISOString().split('T')[0],
-            limit: '50'
+            limit: limit,
+            offset: 0,
+            'order.date_created.from': dataInicio.toISOString().split('T')[0]
         });
         
-        console.log('🛒 Buscando vendas do ML...');
+        let vendas = [];
         
-        const response = await fetch(`${ML_CONFIG.API_BASE_URL}/orders/search?${params.toString()}`, {
-            headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Accept': 'application/json'
+        // Tentar via Worker primeiro
+        try {
+            const response = await fetch(
+                `https://purple-bonus-3b1c.andmiotto1998.workers.dev/api/ml/proxy?url=https://api.mercadolibre.com/orders/search?${params}&token=${token}`
+            );
+            
+            if (response.ok) {
+                const data = await response.json();
+                vendas = data.results || [];
+                console.log(`✅ ${vendas.length} vendas encontradas via Worker`);
+            } else {
+                throw new Error('Worker falhou');
             }
-        });
-        
-        if (response.status === 401) {
-            // Token expirado, tentar renovar
-            console.log('🔄 Token expirado, renovando...');
-            const newToken = await renewTokenAutomatically();
-            if (newToken) {
-                return await buscarVendasML(newToken);
+        } catch (workerError) {
+            console.log('🔄 Worker falhou, tentando direto...');
+            
+            // Fallback: chamada direta
+            const directResponse = await fetch(
+                `https://api.mercadolibre.com/orders/search?${params}`,
+                {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json'
+                    }
+                }
+            );
+            
+            if (directResponse.ok) {
+                const data = await directResponse.json();
+                vendas = data.results || [];
+                console.log(`✅ ${vendas.length} vendas encontradas via API direta`);
+            } else {
+                throw new Error(`API direta falhou: ${directResponse.status}`);
             }
         }
         
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const data = await response.json();
-        
-        if (data.results && data.results.length > 0) {
-            console.log(`✅ ${data.results.length} vendas encontradas`);
-            return processarVendasML(data.results);
+        // 3. Processar resultados
+        if (vendas.length > 0) {
+            return processarVendasML(vendas);
         }
         
         return [];
         
     } catch (error) {
         console.error('❌ Erro ao buscar vendas:', error);
+        showToast('Erro ao buscar vendas: ' + error.message, 'error');
         return [];
     }
 }
