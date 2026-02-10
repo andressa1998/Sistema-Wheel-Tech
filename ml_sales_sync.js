@@ -4,7 +4,7 @@
 
 console.log('🛒 Sistema de Vendas ML iniciando...');
 
-// ml_sales_sync.js - LINHA 4 (logo após os comentários iniciais)
+// ml_sales_sync.js - LINHA 4
 const WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
 
 // E também exponha globalmente

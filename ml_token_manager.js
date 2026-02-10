@@ -345,6 +345,39 @@ async function initializeMLAuth() {
     }
 }
 
+// Adicione no ml_token_manager.js
+window.verificarTokenML = async function() {
+  try {
+    const token = await autoManageMLToken();
+    if (!token) {
+      console.error('❌ Não foi possível obter token');
+      return;
+    }
+    
+    console.log('✅ Token obtido:', token.substring(0, 30) + '...');
+    
+    // Testar conexão direta
+    const response = await fetch('https://api.mercadolibre.com/users/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
+      }
+    });
+    
+    if (response.ok) {
+      const userData = await response.json();
+      console.log('✅ Conexão direta OK:', userData.nickname);
+      alert(`✅ Token válido!\nUsuário: ${userData.nickname}\nToken: ${token.substring(0, 30)}...`);
+    } else {
+      console.error('❌ Token inválido:', response.status);
+      alert('❌ Token inválido ou expirado');
+    }
+  } catch (error) {
+    console.error('❌ Erro:', error);
+    alert('❌ Erro: ' + error.message);
+  }
+};
+
 // ===== EXPORTAR FUNÇÕES =====
 window.autoManageMLToken = autoManageMLToken;
 window.renewTokenWithRefreshToken = renewTokenWithRefreshToken;
