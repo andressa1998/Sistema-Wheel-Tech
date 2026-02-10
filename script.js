@@ -5962,80 +5962,6 @@ window.abrirSistemaVendas = async function() {
     }
 };
 
-// ===== CONFIGURAR BOTÃO DE VENDAS ML =====
-function configurarBotaoVendas() {
-    const vendasBtn = document.getElementById('vendasBtn');
-    if (vendasBtn) {
-        vendasBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            console.log('🛍️ Botão Vendas ML clicado');
-            window.abrirSistemaVendas();
-        });
-        
-        console.log('✅ Botão de vendas configurado');
-    } else {
-        console.log('❌ Botão de vendas não encontrado');
-    }
-}
-
-// ===== FUNÇÃO PARA RENDERIZAR VENDAS NA TABELA =====
-function renderizarVendasML(vendas) {
-    const salesTableBody = document.getElementById('salesTableBody');
-    if (!salesTableBody) {
-        console.error('❌ Tabela de vendas não encontrada');
-        return;
-    }
-    
-    salesTableBody.innerHTML = '';
-    
-    if (vendas.length === 0) {
-        salesTableBody.innerHTML = `
-            <tr>
-                <td colspan="9" class="text-center" style="padding: 40px;">
-                    <i class="fas fa-store-slash fa-3x" style="color: #6c757d; opacity: 0.5; margin-bottom: 15px;"></i>
-                    <h4 style="color: #6c757d;">Nenhuma venda encontrada</h4>
-                    <p style="color: #6c757d;">Não há vendas recentes no Mercado Livre.</p>
-                </td>
-            </tr>
-        `;
-        return;
-    }
-    
-    vendas.forEach((venda, index) => {
-        const row = document.createElement('tr');
-        row.className = 'venda-item';
-        
-        // Status badge
-        let statusBadge = '';
-        if (venda.verificada) {
-            statusBadge = '<span class="badge badge-success">Verificada</span>';
-        } else if (venda.status === 'fraude') {
-            statusBadge = '<span class="badge badge-danger">Fraude</span>';
-        } else {
-            statusBadge = '<span class="badge badge-warning">Nova</span>';
-        }
-        
-        row.innerHTML = `
-            <td><strong>${venda.numero_venda}</strong></td>
-            <td>${venda.data_venda}</td>
-            <td class="valor-cell">R$ ${parseFloat(venda.valor_total).toFixed(2)}</td>
-            <td>${venda.comprador}</td>
-            <td>${venda.quantidade_itens}</td>
-            <td>${statusBadge}</td>
-            <td>
-                <button class="btn btn-info btn-sm" onclick="verDetalhesVenda(${index})" title="Ver detalhes">
-                    <i class="fas fa-eye"></i>
-                </button>
-                <button class="btn btn-success btn-sm" onclick="verificarVenda('${venda.id}')" title="Marcar como verificada">
-                    <i class="fas fa-check"></i>
-                </button>
-            </td>
-        `;
-        
-        salesTableBody.appendChild(row);
-    });
-}
-
 // ============================================
 // FUNÇÃO SIMPLES PARA CONTADOR DE CARACTERES
 // ============================================
@@ -6244,6 +6170,63 @@ window.voltarParaOS = function() {
     if (mainSystem) mainSystem.classList.remove('hidden');
     
     showToast('Voltando para Sistema de Ordem de Serviço', 'info');
+};
+
+// Adicione esta função no script.js
+
+window.abrirSistemaVendas = async function() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
+    }
+    
+    console.log('🛒 Iniciando sistema de vendas ML...');
+    
+    // Esconder outros sistemas
+    if (mainSystem) mainSystem.classList.add('hidden');
+    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
+    if (caixaSystem) caixaSystem.classList.add('hidden');
+    
+    // Mostrar sistema de vendas
+    const salesSystem = document.getElementById('salesSystem');
+    if (!salesSystem) {
+        showToast('❌ Sistema de vendas não encontrado', 'error');
+        return;
+    }
+    
+    salesSystem.classList.remove('hidden');
+    
+    // Atualizar informações do usuário
+    document.getElementById('salesUserName').textContent = currentUser.name;
+    document.getElementById('salesUserAvatar').textContent = currentUser.avatar;
+    document.getElementById('salesUserRole').textContent = currentUser.role;
+    
+    showToast('🔄 Carregando sistema de vendas...', 'info');
+    
+    try {
+        // 1. Verificar conexão ML
+        const token = await autoManageMLToken();
+        if (!token) {
+            showToast('❌ Falha na conexão com Mercado Livre', 'error');
+            return;
+        }
+        
+        // 2. Inicializar sistema de vendas
+        if (window.inicializarSistemaVendas) {
+            await window.inicializarSistemaVendas();
+        }
+        
+        // 3. Carregar dashboard
+        if (window.carregarVendasDashboard) {
+            await window.carregarVendasDashboard('hoje');
+        }
+        
+        showToast('✅ Sistema de vendas carregado!', 'success');
+        
+    } catch (error) {
+        console.error('Erro ao carregar sistema de vendas:', error);
+        showToast('❌ Erro ao carregar vendas: ' + error.message, 'error');
+    }
 };
 
 // ============================================

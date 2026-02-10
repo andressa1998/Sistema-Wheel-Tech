@@ -537,67 +537,25 @@ async function buscarVendasML(limit = 50) {
             throw new Error('Não foi possível obter token válido');
         }
         
-        // 2. Buscar vendas DIRETAMENTE da API ML (fallback se Worker falhar)
-        const dataInicio = new Date();
-        dataInicio.setDate(dataInicio.getDate() - 30); // Últimos 30 dias
+        // 2. Buscar vendas
+        const response = await fetch(`https://purple-bonus-3b1c.andmiotto1998.workers.dev/api/ml/orders?token=${token}&limit=${limit}&seller=415176739`);
         
-        const params = new URLSearchParams({
-            seller: '415176739',
-            sort: 'date_desc',
-            'order.status': 'paid',
-            limit: limit,
-            offset: 0,
-            'order.date_created.from': dataInicio.toISOString().split('T')[0]
-        });
-        
-        let vendas = [];
-        
-        // Tentar via Worker primeiro
-        try {
-            const response = await fetch(
-                `https://purple-bonus-3b1c.andmiotto1998.workers.dev/api/ml/proxy?url=https://api.mercadolibre.com/orders/search?${params}&token=${token}`
-            );
-            
-            if (response.ok) {
-                const data = await response.json();
-                vendas = data.results || [];
-                console.log(`✅ ${vendas.length} vendas encontradas via Worker`);
-            } else {
-                throw new Error('Worker falhou');
-            }
-        } catch (workerError) {
-            console.log('🔄 Worker falhou, tentando direto...');
-            
-            // Fallback: chamada direta
-            const directResponse = await fetch(
-                `https://api.mercadolibre.com/orders/search?${params}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Accept': 'application/json'
-                    }
-                }
-            );
-            
-            if (directResponse.ok) {
-                const data = await directResponse.json();
-                vendas = data.results || [];
-                console.log(`✅ ${vendas.length} vendas encontradas via API direta`);
-            } else {
-                throw new Error(`API direta falhou: ${directResponse.status}`);
-            }
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
         }
         
+        const data = await response.json();
+        
         // 3. Processar resultados
-        if (vendas.length > 0) {
-            return processarVendasML(vendas);
+        if (data.results && data.results.length > 0) {
+            console.log(`✅ ${data.results.length} vendas encontradas`);
+            return processarVendasML(data.results);
         }
         
         return [];
         
     } catch (error) {
         console.error('❌ Erro ao buscar vendas:', error);
-        showToast('Erro ao buscar vendas: ' + error.message, 'error');
         return [];
     }
 }
@@ -639,37 +597,19 @@ function processarVendasML(vendas) {
 
 async function sincronizarVendasComSupabase() {
     console.log('🔄 Sincronizando vendas com Supabase...');
-    console.log('1. Iniciando busca de vendas...');
     
     try {
         // 1. Buscar vendas do ML
         const vendasML = await buscarVendasML(100);
-        console.log(`2. ${vendasML.length} vendas retornadas da busca`);
         
         if (vendasML.length === 0) {
             console.log('📭 Nenhuma venda para sincronizar');
             return;
         }
-
-        // 2. Verificar conexão com Supabase
-        console.log('3. Verificando conexão com Supabase...');
-        const { data: user, error: authError } = await supabaseClient.auth.getUser();
         
-        if (authError) {
-            throw new Error('Erro de autenticação Supabase: ' + authError.message);
-        }
-
-        console.log('4. Usuário autenticado:', user.user.email);
-
-        
-        // 3. Para cada venda, salvar no Supabase
-        let salvas = 0;
-        let erros = 0;
-        
+        // 2. Para cada venda, salvar no Supabase
         for (const venda of vendasML) {
             try {
-                console.log(`   Processando venda ${venda.id}...`);
-                
                 const { data, error } = await supabaseClient
                     .from('vendas_ml')
                     .upsert({
@@ -684,31 +624,28 @@ async function sincronizarVendasComSupabase() {
                         meio_envio: venda.meio_envio,
                         status: 'nova',
                         verificada: false,
-                        dados_completos: venda.dados_completos,
-                        date_created: new Date(venda.data_venda).toISOString()
+                        dados_completos: venda.dados_completos
                     }, { 
-                        onConflict: 'order_id'
+                        onConflict: 'order_id',
+                        ignoreDuplicates: false 
                     });
                 
                 if (error) {
-                    console.error(`   ❌ Erro ao salvar venda ${venda.id}:`, error.message);
-                    erros++;
+                    console.error(`❌ Erro ao salvar venda ${venda.id}:`, error);
                 } else {
-                    console.log(`   ✅ Venda ${venda.id} sincronizada`);
-                    salvas++;
+                    console.log(`✅ Venda ${venda.id} sincronizada`);
                 }
             } catch (error) {
-                console.error(`   ❌ Erro no processamento da venda ${venda.id}:`, error);
-                erros++;
+                console.error(`❌ Erro no processamento da venda ${venda.id}:`, error);
             }
         }
         
-        console.log(`✅ Sincronização concluída: ${salvas} salvas, ${erros} erros`);
-        showToast(`✅ ${salvas} vendas sincronizadas (${erros} erros)`, salvas > 0 ? 'success' : 'warning');
+        console.log(`✅ Sincronização concluída: ${vendasML.length} vendas processadas`);
+        showToast(`✅ ${vendasML.length} vendas sincronizadas`, 'success');
         
     } catch (error) {
         console.error('❌ Erro na sincronização:', error);
-        showToast('❌ Erro ao sincronizar vendas: ' + error.message, 'error');
+        showToast('❌ Erro ao sincronizar vendas', 'error');
     }
 }
 

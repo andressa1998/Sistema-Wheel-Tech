@@ -1,362 +1,523 @@
-// ============================================
-// DASHBOARD DE VENDAS ML
-// ============================================
+// sales_dashboard.js - VERSÃO CORRIGIDA
 
-console.log('📊 Dashboard de vendas carregando...');
+let vendasML = [];
+let vendasPaginadas = [];
+let paginaAtual = 1;
+const itensPorPagina = 20;
+let filtroAtual = 'todas';
+let periodoAtual = 'todas';
 
-// Estado do dashboard
-let dashboardState = {
-    vendas: [],
-    filtroAtual: 'hoje',
-    carregando: false,
-    estatisticas: null
-};
+// Inicialização
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('📊 Sistema de Vendas ML inicializando...');
+    carregarVendasDoBanco();
+    configurarEventListeners();
+    iniciarAutoSincronizacao();
+});
 
-// ===== CARREGAR VENDAS DO SUPABASE =====
-async function carregarVendasDashboard(filtro = 'hoje') {
-    dashboardState.carregando = true;
-    dashboardState.filtroAtual = filtro;
+// Configurar event listeners
+function configurarEventListeners() {
+    const buscarInput = document.getElementById('buscarVendas');
+    if (buscarInput) {
+        buscarInput.addEventListener('input', function() {
+            filtrarPorBusca(this.value);
+        });
+    }
     
-    try {
-        console.log(`📥 Carregando vendas (filtro: ${filtro})...`);
-        
-        let query = supabaseClient
-            .from('vendas_ml')
-            .select('*')
-            .order('date_created', { ascending: false });
-        
-        const hoje = new Date();
-        
-        switch (filtro) {
-            case 'hoje':
-                const inicioHoje = new Date(hoje);
-                inicioHoje.setHours(0, 0, 0, 0);
-                // Pega vendas de hoje que não foram conferidas (false ou null)
-                query = query.gte('date_created', inicioHoje.toISOString())
-                             .or('conferido.eq.false,conferido.is.null');
-                break;
-                
-            case 'ontem':
-                const ontem = new Date(hoje);
-                ontem.setDate(ontem.getDate() - 1);
-                const inicioOntem = new Date(ontem);
-                inicioOntem.setHours(0, 0, 0, 0);
-                const fimOntem = new Date(ontem);
-                fimOntem.setHours(23, 59, 59, 999);
-                query = query.gte('date_created', inicioOntem.toISOString())
-                             .lte('date_created', fimOntem.toISOString());
-                break;
-                
-            case 'semana':
-                const semanaPassada = new Date(hoje);
-                semanaPassada.setDate(semanaPassada.getDate() - 7);
-                query = query.gte('date_created', semanaPassada.toISOString());
-                break;
-                
-            case 'mes':
-                const mesPassado = new Date(hoje);
-                mesPassado.setMonth(mesPassado.getMonth() - 1);
-                query = query.gte('date_created', mesPassado.toISOString());
-                break;
-                
-            case 'pendentes':
-                // Filtro crucial: Mostra tudo que não está marcado como true
-                query = query.or('conferido.eq.false,conferido.is.null');
-                break;
-
-            case 'conferidas':
-                // Filtro para a aba de conferidas
-                query = query.eq('conferido', true);
-                break;
-        }
-        
-        const { data, error } = await query;
-        if (error) throw error;
-        
-        dashboardState.vendas = data || [];
-        
-        renderizarVendasTabela(dashboardState.vendas);
-        if (typeof calcularEstatisticasVendas === 'function') calcularEstatisticasVendas();
-        atualizarContadoresVendas();
-        
-        console.log(`✅ ${dashboardState.vendas.length} vendas carregadas`);
-        
-    } catch (error) {
-        console.error('❌ Erro ao carregar vendas:', error);
-        renderizarVendasTabela([]);
-    } finally {
-        dashboardState.carregando = false;
-        if (typeof atualizarEstadoCarregamento === 'function') atualizarEstadoCarregamento();
+    const btnSincronizar = document.getElementById('btnSincronizar');
+    if (btnSincronizar) {
+        btnSincronizar.addEventListener('click', sincronizarVendasML);
     }
 }
 
-// ===== ATUALIZAR CONTADORES DE VENDAS =====
-function atualizarContadoresVendas() {
-    const vendas = dashboardState.vendas || [];
-    
-    // Novas: Tudo que não é true (false ou null)
-    const novas = vendas.filter(v => v.conferido !== true).length;
-    // Verificadas: Somente o que é true
-    const conferidas = vendas.filter(v => v.conferido === true).length;
-    
-    const ids = ['countNovas', 'tabNovas', 'countVerificadas', 'tabVerificadas'];
-    ids.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.textContent = id.includes('Novas') ? novas : conferidas;
+// Carregar vendas do banco
+async function carregarVendasDoBanco() {
+    try {
+        console.log('📦 Carregando vendas do banco...');
+        
+        const { data, error } = await supabase
+            .from('vendas_ml')
+            .select('*')
+            .order('created_at', { ascending: false }); // Usar created_at em vez de data_venda
+        
+        if (error) {
+            console.error('❌ Erro ao carregar vendas:', error);
+            mostrarToast('Erro ao carregar vendas', 'error');
+            return;
         }
+        
+        vendasML = data || [];
+        console.log(`✅ ${vendasML.length} vendas carregadas do banco`);
+        
+        atualizarEstatisticas();
+        aplicarFiltroAtual();
+        
+    } catch (error) {
+        console.error('❌ Erro no carregamento:', error);
+        mostrarToast('Erro ao carregar vendas do banco', 'error');
+    }
+}
+
+// Sincronizar vendas do ML
+// sales_dashboard.js - Função sincronizarVendasML atualizada
+
+async function sincronizarVendasML() {
+    try {
+        const btn = document.getElementById('btnSincronizar');
+        const textoOriginal = btn.innerHTML;
+        
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sincronizando...';
+        btn.disabled = true;
+        
+        console.log('🔄 Iniciando sincronização de vendas ML...');
+        mostrarToast('Sincronizando vendas do Mercado Livre...', 'info');
+        
+        let resultado = null;
+        
+        // Tentar primeiro método
+        if (window.buscarVendasML) {
+            resultado = await window.buscarVendasML();
+        }
+        
+        // Se falhar, tentar método alternativo
+        if ((!resultado || !resultado.success) && window.buscarVendasMLviaProxy) {
+            console.log('🔄 Tentando método alternativo...');
+            resultado = await window.buscarVendasMLviaProxy();
+        }
+        
+        if (resultado && resultado.success && resultado.vendas && resultado.vendas.length > 0) {
+            console.log(`✅ ${resultado.vendas.length} vendas recebidas do ML`);
+            
+            // Log das primeiras vendas para debug
+            resultado.vendas.slice(0, 3).forEach((venda, i) => {
+                console.log(`  ${i + 1}. ID: ${venda.id}, SKU: ${venda.sku}, Valor: R$ ${venda.total_amount}`);
+            });
+            
+            // Processar e salvar vendas
+            await processarESalvarVendas(resultado.vendas);
+            
+            // Recarregar a lista
+            await carregarVendasDoBanco();
+            
+            mostrarToast(`${resultado.vendas.length} vendas sincronizadas com sucesso!`, 'success');
+        } else {
+            const mensagemErro = resultado?.error || 'Nenhuma venda encontrada';
+            console.warn('⚠️ Nenhuma venda sincronizada:', mensagemErro);
+            mostrarToast(mensagemErro, resultado ? 'warning' : 'error');
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro na sincronização:', error);
+        mostrarToast(`Erro na sincronização: ${error.message}`, 'error');
+    } finally {
+        const btn = document.getElementById('btnSincronizar');
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sincronizar Agora';
+            btn.disabled = false;
+        }
+    }
+}
+
+// Processar e salvar vendas no banco - VERSÃO CORRIGIDA
+async function processarESalvarVendas(vendasML) {
+    try {
+        console.log(`🔄 Processando ${vendasML.length} vendas do ML...`);
+        
+        const vendasParaSalvar = [];
+        const agora = new Date().toISOString();
+        
+        for (const venda of vendasML) {
+            // Usar nomes de colunas que existem na sua tabela
+            const vendaProcessada = {
+                id_venda_ml: venda.id || `ML${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                titulo: venda.title || venda.titulo || 'Venda sem título',
+                cliente: venda.buyer?.nickname || venda.cliente || 'Cliente não identificado',
+                sku: venda.sku || venda.codigo || 'SEM_SKU',
+                quantidade: parseInt(venda.quantity || venda.quantidade || 1),
+                valor_unitario: parseFloat(venda.unit_price || venda.preco_unitario || 0),
+                valor_total: parseFloat(venda.total_amount || venda.valor_total || 0),
+                created_at: venda.date_created || venda.data_venda || agora, // Usar created_at
+                status_ml: venda.status || 'confirmed',
+                status_sistema: 'nova',
+                link: venda.permalink || venda.link || null,
+                informacoes_pagamento: venda.payments ? JSON.stringify(venda.payments) : '{}',
+                informacoes_envio: venda.shipping ? JSON.stringify(venda.shipping) : '{}',
+                updated_at: agora
+            };
+            
+            // Verificar se a venda já existe
+            const { data: vendaExistente } = await supabase
+                .from('vendas_ml')
+                .select('id')
+                .eq('id_venda_ml', vendaProcessada.id_venda_ml)
+                .single();
+            
+            if (vendaExistente) {
+                // Atualizar venda existente
+                const { error } = await supabase
+                    .from('vendas_ml')
+                    .update(vendaProcessada)
+                    .eq('id_venda_ml', vendaProcessada.id_venda_ml);
+                
+                if (error) {
+                    console.warn(`⚠️ Erro ao atualizar venda ${vendaProcessada.id_venda_ml}:`, error);
+                }
+            } else {
+                vendasParaSalvar.push(vendaProcessada);
+            }
+        }
+        
+        // Inserir vendas novas em lote
+        if (vendasParaSalvar.length > 0) {
+            const { error } = await supabase
+                .from('vendas_ml')
+                .insert(vendasParaSalvar);
+            
+            if (error) {
+                console.error('❌ Erro ao inserir vendas:', error);
+                // Tentar inserir uma por uma para identificar o problema
+                for (const venda of vendasParaSalvar) {
+                    try {
+                        const { error: singleError } = await supabase
+                            .from('vendas_ml')
+                            .insert([venda]);
+                        
+                        if (singleError) {
+                            console.error(`❌ Erro na venda ${venda.id_venda_ml}:`, singleError);
+                        }
+                    } catch (singleError) {
+                        console.error(`❌ Erro individual na venda:`, singleError);
+                    }
+                }
+            } else {
+                console.log(`✅ ${vendasParaSalvar.length} novas vendas salvas no banco`);
+            }
+        }
+        
+        return vendasParaSalvar.length;
+        
+    } catch (error) {
+        console.error('❌ Erro no processamento de vendas:', error);
+        throw error;
+    }
+}
+
+// Atualizar estatísticas - VERSÃO CORRIGIDA
+function atualizarEstatisticas() {
+    if (!vendasML || vendasML.length === 0) {
+        atualizarContadores(0, 0, 0, 0);
+        atualizarResumoFinanceiro(0, 0, 0, 0);
+        return;
+    }
+    
+    const hoje = new Date().toISOString().split('T')[0];
+    
+    // Usar created_at em vez de data_venda
+    const vendasHoje = vendasML.filter(v => {
+        if (!v.created_at) return false;
+        const dataVenda = new Date(v.created_at).toISOString().split('T')[0];
+        return dataVenda === hoje;
+    });
+    
+    const umaSemanaAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const vendasSemana = vendasML.filter(v => {
+        if (!v.created_at) return false;
+        const dataVenda = new Date(v.created_at);
+        return dataVenda >= umaSemanaAtras;
+    });
+    
+    const vendasNaoVerificadas = vendasML.filter(v => v.status_sistema === 'nova');
+    
+    atualizarContadores(
+        vendasHoje.length,
+        vendasSemana.length,
+        vendasNaoVerificadas.length,
+        vendasML.length
+    );
+    
+    const totalHoje = vendasHoje.reduce((sum, v) => sum + (v.valor_total || 0), 0);
+    const quantidadeHoje = vendasHoje.reduce((sum, v) => sum + (v.quantidade || 0), 0);
+    const ticketMedio = quantidadeHoje > 0 ? totalHoje / quantidadeHoje : 0;
+    
+    atualizarResumoFinanceiro(totalHoje, quantidadeHoje, ticketMedio, vendasNaoVerificadas.length);
+}
+
+// Atualizar contadores na UI
+function atualizarContadores(hoje, semana, naoVerificadas, total) {
+    const elementos = {
+        'countVendasHoje': hoje,
+        'countVendasSemana': semana,
+        'countVendasNaoVerificadas': naoVerificadas,
+        'countTotalVendas': total,
+        'countNovas': vendasML.filter(v => v.status_sistema === 'nova').length,
+        'countVerificadas': vendasML.filter(v => v.status_sistema === 'verificada').length,
+        'countFraudes': vendasML.filter(v => v.status_sistema === 'fraude').length
+    };
+    
+    Object.entries(elementos).forEach(([id, valor]) => {
+        const elemento = document.getElementById(id);
+        if (elemento) elemento.textContent = valor;
     });
 }
 
-// ===== FUNÇÕES DE AÇÃO PARA VENDAS =====
-window.verDetalhesVenda = async function(vendaId) {
-    try {
-        const { data: venda, error } = await supabaseClient
-            .from('vendas_ml')
-            .select('*')
-            .eq('id', vendaId)
-            .single();
-        
-        if (error) throw error;
-        
-        // Mostrar modal com detalhes
-        mostrarModalDetalhesVenda(venda);
-        
-    } catch (error) {
-        console.error('❌ Erro ao buscar detalhes da venda:', error);
-        showToast('Erro ao carregar detalhes da venda', 'error');
+// Atualizar resumo financeiro
+function atualizarResumoFinanceiro(totalHoje, quantidadeHoje, ticketMedio, pendentes) {
+    const elementos = {
+        'totalHoje': totalHoje.toFixed(2),
+        'quantidadeHoje': quantidadeHoje,
+        'ticketMedio': ticketMedio.toFixed(2),
+        'pendentesVerificacao': pendentes,
+        'totalVendasPeriodo': vendasML.reduce((sum, v) => sum + (v.valor_total || 0), 0).toFixed(2)
+    };
+    
+    Object.entries(elementos).forEach(([id, valor]) => {
+        const elemento = document.getElementById(id);
+        if (elemento) elemento.textContent = valor;
+    });
+}
+
+// Aplicar filtro atual - VERSÃO CORRIGIDA
+function aplicarFiltroAtual() {
+    let vendasFiltradas = [...vendasML];
+    
+    // Aplicar filtro por status
+    if (filtroAtual === 'nova') {
+        vendasFiltradas = vendasFiltradas.filter(v => v.status_sistema === 'nova');
+    } else if (filtroAtual === 'verificada') {
+        vendasFiltradas = vendasFiltradas.filter(v => v.status_sistema === 'verificada');
+    } else if (filtroAtual === 'fraude') {
+        vendasFiltradas = vendasFiltradas.filter(v => v.status_sistema === 'fraude');
     }
-};
+    
+    // Aplicar filtro por período
+    if (periodoAtual !== 'todas') {
+        const hoje = new Date();
+        let dataLimite = new Date();
+        
+        if (periodoAtual === 'hoje') {
+            dataLimite.setHours(0, 0, 0, 0);
+        } else if (periodoAtual === 'ontem') {
+            dataLimite.setDate(dataLimite.getDate() - 1);
+            dataLimite.setHours(0, 0, 0, 0);
+        } else if (periodoAtual === 'semana') {
+            dataLimite.setDate(dataLimite.getDate() - 7);
+        } else if (periodoAtual === 'mes') {
+            dataLimite.setMonth(dataLimite.getMonth() - 1);
+        }
+        
+        vendasFiltradas = vendasFiltradas.filter(v => {
+            if (!v.created_at) return false;
+            const dataVenda = new Date(v.created_at);
+            return dataVenda >= dataLimite;
+        });
+    }
+    
+    // Ordenar por data (mais recente primeiro) - usando created_at
+    vendasFiltradas.sort((a, b) => {
+        const dataA = new Date(a.created_at || 0);
+        const dataB = new Date(b.created_at || 0);
+        return dataB - dataA;
+    });
+    
+    // Paginar
+    paginarVendasLista(vendasFiltradas);
+}
 
-window.conferirVenda = async function(orderId) {
-    const btn = document.querySelector(`button[onclick*="${orderId}"]`);
-    const row = btn ? btn.closest('tr') : null;
-    const inputFisico = row ? row.querySelector('.input-estoque-fisico') : null;
-    const estoqueFisicoValor = inputFisico ? inputFisico.value : "";
+// Paginar vendas
+function paginarVendasLista(vendas) {
+    const inicio = (paginaAtual - 1) * itensPorPagina;
+    const fim = inicio + itensPorPagina;
+    
+    vendasPaginadas = vendas.slice(inicio, fim);
+    
+    atualizarTabelaVendas();
+    atualizarControlesPaginacao(vendas.length);
+}
 
-    if (estoqueFisicoValor === "") {
-        alert("⚠️ Informe o estoque físico antes de conferir!");
+// Atualizar tabela de vendas - VERSÃO CORRIGIDA
+function atualizarTabelaVendas() {
+    const tbody = document.getElementById('salesTableBody');
+    const emptyMsg = document.getElementById('salesEmpty');
+    
+    if (!tbody) return;
+    
+    tbody.innerHTML = '';
+    
+    if (vendasPaginadas.length === 0) {
+        if (emptyMsg) emptyMsg.classList.remove('hidden');
         return;
     }
+    
+    if (emptyMsg) emptyMsg.classList.add('hidden');
+    
+    vendasPaginadas.forEach(venda => {
+        const row = document.createElement('tr');
+        row.className = 'venda-item';
+        row.dataset.id = venda.id_venda_ml;
+        
+        // Formatar data - usar created_at
+        const dataVenda = venda.created_at ? new Date(venda.created_at) : new Date();
+        const dataFormatada = dataVenda.toLocaleDateString('pt-BR');
+        const horaFormatada = dataVenda.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        
+        // Status badge
+        let statusBadge = '';
+        if (venda.status_sistema === 'nova') {
+            statusBadge = '<span class="badge badge-nova">NOVA</span>';
+        } else if (venda.status_sistema === 'verificada') {
+            statusBadge = '<span class="badge badge-verificada">VERIFICADA</span>';
+        } else if (venda.status_sistema === 'fraude') {
+            statusBadge = '<span class="badge badge-fraude">FRAUDE</span>';
+        }
+        
+        row.innerHTML = `
+            <td>
+                <strong>${venda.id_venda_ml || 'N/A'}</strong><br>
+                <small>${(venda.titulo || '').substring(0, 50)}${(venda.titulo || '').length > 50 ? '...' : ''}</small>
+            </td>
+            <td>
+                ${dataFormatada}<br>
+                <small>${horaFormatada}</small>
+            </td>
+            <td class="valor-cell">
+                R$ ${(venda.valor_total || 0).toFixed(2)}<br>
+                <small>${venda.quantidade || 1} un.</small>
+            </td>
+            <td>${venda.cliente || 'Cliente não identificado'}</td>
+            <td>
+                <span class="badge badge-info">${venda.sku || 'SEM_SKU'}</span>
+            </td>
+            <td>${statusBadge}</td>
+            <td>
+                <button onclick="verDetalhesVenda('${venda.id_venda_ml}')" class="btn btn-info btn-sm">
+                    <i class="fas fa-eye"></i>
+                </button>
+                <button onclick="verificarVenda('${venda.id_venda_ml}')" class="btn btn-success btn-sm ${venda.status_sistema === 'nova' ? '' : 'hidden'}">
+                    <i class="fas fa-check"></i>
+                </button>
+                <button onclick="marcarComoFraude('${venda.id_venda_ml}')" class="btn btn-danger btn-sm ${venda.status_sistema === 'nova' ? '' : 'hidden'}">
+                    <i class="fas fa-times"></i>
+                </button>
+            </td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+}
 
+// Atualizar controles de paginação
+function atualizarControlesPaginacao(totalVendas) {
+    const inicio = (paginaAtual - 1) * itensPorPagina + 1;
+    const fim = Math.min(paginaAtual * itensPorPagina, totalVendas);
+    
+    const inicioElem = document.getElementById('vendasInicio');
+    const fimElem = document.getElementById('vendasFim');
+    const totalElem = document.getElementById('vendasTotal');
+    
+    if (inicioElem) inicioElem.textContent = inicio;
+    if (fimElem) fimElem.textContent = fim;
+    if (totalElem) totalElem.textContent = totalVendas;
+    
+    const btnAnterior = document.getElementById('btnAnterior');
+    const btnProxima = document.getElementById('btnProxima');
+    
+    if (btnAnterior) btnAnterior.disabled = paginaAtual <= 1;
+    if (btnProxima) btnProxima.disabled = fim >= totalVendas;
+}
+
+// Funções de filtro
+function filtrarPorStatus(status) {
+    filtroAtual = status;
+    paginaAtual = 1;
+    aplicarFiltroAtual();
+    
+    document.querySelectorAll('#salesSystem .btn-sm').forEach(btn => {
+        btn.classList.remove('filtro-ativo');
+    });
+    if (event && event.target) {
+        event.target.classList.add('filtro-ativo');
+    }
+}
+
+function filtrarVendas(periodo) {
+    periodoAtual = periodo;
+    paginaAtual = 1;
+    aplicarFiltroAtual();
+    
+    document.querySelectorAll('#salesSystem .card.mb-4 .btn-sm').forEach(btn => {
+        btn.classList.remove('filtro-ativo');
+    });
+    if (event && event.target) {
+        event.target.classList.add('filtro-ativo');
+    }
+}
+
+function filtrarPorBusca(termo) {
+    if (!termo || termo.trim() === '') {
+        aplicarFiltroAtual();
+        return;
+    }
+    
+    const termoLower = termo.toLowerCase();
+    const vendasFiltradas = vendasML.filter(v => 
+        (v.id_venda_ml && v.id_venda_ml.toLowerCase().includes(termoLower)) ||
+        (v.titulo && v.titulo.toLowerCase().includes(termoLower)) ||
+        (v.cliente && v.cliente.toLowerCase().includes(termoLower)) ||
+        (v.sku && v.sku.toLowerCase().includes(termoLower))
+    );
+    
+    paginarVendasLista(vendasFiltradas);
+}
+
+// Funções de ação
+async function verificarVenda(idVenda) {
     try {
-        const { error } = await supabaseClient
+        const { error } = await supabase
             .from('vendas_ml')
             .update({ 
-                conferido: true, 
-                estoque_fisico: Number(estoqueFisicoValor),
-                data_conferencia: new Date().toISOString()
+                status_sistema: 'verificada',
+                updated_at: new Date().toISOString()
             })
-            .eq('order_id', String(orderId));
-
+            .eq('id_venda_ml', idVenda);
+        
         if (error) throw error;
-
-        alert("✅ Conferência realizada!");
-        // Recarrega a aba que você está para a venda "mudar" de lugar
-        await carregarVendasDashboard(dashboardState.filtroAtual);
-
-    } catch (err) {
-        console.error("Erro:", err);
-        alert("Erro ao salvar conferência.");
+        
+        mostrarToast('Venda verificada com sucesso!', 'success');
+        await carregarVendasDoBanco();
+        
+    } catch (error) {
+        console.error('❌ Erro ao verificar venda:', error);
+        mostrarToast('Erro ao verificar venda', 'error');
     }
-};
-
-// Função para mostrar modal com detalhes
-function mostrarModalDetalhesVenda(venda) {
-    // Implemente um modal similar ao do sistema OS
-    alert(`Detalhes da venda ${venda.order_id}\n\n` +
-          `Comprador: ${venda.buyer_nickname}\n` +
-          `Valor: R$ ${venda.total_amount}\n` +
-          `Status: ${venda.status}\n` +
-          `Itens: ${venda.items_count}`);
 }
 
-// ===== CALCULAR ESTATÍSTICAS =====
-function calcularEstatisticasVendas() {
-    const vendas = dashboardState.vendas;
-    
-    if (vendas.length === 0) {
-        dashboardState.estatisticas = {
-            totalVendas: 0,
-            valorTotal: 0,
-            valorMedio: 0,
-            vendasConferidas: 0,
-            vendasPendentes: 0,
-            produtoMaisVendido: null
-        };
-        return;
-    }
-    
-    // Calcular totais
-    const valorTotal = vendas.reduce((total, venda) => {
-        return total + (venda.total_amount || 0);
-    }, 0);
-    
-    const vendasConferidas = vendas.filter(v => v.conferido).length;
-    
-    // Encontrar produto mais vendido
-    const produtosVendidos = {};
-    vendas.forEach(venda => {
-        const items = venda.items_json || [];
-        items.forEach(item => {
-            const sku = item.sku || item.item_id;
-            if (sku) {
-                produtosVendidos[sku] = (produtosVendidos[sku] || 0) + item.quantity;
-            }
-        });
-    });
-    
-    let produtoMaisVendido = null;
-    let maxQuantidade = 0;
-    
-    Object.entries(produtosVendidos).forEach(([sku, quantidade]) => {
-        if (quantidade > maxQuantidade) {
-            maxQuantidade = quantidade;
-            produtoMaisVendido = {
-                sku,
-                quantidade
-            };
-        }
-    });
-    
-    dashboardState.estatisticas = {
-        totalVendas: vendas.length,
-        valorTotal: valorTotal,
-        valorMedio: valorTotal / vendas.length,
-        vendasConferidas: vendasConferidas,
-        vendasPendentes: vendas.length - vendasConferidas,
-        produtoMaisVendido: produtoMaisVendido
-    };
-}
-
-// ===== FUNÇÃO PARA RENDERIZAR VENDAS NA TABELA =====
-function renderizarVendasTabela(vendas) {
-    const salesTableBody = document.getElementById('salesTableBody');
-    const salesEmpty = document.getElementById('salesEmpty');
-    if (!salesTableBody) return;
-    
-    salesTableBody.innerHTML = '';
-    
-    if (!vendas || vendas.length === 0) {
-        if (salesEmpty) salesEmpty.classList.remove('hidden');
-        return;
-    } else {
-        if (salesEmpty) salesEmpty.classList.add('hidden');
-    }
-    
-    vendas.forEach((venda) => {
-        try {
-            const row = document.createElement('tr');
-            row.className = 'venda-item';
-            
-            // Lógica de Envio (PRESERVADA)
-            const meio = (venda.meio_envio || 'MERCADO ENVIOS').toUpperCase();
-            let envioBadge = `<span class="badge border" style="padding: 6px 10px; color: #666;">MERCADO ENVIOS</span>`;
-            if (meio.includes('FULL')) {
-                envioBadge = `<span class="badge" style="background-color: #ffdb15; color: #000; font-weight: bold; padding: 6px 10px;"><i class="fas fa-bolt"></i> FULL</span>`;
-            } else if (meio.includes('FLEX')) {
-                envioBadge = `<span class="badge" style="background-color: #00B1EA; color: #fff; font-weight: bold; padding: 6px 10px;"><i class="fas fa-truck-fast"></i> FLEX</span>`;
-            }
-
-            // Lógica de Estoque (PRESERVADA)
-            const estoqueML = (venda.estoque_restante !== null && venda.estoque_restante !== undefined) ? Number(venda.estoque_restante) : 0;
-            const valorFisicoSalvo = venda.estoque_fisico || "";
-            const estaConferida = venda.conferido === true;
-
-            // NOVA LÓGICA: Formatação de Data e ID
-            const dataVenda = venda.date_created ? new Date(venda.date_created).toLocaleString('pt-BR') : 'N/A';
-            const mlb = venda.item_id || 'N/A';
-
-            row.innerHTML = `
-                <td style="text-align: left; padding-left: 20px;">
-                    <div style="font-size: 0.75rem; color: #888; margin-bottom: 2px;">${dataVenda}</div>
-                    <div style="font-weight: 600; font-size: 0.85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;">
-                        ${venda.produto_titulo || 'Sem título'}
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <small class="text-muted">SKU: <strong>${venda.sku || 'N/A'}</strong></small>
-                        <small class="text-primary"><strong>${mlb}</strong></small>
-                    </div>
-                </td>
-
-                <td style="text-align: center; font-weight: bold; color: #28a745;">
-                    R$ ${Number(venda.unit_price || 0).toFixed(2)}
-                </td>
-
-                <td style="text-align: center;">${venda.buyer_nickname || 'N/A'}</td>
-
-                <td style="text-align: center;">
-                    <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                        <span style="font-weight: bold;">${estoqueML}</span>
-                        <span class="text-muted">|</span>
-                        <input type="number" class="form-control input-estoque-fisico" value="${valorFisicoSalvo}" 
-                               ${estaConferida ? 'disabled' : ''} style="width: 60px; height: 25px; text-align: center;">
-                    </div>
-                </td>
-
-                <td style="text-align: center;">${envioBadge}</td>
-
-                <td style="text-align: center;">
-                    <span class="badge ${estaConferida ? 'badge-success' : 'badge-info'}">
-                        ${estaConferida ? 'CONFERIDA' : 'PAGA'}
-                    </span>
-                </td>
-
-                <td style="text-align: center;">
-                    <div style="display: flex; gap: 4px; justify-content: center;">
-                        <button class="btn btn-info btn-sm" onclick="verDetalhesVenda('${venda.order_id}')">
-                            <i class="fas fa-eye"></i>
-                        </button>
-                        
-                        <button class="btn btn-warning btn-sm" title="Editar Anúncio no ML" 
-                            onclick="abrirModalEdicaoML('${venda.item_id}', '${venda.produto_titulo.replace(/'/g, "")}', ${venda.unit_price}, ${venda.estoque_restante}, '${venda.listing_type_id}')">
-                            <i class="fas fa-edit"></i>
-                        </button>
-
-                        ${!estaConferida ? `
-                            <button class="btn btn-success btn-sm" onclick="conferirVenda('${venda.order_id}')">
-                                <i class="fas fa-check"></i>
-                            </button>
-                        ` : ''}
-                    </div>
-                </td>
-            `;
-            salesTableBody.appendChild(row);
-        } catch (err) { console.error(err); }
-    });
-}
-
-/**
- * Função para comparar estoques em tempo real
- */
-window.compararEstoque = function(input, estoqueML) {
-    if (input.value === "") {
-        input.style.backgroundColor = "";
-        input.style.color = "";
-        return;
-    }
-    
-    const valorFisico = Number(input.value);
-    const ml = Number(estoqueML);
-
-    if (valorFisico !== ml) {
-        input.style.backgroundColor = "#fff3cd"; // Amarelo alerta
-        input.style.color = "#856404";
-        input.style.borderColor = "#ffc107";
-    } else {
-        input.style.backgroundColor = "#d4edda"; // Verde sucesso
-        input.style.color = "#155724";
-        input.style.borderColor = "#28a745";
-    }
-};
-
-// ===== FUNÇÕES DE AÇÃO =====
-window.verDetalhesVenda = async function(vendaId) {
+async function marcarComoFraude(idVenda) {
     try {
-        const { data: venda, error } = await supabaseClient
+        const { error } = await supabase
+            .from('vendas_ml')
+            .update({ 
+                status_sistema: 'fraude',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id_venda_ml', idVenda);
+        
+        if (error) throw error;
+        
+        mostrarToast('Venda marcada como fraude!', 'warning');
+        await carregarVendasDoBanco();
+        
+    } catch (error) {
+        console.error('❌ Erro ao marcar venda como fraude:', error);
+        mostrarToast('Erro ao marcar venda como fraude', 'error');
+    }
+}
+
+async function verDetalhesVenda(idVenda) {
+    try {
+        const { data: venda, error } = await supabase
             .from('vendas_ml')
             .select('*')
-            .eq('id', vendaId)
+            .eq('id_venda_ml', idVenda)
             .single();
         
         if (error) throw error;
@@ -364,373 +525,185 @@ window.verDetalhesVenda = async function(vendaId) {
         abrirModalDetalhesVenda(venda);
         
     } catch (error) {
-        console.error('❌ Erro ao buscar detalhes da venda:', error);
-        showToast('Erro ao carregar detalhes da venda', 'error');
+        console.error('❌ Erro ao carregar detalhes da venda:', error);
+        mostrarToast('Erro ao carregar detalhes da venda', 'error');
     }
-};
+}
 
-window.conferirVenda = async function(orderId) {
-    const btn = document.querySelector(`button[onclick*="conferirVenda('${orderId}')"]`);
-    const row = btn.closest('tr');
-    const inputFisico = row.querySelector('.input-estoque-fisico');
-    const estoqueFisicoValor = inputFisico ? inputFisico.value : "";
-
-    if (estoqueFisicoValor === "") {
-        alert("⚠️ Digite o estoque físico antes de conferir!");
-        inputFisico.focus();
-        return;
-    }
-
-    try {
-        const { error } = await supabaseClient
-            .from('vendas_ml')
-            .update({ 
-                conferido: true, 
-                estoque_fisico: Number(estoqueFisicoValor),
-                data_conferencia: new Date().toISOString()
-            })
-            .eq('order_id', String(orderId));
-
-        if (error) throw error;
-
-        alert("✅ Conferência salva!");
-        await carregarVendasDashboard(dashboardState.filtroAtual);
-
-    } catch (err) {
-        console.error(err);
-        alert("Erro ao salvar conferência.");
-    }
-};
-
-window.imprimirVenda = function(vendaId) {
-    // Implementar impressão da venda
-    showToast('Funcionalidade de impressão em desenvolvimento', 'info');
-};
-
-// ===== MODAL DE DETALHES =====
 function abrirModalDetalhesVenda(venda) {
-    const modal = document.createElement('div');
-    modal.className = 'modal';
-    modal.style.cssText = `
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(0,0,0,0.5);
-        z-index: 2000;
-    `;
+    const modal = document.getElementById('vendaDetalhesModal');
+    const content = document.getElementById('vendaDetalhesContent');
+    const codigo = document.getElementById('vendaCodigo');
     
-    const itemsHTML = (venda.items_json || []).map(item => `
-        <tr>
-            <td>${item.sku || '-'}</td>
-            <td>${item.title}</td>
-            <td>${item.quantity}</td>
-            <td>R$ ${item.unit_price?.toFixed(2)}</td>
-            <td>R$ ${(item.unit_price * item.quantity).toFixed(2)}</td>
-        </tr>
-    `).join('');
+    if (!modal || !content) return;
     
-    modal.innerHTML = `
-        <div class="modal-content" style="max-width: 800px; max-height: 90vh; overflow-y: auto;">
-            <div style="background: linear-gradient(135deg, #28a745 0%, #218838 100%); color: white; padding: 20px 30px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <h3 style="margin: 0;">
-                            <i class="fas fa-receipt"></i> Detalhes da Venda
-                        </h3>
-                        <p style="margin: 5px 0 0 0; opacity: 0.9;">
-                            #${venda.order_id}
-                        </p>
-                    </div>
-                    <button onclick="this.parentElement.parentElement.parentElement.remove()" 
-                            style="background: rgba(255,255,255,0.2); border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; color: white; font-size: 20px;">
-                        &times;
-                    </button>
+    // Formatar dados - usar created_at
+    const dataVenda = venda.created_at ? new Date(venda.created_at) : new Date();
+    const dataFormatada = dataVenda.toLocaleDateString('pt-BR');
+    const horaFormatada = dataVenda.toLocaleTimeString('pt-BR');
+    
+    let statusBadge = '';
+    if (venda.status_sistema === 'nova') {
+        statusBadge = '<span class="badge badge-nova">NOVA</span>';
+    } else if (venda.status_sistema === 'verificada') {
+        statusBadge = '<span class="badge badge-verificada">VERIFICADA</span>';
+    } else if (venda.status_sistema === 'fraude') {
+        statusBadge = '<span class="badge badge-fraude">FRAUDE</span>';
+    }
+    
+    content.innerHTML = `
+        <div class="info-grid">
+            <div class="info-card">
+                <h4><i class="fas fa-info-circle"></i> Informações da Venda</h4>
+                <div class="info-item">
+                    <div class="info-label">ID da Venda:</div>
+                    <div class="info-value">${venda.id_venda_ml || 'N/A'}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Status:</div>
+                    <div class="info-value">${statusBadge}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Data e Hora:</div>
+                    <div class="info-value">${dataFormatada} às ${horaFormatada}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Título:</div>
+                    <div class="info-value">${venda.titulo || 'Sem título'}</div>
                 </div>
             </div>
             
-            <div style="padding: 20px;">
-                <div class="row mb-4">
-                    <div class="col-md-6">
-                        <div class="info-card">
-                            <h4><i class="fas fa-user"></i> Informações do Comprador</h4>
-                            <p><strong>ID:</strong> ${venda.buyer_id || '-'}</p>
-                            <p><strong>Nickname:</strong> ${venda.buyer_nickname || '-'}</p>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="info-card">
-                            <h4><i class="fas fa-calendar"></i> Datas</h4>
-                            <p><strong>Criação:</strong> ${new Date(venda.date_created).toLocaleString('pt-BR')}</p>
-                            <p><strong>Fechamento:</strong> ${venda.date_closed ? new Date(venda.date_closed).toLocaleString('pt-BR') : '-'}</p>
-                            ${venda.data_conferencia ? `
-                            <p><strong>Conferido em:</strong> ${new Date(venda.data_conferencia).toLocaleString('pt-BR')}</p>
-                            <p><strong>Conferido por:</strong> ${venda.conferido_por}</p>
-                            ` : ''}
-                        </div>
-                    </div>
+            <div class="info-card">
+                <h4><i class="fas fa-user"></i> Informações do Cliente</h4>
+                <div class="info-item">
+                    <div class="info-label">Cliente:</div>
+                    <div class="info-value">${venda.cliente || 'Cliente não identificado'}</div>
                 </div>
-                
-                <div class="info-card mb-4">
-                    <h4><i class="fas fa-box"></i> Itens da Venda</h4>
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>SKU</th>
-                                    <th>Produto</th>
-                                    <th>Quantidade</th>
-                                    <th>Preço Unitário</th>
-                                    <th>Subtotal</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${itemsHTML}
-                            </tbody>
-                            <tfoot>
-                                <tr style="background: #f8f9fa;">
-                                    <td colspan="4" style="text-align: right; font-weight: bold;">Total:</td>
-                                    <td style="font-weight: bold; color: #28a745;">
-                                        R$ ${venda.total_amount?.toFixed(2)}
-                                    </td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
+                <div class="info-item">
+                    <div class="info-label">SKU:</div>
+                    <div class="info-value"><span class="badge badge-info">${venda.sku || 'SEM_SKU'}</span></div>
                 </div>
-                
-                ${venda.shipping_info ? `
-                <div class="info-card mb-4">
-                    <h4><i class="fas fa-truck"></i> Informações de Envio</h4>
-                    <p><strong>ID do Envio:</strong> ${venda.shipping_info.shipping_id}</p>
-                    <p><strong>Modalidade:</strong> ${venda.shipping_info.shipping_mode}</p>
-                    <p><strong>Status:</strong> ${venda.shipping_info.shipping_status}</p>
-                </div>
-                ` : ''}
-                
-                ${venda.tags && venda.tags.length > 0 ? `
-                <div class="info-card">
-                    <h4><i class="fas fa-tags"></i> Tags</h4>
-                    <div>
-                        ${venda.tags.map(tag => `<span class="badge badge-info mr-2">${tag}</span>`).join('')}
-                    </div>
-                </div>
-                ` : ''}
             </div>
             
-            <div style="background: #f8f9fa; padding: 15px 20px; border-top: 1px solid #dee2e6; text-align: center;">
-                <button class="btn btn-primary" onclick="imprimirDetalhesVenda('${venda.id}')">
-                    <i class="fas fa-print"></i> Imprimir
-                </button>
-                ${!venda.conferido ? `
-                <button class="btn btn-success" onclick="conferirVenda('${venda.id}'); this.parentElement.parentElement.parentElement.remove();">
-                    <i class="fas fa-check"></i> Marcar como Conferida
-                </button>
-                ` : ''}
-                <button class="btn btn-secondary" onclick="this.parentElement.parentElement.parentElement.remove()">
-                    <i class="fas fa-times"></i> Fechar
-                </button>
+            <div class="info-card">
+                <h4><i class="fas fa-money-bill-wave"></i> Valores</h4>
+                <div class="info-item">
+                    <div class="info-label">Quantidade:</div>
+                    <div class="info-value">${venda.quantidade || 1} unidade(s)</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Valor Unitário:</div>
+                    <div class="info-value">R$ ${(venda.valor_unitario || 0).toFixed(2)}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Valor Total:</div>
+                    <div class="info-value" style="font-weight: 700; color: #28a745; font-size: 18px;">
+                        R$ ${(venda.valor_total || 0).toFixed(2)}
+                    </div>
+                </div>
             </div>
         </div>
+        
+        ${venda.link ? `
+        <div class="info-card">
+            <h4><i class="fas fa-link"></i> Links</h4>
+            <div class="info-item">
+                <div class="info-label">Link do Anúncio:</div>
+                <div class="info-value">
+                    <a href="${venda.link}" target="_blank" class="btn btn-sm btn-primary">
+                        <i class="fas fa-external-link-alt"></i> Abrir no ML
+                    </a>
+                </div>
+            </div>
+        </div>
+        ` : ''}
     `;
     
-    document.body.appendChild(modal);
-    
-    // Fechar com ESC
-    const closeOnEsc = (e) => {
-        if (e.key === 'Escape') {
-            modal.remove();
-            document.removeEventListener('keydown', closeOnEsc);
-        }
-    };
-    document.addEventListener('keydown', closeOnEsc);
+    if (codigo) codigo.textContent = venda.id_venda_ml;
+    modal.classList.remove('hidden');
 }
 
-window.abrirModalEdicaoML = function(itemId, titulo, preco, estoque, listingType) {
-    document.getElementById('editItemId').value = itemId;
-    document.getElementById('editTituloItem').textContent = titulo;
-    document.getElementById('editPreco').value = preco;
-    document.getElementById('editEstoque').value = estoque;
-    document.getElementById('editListingType').value = listingType || 'gold_special';
+function fecharDetalhesVenda() {
+    const modal = document.getElementById('vendaDetalhesModal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// Iniciar auto-sincronização
+function iniciarAutoSincronizacao() {
+    setInterval(async () => {
+        if (document.getElementById('salesSystem') && 
+            !document.getElementById('salesSystem').classList.contains('hidden')) {
+            console.log('🔄 Auto-sincronização de vendas...');
+            await sincronizarVendasML();
+        }
+    }, 30 * 60 * 1000);
+}
+
+// Funções para exportar
+function exportarVendasExcel() {
+    if (vendasML.length === 0) {
+        mostrarToast('Nenhuma venda para exportar', 'warning');
+        return;
+    }
     
-    document.getElementById('modalEdicaoML').style.display = 'flex';
-};
-
-window.salvarAlteracoesML = async function() {
-    const itemId = document.getElementById('editItemId').value;
-    const price = parseFloat(document.getElementById('editPreco').value);
-    const stock = parseInt(document.getElementById('editEstoque').value);
-    const type = document.getElementById('editListingType').value;
-
-    const btn = document.querySelector('#modalEdicaoML .btn-primary');
-    btn.disabled = true;
-    btn.innerText = "Salvando...";
-
     try {
-        // Usamos o seu Worker que já está definido no ml_sales_sync.js
-        const urlWorker = window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+        const dados = vendasML.map(venda => ({
+            'ID Venda': venda.id_venda_ml,
+            'Data': venda.created_at ? new Date(venda.created_at).toLocaleDateString('pt-BR') : '',
+            'Hora': venda.created_at ? new Date(venda.created_at).toLocaleTimeString('pt-BR') : '',
+            'Cliente': venda.cliente,
+            'SKU': venda.sku,
+            'Quantidade': venda.quantidade,
+            'Valor Unitário': venda.valor_unitario,
+            'Valor Total': venda.valor_total,
+            'Status': venda.status_sistema,
+            'Título': venda.titulo
+        }));
         
-        const response = await fetch(`${urlWorker}/update-item`, {
-            method: 'POST', // O Worker recebe POST e repassa como PUT pro ML
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                itemId: itemId,
-                price: price,
-                available_quantity: stock,
-                listing_type_id: type
-            })
-        });
-
-        const resultado = await response.json();
-
-        if (response.ok && resultado.success) {
-            alert("✅ Anúncio atualizado com sucesso!");
-            document.getElementById('modalEdicaoML').style.display = 'none';
-            // Recarrega a tabela
-            if (typeof carregarVendasDashboard === 'function') {
-                carregarVendasDashboard(dashboardState.filtroAtual);
-            }
-        } else {
-            alert("❌ Erro ao atualizar: " + (resultado.error || "Verifique o log do Worker"));
-        }
+        const ws = XLSX.utils.json_to_sheet(dados);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Vendas ML");
+        
+        const nomeArquivo = `vendas_ml_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, nomeArquivo);
+        
+        mostrarToast('Exportação realizada com sucesso!', 'success');
+        
     } catch (error) {
-        console.error("Erro na chamada:", error);
-        alert("Erro ao conectar com o Worker. Verifique se ele está online.");
-    } finally {
-        btn.disabled = false;
-        btn.innerText = "Salvar no Mercado Livre";
-    }
-};
-
-// ===== INICIALIZAR DASHBOARD =====
-function inicializarDashboardVendas() {
-    console.log('📊 Inicializando dashboard de vendas...');
-    
-    // Carregar vendas ao abrir o sistema de vendas
-    if (window.abrirSistemaVendas) {
-        const originalAbrirSistemaVendas = window.abrirSistemaVendas;
-        window.abrirSistemaVendas = async function() {
-            await originalAbrirSistemaVendas.apply(this, arguments);
-            await carregarVendasDashboard('hoje');
-        };
-    }
-    
-    // Adicionar botões de filtro
-    adicionarFiltrosDashboard();
-    
-    console.log('✅ Dashboard de vendas inicializado!');
-}
-
-// ===== ADICIONAR FILTROS =====
-function adicionarFiltrosDashboard() {
-    const salesSystem = document.getElementById('salesSystem');
-    if (!salesSystem) return;
-    
-    // Adicionar botões de filtro ao cabeçalho da tabela
-    const tableHeader = salesSystem.querySelector('.card-header');
-    if (tableHeader) {
-        const filterButtons = document.createElement('div');
-        filterButtons.className = 'd-flex flex-wrap gap-2 mt-2';
-        filterButtons.innerHTML = `
-            <button class="btn btn-sm btn-primary" onclick="filtrarVendas('hoje')">
-                Hoje
-            </button>
-            <button class="btn btn-sm btn-outline-primary" onclick="filtrarVendas('ontem')">
-                Ontem
-            </button>
-            <button class="btn btn-sm btn-outline-primary" onclick="filtrarVendas('semana')">
-                Esta Semana
-            </button>
-            <button class="btn btn-sm btn-outline-primary" onclick="filtrarVendas('mes')">
-                Este Mês
-            </button>
-            <button class="btn btn-sm btn-outline-warning" onclick="filtrarVendas('pendentes')">
-                Pendentes
-            </button>
-        `;
-        
-        tableHeader.appendChild(filterButtons);
+        console.error('❌ Erro na exportação:', error);
+        mostrarToast('Erro ao exportar vendas', 'error');
     }
 }
 
-// ===== FILTRAR VENDAS =====
-window.filtrarVendas = async function(filtro) {
-    await carregarVendasDashboard(filtro);
-    
-    // Atualizar botões ativos
-    document.querySelectorAll('#salesSystem .btn-sm').forEach(btn => {
-        btn.classList.remove('active');
-        btn.classList.remove('btn-primary');
-        btn.classList.add('btn-outline-primary');
-    });
-    
-    const activeButton = document.querySelector(`#salesSystem .btn-sm[onclick*="${filtro}"]`);
-    if (activeButton) {
-        activeButton.classList.add('active');
-        activeButton.classList.add('btn-primary');
-        activeButton.classList.remove('btn-outline-primary');
-    }
-};
-
-// ===== ATUALIZAR ESTADO DE CARREGAMENTO =====
-function atualizarEstadoCarregamento() {
-    const container = document.getElementById('salesDashboardContent');
-    if (!container) return;
-    
-    if (dashboardState.carregando) {
-        const loadingDiv = container.querySelector('.loading-overlay');
-        if (!loadingDiv) {
-            const overlay = document.createElement('div');
-            overlay.className = 'loading-overlay';
-            overlay.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                right: 0;
-                bottom: 0;
-                background: rgba(255,255,255,0.8);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                z-index: 10;
-            `;
-            overlay.innerHTML = `
-                <div class="text-center">
-                    <div class="spinner" style="width: 40px; height: 40px; border-width: 4px;"></div>
-                    <p class="mt-2">Carregando vendas...</p>
-                </div>
-            `;
-            container.style.position = 'relative';
-            container.appendChild(overlay);
-        }
+// Helper function para mostrar toast
+function mostrarToast(mensagem, tipo = 'info') {
+    if (window.showToast) {
+        window.showToast(mensagem, tipo);
     } else {
-        const loadingDiv = container.querySelector('.loading-overlay');
-        if (loadingDiv) {
-            loadingDiv.remove();
-        }
+        console.log(`${tipo.toUpperCase()}: ${mensagem}`);
+        // Fallback simples
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${tipo}`;
+        toast.innerHTML = `<i class="fas fa-${tipo === 'success' ? 'check' : tipo === 'error' ? 'times' : 'info'}-circle"></i> ${mensagem}`;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => toast.remove(), 3000);
     }
 }
 
-// ===== EXPORTAR FUNÇÕES =====
-window.carregarVendasDashboard = carregarVendasDashboard;
-window.inicializarDashboardVendas = inicializarDashboardVendas;
-
-console.log('✅ Dashboard de vendas carregado!');
-
-// ===== INICIALIZAR QUANDO PRONTO =====
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            if (window.supabaseClient) {
-                inicializarDashboardVendas();
-            }
-        }, 2000);
-    });
-} else {
-    setTimeout(() => {
-        if (window.supabaseClient) {
-            inicializarDashboardVendas();
-        }
-    }, 2000);
-}
+// Tornar funções globais
+window.filtrarVendas = filtrarVendas;
+window.filtrarPorStatus = filtrarPorStatus;
+window.paginarVendas = function(direcao) {
+    if (direcao === 'anterior' && paginaAtual > 1) {
+        paginaAtual--;
+    } else if (direcao === 'proxima') {
+        paginaAtual++;
+    }
+    aplicarFiltroAtual();
+};
+window.verDetalhesVenda = verDetalhesVenda;
+window.verificarVenda = verificarVenda;
+window.marcarComoFraude = marcarComoFraude;
+window.fecharDetalhesVenda = fecharDetalhesVenda;
+window.exportarVendasExcel = exportarVendasExcel;
