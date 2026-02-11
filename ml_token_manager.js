@@ -12,7 +12,7 @@ const ML_CONFIG = {
     CLIENT_ID: '5767896809769647',
     CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
     REDIRECT_URI: 'https://homework-fees-saving-beliefs.trycloudflare.com/callback',
-    INITIAL_CODE: 'TG-698c6e4b4305710001d4a3af-415176739', // SEU CÓDIGO ATUAL
+    INITIAL_CODE: 'TG-698c7039a7776900014c4ae9-415176739', // SEU CÓDIGO ATUAL
     USER_ID: '415176739',
     WORKER_URL: 'https://purple-bonus-3b1c.andmiotto1998.workers.dev' // ADICIONE ESTA LINHA
 };
@@ -183,7 +183,7 @@ async function testMLConnection(token = null) {
 }
 
 // ===== FUNÇÃO PARA BUSCAR VENDAS VIA WORKER =====
-async function fetchMLSalesViaWorker(token, limit = 20) {
+async function fetchMLSalesViaWorker(token, limit = 50) {
     try {
         const now = new Date();
         const threeDaysAgo = new Date(now);
@@ -210,51 +210,73 @@ async function fetchMLSalesViaWorker(token, limit = 20) {
 // NO ml_token_manager.js - Substitua a função autoManageMLToken:
 
 async function autoManageMLToken() {
-  console.log('🔄 Gerenciamento automático de token iniciado...');
-  
-  try {
-    // 1. Verificar se já tem token salvo
-    const accessToken = localStorage.getItem('ml_access_token');
-    const refreshToken = localStorage.getItem('ml_refresh_token');
-    const tokenExpiry = localStorage.getItem('ml_token_expiry');
+    console.log('🔄 Gerenciamento automático de token iniciado...');
     
-    if (accessToken && refreshToken && tokenExpiry) {
-      const expiresIn = parseInt(tokenExpiry) - Date.now();
-      
-      if (expiresIn > 300000) { // > 5 minutos
-        console.log(`✅ Token válido por mais ${Math.round(expiresIn/60000)} minutos`);
+    try {
+        // 1. TENTAR CARREGAR DO SUPABASE PRIMEIRO
+        const { data: tokenDB, error } = await supabaseClient
+            .from('mercadolivre_tokens')
+            .select('*')
+            .eq('user_id', ML_CONFIG.USER_ID)
+            .single();
         
-        mlTokenStatus = {
-          access_token: accessToken,
-          refresh_token: refreshToken,
-          expires_at: parseInt(tokenExpiry),
-          is_valid: true,
-          last_update: new Date().toISOString(),
-          user_info: mlTokenStatus.user_info
-        };
-        
-        updateTokenStatusUI();
-        return accessToken;
-      }
-      
-      if (expiresIn > 0) { // > 0 mas < 5 minutos
-        console.log(`🔄 Token expira em ${Math.round(expiresIn/60000)} minutos, renovando...`);
-        const newToken = await renewTokenWithRefreshToken(refreshToken);
-        if (newToken) {
-          return newToken;
+        if (tokenDB && tokenDB.refresh_token) {
+            console.log('📦 Token carregado do Supabase');
+            
+            // Verificar se ainda é válido
+            const expiresIn = tokenDB.expires_at - Date.now();
+            
+            if (expiresIn > 300000) { // > 5 minutos
+                console.log(`✅ Token válido por mais ${Math.round(expiresIn/60000)} minutos`);
+                
+                // Atualizar localStorage
+                localStorage.setItem('ml_access_token', tokenDB.access_token);
+                localStorage.setItem('ml_refresh_token', tokenDB.refresh_token);
+                localStorage.setItem('ml_token_expiry', tokenDB.expires_at.toString());
+                
+                mlTokenStatus = {
+                    access_token: tokenDB.access_token,
+                    refresh_token: tokenDB.refresh_token,
+                    expires_at: tokenDB.expires_at,
+                    is_valid: true,
+                    last_update: new Date().toISOString()
+                };
+                
+                updateTokenStatusUI();
+                return tokenDB.access_token;
+            }
+            
+            // Token expirado, tenta renovar
+            if (expiresIn > 0 || expiresIn <= 300000) {
+                console.log('🔄 Token próximo de expirar, renovando...');
+                const newToken = await renewTokenWithRefreshToken(tokenDB.refresh_token);
+                if (newToken) {
+                    return newToken;
+                }
+            }
         }
-      }
+        
+        // 2. Fallback para localStorage
+        const accessToken = localStorage.getItem('ml_access_token');
+        const refreshToken = localStorage.getItem('ml_refresh_token');
+        const tokenExpiry = localStorage.getItem('ml_token_expiry');
+        
+        if (accessToken && refreshToken && tokenExpiry) {
+            const expiresIn = parseInt(tokenExpiry) - Date.now();
+            if (expiresIn > 300000) {
+                console.log(`✅ Token localStorage válido por mais ${Math.round(expiresIn/60000)} minutos`);
+                return accessToken;
+            }
+        }
+        
+        // 3. Se não tem token válido, obter NOVO
+        console.log('🔄 Nenhum token válido encontrado, obtendo novo...');
+        return await getNewTokenWithCode();
+        
+    } catch (error) {
+        console.error('❌ Erro no autoManageMLToken:', error);
+        return null;
     }
-    
-    // 2. Se não tem token válido, obter NOVO token DIRETO
-    console.log('🔄 Nenhum token válido encontrado, obtendo novo DIRETAMENTE...');
-    return await getTokenDiretoDaAPI();
-    
-  } catch (error) {
-    console.error('❌ Erro no autoManageMLToken:', error);
-    showTokenError('ERRO NO SISTEMA');
-    return null;
-  }
 }
 
 // ADICIONE esta função:
@@ -528,7 +550,7 @@ window.verificarTokenML = async function() {
 // ============================================
 
 // ml_token_manager.js - Substitua a função buscarVendasML
-async function buscarVendasML(limit = 20) {
+async function buscarVendasML(limit = 50) {
     try {
         console.log('🛒 Buscando vendas do Mercado Livre...');
         
@@ -1084,6 +1106,65 @@ function iniciarRenovacaoAutomatica() {
     setInterval(() => {
         sincronizarVendasComSupabase();
     }, 1800000); // 30 minutos
+}
+
+// ADICIONE ESTA FUNÇÃO EM ml_token_manager.js
+async function salvarTokenNoSupabase(tokenData) {
+    try {
+        console.log('💾 Salvando token no Supabase...');
+        
+        // Primeiro, verificar se a tabela existe
+        const { data: tableCheck, error: tableError } = await supabaseClient
+            .from('mercadolivre_tokens')
+            .select('count', { count: 'exact', head: true });
+        
+        if (tableError && tableError.code === '42P01') {
+            console.log('📦 Tabela mercadolivre_tokens não existe. Criando...');
+            
+            // Criar a tabela
+            const createTableSQL = `
+                CREATE TABLE IF NOT EXISTS mercadolivre_tokens (
+                    id SERIAL PRIMARY KEY,
+                    user_id TEXT NOT NULL UNIQUE,
+                    access_token TEXT NOT NULL,
+                    refresh_token TEXT NOT NULL,
+                    expires_at BIGINT NOT NULL,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                );
+            `;
+            
+            const { error: createError } = await supabaseClient.rpc('exec_sql', { sql: createTableSQL });
+            
+            if (createError) {
+                console.warn('⚠️ Não foi possível criar tabela via RPC:', createError);
+                // Fallback: usar localStorage apenas
+                return false;
+            }
+        }
+        
+        // Salvar/Atualizar token
+        const { error } = await supabaseClient
+            .from('mercadolivre_tokens')
+            .upsert({
+                user_id: ML_CONFIG.USER_ID,
+                access_token: tokenData.access_token,
+                refresh_token: tokenData.refresh_token,
+                expires_at: Date.now() + (tokenData.expires_in * 1000),
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'user_id' });
+        
+        if (error) {
+            console.error('❌ Erro ao salvar token no Supabase:', error);
+            return false;
+        }
+        
+        console.log('✅ Token salvo no Supabase com sucesso!');
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Erro ao salvar token:', error);
+        return false;
+    }
 }
 
 // ============================================
