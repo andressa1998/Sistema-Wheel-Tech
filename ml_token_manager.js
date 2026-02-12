@@ -160,6 +160,89 @@ async function renewTokenWithRefreshToken(refreshToken) {
     }
 }
 
+// ===== FUNÇÃO PARA OBTER TOKEN VÁLIDO - ADICIONAR NO ARQUIVO =====
+async function getValidToken() {
+    console.log('🔑 Obtendo token válido...');
+    
+    try {
+        // 1. PRIMEIRO: Tentar do mlTokenStatus (memória)
+        if (mlTokenStatus?.access_token && mlTokenStatus?.expires_at) {
+            const expiresIn = mlTokenStatus.expires_at - Date.now();
+            if (expiresIn > 60000) { // Mais de 1 minuto
+                console.log(`✅ Token da memória válido por mais ${Math.round(expiresIn/60000)} minutos`);
+                return {
+                    access_token: mlTokenStatus.access_token,
+                    refresh_token: mlTokenStatus.refresh_token,
+                    expires_at: mlTokenStatus.expires_at
+                };
+            }
+        }
+        
+        // 2. SEGUNDO: Tentar do localStorage
+        const accessToken = localStorage.getItem('ml_access_token');
+        const refreshToken = localStorage.getItem('ml_refresh_token');
+        const tokenExpiry = localStorage.getItem('ml_token_expiry');
+        
+        if (accessToken && refreshToken && tokenExpiry) {
+            const expiresIn = parseInt(tokenExpiry) - Date.now();
+            
+            if (expiresIn > 60000) { // Mais de 1 minuto
+                console.log(`✅ Token localStorage válido por mais ${Math.round(expiresIn/60000)} minutos`);
+                
+                // Atualizar mlTokenStatus
+                mlTokenStatus = {
+                    access_token: accessToken,
+                    refresh_token: refreshToken,
+                    expires_at: parseInt(tokenExpiry),
+                    is_valid: true,
+                    last_update: new Date().toISOString()
+                };
+                
+                return {
+                    access_token: accessToken,
+                    refresh_token: refreshToken,
+                    expires_at: parseInt(tokenExpiry)
+                };
+            }
+            
+            // Token expirado ou próximo de expirar - RENOVAR
+            console.log('🔄 Token expirado ou próximo de expirar. Renovando...');
+            const newTokenData = await renewTokenWithRefreshToken(refreshToken);
+            
+            if (newTokenData && newTokenData.access_token) {
+                return {
+                    access_token: newTokenData.access_token,
+                    refresh_token: newTokenData.refresh_token || refreshToken,
+                    expires_at: Date.now() + ((newTokenData.expires_in || 21600) * 1000)
+                };
+            }
+        }
+        
+        // 3. TERCEIRO: Tentar autoManageMLToken para obter novo token
+        console.log('🔄 Nenhum token válido, executando autoManageMLToken...');
+        const token = await autoManageMLToken();
+        
+        if (token) {
+            const newAccessToken = localStorage.getItem('ml_access_token');
+            const newRefreshToken = localStorage.getItem('ml_refresh_token');
+            const newExpiry = localStorage.getItem('ml_token_expiry');
+            
+            return {
+                access_token: newAccessToken || token,
+                refresh_token: newRefreshToken,
+                expires_at: parseInt(newExpiry || '0')
+            };
+        }
+        
+        console.error('❌ Não foi possível obter token válido');
+        return null;
+        
+    } catch (error) {
+        console.error('❌ Erro em getValidToken:', error);
+        return null;
+    }
+}
+
 // ===== FUNÇÃO PARA AGENDAR RENOVAÇÃO =====
 function scheduleTokenRenewal(milliseconds) {
     // Renovar 1 hora antes de expirar
@@ -637,17 +720,19 @@ window.verificarTokenML = async function() {
 // ml_token_manager.js - Substitua a função buscarVendasML
 // ml_token_manager.js - Função buscarVendasML MODIFICADA
 // ===== FUNÇÃO CORRIGIDA - buscarVendasML COM LIMITE 50 =====
+// ===== FUNÇÃO PARA BUSCAR VENDAS - CORRIGIDA =====
 async function buscarVendasML(limit = 50) {
     try {
         console.log('🛒 Buscando vendas do Mercado Livre com detalhes...');
         
-        // CORREÇÃO: Garantir limite máximo de 50 (API ML aceita no máximo 51)
+        // CORREÇÃO: Garantir limite máximo de 50
         const limiteSeguro = Math.min(limit, 50);
-        console.log(`📊 Limite seguro: ${limiteSeguro} (original: ${limit})`);
         
+        // CORREÇÃO: OBTER TOKEN VÁLIDO
         const tokenData = await getValidToken();
-        if (!tokenData?.access_token) {
-            console.error('❌ Token de acesso não disponível');
+        
+        if (!tokenData) {
+            console.error('❌ Não foi possível obter token válido');
             return {
                 success: false,
                 error: 'Token de acesso não disponível',
@@ -655,15 +740,24 @@ async function buscarVendasML(limit = 50) {
             };
         }
         
+        if (!tokenData.access_token) {
+            console.error('❌ Token sem access_token:', tokenData);
+            return {
+                success: false,
+                error: 'Token inválido',
+                vendas: []
+            };
+        }
+        
+        console.log(`✅ Token obtido: ${tokenData.access_token.substring(0, 20)}...`);
+        
         // Buscar vendas pagas - ÚLTIMOS 30 DIAS
         const agora = new Date();
         const trintaDiasAtras = new Date(agora);
         trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
         
-        // CORREÇÃO: Formato de data correto
         const dataFormatada = trintaDiasAtras.toISOString();
         
-        // CORREÇÃO: Usar limite seguro
         const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=${limiteSeguro}`;
         
         console.log('📡 URL da API:', urlML);
@@ -671,11 +765,26 @@ async function buscarVendasML(limit = 50) {
         const encodedUrl = encodeURIComponent(urlML);
         const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(tokenData.access_token)}`;
         
+        console.log('🔄 Chamando proxy...');
         const response = await fetch(proxyUrl);
         
         if (!response.ok) {
             const errorText = await response.text();
             console.error('❌ Erro na resposta do proxy:', response.status, errorText);
+            
+            // Se for 401, token pode estar expirado - tentar renovar
+            if (response.status === 401) {
+                console.log('🔄 Token 401, tentando renovar...');
+                const refreshToken = localStorage.getItem('ml_refresh_token');
+                if (refreshToken) {
+                    const newToken = await renewTokenWithRefreshToken(refreshToken);
+                    if (newToken) {
+                        console.log('✅ Token renovado, tentando novamente...');
+                        return await buscarVendasML(limit); // RECURSÃO
+                    }
+                }
+            }
+            
             return {
                 success: false,
                 error: `Erro ${response.status}: ${errorText}`,
@@ -699,9 +808,10 @@ async function buscarVendasML(limit = 50) {
         }
         
         // Processar vendas COM DETALHES
+        console.log('🔍 Processando detalhes de estoque e envio...');
         const vendasProcessadas = await processarVendasComDetalhesESTOQUE(result.results, tokenData.access_token);
         
-        console.log(`✅ ${vendasProcessadas.length} vendas processadas do ML`);
+        console.log(`✅ ${vendasProcessadas.length} vendas processadas com detalhes`);
         
         return {
             success: true,
@@ -1637,6 +1747,8 @@ window.updateTokenStatusUI = updateTokenStatusUI;
 window.fetchMLSalesViaWorker = fetchMLSalesViaWorker;
 window.mlTokenStatus = mlTokenStatus;
 window.testMLConnection = testMLConnection;
+window.getValidToken = getValidToken;
+window.buscarVendasML = buscarVendasML;
 
 console.log('✅ Sistema de Token ML carregado e pronto!');
 
