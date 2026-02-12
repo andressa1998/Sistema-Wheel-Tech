@@ -225,21 +225,32 @@ async function renewTokenWithRefreshToken(refreshToken) {
 }
 
 // ===== FUNÇÃO PARA OBTER TOKEN VÁLIDO - ADICIONAR NO ARQUIVO =====
+// ===== FUNÇÃO PARA OBTER TOKEN VÁLIDO - CORRIGIDA =====
 async function getValidToken() {
     console.log('🔑 Obtendo token válido...');
     
     try {
         // 1. PRIMEIRO: Tentar do mlTokenStatus (memória)
-        if (mlTokenStatus?.access_token && mlTokenStatus?.expires_at) {
-            const expiresIn = mlTokenStatus.expires_at - Date.now();
+        if (mlTokenStatus?.access_token) {
+            const token = mlTokenStatus.access_token;
+            const expiresAt = mlTokenStatus.expires_at || 0;
+            const expiresIn = expiresAt - Date.now();
+            
+            console.log(`📌 mlTokenStatus.access_token: ${token.substring(0, 20)}...`);
+            
             if (expiresIn > 60000) { // Mais de 1 minuto
                 console.log(`✅ Token da memória válido por mais ${Math.round(expiresIn/60000)} minutos`);
                 return {
-                    access_token: mlTokenStatus.access_token,
+                    access_token: token,
                     refresh_token: mlTokenStatus.refresh_token,
-                    expires_at: mlTokenStatus.expires_at
+                    expires_at: expiresAt
                 };
+            } else {
+                console.log(`⚠️ Token da memória expirado há ${Math.round(-expiresIn/60000)} minutos`);
             }
+        } else {
+            console.log('❌ mlTokenStatus.access_token está undefined');
+            console.log('📊 mlTokenStatus atual:', mlTokenStatus);
         }
         
         // 2. SEGUNDO: Tentar do localStorage
@@ -247,21 +258,23 @@ async function getValidToken() {
         const refreshToken = localStorage.getItem('ml_refresh_token');
         const tokenExpiry = localStorage.getItem('ml_token_expiry');
         
+        console.log(`📌 localStorage: ${accessToken ? accessToken.substring(0, 20) + '...' : 'SEM TOKEN'}`);
+        
         if (accessToken && refreshToken && tokenExpiry) {
             const expiresIn = parseInt(tokenExpiry) - Date.now();
             
-            if (expiresIn > 60000) { // Mais de 1 minuto
+            // Atualizar mlTokenStatus IMEDIATAMENTE
+            mlTokenStatus = {
+                access_token: accessToken,
+                refresh_token: refreshToken,
+                expires_at: parseInt(tokenExpiry),
+                is_valid: true,
+                last_update: new Date().toISOString(),
+                user_info: mlTokenStatus?.user_info || null
+            };
+            
+            if (expiresIn > 60000) {
                 console.log(`✅ Token localStorage válido por mais ${Math.round(expiresIn/60000)} minutos`);
-                
-                // Atualizar mlTokenStatus
-                mlTokenStatus = {
-                    access_token: accessToken,
-                    refresh_token: refreshToken,
-                    expires_at: parseInt(tokenExpiry),
-                    is_valid: true,
-                    last_update: new Date().toISOString()
-                };
-                
                 return {
                     access_token: accessToken,
                     refresh_token: refreshToken,
@@ -269,20 +282,19 @@ async function getValidToken() {
                 };
             }
             
-            // Token expirado ou próximo de expirar - RENOVAR
-            console.log('🔄 Token expirado ou próximo de expirar. Renovando...');
-            const newTokenData = await renewTokenWithRefreshToken(refreshToken);
-            
-            if (newTokenData && newTokenData.access_token) {
+            // Token expirado - renovar
+            console.log('🔄 Token expirado, renovando...');
+            const newToken = await renewTokenWithRefreshToken(refreshToken);
+            if (newToken) {
                 return {
-                    access_token: newTokenData.access_token,
-                    refresh_token: newTokenData.refresh_token || refreshToken,
-                    expires_at: Date.now() + ((newTokenData.expires_in || 21600) * 1000)
+                    access_token: newToken,
+                    refresh_token: localStorage.getItem('ml_refresh_token'),
+                    expires_at: parseInt(localStorage.getItem('ml_token_expiry') || '0')
                 };
             }
         }
         
-        // 3. TERCEIRO: Tentar autoManageMLToken para obter novo token
+        // 3. TERCEIRO: Tentar autoManageMLToken
         console.log('🔄 Nenhum token válido, executando autoManageMLToken...');
         const token = await autoManageMLToken();
         
@@ -291,10 +303,20 @@ async function getValidToken() {
             const newRefreshToken = localStorage.getItem('ml_refresh_token');
             const newExpiry = localStorage.getItem('ml_token_expiry');
             
-            return {
+            // Atualizar mlTokenStatus
+            mlTokenStatus = {
                 access_token: newAccessToken || token,
                 refresh_token: newRefreshToken,
-                expires_at: parseInt(newExpiry || '0')
+                expires_at: parseInt(newExpiry || '0'),
+                is_valid: true,
+                last_update: new Date().toISOString(),
+                user_info: mlTokenStatus?.user_info || null
+            };
+            
+            return {
+                access_token: mlTokenStatus.access_token,
+                refresh_token: mlTokenStatus.refresh_token,
+                expires_at: mlTokenStatus.expires_at
             };
         }
         
@@ -706,6 +728,7 @@ function showTokenError(message) {
 }
 
 // ===== INICIALIZAR =====
+// ===== INICIALIZAR AUTENTICAÇÃO - CORRIGIDA =====
 async function initializeMLAuth() {
     console.log('🔑 Inicializando autenticação Mercado Livre...');
     
@@ -713,25 +736,37 @@ async function initializeMLAuth() {
     updateTokenStatusUI();
     
     try {
-        const token = await autoManageMLToken();
+        // CARREGAR TOKEN DO LOCALSTORAGE PARA MEMÓRIA
+        const accessToken = localStorage.getItem('ml_access_token');
+        const refreshToken = localStorage.getItem('ml_refresh_token');
+        const tokenExpiry = localStorage.getItem('ml_token_expiry');
         
-        if (token) {
-            // Testar conexão
-            const connectionOK = await testMLConnection(token);
+        if (accessToken && refreshToken && tokenExpiry) {
+            console.log(`📦 Carregando token do localStorage: ${accessToken.substring(0, 20)}...`);
             
-            if (connectionOK) {
-                console.log('✅ Autenticação ML configurada com sucesso!');
-                
-                // Agendar verificação periódica (a cada 5 minutos)
-                setInterval(() => {
-                    autoManageMLToken();
-                }, 5 * 60 * 1000);
-                
-                return token;
+            mlTokenStatus = {
+                access_token: accessToken,
+                refresh_token: refreshToken,
+                expires_at: parseInt(tokenExpiry),
+                is_valid: true,
+                last_update: new Date().toISOString(),
+                user_info: null
+            };
+            
+            updateTokenStatusUI();
+            
+            // Agendar renovação
+            const expiresIn = parseInt(tokenExpiry) - Date.now();
+            if (expiresIn > 0) {
+                scheduleTokenRenewal(expiresIn);
             }
+            
+            return accessToken;
         }
         
-        return null;
+        // Se não tem token, obter novo
+        const token = await autoManageMLToken();
+        return token;
         
     } catch (error) {
         console.error('❌ Erro na inicialização ML:', error);
