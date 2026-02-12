@@ -906,48 +906,48 @@ async function buscarVendasML(limit = 50) {
     }
 }
 
-// NOVA FUNÇÃO: Buscar detalhes completos da venda + estoque + envio
 // ===== FUNÇÃO CORRIGIDA - Busca ESTOQUE e ENVIO corretamente =====
+// ===== FUNÇÃO CORRIGIDA - BASEADA NA DOCUMENTAÇÃO DA API =====
 async function processarVendasComDetalhesESTOQUE(vendas, token) {
     const vendasComDetalhes = [];
     
-    console.log(`🔍 Buscando detalhes completos de ${vendas.length} vendas (ESTOQUE + ENVIO)...`);
+    console.log(`🔍 Buscando detalhes de ${vendas.length} vendas (ESTOQUE + ENVIO)...`);
     
     for (const venda of vendas) {
         try {
-            // 1. Buscar DETALHES COMPLETOS da ordem
-            const urlDetalhes = `https://api.mercadolibre.com/orders/${venda.id}`;
-            const encodedUrl = encodeURIComponent(urlDetalhes);
-            const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(token)}`;
+            // ===== 1. BUSCAR DETALHES DA ORDEM =====
+            // GET https://api.mercadolibre.com/orders/$ORDER_ID
+            const orderResponse = await fetch(`https://api.mercadolibre.com/orders/${venda.id}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
             
-            const response = await fetch(proxyUrl);
-            const detalhes = await response.json();
-            
-            if (!response.ok) {
-                console.warn(`⚠️ Não foi possível obter detalhes da venda ${venda.id}`);
+            if (!orderResponse.ok) {
+                console.warn(`⚠️ Erro ${orderResponse.status} ao buscar order ${venda.id}`);
                 vendasComDetalhes.push(processarVendaBasica(venda));
                 continue;
             }
             
-            // ===== 2. CORREÇÃO: BUSCAR DETALHES DO ENVIO =====
-            let tipoEnvio = 'N/I';
-            let idEnvio = null;
-            let dadosEnvio = null;
+            const orderData = await orderResponse.json();
             
-            if (detalhes.shipping?.id) {
-                idEnvio = detalhes.shipping.id;
+            // ===== 2. BUSCAR TIPO DE ENVIO =====
+            // GET https://api.mercadolibre.com/shipments/$SHIPPING_ID
+            let tipoEnvio = 'N/I';
+            let shippingId = null;
+            
+            if (orderData.shipping?.id) {
+                shippingId = orderData.shipping.id;
                 try {
-                    const urlEnvio = `https://api.mercadolibre.com/shipments/${idEnvio}`;
-                    const encodedEnvioUrl = encodeURIComponent(urlEnvio);
-                    const proxyEnvioUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedEnvioUrl}&token=${encodeURIComponent(token)}`;
+                    const shippingResponse = await fetch(`https://api.mercadolibre.com/shipments/${shippingId}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
                     
-                    const envioResponse = await fetch(proxyEnvioUrl);
-                    if (envioResponse.ok) {
-                        dadosEnvio = await envioResponse.json();
+                    if (shippingResponse.ok) {
+                        const shippingData = await shippingResponse.json();
                         
-                        // MAPEAMENTO CORRETO do tipo de envio
-                        if (dadosEnvio.logistic_type) {
-                            const tipo = dadosEnvio.logistic_type.toLowerCase();
+                        // MAPEAMENTO CORRETO conforme documentação
+                        if (shippingData.logistic_type) {
+                            const tipo = shippingData.logistic_type.toLowerCase();
+                            
                             if (tipo === 'fulfillment') {
                                 tipoEnvio = 'FULL';
                             } else if (tipo === 'drop_off' || tipo === 'xd_drop_off') {
@@ -955,40 +955,38 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                             } else if (tipo === 'self_service' || tipo === 'cross_docking') {
                                 tipoEnvio = 'MERCADO ENVIOS';
                             } else {
-                                tipoEnvio = tipo.toUpperCase();
+                                tipoEnvio = shippingData.logistic_type.toUpperCase();
                             }
                         }
-                        console.log(`📦 Venda ${venda.id} - Tipo Envio: ${tipoEnvio}`);
                     }
                 } catch (error) {
-                    console.warn(`⚠️ Erro ao buscar envio: ${error.message}`);
+                    console.warn(`⚠️ Erro ao buscar shipping ${shippingId}:`, error.message);
                 }
             }
             
-            // ===== 3. CORREÇÃO: BUSCAR ESTOQUE DO PRODUTO =====
+            // ===== 3. BUSCAR ESTOQUE DO ITEM =====
+            // GET https://api.mercadolibre.com/items/$ITEM_ID
             let estoqueAnuncio = 0;
             let itemId = null;
             let variacaoId = null;
-            let variacaoAtributos = [];
             let skuOriginal = null;
+            let variacaoAtributos = [];
             
-            if (detalhes.order_items && detalhes.order_items.length > 0) {
-                const primeiroItem = detalhes.order_items[0];
+            if (orderData.order_items && orderData.order_items.length > 0) {
+                const primeiroItem = orderData.order_items[0];
                 itemId = primeiroItem.item?.id;
                 variacaoId = primeiroItem.item?.variation_id;
                 
                 if (itemId) {
                     try {
-                        // Buscar detalhes do item
-                        const urlItem = `https://api.mercadolibre.com/items/${itemId}`;
-                        const encodedItemUrl = encodeURIComponent(urlItem);
-                        const proxyItemUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedItemUrl}&token=${encodeURIComponent(token)}`;
+                        const itemResponse = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
                         
-                        const itemResponse = await fetch(proxyItemUrl);
                         if (itemResponse.ok) {
                             const itemData = await itemResponse.json();
                             
-                            // PRIORIDADE 1: Se tiver variação, pegar estoque da variação específica
+                            // CASO 1: Com variação
                             if (variacaoId && itemData.variations) {
                                 const variacao = itemData.variations.find(v => String(v.id) === String(variacaoId));
                                 if (variacao) {
@@ -997,33 +995,71 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                                     variacaoAtributos = variacao.attribute_combinations || [];
                                 }
                             } 
-                            // PRIORIDADE 2: Produto sem variação
+                            // CASO 2: Sem variação
                             else {
                                 estoqueAnuncio = itemData.available_quantity || 0;
                                 skuOriginal = itemData.seller_sku || itemData.seller_custom_field;
                             }
-                            
-                            console.log(`📦 Item ${itemId} - Estoque ATUAL: ${estoqueAnuncio} unidades`);
                         }
                     } catch (error) {
-                        console.warn(`⚠️ Erro ao buscar estoque: ${error.message}`);
+                        console.warn(`⚠️ Erro ao buscar item ${itemId}:`, error.message);
                     }
                 }
             }
             
-            // ===== 4. Processar venda com TODOS os dados =====
-            const vendaProcessada = processarVendaCompleta(
-                venda, 
-                detalhes, 
-                tipoEnvio, 
-                idEnvio, 
-                estoqueAnuncio,  // ← ESTE É O ESTOQUE QUE APARECE NA TELA
-                itemId,
-                variacaoId,
-                variacaoAtributos,
-                skuOriginal,
-                dadosEnvio
-            );
+            // ===== 4. PROCESSAR VENDA COM TODOS OS DADOS =====
+            const vendaProcessada = {
+                // ID e identificação
+                id: `ML${venda.id}`,
+                id_venda_ml: `ML${venda.id}`,
+                
+                // Dados do produto
+                titulo: orderData.order_items?.[0]?.item?.title || 'Venda sem título',
+                quantidade: orderData.order_items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 1,
+                
+                // Cliente
+                cliente: orderData.buyer?.nickname || `Cliente ${orderData.buyer?.id || 'N/I'}`,
+                
+                // SKU e Estoque
+                sku: skuOriginal || 
+                      orderData.order_items?.[0]?.item?.seller_custom_field || 
+                      orderData.order_items?.[0]?.item?.seller_sku || 
+                      'SEM_SKU',
+                sku_original: skuOriginal,
+                item_id: itemId,
+                variacao_id: variacaoId,
+                variacao_atributos: variacaoAtributos,
+                
+                // ===== ESTOQUE ATUAL DO ANÚNCIO =====
+                estoque_anuncio: estoqueAnuncio,
+                estoque_fisico: 0,
+                ultima_verificacao_estoque: new Date().toISOString(),
+                
+                // Valores
+                valor_total: orderData.paid_amount || orderData.total_amount || 0,
+                valor_unitario: orderData.order_items?.[0]?.unit_price || 0,
+                
+                // Data
+                data_venda: orderData.date_closed || orderData.date_created || new Date().toISOString(),
+                created_at: orderData.date_closed || orderData.date_created || new Date().toISOString(),
+                
+                // Status
+                status_ml: orderData.status || 'paid',
+                status_sistema: 'nova',
+                
+                // ===== TIPO DE ENVIO =====
+                tipo_envio: tipoEnvio,
+                id_envio: shippingId,
+                
+                // Dados brutos para debug
+                dados_completos: JSON.stringify(orderData)
+            };
+            
+            console.log(`✅ Venda ${venda.id} processada:`, {
+                sku: vendaProcessada.sku,
+                estoque: vendaProcessada.estoque_anuncio,
+                envio: vendaProcessada.tipo_envio
+            });
             
             vendasComDetalhes.push(vendaProcessada);
             
@@ -1031,16 +1067,21 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
             await new Promise(resolve => setTimeout(resolve, 300));
             
         } catch (error) {
-            console.error(`❌ Erro processar venda ${venda.id}:`, error);
+            console.error(`❌ Erro ao processar venda ${venda.id}:`, error);
             vendasComDetalhes.push(processarVendaBasica(venda));
         }
     }
     
-    console.log(`✅ Processamento concluído: ${vendasComDetalhes.length} vendas com ESTOQUE e ENVIO`);
+    console.log(`✅ Total: ${vendasComDetalhes.length} vendas processadas`);
+    console.log('📊 Amostra com estoque:', vendasComDetalhes.slice(0, 2).map(v => ({
+        sku: v.sku,
+        estoque: v.estoque_anuncio,
+        envio: v.tipo_envio
+    })));
+    
     return vendasComDetalhes;
 }
 
-// FUNÇÃO: Processar venda com dados completos
 // ===== FUNÇÃO CORRIGIDA - Retornar ESTOQUE e ENVIO =====
 function processarVendaCompleta(venda, detalhes, tipoEnvio, idEnvio, estoqueAnuncio, itemId, variacaoId, variacaoAtributos, skuOriginal, dadosEnvio) {
     try {
