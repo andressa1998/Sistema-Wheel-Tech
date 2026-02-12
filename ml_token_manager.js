@@ -629,7 +629,7 @@ async function buscarVendasML(limit = 50) {
 // ============================================
 // FUNÇÃO CORRIGIDA - Baseada na DOCUMENTAÇÃO OFICIAL
 // ============================================
-// ===== FUNÇÃO CORRIGIDA - USANDO WORKER (SEM CORS!) =====
+// ===== FUNÇÃO CORRIGIDA - USANDO WORKER OBRIGATORIAMENTE =====
 async function processarVendasComDetalhesESTOQUE(vendas, token) {
     const vendasComDetalhes = [];
     
@@ -641,6 +641,7 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
             const orderUrl = `https://api.mercadolibre.com/orders/${venda.id}`;
             const orderProxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${encodeURIComponent(token)}`;
             
+            console.log(`🔄 Chamando worker para order: ${venda.id}`);
             const orderRes = await fetch(orderProxyUrl);
             
             if (!orderRes.ok) {
@@ -680,7 +681,9 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                             sku = itemData.seller_sku || sku;
                         }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.warn(`⚠️ Erro ao buscar item: ${e.message}`);
+                }
             }
             
             // ===== 4. BUSCAR ENVIO - VIA WORKER =====
@@ -703,7 +706,9 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                             else tipoEnvio = shipData.logistic_type.toUpperCase();
                         }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.warn(`⚠️ Erro ao buscar envio: ${e.message}`);
+                }
             }
             
             // ===== 5. MONTAR OBJETO FINAL =====
