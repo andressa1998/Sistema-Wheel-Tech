@@ -503,6 +503,15 @@ async function initializeMLAuth() {
 async function buscarVendasML(limit = 50) {
     try {
         console.log('🛒 Buscando vendas do Mercado Livre...');
+
+        // ANTES de qualquer coisa, garantir que o token está na memória
+        if (!mlTokenStatus?.access_token && localStorage.getItem('ml_access_token')) {
+            mlTokenStatus.access_token = localStorage.getItem('ml_access_token');
+            mlTokenStatus.refresh_token = localStorage.getItem('ml_refresh_token');
+            mlTokenStatus.expires_at = parseInt(localStorage.getItem('ml_token_expiry') || '0');
+            mlTokenStatus.is_valid = true;
+            console.log('✅ Token restaurado do localStorage para a memória');
+        }
         
         // Obter token
         if (!mlTokenStatus?.access_token) {
