@@ -501,6 +501,7 @@ async function initializeMLAuth() {
 
 // 8. BUSCAR VENDAS
 // ===== FUNÇÃO PARA BUSCAR VENDAS - VERSÃO FINAL CORRIGIDA =====
+// ===== FUNÇÃO PARA BUSCAR VENDAS - VERSÃO FINAL CORRIGIDA =====
 async function buscarVendasML(limit = 50) {
     try {
         console.log('🛒 Buscando vendas do Mercado Livre...');
