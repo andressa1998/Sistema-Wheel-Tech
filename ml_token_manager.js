@@ -58,41 +58,73 @@ async function callWorker(endpoint, method = 'GET', body = null) {
 
 // ===== FUNÇÃO PARA OBTER NOVO TOKEN - COM LOGS DETALHADOS =====
 // ===== FUNÇÃO PARA OBTER NOVO TOKEN COM CÓDIGO =====
+// ===== FUNÇÃO PARA OBTER NOVO TOKEN VIA WORKER =====
 async function getNewTokenWithCode() {
     try {
         console.log('🔄 Obtendo novo token via Worker...');
-        console.log('📤 Enviando código:', ML_CONFIG.INITIAL_CODE?.substring(0, 20) + '...');
+        
+        // VALIDAÇÃO: Código inicial existe?
+        if (!ML_CONFIG.INITIAL_CODE) {
+            console.error('❌ Código inicial não configurado');
+            return await getTokenDiretoDaAPI(); // Fallback
+        }
+        
+        if (ML_CONFIG.INITIAL_CODE === 'undefined' || ML_CONFIG.INITIAL_CODE.includes('undefined')) {
+            console.error('❌ Código inicial contém "undefined"');
+            return await getTokenDiretoDaAPI(); // Fallback
+        }
+        
+        console.log('📤 Enviando código:', ML_CONFIG.INITIAL_CODE.substring(0, 20) + '...');
         
         const tokenData = await callWorker('/api/ml/token', 'POST', {
             code: ML_CONFIG.INITIAL_CODE
         });
         
-        if (!tokenData || !tokenData.access_token) {
-            console.error('❌ Resposta inválida do Worker:', tokenData);
-            
-            // Tentar API direta como fallback
-            console.log('🔄 Tentando API direta...');
+        if (!tokenData) {
+            console.error('❌ Worker retornou null');
+            console.log('🔄 Tentando API direta como fallback...');
+            return await getTokenDiretoDaAPI();
+        }
+        
+        if (!tokenData.access_token) {
+            console.error('❌ Resposta do Worker sem access_token:', tokenData);
+            console.log('🔄 Tentando API direta como fallback...');
+            return await getTokenDiretoDaAPI();
+        }
+        
+        // ===== VALIDAÇÃO CRÍTICA: Token não pode ser "undefined" =====
+        if (tokenData.access_token === 'undefined' || typeof tokenData.access_token !== 'string') {
+            console.error('❌ Worker retornou access_token inválido:', tokenData.access_token);
+            return await getTokenDiretoDaAPI();
+        }
+        
+        if (tokenData.refresh_token === 'undefined' || !tokenData.refresh_token) {
+            console.error('❌ Worker retornou refresh_token inválido:', tokenData.refresh_token);
             return await getTokenDiretoDaAPI();
         }
         
         console.log('✅ Novo token obtido via Worker!');
-        console.log('Access Token:', tokenData.access_token?.substring(0, 30) + '...');
-        console.log('Refresh Token:', tokenData.refresh_token?.substring(0, 30) + '...');
-        console.log('Expira em:', tokenData.expires_in, 'segundos');
+        console.log('📌 Access Token:', tokenData.access_token.substring(0, 30) + '...');
+        console.log('📌 Refresh Token:', tokenData.refresh_token.substring(0, 30) + '...');
+        console.log('⏰ Expira em:', tokenData.expires_in, 'segundos');
         
         // Salvar token
         const expiresIn = tokenData.expires_in || 21600;
         const expiresAt = Date.now() + (expiresIn * 1000);
         
-        localStorage.setItem('ml_access_token', tokenData.access_token);
-        localStorage.setItem('ml_refresh_token', tokenData.refresh_token);
+        // ANTES DE SALVAR, GARANTIR QUE NÃO É "undefined"
+        const accessTokenToSave = tokenData.access_token;
+        const refreshTokenToSave = tokenData.refresh_token;
+        
+        localStorage.setItem('ml_access_token', accessTokenToSave);
+        localStorage.setItem('ml_refresh_token', refreshTokenToSave);
         localStorage.setItem('ml_token_expiry', expiresAt.toString());
         localStorage.setItem('ml_user_id', tokenData.user_id || ML_CONFIG.USER_ID);
         
         // ===== ATUALIZAR mlTokenStatus =====
         mlTokenStatus = {
-            access_token: tokenData.access_token,
-            refresh_token: tokenData.refresh_token,
+            access_token: accessTokenToSave,
+            refresh_token: refreshTokenToSave,
             expires_at: expiresAt,
             is_valid: true,
             last_update: new Date().toISOString(),
@@ -104,37 +136,53 @@ async function getNewTokenWithCode() {
         
         // Salvar no Supabase (tentar, mas não falhar se erro)
         try {
-            await salvarTokenNoSupabase(tokenData);
+            if (supabaseClient) {
+                await salvarTokenNoSupabase({
+                    access_token: accessTokenToSave,
+                    refresh_token: refreshTokenToSave,
+                    expires_in: expiresIn,
+                    user_id: tokenData.user_id || ML_CONFIG.USER_ID
+                });
+            }
         } catch (e) {
             console.warn('⚠️ Não foi possível salvar token no Supabase:', e.message);
         }
         
-        return tokenData.access_token;
+        return accessTokenToSave;
         
     } catch (error) {
         console.error('❌ Erro ao obter token via Worker:', error);
         
         // Última tentativa: API direta
-        console.log('🔄 Tentando obter token DIRETAMENTE da API ML...');
+        console.log('🔄 Tentando API direta como fallback final...');
         try {
             return await getTokenDiretoDaAPI();
         } catch (directError) {
-            console.error('❌ Também falhou direto:', directError);
-            showTokenError('FALHA NO WORKER E API DIRETA');
+            console.error('❌ Fallback também falhou:', directError);
+            showTokenError('FALHA NA OBTENÇÃO DO TOKEN');
             return null;
         }
     }
 }
 
 // ===== FUNÇÃO PARA RENOVAR TOKEN COM REFRESH TOKEN =====
+// ===== FUNÇÃO PARA RENOVAR TOKEN COM REFRESH TOKEN =====
 async function renewTokenWithRefreshToken(refreshToken) {
     try {
         console.log('🔄 Renovando token DIRETAMENTE...');
         
+        // VALIDAÇÃO: Refresh token existe?
         if (!refreshToken) {
             console.error('❌ Refresh token não fornecido');
             return null;
         }
+        
+        if (refreshToken === 'undefined' || refreshToken.includes('undefined')) {
+            console.error('❌ Refresh token contém "undefined"');
+            return null;
+        }
+        
+        console.log('📌 Refresh Token:', refreshToken.substring(0, 20) + '...');
         
         const params = new URLSearchParams();
         params.append('grant_type', 'refresh_token');
@@ -154,10 +202,18 @@ async function renewTokenWithRefreshToken(refreshToken) {
         
         if (!response.ok) {
             console.log('🔄 Renovação direta falhou, tentando Worker...');
+            
             // Fallback para Worker
             try {
                 const workerData = await callWorker('/api/ml/refresh', 'POST', { refresh_token: refreshToken });
+                
                 if (workerData && workerData.access_token) {
+                    // VALIDAÇÃO
+                    if (workerData.access_token === 'undefined' || workerData.refresh_token === 'undefined') {
+                        console.error('❌ Worker retornou token inválido');
+                        return null;
+                    }
+                    
                     const expiresIn = workerData.expires_in || 21600;
                     const expiresAt = Date.now() + (expiresIn * 1000);
                     
@@ -193,10 +249,27 @@ async function renewTokenWithRefreshToken(refreshToken) {
         
         const data = await response.json();
         
+        // ===== VALIDAÇÃO CRÍTICA =====
+        if (!data.access_token) {
+            console.error('❌ API retornou sem access_token');
+            return null;
+        }
+        
+        if (data.access_token === 'undefined' || typeof data.access_token !== 'string') {
+            console.error('❌ access_token é "undefined"');
+            return null;
+        }
+        
         // Salvar novo token
         const expiresIn = data.expires_in || 21600;
         const expiresAt = Date.now() + (expiresIn * 1000);
         const novoRefreshToken = data.refresh_token || refreshToken;
+        
+        // VALIDAÇÃO do refresh token
+        if (novoRefreshToken === 'undefined') {
+            console.error('❌ Refresh token é "undefined"');
+            return null;
+        }
         
         localStorage.setItem('ml_access_token', data.access_token);
         localStorage.setItem('ml_refresh_token', novoRefreshToken);
@@ -535,9 +608,21 @@ async function autoManageMLToken() {
 
 // ADICIONE esta função:
 // ===== FUNÇÃO PARA OBTER TOKEN DIRETO DA API ML =====
+// ===== FUNÇÃO PARA OBTER TOKEN DIRETO DA API ML =====
 async function getTokenDiretoDaAPI() {
     try {
         console.log('🚀 Obtendo token DIRETAMENTE da API ML...');
+        
+        // VALIDAÇÃO: Código inicial existe?
+        if (!ML_CONFIG.INITIAL_CODE) {
+            console.error('❌ Código inicial não configurado');
+            return null;
+        }
+        
+        if (ML_CONFIG.INITIAL_CODE === 'undefined' || ML_CONFIG.INITIAL_CODE.includes('undefined')) {
+            console.error('❌ Código inicial contém "undefined"');
+            return null;
+        }
         
         const params = new URLSearchParams();
         params.append('grant_type', 'authorization_code');
@@ -547,6 +632,7 @@ async function getTokenDiretoDaAPI() {
         params.append('redirect_uri', ML_CONFIG.REDIRECT_URI);
         
         console.log('📤 Enviando para API ML diretamente...');
+        console.log('🔑 Código:', ML_CONFIG.INITIAL_CODE.substring(0, 20) + '...');
         
         const response = await fetch('https://api.mercadolibre.com/oauth/token', {
             method: 'POST',
@@ -563,25 +649,56 @@ async function getTokenDiretoDaAPI() {
         if (!response.ok) {
             const errorText = await response.text();
             console.error('❌ Erro da API ML:', errorText);
+            
+            try {
+                const errorJson = JSON.parse(errorText);
+                console.error('📋 Detalhes do erro:', errorJson);
+            } catch (e) {
+                // Não é JSON
+            }
             return null;
         }
         
         const data = await response.json();
+        
+        // ===== VALIDAÇÃO CRÍTICA: Token não pode ser "undefined" =====
+        if (!data.access_token) {
+            console.error('❌ API retornou sem access_token:', data);
+            return null;
+        }
+        
+        if (data.access_token === 'undefined' || typeof data.access_token !== 'string') {
+            console.error('❌ access_token é "undefined" ou inválido:', data.access_token);
+            return null;
+        }
+        
+        if (data.refresh_token === 'undefined' || !data.refresh_token) {
+            console.error('❌ refresh_token é inválido:', data.refresh_token);
+            return null;
+        }
+        
         console.log('✅ Token obtido DIRETAMENTE!');
+        console.log('📌 Access Token:', data.access_token.substring(0, 30) + '...');
+        console.log('📌 Refresh Token:', data.refresh_token.substring(0, 30) + '...');
+        console.log('⏰ Expira em:', data.expires_in, 'segundos');
         
         // Salvar token
         const expiresIn = data.expires_in || 21600;
         const expiresAt = Date.now() + (expiresIn * 1000);
         
-        localStorage.setItem('ml_access_token', data.access_token);
-        localStorage.setItem('ml_refresh_token', data.refresh_token);
+        // ANTES DE SALVAR, GARANTIR QUE NÃO É "undefined"
+        const accessTokenToSave = data.access_token;
+        const refreshTokenToSave = data.refresh_token;
+        
+        localStorage.setItem('ml_access_token', accessTokenToSave);
+        localStorage.setItem('ml_refresh_token', refreshTokenToSave);
         localStorage.setItem('ml_token_expiry', expiresAt.toString());
         localStorage.setItem('ml_user_id', data.user_id || ML_CONFIG.USER_ID);
         
         // ===== ATUALIZAR mlTokenStatus =====
         mlTokenStatus = {
-            access_token: data.access_token,
-            refresh_token: data.refresh_token,
+            access_token: accessTokenToSave,
+            refresh_token: refreshTokenToSave,
             expires_at: expiresAt,
             is_valid: true,
             last_update: new Date().toISOString(),
@@ -591,7 +708,21 @@ async function getTokenDiretoDaAPI() {
         updateTokenStatusUI();
         scheduleTokenRenewal(expiresIn * 1000);
         
-        return data.access_token;
+        // Salvar no Supabase (opcional)
+        try {
+            if (supabaseClient) {
+                await salvarTokenNoSupabase({
+                    access_token: accessTokenToSave,
+                    refresh_token: refreshTokenToSave,
+                    expires_in: expiresIn,
+                    user_id: data.user_id || ML_CONFIG.USER_ID
+                });
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao salvar no Supabase:', e.message);
+        }
+        
+        return accessTokenToSave;
         
     } catch (error) {
         console.error('❌ Erro ao obter token direto:', error);
@@ -1776,47 +1907,29 @@ function iniciarRenovacaoAutomatica() {
 }
 
 // ADICIONE ESTA FUNÇÃO EM ml_token_manager.js
+// ===== FUNÇÃO PARA SALVAR TOKEN - CORRIGIDA =====
 async function salvarTokenNoSupabase(tokenData) {
     try {
         console.log('💾 Salvando token no Supabase...');
         
-        // Primeiro, verificar se a tabela existe
-        const { data: tableCheck, error: tableError } = await supabaseClient
-            .from('mercadolivre_tokens')
-            .select('count', { count: 'exact', head: true });
-        
-        if (tableError && tableError.code === '42P01') {
-            console.log('📦 Tabela mercadolivre_tokens não existe. Criando...');
-            
-            // Criar a tabela
-            const createTableSQL = `
-                CREATE TABLE IF NOT EXISTS mercadolivre_tokens (
-                    id SERIAL PRIMARY KEY,
-                    user_id TEXT NOT NULL UNIQUE,
-                    access_token TEXT NOT NULL,
-                    refresh_token TEXT NOT NULL,
-                    expires_at BIGINT NOT NULL,
-                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                );
-            `;
-            
-            const { error: createError } = await supabaseClient.rpc('exec_sql', { sql: createTableSQL });
-            
-            if (createError) {
-                console.warn('⚠️ Não foi possível criar tabela via RPC:', createError);
-                // Fallback: usar localStorage apenas
-                return false;
-            }
+        if (!tokenData || !tokenData.access_token) {
+            console.error('❌ Token inválido');
+            return false;
         }
         
-        // Salvar/Atualizar token
+        // VALIDAÇÃO: Garantir que não é string "undefined"
+        if (tokenData.access_token === 'undefined' || tokenData.refresh_token === 'undefined') {
+            console.error('❌ Token contém string "undefined"');
+            return false;
+        }
+        
         const { error } = await supabaseClient
             .from('mercadolivre_tokens')
             .upsert({
                 user_id: ML_CONFIG.USER_ID,
                 access_token: tokenData.access_token,
-                refresh_token: tokenData.refresh_token,
-                expires_at: Date.now() + (tokenData.expires_in * 1000),
+                refresh_token: tokenData.refresh_token || '',
+                expires_at: Date.now() + ((tokenData.expires_in || 21600) * 1000),
                 updated_at: new Date().toISOString()
             }, { onConflict: 'user_id' });
         
@@ -1825,7 +1938,7 @@ async function salvarTokenNoSupabase(tokenData) {
             return false;
         }
         
-        console.log('✅ Token salvo no Supabase com sucesso!');
+        console.log('✅ Token salvo no Supabase!');
         return true;
         
     } catch (error) {
