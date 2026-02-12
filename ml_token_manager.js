@@ -562,120 +562,208 @@ async function buscarVendasML(limit = 50) {
 }
 
 // 9. PROCESSAR VENDAS COM ESTOQUE E ENVIO
+// ============================================
+// FUNÇÃO CORRIGIDA - Baseada na DOCUMENTAÇÃO OFICIAL
+// ============================================
 async function processarVendasComDetalhesESTOQUE(vendas, token) {
     const vendasComDetalhes = [];
     
-    console.log(`🔍 Buscando estoque e envio de ${vendas.length} vendas...`);
+    console.log(`🔍 Buscando SKU, ESTOQUE e ENVIO de ${vendas.length} vendas...`);
     
     for (const venda of vendas) {
         try {
-            // 1. DETALHES DA ORDEM
+            // ===== 1. BUSCAR DETALHES DA ORDEM =====
+            // GET https://api.mercadolibre.com/orders/$ORDER_ID
             const orderRes = await fetch(`https://api.mercadolibre.com/orders/${venda.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
+                headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
             });
             
             if (!orderRes.ok) {
+                console.warn(`⚠️ Erro ${orderRes.status} ao buscar order ${venda.id}`);
                 vendasComDetalhes.push(processarVendaBasica(venda));
                 continue;
             }
             
             const order = await orderRes.json();
             
-            // 2. TIPO DE ENVIO
+            // ===== 2. EXTRAIR DADOS DO PRIMEIRO ITEM =====
+            const primeiroItem = order.order_items?.[0] || {};
+            const item = primeiroItem.item || {};
+            const itemId = item.id;
+            const variacaoId = item.variation_id;
+            
+            // ----- SKU: PRIORIDADE ABSOLUTA para seller_sku -----
+            let sku = item.seller_sku;  // ← CAMPO CORRETO da documentação
+            if (!sku || sku === 'null' || sku === 'undefined') {
+                sku = item.seller_custom_field || 'SEM_SKU';
+            }
+            
+            // ----- Dados básicos -----
+            const titulo = item.title || 'Sem título';
+            const quantidade = primeiroItem.quantity || 1;
+            const valorTotal = order.paid_amount || order.total_amount || 0;
+            const cliente = order.buyer?.nickname || `Cliente ${order.buyer?.id || 'N/I'}`;
+            const idVenda = `ML${order.id}`.replace(/[^a-zA-Z0-9]/g, '');
+            
+            // ===== 3. BUSCAR ESTOQUE DO ANÚNCIO =====
+            // GET https://api.mercadolibre.com/items/$ITEM_ID
+            let estoqueAnuncio = 0;
+            let skuOriginal = sku;
+            let variacaoAtributos = [];
+            
+            if (itemId) {
+                try {
+                    const itemRes = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+                        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
+                    });
+                    
+                    if (itemRes.ok) {
+                        const itemData = await itemRes.json();
+                        
+                        // CASO 1: Item COM variação
+                        if (variacaoId && itemData.variations?.length > 0) {
+                            const variacao = itemData.variations.find(v => String(v.id) === String(variacaoId));
+                            if (variacao) {
+                                estoqueAnuncio = variacao.available_quantity || 0;
+                                // SKU da variação (se existir)
+                                if (variacao.seller_sku) {
+                                    skuOriginal = variacao.seller_sku;
+                                    sku = variacao.seller_sku;  // ← PRIORIDADE MÁXIMA
+                                }
+                                variacaoAtributos = variacao.attribute_combinations || [];
+                            }
+                        } 
+                        // CASO 2: Item SEM variação
+                        else {
+                            estoqueAnuncio = itemData.available_quantity || 0;
+                            if (itemData.seller_sku) {
+                                skuOriginal = itemData.seller_sku;
+                                sku = itemData.seller_sku;  // ← PRIORIDADE MÁXIMA
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Erro ao buscar item ${itemId}:`, error.message);
+                }
+            }
+            
+            // ===== 4. BUSCAR TIPO DE ENVIO =====
+            // GET https://api.mercadolibre.com/shipments/$SHIPPING_ID
             let tipoEnvio = 'N/I';
             let shippingId = null;
+            let shippingStatus = null;
             
             if (order.shipping?.id) {
                 shippingId = order.shipping.id;
                 try {
                     const shipRes = await fetch(`https://api.mercadolibre.com/shipments/${shippingId}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
+                        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
                     });
                     
                     if (shipRes.ok) {
-                        const ship = await shipRes.json();
-                        if (ship.logistic_type) {
-                            const tipo = ship.logistic_type.toLowerCase();
-                            if (tipo === 'fulfillment') tipoEnvio = 'FULL';
-                            else if (tipo === 'drop_off' || tipo === 'xd_drop_off') tipoEnvio = 'FLEX';
-                            else if (tipo === 'self_service' || tipo === 'cross_docking') tipoEnvio = 'MERCADO ENVIOS';
-                            else tipoEnvio = ship.logistic_type.toUpperCase();
-                        }
-                    }
-                } catch (e) {}
-            }
-            
-            // 3. ESTOQUE DO ANÚNCIO
-            let estoque = 0;
-            let skuOriginal = null;
-            let variacaoAtributos = [];
-            let itemId = null;
-            let variacaoId = null;
-            
-            if (order.order_items?.[0]) {
-                const item = order.order_items[0];
-                itemId = item.item?.id;
-                variacaoId = item.item?.variation_id;
-                
-                if (itemId) {
-                    try {
-                        const itemRes = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
+                        const shipData = await shipRes.json();
+                        shippingStatus = shipData.status;
                         
-                        if (itemRes.ok) {
-                            const itemData = await itemRes.json();
+                        // MAPEAMENTO CORRETO do tipo de envio
+                        if (shipData.logistic_type) {
+                            const tipo = shipData.logistic_type.toLowerCase();
                             
-                            if (variacaoId && itemData.variations) {
-                                const variacao = itemData.variations.find(v => String(v.id) === String(variacaoId));
-                                if (variacao) {
-                                    estoque = variacao.available_quantity || 0;
-                                    skuOriginal = variacao.seller_sku || variacao.seller_custom_field;
-                                    variacaoAtributos = variacao.attribute_combinations || [];
-                                }
+                            if (tipo === 'fulfillment') {
+                                tipoEnvio = 'FULL';
+                            } else if (tipo === 'drop_off' || tipo === 'xd_drop_off') {
+                                tipoEnvio = 'FLEX';
+                            } else if (tipo === 'self_service' || tipo === 'cross_docking') {
+                                tipoEnvio = 'MERCADO ENVIOS';
                             } else {
-                                estoque = itemData.available_quantity || 0;
-                                skuOriginal = itemData.seller_sku || itemData.seller_custom_field;
+                                tipoEnvio = shipData.logistic_type.toUpperCase();
                             }
                         }
-                    } catch (e) {}
+                        
+                        // Se já foi enviado/entregue, adicionar status
+                        if (shipData.status === 'shipped') {
+                            tipoEnvio += ' (ENVIADO)';
+                        } else if (shipData.status === 'delivered') {
+                            tipoEnvio += ' (ENTREGUE)';
+                        } else if (shipData.status === 'ready_to_ship') {
+                            tipoEnvio += ' (PRONTO)';
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Erro ao buscar shipping ${shippingId}:`, error.message);
                 }
             }
             
-            // 4. MONTAR OBJETO DA VENDA
-            const idVenda = `ML${venda.id}`.replace(/[^a-zA-Z0-9]/g, '');
-            
-            vendasComDetalhes.push({
+            // ===== 5. MONTAR OBJETO FINAL =====
+            const vendaProcessada = {
+                // ID
                 id: idVenda,
                 id_venda_ml: idVenda,
-                titulo: order.order_items?.[0]?.item?.title || 'Sem título',
-                cliente: order.buyer?.nickname || 'N/I',
-                sku: skuOriginal || order.order_items?.[0]?.item?.seller_sku || order.order_items?.[0]?.item?.seller_custom_field || 'SEM_SKU',
+                
+                // Produto
+                titulo: titulo,
+                quantidade: quantidade,
+                
+                // Cliente
+                cliente: cliente,
+                
+                // SKU (CORRIGIDO - usa seller_sku)
+                sku: sku,
                 sku_original: skuOriginal,
+                codigo: sku,
                 item_id: itemId,
                 variacao_id: variacaoId,
                 variacao_atributos: variacaoAtributos,
-                estoque_anuncio: estoque,
+                
+                // ESTOQUE (CORRIGIDO)
+                estoque_anuncio: estoqueAnuncio,
                 estoque_fisico: 0,
-                quantidade: order.order_items?.reduce((sum, i) => sum + (i.quantity || 0), 0) || 1,
-                valor_total: order.paid_amount || order.total_amount || 0,
+                ultima_verificacao_estoque: new Date().toISOString(),
+                
+                // Valores
+                valor_total: valorTotal,
+                valor_unitario: primeiroItem.unit_price || 0,
+                
+                // Data
                 data_venda: order.date_closed || order.date_created || new Date().toISOString(),
                 created_at: order.date_closed || order.date_created || new Date().toISOString(),
+                
+                // Status
+                status_ml: order.status || 'paid',
                 status_sistema: 'nova',
+                
+                // ENVIO (CORRIGIDO)
                 tipo_envio: tipoEnvio,
                 id_envio: shippingId,
+                shipping_status: shippingStatus,
+                
+                // Dados completos
                 dados_completos: JSON.stringify(order)
+            };
+            
+            console.log(`✅ Venda ${order.id}:`, {
+                sku: vendaProcessada.sku,
+                estoque: vendaProcessada.estoque_anuncio,
+                envio: vendaProcessada.tipo_envio
             });
             
-            console.log(`✅ Venda ${venda.id}: SKU ${skuOriginal || 'SEM_SKU'}, Estoque: ${estoque}, Envio: ${tipoEnvio}`);
+            vendasComDetalhes.push(vendaProcessada);
             
+            // Delay para não sobrecarregar a API
             await new Promise(resolve => setTimeout(resolve, 200));
             
         } catch (error) {
-            console.error(`❌ Erro na venda ${venda.id}:`, error.message);
+            console.error(`❌ Erro ao processar venda ${venda.id}:`, error);
             vendasComDetalhes.push(processarVendaBasica(venda));
         }
     }
+    
+    // Estatísticas finais
+    const comEstoque = vendasComDetalhes.filter(v => v.estoque_anuncio > 0).length;
+    const comEnvio = vendasComDetalhes.filter(v => v.tipo_envio !== 'N/I').length;
+    const comSku = vendasComDetalhes.filter(v => v.sku !== 'SEM_SKU').length;
+    
+    console.log(`✅ Total: ${vendasComDetalhes.length} vendas`);
+    console.log(`📊 SKU: ${comSku}/${vendasComDetalhes.length} | Estoque: ${comEstoque} | Envio: ${comEnvio}`);
     
     return vendasComDetalhes;
 }
