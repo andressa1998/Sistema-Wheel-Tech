@@ -290,6 +290,7 @@ function atualizarTabelaVendas() {
         
         // ===== SKU =====
         const sku = venda.sku || venda.item_sku || venda.codigo || 'SEM_SKU';
+        const mlbId = venda.mlb_id || venda.item_id || null;
         
         // ===== VARIAÇÕES =====
         let variacaoDisplay = '';
@@ -365,16 +366,25 @@ function atualizarTabelaVendas() {
                 <span style="font-size: 12px;">${venda.cliente || venda.comprador || venda.buyer?.nickname || 'N/I'}</span>
             </td>
             <td>
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <span class="badge badge-info" style="font-size: 11px; text-align: left; word-break: break-all;">
-                        <i class="fas fa-barcode"></i> ${sku}
-                    </span>
-                    ${variacaoDisplay}
-                    <div style="margin-top: 4px;">
-                        ${envioBadge}
-                    </div>
-                </div>
-            </td>
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+        <span class="badge badge-info" style="font-size: 11px; text-align: left; word-break: break-all;">
+            <i class="fas fa-barcode"></i> ${sku}
+        </span>
+        ${mlbId ? `
+        <span style="font-size: 10px; color: #666; display: flex; align-items: center; gap: 4px;">
+            <i class="fas fa-tag"></i> 
+            <span style="font-family: monospace;">${mlbId.substring(0, 8)}...${mlbId.substring(mlbId.length-4)}</span>
+            <button onclick="copiarMLB('${mlbId}')" style="border: none; background: none; color: #007bff; cursor: pointer;" title="Copiar MLB">
+                <i class="fas fa-copy"></i>
+            </button>
+        </span>
+        ` : ''}
+        ${variacaoDisplay}
+        <div style="margin-top: 4px;">
+            ${envioBadge}
+        </div>
+    </div>
+</td>
             <td>
                 <div style="display: flex; flex-direction: column; gap: 6px;">
                     <div>
@@ -750,6 +760,26 @@ function abrirModalDetalhesVenda(venda) {
                 <p><strong>Quantidade:</strong> ${venda.quantidade || 1} un</p>
                 <p><strong>Valor Total:</strong> R$ ${(venda.valor_total || 0).toFixed(2)}</p>
             </div>
+            <div class="info-grid">
+        <div class="info-card">
+            <h4><i class="fas fa-info-circle"></i> Informações da Venda</h4>
+            <p><strong>ID:</strong> ${venda.id_venda_ml || 'N/A'}</p>
+            <p><strong>Status:</strong> ${statusBadge}</p>
+            <p><strong>Data:</strong> ${dataFormatada} às ${horaFormatada}</p>
+            <p><strong>Produto:</strong> ${venda.titulo || 'Sem título'}</p>
+            ${venda.mlb_id || venda.item_id ? `
+            <p style="margin-top: 10px;">
+                <strong>MLB:</strong> 
+                <span style="font-family: monospace; background: #f0f0f0; padding: 3px 6px; border-radius: 4px;">
+                    ${venda.mlb_id || venda.item_id}
+                </span>
+                <button onclick="copiarMLB('${venda.mlb_id || venda.item_id}')" 
+                        style="margin-left: 8px; border: none; background: #007bff; color: white; padding: 2px 8px; border-radius: 4px; cursor: pointer;">
+                    <i class="fas fa-copy"></i> Copiar
+                </button>
+            </p>
+            ` : ''}
+        </div>
             <div class="info-card" style="grid-column: span 2;">
                 <h4><i class="fas fa-boxes"></i> Estoque</h4>
                 <p><strong>Anúncio:</strong> ${venda.estoque_anuncio !== null ? venda.estoque_anuncio + ' unidades' : 'N/I'}</p>
@@ -831,6 +861,32 @@ function mostrarToast(mensagem, tipo = 'info') {
         setTimeout(() => toast.remove(), 3000);
     }
 }
+
+// ============================================
+// COPIAR MLB
+// ============================================
+function copiarMLB(mlbId) {
+    if (!mlbId) {
+        mostrarToast('MLB não disponível', 'error');
+        return;
+    }
+    
+    navigator.clipboard.writeText(mlbId).then(() => {
+        mostrarToast('MLB copiado para a área de transferência!', 'success');
+    }).catch(() => {
+        // Fallback
+        const textarea = document.createElement('textarea');
+        textarea.value = mlbId;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        mostrarToast('MLB copiado!', 'success');
+    });
+}
+
+// Exportar função
+window.copiarMLB = copiarMLB;
 
 // ============================================
 // EXPORTAÇÕES GLOBAIS

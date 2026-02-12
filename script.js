@@ -107,6 +107,13 @@ function handleLogin(e) {
     }, 300);
 }
 
+// Adicione no início do script.js, perto das outras variáveis globais
+let salesSyncStatus = {
+    isSyncing: false,
+    lastSync: null,
+    totalSynced: 0
+};
+
 // ===== VARIÁVEIS GLOBAIS =====
 let currentUser = null;
 let orders = [];

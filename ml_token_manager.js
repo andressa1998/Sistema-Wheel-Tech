@@ -630,7 +630,6 @@ async function buscarVendasML(limit = 50) {
 // ============================================
 // FUNÇÃO CORRIGIDA - Baseada na DOCUMENTAÇÃO OFICIAL
 // ============================================
-// ===== FUNÇÃO CORRIGIDA - USANDO WORKER OBRIGATORIAMENTE =====
 async function processarVendasComDetalhesESTOQUE(vendas, token) {
     const vendasComDetalhes = [];
     
@@ -721,6 +720,8 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                 titulo: item.title || 'Sem título',
                 cliente: order.buyer?.nickname || 'N/I',
                 sku: sku,
+                mlb_id: item.id || null,           // <--- NOVO CAMPO
+                item_id: item.id || null,          // <--- JÁ EXISTE? SE NÃO, ADICIONE
                 estoque_anuncio: estoqueAnuncio,
                 quantidade: primeiroItem.quantity || 1,
                 valor_total: order.paid_amount || order.total_amount || 0,
@@ -752,6 +753,7 @@ function processarVendaBasica(venda) {
         id_venda_ml: `ML${venda.id || Date.now()}`,
         titulo: venda.order_items?.[0]?.item?.title || 'Venda sem título',
         cliente: venda.buyer?.nickname || 'N/I',
+        mlb_id: venda.mlb_id || venda.item_id || null,  // <--- NOVO CAMPO
         sku: 'SEM_SKU',
         estoque_anuncio: 0,
         estoque_fisico: 0,
