@@ -77,9 +77,9 @@ async function sincronizarVendasML() {
         }
         
         // BUSCAR VENDAS - CORREÇÃO: limite MÁXIMO 50
-        const resultado = await window.buscarVendasML(50); // MUDAR AQUI: de 100 para 50
-        
-        console.log('📊 Resultado:', resultado);
+        console.log('🔑 Chamando buscarVendasML...');
+        const resultado = await window.buscarVendasML(50);
+        console.log('📦 Resultado bruto:', resultado);
         
         if (resultado && resultado.success && resultado.vendas && resultado.vendas.length > 0) {
             console.log(`✅ ${resultado.vendas.length} vendas recebidas do ML`);

@@ -721,18 +721,17 @@ window.verificarTokenML = async function() {
 // ml_token_manager.js - Função buscarVendasML MODIFICADA
 // ===== FUNÇÃO CORRIGIDA - buscarVendasML COM LIMITE 50 =====
 // ===== FUNÇÃO PARA BUSCAR VENDAS - CORRIGIDA =====
+// ===== FUNÇÃO PARA BUSCAR VENDAS - CORRIGIDA COM TOKEN =====
 async function buscarVendasML(limit = 50) {
     try {
         console.log('🛒 Buscando vendas do Mercado Livre com detalhes...');
         
-        // CORREÇÃO: Garantir limite máximo de 50
-        const limiteSeguro = Math.min(limit, 50);
-        
-        // CORREÇÃO: OBTER TOKEN VÁLIDO
-        const tokenData = await getValidToken();
+        // CORREÇÃO CRÍTICA: OBTER TOKEN VÁLIDO PRIMEIRO
+        console.log('🔑 Chamando getValidToken()...');
+        const tokenData = await window.getValidToken(); // ← USAR window.getValidToken
         
         if (!tokenData) {
-            console.error('❌ Não foi possível obter token válido');
+            console.error('❌ getValidToken retornou null');
             return {
                 success: false,
                 error: 'Token de acesso não disponível',
@@ -741,7 +740,7 @@ async function buscarVendasML(limit = 50) {
         }
         
         if (!tokenData.access_token) {
-            console.error('❌ Token sem access_token:', tokenData);
+            console.error('❌ tokenData sem access_token:', tokenData);
             return {
                 success: false,
                 error: 'Token inválido',
@@ -750,6 +749,9 @@ async function buscarVendasML(limit = 50) {
         }
         
         console.log(`✅ Token obtido: ${tokenData.access_token.substring(0, 20)}...`);
+        
+        // Garantir limite máximo de 50
+        const limiteSeguro = Math.min(limit, 50);
         
         // Buscar vendas pagas - ÚLTIMOS 30 DIAS
         const agora = new Date();
@@ -772,7 +774,7 @@ async function buscarVendasML(limit = 50) {
             const errorText = await response.text();
             console.error('❌ Erro na resposta do proxy:', response.status, errorText);
             
-            // Se for 401, token pode estar expirado - tentar renovar
+            // Se for 401, token expirou - tentar renovar
             if (response.status === 401) {
                 console.log('🔄 Token 401, tentando renovar...');
                 const refreshToken = localStorage.getItem('ml_refresh_token');
@@ -780,7 +782,7 @@ async function buscarVendasML(limit = 50) {
                     const newToken = await renewTokenWithRefreshToken(refreshToken);
                     if (newToken) {
                         console.log('✅ Token renovado, tentando novamente...');
-                        return await buscarVendasML(limit); // RECURSÃO
+                        return await buscarVendasML(limit);
                     }
                 }
             }
@@ -1749,6 +1751,7 @@ window.mlTokenStatus = mlTokenStatus;
 window.testMLConnection = testMLConnection;
 window.getValidToken = getValidToken;
 window.buscarVendasML = buscarVendasML;
+window.processarVendasComDetalhesESTOQUE = processarVendasComDetalhesESTOQUE;
 
 console.log('✅ Sistema de Token ML carregado e pronto!');
 
