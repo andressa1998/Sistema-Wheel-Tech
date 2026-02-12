@@ -12,7 +12,7 @@ const ML_CONFIG = {
     CLIENT_ID: '5767896809769647',
     CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
     REDIRECT_URI: 'https://homework-fees-saving-beliefs.trycloudflare.com/callback',
-    INITIAL_CODE: 'TG-698dbb9b70aa6200017e8536-415176739', // SEU CÓDIGO ATUAL
+    INITIAL_CODE: 'TG-698dbc98e4ab6f0001c31b0c-415176739', // SEU CÓDIGO ATUAL
     USER_ID: '415176739',
     WORKER_URL: 'https://purple-bonus-3b1c.andmiotto1998.workers.dev' // ADICIONE ESTA LINHA
 };
