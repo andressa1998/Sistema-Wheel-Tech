@@ -59,10 +59,8 @@ async function carregarVendasDoBanco() {
 }
 
 // Sincronizar vendas do ML
-// sales_dashboard.js - Função sincronizarVendasML atualizada
 
-// sales_dashboard.js - Função sincronizarVendasML melhorada
-
+// ===== FUNÇÃO CORRIGIDA - sincronizarVendasML =====
 async function sincronizarVendasML() {
     try {
         const btn = document.getElementById('btnSincronizar');
@@ -72,54 +70,43 @@ async function sincronizarVendasML() {
         btn.disabled = true;
         
         console.log('🔄 Iniciando sincronização de vendas ML...');
-        mostrarToast('Sincronizando vendas do Mercado Livre...', 'info');
         
-        // Buscar vendas
-        console.log('📡 Chamando buscarVendasML...');
-        const resultado = await window.buscarVendasML();
+        // CORREÇÃO: Usar window.showToast se existir, senão console.log
+        if (window.showToast) {
+            window.showToast('Sincronizando vendas do Mercado Livre...', 'info');
+        }
         
-        console.log('📊 Resultado de buscarVendasML:', {
-            success: resultado?.success,
-            vendasCount: resultado?.vendas?.length || 0,
-            total: resultado?.total || 0,
-            error: resultado?.error
-        });
+        // BUSCAR VENDAS - CORREÇÃO: limite MÁXIMO 50
+        const resultado = await window.buscarVendasML(50); // MUDAR AQUI: de 100 para 50
+        
+        console.log('📊 Resultado:', resultado);
         
         if (resultado && resultado.success && resultado.vendas && resultado.vendas.length > 0) {
             console.log(`✅ ${resultado.vendas.length} vendas recebidas do ML`);
             
-            // Mostrar detalhes das vendas
-            resultado.vendas.forEach((venda, i) => {
-                console.log(`  ${i + 1}. ${venda.id} - ${venda.sku} - R$ ${venda.valor_total} - ${venda.cliente}`);
-            });
-            
-            // Processar e salvar vendas
-            console.log('💾 Salvando vendas no Supabase...');
             const vendasSalvas = await processarESalvarVendas(resultado.vendas);
-            
-            // Recarregar a lista
             await carregarVendasDoBanco();
             
-            mostrarToast(`${vendasSalvas} vendas sincronizadas com sucesso!`, 'success');
+            // CORREÇÃO: Usar window.showToast
+            if (window.showToast) {
+                window.showToast(`${vendasSalvas} vendas sincronizadas com sucesso!`, 'success');
+            }
             
         } else {
             const mensagemErro = resultado?.error || 'Nenhuma venda encontrada';
-            console.warn('⚠️ Nenhuma venda sincronizada:', {
-                mensagem: mensagemErro,
-                resultado: resultado,
-                temToken: !!localStorage.getItem('ml_access_token')
-            });
+            console.warn('⚠️', mensagemErro);
             
-            if (resultado?.total === 0) {
-                mostrarToast('Não há vendas recentes para sincronizar.', 'info');
-            } else {
-                mostrarToast(mensagemErro, 'warning');
+            // CORREÇÃO: Usar window.showToast
+            if (window.showToast) {
+                window.showToast(mensagemErro, resultado?.total === 0 ? 'info' : 'warning');
             }
         }
         
     } catch (error) {
         console.error('❌ Erro na sincronização:', error);
-        mostrarToast(`Erro na sincronização: ${error.message}`, 'error');
+        if (window.showToast) {
+            window.showToast(`Erro na sincronização: ${error.message}`, 'error');
+        }
     } finally {
         const btn = document.getElementById('btnSincronizar');
         if (btn) {

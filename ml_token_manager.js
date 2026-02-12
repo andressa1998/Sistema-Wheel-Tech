@@ -551,9 +551,14 @@ window.verificarTokenML = async function() {
 
 // ml_token_manager.js - Substitua a função buscarVendasML
 // ml_token_manager.js - Função buscarVendasML MODIFICADA
+// ===== FUNÇÃO CORRIGIDA - buscarVendasML COM LIMITE 50 =====
 async function buscarVendasML(limit = 50) {
     try {
         console.log('🛒 Buscando vendas do Mercado Livre com detalhes...');
+        
+        // CORREÇÃO: Garantir limite máximo de 50 (API ML aceita no máximo 51)
+        const limiteSeguro = Math.min(limit, 50);
+        console.log(`📊 Limite seguro: ${limiteSeguro} (original: ${limit})`);
         
         const tokenData = await getValidToken();
         if (!tokenData?.access_token) {
@@ -565,15 +570,16 @@ async function buscarVendasML(limit = 50) {
             };
         }
         
-        // Buscar vendas pagas
+        // Buscar vendas pagas - ÚLTIMOS 30 DIAS
         const agora = new Date();
         const trintaDiasAtras = new Date(agora);
         trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
         
-        const dataFormatada = trintaDiasAtras.toISOString().split('.')[0] + '-00:00';
+        // CORREÇÃO: Formato de data correto
+        const dataFormatada = trintaDiasAtras.toISOString();
         
-        // URL para buscar ordens pagas
-        const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=${limit}`;
+        // CORREÇÃO: Usar limite seguro
+        const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=${limiteSeguro}`;
         
         console.log('📡 URL da API:', urlML);
         
@@ -607,10 +613,10 @@ async function buscarVendasML(limit = 50) {
             };
         }
         
-        // Processar vendas COM DETALHES COMPLETOS e ESTOQUE
+        // Processar vendas COM DETALHES
         const vendasProcessadas = await processarVendasComDetalhesESTOQUE(result.results, tokenData.access_token);
         
-        console.log(`✅ ${vendasProcessadas.length} vendas processadas do ML com detalhes de estoque e envio`);
+        console.log(`✅ ${vendasProcessadas.length} vendas processadas do ML`);
         
         return {
             success: true,
@@ -1319,57 +1325,82 @@ async function testarAPIOrdenar() {
 // FUNÇÃO PARA SINCRONIZAR VENDAS COM SUPABASE
 // ============================================
 
+// ===== FUNÇÃO CORRIGIDA - sincronizarVendasComSupabase =====
 async function sincronizarVendasComSupabase() {
     console.log('🔄 Sincronizando vendas com Supabase...');
     
     try {
-        // 1. Buscar vendas do ML
-        const vendasML = await buscarVendasML(100);
+        // 1. Buscar vendas do ML com limite seguro
+        const resultado = await buscarVendasML(50); // CORREÇÃO: 50, não 100
+        
+        // CORREÇÃO: Verificar se existe vendas no resultado
+        const vendasML = resultado?.vendas || [];
         
         if (vendasML.length === 0) {
             console.log('📭 Nenhuma venda para sincronizar');
+            if (window.showToast) window.showToast('Nenhuma venda para sincronizar', 'info');
             return;
         }
         
+        console.log(`📦 ${vendasML.length} vendas para processar`);
+        
         // 2. Para cada venda, salvar no Supabase
+        let sucessos = 0;
+        let erros = 0;
+        
         for (const venda of vendasML) {
             try {
+                // CORREÇÃO: Verificar se supabaseClient existe
+                if (!supabaseClient) {
+                    console.error('❌ Supabase não inicializado');
+                    continue;
+                }
+                
                 const { data, error } = await supabaseClient
                     .from('vendas_ml')
                     .upsert({
-                        order_id: venda.id,
-                        numero_venda: venda.numero_venda,
-                        data_venda: new Date(venda.data_venda),
-                        valor_total: venda.valor_total,
-                        comprador: venda.comprador,
-                        item_titulo: venda.item_titulo,
-                        item_sku: venda.item_sku,
-                        item_quantidade: venda.item_quantidade,
-                        meio_envio: venda.meio_envio,
+                        id_venda_ml: venda.id_venda_ml || venda.id,
+                        numero_venda: venda.id_venda_ml || venda.id,
+                        data_venda: venda.data_venda || venda.date_created || new Date().toISOString(),
+                        valor_total: venda.valor_total || 0,
+                        comprador: venda.cliente || venda.buyer?.nickname || 'N/I',
+                        item_titulo: venda.titulo || venda.title || '',
+                        item_sku: venda.sku || venda.codigo || 'SEM_SKU',
+                        item_quantidade: venda.quantidade || 1,
+                        meio_envio: venda.tipo_envio || 'N/I',
                         status: 'nova',
                         verificada: false,
-                        dados_completos: venda.dados_completos
+                        dados_completos: JSON.stringify(venda)
                     }, { 
-                        onConflict: 'order_id',
+                        onConflict: 'id_venda_ml',
                         ignoreDuplicates: false 
                     });
                 
                 if (error) {
-                    console.error(`❌ Erro ao salvar venda ${venda.id}:`, error);
+                    console.error(`❌ Erro ao salvar venda ${venda.id_venda_ml}:`, error);
+                    erros++;
                 } else {
-                    console.log(`✅ Venda ${venda.id} sincronizada`);
+                    sucessos++;
                 }
             } catch (error) {
-                console.error(`❌ Erro no processamento da venda ${venda.id}:`, error);
+                console.error(`❌ Erro no processamento da venda:`, error);
+                erros++;
             }
+            
+            // Pequeno delay para não sobrecarregar
+            await new Promise(resolve => setTimeout(resolve, 50));
         }
         
-        console.log(`✅ Sincronização concluída: ${vendasML.length} vendas processadas`);
-        showToast(`✅ ${vendasML.length} vendas sincronizadas`, 'success');
+        console.log(`✅ Sincronização concluída: ${sucessos} sucessos, ${erros} erros`);
+        if (window.showToast) {
+            window.showToast(`✅ ${sucessos} vendas sincronizadas`, 'success');
+        }
         
     } catch (error) {
         console.error('❌ Erro na sincronização:', error);
-        showToast('❌ Erro ao sincronizar vendas', 'error');
+        if (window.showToast) {
+            window.showToast('❌ Erro ao sincronizar vendas', 'error');
+        }
     }
 }
 

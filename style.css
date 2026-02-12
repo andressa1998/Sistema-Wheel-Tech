@@ -634,3 +634,84 @@ table {
     outline: 0;
     box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
 }
+
+/* Adicione ao seu CSS */
+
+/* Badges de Envio */
+.badge-full {
+    background: linear-gradient(135deg, #FFE600 0%, #FFC107 100%);
+    color: #000;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-flex {
+    background: linear-gradient(135deg, #00A650 0%, #28A745 100%);
+    color: white;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-mercado {
+    background: linear-gradient(135deg, #3483FA 0%, #2968C8 100%);
+    color: white;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Badges de Estoque */
+.badge-danger {
+    background: #dc3545;
+    color: white;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-warning {
+    background: #ffc107;
+    color: #000;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-success {
+    background: #28a745;
+    color: white;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Input de estoque */
+.estoque-fisico-input {
+    transition: all 0.3s ease;
+}
+
+.estoque-fisico-input:focus {
+    border-color: #3483FA !important;
+    box-shadow: 0 0 0 2px rgba(52, 131, 250, 0.2);
+    outline: none;
+}
