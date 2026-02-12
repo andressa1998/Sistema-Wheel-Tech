@@ -500,73 +500,128 @@ async function initializeMLAuth() {
 // ============================================
 
 // 8. BUSCAR VENDAS
+// ===== FUNÇÃO PARA BUSCAR VENDAS - VERSÃO FINAL CORRIGIDA =====
 async function buscarVendasML(limit = 50) {
     try {
         console.log('🛒 Buscando vendas do Mercado Livre...');
-
-        // ANTES de qualquer coisa, garantir que o token está na memória
+        
+        // ===== CORREÇÃO CRÍTICA: RESTAURAR TOKEN DO LOCALSTORAGE =====
         if (!mlTokenStatus?.access_token && localStorage.getItem('ml_access_token')) {
-            mlTokenStatus.access_token = localStorage.getItem('ml_access_token');
-            mlTokenStatus.refresh_token = localStorage.getItem('ml_refresh_token');
-            mlTokenStatus.expires_at = parseInt(localStorage.getItem('ml_token_expiry') || '0');
-            mlTokenStatus.is_valid = true;
-            console.log('✅ Token restaurado do localStorage para a memória');
+            console.log('🔄 Restaurando token do localStorage para memória...');
+            mlTokenStatus = {
+                access_token: localStorage.getItem('ml_access_token'),
+                refresh_token: localStorage.getItem('ml_refresh_token'),
+                expires_at: parseInt(localStorage.getItem('ml_token_expiry') || '0'),
+                is_valid: true,
+                last_update: new Date().toISOString(),
+                user_info: mlTokenStatus?.user_info || null
+            };
         }
         
-        // Obter token
+        // Verificar se temos token
         if (!mlTokenStatus?.access_token) {
+            console.error('❌ mlTokenStatus sem access_token');
             const refreshToken = localStorage.getItem('ml_refresh_token');
             if (refreshToken) {
+                console.log('🔄 Tentando renovar token...');
                 const newToken = await renewTokenWithRefreshToken(refreshToken);
-                if (!newToken) return { success: false, error: 'Token não disponível', vendas: [] };
+                if (!newToken) {
+                    return { success: false, error: 'Token não disponível', vendas: [] };
+                }
             } else {
                 return { success: false, error: 'Token não disponível', vendas: [] };
             }
         }
         
-        const accessToken = mlTokenStatus.access_token;
+        // Garantir que temos o token
+        const accessToken = mlTokenStatus.access_token || localStorage.getItem('ml_access_token');
+        if (!accessToken) {
+            return { success: false, error: 'Token não disponível', vendas: [] };
+        }
+        
+        console.log(`✅ Token obtido: ${accessToken.substring(0, 20)}...`);
+        
+        // Garantir limite máximo de 50
         const limiteSeguro = Math.min(limit, 50);
         
-        // Buscar vendas dos últimos 30 dias
+        // Buscar vendas pagas - ÚLTIMOS 30 DIAS
         const agora = new Date();
         const trintaDiasAtras = new Date(agora);
         trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
         
-        const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${trintaDiasAtras.toISOString()}&limit=${limiteSeguro}`;
+        const dataFormatada = trintaDiasAtras.toISOString();
         
-        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(urlML)}&token=${encodeURIComponent(accessToken)}`;
+        const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=${limiteSeguro}`;
         
+        console.log('📡 URL da API:', urlML);
+        
+        const encodedUrl = encodeURIComponent(urlML);
+        const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(accessToken)}`;
+        
+        console.log('🔄 Chamando proxy...');
         const response = await fetch(proxyUrl);
         
         if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Erro na resposta do proxy:', response.status, errorText);
+            
             if (response.status === 401) {
+                console.log('🔄 Token 401, tentando renovar...');
                 const refreshToken = localStorage.getItem('ml_refresh_token');
                 if (refreshToken) {
                     const newToken = await renewTokenWithRefreshToken(refreshToken);
-                    if (newToken) return await buscarVendasML(limit);
+                    if (newToken) {
+                        console.log('✅ Token renovado, tentando novamente...');
+                        return await buscarVendasML(limit);
+                    }
                 }
             }
-            return { success: false, error: `Erro ${response.status}`, vendas: [] };
+            
+            return {
+                success: false,
+                error: `Erro ${response.status}: ${errorText}`,
+                vendas: []
+            };
         }
         
         const result = await response.json();
         
-        if (!result.results?.length) {
-            return { success: true, vendas: [], total: 0 };
+        console.log('📊 Resposta da API:', {
+            total: result.paging?.total || 0,
+            resultsCount: result.results?.length || 0
+        });
+        
+        if (!result.results || result.results.length === 0) {
+            return {
+                success: true,
+                vendas: [],
+                total: 0
+            };
         }
         
-        // Processar com detalhes de estoque e envio
-        const vendasProcessadas = await processarVendasComDetalhesESTOQUE(result.results, accessToken);
+        // ===== CORREÇÃO: PASSAR O TOKEN CORRETO =====
+        console.log('🔍 Processando detalhes de estoque e envio...');
+        const vendasProcessadas = await processarVendasComDetalhesESTOQUE(
+            result.results, 
+            accessToken  // ← PASSA O TOKEN QUE TEMOS CERTEZA QUE FUNCIONA
+        );
+        
+        console.log(`✅ ${vendasProcessadas.length} vendas processadas com detalhes`);
         
         return {
             success: true,
             vendas: vendasProcessadas,
-            total: result.paging?.total || 0
+            total: result.paging?.total || vendasProcessadas.length,
+            paging: result.paging || {}
         };
         
     } catch (error) {
-        console.error('❌ Erro ao buscar vendas:', error);
-        return { success: false, error: error.message, vendas: [] };
+        console.error('❌ Erro ao buscar vendas ML:', error);
+        return {
+            success: false,
+            error: error.message,
+            vendas: []
+        };
     }
 }
 
