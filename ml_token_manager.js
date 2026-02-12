@@ -209,72 +209,135 @@ async function fetchMLSalesViaWorker(token, limit = 50) {
 // ===== FUNÇÃO PRINCIPAL PARA GERENCIAR TOKEN =====
 // NO ml_token_manager.js - Substitua a função autoManageMLToken:
 
+// ===== FUNÇÃO PRINCIPAL PARA GERENCIAR TOKEN - CORRIGIDA =====
 async function autoManageMLToken() {
     console.log('🔄 Gerenciamento automático de token iniciado...');
     
     try {
-        // 1. TENTAR CARREGAR DO SUPABASE PRIMEIRO
-        const { data: tokenDB, error } = await supabaseClient
-            .from('mercadolivre_tokens')
-            .select('*')
-            .eq('user_id', ML_CONFIG.USER_ID)
-            .single();
+        // 1. TENTAR CARREGAR DO SUPABASE PRIMEIRO (SEM .single())
+        if (window.supabaseClient || supabaseClient) {
+            try {
+                const client = window.supabaseClient || supabaseClient;
+                
+                const { data: tokenDB, error } = await client
+                    .from('mercadolivre_tokens')
+                    .select('*')
+                    .eq('user_id', ML_CONFIG.USER_ID);
+                
+                if (!error && tokenDB && tokenDB.length > 0) {
+                    const token = tokenDB[0]; // Pega o primeiro registro
+                    console.log('📦 Token carregado do Supabase');
+                    
+                    // Verificar se ainda é válido
+                    const expiresIn = token.expires_at - Date.now();
+                    
+                    if (expiresIn > 300000) { // > 5 minutos
+                        console.log(`✅ Token válido por mais ${Math.round(expiresIn/60000)} minutos`);
+                        
+                        // Atualizar localStorage
+                        localStorage.setItem('ml_access_token', token.access_token);
+                        localStorage.setItem('ml_refresh_token', token.refresh_token);
+                        localStorage.setItem('ml_token_expiry', token.expires_at.toString());
+                        localStorage.setItem('ml_user_id', token.user_id || ML_CONFIG.USER_ID);
+                        
+                        mlTokenStatus = {
+                            access_token: token.access_token,
+                            refresh_token: token.refresh_token,
+                            expires_at: token.expires_at,
+                            is_valid: true,
+                            last_update: new Date().toISOString(),
+                            user_info: mlTokenStatus?.user_info || null
+                        };
+                        
+                        updateTokenStatusUI();
+                        scheduleTokenRenewal(expiresIn);
+                        return token.access_token;
+                    }
+                    
+                    // Token expirado ou próximo de expirar, tenta renovar
+                    if (expiresIn > 0 || expiresIn <= 300000) {
+                        console.log('🔄 Token próximo de expirar, renovando...');
+                        const newToken = await renewTokenWithRefreshToken(token.refresh_token);
+                        if (newToken) {
+                            return newToken;
+                        }
+                    }
+                } else {
+                    console.log('📭 Nenhum token encontrado no Supabase');
+                }
+            } catch (supabaseError) {
+                console.warn('⚠️ Erro ao consultar Supabase:', supabaseError.message);
+                // Continua para localStorage
+            }
+        }
         
-        if (tokenDB && tokenDB.refresh_token) {
-            console.log('📦 Token carregado do Supabase');
-            
-            // Verificar se ainda é válido
-            const expiresIn = tokenDB.expires_at - Date.now();
+        // 2. FALLBACK PARA LOCALSTORAGE
+        const accessToken = localStorage.getItem('ml_access_token');
+        const refreshToken = localStorage.getItem('ml_refresh_token');
+        const tokenExpiry = localStorage.getItem('ml_token_expiry');
+        const userId = localStorage.getItem('ml_user_id') || ML_CONFIG.USER_ID;
+        
+        if (accessToken && refreshToken && tokenExpiry) {
+            const expiresIn = parseInt(tokenExpiry) - Date.now();
             
             if (expiresIn > 300000) { // > 5 minutos
-                console.log(`✅ Token válido por mais ${Math.round(expiresIn/60000)} minutos`);
-                
-                // Atualizar localStorage
-                localStorage.setItem('ml_access_token', tokenDB.access_token);
-                localStorage.setItem('ml_refresh_token', tokenDB.refresh_token);
-                localStorage.setItem('ml_token_expiry', tokenDB.expires_at.toString());
+                console.log(`✅ Token localStorage válido por mais ${Math.round(expiresIn/60000)} minutos`);
                 
                 mlTokenStatus = {
-                    access_token: tokenDB.access_token,
-                    refresh_token: tokenDB.refresh_token,
-                    expires_at: tokenDB.expires_at,
+                    access_token: accessToken,
+                    refresh_token: refreshToken,
+                    expires_at: parseInt(tokenExpiry),
                     is_valid: true,
-                    last_update: new Date().toISOString()
+                    last_update: new Date().toISOString(),
+                    user_info: mlTokenStatus?.user_info || null
                 };
                 
                 updateTokenStatusUI();
-                return tokenDB.access_token;
+                scheduleTokenRenewal(expiresIn);
+                return accessToken;
             }
             
-            // Token expirado, tenta renovar
+            // Token expirado ou próximo de expirar
             if (expiresIn > 0 || expiresIn <= 300000) {
-                console.log('🔄 Token próximo de expirar, renovando...');
-                const newToken = await renewTokenWithRefreshToken(tokenDB.refresh_token);
+                console.log('🔄 Token localStorage próximo de expirar, renovando...');
+                const newToken = await renewTokenWithRefreshToken(refreshToken);
                 if (newToken) {
                     return newToken;
                 }
             }
         }
         
-        // 2. Fallback para localStorage
-        const accessToken = localStorage.getItem('ml_access_token');
-        const refreshToken = localStorage.getItem('ml_refresh_token');
-        const tokenExpiry = localStorage.getItem('ml_token_expiry');
+        // 3. SE NÃO TEM TOKEN VÁLIDO, OBTER NOVO
+        console.log('🔄 Nenhum token válido encontrado, obtendo novo...');
         
-        if (accessToken && refreshToken && tokenExpiry) {
-            const expiresIn = parseInt(tokenExpiry) - Date.now();
-            if (expiresIn > 300000) {
-                console.log(`✅ Token localStorage válido por mais ${Math.round(expiresIn/60000)} minutos`);
-                return accessToken;
+        // Tentar obter token direto da API
+        try {
+            const tokenData = await getTokenDiretoDaAPI();
+            if (tokenData) {
+                return tokenData;
             }
+        } catch (error) {
+            console.warn('⚠️ Erro ao obter token direto:', error);
         }
         
-        // 3. Se não tem token válido, obter NOVO
-        console.log('🔄 Nenhum token válido encontrado, obtendo novo...');
+        // Última tentativa: Worker
+        console.log('🔄 Tentando obter token via Worker...');
         return await getNewTokenWithCode();
         
     } catch (error) {
-        console.error('❌ Erro no autoManageMLToken:', error);
+        console.error('❌ Erro crítico no autoManageMLToken:', error);
+        
+        // TENTAR RECUPERAR: usar refresh token do localStorage como última tentativa
+        try {
+            const refreshToken = localStorage.getItem('ml_refresh_token');
+            if (refreshToken) {
+                console.log('🔄 Tentativa de recuperação com refresh token...');
+                return await renewTokenWithRefreshToken(refreshToken);
+            }
+        } catch (recoveryError) {
+            console.error('❌ Falha na recuperação:', recoveryError);
+        }
+        
         return null;
     }
 }
