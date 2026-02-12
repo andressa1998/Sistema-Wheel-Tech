@@ -457,52 +457,52 @@ function scheduleTokenRenewal(milliseconds) {
 }
 
 // 7. INICIALIZAR AUTENTICAÇÃO
+// ===== INICIALIZAR =====
 async function initializeMLAuth() {
     console.log('🔑 Inicializando autenticação Mercado Livre...');
     
-    updateTokenStatusUI();
+    // ✅ SEMPRE VERIFICAR E RENOVAR SE NECESSÁRIO AO INICIAR
+    console.log('📦 Carregando token do localStorage');
+    const accessToken = localStorage.getItem('ml_access_token');
+    const refreshToken = localStorage.getItem('ml_refresh_token');
+    const tokenExpiry = localStorage.getItem('ml_token_expiry');
     
-    try {
-        const accessToken = localStorage.getItem('ml_access_token');
-        const refreshToken = localStorage.getItem('ml_refresh_token');
-        const tokenExpiry = localStorage.getItem('ml_token_expiry');
+    if (accessToken && refreshToken && tokenExpiry) {
+        const expiresIn = parseInt(tokenExpiry) - Date.now();
+        console.log(`⏰ Token expira em ${Math.round(expiresIn/60000)} minutos`);
         
-        if (accessToken && refreshToken && tokenExpiry) {
-            console.log(`📦 Carregando token do localStorage`);
-            
+        // ✅ SE ESTIVER PERTO DE EXPIRAR (< 1 hora), RENOVA AGORA!
+        if (expiresIn < 3600000) { // 1 hora em ms
+            console.log('🔄 Token próximo de expirar, renovando ao iniciar...');
+            const novoToken = await renewTokenWithRefreshToken(refreshToken);
+            if (novoToken) {
+                console.log('✅ Token renovado ao iniciar!');
+                updateTokenStatusUI();
+                return novoToken;
+            }
+        } else {
+            // Token ainda válido
             mlTokenStatus = {
                 access_token: accessToken,
                 refresh_token: refreshToken,
                 expires_at: parseInt(tokenExpiry),
                 is_valid: true,
                 last_update: new Date().toISOString(),
-                user_info: null
+                user_info: mlTokenStatus.user_info
             };
-            
             updateTokenStatusUI();
-            
-            const expiresIn = parseInt(tokenExpiry) - Date.now();
-            if (expiresIn > 0) scheduleTokenRenewal(expiresIn);
-            
             return accessToken;
         }
-        
-        return await autoManageMLToken();
-        
-    } catch (error) {
-        console.error('❌ Erro na inicialização:', error);
-        showTokenError('FALHA NA INICIALIZAÇÃO');
-        return null;
     }
+    
+    // Se não tem token ou expirou, pegar novo
+    console.log('🔄 Nenhum token válido encontrado, obtendo novo...');
+    return await getNewTokenWithCode();
 }
 
 // ============================================
 // FUNÇÕES DE VENDAS - CORRIGIDAS
 // ============================================
-
-// 8. BUSCAR VENDAS
-// ===== FUNÇÃO PARA BUSCAR VENDAS - VERSÃO FINAL CORRIGIDA =====
-// ===== FUNÇÃO PARA BUSCAR VENDAS - VERSÃO FINAL CORRIGIDA =====
 async function buscarVendasML(limit = 50) {
     try {
         console.log('🛒 Buscando vendas do Mercado Livre...');
