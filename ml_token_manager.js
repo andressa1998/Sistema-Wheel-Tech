@@ -7,6 +7,7 @@ console.log('🔑 Sistema de Token ML para Cloudflare Worker inicializando...');
 // CONFIGURAÇÕES
 // ============================================
 const WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+console.log('🔧 WORKER_URL:', WORKER_URL);
 window.WORKER_URL = WORKER_URL;
 
 const ML_CONFIG = {
