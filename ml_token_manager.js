@@ -57,13 +57,20 @@ async function callWorker(endpoint, method = 'GET', body = null) {
 }
 
 // ===== FUNÇÃO PARA OBTER NOVO TOKEN =====
+// ===== FUNÇÃO PARA OBTER NOVO TOKEN - COM LOGS DETALHADOS =====
 async function getNewTokenWithCode() {
     try {
         console.log('🔄 Obtendo novo token via Worker...');
+        console.log('📤 Enviando código:', ML_CONFIG.INITIAL_CODE.substring(0, 20) + '...');
         
         const tokenData = await callWorker('/api/ml/token', 'POST', {
             code: ML_CONFIG.INITIAL_CODE
         });
+        
+        if (!tokenData || !tokenData.access_token) {
+            console.error('❌ Resposta inválida do Worker:', tokenData);
+            throw new Error('Resposta inválida do Worker');
+        }
         
         console.log('✅ Novo token obtido via Worker!');
         console.log('Access Token:', tokenData.access_token?.substring(0, 30) + '...');
@@ -71,7 +78,7 @@ async function getNewTokenWithCode() {
         console.log('Expira em:', tokenData.expires_in, 'segundos');
         
         // Salvar token
-        const expiresIn = tokenData.expires_in || 21600; // 6 horas padrão
+        const expiresIn = tokenData.expires_in || 21600;
         const expiresAt = Date.now() + (expiresIn * 1000);
         
         localStorage.setItem('ml_access_token', tokenData.access_token);
@@ -91,12 +98,27 @@ async function getNewTokenWithCode() {
         updateTokenStatusUI();
         scheduleTokenRenewal(expiresIn * 1000);
         
+        // Salvar no Supabase (tentar, mas não falhar se erro)
+        try {
+            await salvarTokenNoSupabase(tokenData);
+        } catch (e) {
+            console.warn('⚠️ Não foi possível salvar token no Supabase:', e.message);
+        }
+        
         return tokenData.access_token;
         
     } catch (error) {
         console.error('❌ Erro ao obter token via Worker:', error);
-        showTokenError('FALHA NO WORKER');
-        return null;
+        
+        // TENTATIVA DIRETA COMO FALLBACK
+        console.log('🔄 Tentando obter token DIRETAMENTE da API ML...');
+        try {
+            return await getTokenDiretoDaAPI();
+        } catch (directError) {
+            console.error('❌ Também falhou direto:', directError);
+            showTokenError('FALHA NO WORKER E API DIRETA');
+            return null;
+        }
     }
 }
 
