@@ -12,7 +12,7 @@ window.WORKER_URL = WORKER_URL;
 const ML_CONFIG = {
     CLIENT_ID: '5767896809769647',
     CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
-    REDIRECT_URI: 'https://homework-fees-saving-beliefs.trycloudflare.com/callback',
+    REDIRECT_URI: 'https://purple-bonus-3b1c.andmiotto1998.workers.dev/callback',
     INITIAL_CODE: 'TG-698dc3bcad54130001231051-415176739', // ATUALIZE COM NOVO CÓDIGO
     USER_ID: '415176739',
     WORKER_URL: WORKER_URL
