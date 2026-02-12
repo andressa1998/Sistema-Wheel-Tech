@@ -459,6 +459,7 @@ function paginarVendasLista(vendas) {
 }
 
 // Atualizar tabela de vendas - VERSÃO CORRIGIDA
+// ===== FUNÇÃO CORRIGIDA - MOSTRA SKU, ESTOQUE E ENVIO =====
 function atualizarTabelaVendas() {
     const tbody = document.getElementById('salesTableBody');
     const emptyMsg = document.getElementById('salesEmpty');
@@ -477,56 +478,145 @@ function atualizarTabelaVendas() {
     vendasPaginadas.forEach(venda => {
         const row = document.createElement('tr');
         row.className = 'venda-item';
-        row.dataset.id = venda.id_venda_ml;
+        row.dataset.id = venda.id_venda_ml || venda.id;
         
-        // Formatar data - usar created_at
-        const dataVenda = venda.created_at ? new Date(venda.created_at) : new Date();
-        const dataFormatada = dataVenda.toLocaleDateString('pt-BR');
-        const horaFormatada = dataVenda.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        // Data da venda
+        const dataVenda = venda.created_at || venda.data_venda || venda.date_created || new Date().toISOString();
+        const dataObj = new Date(dataVenda);
+        const dataFormatada = dataObj.toLocaleDateString('pt-BR');
+        const horaFormatada = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         
-        // Status badge
+        // ===== STATUS DA VENDA =====
         let statusBadge = '';
         if (venda.status_sistema === 'nova') {
-            statusBadge = '<span class="badge badge-nova">NOVA</span>';
+            statusBadge = '<span class="badge badge-nova"><i class="fas fa-star"></i> NOVA</span>';
         } else if (venda.status_sistema === 'verificada') {
-            statusBadge = '<span class="badge badge-verificada">VERIFICADA</span>';
+            statusBadge = '<span class="badge badge-verificada"><i class="fas fa-check"></i> VERIFICADA</span>';
         } else if (venda.status_sistema === 'fraude') {
-            statusBadge = '<span class="badge badge-fraude">FRAUDE</span>';
+            statusBadge = '<span class="badge badge-fraude"><i class="fas fa-ban"></i> FRAUDE</span>';
+        } else {
+            statusBadge = '<span class="badge badge-secondary">PENDENTE</span>';
         }
         
+        // ===== SKU =====
+        const sku = venda.sku || venda.item_sku || venda.codigo || 'SEM_SKU';
+        
+        // ===== TIPO DE ENVIO =====
+        let envioBadge = '';
+        let tipoEnvio = venda.tipo_envio || venda.meio_envio || 'N/I';
+        
+        if (tipoEnvio.includes('FULL') || tipoEnvio.includes('fulfillment')) {
+            envioBadge = '<span class="badge badge-full"><i class="fas fa-warehouse"></i> FULL</span>';
+        } else if (tipoEnvio.includes('FLEX') || tipoEnvio.includes('drop_off')) {
+            envioBadge = '<span class="badge badge-flex"><i class="fas fa-motorcycle"></i> FLEX</span>';
+        } else if (tipoEnvio.includes('MERCADO') || tipoEnvio.includes('self_service') || tipoEnvio.includes('cross_docking')) {
+            envioBadge = '<span class="badge badge-mercado"><i class="fas fa-truck"></i> MERCADO ENVIOS</span>';
+        } else if (tipoEnvio !== 'N/I' && tipoEnvio !== 'Não especificado') {
+            envioBadge = `<span class="badge badge-info">${tipoEnvio}</span>`;
+        } else {
+            envioBadge = '<span class="badge badge-secondary"><i class="fas fa-question"></i> N/I</span>';
+        }
+        
+        // ===== ESTOQUE DO ANÚNCIO =====
+        let estoqueBadge = '';
+        const estoqueAnuncio = venda.estoque_anuncio !== undefined ? venda.estoque_anuncio : null;
+        
+        if (estoqueAnuncio !== null && estoqueAnuncio !== undefined) {
+            if (estoqueAnuncio <= 5) {
+                estoqueBadge = `<span class="badge badge-danger"><i class="fas fa-exclamation-triangle"></i> ${estoqueAnuncio} un</span>`;
+            } else if (estoqueAnuncio <= 20) {
+                estoqueBadge = `<span class="badge badge-warning"><i class="fas fa-exclamation"></i> ${estoqueAnuncio} un</span>`;
+            } else {
+                estoqueBadge = `<span class="badge badge-success"><i class="fas fa-check"></i> ${estoqueAnuncio} un</span>`;
+            }
+        } else {
+            estoqueBadge = '<span class="badge badge-secondary">N/I</span>';
+        }
+        
+        // ===== VARIAÇÕES (se houver) =====
+        let variacaoDisplay = '';
+        if (venda.variacao_atributos && venda.variacao_atributos.length > 0) {
+            const variacoes = venda.variacao_atributos
+                .map(attr => `${attr.name}: ${attr.value_name}`)
+                .join(' | ');
+            variacaoDisplay = `<br><small style="color: #666; font-size: 10px;">${variacoes}</small>`;
+        }
+        
+        // ===== ESTOQUE FÍSICO =====
+        const estoqueFisicoInput = `
+            <div style="display: flex; align-items: center; gap: 4px;">
+                <input type="number" 
+                       class="estoque-fisico-input form-control-sm" 
+                       value="${venda.estoque_fisico || 0}" 
+                       min="0"
+                       data-id="${venda.id_venda_ml || venda.id}"
+                       style="width: 60px; padding: 2px 4px; border-radius: 4px; border: 1px solid #ddd;"
+                       onchange="window.atualizarEstoqueFisico('${venda.id_venda_ml || venda.id}', this.value)">
+            </div>
+        `;
+        
+        // ===== MONTAR LINHA DA TABELA =====
         row.innerHTML = `
             <td>
-                <strong>${venda.id_venda_ml || 'N/A'}</strong><br>
-                <small>${(venda.titulo || '').substring(0, 50)}${(venda.titulo || '').length > 50 ? '...' : ''}</small>
+                <strong style="font-size: 12px;">${(venda.id_venda_ml || venda.id || '').substring(0, 15)}</strong><br>
+                <small style="color: #666; font-size: 11px;">${(venda.titulo || venda.title || '').substring(0, 30)}${(venda.titulo || venda.title || '').length > 30 ? '...' : ''}</small>
             </td>
             <td>
-                ${dataFormatada}<br>
-                <small>${horaFormatada}</small>
+                <span style="font-weight: 500;">${dataFormatada}</span><br>
+                <small style="color: #666;">${horaFormatada}</small>
             </td>
             <td class="valor-cell">
-                R$ ${(venda.valor_total || 0).toFixed(2)}<br>
-                <small>${venda.quantidade || 1} un.</small>
+                <span style="font-weight: 600; color: #28a745;">R$ ${(venda.valor_total || 0).toFixed(2)}</span><br>
+                <small style="color: #666;">${venda.quantidade || venda.quantity || 1} un</small>
             </td>
-            <td>${venda.cliente || 'Cliente não identificado'}</td>
             <td>
-                <span class="badge badge-info">${venda.sku || 'SEM_SKU'}</span>
+                <span style="font-size: 12px;">${venda.cliente || venda.comprador || venda.buyer?.nickname || 'N/I'}</span>
             </td>
-            <td>${statusBadge}</td>
             <td>
-                <button onclick="verDetalhesVenda('${venda.id_venda_ml}')" class="btn btn-info btn-sm">
-                    <i class="fas fa-eye"></i>
-                </button>
-                <button onclick="verificarVenda('${venda.id_venda_ml}')" class="btn btn-success btn-sm ${venda.status_sistema === 'nova' ? '' : 'hidden'}">
-                    <i class="fas fa-check"></i>
-                </button>
-                <button onclick="marcarComoFraude('${venda.id_venda_ml}')" class="btn btn-danger btn-sm ${venda.status_sistema === 'nova' ? '' : 'hidden'}">
-                    <i class="fas fa-times"></i>
-                </button>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <span class="badge badge-info" style="font-size: 11px; text-align: left; word-break: break-all;">
+                        <i class="fas fa-barcode"></i> ${sku}
+                    </span>
+                    ${variacaoDisplay}
+                    <div style="margin-top: 4px;">
+                        ${envioBadge}
+                    </div>
+                </div>
+            </td>
+            <td>
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <div>
+                        <small style="color: #666; font-size: 10px; display: block;">📦 Anúncio:</small>
+                        ${estoqueBadge}
+                    </div>
+                    <div>
+                        <small style="color: #666; font-size: 10px; display: block;">🏭 Físico:</small>
+                        ${estoqueFisicoInput}
+                    </div>
+                </div>
+            </td>
+            <td>
+                ${statusBadge}
+            </td>
+            <td>
+                <div style="display: flex; gap: 4px;">
+                    <button onclick="verDetalhesVenda('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-info" title="Ver detalhes">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button onclick="verificarVenda('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-success ${venda.status_sistema === 'nova' ? '' : 'hidden'}" title="Verificar">
+                        <i class="fas fa-check"></i>
+                    </button>
+                    <button onclick="marcarComoFraude('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-danger ${venda.status_sistema === 'nova' ? '' : 'hidden'}" title="Fraude">
+                        <i class="fas fa-ban"></i>
+                    </button>
+                </div>
             </td>
         `;
         
         tbody.appendChild(row);
     });
+    
+    console.log(`✅ Tabela atualizada com ${vendasPaginadas.length} vendas`);
 }
 
 // Atualizar controles de paginação
@@ -656,136 +746,6 @@ async function atualizarEstoqueFisico(idVenda, novoEstoque) {
         console.error('❌ Erro ao atualizar estoque físico:', error);
         mostrarToast('Erro ao atualizar estoque', 'error');
     }
-}
-
-// MODIFICAR a função atualizarTabelaVendas para mostrar os novos campos
-function atualizarTabelaVendas() {
-    const tbody = document.getElementById('salesTableBody');
-    const emptyMsg = document.getElementById('salesEmpty');
-    
-    if (!tbody) return;
-    
-    tbody.innerHTML = '';
-    
-    if (vendasPaginadas.length === 0) {
-        if (emptyMsg) emptyMsg.classList.remove('hidden');
-        return;
-    }
-    
-    if (emptyMsg) emptyMsg.classList.add('hidden');
-    
-    vendasPaginadas.forEach(venda => {
-        const row = document.createElement('tr');
-        row.className = 'venda-item';
-        row.dataset.id = venda.id_venda_ml;
-        
-        const dataVenda = venda.created_at ? new Date(venda.created_at) : new Date();
-        const dataFormatada = dataVenda.toLocaleDateString('pt-BR');
-        const horaFormatada = dataVenda.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        
-        // Badge de status
-        let statusBadge = '';
-        if (venda.status_sistema === 'nova') {
-            statusBadge = '<span class="badge badge-nova">NOVA</span>';
-        } else if (venda.status_sistema === 'verificada') {
-            statusBadge = '<span class="badge badge-verificada">VERIFICADA</span>';
-        } else if (venda.status_sistema === 'fraude') {
-            statusBadge = '<span class="badge badge-fraude">FRAUDE</span>';
-        }
-        
-        // Badge de tipo de envio
-        let envioBadge = '';
-        if (venda.tipo_envio) {
-            if (venda.tipo_envio.includes('FULL')) {
-                envioBadge = '<span class="badge badge-full"><i class="fas fa-box"></i> FULL</span>';
-            } else if (venda.tipo_envio.includes('FLEX')) {
-                envioBadge = '<span class="badge badge-flex"><i class="fas fa-motorcycle"></i> FLEX</span>';
-            } else if (venda.tipo_envio.includes('MERCADO')) {
-                envioBadge = '<span class="badge badge-mercado"><i class="fas fa-truck"></i> ME</span>';
-            } else {
-                envioBadge = `<span class="badge badge-info">${venda.tipo_envio}</span>`;
-            }
-        } else {
-            envioBadge = '<span class="badge badge-secondary">N/I</span>';
-        }
-        
-        // Estoque do anúncio (com cor baseada no nível)
-        let estoqueBadge = '';
-        if (venda.estoque_anuncio !== undefined && venda.estoque_anuncio !== null) {
-            if (venda.estoque_anuncio <= 5) {
-                estoqueBadge = `<span class="badge badge-danger">${venda.estoque_anuncio} un.</span>`;
-            } else if (venda.estoque_anuncio <= 20) {
-                estoqueBadge = `<span class="badge badge-warning">${venda.estoque_anuncio} un.</span>`;
-            } else {
-                estoqueBadge = `<span class="badge badge-success">${venda.estoque_anuncio} un.</span>`;
-            }
-        } else {
-            estoqueBadge = '<span class="badge badge-secondary">N/I</span>';
-        }
-        
-        // Input para estoque físico
-        const estoqueFisicoInput = `
-            <input type="number" 
-                   class="estoque-fisico-input" 
-                   value="${venda.estoque_fisico || 0}" 
-                   min="0"
-                   data-id="${venda.id_venda_ml}"
-                   data-sku="${venda.sku}"
-                   style="width: 70px; padding: 4px; border-radius: 4px; border: 1px solid #ddd;"
-                   onchange="window.atualizarEstoqueFisico('${venda.id_venda_ml}', this.value)">
-        `;
-        
-        row.innerHTML = `
-            <td>
-                <strong>${venda.id_venda_ml?.substring(0, 15) || 'N/A'}...</strong><br>
-                <small>${(venda.titulo || '').substring(0, 30)}${(venda.titulo || '').length > 30 ? '...' : ''}</small>
-            </td>
-            <td>
-                ${dataFormatada}<br>
-                <small>${horaFormatada}</small>
-            </td>
-            <td class="valor-cell">
-                R$ ${(venda.valor_total || 0).toFixed(2)}<br>
-                <small>${venda.quantidade || 1} un.</small>
-            </td>
-            <td>${venda.cliente || 'N/I'}</td>
-            <td>
-                <span class="badge badge-info" style="display: block; margin-bottom: 4px;">
-                    ${venda.sku || 'SEM_SKU'}
-                </span>
-                ${envioBadge}
-            </td>
-            <td>
-                <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <div>
-                        <span style="font-size: 11px; color: #666;">Anúncio:</span>
-                        ${estoqueBadge}
-                    </div>
-                    <div>
-                        <span style="font-size: 11px; color: #666;">Físico:</span>
-                        ${estoqueFisicoInput}
-                    </div>
-                </div>
-            </td>
-            <td>${statusBadge}</td>
-            <td>
-                <button onclick="verDetalhesVenda('${venda.id_venda_ml}')" class="btn btn-info btn-sm" title="Ver detalhes">
-                    <i class="fas fa-eye"></i>
-                </button>
-                <button onclick="verificarVenda('${venda.id_venda_ml}')" class="btn btn-success btn-sm ${venda.status_sistema === 'nova' ? '' : 'hidden'}" title="Verificar">
-                    <i class="fas fa-check"></i>
-                </button>
-                <button onclick="marcarComoFraude('${venda.id_venda_ml}')" class="btn btn-danger btn-sm ${venda.status_sistema === 'nova' ? '' : 'hidden'}" title="Fraude">
-                    <i class="fas fa-times"></i>
-                </button>
-                <button onclick="editarEstoqueFisico('${venda.id_venda_ml}', ${venda.estoque_fisico || 0})" class="btn btn-warning btn-sm" title="Editar estoque">
-                    <i class="fas fa-edit"></i>
-                </button>
-            </td>
-        `;
-        
-        tbody.appendChild(row);
-    });
 }
 
 // Função para editar estoque físico via modal
