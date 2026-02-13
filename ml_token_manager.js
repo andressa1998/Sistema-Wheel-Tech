@@ -14,7 +14,7 @@ const ML_CONFIG = {
     CLIENT_ID: '5767896809769647',
     CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
     REDIRECT_URI: 'https://purple-bonus-3b1c.andmiotto1998.workers.dev/callback',
-    INITIAL_CODE: 'TG-698dc6a1c97d360001a048c2-415176739', // ATUALIZE COM NOVO CÓDIGO
+    INITIAL_CODE: 'TG-698dc6a1c97d360001a048c2-415176739',
     USER_ID: '415176739',
     WORKER_URL: WORKER_URL
 };
@@ -55,8 +55,6 @@ async function callWorker(endpoint, method = 'GET', body = null) {
 // ============================================
 // FUNÇÕES DE TOKEN - API DIRETA
 // ============================================
-
-// 1. OBTER TOKEN DIRETO DA API (COM CÓDIGO)
 async function getTokenDiretoDaAPI() {
     try {
         console.log('🚀 Obtendo token DIRETAMENTE da API ML...');
@@ -72,8 +70,6 @@ async function getTokenDiretoDaAPI() {
         params.append('client_secret', ML_CONFIG.CLIENT_SECRET);
         params.append('code', ML_CONFIG.INITIAL_CODE);
         params.append('redirect_uri', ML_CONFIG.REDIRECT_URI);
-        
-        console.log('📤 Enviando código:', ML_CONFIG.INITIAL_CODE.substring(0, 20) + '...');
         
         const response = await fetch('https://api.mercadolibre.com/oauth/token', {
             method: 'POST',
@@ -98,16 +94,13 @@ async function getTokenDiretoDaAPI() {
         }
         
         console.log('✅ Token obtido com sucesso!');
-        console.log('📌 Refresh Token SALVO:', data.refresh_token.substring(0, 30) + '...');
         
-        // Salvar no localStorage
         const expiresAt = Date.now() + (data.expires_in * 1000);
         localStorage.setItem('ml_access_token', data.access_token);
         localStorage.setItem('ml_refresh_token', data.refresh_token);
         localStorage.setItem('ml_token_expiry', expiresAt.toString());
         localStorage.setItem('ml_user_id', data.user_id || ML_CONFIG.USER_ID);
         
-        // Atualizar mlTokenStatus
         mlTokenStatus = {
             access_token: data.access_token,
             refresh_token: data.refresh_token,
@@ -120,7 +113,6 @@ async function getTokenDiretoDaAPI() {
         updateTokenStatusUI();
         scheduleTokenRenewal(data.expires_in * 1000);
         
-        // Salvar no Supabase (opcional)
         try { if (supabaseClient) await salvarTokenNoSupabase(data); } catch (e) {}
         
         return data.access_token;
@@ -131,7 +123,6 @@ async function getTokenDiretoDaAPI() {
     }
 }
 
-// 2. RENOVAR TOKEN COM REFRESH TOKEN (VERSÃO ÚNICA E COMPLETA)
 async function renewTokenWithRefreshToken(refreshToken) {
     try {
         console.log('🔄 Renovando token com refresh token...');
@@ -140,8 +131,6 @@ async function renewTokenWithRefreshToken(refreshToken) {
             console.error('❌ Refresh token inválido');
             return null;
         }
-        
-        console.log('📌 Refresh Token:', refreshToken.substring(0, 20) + '...');
         
         const params = new URLSearchParams();
         params.append('grant_type', 'refresh_token');
@@ -230,7 +219,6 @@ async function renewTokenWithRefreshToken(refreshToken) {
     }
 }
 
-// 3. OBTER TOKEN VIA WORKER
 async function getNewTokenWithCode() {
     try {
         console.log('🔄 Obtendo novo token via Worker...');
@@ -282,13 +270,10 @@ async function getNewTokenWithCode() {
 // ============================================
 // GERENCIAMENTO DE TOKEN
 // ============================================
-
-// 4. OBTER TOKEN VÁLIDO
 async function getValidToken() {
     console.log('🔑 Obtendo token válido...');
     
     try {
-        // 1. Verificar mlTokenStatus
         if (mlTokenStatus?.access_token) {
             const expiresIn = (mlTokenStatus.expires_at || 0) - Date.now();
             if (expiresIn > 60000) {
@@ -301,7 +286,6 @@ async function getValidToken() {
             }
         }
         
-        // 2. Verificar localStorage
         const accessToken = localStorage.getItem('ml_access_token');
         const refreshToken = localStorage.getItem('ml_refresh_token');
         const tokenExpiry = localStorage.getItem('ml_token_expiry');
@@ -334,7 +318,6 @@ async function getValidToken() {
             }
         }
         
-        // 3. Tentar obter novo token
         console.log('🔄 Nenhum token válido, obtendo novo...');
         const token = await autoManageMLToken();
         if (token) {
@@ -353,12 +336,10 @@ async function getValidToken() {
     }
 }
 
-// 5. GERENCIAMENTO AUTOMÁTICO
 async function autoManageMLToken() {
     console.log('🔄 Gerenciamento automático de token iniciado...');
     
     try {
-        // 1. Tentar Supabase
         if (window.supabaseClient || supabaseClient) {
             try {
                 const client = window.supabaseClient || supabaseClient;
@@ -400,7 +381,6 @@ async function autoManageMLToken() {
             }
         }
         
-        // 2. Tentar localStorage
         const accessToken = localStorage.getItem('ml_access_token');
         const refreshToken = localStorage.getItem('ml_refresh_token');
         const tokenExpiry = localStorage.getItem('ml_token_expiry');
@@ -431,7 +411,6 @@ async function autoManageMLToken() {
             }
         }
         
-        // 3. Obter novo token
         console.log('🔄 Nenhum token válido, obtendo novo...');
         return await getTokenDiretoDaAPI();
         
@@ -441,9 +420,8 @@ async function autoManageMLToken() {
     }
 }
 
-// 6. AGENDAR RENOVAÇÃO
 function scheduleTokenRenewal(milliseconds) {
-    const renewTime = milliseconds - 3600000; // 1 hora antes
+    const renewTime = milliseconds - 3600000;
     
     if (renewTime > 0) {
         console.log(`⏰ Agendando renovação em ${Math.round(renewTime/3600000)} horas`);
@@ -456,12 +434,9 @@ function scheduleTokenRenewal(milliseconds) {
     }
 }
 
-// 7. INICIALIZAR AUTENTICAÇÃO
-// ===== INICIALIZAR =====
 async function initializeMLAuth() {
     console.log('🔑 Inicializando autenticação Mercado Livre...');
     
-    // ✅ SEMPRE VERIFICAR E RENOVAR SE NECESSÁRIO AO INICIAR
     console.log('📦 Carregando token do localStorage');
     const accessToken = localStorage.getItem('ml_access_token');
     const refreshToken = localStorage.getItem('ml_refresh_token');
@@ -471,8 +446,7 @@ async function initializeMLAuth() {
         const expiresIn = parseInt(tokenExpiry) - Date.now();
         console.log(`⏰ Token expira em ${Math.round(expiresIn/60000)} minutos`);
         
-        // ✅ SE ESTIVER PERTO DE EXPIRAR (< 1 hora), RENOVA AGORA!
-        if (expiresIn < 3600000) { // 1 hora em ms
+        if (expiresIn < 3600000) {
             console.log('🔄 Token próximo de expirar, renovando ao iniciar...');
             const novoToken = await renewTokenWithRefreshToken(refreshToken);
             if (novoToken) {
@@ -481,7 +455,6 @@ async function initializeMLAuth() {
                 return novoToken;
             }
         } else {
-            // Token ainda válido
             mlTokenStatus = {
                 access_token: accessToken,
                 refresh_token: refreshToken,
@@ -495,19 +468,17 @@ async function initializeMLAuth() {
         }
     }
     
-    // Se não tem token ou expirou, pegar novo
     console.log('🔄 Nenhum token válido encontrado, obtendo novo...');
     return await getNewTokenWithCode();
 }
 
 // ============================================
-// FUNÇÕES DE VENDAS - CORRIGIDAS
+// FUNÇÕES DE VENDAS
 // ============================================
 async function buscarVendasML(limit = 50) {
     try {
         console.log('🛒 Buscando vendas do Mercado Livre...');
         
-        // ===== CORREÇÃO CRÍTICA: RESTAURAR TOKEN DO LOCALSTORAGE =====
         if (!mlTokenStatus?.access_token && localStorage.getItem('ml_access_token')) {
             console.log('🔄 Restaurando token do localStorage para memória...');
             mlTokenStatus = {
@@ -520,7 +491,6 @@ async function buscarVendasML(limit = 50) {
             };
         }
         
-        // Verificar se temos token
         if (!mlTokenStatus?.access_token) {
             console.error('❌ mlTokenStatus sem access_token');
             const refreshToken = localStorage.getItem('ml_refresh_token');
@@ -535,7 +505,6 @@ async function buscarVendasML(limit = 50) {
             }
         }
         
-        // Garantir que temos o token
         const accessToken = mlTokenStatus.access_token || localStorage.getItem('ml_access_token');
         if (!accessToken) {
             return { success: false, error: 'Token não disponível', vendas: [] };
@@ -543,10 +512,8 @@ async function buscarVendasML(limit = 50) {
         
         console.log(`✅ Token obtido: ${accessToken.substring(0, 20)}...`);
         
-        // Garantir limite máximo de 50
         const limiteSeguro = Math.min(limit, 50);
         
-        // Buscar vendas pagas - ÚLTIMOS 30 DIAS
         const agora = new Date();
         const trintaDiasAtras = new Date(agora);
         trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
@@ -601,11 +568,10 @@ async function buscarVendasML(limit = 50) {
             };
         }
         
-        // ===== CORREÇÃO: PASSAR O TOKEN CORRETO =====
         console.log('🔍 Processando detalhes de estoque e envio...');
         const vendasProcessadas = await processarVendasComDetalhesESTOQUE(
             result.results, 
-            accessToken  // ← PASSA O TOKEN QUE TEMOS CERTEZA QUE FUNCIONA
+            accessToken
         );
         
         console.log(`✅ ${vendasProcessadas.length} vendas processadas com detalhes`);
@@ -628,7 +594,7 @@ async function buscarVendasML(limit = 50) {
 }
 
 // ============================================
-// FUNÇÃO CORRIGIDA - Baseada na DOCUMENTAÇÃO OFICIAL
+// FUNÇÃO CORRIGIDA - COM FLEX CORRETO
 // ============================================
 async function processarVendasComDetalhesESTOQUE(vendas, token) {
     const vendasComDetalhes = [];
@@ -637,7 +603,6 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
     
     for (const venda of vendas) {
         try {
-            // ===== 1. BUSCAR DETALHES DA ORDEM - VIA WORKER =====
             const orderUrl = `https://api.mercadolibre.com/orders/${venda.id}`;
             const orderProxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${encodeURIComponent(token)}`;
             
@@ -652,11 +617,9 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
             
             const order = await orderRes.json();
             
-            // ===== 2. DADOS DO ITEM =====
             const primeiroItem = order.order_items?.[0] || {};
             const item = primeiroItem.item || {};
             
-            // ===== 3. BUSCAR ITEM PARA ESTOQUE - VIA WORKER =====
             let estoqueAnuncio = 0;
             let sku = item.seller_sku || item.seller_custom_field || 'SEM_SKU';
             
@@ -686,7 +649,7 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                 }
             }
             
-            // ===== 4. BUSCAR ENVIO - VIA WORKER =====
+            // ===== 4. BUSCAR ENVIO - VIA WORKER (CORRIGIDO PARA FLEX) =====
             let tipoEnvio = 'N/I';
             if (order.shipping?.id) {
                 try {
@@ -698,12 +661,39 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                     if (shipRes.ok) {
                         const shipData = await shipRes.json();
                         
+                        // Log para debug
+                        console.log('📦 Dados do envio:', {
+                            id: order.shipping.id,
+                            logistic_type: shipData.logistic_type,
+                            substatus: shipData.substatus,
+                            status: shipData.status
+                        });
+                        
                         if (shipData.logistic_type) {
                             const tipo = shipData.logistic_type.toLowerCase();
-                            if (tipo === 'fulfillment') tipoEnvio = 'FULL';
-                            else if (tipo === 'drop_off' || tipo === 'xd_drop_off') tipoEnvio = 'FLEX';
-                            else if (tipo === 'self_service' || tipo === 'cross_docking') tipoEnvio = 'MERCADO ENVIOS';
-                            else tipoEnvio = shipData.logistic_type.toUpperCase();
+                            
+                            // CORREÇÃO: Identificar FLEX corretamente
+                            if (tipo === 'fulfillment' || tipo === 'fulfillment_me2') {
+                                tipoEnvio = 'FULL';
+                            } 
+                            else if (tipo === 'drop_off' || tipo === 'xd_drop_off' || tipo === 'self_service') {
+                                tipoEnvio = 'FLEX';  // TODOS esses são FLEX
+                            } 
+                            else if (tipo === 'cross_docking' || tipo === 'me2') {
+                                tipoEnvio = 'MERCADO ENVIOS';
+                            }
+                            else {
+                                // Se não identificou, verificar pelo substatus
+                                if (shipData.substatus === 'fulfillment') {
+                                    tipoEnvio = 'FULL';
+                                } else if (shipData.substatus === 'drop_off') {
+                                    tipoEnvio = 'FLEX';
+                                } else {
+                                    tipoEnvio = shipData.logistic_type.toUpperCase();
+                                }
+                            }
+                            
+                            console.log(`📦 Tipo de envio identificado: ${tipoEnvio} (logistic_type: ${tipo})`);
                         }
                     }
                 } catch (e) {
@@ -711,7 +701,6 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                 }
             }
             
-            // ===== 5. MONTAR OBJETO FINAL =====
             const idVenda = `ML${order.id}`.replace(/[^a-zA-Z0-9]/g, '');
             
             vendasComDetalhes.push({
@@ -720,8 +709,8 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                 titulo: item.title || 'Sem título',
                 cliente: order.buyer?.nickname || 'N/I',
                 sku: sku,
-                mlb_id: item.id || null,           // <--- NOVO CAMPO
-                item_id: item.id || null,          // <--- JÁ EXISTE? SE NÃO, ADICIONE
+                mlb_id: item.id || null,
+                item_id: item.id || null,
                 estoque_anuncio: estoqueAnuncio,
                 quantidade: primeiroItem.quantity || 1,
                 valor_total: order.paid_amount || order.total_amount || 0,
@@ -746,14 +735,13 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
     return vendasComDetalhes;
 }
 
-// 10. FALLBACK - VENDA BÁSICA
 function processarVendaBasica(venda) {
     return {
         id: `ML${venda.id || Date.now()}`,
         id_venda_ml: `ML${venda.id || Date.now()}`,
         titulo: venda.order_items?.[0]?.item?.title || 'Venda sem título',
         cliente: venda.buyer?.nickname || 'N/I',
-        mlb_id: venda.mlb_id || venda.item_id || null,  // <--- NOVO CAMPO
+        mlb_id: venda.mlb_id || venda.item_id || null,
         sku: 'SEM_SKU',
         estoque_anuncio: 0,
         estoque_fisico: 0,
@@ -766,58 +754,6 @@ function processarVendaBasica(venda) {
         id_envio: null,
         dados_completos: JSON.stringify(venda)
     };
-}
-
-// 11. SINCRONIZAR COM SUPABASE
-async function sincronizarVendasComSupabase() {
-    console.log('🔄 Sincronizando vendas com Supabase...');
-    
-    try {
-        const resultado = await buscarVendasML(50);
-        const vendasML = resultado?.vendas || [];
-        
-        if (vendasML.length === 0) {
-            console.log('📭 Nenhuma venda para sincronizar');
-            return;
-        }
-        
-        let sucessos = 0;
-        
-        for (const venda of vendasML) {
-            try {
-                if (!supabaseClient) continue;
-                
-                await supabaseClient
-                    .from('vendas_ml')
-                    .upsert({
-                        id_venda_ml: venda.id_venda_ml,
-                        numero_venda: venda.id_venda_ml,
-                        data_venda: venda.data_venda,
-                        valor_total: venda.valor_total,
-                        comprador: venda.cliente,
-                        item_titulo: venda.titulo,
-                        item_sku: venda.sku,
-                        item_quantidade: venda.quantidade,
-                        meio_envio: venda.tipo_envio,
-                        status: 'nova',
-                        verificada: false,
-                        dados_completos: JSON.stringify(venda)
-                    }, { onConflict: 'id_venda_ml' });
-                
-                sucessos++;
-                
-            } catch (e) {
-                console.error(`❌ Erro ao salvar venda:`, e.message);
-            }
-            
-            await new Promise(resolve => setTimeout(resolve, 50));
-        }
-        
-        console.log(`✅ ${sucessos}/${vendasML.length} vendas sincronizadas`);
-        
-    } catch (error) {
-        console.error('❌ Erro na sincronização:', error);
-    }
 }
 
 // ============================================
