@@ -180,9 +180,6 @@ async function carregarVendasDoBanco() {
 // ============================================
 // SINCRONIZAR VENDAS DO ML
 // ============================================
-// ============================================
-// SINCRONIZAR VENDAS DO ML (VERSÃO CORRIGIDA)
-// ============================================
 async function sincronizarVendasML() {
     try {
         const btn = document.getElementById('btnSincronizar');
@@ -194,25 +191,17 @@ async function sincronizarVendasML() {
         
         const resultado = await window.buscarVendasML(50);
         
-        // 🔥 CORREÇÃO: resultado é o array diretamente
-        if (resultado && resultado.length > 0) {
-            console.log(`✅ ${resultado.length} vendas recebidas do ML`);
+        if (resultado && resultado.success && resultado.vendas && resultado.vendas.length > 0) {
+            console.log(`✅ ${resultado.vendas.length} vendas recebidas do ML`);
             
-            // Mostrar exemplo da primeira venda
-            console.log('📦 Exemplo da primeira venda:', {
-                id: resultado[0].id_venda_ml,
-                titulo: resultado[0].titulo,
-                sku: resultado[0].sku
-            });
-            
-            const vendasSalvas = await processarESalvarVendas(resultado);
+            const vendasSalvas = await processarESalvarVendas(resultado.vendas);
             await carregarVendasDoBanco();
             
             mostrarToast(`${vendasSalvas} vendas sincronizadas com sucesso!`, 'success');
             
         } else {
-            console.warn('⚠️ Nenhuma venda encontrada');
-            mostrarToast('Nenhuma venda encontrada', 'info');
+            const mensagemErro = resultado?.error || 'Nenhuma venda encontrada';
+            mostrarToast(mensagemErro, resultado?.total === 0 ? 'info' : 'warning');
         }
     } catch (error) {
         console.error('❌ Erro na sincronização:', error);
@@ -224,6 +213,9 @@ async function sincronizarVendasML() {
     }
 }
 
+// ============================================
+// PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA)
+// ============================================
 // ============================================
 // PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA - SEM KIT)
 // ============================================

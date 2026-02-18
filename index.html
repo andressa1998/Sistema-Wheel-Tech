@@ -1964,7 +1964,6 @@
     </div>
 
     <!-- ===== SISTEMA DE REEMBOLSOS ===== -->
-<!-- ===== SISTEMA DE REEMBOLSOS ===== -->
 <div id="reembolsosSystem" class="hidden">
     <header class="main-header">
         <div class="container">
@@ -1999,7 +1998,6 @@
                 </div>
             </div>
         </div>
-    </header>
     
     <div class="container">
         <!-- Status do Sistema de Reembolsos -->
@@ -2031,8 +2029,8 @@
                 </div>
             </div>
         </div>
-        
-        <!-- Abas de Navegação -->
+            
+            <!-- Abas de Navegação -->
         <div class="card mb-4">
             <div class="d-flex flex-wrap gap-2" style="border-bottom: 2px solid #f1f3f5; padding-bottom: 15px;">
                 <button class="btn btn-warning btn-sm" onclick="filtrarReembolsos('a_verificar')">
@@ -2050,139 +2048,35 @@
                     <i class="fas fa-list"></i> Todos (<span id="tabTodos">0</span>)
                 </button>
             </div>
-            
-            <!-- Lista de Reembolsos -->
-<div class="table-responsive mt-3">
-    <table class="table" id="reembolsosTable">
-        <thead>
-            <tr>
-                <th>Venda</th>
-                <th>Operação</th>
-                <th>Valor</th>
-                <th>Data</th>
-                <th>Tipo</th>
-                <th>Status</th>
-                <th>Criado por</th>
-                <th>Ações</th>
-            </tr>
-        </thead>
-        <tbody id="reembolsosTableBody">
-            <!-- Reembolsos serão carregados aqui -->
-        </tbody>
-    </table>
-</div>
-
-<!-- Mensagem quando não há reembolsos -->
-<div id="reembolsosEmpty" class="text-center py-5 hidden">
-    <i class="fas fa-exchange-alt fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-    <h4 style="color: #6c757d;">Nenhum reembolso encontrado</h4>
-    <p style="color: #6c757d;">Clique em "Novo Reembolso" para começar.</p>
-</div>
-
-<!-- Modal para Novo Reembolso -->
-<div id="reembolsoModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 500px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h3 style="margin: 0;">
-                <i class="fas fa-exchange-alt"></i> <span id="reembolsoModalTitle">Novo Reembolso</span>
-            </h3>
-            <button onclick="closeReembolsoModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
-                &times;
-            </button>
-        </div>
-        
-        <div id="reembolsoFormContainer">
-            <input type="hidden" id="reembolsoId">
-            
-            <div class="form-group mb-3">
-                <label for="numeroVenda"><i class="fas fa-tag"></i> Número da Venda *</label>
-                <input type="text" id="numeroVenda" class="form-control" placeholder="Ex: VENDA123456" required>
-            </div>
-            
-            <div class="form-group mb-3">
-                <label for="numeroOperacao"><i class="fas fa-receipt"></i> Número da Operação *</label>
-                <input type="text" id="numeroOperacao" class="form-control" placeholder="Ex: OP789012" required>
-            </div>
-            
-            <div class="d-flex gap-3 mb-3">
-                <div style="flex: 1;">
-                    <div class="form-group">
-                        <label for="valorReembolso"><i class="fas fa-money-bill-wave"></i> Valor *</label>
-                        <input type="number" id="valorReembolso" class="form-control" step="0.01" min="0" placeholder="0,00" required>
-                    </div>
-                </div>
                 
-                <div style="flex: 1;">
-                    <div class="form-group">
-                        <label for="dataReembolso"><i class="fas fa-calendar"></i> Data *</label>
-                        <input type="date" id="dataReembolso" class="form-control" required>
-                    </div>
-                </div>
+                <!-- Lista de Reembolsos -->
+            <div class="table-responsive mt-3">
+                <table class="table" id="reembolsosTable">
+                    <thead>
+                        <tr>
+                            <th>Venda</th>
+                            <th>Operação</th>
+                            <th>Valor</th>
+                            <th>Data</th>
+                            <th>Frete</th>
+                            <th>Status</th>
+                            <th>Criado por</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reembolsosTableBody">
+                        <!-- Reembolsos serão carregados aqui -->
+                    </tbody>
+                </table>
             </div>
-            
-            <div class="form-group mb-3">
-                <label for="tipoReembolso"><i class="fas fa-shipping-fast"></i> Tipo de Reembolso</label>
-                <select id="tipoReembolso" class="form-control">
-                    <option value="normal" selected>Normal (Produto)</option>
-                    <option value="frete">Frete</option>
-                    <option value="outro">Outro</option>
-                </select>
-                <small style="color: #6c757d; font-size: 12px; display: block; margin-top: 5px;">
-                    <i class="fas fa-info-circle"></i> Selecione "Frete" se o reembolso for referente a custos de envio
-                </small>
-            </div>
-            
-            <div class="form-group mb-4">
-                <label for="observacoesReembolso"><i class="fas fa-sticky-note"></i> Observações</label>
-                <textarea id="observacoesReembolso" class="form-control" rows="2" placeholder="Detalhes sobre o reembolso..."></textarea>
-            </div>
-            
-            <div class="d-flex justify-content-end gap-2">
-                <button type="button" class="btn btn-secondary" onclick="closeReembolsoModal()">
-                    Cancelar
-                </button>
-                <button id="salvarReembolsoBtn" class="btn btn-success" onclick="salvarReembolso()">
-                    <i class="fas fa-save"></i> Salvar
-                </button>
+                
+                <div id="reembolsosEmpty" class="text-center py-5 hidden">
+                <i class="fas fa-exchange-alt fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                <h4 style="color: #6c757d;">Nenhum reembolso encontrado</h4>
+                <p style="color: #6c757d;">Clique em "Novo Reembolso" para começar.</p>
             </div>
         </div>
     </div>
-</div>
-
-<!-- Notificações Dropdown para Reembolsos -->
-<div id="notificacoesReembolsoDropdown" class="hidden" style="position: fixed; top: 70px; right: 20px; width: 350px; background: white; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.15); z-index: 1001; border: 1px solid #dee2e6;">
-    <div style="padding: 15px; border-bottom: 1px solid #e9ecef;">
-        <div class="d-flex justify-content-between align-items-center">
-            <h5 style="margin: 0;"><i class="fas fa-bell"></i> Notificações</h5>
-            <button onclick="toggleNotificacoesReembolso()" style="background: none; border: none; color: #6c757d; cursor: pointer;">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-    </div>
-    <div id="notificacoesReembolsoContent" style="max-height: 400px; overflow-y: auto;">
-        <!-- Notificações serão carregadas aqui -->
-    </div>
-    <div style="padding: 10px; text-align: center; border-top: 1px solid #e9ecef;">
-        <button onclick="marcarTodasComoLidasReembolso()" class="btn btn-sm btn-outline-secondary">
-            <i class="fas fa-check-double"></i> Marcar todas como lidas
-        </button>
-    </div>
-</div>
-
-<!-- Elementos ocultos para garantir que todas as funções funcionem -->
-<div style="display: none;">
-    <span id="badgeNovos"></span>
-    <span id="badgePendentes"></span>
-    <span id="reembolsoNotificationCount">0</span>
-    <span id="reembolsoNotificationBell"></span>
-    <span id="countVerificar">0</span>
-    <span id="countReembolsados">0</span>
-    <span id="countPendentes">0</span>
-    <span id="totalReembolsos">0.00</span>
-    <span id="tabVerificar">0</span>
-    <span id="tabReembolsados">0</span>
-    <span id="tabPendentes">0</span>
-    <span id="tabTodos">0</span>
 </div>
 
     <!-- Modal para Impressão da OS -->
@@ -2933,10 +2827,10 @@
 </div>
     
     <!-- SCRIPT PRINCIPAL -->
-    <script src="ml_token_manager.js"></script>
     <script src="script.js"></script>
-    <script src="sales_dashboard.js"></script>
+    <script src="ml_token_manager.js"></script>
     <script src="caixa-conferencia.js"></script>
+    <script src="sales_dashboard.js"></script>
     
 </body>
 </html>
