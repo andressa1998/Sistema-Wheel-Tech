@@ -666,6 +666,9 @@ window.buscarVendasML = buscarVendasML;
 // ============================================
 // FUNÇÃO CORRIGIDA - COM FLEX CORRETO
 // ============================================
+// ============================================
+// FUNÇÃO CORRIGIDA - COM FLEX CORRETO E ESTOQUE APÓS VENDA
+// ============================================
 async function processarVendasComDetalhesESTOQUE(vendas, token) {
     const vendasComDetalhes = [];
     
@@ -690,9 +693,13 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
             const primeiroItem = order.order_items?.[0] || {};
             const item = primeiroItem.item || {};
             
-            let estoqueAnuncio = 0;
+            // ===== VARIÁVEIS PARA ESTOQUE =====
+            let estoqueAtual = 0;
+            let estoqueAposVenda = 0;
             let sku = item.seller_sku || item.seller_custom_field || 'SEM_SKU';
+            let quantidadeVendida = primeiroItem.quantity || 1;
             
+            // ===== 3. BUSCAR ITEM PARA ESTOQUE - VIA WORKER (CORRIGIDO) =====
             if (item.id) {
                 try {
                     const itemUrl = `https://api.mercadolibre.com/items/${item.id}`;
@@ -703,16 +710,67 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                     if (itemRes.ok) {
                         const itemData = await itemRes.json();
                         
+                        // PEGAR O TOTAL VENDIDO (sold_quantity)
+                        const soldQuantityTotal = itemData.sold_quantity || 0;
+                        
+                        console.log(`📦 Dados do item ${item.id}:`, {
+                            available: itemData.available_quantity,
+                            sold: soldQuantityTotal,
+                            has_variations: !!itemData.variations
+                        });
+                        
+                        // CASO 1: Tem variação
                         if (item.variation_id && itemData.variations) {
+                            console.log(`🔍 Buscando variação: ${item.variation_id}`);
+                            
                             const variacao = itemData.variations.find(v => String(v.id) === String(item.variation_id));
+                            
                             if (variacao) {
-                                estoqueAnuncio = variacao.available_quantity || 0;
+                                estoqueAtual = variacao.available_quantity || 0;
                                 sku = variacao.seller_sku || sku;
+                                
+                                // Se a variação tiver sold_quantity próprio, usar
+                                const soldVariacao = variacao.sold_quantity || 0;
+                                
+                                // 🔥 CÁLCULO DO ESTOQUE QUE FICOU APÓS A VENDA
+                                // Fórmula: (estoque_atual + total_vendido) - quantidade_vendida_nesta_venda
+                                const estoqueInicial = estoqueAtual + soldVariacao;
+                                estoqueAposVenda = estoqueInicial - quantidadeVendida;
+                                
+                                console.log(`📊 CÁLCULO (c/ variação):`, {
+                                    estoqueAtual,
+                                    soldVariacao,
+                                    estoqueInicial,
+                                    quantidadeVendida,
+                                    estoqueAposVenda: estoqueAposVenda // ESTE É O VALOR CORRETO!
+                                });
+                            } else {
+                                console.warn(`⚠️ Variação ${item.variation_id} não encontrada`);
+                                // Fallback: usar dados do item principal
+                                estoqueAtual = itemData.available_quantity || 0;
+                                const estoqueInicial = estoqueAtual + soldQuantityTotal;
+                                estoqueAposVenda = estoqueInicial - quantidadeVendida;
                             }
-                        } else {
-                            estoqueAnuncio = itemData.available_quantity || 0;
+                        } 
+                        // CASO 2: Sem variação
+                        else {
+                            estoqueAtual = itemData.available_quantity || 0;
                             sku = itemData.seller_sku || sku;
+                            
+                            // 🔥 CÁLCULO DO ESTOQUE QUE FICOU APÓS A VENDA
+                            const estoqueInicial = estoqueAtual + soldQuantityTotal;
+                            estoqueAposVenda = estoqueInicial - quantidadeVendida;
+                            
+                            console.log(`📊 CÁLCULO (s/ variação):`, {
+                                estoqueAtual,
+                                soldQuantityTotal,
+                                estoqueInicial,
+                                quantidadeVendida,
+                                estoqueAposVenda: estoqueAposVenda // ESTE É O VALOR CORRETO!
+                            });
                         }
+                    } else {
+                        console.warn(`⚠️ Erro ${itemRes.status} ao buscar item ${item.id}`);
                     }
                 } catch (e) {
                     console.warn(`⚠️ Erro ao buscar item: ${e.message}`);
@@ -773,6 +831,7 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
             
             const idVenda = `ML${order.id}`.replace(/[^a-zA-Z0-9]/g, '');
             
+            // ===== MONTAR OBJETO FINAL =====
             vendasComDetalhes.push({
                 id: idVenda,
                 id_venda_ml: idVenda,
@@ -781,7 +840,9 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                 sku: sku,
                 mlb_id: item.id || null,
                 item_id: item.id || null,
-                estoque_anuncio: estoqueAnuncio,
+                // 🔥 USAR O ESTOQUE CALCULADO (APÓS A VENDA)
+                estoque_anuncio: estoqueAposVenda,
+                estoque_atual_referencia: estoqueAtual, // Opcional: guardar o atual para referência
                 quantidade: primeiroItem.quantity || 1,
                 valor_total: order.paid_amount || order.total_amount || 0,
                 data_venda: order.date_closed || order.date_created || new Date().toISOString(),
@@ -792,7 +853,7 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                 dados_completos: JSON.stringify(order)
             });
             
-            console.log(`✅ Venda ${order.id}: SKU=${sku}, Estoque=${estoqueAnuncio}, Envio=${tipoEnvio}`);
+            console.log(`✅ Venda ${order.id}: SKU=${sku}, Estoque após venda=${estoqueAposVenda}, Envio=${tipoEnvio}`);
             
             await new Promise(resolve => setTimeout(resolve, 200));
             

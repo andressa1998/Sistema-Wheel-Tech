@@ -178,9 +178,6 @@ async function carregarVendasDoBanco() {
 }
 
 // ============================================
-// SINCRONIZAR VENDAS DO ML
-// ============================================
-// ============================================
 // SINCRONIZAR VENDAS DO ML (VERSÃO CORRIGIDA)
 // ============================================
 async function sincronizarVendasML() {
@@ -192,20 +189,48 @@ async function sincronizarVendasML() {
         console.log('🔄 Iniciando sincronização de vendas ML...');
         mostrarToast('Sincronizando vendas do Mercado Livre...', 'info');
         
+        // 🔥 CORREÇÃO: Verificar o formato do retorno
         const resultado = await window.buscarVendasML(50);
         
-        // 🔥 CORREÇÃO: resultado é o array diretamente
-        if (resultado && resultado.length > 0) {
-            console.log(`✅ ${resultado.length} vendas recebidas do ML`);
+        console.log('📦 Resultado da busca:', resultado);
+        
+        // 🔥 VERIFICAR SE TEM A PROPRIEDADE 'vendas' (objeto) ou é array direto
+        let vendasArray = [];
+        
+        if (resultado) {
+            if (Array.isArray(resultado)) {
+                // Caso 1: É um array direto
+                vendasArray = resultado;
+                console.log(`✅ Array direto com ${vendasArray.length} vendas`);
+            } 
+            else if (resultado.vendas && Array.isArray(resultado.vendas)) {
+                // Caso 2: É um objeto com propriedade 'vendas'
+                vendasArray = resultado.vendas;
+                console.log(`✅ Objeto com ${vendasArray.length} vendas`);
+            }
+            else if (resultado.success === false) {
+                // Caso 3: Erro retornado
+                console.error('❌ Erro na API:', resultado.error);
+                mostrarToast(`Erro: ${resultado.error}`, 'error');
+                return;
+            }
+        }
+        
+        if (vendasArray.length > 0) {
+            console.log(`✅ ${vendasArray.length} vendas recebidas do ML`);
             
             // Mostrar exemplo da primeira venda
-            console.log('📦 Exemplo da primeira venda:', {
-                id: resultado[0].id_venda_ml,
-                titulo: resultado[0].titulo,
-                sku: resultado[0].sku
-            });
+            if (vendasArray.length > 0) {
+                console.log('📦 Exemplo da primeira venda:', {
+                    id: vendasArray[0].id_venda_ml,
+                    titulo: vendasArray[0].titulo,
+                    sku: vendasArray[0].sku,
+                    estoque: vendasArray[0].estoque_anuncio,
+                    data: vendasArray[0].data_venda
+                });
+            }
             
-            const vendasSalvas = await processarESalvarVendas(resultado);
+            const vendasSalvas = await processarESalvarVendas(vendasArray);
             await carregarVendasDoBanco();
             
             mostrarToast(`${vendasSalvas} vendas sincronizadas com sucesso!`, 'success');
@@ -225,44 +250,94 @@ async function sincronizarVendasML() {
 }
 
 // ============================================
-// PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA - SEM KIT)
+// PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA - DATAS)
+// ============================================
+// ============================================
+// PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA - DATAS)
 // ============================================
 async function processarESalvarVendas(vendasML) {
     try {
         console.log(`🔄 Processando ${vendasML.length} vendas para salvar...`);
         
         const vendasParaSalvar = [];
+        const vendasParaAtualizar = [];
         const agora = new Date().toISOString();
         
         for (const venda of vendasML) {
             try {
                 const idVendaML = venda.id_venda_ml || venda.id || `ML${Date.now()}`;
                 
+                // ===== FUNÇÃO CORRIGIDA PARA CONVERTER DATA PARA ISO =====
+                function converterParaISO(dataStr) {
+                    if (!dataStr) return agora;
+                    
+                    // Se já estiver no formato ISO (YYYY-MM-DDTHH:MM:SS), retorna ela mesma
+                    if (dataStr.includes('T') && dataStr.includes('-') && dataStr.includes(':')) {
+                        return dataStr;
+                    }
+                    
+                    // Formato: "18/02/2025, 13:56:37"
+                    if (typeof dataStr === 'string' && dataStr.includes('/') && dataStr.includes(',')) {
+                        const partes = dataStr.split(', ');
+                        if (partes.length === 2) {
+                            const dataPartes = partes[0].split('/');
+                            if (dataPartes.length === 3) {
+                                const dia = dataPartes[0].padStart(2, '0');
+                                const mes = dataPartes[1].padStart(2, '0');
+                                const ano = dataPartes[2];
+                                const hora = partes[1];
+                                
+                                // 🔥 CORREÇÃO: Formatar como YYYY-MM-DDTHH:MM:SS (sem .000Z)
+                                return `${ano}-${mes}-${dia}T${hora}`;
+                            }
+                        }
+                    }
+                    
+                    // Tentar converter de outras formas
+                    try {
+                        const date = new Date(dataStr);
+                        if (!isNaN(date.getTime())) {
+                            return date.toISOString();
+                        }
+                    } catch (e) {}
+                    
+                    // Fallback
+                    return agora;
+                }
+                
+                // Preparar objeto com TODOS os campos
                 const vendaProcessada = {
                     id_venda_ml: idVendaML,
                     titulo: venda.titulo || venda.title || 'Venda sem título',
                     cliente: venda.cliente || venda.buyer?.nickname || 'Cliente não identificado',
                     
+                    // SKU e identificadores
                     sku: venda.sku || venda.codigo || 'SEM_SKU',
                     sku_original: venda.sku_original || null,
                     item_id: venda.item_id || null,
                     mlb_id: venda.mlb_id || null,
                     variacao_id: venda.variacao_id || null,
                     variacao_atributos: venda.variacao_atributos || [],
+                    
+                    // Estoque
                     estoque_anuncio: venda.estoque_anuncio || 0,
                     estoque_fisico: venda.estoque_fisico || 0,
                     ultima_verificacao_estoque: venda.ultima_verificacao_estoque || agora,
                     
+                    // Quantidades e valores
                     quantidade: venda.quantidade || venda.quantity || 1,
                     valor_unitario: venda.valor_unitario || venda.unit_price || 0,
                     valor_total: venda.valor_total || venda.total_amount || 0,
                     
-                    created_at: venda.created_at || venda.data_venda || venda.date_created || agora,
-                    data_venda: venda.data_venda || venda.date_created || agora,
+                    // 🔥 DATAS CONVERTIDAS PARA ISO 🔥
+                    created_at: converterParaISO(venda.created_at || venda.data_venda || venda.date_created),
+                    data_venda: converterParaISO(venda.data_venda || venda.date_created),
                     
+                    // Status
                     status_ml: venda.status_ml || venda.status || 'paid',
                     status_sistema: venda.status_sistema || 'nova',
                     
+                    // Envio
                     tipo_envio: venda.tipo_envio || 'N/I',
                     id_envio: venda.id_envio || null,
                     informacoes_envio: venda.informacoes_envio || JSON.stringify({
@@ -270,10 +345,13 @@ async function processarESalvarVendas(vendasML) {
                         id: venda.id_envio
                     }),
                     
+                    // Pagamento
                     informacoes_pagamento: venda.informacoes_pagamento || '{}',
                     
+                    // Links
                     link: venda.link || venda.permalink || null,
                     
+                    // Conferência
                     status_conferencia: venda.status_conferencia || 'pendente',
                     divergente: venda.divergente || false,
                     conferido_por_estoque: venda.conferido_por_estoque || null,
@@ -283,69 +361,110 @@ async function processarESalvarVendas(vendasML) {
                     observacao: venda.observacao || null,
                     observacoes_gerais: venda.observacoes_gerais || '',
                     
-                    // REMOVI fotos_anuncio, qtd_fotos_anuncio, eh_kit, skus_kit
+                    // Fotos
                     fotos: venda.fotos || [],
                     qtd_fotos: venda.qtd_fotos || 0,
                     
+                    // Controle
                     updated_at: agora,
                     dados_completos: JSON.stringify(venda)
                 };
                 
-                const { data: vendaExistente } = await supabaseClient
+                // Verificar se a venda já existe
+                const { data: vendaExistente, error: erroBusca } = await supabaseClient
                     .from('vendas_ml')
                     .select('id')
                     .eq('id_venda_ml', idVendaML)
                     .maybeSingle();
                 
+                if (erroBusca && erroBusca.code !== 'PGRST116') {
+                    console.warn(`⚠️ Erro ao buscar venda ${idVendaML}:`, erroBusca);
+                }
+                
                 if (vendaExistente) {
-                    const { error } = await supabaseClient
-                        .from('vendas_ml')
-                        .update(vendaProcessada)
-                        .eq('id_venda_ml', idVendaML);
-                    
-                    if (error) {
-                        console.warn(`⚠️ Erro ao atualizar venda ${idVendaML}:`, error);
-                    }
+                    vendasParaAtualizar.push(vendaProcessada);
+                    console.log(`🔄 Venda ${idVendaML} será ATUALIZADA`);
                 } else {
                     vendasParaSalvar.push(vendaProcessada);
+                    console.log(`➕ Venda ${idVendaML} será INSERIDA`);
                 }
+                
             } catch (errorVenda) {
-                console.error(`❌ Erro processando venda:`, errorVenda);
+                console.error(`❌ Erro processando venda:`, errorVenda, venda);
             }
         }
         
+        // 1. ATUALIZAR vendas existentes
+        let atualizados = 0;
+        if (vendasParaAtualizar.length > 0) {
+            console.log(`🔄 Atualizando ${vendasParaAtualizar.length} vendas existentes...`);
+            
+            for (const venda of vendasParaAtualizar) {
+                try {
+                    // 🔥 CORREÇÃO: Remover campos que não devem ser atualizados
+                    const { id, created_at, ...vendaParaUpdate } = venda;
+                    
+                    const { error } = await supabaseClient
+                        .from('vendas_ml')
+                        .update(vendaParaUpdate)
+                        .eq('id_venda_ml', venda.id_venda_ml);
+                    
+                    if (error) {
+                        console.error(`❌ Erro ao atualizar venda ${venda.id_venda_ml}:`, error);
+                    } else {
+                        atualizados++;
+                        console.log(`✅ Venda ${venda.id_venda_ml} ATUALIZADA`);
+                    }
+                } catch (e) {
+                    console.error(`❌ Erro na atualização ${venda.id_venda_ml}:`, e);
+                }
+            }
+        }
+        
+        // 2. INSERIR novas vendas
+        let inseridos = 0;
         if (vendasParaSalvar.length > 0) {
             console.log(`💾 Salvando ${vendasParaSalvar.length} novas vendas...`);
             
-            const { error } = await supabaseClient
-                .from('vendas_ml')
-                .insert(vendasParaSalvar);
-            
-            if (error) {
-                console.error('❌ Erro ao salvar vendas:', error);
+            // Tentar inserir em lote (máx 100 por vez)
+            const batchSize = 50;
+            for (let i = 0; i < vendasParaSalvar.length; i += batchSize) {
+                const batch = vendasParaSalvar.slice(i, i + batchSize);
                 
-                let sucessos = 0;
-                for (const venda of vendasParaSalvar) {
-                    try {
-                        const { error: singleError } = await supabaseClient
-                            .from('vendas_ml')
-                            .insert([venda]);
-                        
-                        if (!singleError) sucessos++;
-                    } catch (singleError) {
-                        console.error(`❌ Erro individual:`, singleError);
+                const { error: batchError } = await supabaseClient
+                    .from('vendas_ml')
+                    .insert(batch);
+                
+                if (batchError) {
+                    console.error('❌ Erro no insert em lote:', batchError);
+                    
+                    // Inserir individualmente
+                    for (const venda of batch) {
+                        try {
+                            const { error: singleError } = await supabaseClient
+                                .from('vendas_ml')
+                                .insert([venda]);
+                            
+                            if (singleError) {
+                                console.error(`❌ Erro ao inserir ${venda.id_venda_ml}:`, singleError);
+                            } else {
+                                inseridos++;
+                                console.log(`✅ Venda ${venda.id_venda_ml} INSERIDA`);
+                            }
+                        } catch (e) {
+                            console.error(`❌ Erro na inserção ${venda.id_venda_ml}:`, e);
+                        }
                     }
+                } else {
+                    inseridos += batch.length;
+                    console.log(`✅ ${batch.length} vendas inseridas em lote`);
                 }
-                console.log(`✅ ${sucessos}/${vendasParaSalvar.length} vendas salvas`);
-                return sucessos;
-            } else {
-                console.log(`✅ ${vendasParaSalvar.length} vendas salvas com sucesso`);
-                return vendasParaSalvar.length;
             }
         }
         
-        console.log('ℹ️ Nenhuma venda nova para salvar');
-        return 0;
+        console.log(`📊 RESUMO: ${atualizados} atualizadas, ${inseridos} inseridas`);
+        
+        return atualizados + inseridos;
         
     } catch (error) {
         console.error('❌ Erro processarESalvarVendas:', error);
@@ -2282,6 +2401,120 @@ function mostrarToast(mensagem, tipo = 'info') {
         setTimeout(() => toast.remove(), 3000);
     }
 }
+
+// ============================================
+// FUNÇÃO DE DIAGNÓSTICO - VERIFICAR VENDAS NOVAS
+// ============================================
+async function diagnosticarVendasNovas() {
+    try {
+        console.log('🔍 INICIANDO DIAGNÓSTICO DE VENDAS NOVAS...');
+        
+        // 1. Buscar vendas do ML novamente
+        console.log('1️⃣ Buscando vendas do ML...');
+        const resultado = await window.buscarVendasML(50);
+        
+        let vendasML = [];
+        if (Array.isArray(resultado)) {
+            vendasML = resultado;
+        } else if (resultado.vendas && Array.isArray(resultado.vendas)) {
+            vendasML = resultado.vendas;
+        }
+        
+        console.log(`📊 ML retornou ${vendasML.length} vendas`);
+        
+        if (vendasML.length === 0) {
+            console.log('❌ Nenhuma venda retornada do ML');
+            return;
+        }
+        
+        // 2. Buscar todas as vendas do banco
+        console.log('2️⃣ Buscando vendas do banco...');
+        const { data: vendasBanco, error } = await supabaseClient
+            .from('vendas_ml')
+            .select('id_venda_ml, created_at, status_sistema, titulo')
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            console.error('❌ Erro ao buscar banco:', error);
+            return;
+        }
+        
+        console.log(`📊 Banco tem ${vendasBanco.length} vendas`);
+        
+        // 3. Criar conjunto de IDs do banco para busca rápida
+        const idsBanco = new Set(vendasBanco.map(v => v.id_venda_ml));
+        
+        // 4. Verificar cada venda do ML
+        console.log('3️⃣ Comparando vendas...');
+        console.log('='.repeat(80));
+        
+        let encontradas = 0;
+        let naoEncontradas = 0;
+        
+        for (const vendaML of vendasML) {
+            const idML = vendaML.id_venda_ml || vendaML.id;
+            const tituloML = (vendaML.titulo || '').substring(0, 30);
+            const dataML = vendaML.data_venda || vendaML.created_at || 'sem data';
+            
+            if (idsBanco.has(idML)) {
+                encontradas++;
+                // Buscar a venda no banco para comparar dados
+                const vendaBanco = vendasBanco.find(v => v.id_venda_ml === idML);
+                console.log(`✅ ENCONTRADA: ${idML} | Título: ${tituloML}... | Data ML: ${dataML}`);
+                console.log(`   Status no banco: ${vendaBanco?.status_sistema} | Data banco: ${vendaBanco?.created_at}`);
+            } else {
+                naoEncontradas++;
+                console.log(`❌ NÃO ENCONTRADA: ${idML} | Título: ${tituloML}... | Data: ${dataML}`);
+                console.log(`   Dados completos:`, {
+                    sku: vendaML.sku,
+                    estoque: vendaML.estoque_anuncio,
+                    valor: vendaML.valor_total
+                });
+            }
+        }
+        
+        console.log('='.repeat(80));
+        console.log(`📊 RESUMO:`);
+        console.log(`   Total ML: ${vendasML.length}`);
+        console.log(`   Encontradas no banco: ${encontradas}`);
+        console.log(`   Não encontradas: ${naoEncontradas}`);
+        
+        if (naoEncontradas > 0) {
+            console.log('⚠️ VENDAS NOVAS DETECTADAS! Mas não foram inseridas.');
+            console.log('Possíveis causas:');
+            console.log('1. Erro na função processarESalvarVendas ao inserir');
+            console.log('2. Campo id_venda_ml diferente entre ML e banco');
+            console.log('3. Restrição de chave duplicada');
+        } else if (encontradas === vendasML.length) {
+            console.log('✅ Todas as vendas já existem no banco');
+            console.log('Verifique se há vendas com status diferente no sistema');
+        }
+        
+        return { encontradas, naoEncontradas, vendasML, vendasBanco };
+        
+    } catch (error) {
+        console.error('❌ Erro no diagnóstico:', error);
+    }
+}
+
+// Adicionar botão de diagnóstico na interface (opcional)
+function adicionarBotaoDiagnostico() {
+    const botoesContainer = document.querySelector('.sales-filters') || 
+                           document.querySelector('.dashboard-header');
+    
+    if (botoesContainer) {
+        const btnDiagnostico = document.createElement('button');
+        btnDiagnostico.className = 'btn btn-warning btn-sm';
+        btnDiagnostico.innerHTML = '<i class="fas fa-stethoscope"></i> Diagnosticar';
+        btnDiagnostico.onclick = diagnosticarVendasNovas;
+        btnDiagnostico.style.marginLeft = '10px';
+        botoesContainer.appendChild(btnDiagnostico);
+        console.log('✅ Botão de diagnóstico adicionado');
+    }
+}
+
+// Executar após carregar a página
+setTimeout(adicionarBotaoDiagnostico, 2000);
 
 // ============================================
 // EXPORTAÇÕES GLOBAIS

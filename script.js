@@ -1568,9 +1568,11 @@ function setupReembolsoEventListeners() {
     }
 }
 
-// Renderizar tabela de reembolsos
 // ============================================
 // RENDERIZAR TABELA DE REEMBOLSOS (VERSÃO SEGURA)
+// ============================================
+// ============================================
+// RENDERIZAR TABELA DE REEMBOLSOS (COM BOTÃO REENVIAR)
 // ============================================
 function renderReembolsosTable() {
     const tbody = document.getElementById('reembolsosTableBody');
@@ -1617,7 +1619,7 @@ function renderReembolsosTable() {
             statusBadge = '<span class="status-pendente">Pendente</span>';
         }
         
-        // FRETE:
+        // Tipo (frete ou normal)
         let tipoInfo = '';
         if (reembolso.tipo === 'frete') {
             tipoInfo = `
@@ -1637,36 +1639,41 @@ function renderReembolsosTable() {
             `;
         }
         
-        // Ações
+        // ===== AÇÕES =====
         let acoes = '';
         
         // Se for admin ou criador do reembolso
         if (isAdmin || reembolso.criado_por === currentUser?.name) {
+            
+            // Botões para admin (a_verificar)
             if (reembolso.status === 'a_verificar' && isAdmin) {
                 acoes = `
-                    <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
-                        <i class="fas fa-check"></i> OK
+                    <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Aprovar (Reembolsado)">
+                        <i class="fas fa-check"></i>
                     </button>
-                    <button class="btn btn-danger btn-sm" onclick="rejeitarReembolso(${reembolso.id})" title="Marcar como Pendente">
-                        <i class="fas fa-times"></i> Pendente
+                    <button class="btn btn-danger btn-sm" onclick="rejeitarReembolso(${reembolso.id})" title="Rejeitar (Pendente)">
+                        <i class="fas fa-times"></i>
                     </button>
                 `;
             }
             
+            // 🔥 BOTÃO DE REENVIAR - PARA USUÁRIO QUANDO ESTÁ PENDENTE
             if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser?.name) {
                 acoes += `
-                    <button class="btn btn-info btn-sm btn-reenviar" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação">
+                    <button class="btn btn-info btn-sm" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação">
                         <i class="fas fa-paper-plane"></i> Reenviar
                     </button>
                 `;
             }
             
+            // Botão de editar (sempre visível para admin/criador)
             acoes += `
                 <button class="btn btn-warning btn-sm" onclick="editarReembolso(${reembolso.id})" title="Editar">
                     <i class="fas fa-edit"></i>
                 </button>
             `;
             
+            // Botão de excluir (admin ou criador)
             if (isAdmin || reembolso.criado_por === currentUser?.name) {
                 acoes += `
                     <button class="btn btn-danger btn-sm" onclick="excluirReembolso(${reembolso.id})" title="Excluir">
@@ -1674,6 +1681,7 @@ function renderReembolsosTable() {
                     </button>
                 `;
             }
+            
         } else {
             acoes = '<span class="text-muted">Sem permissão</span>';
         }
@@ -1687,7 +1695,7 @@ function renderReembolsosTable() {
             <td>${statusBadge}</td>
             <td>${reembolso.criado_por}</td>
             <td>
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2" style="flex-wrap: wrap;">
                     ${acoes}
                 </div>
             </td>
@@ -1859,24 +1867,21 @@ window.novoReembolso = function() {
 };
 
 // Adicione esta função no arquivo script.js (pode ser na seção de funções para reembolsos):
+// ============================================
+// REENVIAR REEMBOLSO PARA VERIFICAÇÃO
+// ============================================
 window.reenviarParaVerificacao = async function(id) {
-    if (!confirm('Reenviar este reembolso para verificação?\n\nO administrador será notificado para verificar novamente.')) return;
+    if (!confirm('Reenviar este reembolso para verificação?')) return;
     
     try {
-        if (!supabaseClient) {
-            throw new Error('Conexão não disponível');
-        }
-        
-        const { data, error } = await supabaseClient
+        const { error } = await supabaseClient
             .from('reembolsos_ml')
             .update({ 
                 status: 'a_verificar',
                 verificado_por: null,
-                data_atualizacao: new Date().toISOString(),
-                notificado_admin: false // Resetar notificação para admin
+                data_atualizacao: new Date().toISOString()
             })
-            .eq('id', id)
-            .select();
+            .eq('id', id);
         
         if (error) throw error;
         
@@ -1885,23 +1890,14 @@ window.reenviarParaVerificacao = async function(id) {
         if (index !== -1) {
             reembolsos[index].status = 'a_verificar';
             reembolsos[index].verificado_por = null;
-            reembolsos[index].notificado_admin = false;
         }
         
-        showToast('↪️ Reembolso reenviado para verificação!', 'success');
-        
-        // Recarregar a tabela
-        updateReembolsoCounters();
-        renderReembolsosTable();
-        
-        // Se for admin, mostrar notificação imediatamente
-        if (currentUser.role === 'Administrador') {
-            verificarNotificacoes();
-        }
+        mostrarToast('↪️ Reembolso reenviado para verificação!', 'success');
+        await loadReembolsos();
         
     } catch (error) {
-        console.error('❌ Erro ao reenviar reembolso:', error);
-        showToast('❌ Erro ao reenviar reembolso: ' + error.message, 'error');
+        console.error('❌ Erro ao reenviar:', error);
+        mostrarToast('Erro ao reenviar reembolso', 'error');
     }
 };
 
