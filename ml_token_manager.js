@@ -14,10 +14,11 @@ const ML_CONFIG = {
     CLIENT_ID: '5767896809769647',
     CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
     REDIRECT_URI: 'https://purple-bonus-3b1c.andmiotto1998.workers.dev/callback',
-    INITIAL_CODE: 'TG-698dc6a1c97d360001a048c2-415176739',
+    INITIAL_CODE: 'TG-6995b30242892700018e4436-415176739',
     USER_ID: '415176739',
     WORKER_URL: WORKER_URL
 };
+window.ML_CONFIG = ML_CONFIG;
 
 // ============================================
 // ESTADO DO TOKEN
@@ -113,7 +114,14 @@ async function getTokenDiretoDaAPI() {
         updateTokenStatusUI();
         scheduleTokenRenewal(data.expires_in * 1000);
         
-        try { if (supabaseClient) await salvarTokenNoSupabase(data); } catch (e) {}
+        try { 
+            if (supabaseClient) {
+                await salvarTokenNoSupabase(data); 
+                console.log('✅ Token salvo no Supabase para compartilhamento');
+            }
+        } catch (e) {
+            console.warn('⚠️ Não foi possível salvar token no Supabase:', e);
+        }
         
         return data.access_token;
         
@@ -172,6 +180,24 @@ async function renewTokenWithRefreshToken(refreshToken) {
                     updateTokenStatusUI();
                     scheduleTokenRenewal(expiresIn * 1000);
                     console.log('✅ Token renovado via Worker!');
+                    
+                    try {
+                        if (supabaseClient) {
+                            await supabaseClient
+                                .from('mercadolivre_tokens')
+                                .upsert({
+                                    user_id: ML_CONFIG.USER_ID,
+                                    access_token: workerData.access_token,
+                                    refresh_token: workerData.refresh_token || refreshToken,
+                                    expires_at: expiresAt,
+                                    updated_at: new Date().toISOString()
+                                }, { onConflict: 'user_id' });
+                            console.log('✅ Token renovado e salvo no Supabase');
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ Erro ao atualizar token no Supabase:', e);
+                    }
+                    
                     return workerData.access_token;
                 }
             } catch (workerError) {
@@ -211,6 +237,24 @@ async function renewTokenWithRefreshToken(refreshToken) {
         scheduleTokenRenewal(expiresIn * 1000);
         
         console.log('✅ Token renovado com sucesso!');
+        
+        try {
+            if (supabaseClient) {
+                await supabaseClient
+                    .from('mercadolivre_tokens')
+                    .upsert({
+                        user_id: ML_CONFIG.USER_ID,
+                        access_token: data.access_token,
+                        refresh_token: data.refresh_token || refreshToken,
+                        expires_at: expiresAt,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: 'user_id' });
+                console.log('✅ Token renovado e salvo no Supabase');
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao atualizar token no Supabase:', e);
+        }
+        
         return data.access_token;
         
     } catch (error) {
@@ -336,23 +380,35 @@ async function getValidToken() {
     }
 }
 
+// ============================================
+// GERENCIAMENTO AUTOMÁTICO DE TOKEN (VERSÃO CORRIGIDA)
+// ============================================
 async function autoManageMLToken() {
     console.log('🔄 Gerenciamento automático de token iniciado...');
     
     try {
+        // ===== 1. PRIORIDADE MÁXIMA: TENTAR SUPABASE PRIMEIRO =====
         if (window.supabaseClient || supabaseClient) {
             try {
                 const client = window.supabaseClient || supabaseClient;
-                const { data } = await client
+                const { data, error } = await client
                     .from('mercadolivre_tokens')
                     .select('*')
                     .eq('user_id', ML_CONFIG.USER_ID);
                 
-                if (data?.[0]) {
+                if (error) {
+                    console.warn('⚠️ Erro ao buscar token no Supabase:', error.message);
+                } else if (data && data.length > 0) {
                     const token = data[0];
                     const expiresIn = token.expires_at - Date.now();
                     
+                    console.log('📦 Token carregado do Supabase. Expira em:', new Date(token.expires_at).toLocaleString());
+                    
+                    // Se o token ainda é válido (mais de 5 minutos)
                     if (expiresIn > 300000) {
+                        console.log(`✅ Token do Supabase válido por mais ${Math.round(expiresIn/60000)} minutos`);
+                        
+                        // Atualizar localStorage para cache local
                         localStorage.setItem('ml_access_token', token.access_token);
                         localStorage.setItem('ml_refresh_token', token.refresh_token);
                         localStorage.setItem('ml_token_expiry', token.expires_at.toString());
@@ -371,16 +427,21 @@ async function autoManageMLToken() {
                         return token.access_token;
                     }
                     
-                    if (expiresIn > 0) {
-                        console.log('🔄 Token próximo de expirar, renovando...');
-                        return await renewTokenWithRefreshToken(token.refresh_token);
+                    // Token expirado ou próximo de expirar: tenta renovar com o refresh_token do Supabase
+                    if (expiresIn > 0 || expiresIn <= 300000) {
+                        console.log('🔄 Token do Supabase próximo de expirar, renovando...');
+                        const newToken = await renewTokenWithRefreshToken(token.refresh_token);
+                        if (newToken) {
+                            return newToken;
+                        }
                     }
                 }
             } catch (e) {
-                console.warn('⚠️ Erro no Supabase:', e.message);
+                console.warn('⚠️ Erro ao acessar Supabase:', e.message);
             }
         }
         
+        // ===== 2. FALLBACK: TENTAR LOCALSTORAGE (caso Supabase não esteja disponível) =====
         const accessToken = localStorage.getItem('ml_access_token');
         const refreshToken = localStorage.getItem('ml_refresh_token');
         const tokenExpiry = localStorage.getItem('ml_token_expiry');
@@ -411,7 +472,8 @@ async function autoManageMLToken() {
             }
         }
         
-        console.log('🔄 Nenhum token válido, obtendo novo...');
+        // ===== 3. ÚLTIMO CASO: NENHUM TOKEN VÁLIDO, OBTER NOVO =====
+        console.log('🔄 Nenhum token válido encontrado, obtendo novo...');
         return await getTokenDiretoDaAPI();
         
     } catch (error) {
@@ -419,6 +481,7 @@ async function autoManageMLToken() {
         return null;
     }
 }
+window.autoManageMLToken = autoManageMLToken;
 
 function scheduleTokenRenewal(milliseconds) {
     const renewTime = milliseconds - 3600000;
@@ -471,6 +534,7 @@ async function initializeMLAuth() {
     console.log('🔄 Nenhum token válido encontrado, obtendo novo...');
     return await getNewTokenWithCode();
 }
+window.initializeMLAuth = initializeMLAuth;
 
 // ============================================
 // FUNÇÕES DE VENDAS
@@ -592,6 +656,7 @@ async function buscarVendasML(limit = 50) {
         };
     }
 }
+window.buscarVendasML = buscarVendasML;
 
 // ============================================
 // FUNÇÃO CORRIGIDA - COM FLEX CORRETO
@@ -734,6 +799,7 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
     
     return vendasComDetalhes;
 }
+window.processarVendasComDetalhesESTOQUE = processarVendasComDetalhesESTOQUE;
 
 function processarVendaBasica(venda) {
     return {
@@ -781,6 +847,7 @@ async function salvarTokenNoSupabase(tokenData) {
         return false;
     }
 }
+window.salvarTokenNoSupabase = salvarTokenNoSupabase;
 
 // ============================================
 // INTERFACE
@@ -808,6 +875,7 @@ function updateTokenStatusUI() {
         txt.innerHTML = `<i class="fas fa-sync-alt fa-spin"></i> Token ML: INICIALIZANDO...`;
     }
 }
+window.updateTokenStatusUI = updateTokenStatusUI;
 
 function showTokenError(msg) {
     const el = document.getElementById('mlTokenStatus');
@@ -818,6 +886,7 @@ function showTokenError(msg) {
         el.style.display = 'block';
     }
 }
+window.showTokenError = showTokenError;
 
 // ============================================
 // DEBUG
@@ -857,23 +926,13 @@ window.debugVendasDetalhes = async function() {
 };
 
 // ============================================
-// EXPORTAÇÕES
+// EXPORTAÇÕES ADICIONAIS
 // ============================================
-window.WORKER_URL = WORKER_URL;
-window.ML_CONFIG = ML_CONFIG;
-window.mlTokenStatus = mlTokenStatus;
 window.getValidToken = getValidToken;
 window.renewTokenWithRefreshToken = renewTokenWithRefreshToken;
 window.getTokenDiretoDaAPI = getTokenDiretoDaAPI;
 window.getNewTokenWithCode = getNewTokenWithCode;
-window.autoManageMLToken = autoManageMLToken;
-window.initializeMLAuth = initializeMLAuth;
-window.buscarVendasML = buscarVendasML;
-window.processarVendasComDetalhesESTOQUE = processarVendasComDetalhesESTOQUE;
 window.sincronizarVendasComSupabase = sincronizarVendasComSupabase;
-window.updateTokenStatusUI = updateTokenStatusUI;
-
-console.log('✅ ML Token Manager carregado e pronto!');
 
 // ============================================
 // INICIALIZAÇÃO AUTOMÁTICA
@@ -885,3 +944,5 @@ if (document.readyState === 'loading') {
 } else {
     setTimeout(initializeMLAuth, 1000);
 }
+
+console.log('✅ ML Token Manager carregado e pronto!');

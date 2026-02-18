@@ -6064,6 +6064,29 @@ function initContadorCaracteres() {
     }, 1000);
 }
 
+// ============================================
+// CONFIGURAR BOTÃO DE VENDAS
+// ============================================
+function configurarBotaoVendas() {
+    const vendasBtn = document.getElementById('vendasBtn');
+    if (vendasBtn) {
+        vendasBtn.addEventListener('click', function() {
+            if (window.abrirSistemaVendas) {
+                window.abrirSistemaVendas();
+            } else {
+                console.log('⏳ Aguardando carregamento do sistema de vendas...');
+                setTimeout(() => {
+                    if (window.abrirSistemaVendas) {
+                        window.abrirSistemaVendas();
+                    } else {
+                        console.error('❌ abrirSistemaVendas não encontrado');
+                    }
+                }, 2000);
+            }
+        });
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     setTimeout(configurarBotaoVendas, 1000);
 });
