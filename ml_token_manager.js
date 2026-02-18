@@ -14,7 +14,7 @@ const ML_CONFIG = {
     CLIENT_ID: '5767896809769647',
     CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
     REDIRECT_URI: 'https://purple-bonus-3b1c.andmiotto1998.workers.dev/callback',
-    INITIAL_CODE: 'TG-6995b30242892700018e4436-415176739',
+    INITIAL_CODE: 'TG-6993e1f5c1612c00016452f8-415176739',
     USER_ID: '415176739',
     WORKER_URL: WORKER_URL
 };
@@ -578,11 +578,16 @@ async function buscarVendasML(limit = 50) {
         
         const limiteSeguro = Math.min(limit, 50);
         
+        // ===== CORREÇÃO DA DATA =====
         const agora = new Date();
+        console.log('📅 Data atual do sistema:', agora.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }));
+        
         const trintaDiasAtras = new Date(agora);
         trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
         
+        // Garantir que a data está no formato ISO correto
         const dataFormatada = trintaDiasAtras.toISOString();
+        console.log('📅 Buscando vendas desde:', dataFormatada);
         
         const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=${limiteSeguro}`;
         

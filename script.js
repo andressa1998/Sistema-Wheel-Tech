@@ -1470,6 +1470,9 @@ async function loadReembolsos() {
 }
 
 // Atualizar contadores de reembolsos
+// ============================================
+// ATUALIZAR CONTADORES DE REEMBOLSOS (VERSÃO SUPER SEGURA)
+// ============================================
 function updateReembolsoCounters() {
     if (!currentUser) return;
     
@@ -1483,38 +1486,57 @@ function updateReembolsoCounters() {
         .filter(r => r.status === 'reembolsado')
         .reduce((sum, r) => sum + parseFloat(r.valor || 0), 0);
     
-    if (countVerificar) countVerificar.textContent = aVerificar;
-    if (countReembolsados) countReembolsados.textContent = reembolsados;
-    if (countPendentes) countPendentes.textContent = pendentes;
-    if (totalReembolsos) totalReembolsos.textContent = totalValor.toFixed(2);
+    // Função segura para setar texto
+    const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    };
     
-    if (tabVerificar) tabVerificar.textContent = aVerificar;
-    if (tabReembolsados) tabReembolsados.textContent = reembolsados;
-    if (tabPendentes) tabPendentes.textContent = pendentes;
-    if (tabTodos) tabTodos.textContent = total;
+    // Função segura para setar display
+    const setDisplay = (id, display) => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = display;
+    };
     
-    // Mostrar badge se houver novos a verificar (para admin)
+    // Atualizar contadores principais
+    setText('countVerificar', aVerificar);
+    setText('countReembolsados', reembolsados);
+    setText('countPendentes', pendentes);
+    setText('totalReembolsos', totalValor.toFixed(2));
+    
+    setText('tabVerificar', aVerificar);
+    setText('tabReembolsados', reembolsados);
+    setText('tabPendentes', pendentes);
+    setText('tabTodos', total);
+    
+    // Badges de notificação
     if (currentUser.role === 'Administrador' && aVerificar > 0) {
-        badgeNovos.style.display = 'inline-block';
-        badgeNovos.textContent = aVerificar;
+        setDisplay('badgeNovos', 'inline-block');
+        setText('badgeNovos', aVerificar);
     } else {
-        badgeNovos.style.display = 'none';
+        setDisplay('badgeNovos', 'none');
     }
     
-    // Mostrar badge se houver pendentes (para usuário que criou)
     const pendentesUsuario = reembolsos.filter(r => 
         r.status === 'pendente' && r.criado_por === currentUser.name
     ).length;
     
     if (pendentesUsuario > 0) {
-        badgePendentes.style.display = 'inline-block';
-        badgePendentes.textContent = pendentesUsuario;
+        setDisplay('badgePendentes', 'inline-block');
+        setText('badgePendentes', pendentesUsuario);
     } else {
-        badgePendentes.style.display = 'none';
+        setDisplay('badgePendentes', 'none');
     }
     
-    // Atualizar notificação do sino
-    updateNotificationBadge();
+    // Notificação do sino
+    const totalNotificacoes = aVerificar + pendentesUsuario;
+    setText('reembolsoNotificationCount', totalNotificacoes);
+    
+    if (totalNotificacoes > 0) {
+        setDisplay('reembolsoNotificationBell', 'block');
+    } else {
+        setDisplay('reembolsoNotificationBell', 'none');
+    }
 }
 
 // Adicione esta função se não existir:
@@ -1547,24 +1569,26 @@ function setupReembolsoEventListeners() {
 }
 
 // Renderizar tabela de reembolsos
+// ============================================
+// RENDERIZAR TABELA DE REEMBOLSOS (VERSÃO SEGURA)
+// ============================================
 function renderReembolsosTable() {
-    if (!reembolsosTableBody) return;
+    const tbody = document.getElementById('reembolsosTableBody');
+    const emptyMsg = document.getElementById('reembolsosEmpty');
     
-    reembolsosTableBody.innerHTML = '';
-    
-    if (reembolsos.length === 0) {
-        reembolsosTableBody.innerHTML = `
-            <tr>
-                <td colspan="8" class="text-center" style="padding: 40px;">
-                    <i class="fas fa-exchange-alt fa-3x" style="color: #6c757d; opacity: 0.5; margin-bottom: 15px;"></i>
-                    <h4 style="color: #6c757d;">Nenhum reembolso encontrado</h4>
-                    <p style="color: #6c757d;">Clique em "Novo Reembolso" para começar.</p>
-                </td>
-            </tr>
-        `;
-        reembolsosEmpty.classList.add('hidden');
+    if (!tbody) {
+        console.error('❌ Elemento reembolsosTableBody não encontrado');
         return;
     }
+    
+    tbody.innerHTML = '';
+    
+    if (reembolsos.length === 0) {
+        if (emptyMsg) emptyMsg.classList.remove('hidden');
+        return;
+    }
+    
+    if (emptyMsg) emptyMsg.classList.add('hidden');
     
     // Filtrar reembolsos baseado no filtro atual
     let filteredReembolsos = reembolsos;
@@ -1573,7 +1597,7 @@ function renderReembolsosTable() {
     }
     
     // Verificar se o usuário atual é admin
-    const isAdmin = currentUser.role === 'Administrador';
+    const isAdmin = currentUser && currentUser.role === 'Administrador';
     
     filteredReembolsos.forEach(reembolso => {
         const row = document.createElement('tr');
@@ -1591,18 +1615,6 @@ function renderReembolsosTable() {
             statusBadge = '<span class="status-reembolsado">Reembolsado</span>';
         } else {
             statusBadge = '<span class="status-pendente">Pendente</span>';
-        }
-
-        // Mostrar badge se houver pendentes (para usuário que criou)
-        const pendentesUsuario = reembolsos.filter(r => 
-            r.status === 'pendente' && r.criado_por === currentUser.name
-        ).length;
-
-        if (pendentesUsuario > 0) {
-            badgePendentes.style.display = 'inline-block';
-            badgePendentes.textContent = pendentesUsuario;
-        } else {
-            badgePendentes.style.display = 'none';
         }
         
         // FRETE:
@@ -1629,7 +1641,7 @@ function renderReembolsosTable() {
         let acoes = '';
         
         // Se for admin ou criador do reembolso
-        if (isAdmin || reembolso.criado_por === currentUser.name) {
+        if (isAdmin || reembolso.criado_por === currentUser?.name) {
             if (reembolso.status === 'a_verificar' && isAdmin) {
                 acoes = `
                     <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
@@ -1641,8 +1653,7 @@ function renderReembolsosTable() {
                 `;
             }
             
-            // ADICIONE ESTE BLOCO PARA REENVIO
-            if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser.name) {
+            if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser?.name) {
                 acoes += `
                     <button class="btn btn-info btn-sm btn-reenviar" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação">
                         <i class="fas fa-paper-plane"></i> Reenviar
@@ -1656,8 +1667,7 @@ function renderReembolsosTable() {
                 </button>
             `;
             
-            // Se for admin ou criador, pode excluir
-            if (isAdmin || reembolso.criado_por === currentUser.name) {
+            if (isAdmin || reembolso.criado_por === currentUser?.name) {
                 acoes += `
                     <button class="btn btn-danger btn-sm" onclick="excluirReembolso(${reembolso.id})" title="Excluir">
                         <i class="fas fa-trash"></i>
@@ -1665,7 +1675,6 @@ function renderReembolsosTable() {
                 `;
             }
         } else {
-            // Se não tiver permissão, mostrar apenas visualização
             acoes = '<span class="text-muted">Sem permissão</span>';
         }
         
@@ -1684,10 +1693,51 @@ function renderReembolsosTable() {
             </td>
         `;
         
-        reembolsosTableBody.appendChild(row);
+        tbody.appendChild(row);
     });
     
-    reembolsosEmpty.classList.add('hidden');
+    // Calcular pendentes do usuário para os badges
+    const pendentesUsuario = reembolsos.filter(r => 
+        r.status === 'pendente' && r.criado_por === currentUser?.name
+    ).length;
+    
+    const aVerificar = reembolsos.filter(r => r.status === 'a_verificar').length;
+    
+    // Atualizar badges de forma segura
+    const badgeNovos = document.getElementById('badgeNovos');
+    const badgePendentes = document.getElementById('badgePendentes');
+    const reembolsoNotificationCount = document.getElementById('reembolsoNotificationCount');
+    const reembolsoNotificationBell = document.getElementById('reembolsoNotificationBell');
+    
+    if (badgeNovos) {
+        if (isAdmin && aVerificar > 0) {
+            badgeNovos.style.display = 'inline-block';
+            badgeNovos.textContent = aVerificar;
+        } else {
+            badgeNovos.style.display = 'none';
+        }
+    }
+    
+    if (badgePendentes) {
+        if (pendentesUsuario > 0) {
+            badgePendentes.style.display = 'inline-block';
+            badgePendentes.textContent = pendentesUsuario;
+        } else {
+            badgePendentes.style.display = 'none';
+        }
+    }
+    
+    const totalNotificacoes = (isAdmin ? aVerificar : 0) + pendentesUsuario;
+    
+    if (reembolsoNotificationCount) {
+        reembolsoNotificationCount.textContent = totalNotificacoes;
+    }
+    
+    if (reembolsoNotificationBell) {
+        reembolsoNotificationBell.style.display = totalNotificacoes > 0 ? 'block' : 'none';
+    }
+    
+    if (emptyMsg) emptyMsg.classList.add('hidden');
 }
 
 // ===== FUNÇÃO PARA EDITAR REEMBOLSO =====

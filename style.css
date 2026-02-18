@@ -715,3 +715,7 @@ table {
     box-shadow: 0 0 0 2px rgba(52, 131, 250, 0.2);
     outline: none;
 }
+
+.hidden {
+    display: none !important;
+}
