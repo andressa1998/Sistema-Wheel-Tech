@@ -1102,6 +1102,15 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
                             <i class="fas fa-camera"></i>
                           </button>`;
         }
+
+        // ===== BOTÃO PARA REENVIAR DIVERGENTE (QUALQUER USUÁRIO) =====
+        if (venda.divergente) {
+            acoesHtml += `<button onclick="reenviarDivergente('${venda.id_venda_ml || venda.id}')" 
+                            class="btn btn-sm btn-warning" 
+                            title="Reenviar para Em Andamento">
+                            <i class="fas fa-undo-alt"></i> Reenviar
+                        </button>`;
+        }
         
         // Botões de conferência - se for kit, mostrar botão específico
         if (podeConferirEstoque) {
@@ -1137,9 +1146,7 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
         
         // Botões verificar/fraude
         if (venda.status_sistema === 'nova') {
-            acoesHtml += `<button onclick="verificarVenda('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-success" title="Verificar">
-                            <i class="fas fa-check"></i>
-                          </button>
+            acoesHtml += `
                           <button onclick="marcarComoFraude('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-danger" title="Fraude">
                             <i class="fas fa-ban"></i>
                           </button>`;
@@ -1242,10 +1249,6 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
                 <div style="margin-bottom: 8px;">
                     <small style="display: block; color: #666;">Anúncio:</small>
                     ${estoqueBadge}
-                </div>
-                <div>
-                    <small style="display: block; color: #666;">Físico:</small>
-                    ${estoqueFisicoDisplay}
                 </div>
             </td>
             <td>
@@ -1372,6 +1375,9 @@ function aplicarFiltroAtual() {
     } else if (filtroConferencia === 'divergente') {
         vendasFiltradas = vendasFiltradas.filter(v => v.divergente === true);
     }
+    if (filtroConferencia === 'em_andamento') {
+    vendasFiltradas = vendasFiltradas.filter(v => v.status_conferencia === 'em_andamento');
+    }
     
     if (filtroTipoEnvio !== 'todos') {
         vendasFiltradas = vendasFiltradas.filter(v => {
@@ -1484,6 +1490,9 @@ function filtrarPorBusca(termo) {
 // ============================================
 // FUNÇÕES DE CONFERÊNCIA (ANÚNCIO)
 // ============================================
+// ============================================
+// CONFERIR ANÚNCIO (2ª CONFERÊNCIA) - VERSÃO CORRIGIDA
+// ============================================
 async function conferirAnuncio(idVenda) {
     try {
         const { data: venda, error } = await supabaseClient
@@ -1510,16 +1519,17 @@ async function conferirAnuncio(idVenda) {
                 `Estoque Anúncio: ${venda.estoque_anuncio} unidades\n` +
                 `Estoque Físico: ${venda.estoque_fisico} unidades\n\n` +
                 `Usuário: ${nomeUsuario}\n\n` +
-                `OK = JÁ AJUSTOU (irá para Finalizados)\n` +
-                `CANCELAR = AINDA NÃO ajustou (marcar como Divergente)`
+                `✅ OK = JÁ AJUSTOU (irá para Finalizados)\n` +
+                `🔄 Cancelar = Enviar para EM ANDAMENTO (pode ajustar depois)`
             );
             
             if (opcao) {
                 await finalizarConferencia(idVenda, false, nomeUsuario);
                 mostrarToast('✅ Anúncio ajustado e conferido!', 'success');
             } else {
-                await finalizarConferencia(idVenda, true, nomeUsuario);
-                mostrarToast('⚠️ Divergência registrada!', 'warning');
+                // ===== NOVO: Enviar para EM ANDAMENTO =====
+                await enviarParaAndamento(idVenda, nomeUsuario, divergente);
+                mostrarToast('🔄 Venda movida para EM ANDAMENTO', 'warning');
             }
         } else {
             if (confirm(
@@ -1541,6 +1551,86 @@ async function conferirAnuncio(idVenda) {
     } catch (error) {
         console.error('❌ Erro na conferência:', error);
         mostrarToast('Erro ao conferir anúncio', 'error');
+    }
+}
+
+// ============================================
+// ENVIAR VENDA PARA EM ANDAMENTO (APÓS DIVERGÊNCIA)
+// ============================================
+async function enviarParaAndamento(idVenda, nomeUsuario, divergente) {
+    try {
+        console.log(`🔄 Enviando venda ${idVenda} para EM ANDAMENTO...`);
+        
+        const { error } = await supabaseClient
+            .from('vendas_ml')
+            .update({
+                status_conferencia: 'em_andamento',
+                divergente: divergente,
+                conferido_por_anuncio: null,
+                data_conferencia_anuncio: null,
+                observacao: `Divergência detectada - Em andamento por ${nomeUsuario}`
+            })
+            .eq('id_venda_ml', idVenda);
+        
+        if (error) throw error;
+        
+        console.log(`✅ Venda ${idVenda} movida para EM ANDAMENTO`);
+        
+    } catch (error) {
+        console.error('❌ Erro ao enviar para andamento:', error);
+        throw error;
+    }
+}
+
+// ============================================
+// REENVIAR DIVERGENTE PARA EM ANDAMENTO
+// ============================================
+async function reenviarDivergente(idVenda) {
+    try {
+        const venda = vendasML.find(v => v.id_venda_ml === idVenda);
+        
+        if (!venda) {
+            mostrarToast('Venda não encontrada', 'error');
+            return;
+        }
+        
+        if (!venda.divergente) {
+            mostrarToast('Esta venda não está marcada como divergente', 'warning');
+            return;
+        }
+        
+        const nomeUsuario = getNomeUsuario();
+        
+        if (confirm(
+            `🔄 REENVIAR PARA EM ANDAMENTO\n\n` +
+            `SKU: ${venda.sku}\n` +
+            `Produto: ${venda.titulo}\n` +
+            `Estoque Anúncio: ${venda.estoque_anuncio}\n` +
+            `Estoque Físico: ${venda.estoque_fisico}\n\n` +
+            `Deseja enviar esta venda de volta para EM ANDAMENTO?\n` +
+            `(Qualquer usuário pode fazer isso)`
+        )) {
+            
+            const { error } = await supabaseClient
+                .from('vendas_ml')
+                .update({
+                    status_conferencia: 'em_andamento',
+                    conferido_por_anuncio: null,
+                    data_conferencia_anuncio: null,
+                    observacao: `Reenviado por ${nomeUsuario}`
+                    // Mantém divergente = true para histórico
+                })
+                .eq('id_venda_ml', idVenda);
+            
+            if (error) throw error;
+            
+            mostrarToast(`🔄 Venda reenviada para EM ANDAMENTO por ${nomeUsuario}`, 'success');
+            await carregarVendasDoBanco();
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao reenviar divergente:', error);
+        mostrarToast('Erro ao reenviar', 'error');
     }
 }
 
@@ -1846,7 +1936,6 @@ async function verDetalhesVenda(idVenda) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                         <div>
                             <p><strong>Anúncio:</strong> ${venda.estoque_anuncio || 0} un</p>
-                            <p><strong>Físico:</strong> ${venda.estoque_fisico || 0} un</p>
                         </div>
                         <div>
                             <p><strong>1ª Conf.:</strong> ${venda.conferido_por_estoque || '-'}</p>
@@ -2311,5 +2400,6 @@ window.salvarObservacoesVenda = salvarObservacoesVenda;
 window.configurarKit = configurarKit;
 window.copiarMLB = copiarMLB;
 window.exportarVendasExcel = exportarVendasExcel;
+window.reenviarDivergente = reenviarDivergente;
 
 console.log('✅ Sales Dashboard com Dupla Conferência e Kits carregado e pronto!');
