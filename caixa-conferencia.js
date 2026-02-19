@@ -125,7 +125,7 @@ window.carregarCaixaDia = async function() {
         const caixaDateTitle = document.getElementById('caixaDateTitle');
         if (caixaDateTitle) {
             const dataFormatada = formatarDataBR(dataCaixaAtual);
-            caixaDateTitle.textContent = `Caixa Amor Saúde Colombo - ${dataFormatada}`;
+            caixaDateTitle.textContent = `Caixa Wheel Tech - ${dataFormatada}`;
         }
         
         showToast('✅ Caixa carregado com sucesso', 'success');
