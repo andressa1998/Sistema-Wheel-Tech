@@ -1250,6 +1250,10 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
                     <small style="display: block; color: #666;">Anúncio:</small>
                     ${estoqueBadge}
                 </div>
+                <div>
+                    <small style="display: block; color: #666;">Físico:</small>
+                    ${estoqueFisicoDisplay}
+                </div>
             </td>
             <td>
                 ${statusBadge}
@@ -1936,6 +1940,7 @@ async function verDetalhesVenda(idVenda) {
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                         <div>
                             <p><strong>Anúncio:</strong> ${venda.estoque_anuncio || 0} un</p>
+                            <p><strong>Físico:</strong> ${venda.estoque_fisico || 0} un</p>
                         </div>
                         <div>
                             <p><strong>1ª Conf.:</strong> ${venda.conferido_por_estoque || '-'}</p>
