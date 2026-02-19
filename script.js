@@ -3246,10 +3246,8 @@ async function saveOrder() {
             showToast('❌ Erro ao salvar: ' + result.error, 'error');
         }
         
-    } catch (error) {
-        console.error('❌ Erro:', error);
-        showToast('❌ Erro inesperado', 'error');
-    } finally {
+    } 
+    finally {
         if (saveOSBtn) {
             saveOSBtn.innerHTML = '<i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>';
             saveOSBtn.disabled = false;
