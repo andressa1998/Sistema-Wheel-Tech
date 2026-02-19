@@ -6,6 +6,7 @@ let vendasML = [];
 let vendasPaginadas = [];
 let paginaAtual = 1;
 const itensPorPagina = 20;
+let vendasFiltradasAtuais = [];
 let filtroAtual = 'todas';
 let periodoAtual = 'todas';
 let filtroConferencia = 'todos';
@@ -1393,11 +1394,48 @@ function atualizarContadoresConferencia() {
 }
 
 // ============================================
-// FILTROS
+// PAGINAR VENDAS (ATUALIZAR BOTÕES)
+// ============================================
+function paginarVendasLista(vendas) {
+    const inicio = (paginaAtual - 1) * itensPorPagina;
+    const fim = inicio + itensPorPagina;
+    
+    vendasPaginadas = vendas.slice(inicio, fim);
+    
+    atualizarTabelaVendas();
+    
+    // Atualizar contadores
+    setElementText('vendasInicio', vendas.length > 0 ? inicio + 1 : 0);
+    setElementText('vendasFim', Math.min(fim, vendas.length));
+    setElementText('vendasTotal', vendas.length);
+    
+    // ===== ATUALIZAR BOTÕES DE PAGINAÇÃO =====
+    const btnAnterior = document.getElementById('btnAnterior');
+    const btnProxima = document.getElementById('btnProxima');
+    
+    if (btnAnterior) {
+        btnAnterior.disabled = paginaAtual <= 1;
+        btnAnterior.style.opacity = paginaAtual <= 1 ? '0.5' : '1';
+        btnAnterior.style.cursor = paginaAtual <= 1 ? 'not-allowed' : 'pointer';
+    }
+    
+    const totalPaginas = Math.ceil(vendas.length / itensPorPagina);
+    if (btnProxima) {
+        btnProxima.disabled = paginaAtual >= totalPaginas;
+        btnProxima.style.opacity = paginaAtual >= totalPaginas ? '0.5' : '1';
+        btnProxima.style.cursor = paginaAtual >= totalPaginas ? 'not-allowed' : 'pointer';
+    }
+    
+    console.log(`📊 Página ${paginaAtual} de ${totalPaginas} - Mostrando ${vendasPaginadas.length} vendas`);
+}
+
+// ============================================
+// APLICAR FILTRO ATUAL (COM PAGINAÇÃO CORRIGIDA)
 // ============================================
 function aplicarFiltroAtual() {
     let vendasFiltradas = [...vendasML];
     
+    // Aplicar todos os filtros (status, período, conferência, tipo envio)
     if (filtroConferencia === 'pendente') {
         vendasFiltradas = vendasFiltradas.filter(v => v.status_conferencia === 'pendente' || !v.status_conferencia);
     } else if (filtroConferencia === 'conferido_estoque') {
@@ -1406,9 +1444,8 @@ function aplicarFiltroAtual() {
         vendasFiltradas = vendasFiltradas.filter(v => v.status_conferencia === 'conferido_anuncio' && !v.divergente);
     } else if (filtroConferencia === 'divergente') {
         vendasFiltradas = vendasFiltradas.filter(v => v.divergente === true);
-    }
-    if (filtroConferencia === 'em_andamento') {
-    vendasFiltradas = vendasFiltradas.filter(v => v.status_conferencia === 'em_andamento');
+    } else if (filtroConferencia === 'em_andamento') {
+        vendasFiltradas = vendasFiltradas.filter(v => v.status_conferencia === 'em_andamento');
     }
     
     if (filtroTipoEnvio !== 'todos') {
@@ -1450,33 +1487,53 @@ function aplicarFiltroAtual() {
         });
     }
     
+    // Ordenar por data (mais recente primeiro)
     vendasFiltradas.sort((a, b) => {
         const dataA = new Date(a.created_at || 0);
         const dataB = new Date(b.created_at || 0);
         return dataB - dataA;
     });
     
+    // ===== ARMAZENAR VENDAS FILTRADAS PARA PAGINAÇÃO =====
+    vendasFiltradasAtuais = vendasFiltradas;
+    
+    // Aplicar paginação
     paginarVendasLista(vendasFiltradas);
 }
 
-function paginarVendasLista(vendas) {
-    const inicio = (paginaAtual - 1) * itensPorPagina;
-    const fim = inicio + itensPorPagina;
+// ============================================
+// FUNÇÃO DE PAGINAÇÃO - CORRIGIDA
+// ============================================
+window.paginarVendas = function(direcao) {
+    console.log(`📄 Paginando: ${direcao}, página atual: ${paginaAtual}`);
     
-    vendasPaginadas = vendas.slice(inicio, fim);
+    const totalPaginas = Math.ceil(vendasFiltradasAtuais?.length || vendasML.length / itensPorPagina);
     
-    atualizarTabelaVendas();
+    if (direcao === 'anterior' && paginaAtual > 1) {
+        paginaAtual--;
+        console.log(`📄 Indo para página ${paginaAtual}`);
+    } else if (direcao === 'proxima') {
+        const maxPagina = Math.ceil((vendasFiltradasAtuais?.length || vendasML.length) / itensPorPagina);
+        if (paginaAtual < maxPagina) {
+            paginaAtual++;
+            console.log(`📄 Indo para página ${paginaAtual}`);
+        } else {
+            console.log('📄 Já está na última página');
+            showToast('Você já está na última página', 'info');
+            return;
+        }
+    } else {
+        return;
+    }
     
-    setElementText('vendasInicio', vendas.length > 0 ? inicio + 1 : 0);
-    setElementText('vendasFim', Math.min(fim, vendas.length));
-    setElementText('vendasTotal', vendas.length);
+    aplicarFiltroAtual();
     
-    const btnAnterior = document.getElementById('btnAnterior');
-    const btnProxima = document.getElementById('btnProxima');
-    
-    if (btnAnterior) btnAnterior.disabled = paginaAtual <= 1;
-    if (btnProxima) btnProxima.disabled = fim >= vendas.length;
-}
+    // Rolar suavemente para o topo da tabela
+    const tabela = document.getElementById('salesTable');
+    if (tabela) {
+        tabela.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+};
 
 function filtrarPorConferencia(status) {
     filtroConferencia = status;
