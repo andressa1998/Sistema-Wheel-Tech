@@ -768,12 +768,73 @@ async function buscarVendasML(limit = 50) {
 }
 
 // ============================================
+// FUNÇÃO PARA DETECTAR DATA DE LIBERAÇÃO
+// ============================================
+function detectarDataLiberacao(order) {
+    try {
+        // 1. Verificar se há mensagem sobre coleta futura
+        const shipping = order.shipping || {};
+        const tags = order.tags || [];
+        
+        // Data padrão (já liberado)
+        let dataLiberacao = null;
+        let statusLiberacao = 'liberado'; // liberado, agendado, pendente
+        
+        // 2. Verificar tags que indicam agendamento
+        if (tags.includes('coleta_agendada') || tags.includes('scheduled_delivery')) {
+            statusLiberacao = 'agendado';
+        }
+        
+        // 3. Verificar shipping status
+        if (shipping.status === 'to_be_agreed' || shipping.status === 'pending') {
+            statusLiberacao = 'pendente';
+        }
+        
+        // 4. Tentar extrair data da mensagem (se houver no response)
+        // Isso é mais complexo, mas podemos usar uma lógica simples
+        if (order.shipping?.date_created) {
+            const dataCriacao = new Date(order.shipping.date_created);
+            // Se for FULL, geralmente libera em 24h
+            if (order.shipping.logistic_type === 'fulfillment') {
+                dataLiberacao = new Date(dataCriacao.getTime() + (24 * 60 * 60 * 1000));
+            }
+        }
+        
+        return {
+            data_liberacao: dataLiberacao ? dataLiberacao.toISOString() : null,
+            status_liberacao: statusLiberacao,
+            mensagem_liberacao: gerarMensagemLiberacao(order, statusLiberacao)
+        };
+        
+    } catch (error) {
+        console.error('Erro ao detectar data liberação:', error);
+        return {
+            data_liberacao: null,
+            status_liberacao: 'liberado',
+            mensagem_liberacao: null
+        };
+    }
+}
+
+function gerarMensagemLiberacao(order, status) {
+    if (status === 'agendado') {
+        return "📅 Coleta agendada - Liberação futura";
+    } else if (status === 'pendente') {
+        return "⏳ Aguardando liberação do Mercado Livre";
+    }
+    return null;
+}
+
+// ============================================
 // FUNÇÃO CORRIGIDA - COM FLEX CORRETO
+// ============================================
+// ============================================
+// PROCESSAR VENDAS COM DETALHES (VERSÃO COMPLETA COM LIBERAÇÃO)
 // ============================================
 async function processarVendasComDetalhesESTOQUE(vendas, token) {
     const vendasComDetalhes = [];
     
-    console.log(`🔍 Buscando SKU, ESTOQUE e ENVIO de ${vendas.length} vendas...`);
+    console.log(`🔍 Buscando SKU, ESTOQUE, ENVIO e LIBERAÇÃO de ${vendas.length} vendas...`);
     
     for (const venda of vendas) {
         try {
@@ -796,7 +857,9 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
             
             let estoqueAnuncio = 0;
             let sku = item.seller_sku || item.seller_custom_field || 'SEM_SKU';
+            let quantidadeVendida = primeiroItem.quantity || 1;
             
+            // ===== BUSCAR ITEM PARA ESTOQUE =====
             if (item.id) {
                 try {
                     const itemUrl = `https://api.mercadolibre.com/items/${item.id}`;
@@ -823,7 +886,7 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                 }
             }
             
-            // ===== 4. BUSCAR ENVIO - VIA WORKER (CORRIGIDO PARA FLEX) =====
+            // ===== BUSCAR ENVIO =====
             let tipoEnvio = 'N/I';
             if (order.shipping?.id) {
                 try {
@@ -835,38 +898,16 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                     if (shipRes.ok) {
                         const shipData = await shipRes.json();
                         
-                        console.log('📦 Dados do envio:', {
-                            id: order.shipping.id,
-                            logistic_type: shipData.logistic_type,
-                            substatus: shipData.substatus,
-                            status: shipData.status
-                        });
-                        
                         if (shipData.logistic_type) {
                             const tipo = shipData.logistic_type.toLowerCase();
                             
-                            // CORREÇÃO: Identificar FLEX corretamente
                             if (tipo === 'fulfillment' || tipo === 'fulfillment_me2') {
                                 tipoEnvio = 'FULL';
-                            } 
-                            else if (tipo === 'drop_off' || tipo === 'xd_drop_off' || tipo === 'self_service') {
-                                tipoEnvio = 'FLEX';  // TODOS esses são FLEX
-                            } 
-                            else if (tipo === 'cross_docking' || tipo === 'me2') {
+                            } else if (tipo === 'drop_off' || tipo === 'xd_drop_off' || tipo === 'self_service') {
+                                tipoEnvio = 'FLEX';
+                            } else if (tipo === 'cross_docking' || tipo === 'me2') {
                                 tipoEnvio = 'MERCADO ENVIOS';
                             }
-                            else {
-                                // Se não identificou, verificar pelo substatus
-                                if (shipData.substatus === 'fulfillment') {
-                                    tipoEnvio = 'FULL';
-                                } else if (shipData.substatus === 'drop_off') {
-                                    tipoEnvio = 'FLEX';
-                                } else {
-                                    tipoEnvio = shipData.logistic_type.toUpperCase();
-                                }
-                            }
-                            
-                            console.log(`📦 Tipo de envio identificado: ${tipoEnvio} (logistic_type: ${tipo})`);
                         }
                     }
                 } catch (e) {
@@ -874,6 +915,57 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                 }
             }
             
+            // ============================================
+            // 🆕 DETECTAR DATA DE LIBERAÇÃO
+            // ============================================
+            function detectarDataLiberacao(order) {
+                try {
+                    const shipping = order.shipping || {};
+                    const tags = order.tags || [];
+                    
+                    let dataLiberacao = null;
+                    let statusLiberacao = 'liberado';
+                    let mensagemLiberacao = null;
+                    
+                    // Verificar se há indicação de coleta futura
+                    if (tags.includes('coleta_agendada') || tags.includes('scheduled_delivery')) {
+                        statusLiberacao = 'agendado';
+                        mensagemLiberacao = "📅 Coleta agendada";
+                    }
+                    
+                    // Verificar status do shipping
+                    if (shipping.status === 'to_be_agreed' || shipping.status === 'pending') {
+                        statusLiberacao = 'pendente';
+                        mensagemLiberacao = "⏳ Aguardando liberação";
+                    }
+                    
+                    // Tentar extrair data (se for FULL, libera em 24h)
+                    if (order.shipping?.date_created && order.shipping?.logistic_type === 'fulfillment') {
+                        const dataCriacao = new Date(order.shipping.date_created);
+                        dataLiberacao = new Date(dataCriacao.getTime() + (24 * 60 * 60 * 1000)).toISOString();
+                    }
+                    
+                    return {
+                        data_liberacao: dataLiberacao,
+                        status_liberacao: statusLiberacao,
+                        mensagem_liberacao: mensagemLiberacao,
+                        precisa_aguardar: statusLiberacao !== 'liberado'
+                    };
+                    
+                } catch (error) {
+                    return {
+                        data_liberacao: null,
+                        status_liberacao: 'liberado',
+                        mensagem_liberacao: null,
+                        precisa_aguardar: false
+                    };
+                }
+            }
+            
+            // CHAMAR A FUNÇÃO DE LIBERAÇÃO
+            const liberacaoInfo = detectarDataLiberacao(order);
+            
+            // ===== MONTAR OBJETO FINAL =====
             const idVenda = `ML${order.id}`.replace(/[^a-zA-Z0-9]/g, '');
             
             vendasComDetalhes.push({
@@ -892,10 +984,16 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
                 status_sistema: 'nova',
                 tipo_envio: tipoEnvio,
                 id_envio: order.shipping?.id || null,
-                dados_completos: JSON.stringify(order)
+                dados_completos: JSON.stringify(order),
+                
+                // 🆕 CAMPOS DE LIBERAÇÃO
+                data_liberacao: liberacaoInfo.data_liberacao,
+                status_liberacao: liberacaoInfo.status_liberacao,
+                mensagem_liberacao: liberacaoInfo.mensagem_liberacao,
+                precisa_aguardar: liberacaoInfo.precisa_aguardar
             });
             
-            console.log(`✅ Venda ${order.id}: SKU=${sku}, Estoque=${estoqueAnuncio}, Envio=${tipoEnvio}`);
+            console.log(`✅ Venda ${order.id}: SKU=${sku}, Envio=${tipoEnvio}, Liberação=${liberacaoInfo.status_liberacao}`);
             
             await new Promise(resolve => setTimeout(resolve, 200));
             

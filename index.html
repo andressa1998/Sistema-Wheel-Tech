@@ -1822,6 +1822,12 @@
             <button class="btn btn-sm btn-outline-danger" onclick="filtrarPorConferencia('divergente')">
                 <i class="fas fa-exclamation-triangle"></i> Divergentes <span class="badge badge-danger" id="badgeDivergentes">0</span>
             </button>
+            <button class="btn btn-sm btn-outline-warning" onclick="filtrarPorLiberacao('pendente')">
+                <i class="fas fa-clock"></i> Aguardando Liberação
+            </button>
+            <button class="btn btn-sm btn-outline-info" onclick="filtrarPorLiberacao('agendado')">
+                <i class="fas fa-calendar-check"></i> Coleta Agendada
+            </button>
         </div>
         
             
@@ -2452,14 +2458,17 @@
     </div>
     </div>
 
-    <!-- ===== SISTEMA DE CONFERÊNCIA DE CAIXA ===== -->
+   <!-- ============================================ -->
+<!-- SISTEMA DE CONFERÊNCIA DE CAIXA - VERSÃO 2.0 -->
+<!-- ============================================ -->
 <div id="caixaSystem" class="hidden">
+    <!-- Header do Sistema -->
     <header class="main-header">
         <div class="container">
             <div class="header-content">
                 <h1 style="display: flex; align-items: center; gap: 10px;">
                     <i class="fas fa-cash-register" style="color: #28a745;"></i>
-                    Sistema de Conferência de Caixa
+                    <span id="caixaDateTitle">Caixa Amor Saúde Colombo</span>
                 </h1>
                 
                 <div class="user-info">
@@ -2469,7 +2478,7 @@
                         <div style="font-size: 12px; color: #6c757d;" id="caixaUserRole"></div>
                         <div class="d-flex gap-2 mt-2">
                             <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
-                                <i class="fas fa-arrow-left"></i> Voltar para OS
+                                <i class="fas fa-arrow-left"></i> Voltar
                             </button>
                             <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
                                 <i class="fas fa-sign-out-alt"></i> Sair
@@ -2482,95 +2491,142 @@
     </header>
     
     <div class="container">
-        <!-- Status do Caixa -->
-        <div class="card mb-4">
-            <div class="d-flex justify-content-between align-items-center">
-                <div>
-                    <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
-                        <i class="fas fa-calendar-day" style="color: #8A2BE2;"></i>
-                        <span id="caixaDateTitle">Caixa do Dia</span>
-                        <input type="date" id="dataCaixa" class="form-control" style="width: auto; display: inline-block; margin-left: 10px;">
-                        <button onclick="carregarCaixaDia()" class="btn btn-sm btn-info">
-                            <i class="fas fa-sync-alt"></i> Carregar
-                        </button>
-                    </h3>
-                    <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
-                        <span id="statusCaixa">Aberto</span> • 
-                        Saldo: R$ <span id="saldoAtual">0,00</span> • 
-                        Entradas: <span id="totalEntradas">0</span> • 
-                        Saídas: <span id="totalSaidas">0</span>
-                    </p>
+        <!-- Filtros e Data -->
+        <div class="filters-bar" style="margin: 20px 0; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+            <div class="filter-group" style="display: flex; gap: 5px;">
+                <button class="btn btn-sm btn-outline-primary active" onclick="filtrarLancamentos('todos')">Todos</button>
+                <button class="btn btn-sm btn-outline-success" onclick="filtrarLancamentos('entrada')">Entradas</button>
+                <button class="btn btn-sm btn-outline-danger" onclick="filtrarLancamentos('saida')">Saídas</button>
+            </div>
+            
+            <div style="display: flex; gap: 5px; align-items: center; margin-left: auto;">
+                <label for="dataCaixa" style="font-size: 14px;">Data:</label>
+                <input type="date" id="dataCaixa" class="form-control" style="width: 150px;">
+                <button onclick="carregarCaixaDia()" class="btn btn-sm btn-info">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- PAINEL DE CARDS COMPLETO (igual à sua imagem) -->
+        <div class="cards-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 25px;">
+            <!-- Saldo Anterior -->
+            <div class="info-card" style="background: #f8f9fa; padding: 10px; border-radius: 8px;">
+                <div style="font-size: 11px; color: #6c757d;">Saldo Anterior</div>
+                <div style="font-size: 16px; font-weight: bold;" id="saldoAnterior">R$ 0,00</div>
+            </div>
+            
+            <!-- Entrada -->
+            <div class="info-card" style="background: #d4edda; padding: 10px; border-radius: 8px;">
+                <div style="font-size: 11px; color: #155724;">Entrada</div>
+                <div style="font-size: 16px; font-weight: bold; color: #28a745;" id="totalEntradas">R$ 0,00</div>
+            </div>
+            
+            <!-- Saída -->
+            <div class="info-card" style="background: #f8d7da; padding: 10px; border-radius: 8px;">
+                <div style="font-size: 11px; color: #721c24;">Saída</div>
+                <div style="font-size: 16px; font-weight: bold; color: #dc3545;" id="totalSaidas">R$ 0,00</div>
+            </div>
+            
+            <!-- Saldo do Dia -->
+            <div class="info-card" style="background: #cce5ff; padding: 10px; border-radius: 8px;">
+                <div style="font-size: 11px; color: #004085;">Saldo do Dia</div>
+                <div style="font-size: 16px; font-weight: bold; color: #007bff;" id="saldoCalculado">R$ 0,00</div>
+            </div>
+            
+            <!-- Diferença -->
+            <div class="info-card" style="background: #fff3cd; padding: 10px; border-radius: 8px;">
+                <div style="font-size: 11px; color: #856404;">Diferença</div>
+                <div style="font-size: 16px; font-weight: bold; color: #ffc107;" id="diferenca">R$ 0,00</div>
+            </div>
+            
+            <!-- CADEADO 1 - Operador -->
+            <div class="info-card" id="cadeado1" style="background: #e2d5f1; padding: 10px; border-radius: 8px; text-align: center; cursor: pointer;" onclick="if(!caixaData?.fechado_operador) fecharCaixaOperador()">
+                <div style="font-size: 24px;" id="cadeado1Icon"><i class="fas fa-unlock-alt" style="color: #ffc107;"></i></div>
+                <div style="font-size: 11px; font-weight: bold; color: #4B0082;">Fechamento Operador</div>
+                <div style="font-size: 10px; margin-top: 5px;" id="cadeado1Status">
+                    <small>Aguardando fechamento</small>
                 </div>
-                
-                <div class="d-flex gap-2">
-                    <button onclick="abrirRelatorioCaixa()" class="btn btn-info">
-                        <i class="fas fa-chart-line"></i> Relatório
-                    </button>
-                    <button onclick="exportarCaixaExcel()" class="btn btn-success">
-                        <i class="fas fa-file-excel"></i> Exportar
-                    </button>
-                    <button onclick="fecharCaixa()" class="btn btn-danger" id="fecharCaixaBtn">
-                        <i class="fas fa-lock"></i> Fechar Caixa
-                    </button>
-                    <button onclick="reabrirCaixa()" class="btn btn-warning hidden" id="reabrirCaixaBtn">
-                        <i class="fas fa-unlock"></i> Reabrir Caixa
-                    </button>
+            </div>
+            
+            <!-- CADEADO 2 - Admin -->
+            <div class="info-card" id="cadeado2" style="background: #f5e6ff; padding: 10px; border-radius: 8px; text-align: center; cursor: pointer;" onclick="if(caixaData?.fechado_operador && !caixaData?.conferido_admin) conferirCaixaAdmin()">
+                <div style="font-size: 24px;" id="cadeado2Icon"><i class="fas fa-lock" style="color: #6c757d;"></i></div>
+                <div style="font-size: 11px; font-weight: bold; color: #8A2BE2;">Conferência Admin</div>
+                <div style="font-size: 10px; margin-top: 5px;" id="cadeado2Status">
+                    <small>Aguardando fechamento</small>
                 </div>
             </div>
         </div>
-        
-        <!-- Formulário de Lançamentos -->
+
+        <!-- Botões de Ação -->
+        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <button id="fecharCaixaBtn" class="btn btn-warning" onclick="fecharCaixaOperador()" style="display: flex; align-items: center; gap: 5px;">
+                <i class="fas fa-lock"></i> Fechar Caixa (Operador)
+            </button>
+            
+            <button id="conferirCaixaBtn" class="btn btn-primary" onclick="conferirCaixaAdmin()" style="display: flex; align-items: center; gap: 5px;">
+                <i class="fas fa-check-double"></i> Conferir Caixa (Admin)
+            </button>
+            
+            <button onclick="abrirRelatorioCaixa()" class="btn btn-info">
+                <i class="fas fa-chart-line"></i> Relatório
+            </button>
+            
+            <button onclick="exportarCaixaExcel()" class="btn btn-success">
+                <i class="fas fa-file-excel"></i> Exportar
+            </button>
+        </div>
+
+        <!-- Formulário de Novo Lançamento -->
         <div class="card mb-4" id="formLancamentoCard">
             <div class="card-header">
                 <h2 class="card-title">
-                    <i class="fas fa-plus-circle"></i>
-                    Novo Lançamento
+                    <i class="fas fa-plus-circle"></i> Novo Lançamento
                 </h2>
             </div>
             
-            <div id="lancamentoForm">
-                <div class="d-flex flex-wrap gap-3 mb-4">
-                    <div style="flex: 1; min-width: 200px;">
+            <div id="lancamentoForm" class="p-3">
+                <div class="row">
+                    <div class="col-md-3">
                         <div class="form-group">
-                            <label for="tipoLancamento"><i class="fas fa-exchange-alt"></i> Tipo *</label>
+                            <label for="tipoLancamento">Tipo *</label>
                             <select id="tipoLancamento" class="form-control" required>
-                                <option value="entrada">Entrada</option>
-                                <option value="saida">Saída</option>
+                                <option value="entrada">💰 Entrada (sem comprovante)</option>
+                                <option value="saida">💸 Saída (com comprovante obrigatório)</option>
                             </select>
                         </div>
                     </div>
                     
-                    <div style="flex: 1; min-width: 200px;">
+                    <div class="col-md-3">
                         <div class="form-group">
-                            <label for="valorLancamento"><i class="fas fa-money-bill-wave"></i> Valor *</label>
-                            <input type="number" id="valorLancamento" class="form-control" step="0.01" min="0" placeholder="0,00" required>
+                            <label for="valorLancamento">Valor (R$) *</label>
+                            <input type="number" id="valorLancamento" class="form-control" step="0.01" min="0.01" placeholder="0,00" required>
                         </div>
-                    </div>
-                </div>
-                
-                <div class="form-group mb-4">
-                    <label for="descricaoLancamento"><i class="fas fa-sticky-note"></i> Descrição *</label>
-                    <input type="text" id="descricaoLancamento" class="form-control" placeholder="Descrição do lançamento" required>
-                </div>
-                
-                <div class="form-group mb-4" id="comprovanteSection">
-                    <label for="comprovanteLancamento"><i class="fas fa-receipt"></i> Comprovante (Obrigatório para saída)</label>
-                    <div class="photo-link-section">
-                        <div class="d-flex gap-2">
-                            <input type="file" id="comprovanteFile" class="form-control" accept="image/*,.pdf" style="padding: 8px;">
-                            <button type="button" id="addComprovanteBtn" class="btn btn-primary btn-sm">
-                                <i class="fas fa-upload"></i> Upload
-                            </button>
-                        </div>
-                        <small style="color: #6c757d; font-size: 12px; display: block; margin-top: 5px;">
-                            <i class="fas fa-info-circle"></i> Faça upload do comprovante (JPG, PNG ou PDF)
-                        </small>
                     </div>
                     
-                    <div id="comprovantePreview" class="mt-3" style="display: none;">
-                        <div class="d-flex align-items-center justify-content-between" style="background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #dee2e6;">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label for="descricaoLancamento">Descrição *</label>
+                            <input type="text" id="descricaoLancamento" class="form-control" placeholder="Descrição do lançamento" required>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Seção de Comprovante (obrigatório para saídas) -->
+                <div class="form-group mt-3" id="comprovanteSection">
+                    <label><i class="fas fa-receipt"></i> Comprovante <span id="comprovanteObrigatorio" style="color: #dc3545;">(obrigatório para saídas)</span></label>
+                    <div class="d-flex gap-2 align-items-center">
+                        <input type="file" id="comprovanteFile" class="form-control" accept="image/*,.pdf" style="width: auto; flex: 1;">
+                        <button type="button" id="addComprovanteBtn" class="btn btn-primary">
+                            <i class="fas fa-upload"></i> Upload
+                        </button>
+                    </div>
+                    
+                    <div id="comprovantePreview" class="mt-2" style="display: none;">
+                        <div class="d-flex align-items-center justify-content-between p-2" style="background: #e8f5e9; border-radius: 5px;">
                             <div>
-                                <i class="fas fa-file-invoice-dollar"></i>
+                                <i class="fas fa-file-invoice-dollar text-success"></i>
                                 <span id="comprovanteName">comprovante.pdf</span>
                             </div>
                             <button type="button" onclick="removerComprovante()" class="btn btn-sm btn-danger">
@@ -2578,9 +2634,14 @@
                             </button>
                         </div>
                     </div>
+                    
+                    <small class="text-muted mt-1 d-block">
+                        <i class="fas fa-info-circle"></i> 
+                        <span id="comprovanteMessage">Saídas exigem comprovante. Entradas não precisam.</span>
+                    </small>
                 </div>
                 
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 mt-4">
                     <button type="button" onclick="salvarLancamento()" class="btn btn-success" id="salvarLancamentoBtn">
                         <i class="fas fa-save"></i> Salvar Lançamento
                     </button>
@@ -2590,55 +2651,49 @@
                 </div>
             </div>
         </div>
-        
-        <!-- Lista de Lançamentos -->
+
+        <!-- Tabela de Lançamentos -->
         <div class="card">
             <div class="card-header">
                 <h2 class="card-title">
                     <i class="fas fa-list"></i> Lançamentos do Dia
                 </h2>
                 
-                <div class="d-flex flex-wrap gap-2">
-                    <button class="btn btn-success btn-sm" onclick="filtrarLancamentos('entrada')">
-                        Entradas (<span id="countEntradas">0</span>)
-                    </button>
-                    <button class="btn btn-danger btn-sm" onclick="filtrarLancamentos('saida')">
-                        Saídas (<span id="countSaidas">0</span>)
-                    </button>
-                    <button class="btn btn-primary btn-sm" onclick="filtrarLancamentos('todos')">
-                        Todos (<span id="countLancamentos">0</span>)
-                    </button>
+                <div class="d-flex gap-2">
+                    <span class="badge badge-success" id="countEntradas">0 entradas</span>
+                    <span class="badge badge-danger" id="countSaidas">0 saídas</span>
+                    <span class="badge badge-primary" id="countLancamentos">0 total</span>
                 </div>
             </div>
             
             <div class="table-responsive">
-                <table class="table" id="lancamentosTable">
+                <table class="table table-striped" id="lancamentosTable">
                     <thead>
                         <tr>
-                            <th>Tipo</th>
+                            <th>Data</th>
                             <th>Valor</th>
                             <th>Descrição</th>
-                            <th>Comprovante</th>
-                            <th>Conferido</th>
+                            <th style="text-align: center;">Comprovante</th>
                             <th>Usuário</th>
                             <th>Hora</th>
-                            <th>Ações</th>
+                            <th style="text-align: center;">Ações</th>
                         </tr>
                     </thead>
-                    <tbody id="lancamentosTableBody">
+                    <tbody id="tabelaCaixaBody">
                         <!-- Lançamentos serão carregados aqui -->
+                        <tr>
+                            <td colspan="7" class="text-center p-5">
+                                <i class="fas fa-cash-register fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                                <h4 style="color: #6c757d;">Nenhum lançamento encontrado</h4>
+                                <p style="color: #6c757d;">Clique em "Salvar Lançamento" para começar.</p>
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
-            
-            <div id="lancamentosEmpty" class="text-center py-5 hidden">
-                <i class="fas fa-cash-register fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                <h4 style="color: #6c757d;">Nenhum lançamento encontrado</h4>
-                <p style="color: #6c757d;">Clique em "Novo Lançamento" para começar.</p>
-            </div>
         </div>
     </div>
-    
+
     <!-- Modal para Visualizar/Conferir Comprovante -->
     <div id="comprovanteModal" class="modal hidden">
         <div class="modal-content" style="max-width: 600px;">
@@ -2653,10 +2708,10 @@
             
             <div id="comprovanteModalContent">
                 <div class="text-center mb-4">
-                    <div id="comprovanteImage" style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
+                    <div id="comprovanteImage" style="max-height: 300px; overflow-y: auto; margin-bottom: 20px; border: 1px solid #dee2e6; padding: 10px; border-radius: 5px;">
                         <p class="text-muted">Carregando comprovante...</p>
                     </div>
-                    <div>
+                    <div class="text-left">
                         <p><strong>Valor:</strong> R$ <span id="modalValor">0,00</span></p>
                         <p><strong>Descrição:</strong> <span id="modalDescricao">-</span></p>
                         <p><strong>Usuário:</strong> <span id="modalUsuario">-</span></p>
@@ -2677,7 +2732,7 @@
     
     <!-- Modal para Relatório de Caixa -->
     <div id="relatorioCaixaModal" class="modal hidden">
-        <div class="modal-content" style="max-width: 800px; max-height: 90vh; padding: 0;">
+        <div class="modal-content" style="max-width: 900px; max-height: 90vh; padding: 0;">
             <div style="background: linear-gradient(135deg, #28a745 0%, #218838 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h3 style="margin: 0; font-weight: 600;">
@@ -2696,27 +2751,24 @@
                 <!-- Filtros -->
                 <div class="card mb-4">
                     <h4 style="margin-bottom: 15px;"><i class="fas fa-filter"></i> Filtros</h4>
-                    <div class="d-flex flex-wrap gap-3">
-                        <div style="flex: 1; min-width: 200px;">
+                    <div class="row">
+                        <div class="col-md-4">
                             <div class="form-group">
-                                <label for="relDataInicio"><i class="fas fa-calendar-alt"></i> Data Início</label>
+                                <label for="relDataInicio">Data Início</label>
                                 <input type="date" id="relDataInicio" class="form-control">
                             </div>
                         </div>
-                        <div style="flex: 1; min-width: 200px;">
+                        <div class="col-md-4">
                             <div class="form-group">
-                                <label for="relDataFim"><i class="fas fa-calendar-alt"></i> Data Fim</label>
+                                <label for="relDataFim">Data Fim</label>
                                 <input type="date" id="relDataFim" class="form-control">
                             </div>
                         </div>
-                        <div style="flex: 1; min-width: 200px;">
+                        <div class="col-md-4">
                             <div class="form-group">
-                                <label for="relUsuario"><i class="fas fa-user"></i> Usuário</label>
+                                <label for="relUsuario">Usuário</label>
                                 <select id="relUsuario" class="form-control">
                                     <option value="">Todos os usuários</option>
-                                    <option value="Thalyta">Thalyta</option>
-                                    <option value="Andressa">Andressa</option>
-                                    <option value="andressamiotto">Andressa (Admin)</option>
                                 </select>
                             </div>
                         </div>
@@ -2731,22 +2783,22 @@
                 <!-- Resumo -->
                 <div class="card mb-4">
                     <h4 style="margin-bottom: 15px;"><i class="fas fa-chart-pie"></i> Resumo do Período</h4>
-                    <div class="d-flex flex-wrap gap-4">
-                        <div class="text-center" style="flex: 1; min-width: 150px;">
+                    <div class="row text-center">
+                        <div class="col-md-3">
                             <div style="font-size: 24px; font-weight: 700; color: #28a745;">R$ <span id="relTotalEntradas">0,00</span></div>
                             <div style="font-size: 12px; color: #6c757d;">Total Entradas</div>
                         </div>
-                        <div class="text-center" style="flex: 1; min-width: 150px;">
+                        <div class="col-md-3">
                             <div style="font-size: 24px; font-weight: 700; color: #dc3545;">R$ <span id="relTotalSaidas">0,00</span></div>
                             <div style="font-size: 12px; color: #6c757d;">Total Saídas</div>
                         </div>
-                        <div class="text-center" style="flex: 1; min-width: 150px;">
+                        <div class="col-md-3">
                             <div style="font-size: 24px; font-weight: 700; color: #8A2BE2;">R$ <span id="relSaldoFinal">0,00</span></div>
                             <div style="font-size: 12px; color: #6c757d;">Saldo Final</div>
                         </div>
-                        <div class="text-center" style="flex: 1; min-width: 150px;">
+                        <div class="col-md-3">
                             <div style="font-size: 24px; font-weight: 700; color: #17a2b8;"><span id="relTotalDias">0</span></div>
-                            <div style="font-size: 12px; color: #6c757d;">Dias</div>
+                            <div style="font-size: 12px; color: #6c757d;">Dias Analisados</div>
                         </div>
                     </div>
                 </div>
@@ -2754,7 +2806,7 @@
                 <!-- Gráfico -->
                 <div class="card mb-4">
                     <h4 style="margin-bottom: 15px;"><i class="fas fa-chart-bar"></i> Evolução Diária</h4>
-                    <div id="graficoCaixaContainer" style="height: 300px; display: flex; align-items: center; justify-content: center; color: #6c757d;">
+                    <div id="graficoCaixaContainer" style="height: 300px; display: flex; align-items: center; justify-content: center; background: #f8f9fa; border-radius: 5px; color: #6c757d;">
                         <i class="fas fa-chart-line fa-3x" style="opacity: 0.3;"></i>
                         <span style="margin-left: 10px;">Clique em "Gerar Relatório" para visualizar</span>
                     </div>
@@ -2768,15 +2820,20 @@
                             <thead>
                                 <tr>
                                     <th>Data</th>
+                                    <th>Saldo Anterior</th>
                                     <th>Entradas</th>
                                     <th>Saídas</th>
-                                    <th>Saldo</th>
+                                    <th>Saldo do Dia</th>
+                                    <th>Diferença</th>
                                     <th>Status</th>
-                                    <th>Usuário</th>
                                 </tr>
                             </thead>
                             <tbody id="relatorioCaixaTableBody">
-                                <!-- Dados do relatório serão carregados aqui -->
+                                <tr>
+                                    <td colspan="7" class="text-center p-4">
+                                        Clique em "Gerar Relatório" para exibir dados
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>

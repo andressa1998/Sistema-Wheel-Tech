@@ -1016,6 +1016,33 @@ function atualizarTabelaVendas() {
         else {
             envioBadge = '<span class="badge badge-secondary"><i class="fas fa-question"></i> N/I</span>';
         }
+
+        // ===== NOVO: Badge de Liberação =====
+// ===== NOVO: Badge de Liberação =====
+let liberacaoBadge = '';
+if (venda.precisa_aguardar) {
+    let cor = '#ffc107'; // amarelo
+    let icone = 'fa-clock';
+    let texto = venda.mensagem_liberacao || 'Aguardar liberação';
+    
+    if (venda.status_liberacao === 'agendado') {
+        cor = '#17a2b8'; // azul
+        icone = 'fa-calendar-check';
+    }
+    
+    if (venda.data_liberacao) {
+        const dataLib = new Date(venda.data_liberacao);
+        texto += ` - ${dataLib.toLocaleDateString('pt-BR')}`;
+    }
+    
+    liberacaoBadge = `
+        <div style="margin-top: 8px; padding-top: 5px; border-top: 1px dashed #dee2e6;">
+            <span class="badge" style="background: ${cor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px;">
+                <i class="fas ${icone}"></i> ${texto}
+            </span>
+        </div>
+    `;
+}
         
         // ===== ESTOQUE DO ANÚNCIO =====
         let estoqueBadge = '';
@@ -1244,6 +1271,7 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
                 ${skuDisplay}
                 ${mlbDisplay}
                 <div style="margin-top: 4px;">${envioBadge}</div>
+                ${liberacaoBadge}
             </td>
             <td style="min-width: 120px;">
                 <div style="margin-bottom: 8px;">
@@ -2347,6 +2375,25 @@ function exportarVendasExcel() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Vendas");
     XLSX.writeFile(wb, `vendas_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+// ============================================
+// FILTRO PARA VENDAS NÃO LIBERADAS
+// ============================================
+function filtrarPorLiberacao(status) {
+    // status pode ser: 'todas', 'liberado', 'pendente', 'agendado'
+    filtroLiberacao = status;
+    paginaAtual = 1;
+    aplicarFiltroAtual();
+}
+
+// Modifique a função aplicarFiltroAtual para incluir:
+if (filtroLiberacao && filtroLiberacao !== 'todas') {
+    if (filtroLiberacao === 'pendente') {
+        vendasFiltradas = vendasFiltradas.filter(v => v.status_liberacao === 'pendente' || v.status_liberacao === 'agendado');
+    } else {
+        vendasFiltradas = vendasFiltradas.filter(v => v.status_liberacao === filtroLiberacao);
+    }
 }
 
 // ============================================
