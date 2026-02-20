@@ -2694,6 +2694,103 @@
         </div>
     </div>
 
+    <!-- ============================================ -->
+<!-- HISTÓRICO DE DIAS - LISTAGEM COMPLETA -->
+<!-- ============================================ -->
+<div class="card mt-4">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h2 class="card-title" style="margin: 0;">
+            <i class="fas fa-history"></i> Histórico de Dias
+        </h2>
+        <div class="d-flex gap-2">
+            <button onclick="carregarHistoricoDias('semana')" class="btn btn-sm btn-outline-primary">Últimos 7 dias</button>
+            <button onclick="carregarHistoricoDias('mes')" class="btn btn-sm btn-outline-primary">Últimos 30 dias</button>
+            <button onclick="carregarHistoricoDias('todos')" class="btn btn-sm btn-outline-primary">Todos</button>
+            <button onclick="exportarHistoricoExcel()" class="btn btn-sm btn-success">
+                <i class="fas fa-file-excel"></i> Exportar Histórico
+            </button>
+        </div>
+    </div>
+    
+    <div class="card-body">
+        <!-- Filtro rápido por período -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <div class="form-group">
+                    <label>Período</label>
+                    <select id="filtroPeriodoHistorico" class="form-control" onchange="filtrarHistoricoPeriodo()">
+                        <option value="7">Últimos 7 dias</option>
+                        <option value="15">Últimos 15 dias</option>
+                        <option value="30" selected>Últimos 30 dias</option>
+                        <option value="90">Últimos 90 dias</option>
+                        <option value="0">Todos</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="filtroStatusHistorico" class="form-control" onchange="filtrarHistoricoStatus()">
+                        <option value="todos">Todos os status</option>
+                        <option value="aberto">Aberto</option>
+                        <option value="fechado_operador">Fechado (Operador)</option>
+                        <option value="conferido_admin">Conferido (Admin)</option>
+                        <option value="divergente">Com divergência</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="form-group">
+                    <label> </label>
+                    <button onclick="carregarHistoricoDias()" class="btn btn-primary btn-block">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Tabela de Histórico -->
+        <div class="table-responsive">
+            <table class="table table-striped table-hover" id="historicoDiasTable">
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Início do Dia</th>
+                        <th>Fim do Dia</th>
+                        <th>Divergência</th>
+                        <th style="text-align: center;">Cadeado 1 (Operador)</th>
+                        <th style="text-align: center;">Cadeado 2 (Admin)</th>
+                        <th style="text-align: center;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="historicoDiasTableBody">
+                    <tr>
+                        <td colspan="7" class="text-center p-4">
+                            <i class="fas fa-history fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                            <h4 style="color: #6c757d;">Carregando histórico...</h4>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <!-- Paginação do Histórico -->
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <div>
+                <span id="historicoInfo">Mostrando 0-0 de 0 dias</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button id="btnHistoricoAnterior" class="btn btn-sm btn-outline-primary" onclick="paginarHistorico('anterior')" disabled>
+                    <i class="fas fa-chevron-left"></i> Anterior
+                </button>
+                <button id="btnHistoricoProxima" class="btn btn-sm btn-outline-primary" onclick="paginarHistorico('proxima')" disabled>
+                    Próxima <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
     <!-- Modal para Visualizar/Conferir Comprovante -->
     <div id="comprovanteModal" class="modal hidden">
         <div class="modal-content" style="max-width: 600px;">
