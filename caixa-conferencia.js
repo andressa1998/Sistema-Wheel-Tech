@@ -1,5 +1,5 @@
 // ============================================
-// SISTEMA DE CONFERÊNCIA DE CAIXA - VERSÃO COMPLETA
+// SISTEMA DE CONFERÊNCIA DE CAIXA - VERSÃO CORRIGIDA
 // ============================================
 
 // ===== VARIÁVEIS GLOBAIS =====
@@ -103,7 +103,7 @@ function carregarUsuarios() {
     }
 }
 
-// ===== FUNÇÃO PARA CARREGAR CAIXA DO DIA =====
+// ===== FUNÇÃO CORRIGIDA PARA CARREGAR CAIXA DO DIA =====
 window.carregarCaixaDia = async function() {
     try {
         const dataCaixaInput = document.getElementById('dataCaixa');
@@ -117,7 +117,29 @@ window.carregarCaixaDia = async function() {
             throw new Error('Supabase não conectado');
         }
         
-        // Buscar caixa do dia
+        // PASSO 1: Buscar o saldo do dia anterior
+        const dataAnterior = new Date(dataCaixaAtual);
+        dataAnterior.setDate(dataAnterior.getDate() - 1);
+        const dataAnteriorStr = dataAnterior.toISOString().split('T')[0];
+        
+        console.log('📅 Data atual:', dataCaixaAtual);
+        console.log('📅 Data anterior:', dataAnteriorStr);
+        
+        // Buscar caixa do dia anterior para pegar o saldo final
+        const { data: caixaAnterior, error: errorAnterior } = await supabaseClient
+            .from('caixa')
+            .select('saldo_final')
+            .eq('data', dataAnteriorStr)
+            .maybeSingle();
+        
+        if (errorAnterior) {
+            console.error('Erro ao buscar caixa anterior:', errorAnterior);
+        }
+        
+        const saldoAnteriorValor = caixaAnterior?.saldo_final || 0;
+        console.log('💰 Saldo anterior encontrado:', saldoAnteriorValor);
+        
+        // PASSO 2: Buscar OU criar caixa do dia atual
         const { data: caixaDataResult, error: caixaError } = await supabaseClient
             .from('caixa')
             .select('*')
@@ -126,9 +148,46 @@ window.carregarCaixaDia = async function() {
         
         if (caixaError) throw caixaError;
         
-        caixaData = caixaDataResult;
+        // Se não existe caixa para hoje, criar com o saldo anterior
+        if (!caixaDataResult) {
+            console.log('📝 Criando novo caixa para hoje com saldo anterior:', saldoAnteriorValor);
+            
+            const { data: novoCaixa, error: createError } = await supabaseClient
+                .from('caixa')
+                .insert([{
+                    data: dataCaixaAtual,
+                    saldo_anterior: saldoAnteriorValor,
+                    total_entradas: 0,
+                    total_saidas: 0,
+                    saldo_final: saldoAnteriorValor,
+                    fechado_operador: false,
+                    conferido_admin: false,
+                    created_at: new Date().toISOString()
+                }])
+                .select()
+                .single();
+            
+            if (createError) throw createError;
+            caixaData = novoCaixa;
+        } else {
+            caixaData = caixaDataResult;
+            
+            // Se o caixa já existe mas o saldo_anterior está errado, corrigir
+            if (caixaData.saldo_anterior !== saldoAnteriorValor && !caixaData.fechado_operador) {
+                console.log('🔄 Corrigindo saldo anterior do caixa:', caixaData.saldo_anterior, '->', saldoAnteriorValor);
+                
+                const { error: updateError } = await supabaseClient
+                    .from('caixa')
+                    .update({ saldo_anterior: saldoAnteriorValor })
+                    .eq('data', dataCaixaAtual);
+                
+                if (!updateError) {
+                    caixaData.saldo_anterior = saldoAnteriorValor;
+                }
+            }
+        }
         
-        // Buscar lançamentos do dia
+        // PASSO 3: Buscar lançamentos do dia
         const { data: lancamentosData, error: lancamentosError } = await supabaseClient
             .from('caixa_lancamentos')
             .select('*')
@@ -139,14 +198,14 @@ window.carregarCaixaDia = async function() {
         
         lancamentosCaixa = lancamentosData || [];
         
-        // Atualizar título
+        // PASSO 4: Atualizar título
         const caixaDateTitle = document.getElementById('caixaDateTitle');
         if (caixaDateTitle) {
             const [ano, mes, dia] = dataCaixaAtual.split('-');
             caixaDateTitle.textContent = `Caixa Wheel Tech - ${dia}/${mes}/${ano}`;
         }
         
-        // Atualizar interface
+        // PASSO 5: Atualizar interface
         atualizarPainelCaixa();
         renderLancamentosTable();
         
@@ -348,7 +407,7 @@ function criarLinhaLancamento(lancamento) {
     
     if (lancamento.comprovante_url) {
         acoes += `
-            <button class="btn btn-sm btn-info" onclick="verComprovante('${lancamento.comprovante_url}')" title="Ver">
+            <button class="btn btn-sm btn-info" onclick="verComprovante('${lancamento.comprovante_url.replace(/'/g, "\\'")}')" title="Ver">
                 <i class="fas fa-eye"></i>
             </button>
         `;
@@ -377,6 +436,98 @@ function criarLinhaLancamento(lancamento) {
     
     return row;
 }
+
+// ===== FUNÇÃO CORRIGIDA PARA VER COMPROVANTE =====
+window.verComprovante = function(url) {
+    console.log('📎 Tentando abrir comprovante:', url);
+    
+    if (!url) {
+        showToast('❌ Nenhum comprovante encontrado', 'error');
+        return;
+    }
+    
+    try {
+        // Se for data URL (base64)
+        if (url.startsWith('data:')) {
+            // Verificar se é imagem
+            if (url.startsWith('data:image/')) {
+                // Abrir em nova aba
+                const win = window.open('', '_blank');
+                if (win) {
+                    win.document.write(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>Comprovante</title>
+                            <style>
+                                body { 
+                                    margin: 0; 
+                                    display: flex; 
+                                    justify-content: center; 
+                                    align-items: center; 
+                                    min-height: 100vh; 
+                                    background: #f5f5f5;
+                                    font-family: Arial, sans-serif;
+                                }
+                                .container {
+                                    text-align: center;
+                                    padding: 20px;
+                                }
+                                img { 
+                                    max-width: 90vw; 
+                                    max-height: 90vh; 
+                                    object-fit: contain; 
+                                    box-shadow: 0 0 20px rgba(0,0,0,0.2);
+                                    border-radius: 8px;
+                                }
+                                .btn {
+                                    display: inline-block;
+                                    margin-top: 20px;
+                                    padding: 10px 20px;
+                                    background: #dc3545;
+                                    color: white;
+                                    text-decoration: none;
+                                    border-radius: 5px;
+                                    font-weight: bold;
+                                }
+                                .btn:hover {
+                                    background: #c82333;
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="container">
+                                <img src="${url}" alt="Comprovante">
+                                <br>
+                                <a href="#" class="btn" onclick="window.close()">Fechar</a>
+                            </div>
+                        </body>
+                        </html>
+                    `);
+                    win.document.close();
+                } else {
+                    // Fallback: tentar abrir diretamente
+                    window.open(url, '_blank');
+                }
+            } else {
+                // Se não for imagem, tentar download
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'comprovante.' + (url.includes('application/pdf') ? 'pdf' : 'bin');
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        } 
+        // Se for URL normal
+        else {
+            window.open(url, '_blank');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao abrir comprovante:', error);
+        showToast('❌ Erro ao abrir comprovante', 'error');
+    }
+};
 
 // ===== FUNÇÃO PARA SALVAR LANÇAMENTO =====
 window.salvarLancamento = async function() {
@@ -408,34 +559,6 @@ window.salvarLancamento = async function() {
         if (tipoLancamento === 'saida') {
             const comprovanteFile = document.getElementById('comprovanteFile');
             comprovanteUrl = await uploadComprovante(comprovanteFile.files[0]);
-        }
-        
-        // Verificar se caixa existe
-        const { data: caixaExistente } = await supabaseClient
-            .from('caixa')
-            .select('id')
-            .eq('data', dataCaixaAtual)
-            .maybeSingle();
-        
-        if (!caixaExistente) {
-            // Buscar saldo do dia anterior
-            const dataAnterior = new Date(dataCaixaAtual);
-            dataAnterior.setDate(dataAnterior.getDate() - 1);
-            const dataAnteriorStr = dataAnterior.toISOString().split('T')[0];
-            
-            const { data: caixaAnterior } = await supabaseClient
-                .from('caixa')
-                .select('saldo_final')
-                .eq('data', dataAnteriorStr)
-                .maybeSingle();
-            
-            await supabaseClient
-                .from('caixa')
-                .insert([{
-                    data: dataCaixaAtual,
-                    saldo_anterior: caixaAnterior?.saldo_final || 0,
-                    fechado_operador: false
-                }]);
         }
         
         // Inserir lançamento
@@ -483,19 +606,9 @@ async function atualizarTotaisCaixa() {
     });
     
     const saldoCalculado = totalEntradas - totalSaidas;
+    const saldoAcumulado = (caixaData?.saldo_anterior || 0) + saldoCalculado;
     
-    // Buscar caixa do dia anterior
-    const dataAnterior = new Date(dataCaixaAtual);
-    dataAnterior.setDate(dataAnterior.getDate() - 1);
-    const { data: caixaAnterior } = await supabaseClient
-        .from('caixa')
-        .select('saldo_final')
-        .eq('data', dataAnterior.toISOString().split('T')[0])
-        .maybeSingle();
-    
-    const saldoAcumulado = (caixaAnterior?.saldo_final || 0) + saldoCalculado;
-    
-    await supabaseClient
+    const { error } = await supabaseClient
         .from('caixa')
         .update({
             total_entradas: totalEntradas,
@@ -503,6 +616,8 @@ async function atualizarTotaisCaixa() {
             saldo_final: saldoAcumulado
         })
         .eq('data', dataCaixaAtual);
+    
+    if (error) throw error;
     
     const { data } = await supabaseClient
         .from('caixa')
@@ -695,11 +810,6 @@ window.rejeitarComprovante = async function(id) {
     
     renderLancamentosTable();
     showToast('❌ Comprovante rejeitado!', 'warning');
-};
-
-// ===== FUNÇÃO PARA VER COMPROVANTE =====
-window.verComprovante = function(url) {
-    window.open(url, '_blank');
 };
 
 // ===== FUNÇÃO PARA LIMPAR FORMULÁRIO =====
