@@ -6502,6 +6502,723 @@ window.atualizarVendas = async function() {
     script.src = 'vendas_conferencia.js';
     document.body.appendChild(script);
 
+    // ============================================
+// FUNÇÕES DE SELEÇÃO MÚLTIPLA DE OS PARA IMPRESSÃO
+// ============================================
+
+// Variáveis para controle de seleção
+let selectedOSForPrint = [];
+let selectModeActive = false;
+
+// ===== FUNÇÃO PARA ATIVAR MODO DE SELEÇÃO =====
+window.ativarModoSelecaoOS = function() {
+    selectModeActive = !selectModeActive;
+    
+    const selectBtn = document.getElementById('selectOSBtn');
+    if (selectBtn) {
+        if (selectModeActive) {
+            selectBtn.innerHTML = '<i class="fas fa-times"></i> Cancelar Seleção';
+            selectBtn.classList.add('btn-danger');
+            selectBtn.classList.remove('btn-success');
+            
+            // Adicionar coluna de checkbox na tabela
+            adicionarColunaSelecao();
+            
+            // Mostrar barra de ações
+            document.getElementById('selectedOSBar').classList.remove('hidden');
+            
+            showToast('✅ Modo de seleção ativado - Marque as OS que deseja imprimir', 'success');
+        } else {
+            cancelarModoSelecao();
+        }
+    }
+};
+
+// ===== FUNÇÃO PARA ADICIONAR COLUNA DE CHECKBOX =====
+function adicionarColunaSelecao() {
+    const table = document.getElementById('osTableBody');
+    if (!table) return;
+    
+    // Limpar seleções anteriores
+    selectedOSForPrint = [];
+    atualizarContadorSelecionados();
+    
+    // Adicionar checkbox em cada linha
+    const rows = table.querySelectorAll('tr');
+    rows.forEach((row, index) => {
+        // Verificar se já não tem checkbox
+        if (row.querySelector('.os-select-checkbox')) return;
+        
+        // Criar checkbox
+        const checkboxCell = document.createElement('td');
+        checkboxCell.style.width = '40px';
+        checkboxCell.style.textAlign = 'center';
+        checkboxCell.innerHTML = `
+            <input type="checkbox" 
+                   class="os-select-checkbox" 
+                   data-os-index="${index}"
+                   onchange="toggleOSSelection(this, ${index})"
+                   style="width: 18px; height: 18px; cursor: pointer;">
+        `;
+        
+        // Inserir no início da linha
+        row.insertBefore(checkboxCell, row.firstChild);
+    });
+}
+
+// ===== FUNÇÃO PARA ALTERNAR SELEÇÃO DE OS =====
+window.toggleOSSelection = function(checkbox, index) {
+    const row = checkbox.closest('tr');
+    
+    // Encontrar a OS correspondente
+    let userOrders = filterOrdersByUser(orders);
+    let filteredOrders = currentFilter === 'todos' ? userOrders : 
+                         userOrders.filter(order => order.status === currentFilter);
+    
+    const os = filteredOrders[index];
+    
+    if (!os) return;
+    
+    if (checkbox.checked) {
+        // Adicionar à seleção
+        selectedOSForPrint.push(os);
+        
+        // Destacar linha
+        row.style.backgroundColor = '#e8f0fe';
+        row.style.borderLeft = '4px solid #8A2BE2';
+    } else {
+        // Remover da seleção
+        selectedOSForPrint = selectedOSForPrint.filter(o => o.id !== os.id);
+        
+        // Remover destaque
+        row.style.backgroundColor = '';
+        row.style.borderLeft = '';
+    }
+    
+    // Atualizar contador
+    atualizarContadorSelecionados();
+};
+
+// ===== FUNÇÃO PARA ATUALIZAR CONTADOR DE SELEÇÃO =====
+function atualizarContadorSelecionados() {
+    const count = selectedOSForPrint.length;
+    document.getElementById('selectedOSCount').textContent = count;
+    
+    // Habilitar/desabilitar botões
+    const printSelectedBtn = document.getElementById('printSelectedOSBtn');
+    if (printSelectedBtn) {
+        printSelectedBtn.disabled = count === 0;
+    }
+}
+
+// ===== FUNÇÃO PARA SELECIONAR TODAS AS OS =====
+window.selecionarTodasOS = function() {
+    const checkboxes = document.querySelectorAll('.os-select-checkbox');
+    
+    checkboxes.forEach((checkbox, index) => {
+        if (!checkbox.checked) {
+            checkbox.checked = true;
+            
+            // Disparar evento de seleção
+            const event = new Event('change', { bubbles: true });
+            checkbox.dispatchEvent(event);
+            
+            // Chamar toggleOSSelection manualmente
+            const row = checkbox.closest('tr');
+            
+            let userOrders = filterOrdersByUser(orders);
+            let filteredOrders = currentFilter === 'todos' ? userOrders : 
+                                 userOrders.filter(order => order.status === currentFilter);
+            
+            const os = filteredOrders[index];
+            if (os && !selectedOSForPrint.find(o => o.id === os.id)) {
+                selectedOSForPrint.push(os);
+                
+                // Destacar linha
+                row.style.backgroundColor = '#e8f0fe';
+                row.style.borderLeft = '4px solid #8A2BE2';
+            }
+        }
+    });
+    
+    atualizarContadorSelecionados();
+    showToast(`✅ ${selectedOSForPrint.length} OS selecionadas`, 'success');
+};
+
+// ===== FUNÇÃO PARA LIMPAR SELEÇÃO =====
+window.limparSelecaoOS = function() {
+    const checkboxes = document.querySelectorAll('.os-select-checkbox');
+    
+    checkboxes.forEach((checkbox, index) => {
+        if (checkbox.checked) {
+            checkbox.checked = false;
+            
+            // Remover destaque da linha
+            const row = checkbox.closest('tr');
+            row.style.backgroundColor = '';
+            row.style.borderLeft = '';
+        }
+    });
+    
+    selectedOSForPrint = [];
+    atualizarContadorSelecionados();
+    showToast('🧹 Seleção limpa', 'info');
+};
+
+// ===== FUNÇÃO PARA CANCELAR MODO DE SELEÇÃO =====
+function cancelarModoSelecao() {
+    selectModeActive = false;
+    
+    // Resetar botão
+    const selectBtn = document.getElementById('selectOSBtn');
+    if (selectBtn) {
+        selectBtn.innerHTML = '<i class="fas fa-check-double"></i> Selecionar OS';
+        selectBtn.classList.remove('btn-danger');
+        selectBtn.classList.add('btn-success');
+    }
+    
+    // Remover coluna de checkbox
+    const table = document.getElementById('osTableBody');
+    if (table) {
+        const rows = table.querySelectorAll('tr');
+        rows.forEach(row => {
+            const firstCell = row.querySelector('td:first-child');
+            if (firstCell && firstCell.querySelector('.os-select-checkbox')) {
+                row.removeChild(firstCell);
+            }
+            
+            // Remover destaque
+            row.style.backgroundColor = '';
+            row.style.borderLeft = '';
+        });
+    }
+    
+    // Limpar seleção
+    selectedOSForPrint = [];
+    
+    // Esconder barra de ações
+    document.getElementById('selectedOSBar').classList.add('hidden');
+    
+    showToast('Modo de seleção desativado', 'info');
+}
+
+// ===== FUNÇÃO PARA IMPRIMIR OS SELECIONADAS =====
+window.imprimirOSSelecionadas = function() {
+    if (selectedOSForPrint.length === 0) {
+        showToast('Nenhuma OS selecionada', 'warning');
+        return;
+    }
+    
+    // Abrir janela de impressão
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    
+    // Gerar HTML para impressão
+    const printHTML = gerarHTMLImpressaoMultipla(selectedOSForPrint);
+    
+    printWindow.document.write(printHTML);
+    printWindow.document.close();
+    
+    // Fechar modo de seleção após impressão
+    setTimeout(() => {
+        if (selectModeActive) {
+            cancelarModoSelecao();
+        }
+    }, 500);
+};
+
+// ===== FUNÇÃO PARA GERAR HTML DE IMPRESSÃO MÚLTIPLA =====
+function gerarHTMLImpressaoMultipla(oss) {
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    const hora = new Date().toLocaleTimeString('pt-BR');
+    
+    let ossHTML = '';
+    
+    oss.forEach((os, index) => {
+        // Extrair apenas os campos necessários: N° OS, Produto, Descrição, SKU
+        const osNumber = os.code || `OS-${os.id}`;
+        const productName = os.productName || 'Produto não informado';
+        const description = os.observations || 'Sem descrição';
+        const sku = Array.isArray(os.skus) ? os.skus.join(', ') : (os.skus || 'N/A');
+        
+        ossHTML += `
+            <div class="os-item ${index < oss.length - 1 ? 'page-break' : ''}">
+                <div class="os-header">
+                    <div class="os-code-badge">${osNumber}</div>
+                </div>
+                
+                <table class="os-details-table">
+                    <tr>
+                        <td class="label">PRODUTO:</td>
+                        <td class="value">${productName}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">DESCRIÇÃO:</td>
+                        <td class="value">${description}</td>
+                    </tr>
+                    <tr>
+                        <td class="label">SKU:</td>
+                        <td class="value sku-value">${sku}</td>
+                    </tr>
+                </table>
+                
+                <div class="os-footer">
+                    <div class="barcode">*${osNumber}*</div>
+                </div>
+            </div>
+            
+            ${index < oss.length - 1 ? '<div class="page-break-divider"></div>' : ''}
+        `;
+    });
+    
+    return `
+        <!DOCTYPE html>
+        <html lang="pt-br">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Impressão Múltipla de OS</title>
+            <style>
+                @media print {
+                    @page {
+                        size: A4;
+                        margin: 1.5cm;
+                    }
+                    
+                    body {
+                        font-family: 'Courier New', monospace;
+                        margin: 0;
+                        padding: 20px;
+                        color: #000;
+                        background: #fff;
+                    }
+                    
+                    .print-header {
+                        text-align: center;
+                        margin-bottom: 30px;
+                        padding-bottom: 15px;
+                        border-bottom: 2px solid #333;
+                    }
+                    
+                    .print-header h1 {
+                        margin: 0;
+                        font-size: 24px;
+                        font-weight: bold;
+                        text-transform: uppercase;
+                    }
+                    
+                    .print-header p {
+                        margin: 5px 0 0;
+                        font-size: 12px;
+                        color: #555;
+                    }
+                    
+                    .os-item {
+                        margin-bottom: 30px;
+                        padding: 20px;
+                        border: 1px solid #ccc;
+                        border-radius: 8px;
+                        page-break-inside: avoid;
+                    }
+                    
+                    .os-header {
+                        text-align: center;
+                        margin-bottom: 20px;
+                    }
+                    
+                    .os-code-badge {
+                        font-size: 28px;
+                        font-weight: 800;
+                        letter-spacing: 2px;
+                        background: #000;
+                        color: #fff;
+                        padding: 10px 20px;
+                        display: inline-block;
+                        border-radius: 50px;
+                    }
+                    
+                    .os-details-table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 15px 0;
+                    }
+                    
+                    .os-details-table td {
+                        padding: 12px 8px;
+                        border-bottom: 1px dashed #ccc;
+                        vertical-align: top;
+                    }
+                    
+                    .os-details-table .label {
+                        width: 120px;
+                        font-weight: 700;
+                        font-size: 14px;
+                        color: #333;
+                        text-transform: uppercase;
+                    }
+                    
+                    .os-details-table .value {
+                        font-size: 16px;
+                        color: #000;
+                        font-weight: 500;
+                    }
+                    
+                    .sku-value {
+                        font-family: 'Courier New', monospace;
+                        font-weight: bold;
+                        background: #f5f5f5;
+                        padding: 8px !important;
+                        border-radius: 4px;
+                    }
+                    
+                    .os-footer {
+                        margin-top: 20px;
+                        text-align: center;
+                        font-size: 12px;
+                        color: #666;
+                    }
+                    
+                    .barcode {
+                        font-family: 'Courier New', monospace;
+                        font-size: 20px;
+                        letter-spacing: 5px;
+                        margin: 10px 0;
+                    }
+                    
+                    .page-break-divider {
+                        page-break-after: always;
+                        height: 0;
+                        margin: 0;
+                    }
+                    
+                    /* Estilo para a primeira página */
+                    .cover-page {
+                        text-align: center;
+                        margin-bottom: 40px;
+                        page-break-after: always;
+                    }
+                    
+                    .cover-page h1 {
+                        font-size: 36px;
+                        margin: 100px 0 20px;
+                    }
+                    
+                    .cover-page .total-os {
+                        font-size: 48px;
+                        font-weight: 800;
+                        color: #000;
+                        margin: 50px 0;
+                    }
+                    
+                    .summary {
+                        margin: 30px 0;
+                        padding: 20px;
+                        background: #f9f9f9;
+                        border-radius: 8px;
+                    }
+                    
+                    .summary table {
+                        width: 100%;
+                        border-collapse: collapse;
+                    }
+                    
+                    .summary td {
+                        padding: 8px;
+                        border: 1px solid #ddd;
+                    }
+                    
+                    .summary .label {
+                        font-weight: bold;
+                        background: #eee;
+                    }
+                    
+                    .no-print {
+                        display: none;
+                    }
+                }
+                
+                @media screen {
+                    body {
+                        font-family: 'Courier New', monospace;
+                        margin: 20px;
+                        background: #f5f5f5;
+                    }
+                    
+                    .print-container {
+                        max-width: 210mm;
+                        margin: 0 auto;
+                        background: white;
+                        padding: 20mm;
+                        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                    }
+                    
+                    .print-controls {
+                        text-align: center;
+                        margin: 20px 0;
+                        padding: 15px;
+                        background: white;
+                        border-radius: 8px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                    }
+                    
+                    .print-btn {
+                        padding: 12px 30px;
+                        background: #8A2BE2;
+                        color: white;
+                        border: none;
+                        border-radius: 5px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        margin: 0 10px;
+                        transition: all 0.3s;
+                    }
+                    
+                    .print-btn:hover {
+                        background: #7a1bd2;
+                        transform: translateY(-2px);
+                        box-shadow: 0 4px 8px rgba(138, 43, 226, 0.3);
+                    }
+                    
+                    .close-btn {
+                        background: #6c757d;
+                    }
+                    
+                    .close-btn:hover {
+                        background: #5a6268;
+                    }
+                    
+                    /* Estilos de tela */
+                    .os-item {
+                        margin-bottom: 30px;
+                        padding: 20px;
+                        border: 1px solid #dee2e6;
+                        border-radius: 8px;
+                        background: #fff;
+                    }
+                    
+                    .os-code-badge {
+                        font-size: 24px;
+                        font-weight: bold;
+                        background: #8A2BE2;
+                        color: white;
+                        padding: 8px 16px;
+                        display: inline-block;
+                        border-radius: 50px;
+                    }
+                    
+                    .os-details-table td {
+                        padding: 8px;
+                        border-bottom: 1px solid #e9ecef;
+                    }
+                    
+                    .label {
+                        font-weight: bold;
+                        color: #495057;
+                        width: 120px;
+                    }
+                    
+                    .sku-value {
+                        font-family: monospace;
+                        background: #f8f9fa;
+                        padding: 4px 8px;
+                        border-radius: 4px;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <div class="print-controls no-print">
+                <h2>Imprimir ${oss.length} OS selecionada(s)</h2>
+                <p>Visualize como ficará a impressão antes de imprimir.</p>
+                <button class="print-btn" onclick="window.print()">
+                    <i class="fas fa-print"></i> Imprimir Documento
+                </button>
+                <button class="print-btn close-btn" onclick="window.close()">
+                    <i class="fas fa-times"></i> Fechar
+                </button>
+            </div>
+            
+            <div class="print-container">
+                <!-- Capa -->
+                <div class="cover-page">
+                    <h1>📋 ORDENS DE SERVIÇO</h1>
+                    <p style="font-size: 18px; color: #666;">Lista de OS selecionadas para impressão</p>
+                    
+                    <div class="total-os">
+                        ${oss.length} OS
+                    </div>
+                    
+                    <div style="margin-top: 50px;">
+                        <p><strong>Data da emissão:</strong> ${hoje} às ${hora}</p>
+                        <p><strong>Emitido por:</strong> ${currentUser?.name || 'Sistema'}</p>
+                        <p><strong>Total de páginas:</strong> ${Math.ceil(oss.length)}</p>
+                    </div>
+                    
+                    <div style="margin-top: 100px; font-size: 12px; color: #999;">
+                        <p>Documento gerado automaticamente pelo Sistema Wheel Tech</p>
+                    </div>
+                </div>
+                
+                <!-- Lista de OS -->
+                ${ossHTML}
+                
+                <!-- Rodapé final -->
+                <div style="margin-top: 50px; text-align: center; font-size: 10px; color: #999; border-top: 1px solid #ccc; padding-top: 20px;">
+                    <p>Fim do documento - Total de ${oss.length} OS impressas</p>
+                </div>
+            </div>
+            
+            <script>
+                // Auto-print quando a janela carregar
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 1000);
+                };
+                
+                // Fechar após impressão
+                window.onafterprint = function() {
+                    setTimeout(function() {
+                        window.close();
+                    }, 1000);
+                };
+            <\/script>
+        </body>
+        </html>
+    `;
+}
+
+// ===== ADICIONAR BOTÕES NA INTERFACE =====
+function adicionarBotoesSelecaoOS() {
+    // Verificar se já existe
+    if (document.getElementById('selectOSBtn')) return;
+    
+    // Encontrar o container dos botões de filtro
+    const filterContainer = document.querySelector('.filter-group');
+    if (!filterContainer) return;
+    
+    // Criar botão de seleção
+    const selectBtn = document.createElement('button');
+    selectBtn.id = 'selectOSBtn';
+    selectBtn.className = 'btn btn-success';
+    selectBtn.innerHTML = '<i class="fas fa-check-double"></i> Selecionar OS';
+    selectBtn.onclick = window.ativarModoSelecaoOS;
+    
+    // Adicionar após os filtros
+    filterContainer.parentNode.insertBefore(selectBtn, filterContainer.nextSibling);
+    
+    // Criar barra de ações para OS selecionadas
+    const selectedBar = document.createElement('div');
+    selectedBar.id = 'selectedOSBar';
+    selectedBar.className = 'selected-os-bar hidden';
+    selectedBar.innerHTML = `
+        <div style="background: #f0f0f0; padding: 10px 20px; margin: 10px 0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; border-left: 4px solid #8A2BE2;">
+            <div>
+                <i class="fas fa-check-circle" style="color: #8A2BE2;"></i>
+                <strong id="selectedOSCount">0</strong> OS selecionada(s)
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn btn-sm btn-info" onclick="selecionarTodasOS()">
+                    <i class="fas fa-check-double"></i> Selecionar Todas
+                </button>
+                <button class="btn btn-sm btn-warning" onclick="limparSelecaoOS()">
+                    <i class="fas fa-eraser"></i> Limpar
+                </button>
+                <button class="btn btn-sm btn-primary" id="printSelectedOSBtn" onclick="imprimirOSSelecionadas()" disabled>
+                    <i class="fas fa-print"></i> Imprimir Selecionadas
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="ativarModoSelecaoOS()">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Inserir após a tabela
+    const tableContainer = document.querySelector('.table-responsive');
+    if (tableContainer) {
+        tableContainer.parentNode.insertBefore(selectedBar, tableContainer.nextSibling);
+    }
+}
+
+// ===== MODIFICAR A FUNÇÃO renderOrdersTable PARA INCLUIR CHECKBOX QUANDO EM MODO SELEÇÃO =====
+// Esta função substitui a renderização padrão quando em modo seleção
+
+// ===== INICIALIZAR QUANDO O DOM CARREGAR =====
+document.addEventListener('DOMContentLoaded', function() {
+    // Aguardar um pouco para garantir que tudo carregou
+    setTimeout(() => {
+        adicionarBotoesSelecaoOS();
+    }, 2000);
+});
+
+// ===== CSS ADICIONAL PARA A BARRA DE SELEÇÃO =====
+const selecaoStyles = document.createElement('style');
+selecaoStyles.innerHTML = `
+    .selected-os-bar {
+        animation: slideDown 0.3s ease-out;
+        margin-bottom: 20px;
+    }
+    
+    .selected-os-bar.hidden {
+        display: none;
+    }
+    
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    /* Estilo para linhas selecionadas */
+    tr.selected-os-row {
+        background-color: #e8f0fe !important;
+        border-left: 4px solid #8A2BE2 !important;
+    }
+    
+    /* Checkbox personalizado */
+    .os-select-checkbox {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        accent-color: #8A2BE2;
+    }
+    
+    .os-select-checkbox:hover {
+        transform: scale(1.1);
+    }
+    
+    /* Botão de seleção */
+    #selectOSBtn {
+        margin-left: 15px;
+        transition: all 0.3s;
+    }
+    
+    #selectOSBtn.btn-success {
+        background: linear-gradient(135deg, #28a745, #20c997);
+    }
+    
+    #selectOSBtn.btn-danger {
+        background: linear-gradient(135deg, #dc3545, #c82333);
+    }
+    
+    /* Badge de contagem */
+    .selection-badge {
+        background: #8A2BE2;
+        color: white;
+        border-radius: 50%;
+        padding: 2px 6px;
+        font-size: 11px;
+        margin-left: 5px;
+    }
+`;
+
+document.head.appendChild(selecaoStyles);
+
 // ===== EXPORTAR FUNÇÕES PARA USO GLOBAL =====
 window.testMLConnection = testMLConnection;
 window.checkMLTokenStatus = checkMLTokenStatus;

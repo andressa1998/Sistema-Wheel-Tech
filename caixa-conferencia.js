@@ -17,6 +17,9 @@ const historicoItensPorPagina = 15;
 let historicoFiltroPeriodo = 30;
 let historicoFiltroStatus = 'todos';
 
+// ===== VARIÁVEL PARA CONTROLE DE EDIÇÃO =====
+let lancamentoEditando = null;
+
 // ===== INICIALIZAÇÃO =====
 document.addEventListener('DOMContentLoaded', function() {
     console.log('💰 Sistema de Caixa 2.0 carregado');
@@ -172,7 +175,7 @@ window.carregarCaixaDia = async function() {
         } else {
             caixaData = caixaDataResult;
             
-            // Se o caixa já existe mas o saldo_anterior está errado, corrigir
+            // Se o caixa já existe mas o saldo_anterior está errado, corrigir (apenas se não estiver fechado)
             if (caixaData.saldo_anterior !== saldoAnteriorValor && !caixaData.fechado_operador) {
                 console.log('🔄 Corrigindo saldo anterior do caixa:', caixaData.saldo_anterior, '->', saldoAnteriorValor);
                 
@@ -341,7 +344,7 @@ function renderLancamentosTable() {
     if (lancamentosCaixa.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" class="text-center p-5">
+                <td colspan="8" class="text-center p-5">
                     <i class="fas fa-cash-register fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
                     <h4 style="color: #6c757d;">Nenhum lançamento encontrado</h4>
                     <p style="color: #6c757d;">Clique em "Salvar Lançamento" para começar.</p>
@@ -369,6 +372,12 @@ function criarLinhaLancamento(lancamento) {
     const isAdmin = currentUser?.role === 'Administrador';
     const isCriador = lancamento.criado_por === currentUser?.name;
     const podeEditar = !caixaData?.fechado_operador && (isAdmin || isCriador);
+    const comprovanteRejeitado = lancamento.comprovante_aprovado === false;
+    
+    // Se o comprovante foi rejeitado, destacar a linha
+    if (comprovanteRejeitado) {
+        row.style.backgroundColor = '#fff3cd';
+    }
     
     // Ícone do comprovante
     let comprovanteIcon = '';
@@ -376,7 +385,7 @@ function criarLinhaLancamento(lancamento) {
         if (lancamento.comprovante_aprovado === true) {
             comprovanteIcon = '<i class="fas fa-check-circle" style="color: #28a745;" title="Comprovante aprovado"></i>';
         } else if (lancamento.comprovante_aprovado === false) {
-            comprovanteIcon = '<i class="fas fa-times-circle" style="color: #dc3545;" title="Comprovante rejeitado"></i>';
+            comprovanteIcon = '<i class="fas fa-exclamation-triangle" style="color: #dc3545;" title="Comprovante rejeitado - Clique em editar para corrigir"></i>';
         } else if (lancamento.comprovante_url) {
             comprovanteIcon = '<i class="fas fa-question-circle" style="color: #ffc107;" title="Aguardando aprovação"></i>';
         } else {
@@ -387,6 +396,21 @@ function criarLinhaLancamento(lancamento) {
     // Ações
     let acoes = '';
     if (podeEditar) {
+        // Se o comprovante foi rejeitado, mostrar botão de editar em destaque
+        if (comprovanteRejeitado) {
+            acoes += `
+                <button class="btn btn-sm btn-warning" onclick="editarLancamento(${lancamento.id})" title="Editar (Comprovante rejeitado)">
+                    <i class="fas fa-edit"></i> Corrigir
+                </button>
+            `;
+        } else {
+            acoes += `
+                <button class="btn btn-sm btn-primary" onclick="editarLancamento(${lancamento.id})" title="Editar">
+                    <i class="fas fa-edit"></i>
+                </button>
+            `;
+        }
+        
         acoes += `
             <button class="btn btn-sm btn-danger" onclick="excluirLancamento(${lancamento.id})" title="Excluir">
                 <i class="fas fa-trash"></i>
@@ -418,12 +442,16 @@ function criarLinhaLancamento(lancamento) {
     const [ano, mes, dia] = lancamento.data.split('-');
     const dataFormatada = `${dia}/${mes}/${ano}`;
     
+    // Adicionar badge de rejeitado se necessário
+    const statusBadge = comprovanteRejeitado ? 
+        '<span class="badge bg-danger" style="font-size: 0.7rem; margin-left: 5px;">Rejeitado</span>' : '';
+    
     row.innerHTML = `
         <td>${dataFormatada}</td>
         <td class="${lancamento.tipo === 'entrada' ? 'text-success' : 'text-danger'}">
             ${lancamento.tipo === 'entrada' ? '+' : '-'} ${formatarMoeda(lancamento.valor)}
         </td>
-        <td>${lancamento.descricao}</td>
+        <td>${lancamento.descricao} ${statusBadge}</td>
         <td style="text-align: center;">${comprovanteIcon}</td>
         <td>${lancamento.criado_por}</td>
         <td>${horaFormatada}</td>
@@ -436,6 +464,167 @@ function criarLinhaLancamento(lancamento) {
     
     return row;
 }
+
+// ===== FUNÇÃO PARA EDITAR LANÇAMENTO =====
+window.editarLancamento = function(id) {
+    const lancamento = lancamentosCaixa.find(l => l.id === id);
+    if (!lancamento) return;
+    
+    // Verificar se pode editar
+    if (caixaData?.fechado_operador) {
+        showToast('❌ Caixa já está fechado, não é possível editar', 'error');
+        return;
+    }
+    
+    const isAdmin = currentUser?.role === 'Administrador';
+    const isCriador = lancamento.criado_por === currentUser?.name;
+    
+    if (!isAdmin && !isCriador) {
+        showToast('❌ Você só pode editar seus próprios lançamentos', 'error');
+        return;
+    }
+    
+    // Preencher formulário com dados do lançamento
+    lancamentoEditando = lancamento;
+    
+    document.getElementById('tipoLancamento').value = lancamento.tipo;
+    document.getElementById('valorLancamento').value = lancamento.valor;
+    document.getElementById('descricaoLancamento').value = lancamento.descricao;
+    
+    // Mostrar seção de comprovante
+    const comprovanteSection = document.getElementById('comprovanteSection');
+    comprovanteSection.style.display = 'block';
+    
+    // Atualizar mensagem baseada no tipo
+    const comprovanteMsg = document.getElementById('comprovanteMessage');
+    if (lancamento.tipo === 'saida') {
+        comprovanteMsg.innerHTML = '⚠️ Para saídas, faça upload de um novo comprovante se necessário';
+        document.getElementById('tipoLancamento').disabled = true;
+    } else {
+        comprovanteMsg.innerHTML = 'Entradas não precisam de comprovante.';
+        document.getElementById('tipoLancamento').disabled = false;
+    }
+    
+    // Mudar texto do botão
+    const btn = document.getElementById('salvarLancamentoBtn');
+    btn.innerHTML = '<i class="fas fa-save"></i> Atualizar Lançamento';
+    btn.onclick = function() { atualizarLancamento(); };
+    
+    // Adicionar botão de cancelar
+    let cancelBtn = document.getElementById('cancelarEdicaoBtn');
+    if (!cancelBtn) {
+        cancelBtn = document.createElement('button');
+        cancelBtn.id = 'cancelarEdicaoBtn';
+        cancelBtn.className = 'btn btn-secondary';
+        cancelBtn.innerHTML = '<i class="fas fa-times"></i> Cancelar';
+        cancelBtn.onclick = cancelarEdicao;
+        btn.parentNode.insertBefore(cancelBtn, btn.nextSibling);
+    }
+    
+    showToast('✏️ Editando lançamento...', 'info');
+    
+    // Rolar para o formulário
+    document.querySelector('.form-card').scrollIntoView({ behavior: 'smooth' });
+};
+
+// ===== FUNÇÃO PARA ATUALIZAR LANÇAMENTO =====
+window.atualizarLancamento = async function() {
+    if (!lancamentoEditando) return;
+    
+    const tipoLancamento = document.getElementById('tipoLancamento').value;
+    const valorLancamento = parseFloat(document.getElementById('valorLancamento').value);
+    const descricaoLancamento = document.getElementById('descricaoLancamento').value.trim();
+    const comprovanteFile = document.getElementById('comprovanteFile').files[0];
+    
+    if (!tipoLancamento || !valorLancamento || valorLancamento <= 0 || !descricaoLancamento) {
+        showToast('Preencha todos os campos obrigatórios!', 'warning');
+        return;
+    }
+    
+    const btn = document.getElementById('salvarLancamentoBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Atualizando...';
+    btn.disabled = true;
+    
+    try {
+        let comprovanteUrl = lancamentoEditando.comprovante_url;
+        
+        // Se novo comprovante foi enviado
+        if (comprovanteFile) {
+            comprovanteUrl = await uploadComprovante(comprovanteFile);
+        }
+        
+        // Se é uma saída e não tem comprovante
+        if (tipoLancamento === 'saida' && !comprovanteUrl) {
+            showToast('Para saídas, é obrigatório ter um comprovante!', 'warning');
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            return;
+        }
+        
+        // Atualizar no banco
+        const { error } = await supabaseClient
+            .from('caixa_lancamentos')
+            .update({
+                tipo: tipoLancamento,
+                valor: valorLancamento,
+                descricao: descricaoLancamento,
+                comprovante_url: comprovanteUrl,
+                comprovante_aprovado: tipoLancamento === 'saida' ? null : true, // Resetar aprovação se for saída
+                editado_por: currentUser.name,
+                editado_em: new Date().toISOString()
+            })
+            .eq('id', lancamentoEditando.id);
+        
+        if (error) throw error;
+        
+        // Atualizar no array local
+        const index = lancamentosCaixa.findIndex(l => l.id === lancamentoEditando.id);
+        if (index !== -1) {
+            lancamentosCaixa[index] = {
+                ...lancamentosCaixa[index],
+                tipo: tipoLancamento,
+                valor: valorLancamento,
+                descricao: descricaoLancamento,
+                comprovante_url: comprovanteUrl,
+                comprovante_aprovado: tipoLancamento === 'saida' ? null : true,
+                editado_por: currentUser.name,
+                editado_em: new Date().toISOString()
+            };
+        }
+        
+        await atualizarTotaisCaixa();
+        cancelarEdicao();
+        atualizarPainelCaixa();
+        renderLancamentosTable();
+        
+        showToast('✅ Lançamento atualizado!', 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+};
+
+// ===== FUNÇÃO PARA CANCELAR EDIÇÃO =====
+window.cancelarEdicao = function() {
+    lancamentoEditando = null;
+    limparFormLancamento();
+    
+    document.getElementById('tipoLancamento').disabled = false;
+    
+    // Remover botão de cancelar
+    const cancelBtn = document.getElementById('cancelarEdicaoBtn');
+    if (cancelBtn) cancelBtn.remove();
+    
+    // Restaurar botão original
+    const btn = document.getElementById('salvarLancamentoBtn');
+    btn.innerHTML = '<i class="fas fa-save"></i> Salvar Lançamento';
+    btn.onclick = salvarLancamento;
+};
 
 // ===== FUNÇÃO CORRIGIDA PARA VER COMPROVANTE =====
 window.verComprovante = function(url) {
@@ -619,6 +808,7 @@ async function atualizarTotaisCaixa() {
     
     if (error) throw error;
     
+    // Recarregar caixa para garantir dados atualizados
     const { data } = await supabaseClient
         .from('caixa')
         .select('*')
@@ -635,6 +825,12 @@ window.fecharCaixaOperador = async function() {
         return;
     }
     
+    // Verificar se já está fechado
+    if (caixaData.fechado_operador) {
+        showToast('Caixa já está fechado', 'warning');
+        return;
+    }
+    
     let totalEntradas = 0;
     let totalSaidas = 0;
     
@@ -644,14 +840,16 @@ window.fecharCaixaOperador = async function() {
     });
     
     const saldoEsperado = totalEntradas - totalSaidas;
+    const saldoComAnterior = (caixaData.saldo_anterior || 0) + saldoEsperado;
     
     const valorReal = prompt(
         '💰 FECHAMENTO DO CAIXA\n\n' +
-        `Esperado: R$ ${saldoEsperado.toFixed(2)}\n` +
+        `Saldo anterior: R$ ${(caixaData.saldo_anterior || 0).toFixed(2)}\n` +
         `Entradas: R$ ${totalEntradas.toFixed(2)}\n` +
-        `Saídas: R$ ${totalSaidas.toFixed(2)}\n\n` +
+        `Saídas: R$ ${totalSaidas.toFixed(2)}\n` +
+        `Saldo esperado: R$ ${saldoComAnterior.toFixed(2)}\n\n` +
         'Valor real no caixa:',
-        saldoEsperado.toFixed(2).replace('.', ',')
+        saldoComAnterior.toFixed(2).replace('.', ',')
     );
     
     if (valorReal === null) return;
@@ -662,53 +860,79 @@ window.fecharCaixaOperador = async function() {
         return;
     }
     
-    const diferenca = valorRealNum - saldoEsperado;
+    const diferenca = valorRealNum - saldoComAnterior;
     const isDivergente = Math.abs(diferenca) > 0.01;
     
-    if (isDivergente) {
-        if (confirm(
-            `⚠️ DIVERGÊNCIA!\n\n` +
-            `Esperado: R$ ${saldoEsperado.toFixed(2)}\n` +
-            `Real: R$ ${valorRealNum.toFixed(2)}\n` +
-            `Diferença: R$ ${diferenca.toFixed(2)}\n\n` +
-            `Registrar divergência e aguardar admin?`
-        )) {
-            await supabaseClient
+    const btn = document.getElementById('fecharCaixaBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Processando...';
+    btn.disabled = true;
+    
+    try {
+        if (isDivergente) {
+            if (confirm(
+                `⚠️ DIVERGÊNCIA!\n\n` +
+                `Esperado: R$ ${saldoComAnterior.toFixed(2)}\n` +
+                `Real: R$ ${valorRealNum.toFixed(2)}\n` +
+                `Diferença: R$ ${diferenca.toFixed(2)}\n\n` +
+                `Registrar divergência e aguardar admin?`
+            )) {
+                const { error } = await supabaseClient
+                    .from('caixa')
+                    .update({
+                        fechado_operador: true,
+                        fechado_por_operador: currentUser.name,
+                        data_fechamento_operador: new Date().toISOString(),
+                        valor_real_operador: valorRealNum,
+                        tem_divergencia: true,
+                        diferenca: diferenca,
+                        divergencia_registrada_por: currentUser.name,
+                        data_divergencia: new Date().toISOString()
+                    })
+                    .eq('data', dataCaixaAtual);
+                
+                if (error) throw error;
+                
+                caixaData.fechado_operador = true;
+                caixaData.fechado_por_operador = currentUser.name;
+                caixaData.tem_divergencia = true;
+                caixaData.diferenca = diferenca;
+                
+                atualizarPainelCaixa();
+                showToast('⚠️ Divergência registrada', 'warning');
+            }
+        } else {
+            const { error } = await supabaseClient
                 .from('caixa')
                 .update({
-                    tem_divergencia: true,
-                    diferenca: diferenca,
-                    valor_real_informado: valorRealNum,
-                    data_divergencia: new Date().toISOString(),
-                    divergencia_registrada_por: currentUser.name
+                    fechado_operador: true,
+                    fechado_por_operador: currentUser.name,
+                    data_fechamento_operador: new Date().toISOString(),
+                    valor_real_operador: valorRealNum,
+                    tem_divergencia: false,
+                    diferenca: 0
                 })
                 .eq('data', dataCaixaAtual);
             
-            caixaData.tem_divergencia = true;
-            caixaData.diferenca = diferenca;
+            if (error) throw error;
+            
+            caixaData.fechado_operador = true;
+            caixaData.fechado_por_operador = currentUser.name;
+            
             atualizarPainelCaixa();
-            showToast('⚠️ Divergência registrada', 'warning');
+            showToast('🔒 Caixa fechado com sucesso!', 'success');
         }
-    } else {
-        await supabaseClient
-            .from('caixa')
-            .update({
-                fechado_operador: true,
-                fechado_por_operador: currentUser.name,
-                data_fechamento_operador: new Date().toISOString(),
-                valor_real_operador: valorRealNum,
-                tem_divergencia: false,
-                diferenca: 0
-            })
-            .eq('data', dataCaixaAtual);
         
-        caixaData.fechado_operador = true;
-        caixaData.fechado_por_operador = currentUser.name;
-        atualizarPainelCaixa();
-        showToast('🔒 Caixa fechado!', 'success');
+        // Recarregar histórico
+        carregarHistoricoDias();
+        
+    } catch (error) {
+        console.error('❌ Erro ao fechar caixa:', error);
+        showToast('❌ Erro ao fechar caixa: ' + error.message, 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
     }
-    
-    carregarHistoricoDias();
 };
 
 // ===== FUNÇÃO PARA CONFERIR CAIXA (ADMIN) =====
@@ -723,29 +947,52 @@ window.conferirCaixaAdmin = async function() {
         return;
     }
     
+    const saldoCalculado = (caixaData.total_entradas || 0) - (caixaData.total_saidas || 0);
+    const saldoComAnterior = (caixaData.saldo_anterior || 0) + saldoCalculado;
+    
     const mensagem = 
         '🔍 CONFERÊNCIA ADMIN\n\n' +
-        `Esperado: R$ ${(caixaData.total_entradas - caixaData.total_saidas).toFixed(2)}\n` +
-        `Real: R$ ${(caixaData.valor_real_operador || 0).toFixed(2)}\n` +
+        `Saldo anterior: R$ ${(caixaData.saldo_anterior || 0).toFixed(2)}\n` +
+        `Esperado: R$ ${saldoComAnterior.toFixed(2)}\n` +
+        `Real informado: R$ ${(caixaData.valor_real_operador || 0).toFixed(2)}\n` +
         `Diferença: R$ ${(caixaData.diferenca || 0).toFixed(2)}\n\n` +
         `Confirmar conferência?`;
     
     if (!confirm(mensagem)) return;
     
-    await supabaseClient
-        .from('caixa')
-        .update({
-            conferido_admin: true,
-            conferido_por_admin: currentUser.name,
-            data_conferencia_admin: new Date().toISOString()
-        })
-        .eq('data', dataCaixaAtual);
+    const btn = document.getElementById('conferirCaixaBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Conferindo...';
+    btn.disabled = true;
     
-    caixaData.conferido_admin = true;
-    caixaData.conferido_por_admin = currentUser.name;
-    atualizarPainelCaixa();
-    showToast('✅ Caixa conferido!', 'success');
-    carregarHistoricoDias();
+    try {
+        const { error } = await supabaseClient
+            .from('caixa')
+            .update({
+                conferido_admin: true,
+                conferido_por_admin: currentUser.name,
+                data_conferencia_admin: new Date().toISOString()
+            })
+            .eq('data', dataCaixaAtual);
+        
+        if (error) throw error;
+        
+        caixaData.conferido_admin = true;
+        caixaData.conferido_por_admin = currentUser.name;
+        
+        atualizarPainelCaixa();
+        showToast('✅ Caixa conferido com sucesso!', 'success');
+        
+        // Recarregar histórico
+        carregarHistoricoDias();
+        
+    } catch (error) {
+        console.error('❌ Erro ao conferir caixa:', error);
+        showToast('❌ Erro ao conferir caixa: ' + error.message, 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
 };
 
 // ===== FUNÇÃO PARA EXCLUIR LANÇAMENTO =====
@@ -753,14 +1000,41 @@ window.excluirLancamento = async function(id) {
     const lancamento = lancamentosCaixa.find(l => l.id === id);
     if (!lancamento) return;
     
-    if (!confirm(`Excluir lançamento de R$ ${lancamento.valor}?`)) return;
+    // Verificar permissão
+    const isAdmin = currentUser?.role === 'Administrador';
+    const isCriador = lancamento.criado_por === currentUser?.name;
     
-    await supabaseClient.from('caixa_lancamentos').delete().eq('id', id);
-    lancamentosCaixa = lancamentosCaixa.filter(l => l.id !== id);
-    await atualizarTotaisCaixa();
-    atualizarPainelCaixa();
-    renderLancamentosTable();
-    showToast('🗑️ Excluído!', 'success');
+    if (!isAdmin && !isCriador) {
+        showToast('❌ Você só pode excluir seus próprios lançamentos', 'error');
+        return;
+    }
+    
+    if (caixaData?.fechado_operador) {
+        showToast('❌ Caixa já está fechado, não é possível excluir', 'error');
+        return;
+    }
+    
+    if (!confirm(`Excluir lançamento de R$ ${lancamento.valor.toFixed(2)}?`)) return;
+    
+    try {
+        const { error } = await supabaseClient
+            .from('caixa_lancamentos')
+            .delete()
+            .eq('id', id);
+        
+        if (error) throw error;
+        
+        lancamentosCaixa = lancamentosCaixa.filter(l => l.id !== id);
+        await atualizarTotaisCaixa();
+        atualizarPainelCaixa();
+        renderLancamentosTable();
+        
+        showToast('🗑️ Lançamento excluído!', 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro ao excluir:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
+    }
 };
 
 // ===== FUNÇÃO PARA UPLOAD DE COMPROVANTE =====
@@ -774,42 +1048,62 @@ async function uploadComprovante(file) {
 
 // ===== FUNÇÃO PARA APROVAR COMPROVANTE =====
 window.aprovarComprovante = async function(id) {
-    await supabaseClient
-        .from('caixa_lancamentos')
-        .update({ 
-            comprovante_aprovado: true,
-            conferido_por: currentUser.name,
-            data_conferencia: new Date().toISOString()
-        })
-        .eq('id', id);
-    
-    const index = lancamentosCaixa.findIndex(l => l.id === id);
-    if (index !== -1) {
-        lancamentosCaixa[index].comprovante_aprovado = true;
+    try {
+        const { error } = await supabaseClient
+            .from('caixa_lancamentos')
+            .update({ 
+                comprovante_aprovado: true,
+                conferido_por: currentUser.name,
+                data_conferencia: new Date().toISOString()
+            })
+            .eq('id', id);
+        
+        if (error) throw error;
+        
+        const index = lancamentosCaixa.findIndex(l => l.id === id);
+        if (index !== -1) {
+            lancamentosCaixa[index].comprovante_aprovado = true;
+        }
+        
+        renderLancamentosTable();
+        showToast('✅ Comprovante aprovado!', 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
     }
-    
-    renderLancamentosTable();
-    showToast('✅ Comprovante aprovado!', 'success');
 };
 
 // ===== FUNÇÃO PARA REJEITAR COMPROVANTE =====
 window.rejeitarComprovante = async function(id) {
-    await supabaseClient
-        .from('caixa_lancamentos')
-        .update({ 
-            comprovante_aprovado: false,
-            conferido_por: currentUser.name,
-            data_conferencia: new Date().toISOString()
-        })
-        .eq('id', id);
+    const motivo = prompt('Motivo da rejeição (opcional):');
     
-    const index = lancamentosCaixa.findIndex(l => l.id === id);
-    if (index !== -1) {
-        lancamentosCaixa[index].comprovante_aprovado = false;
+    try {
+        const { error } = await supabaseClient
+            .from('caixa_lancamentos')
+            .update({ 
+                comprovante_aprovado: false,
+                motivo_rejeicao: motivo || 'Não informado',
+                conferido_por: currentUser.name,
+                data_conferencia: new Date().toISOString()
+            })
+            .eq('id', id);
+        
+        if (error) throw error;
+        
+        const index = lancamentosCaixa.findIndex(l => l.id === id);
+        if (index !== -1) {
+            lancamentosCaixa[index].comprovante_aprovado = false;
+            lancamentosCaixa[index].motivo_rejeicao = motivo;
+        }
+        
+        renderLancamentosTable();
+        showToast('❌ Comprovante rejeitado! O criador poderá editar.', 'warning');
+        
+    } catch (error) {
+        console.error('❌ Erro:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
     }
-    
-    renderLancamentosTable();
-    showToast('❌ Comprovante rejeitado!', 'warning');
 };
 
 // ===== FUNÇÃO PARA LIMPAR FORMULÁRIO =====
@@ -819,6 +1113,15 @@ window.limparFormLancamento = function() {
     document.getElementById('descricaoLancamento').value = '';
     document.getElementById('comprovanteFile').value = '';
     document.getElementById('comprovantePreview').style.display = 'none';
+    
+    // Resetar mensagem
+    const comprovanteMsg = document.getElementById('comprovanteMessage');
+    comprovanteMsg.innerHTML = 'Entradas não precisam de comprovante.';
+    
+    // Garantir que não está em modo de edição
+    if (lancamentoEditando) {
+        cancelarEdicao();
+    }
 };
 
 // ===== FUNÇÃO PARA FILTRAR LANÇAMENTOS =====
@@ -977,16 +1280,24 @@ window.exportarCaixaExcel = function() {
         return;
     }
     
-    const dados = [['Data', 'Tipo', 'Valor', 'Descrição', 'Comprovante', 'Usuário', 'Hora']];
+    const dados = [['Data', 'Tipo', 'Valor', 'Descrição', 'Status Comprovante', 'Usuário', 'Hora']];
     
     lancamentosCaixa.forEach(l => {
         const data = new Date(l.created_at);
+        let statusComprovante = 'N/A';
+        if (l.tipo === 'saida') {
+            if (l.comprovante_aprovado === true) statusComprovante = 'Aprovado';
+            else if (l.comprovante_aprovado === false) statusComprovante = 'Rejeitado';
+            else if (l.comprovante_url) statusComprovante = 'Pendente';
+            else statusComprovante = 'Faltando';
+        }
+        
         dados.push([
             l.data,
             l.tipo === 'entrada' ? 'Entrada' : 'Saída',
             l.valor,
             l.descricao,
-            l.comprovante_url ? 'Sim' : 'Não',
+            statusComprovante,
             l.criado_por,
             data.toLocaleTimeString('pt-BR')
         ]);
@@ -1109,7 +1420,7 @@ window.gerarRelatorioCaixa = async function() {
                 R$ ${(d.saldo_final || 0).toFixed(2)}
             </td>
             <td>${d.fechado_operador ? 'Fechado' : 'Aberto'}</td>
-            <td>${d.criado_por || '-'}</td>
+            <td>${d.conferido_admin ? 'Conferido' : 'Pendente'}</td>
         `;
         tbody.appendChild(row);
     });
