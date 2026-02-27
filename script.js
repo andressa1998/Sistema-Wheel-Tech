@@ -6726,48 +6726,46 @@ window.imprimirOSSelecionadas = function() {
     }, 500);
 };
 
-// ===== FUNÇÃO PARA GERAR HTML DE IMPRESSÃO MÚLTIPLA =====
+// ===== FUNÇÃO PARA GERAR HTML DE IMPRESSÃO MÚLTIPLA EM FORMATO DE LISTA =====
 function gerarHTMLImpressaoMultipla(oss) {
     const hoje = new Date().toLocaleDateString('pt-BR');
     const hora = new Date().toLocaleTimeString('pt-BR');
     
-    let ossHTML = '';
+    // Ordenar OS por código/número
+    const ossOrdenadas = [...oss].sort((a, b) => {
+        const numA = parseInt(a.code?.replace(/\D/g, '')) || 0;
+        const numB = parseInt(b.code?.replace(/\D/g, '')) || 0;
+        return numA - numB;
+    });
     
-    oss.forEach((os, index) => {
-        // Extrair apenas os campos necessários: N° OS, Produto, Descrição, SKU
+    let listaHTML = '';
+    let contador = 1;
+    
+    ossOrdenadas.forEach((os) => {
+        // Extrair apenas os campos necessários
         const osNumber = os.code || `OS-${os.id}`;
+        const numeroLimpo = osNumber.replace(/\D/g, ''); // Pega só os números
+        
+        // Usar o número sequencial da lista (1, 2, 3...) ou o número da OS
+        const numeroExibicao = contador.toString().padStart(3, '0');
+        
         const productName = os.productName || 'Produto não informado';
         const description = os.observations || 'Sem descrição';
         const sku = Array.isArray(os.skus) ? os.skus.join(', ') : (os.skus || 'N/A');
         
-        ossHTML += `
-            <div class="os-item ${index < oss.length - 1 ? 'page-break' : ''}">
-                <div class="os-header">
-                    <div class="os-code-badge">${osNumber}</div>
+        listaHTML += `
+            <div class="lista-item">
+                <div class="item-numero">${numeroExibicao}</div>
+                <div class="item-conteudo">
+                    <div class="item-produto">${productName}</div>
+                    <div class="item-descricao">${description}</div>
+                    <div class="item-sku">SKU: ${sku}</div>
                 </div>
-                
-                <table class="os-details-table">
-                    <tr>
-                        <td class="label">PRODUTO:</td>
-                        <td class="value">${productName}</td>
-                    </tr>
-                    <tr>
-                        <td class="label">DESCRIÇÃO:</td>
-                        <td class="value">${description}</td>
-                    </tr>
-                    <tr>
-                        <td class="label">SKU:</td>
-                        <td class="value sku-value">${sku}</td>
-                    </tr>
-                </table>
-                
-                <div class="os-footer">
-                    <div class="barcode">*${osNumber}*</div>
-                </div>
+                <div class="item-codigo">#${numeroLimpo}</div>
             </div>
-            
-            ${index < oss.length - 1 ? '<div class="page-break-divider"></div>' : ''}
         `;
+        
+        contador++;
     });
     
     return `
@@ -6776,7 +6774,7 @@ function gerarHTMLImpressaoMultipla(oss) {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Impressão Múltipla de OS</title>
+            <title>Lista de OS para Impressão</title>
             <style>
                 @media print {
                     @page {
@@ -6787,152 +6785,116 @@ function gerarHTMLImpressaoMultipla(oss) {
                     body {
                         font-family: 'Courier New', monospace;
                         margin: 0;
-                        padding: 20px;
-                        color: #000;
-                        background: #fff;
+                        padding: 0;
+                        background: white;
+                        color: black;
+                        font-size: 11pt;
+                        line-height: 1.3;
                     }
                     
                     .print-header {
-                        text-align: center;
-                        margin-bottom: 30px;
-                        padding-bottom: 15px;
-                        border-bottom: 2px solid #333;
+                        margin-bottom: 20px;
+                        padding-bottom: 10px;
+                        border-bottom: 2px solid #000;
                     }
                     
                     .print-header h1 {
-                        margin: 0;
-                        font-size: 24px;
+                        font-size: 18pt;
+                        margin: 0 0 5px 0;
                         font-weight: bold;
-                        text-transform: uppercase;
                     }
                     
                     .print-header p {
-                        margin: 5px 0 0;
-                        font-size: 12px;
-                        color: #555;
+                        margin: 0;
+                        font-size: 10pt;
+                        color: #333;
                     }
                     
-                    .os-item {
-                        margin-bottom: 30px;
-                        padding: 20px;
-                        border: 1px solid #ccc;
-                        border-radius: 8px;
+                    .lista-container {
+                        width: 100%;
+                    }
+                    
+                    .lista-item {
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 15px;
+                        padding: 8px 0;
+                        border-bottom: 1px dotted #ccc;
                         page-break-inside: avoid;
                     }
                     
-                    .os-header {
-                        text-align: center;
-                        margin-bottom: 20px;
-                    }
-                    
-                    .os-code-badge {
-                        font-size: 28px;
-                        font-weight: 800;
-                        letter-spacing: 2px;
-                        background: #000;
-                        color: #fff;
-                        padding: 10px 20px;
-                        display: inline-block;
-                        border-radius: 50px;
-                    }
-                    
-                    .os-details-table {
-                        width: 100%;
-                        border-collapse: collapse;
-                        margin: 15px 0;
-                    }
-                    
-                    .os-details-table td {
-                        padding: 12px 8px;
-                        border-bottom: 1px dashed #ccc;
-                        vertical-align: top;
-                    }
-                    
-                    .os-details-table .label {
-                        width: 120px;
-                        font-weight: 700;
-                        font-size: 14px;
-                        color: #333;
-                        text-transform: uppercase;
-                    }
-                    
-                    .os-details-table .value {
-                        font-size: 16px;
-                        color: #000;
-                        font-weight: 500;
-                    }
-                    
-                    .sku-value {
-                        font-family: 'Courier New', monospace;
+                    .item-numero {
                         font-weight: bold;
-                        background: #f5f5f5;
-                        padding: 8px !important;
-                        border-radius: 4px;
+                        font-size: 12pt;
+                        min-width: 40px;
+                        text-align: right;
+                        color: #000;
                     }
                     
-                    .os-footer {
-                        margin-top: 20px;
-                        text-align: center;
-                        font-size: 12px;
+                    .item-conteudo {
+                        flex: 1;
+                    }
+                    
+                    .item-produto {
+                        font-weight: bold;
+                        font-size: 11pt;
+                        margin-bottom: 2px;
+                    }
+                    
+                    .item-descricao {
+                        font-size: 10pt;
+                        color: #444;
+                        margin-bottom: 2px;
+                        font-style: italic;
+                    }
+                    
+                    .item-sku {
+                        font-size: 9pt;
                         color: #666;
+                        font-family: monospace;
                     }
                     
-                    .barcode {
-                        font-family: 'Courier New', monospace;
-                        font-size: 20px;
-                        letter-spacing: 5px;
-                        margin: 10px 0;
+                    .item-codigo {
+                        font-size: 9pt;
+                        color: #888;
+                        min-width: 60px;
+                        text-align: right;
+                        font-family: monospace;
                     }
                     
-                    .page-break-divider {
-                        page-break-after: always;
-                        height: 0;
+                    .print-footer {
+                        margin-top: 30px;
+                        padding-top: 15px;
+                        border-top: 1px solid #ccc;
+                        font-size: 8pt;
+                        color: #666;
+                        text-align: center;
+                    }
+                    
+                    .total-badge {
+                        display: inline-block;
+                        background: #000;
+                        color: white;
+                        padding: 3px 10px;
+                        border-radius: 20px;
+                        font-size: 9pt;
+                        margin-top: 10px;
+                    }
+                    
+                    /* Estilo para primeira página */
+                    .cover-info {
+                        text-align: center;
+                        margin-bottom: 30px;
+                    }
+                    
+                    .cover-info h2 {
+                        font-size: 24pt;
                         margin: 0;
                     }
                     
-                    /* Estilo para a primeira página */
-                    .cover-page {
-                        text-align: center;
-                        margin-bottom: 40px;
-                        page-break-after: always;
-                    }
-                    
-                    .cover-page h1 {
-                        font-size: 36px;
-                        margin: 100px 0 20px;
-                    }
-                    
-                    .cover-page .total-os {
-                        font-size: 48px;
-                        font-weight: 800;
-                        color: #000;
-                        margin: 50px 0;
-                    }
-                    
-                    .summary {
-                        margin: 30px 0;
-                        padding: 20px;
-                        background: #f9f9f9;
-                        border-radius: 8px;
-                    }
-                    
-                    .summary table {
-                        width: 100%;
-                        border-collapse: collapse;
-                    }
-                    
-                    .summary td {
-                        padding: 8px;
-                        border: 1px solid #ddd;
-                    }
-                    
-                    .summary .label {
-                        font-weight: bold;
-                        background: #eee;
-                    }
-                    
-                    .no-print {
-                        display: none;
+                    .cover-info .data {
+                        font-size: 11pt;
+                        color: #666;
                     }
                 }
                 
@@ -6949,6 +6911,7 @@ function gerarHTMLImpressaoMultipla(oss) {
                         background: white;
                         padding: 20mm;
                         box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+                        border-radius: 3px;
                     }
                     
                     .print-controls {
@@ -6986,51 +6949,26 @@ function gerarHTMLImpressaoMultipla(oss) {
                         background: #5a6268;
                     }
                     
-                    /* Estilos de tela */
-                    .os-item {
-                        margin-bottom: 30px;
-                        padding: 20px;
-                        border: 1px solid #dee2e6;
-                        border-radius: 8px;
-                        background: #fff;
+                    .lista-item {
+                        display: flex;
+                        align-items: flex-start;
+                        gap: 15px;
+                        padding: 10px;
+                        border-bottom: 1px solid #eee;
                     }
                     
-                    .os-code-badge {
-                        font-size: 24px;
-                        font-weight: bold;
-                        background: #8A2BE2;
-                        color: white;
-                        padding: 8px 16px;
-                        display: inline-block;
-                        border-radius: 50px;
-                    }
-                    
-                    .os-details-table td {
-                        padding: 8px;
-                        border-bottom: 1px solid #e9ecef;
-                    }
-                    
-                    .label {
-                        font-weight: bold;
-                        color: #495057;
-                        width: 120px;
-                    }
-                    
-                    .sku-value {
-                        font-family: monospace;
+                    .lista-item:hover {
                         background: #f8f9fa;
-                        padding: 4px 8px;
-                        border-radius: 4px;
                     }
                 }
             </style>
         </head>
         <body>
             <div class="print-controls no-print">
-                <h2>Imprimir ${oss.length} OS selecionada(s)</h2>
-                <p>Visualize como ficará a impressão antes de imprimir.</p>
+                <h2>📋 Lista de OS para Impressão</h2>
+                <p>${oss.length} OS selecionada(s) - Formato de lista</p>
                 <button class="print-btn" onclick="window.print()">
-                    <i class="fas fa-print"></i> Imprimir Documento
+                    <i class="fas fa-print"></i> Imprimir Lista
                 </button>
                 <button class="print-btn close-btn" onclick="window.close()">
                     <i class="fas fa-times"></i> Fechar
@@ -7038,44 +6976,32 @@ function gerarHTMLImpressaoMultipla(oss) {
             </div>
             
             <div class="print-container">
-                <!-- Capa -->
-                <div class="cover-page">
-                    <h1>📋 ORDENS DE SERVIÇO</h1>
-                    <p style="font-size: 18px; color: #666;">Lista de OS selecionadas para impressão</p>
-                    
-                    <div class="total-os">
-                        ${oss.length} OS
-                    </div>
-                    
-                    <div style="margin-top: 50px;">
-                        <p><strong>Data da emissão:</strong> ${hoje} às ${hora}</p>
-                        <p><strong>Emitido por:</strong> ${currentUser?.name || 'Sistema'}</p>
-                        <p><strong>Total de páginas:</strong> ${Math.ceil(oss.length)}</p>
-                    </div>
-                    
-                    <div style="margin-top: 100px; font-size: 12px; color: #999;">
-                        <p>Documento gerado automaticamente pelo Sistema Wheel Tech</p>
-                    </div>
+                <!-- Cabeçalho -->
+                <div class="print-header">
+                    <h1>📋 LISTA DE ORDENS DE SERVIÇO</h1>
+                    <p>Data: ${hoje} | Hora: ${hora} | Emitido por: ${currentUser?.name || 'Sistema'}</p>
+                    <div class="total-badge">Total: ${oss.length} OS</div>
                 </div>
                 
-                <!-- Lista de OS -->
-                ${ossHTML}
+                <!-- Lista -->
+                <div class="lista-container">
+                    ${listaHTML}
+                </div>
                 
-                <!-- Rodapé final -->
-                <div style="margin-top: 50px; text-align: center; font-size: 10px; color: #999; border-top: 1px solid #ccc; padding-top: 20px;">
-                    <p>Fim do documento - Total de ${oss.length} OS impressas</p>
+                <!-- Rodapé -->
+                <div class="print-footer">
+                    <p>Documento gerado automaticamente pelo Sistema Wheel Tech</p>
+                    <p>Lista de OS - Página 1 de 1</p>
                 </div>
             </div>
             
             <script>
-                // Auto-print quando a janela carregar
                 window.onload = function() {
                     setTimeout(function() {
                         window.print();
                     }, 1000);
                 };
                 
-                // Fechar após impressão
                 window.onafterprint = function() {
                     setTimeout(function() {
                         window.close();
