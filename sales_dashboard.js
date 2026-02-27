@@ -215,10 +215,10 @@ async function sincronizarVendasML() {
 }
 
 // ============================================
-// PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA)
-// ============================================
-// ============================================
 // PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA - SEM KIT)
+// ============================================
+// ============================================
+// PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA - MANTÉM STATUS)
 // ============================================
 async function processarESalvarVendas(vendasML) {
     try {
@@ -230,6 +230,13 @@ async function processarESalvarVendas(vendasML) {
         for (const venda of vendasML) {
             try {
                 const idVendaML = venda.id_venda_ml || venda.id || `ML${Date.now()}`;
+                
+                // Buscar venda existente para preservar status de conferência
+                const { data: vendaExistente } = await supabaseClient
+                    .from('vendas_ml')
+                    .select('*')
+                    .eq('id_venda_ml', idVendaML)
+                    .maybeSingle();
                 
                 const vendaProcessada = {
                     id_venda_ml: idVendaML,
@@ -243,7 +250,10 @@ async function processarESalvarVendas(vendasML) {
                     variacao_id: venda.variacao_id || null,
                     variacao_atributos: venda.variacao_atributos || [],
                     estoque_anuncio: venda.estoque_anuncio || 0,
-                    estoque_fisico: venda.estoque_fisico || 0,
+                    
+                    // 🟢 MANTER ESTOQUE FÍSICO EXISTENTE SE HOUVER
+                    estoque_fisico: vendaExistente?.estoque_fisico || venda.estoque_fisico || 0,
+                    
                     ultima_verificacao_estoque: venda.ultima_verificacao_estoque || agora,
                     
                     quantidade: venda.quantidade || venda.quantity || 1,
@@ -254,7 +264,9 @@ async function processarESalvarVendas(vendasML) {
                     data_venda: venda.data_venda || venda.date_created || agora,
                     
                     status_ml: venda.status_ml || venda.status || 'paid',
-                    status_sistema: venda.status_sistema || 'nova',
+                    
+                    // 🟢 MANTER STATUS DO SISTEMA EXISTENTE
+                    status_sistema: vendaExistente?.status_sistema || venda.status_sistema || 'nova',
                     
                     tipo_envio: venda.tipo_envio || 'N/I',
                     id_envio: venda.id_envio || null,
@@ -267,39 +279,71 @@ async function processarESalvarVendas(vendasML) {
                     
                     link: venda.link || venda.permalink || null,
                     
-                    status_conferencia: venda.status_conferencia || 'pendente',
-                    divergente: venda.divergente || false,
-                    conferido_por_estoque: venda.conferido_por_estoque || null,
-                    conferido_por_anuncio: venda.conferido_por_anuncio || null,
-                    data_conferencia_estoque: venda.data_conferencia_estoque || null,
-                    data_conferencia_anuncio: venda.data_conferencia_anuncio || null,
-                    observacao: venda.observacao || null,
-                    observacoes_gerais: venda.observacoes_gerais || '',
+                    // ===== 🟢🟢🟢 CORREÇÃO CRÍTICA: MANTER STATUS DE CONFERÊNCIA =====
+                    status_conferencia: vendaExistente?.status_conferencia || venda.status_conferencia || 'pendente',
+                    divergente: vendaExistente?.divergente || venda.divergente || false,
                     
-                    // REMOVI fotos_anuncio, qtd_fotos_anuncio, eh_kit, skus_kit
-                    fotos: venda.fotos || [],
-                    qtd_fotos: venda.qtd_fotos || 0,
+                    // Manter dados de conferência existentes
+                    conferido_por_estoque: vendaExistente?.conferido_por_estoque || venda.conferido_por_estoque || null,
+                    conferido_por_anuncio: vendaExistente?.conferido_por_anuncio || venda.conferido_por_anuncio || null,
+                    data_conferencia_estoque: vendaExistente?.data_conferencia_estoque || venda.data_conferencia_estoque || null,
+                    data_conferencia_anuncio: vendaExistente?.data_conferencia_anuncio || venda.data_conferencia_anuncio || null,
+                    
+                    // Manter configurações de kit existentes
+                    eh_kit: vendaExistente?.eh_kit || venda.eh_kit || false,
+                    skus_kit: vendaExistente?.skus_kit || venda.skus_kit || [],
+                    
+                    observacao: vendaExistente?.observacao || venda.observacao || null,
+                    observacoes_gerais: vendaExistente?.observacoes_gerais || venda.observacoes_gerais || '',
+                    
+                    // Manter fotos existentes + novas (se houver)
+                    fotos: vendaExistente?.fotos || venda.fotos || [],
+                    qtd_fotos: (vendaExistente?.fotos || venda.fotos || []).length,
+                    
+                    // 🆕 CAMPOS DE LIBERAÇÃO
+                    data_liberacao: venda.data_liberacao || vendaExistente?.data_liberacao || null,
+                    status_liberacao: venda.status_liberacao || vendaExistente?.status_liberacao || 'liberado',
+                    mensagem_liberacao: venda.mensagem_liberacao || vendaExistente?.mensagem_liberacao || null,
+                    precisa_aguardar: venda.precisa_aguardar || vendaExistente?.precisa_aguardar || false,
                     
                     updated_at: agora,
                     dados_completos: JSON.stringify(venda)
                 };
                 
-                const { data: vendaExistente } = await supabaseClient
-                    .from('vendas_ml')
-                    .select('id')
-                    .eq('id_venda_ml', idVendaML)
-                    .maybeSingle();
-                
                 if (vendaExistente) {
+                    // 🟢 UPDATE: Atualizar apenas dados do ML, manter status de conferência
                     const { error } = await supabaseClient
                         .from('vendas_ml')
-                        .update(vendaProcessada)
+                        .update({
+                            // Dados do ML que podem mudar
+                            titulo: vendaProcessada.titulo,
+                            cliente: vendaProcessada.cliente,
+                            sku: vendaProcessada.sku,
+                            mlb_id: vendaProcessada.mlb_id,
+                            estoque_anuncio: vendaProcessada.estoque_anuncio,
+                            quantidade: vendaProcessada.quantidade,
+                            valor_total: vendaProcessada.valor_total,
+                            tipo_envio: vendaProcessada.tipo_envio,
+                            id_envio: vendaProcessada.id_envio,
+                            informacoes_envio: vendaProcessada.informacoes_envio,
+                            data_liberacao: vendaProcessada.data_liberacao,
+                            status_liberacao: vendaProcessada.status_liberacao,
+                            mensagem_liberacao: vendaProcessada.mensagem_liberacao,
+                            precisa_aguardar: vendaProcessada.precisa_aguardar,
+                            updated_at: agora,
+                            dados_completos: vendaProcessada.dados_completos
+                            
+                            // ⚠️ NÃO ATUALIZAR CAMPOS DE CONFERÊNCIA!
+                        })
                         .eq('id_venda_ml', idVendaML);
                     
                     if (error) {
                         console.warn(`⚠️ Erro ao atualizar venda ${idVendaML}:`, error);
+                    } else {
+                        console.log(`🔄 Venda ${idVendaML} atualizada, status conferência mantido: ${vendaExistente.status_conferencia}`);
                     }
                 } else {
+                    // INSERT: Nova venda
                     vendasParaSalvar.push(vendaProcessada);
                 }
             } catch (errorVenda) {
@@ -317,6 +361,7 @@ async function processarESalvarVendas(vendasML) {
             if (error) {
                 console.error('❌ Erro ao salvar vendas:', error);
                 
+                // Fallback: inserir uma por uma
                 let sucessos = 0;
                 for (const venda of vendasParaSalvar) {
                     try {
