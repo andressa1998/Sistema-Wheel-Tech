@@ -1475,42 +1475,92 @@ function paginarVendasLista(vendas) {
 }
 
 // ============================================
-// APLICAR FILTRO ATUAL (COM PAGINAÇÃO CORRIGIDA)
+// APLICAR FILTRO ATUAL (COM FILTRO FULL AUTOMÁTICO)
 // ============================================
 function aplicarFiltroAtual() {
     let vendasFiltradas = [...vendasML];
     
-    // Aplicar todos os filtros (status, período, conferência, tipo envio)
-    if (filtroConferencia === 'pendente') {
-        vendasFiltradas = vendasFiltradas.filter(v => v.status_conferencia === 'pendente' || !v.status_conferencia);
-    } else if (filtroConferencia === 'conferido_estoque') {
-        vendasFiltradas = vendasFiltradas.filter(v => v.status_conferencia === 'conferido_estoque');
-    } else if (filtroConferencia === 'conferido_anuncio') {
-        vendasFiltradas = vendasFiltradas.filter(v => v.status_conferencia === 'conferido_anuncio' && !v.divergente);
-    } else if (filtroConferencia === 'divergente') {
-        vendasFiltradas = vendasFiltradas.filter(v => v.divergente === true);
-    } else if (filtroConferencia === 'em_andamento') {
-        vendasFiltradas = vendasFiltradas.filter(v => v.status_conferencia === 'em_andamento');
-    }
+    console.log('🔍 Aplicando filtros:', {
+        filtroConferencia,
+        filtroTipoEnvio,
+        filtroAtual,
+        periodoAtual,
+        excluindoFull: true // Sempre excluindo FULL
+    });
     
+    // ===== FILTRO AUTOMÁTICO: EXCLUIR VENDAS FULL =====
+    vendasFiltradas = vendasFiltradas.filter(v => {
+        const tipo = (v.tipo_envio || '').toUpperCase();
+        // Mantém apenas vendas que NÃO são FULL
+        return !tipo.includes('FULL') && 
+               !tipo.includes('FULFILLMENT') &&
+               tipo !== 'FULL';
+    });
+    
+    // ===== FILTRO POR TIPO DE ENVIO =====
     if (filtroTipoEnvio !== 'todos') {
         vendasFiltradas = vendasFiltradas.filter(v => {
-            const tipo = v.tipo_envio || 'N/I';
+            const tipo = (v.tipo_envio || 'N/I').toUpperCase();
+            
             if (filtroTipoEnvio === 'N/I') {
-                return tipo === 'N/I' || tipo === 'Não especificado';
+                return tipo === 'N/I' || tipo === 'NÃO ESPECIFICADO';
             }
-            return tipo.includes(filtroTipoEnvio);
+            
+            if (filtroTipoEnvio === 'FLEX') {
+                return tipo.includes('FLEX') || 
+                       tipo.includes('DROP_OFF') || 
+                       tipo.includes('SELF_SERVICE');
+            }
+            
+            if (filtroTipoEnvio === 'MERCADO_ENVIOS') {
+                return tipo.includes('MERCADO') || 
+                       tipo.includes('CROSS') ||
+                       tipo.includes('ME2');
+            }
+            
+            return tipo.includes(filtroTipoEnvio.toUpperCase());
         });
     }
     
-    if (filtroAtual === 'nova') {
-        vendasFiltradas = vendasFiltradas.filter(v => v.status_sistema === 'nova');
-    } else if (filtroAtual === 'verificada') {
-        vendasFiltradas = vendasFiltradas.filter(v => v.status_sistema === 'verificada');
-    } else if (filtroAtual === 'fraude') {
-        vendasFiltradas = vendasFiltradas.filter(v => v.status_sistema === 'fraude');
+    // ===== FILTRO POR STATUS DE CONFERÊNCIA =====
+    if (filtroConferencia === 'pendente') {
+        vendasFiltradas = vendasFiltradas.filter(v => 
+            v.status_conferencia === 'pendente' || !v.status_conferencia
+        );
+    } else if (filtroConferencia === 'conferido_estoque') {
+        vendasFiltradas = vendasFiltradas.filter(v => 
+            v.status_conferencia === 'conferido_estoque'
+        );
+    } else if (filtroConferencia === 'conferido_anuncio') {
+        vendasFiltradas = vendasFiltradas.filter(v => 
+            v.status_conferencia === 'conferido_anuncio' && !v.divergente
+        );
+    } else if (filtroConferencia === 'divergente') {
+        vendasFiltradas = vendasFiltradas.filter(v => 
+            v.divergente === true
+        );
+    } else if (filtroConferencia === 'em_andamento') {
+        vendasFiltradas = vendasFiltradas.filter(v => 
+            v.status_conferencia === 'em_andamento'
+        );
     }
     
+    // ===== FILTRO POR STATUS DO SISTEMA =====
+    if (filtroAtual === 'nova') {
+        vendasFiltradas = vendasFiltradas.filter(v => 
+            v.status_sistema === 'nova'
+        );
+    } else if (filtroAtual === 'verificada') {
+        vendasFiltradas = vendasFiltradas.filter(v => 
+            v.status_sistema === 'verificada'
+        );
+    } else if (filtroAtual === 'fraude') {
+        vendasFiltradas = vendasFiltradas.filter(v => 
+            v.status_sistema === 'fraude'
+        );
+    }
+    
+    // ===== FILTRO POR PERÍODO =====
     if (periodoAtual !== 'todas') {
         const hoje = new Date();
         let dataLimite = new Date();
@@ -1528,22 +1578,83 @@ function aplicarFiltroAtual() {
         
         vendasFiltradas = vendasFiltradas.filter(v => {
             if (!v.created_at) return false;
-            return new Date(v.created_at) >= dataLimite;
+            const dataVenda = new Date(v.created_at);
+            return dataVenda >= dataLimite;
         });
     }
     
-    // Ordenar por data (mais recente primeiro)
+    // ===== FILTRO POR STATUS DE LIBERAÇÃO =====
+    if (window.filtroLiberacao && window.filtroLiberacao !== 'todas') {
+        if (window.filtroLiberacao === 'pendente') {
+            vendasFiltradas = vendasFiltradas.filter(v => 
+                v.status_liberacao === 'pendente' || 
+                v.status_liberacao === 'agendado' ||
+                v.precisa_aguardar === true
+            );
+        } else if (window.filtroLiberacao === 'liberado') {
+            vendasFiltradas = vendasFiltradas.filter(v => 
+                v.status_liberacao === 'liberado' && 
+                !v.precisa_aguardar
+            );
+        } else {
+            vendasFiltradas = vendasFiltradas.filter(v => 
+                v.status_liberacao === window.filtroLiberacao
+            );
+        }
+    }
+    
+    // ===== ORDENAR POR DATA (MAIS RECENTE PRIMEIRO) =====
     vendasFiltradas.sort((a, b) => {
-        const dataA = new Date(a.created_at || 0);
-        const dataB = new Date(b.created_at || 0);
+        const dataA = new Date(a.created_at || a.data_venda || 0);
+        const dataB = new Date(b.created_at || b.data_venda || 0);
         return dataB - dataA;
     });
     
     // ===== ARMAZENAR VENDAS FILTRADAS PARA PAGINAÇÃO =====
     vendasFiltradasAtuais = vendasFiltradas;
     
-    // Aplicar paginação
+    console.log(`📊 Total após filtros: ${vendasFiltradas.length} vendas (excluindo FULL)`);
+    
+    // ===== APLICAR PAGINAÇÃO =====
     paginarVendasLista(vendasFiltradas);
+}
+
+// ============================================
+// FUNÇÃO MODIFICADA PARA CARREGAR VENDAS DO BANCO
+// ============================================
+async function carregarVendasDoBanco() {
+    try {
+        console.log('📦 Carregando vendas do banco...');
+        
+        const { data, error } = await supabaseClient
+            .from('vendas_ml')
+            .select('*')
+            .order('created_at', { ascending: false });
+        
+        if (error) {
+            console.error('❌ Erro ao carregar vendas:', error);
+            mostrarToast('Erro ao carregar vendas', 'error');
+            return;
+        }
+        
+        vendasML = data || [];
+        
+        // Filtrar vendas FULL já no carregamento
+        const vendasFull = vendasML.filter(v => {
+            const tipo = (v.tipo_envio || '').toUpperCase();
+            return tipo.includes('FULL') || tipo.includes('FULFILLMENT') || tipo === 'FULL';
+        }).length;
+        
+        console.log(`✅ ${vendasML.length} vendas carregadas do banco (${vendasFull} FULL ocultadas)`);
+        
+        atualizarEstatisticas();
+        atualizarContadoresConferencia();
+        aplicarFiltroAtual(); // Já aplica o filtro FULL automaticamente
+        
+    } catch (error) {
+        console.error('❌ Erro no carregamento:', error);
+        mostrarToast('Erro ao carregar vendas do banco', 'error');
+    }
 }
 
 // ============================================
@@ -1621,9 +1732,6 @@ function filtrarPorBusca(termo) {
     paginarVendasLista(vendasFiltradas);
 }
 
-// ============================================
-// FUNÇÕES DE CONFERÊNCIA (ANÚNCIO)
-// ============================================
 // ============================================
 // CONFERIR ANÚNCIO (2ª CONFERÊNCIA) - VERSÃO CORRIGIDA
 // ============================================
