@@ -647,7 +647,7 @@ async function initializeMLAuth() {
 }
 
 // ============================================
-// FUNÇÕES DE VENDAS
+// BUSCAR VENDAS ML - VERSÃO SIMPLES E CONFIÁVEL
 // ============================================
 async function buscarVendasML(limit = 50) {
     try {
@@ -686,55 +686,82 @@ async function buscarVendasML(limit = 50) {
         
         console.log(`✅ Token obtido: ${accessToken.substring(0, 20)}...`);
         
+        // ===== PARÂMETROS SIMPLES =====
         const limiteSeguro = Math.min(limit, 50);
         
+        // Data de início: 60 DIAS ATRÁS (para pegar mais vendas)
         const agora = new Date();
-        const trintaDiasAtras = new Date(agora);
-        trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+        const sessentaDiasAtras = new Date(agora);
+        sessentaDiasAtras.setDate(sessentaDiasAtras.getDate() - 60);
         
-        const dataFormatada = trintaDiasAtras.toISOString();
+        const dataFormatada = sessentaDiasAtras.toISOString();
         
-        const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=${limiteSeguro}`;
+        // URL com scroll manual para pegar mais páginas
+        let todasVendas = [];
+        let offset = 0;
+        let tentativas = 0;
+        const maxTentativas = 5; // Máximo de 5 páginas (250 vendas)
         
-        console.log('📡 URL da API:', urlML);
-        
-        const encodedUrl = encodeURIComponent(urlML);
-        const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(accessToken)}`;
-        
-        console.log('🔄 Chamando proxy...');
-        const response = await fetch(proxyUrl);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('❌ Erro na resposta do proxy:', response.status, errorText);
-            
-            if (response.status === 401) {
-                console.log('🔄 Token 401, tentando renovar...');
-                const refreshToken = localStorage.getItem('ml_refresh_token');
-                if (refreshToken) {
-                    const newToken = await renewTokenWithRefreshToken(refreshToken);
-                    if (newToken) {
-                        console.log('✅ Token renovado, tentando novamente...');
-                        return await buscarVendasML(limit);
+        while (tentativas < maxTentativas) {
+            try {
+                const urlML = `https://api.mercadolibre.com/orders/search?seller=${ML_CONFIG.USER_ID}&sort=date_desc&order.status=paid&order.date_created.from=${dataFormatada}&limit=${limiteSeguro}&offset=${offset}`;
+                
+                console.log(`📡 Buscando página ${tentativas + 1} (offset: ${offset})...`);
+                
+                const encodedUrl = encodeURIComponent(urlML);
+                const proxyUrl = `${ML_CONFIG.WORKER_URL}/api/ml/proxy?url=${encodedUrl}&token=${encodeURIComponent(accessToken)}`;
+                
+                const response = await fetch(proxyUrl);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('❌ Erro na resposta do proxy:', response.status, errorText);
+                    
+                    if (response.status === 401) {
+                        console.log('🔄 Token 401, tentando renovar...');
+                        const refreshToken = localStorage.getItem('ml_refresh_token');
+                        if (refreshToken) {
+                            const newToken = await renewTokenWithRefreshToken(refreshToken);
+                            if (newToken) {
+                                console.log('✅ Token renovado, tentando novamente...');
+                                return await buscarVendasML(limit);
+                            }
+                        }
                     }
+                    break;
                 }
+                
+                const result = await response.json();
+                
+                if (!result.results || result.results.length === 0) {
+                    console.log('📭 Nenhuma venda encontrada nesta página');
+                    break;
+                }
+                
+                console.log(`✅ Página ${tentativas + 1}: ${result.results.length} vendas`);
+                todasVendas = [...todasVendas, ...result.results];
+                
+                // Se veio menos que o limite, é a última página
+                if (result.results.length < limiteSeguro) {
+                    console.log('📌 Última página alcançada');
+                    break;
+                }
+                
+                offset += limiteSeguro;
+                tentativas++;
+                
+                // Pequeno delay para não sobrecarregar
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+            } catch (pageError) {
+                console.error('❌ Erro na página:', pageError);
+                break;
             }
-            
-            return {
-                success: false,
-                error: `Erro ${response.status}: ${errorText}`,
-                vendas: []
-            };
         }
         
-        const result = await response.json();
+        console.log(`📊 Total de vendas encontradas: ${todasVendas.length}`);
         
-        console.log('📊 Resposta da API:', {
-            total: result.paging?.total || 0,
-            resultsCount: result.results?.length || 0
-        });
-        
-        if (!result.results || result.results.length === 0) {
+        if (todasVendas.length === 0) {
             return {
                 success: true,
                 vendas: [],
@@ -744,7 +771,7 @@ async function buscarVendasML(limit = 50) {
         
         console.log('🔍 Processando detalhes de estoque e envio...');
         const vendasProcessadas = await processarVendasComDetalhesESTOQUE(
-            result.results, 
+            todasVendas, 
             accessToken
         );
         
@@ -753,8 +780,8 @@ async function buscarVendasML(limit = 50) {
         return {
             success: true,
             vendas: vendasProcessadas,
-            total: result.paging?.total || vendasProcessadas.length,
-            paging: result.paging || {}
+            total: todasVendas.length,
+            paginas: tentativas + 1
         };
         
     } catch (error) {
