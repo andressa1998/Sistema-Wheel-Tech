@@ -719,3 +719,25 @@ table {
 .hidden {
     display: none !important;
 }
+
+/* Adicione no seu arquivo CSS ou no final do script */
+.btn-outline-primary {
+    background: transparent;
+    border: 2px solid #8A2BE2;
+    color: #8A2BE2;
+    padding: 8px 16px;
+    border-radius: 30px;
+    transition: all 0.3s;
+    font-weight: 600;
+}
+
+.btn-outline-primary:hover {
+    background: #8A2BE2;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(138, 43, 226, 0.2);
+}
+
+.btn-outline-primary i {
+    margin-right: 5px;
+}

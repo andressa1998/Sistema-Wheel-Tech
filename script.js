@@ -1130,19 +1130,22 @@ function renderVendasML(vendas) {
     });
 }
 
-// ===== FUNÇÃO PARA MOSTRAR/OCULTAR CAMPOS DE ANÚNCIO =====
+// ============================================
+// FUNÇÃO PARA MOSTRAR/OCULTAR CAMPOS DE ANÚNCIO (MODIFICADA)
+// ============================================
 function toggleCamposAnuncio() {
     const photoType = document.getElementById('photoType').value;
     const camposAnuncio = document.getElementById('camposAnuncio');
     
-    if (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio') {
+    // Agora mostra os campos também para "Apenas edição"
+    if (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio' || photoType === 'edicao') {
         camposAnuncio.classList.remove('hidden');
     } else {
         camposAnuncio.classList.add('hidden');
     }
     
-    // Se for criar/replicar anúncio, definir opções padrão
-    if (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio') {
+    // Se for criar/replicar anúncio ou apenas edição, definir opções padrão
+    if (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio' || photoType === 'edicao') {
         // Garantir que o campo "precisa de foto" esteja visível
         const precisaFotoSelect = document.getElementById('precisaFoto');
         if (precisaFotoSelect) {
@@ -2403,10 +2406,12 @@ async function enviarNotificacaoEmail(destinatario, assunto, mensagem, tipo = 'o
     return true;
 }
 
-// ===== FUNÇÃO PARA NOTIFICAR ELAINE SOBRE FOTOS =====
+// ============================================
+// FUNÇÃO PARA NOTIFICAR ELAINE SOBRE FOTOS (ATUALIZADA)
+// ============================================
 async function notificarElaineSobreFotos(osData) {
     // Verificar se precisa de foto
-    const precisaFoto = document.getElementById('precisaFoto')?.value === 'sim';
+    const precisaFoto = osData.precisaFoto === 'sim';
     
     if (precisaFoto) {
         const assunto = `📸 Nova OS precisa de fotos - ${osData.code}`;
@@ -2416,8 +2421,8 @@ async function notificarElaineSobreFotos(osData) {
             📋 OS: ${osData.code}
             📦 Produto: ${osData.productName}
             👤 Responsável: ${osData.responsibleName}
-            💰 Valor do Anúncio: R$ ${document.getElementById('valorAnuncio')?.value || '0,00'}
-            📝 Descrição: ${document.getElementById('descricaoAnuncio')?.value || 'Nenhuma'}
+            💰 Valor do Anúncio: R$ ${osData.valorAnuncio || '0,00'}
+            📝 Descrição: ${osData.descricaoAnuncio || 'Nenhuma'}
             
             Por favor, verifique o sistema para mais detalhes.
             
@@ -3135,7 +3140,7 @@ async function loadOrders() {
 }
 
 // ============================================
-// FUNÇÃO SALVAR OS (ATUALIZADA COM NOVOS CAMPOS)
+// FUNÇÃO SALVAR OS (CORRIGIDA - INCLUIR "APENAS EDIÇÃO")
 // ============================================
 async function saveOrder() {
     if (!currentUser) {
@@ -3153,16 +3158,19 @@ async function saveOrder() {
         return;
     }
     
-    // Coletar dados específicos para criar/replicar anúncio
+    // Coletar dados específicos para criar/replicar anúncio OU APENAS EDIÇÃO
     const valorAnuncio = document.getElementById('valorAnuncio')?.value || 0;
     const descricaoAnuncio = document.getElementById('descricaoAnuncio')?.value || '';
     const linkNovoAnuncio = document.getElementById('linkNovoAnuncio')?.value || '';
     const precisaFoto = document.getElementById('precisaFoto')?.value || 'nao';
 
-    // VERIFICAR SE PRECISA DE FOTO E É CRIAR/REPLICAR ANÚNCIO
+    // VERIFICAR SE PRECISA DE FOTO E É CRIAR/REPLICAR ANÚNCIO OU APENAS EDIÇÃO
     let finalResponsibleName = responsibleName;
-    if ((photoType === 'criar_anuncio' || photoType === 'replicar_anuncio') && precisaFoto === 'sim') {
-
+    
+    // Lista de tipos que precisam mostrar os campos de anúncio
+    const tiposComAnuncio = ['criar_anuncio', 'replicar_anuncio', 'edicao'];
+    
+    if (tiposComAnuncio.includes(photoType) && precisaFoto === 'sim') {
         // Adicionar Elaine como responsável junto com o responsável selecionado
         if (responsibleName && responsibleName !== 'Elaine') {
             finalResponsibleName = `${responsibleName} e Elaine`;
@@ -3177,7 +3185,7 @@ async function saveOrder() {
         id: editingOrderId || orderCounter,
         code: editingOrderId ? orders.find(o => o.id == editingOrderId)?.code : generateOSCode(),
         productName: productName,
-        responsibleName: finalResponsibleName, // Usar o responsável ajustado
+        responsibleName: finalResponsibleName,
         linkAnuncio: linkAnuncio || '',
         urgency: document.getElementById('urgency')?.value || 'normal',
         osType: document.getElementById('osType')?.value || 'normal',
@@ -3231,9 +3239,8 @@ async function saveOrder() {
                 // NOTIFICAR ADMIN SOBRE NOVA OS
                 await notificarAdminSobreNovaOS(orderData);
 
-                
-                // NOTIFICAR ELAINE SE PRECISAR DE FOTOS
-                if (precisaFoto === 'sim' && (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio')) {
+                // NOTIFICAR ELAINE SE PRECISAR DE FOTOS (para qualquer tipo com anúncio)
+                if (tiposComAnuncio.includes(photoType) && precisaFoto === 'sim') {
                     await notificarElaineSobreFotos(orderData);
                 }
             }
@@ -3246,8 +3253,7 @@ async function saveOrder() {
             showToast('❌ Erro ao salvar: ' + result.error, 'error');
         }
         
-    } 
-    finally {
+    } finally {
         if (saveOSBtn) {
             saveOSBtn.innerHTML = '<i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>';
             saveOSBtn.disabled = false;
@@ -3547,6 +3553,9 @@ function updateCounters() {
     }
 }
 
+// ============================================
+// FUNÇÃO RENDER ORDERS TABLE (CORRIGIDA - MOSTRAR LINK NAS CONCLUÍDAS)
+// ============================================
 function renderOrdersTable() {
     if (!osTableBody) return;
     
@@ -3563,7 +3572,6 @@ function renderOrdersTable() {
     let filteredOrders = currentFilter === 'todos' ? userOrders : 
                          userOrders.filter(order => order.status === currentFilter);
 
-                         // Adicione esta verificação para "nao_conferidas"
     if (currentFilter === 'nao_conferidas') {
         filteredOrders = userOrders.filter(order => 
             order.status === 'concluida' && !order.conferido
@@ -3637,6 +3645,29 @@ function renderOrdersTable() {
                     </span>
                 `;
             }
+        }
+        
+        // LINK DO ANÚNCIO - AGORA APARECE PARA TODAS AS OS CONCLUÍDAS (NÃO APENAS NÃO CONFERIDAS)
+        let linkAnuncioDisplay = '';
+        if (order.status === 'concluida' && order.linkNovoAnuncio) {
+            linkAnuncioDisplay = `
+                <div style="margin-top: 12px; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                        <i class="fas fa-link" style="color: #28a745; font-size: 14px;"></i>
+                        <span style="font-weight: 600; color: #28a745; font-size: 12px;">LINK DO ANÚNCIO</span>
+                    </div>
+                    <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" 
+                       style="color: #0066cc; text-decoration: none; font-size: 13px; word-break: break-all; display: block; padding: 5px 8px; background: white; border-radius: 4px; border: 1px solid #c3e6cb;">
+                        <i class="fas fa-external-link-alt" style="margin-right: 5px; font-size: 11px;"></i>
+                        ${order.linkNovoAnuncio.length > 50 ? order.linkNovoAnuncio.substring(0, 50) + '...' : order.linkNovoAnuncio}
+                    </a>
+                    ${order.valorAnuncio ? `
+                    <div style="margin-top: 6px; font-size: 12px; color: #28a745; font-weight: 600;">
+                        <i class="fas fa-tag"></i> R$ ${parseFloat(order.valorAnuncio).toFixed(2)}
+                    </div>
+                    ` : ''}
+                </div>
+            `;
         }
         
         // Badges de permissão
@@ -3738,6 +3769,8 @@ function renderOrdersTable() {
                 ${permissionBadge}
                 ${accessBadge}
                 ${typeBadge}
+                <!-- LINK VISÍVEL PARA TODAS AS OS CONCLUÍDAS -->
+                ${linkAnuncioDisplay}
             </td>
             <td>${order.productName}</td>
             <td>
@@ -3860,6 +3893,34 @@ window.viewOrderPhotos = function(orderId) {
     } else {
         showToast('Nenhuma foto disponível para esta OS', 'info');
     }
+};
+
+// ============================================
+// FUNÇÃO PARA VOLTAR AO FORMULÁRIO VAZIO (HOME)
+// ============================================
+window.voltarParaHome = function() {
+    // Cancelar qualquer edição em andamento
+    if (editingOrderId) {
+        cancelEdit();
+    } else {
+        // Apenas limpar o formulário
+        clearForm();
+    }
+    
+    // Voltar para o filtro "pendente" (ou o padrão que você preferir)
+    if (currentFilter !== 'pendente') {
+        currentFilter = 'pendente';
+        highlightActiveFilterButton();
+        renderOrdersTable();
+    }
+    
+    // Rolar suavemente para o topo do formulário
+    const formSection = document.querySelector('.form-section');
+    if (formSection) {
+        formSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    
+    showToast('🏠 Voltando ao início', 'info');
 };
 
 // ============================================
@@ -7065,9 +7126,6 @@ function adicionarBotoesSelecaoOS() {
         tableContainer.parentNode.insertBefore(selectedBar, tableContainer.nextSibling);
     }
 }
-
-// ===== MODIFICAR A FUNÇÃO renderOrdersTable PARA INCLUIR CHECKBOX QUANDO EM MODO SELEÇÃO =====
-// Esta função substitui a renderização padrão quando em modo seleção
 
 // ===== INICIALIZAR QUANDO O DOM CARREGAR =====
 document.addEventListener('DOMContentLoaded', function() {
