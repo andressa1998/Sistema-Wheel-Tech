@@ -146,7 +146,7 @@ const EMAIL_CONFIG = {
 // Mapeamento de usuários para emails
 const USER_EMAILS = {
     'Elaine': 'elainecguidelli@gmail.com',
-    'Arthur': 'arthur@empresa.com',
+    'Arthur': 'bavaroski66@gmail.com',
     'Laura': 'laura@empresa.com',
     'Ronald': 'ronald@empresa.com',
     'Bruna': 'bruna@empresa.com',
