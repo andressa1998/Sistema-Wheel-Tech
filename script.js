@@ -150,7 +150,7 @@ const USER_EMAILS = {
     'Laura': 'laura@empresa.com',
     'Ronald': 'ronald@empresa.com',
     'Bruna': 'bruna@empresa.com',
-    'Andressa': 'andmiotto1998@gmail.com',
+    'Andressa': 'andressasloboda99@gmail.com',
     'Thalyta': 'thalyta@empresa.com',
     'Andressa Miotto': 'andmiotto1998@gmail.com',
     'Hosama': 'andmiotto1998@gmail.com'
