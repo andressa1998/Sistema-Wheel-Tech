@@ -3649,16 +3649,42 @@ function renderOrdersTable() {
         }
         
         // LINK DO ANÚNCIO - AGORA APARECE PARA TODAS AS OS CONCLUÍDAS (NÃO APENAS NÃO CONFERIDAS)
-        let linkAnuncioDisplay = '';
-        if (order.status === 'concluida' && order.linkNovoAnuncio) {
-            linkAnuncioDisplay = `
-                <div style="margin-top: 12px; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+       // LINKS DO ANÚNCIO - MOSTRA AMBOS SE EXISTIREM (APENAS PARA OS CONCLUÍDAS)
+let linkAnuncioDisplay = '';
+if (order.status === 'concluida') {
+    const temLinkOriginal = order.linkAnuncio && order.linkAnuncio.trim() !== '';
+    const temLinkNovo = order.linkNovoAnuncio && order.linkNovoAnuncio.trim() !== '';
+    
+    if (temLinkOriginal || temLinkNovo) {
+        linkAnuncioDisplay = '<div style="margin-top: 12px;">';
+        
+        // Link Original (se existir)
+        if (temLinkOriginal) {
+            linkAnuncioDisplay += `
+                <div style="margin-bottom: 8px; padding: 10px; background: #f0f7ff; border-radius: 6px; border-left: 4px solid #0066cc; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                        <i class="fas fa-link" style="color: #0066cc; font-size: 14px;"></i>
+                        <span style="font-weight: 600; color: #0066cc; font-size: 12px;">LINK ORIGINAL DO ANÚNCIO</span>
+                    </div>
+                    <a href="${order.linkAnuncio}" target="_blank" rel="noopener noreferrer" 
+                       style="color: #0066cc; text-decoration: none; font-size: 13px; word-break: break-all; display: block; padding: 5px 8px; background: white; border-radius: 4px; border: 1px solid #b8daff;">
+                        <i class="fas fa-external-link-alt" style="margin-right: 5px; font-size: 11px;"></i>
+                        ${order.linkAnuncio.length > 50 ? order.linkAnuncio.substring(0, 50) + '...' : order.linkAnuncio}
+                    </a>
+                </div>
+            `;
+        }
+        
+        // Link Novo (se existir)
+        if (temLinkNovo) {
+            linkAnuncioDisplay += `
+                <div style="margin-bottom: ${temLinkOriginal ? '8px' : '0'}; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
                         <i class="fas fa-link" style="color: #28a745; font-size: 14px;"></i>
-                        <span style="font-weight: 600; color: #28a745; font-size: 12px;">LINK DO ANÚNCIO</span>
+                        <span style="font-weight: 600; color: #28a745; font-size: 12px;">LINK DO NOVO ANÚNCIO</span>
                     </div>
                     <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" 
-                       style="color: #0066cc; text-decoration: none; font-size: 13px; word-break: break-all; display: block; padding: 5px 8px; background: white; border-radius: 4px; border: 1px solid #c3e6cb;">
+                       style="color: #28a745; text-decoration: none; font-size: 13px; word-break: break-all; display: block; padding: 5px 8px; background: white; border-radius: 4px; border: 1px solid #c3e6cb;">
                         <i class="fas fa-external-link-alt" style="margin-right: 5px; font-size: 11px;"></i>
                         ${order.linkNovoAnuncio.length > 50 ? order.linkNovoAnuncio.substring(0, 50) + '...' : order.linkNovoAnuncio}
                     </a>
@@ -3670,6 +3696,10 @@ function renderOrdersTable() {
                 </div>
             `;
         }
+        
+        linkAnuncioDisplay += '</div>';
+    }
+}
         
         // Badges de permissão
         let permissionBadge = '';
