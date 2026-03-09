@@ -76,6 +76,7 @@ function handleLogin(e) {
                 } else {
                     updateCounters();
                     renderOrdersTable();
+                    updateOSNotificationBell();
                 }
                 
                 // Configurar botão de reembolsos (AGORA DENTRO DO LOGIN)
@@ -143,14 +144,15 @@ const EMAIL_CONFIG = {
 
 // Mapeamento de usuários para emails
 const USER_EMAILS = {
-    'Elaine': 'elaine@empresa.com',
+    'Elaine': 'andmiotto1998@gmail.com',
     'Arthur': 'arthur@empresa.com',
     'Laura': 'laura@empresa.com',
     'Ronald': 'ronald@empresa.com',
     'Bruna': 'bruna@empresa.com',
-    'Andressa': 'andressa@empresa.com',
+    'Andressa': 'andmiotto1998@gmail.com',
     'Thalyta': 'thalyta@empresa.com',
-    'Andressa Miotto': 'andressamiotto@empresa.com'
+    'Andressa Miotto': 'andmiotto1998@gmail.com',
+    'Hosama': 'andmiotto1998@gmail.com'
 };
 
 // ===== VARIÁVEIS PARA NOTIFICAÇÕES DO SISTEMA =====
@@ -203,6 +205,13 @@ const SYSTEM_USERS = [
     { username: 'hosama', password: '170999', name: 'Hosama', avatar: 'R', role: 'Administrador' },
     { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
 ];
+
+function contarCaracteres() {
+    const campo = document.getElementById('productName');
+    if (campo) {
+        updateProductCounter(campo, 'productCounter');
+    }
+}
 
 // ===== FUNÇÃO PARA INICIALIZAR BOTÕES DO HEADER =====
 function setupHeaderButtons() {
@@ -343,50 +352,65 @@ function initSupabase() {
 // FUNÇÃO PARA ENVIAR NOTIFICAÇÕES POR EMAIL
 // ============================================
 async function enviarNotificacaoEmail(recipientName, subject, message, osData = null) {
+    // Mapeamento de nomes para e-mails (certifique-se de que está completo)
+    const USER_EMAILS = {
+        'Elaine': 'andmiotto1998@gmail.com',
+        'Arthur': 'arthur@empresa.com',
+        'Laura': 'laura@empresa.com',
+        'Ronald': 'ronald@empresa.com',
+        'Bruna': 'bruna@empresa.com',
+        'Andressa': 'andmiotto1998@gmail.com',
+        'Thalyta': 'thalyta@empresa.com',
+        'Andressa Miotto': 'andmiotto1998@gmail.com'
+    };
+
     const recipientEmail = USER_EMAILS[recipientName];
-    
     if (!recipientEmail) {
         console.warn(`❌ Email não configurado para: ${recipientName}`);
         return false;
     }
-    
+
+    console.log('📧 Preparando envio de e-mail:', {
+        destinatario: recipientName,
+        email: recipientEmail,
+        assunto: subject,
+        mensagem: message.substring(0, 100) + '...' // resumo
+    });
+
+    // IDs corretos (substitua se necessário)
+    const serviceId = 'service_lqj60lq';   // seu Service ID
+    const templateId = 'template_hq8vrdn'; // seu Template ID
+
     try {
-        // Em produção, você integraria com um serviço real de email
-        // Aqui está uma simulação que você pode implementar depois
-        
-        console.log(`📧 EMAIL SIMULADO para ${recipientName} (${recipientEmail})`);
-        console.log(`Assunto: ${subject}`);
-        console.log(`Mensagem: ${message}`);
-        
-        // Exemplo de implementação real com fetch (descomente e configure):
-        /*
-        const response = await fetch('/api/send-email', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                to: recipientEmail,
-                subject: subject,
-                html: generateEmailTemplate(message, osData),
-                type: 'os_notification'
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Falha ao enviar email');
-        }
-        
-        console.log('✅ Email enviado com sucesso');
-        */
-        
-        // Para simulação, mostramos um toast
-        showToast(`📧 Notificação enviada para ${recipientName}`, 'info');
-        
+        const response = await emailjs.send(
+    'service_lqj60lq',                     // Service ID
+    'template_hq8vrdn',                     // Template ID
+    {
+        to_email: recipientEmail,
+        subject: subject,
+        message: message
+    },
+    {
+        publicKey: 'pVfIt22rOprU6KOzq'      // Sua Public Key com I maiúsculo
+    }
+        );
+        console.log('✅ E-mail enviado com sucesso:', response);
+        showToast(`📧 Notificação enviada para ${recipientName}`, 'success');
         return true;
-        
     } catch (error) {
-        console.error('❌ Erro ao enviar email:', error);
+        console.error('❌ Erro ao enviar e-mail:');
+        console.error('Status:', error.status);
+        console.error('Mensagem:', error.text || error.message);
+        if (error.text) {
+            // Tenta extrair mais detalhes
+            try {
+                const details = JSON.parse(error.text);
+                console.error('Detalhes:', details);
+            } catch (e) {
+                console.error('Resposta bruta:', error.text);
+            }
+        }
+        showToast('❌ Erro ao enviar e-mail. Verifique o console.', 'error');
         return false;
     }
 }
@@ -1978,6 +2002,11 @@ window.salvarReembolso = async function() {
             closeReembolsoModal();
             await loadReembolsos();
         }
+
+        if (!editingReembolsoId) {
+            await notificarAndressaNovoReembolso(reembolsoData);
+            const destinatario = 'Andressa Miotto';  // string literal, não variável
+        }
     } catch (error) {
         console.error('❌ Erro ao salvar reembolso:', error);
         showToast('Erro ao salvar reembolso: ' + error.message, 'error');
@@ -2182,52 +2211,60 @@ async function verificarNotificacoesReembolsos() {
 
 // Atualizar UI das notificações
 function updateNotificationsUI() {
-    if (!notificacoesContent) return;
-    
-    // Filtrar notificações não lidas
-    const unreadNotifications = notificacoes.filter(n => !n.read);
-    
-    if (unreadNotifications.length === 0) {
-        notificacoesContent.innerHTML = `
-            <div style="padding: 20px; text-align: center; color: #6c757d;">
-                <i class="fas fa-bell-slash fa-2x" style="margin-bottom: 10px;"></i>
-                <p>Nenhuma notificação</p>
-            </div>
-        `;
+    const content = document.getElementById('notificacoesContent');
+    if (!content) return;
+
+    // OS não lidas
+    const osNaoLidas = orders
+        .filter(os => 
+            os.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) &&
+            os.user_notified === false
+        )
+        .map(os => ({
+            id: os.id,
+            type: 'nova_os',
+            title: '📸 Nova OS atribuída',
+            message: `${os.code} - ${os.productName}`,
+            date: new Date(os.createdAt),
+            read: false
+        }));
+
+    // Reembolsos não lidos (já existentes em notificacoes)
+    const reembolsoNots = notificacoes.filter(n => !n.read).map(n => ({
+        ...n,
+        type: n.type === 'novo_reembolso' ? 'reembolso' : 'pendente'
+    }));
+
+    const todas = [...osNaoLidas, ...reembolsoNots].sort((a, b) => b.date - a.date);
+
+    if (todas.length === 0) {
+        content.innerHTML = `<div style="padding:20px; text-align:center; color:#6c757d;">Nenhuma notificação</div>`;
         return;
     }
-    
-    // Ordenar por data (mais recente primeiro)
-    unreadNotifications.sort((a, b) => b.date - a.date);
-    
-    let notificationsHTML = '';
-    
-    unreadNotifications.forEach((notif, index) => {
+
+    let html = '';
+    todas.forEach((notif, index) => {
         const timeAgo = getTimeAgo(notif.date);
-        
-        notificationsHTML += `
-            <div style="padding: 15px; border-bottom: 1px solid #e9ecef; cursor: pointer; transition: background 0.3s;" 
-                 onclick="marcarNotificacaoComoLida(${index})"
-                 onmouseover="this.style.background='#f8f9fa'" 
-                 onmouseout="this.style.background='white'">
-                <div style="display: flex; align-items: flex-start; gap: 10px;">
-                    <div style="color: ${notif.type === 'novo_reembolso' ? '#8A2BE2' : '#dc3545'};">
-                        <i class="fas ${notif.type === 'novo_reembolso' ? 'fa-exchange-alt' : 'fa-exclamation-circle'}"></i>
+        const icon = notif.type === 'nova_os' ? 'fa-file-alt' : (notif.type === 'reembolso' ? 'fa-exchange-alt' : 'fa-exclamation-circle');
+        const color = notif.type === 'nova_os' ? '#8A2BE2' : '#dc3545';
+
+        html += `
+            <div style="padding:15px; border-bottom:1px solid #e9ecef; cursor:pointer;" 
+                 onclick="marcarNotificacaoComoLida('${notif.type}', ${notif.id})">
+                <div style="display:flex; gap:10px;">
+                    <div style="color:${color};">
+                        <i class="fas ${icon}"></i>
                     </div>
-                    <div style="flex: 1;">
-                        <div style="font-weight: 600; color: #495057; margin-bottom: 5px;">${notif.title}</div>
-                        <div style="font-size: 13px; color: #6c757d; margin-bottom: 5px;">${notif.message}</div>
-                        <div style="font-size: 11px; color: #adb5bd;">${timeAgo}</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:600;">${notif.title}</div>
+                        <div style="font-size:13px; color:#6c757d;">${notif.message}</div>
+                        <div style="font-size:11px; color:#adb5bd;">${timeAgo}</div>
                     </div>
                 </div>
             </div>
         `;
     });
-    
-    notificacoesContent.innerHTML = notificationsHTML;
-    
-    // Atualizar contador
-    updateNotificationBadge();
+    content.innerHTML = html;
 }
 
 // Atualizar badge de notificação
@@ -2255,34 +2292,37 @@ function updateNotificationBadge() {
 }
 
 // Marcar notificação como lida
-window.marcarNotificacaoComoLida = async function(index) {
-    if (index >= notificacoes.length) return;
-    
-    const notificacao = notificacoes[index];
-    notificacao.read = true;
-    
-    // Atualizar no banco de dados se aplicável
-    if (notificacao.type === 'novo_reembolso' && currentUser.role === 'Administrador') {
+window.marcarNotificacaoComoLida = async function(tipo, id) {
+    if (tipo === 'nova_os') {
+        // Marcar OS como lida
         try {
+            if (!supabaseClient) return;
             await supabaseClient
-                .from('reembolsos_ml')
-                .update({ notificado_admin: true })
-                .eq('id', notificacao.id);
+                .from('ordens_service')
+                .update({ user_notified: true })
+                .eq('id', id);
+
+            const os = orders.find(o => o.id == id);
+            if (os) os.user_notified = true;
+
+            updateOSNotificationBell();
+            updateNotificationsUI();
         } catch (error) {
-            console.error('❌ Erro ao atualizar notificação:', error);
+            console.error('Erro ao marcar OS como lida:', error);
         }
-    } else if (notificacao.type === 'reembolso_pendente') {
-        try {
-            await supabaseClient
-                .from('reembolsos_ml')
-                .update({ notificado_usuario: true })
-                .eq('id', notificacao.id);
-        } catch (error) {
-            console.error('❌ Erro ao atualizar notificação:', error);
+    } else {
+        // Código existente para reembolsos
+        const notif = notificacoes.find(n => n.id === id);
+        if (notif) {
+            notif.read = true;
+            if (notif.type === 'novo_reembolso') {
+                await supabaseClient.from('reembolsos_ml').update({ notificado_admin: true }).eq('id', id);
+            } else if (notif.type === 'reembolso_pendente') {
+                await supabaseClient.from('reembolsos_ml').update({ notificado_usuario: true }).eq('id', id);
+            }
         }
+        updateNotificationsUI();
     }
-    
-    updateNotificationsUI();
 };
 
 // Marcar todas como lidas
@@ -2320,26 +2360,15 @@ window.marcarTodasComoLidasReembolso = function() {
 };
 
 // Alternar exibição de notificações
-window.toggleNotificacoes = function() {
-    if (notificacoesDropdown.classList.contains('hidden')) {
-        notificacoesDropdown.classList.remove('hidden');
-        // Carregar notificações se necessário
-        updateNotificationsUI();
-    } else {
-        notificacoesDropdown.classList.add('hidden');
-    }
-};
+window.toggleNotificacoes = async function() {
+    // Marcar OS como lidas ao abrir o dropdown
+    await marcarOSComoLidas();
 
-// Alternar exibição de notificações (reembolsos)
-window.toggleNotificacoesReembolso = function() {
-    const dropdown = document.getElementById('notificacoesReembolsoDropdown');
-    const content = document.getElementById('notificacoesReembolsoContent');
-    
-    if (!dropdown || !content) return;
-    
+    const dropdown = document.getElementById('notificacoesDropdown');
     if (dropdown.classList.contains('hidden')) {
         dropdown.classList.remove('hidden');
-        content.innerHTML = notificacoesContent.innerHTML;
+        // Atualiza outras notificações se necessário
+        updateNotificationsUI();
     } else {
         dropdown.classList.add('hidden');
     }
@@ -2358,53 +2387,6 @@ function getTimeAgo(date) {
     if (diffHours < 24) return `há ${diffHours} h`;
     if (diffDays < 7) return `há ${diffDays} d`;
     return date.toLocaleDateString('pt-BR');
-}
-
-// ===== FUNÇÃO PARA ENVIAR NOTIFICAÇÃO POR EMAIL =====
-async function enviarNotificacaoEmail(destinatario, assunto, mensagem, tipo = 'os') {
-    // Esta função enviaria uma notificação por email
-    // Como não temos um servidor de email configurado, vamos apenas simular
-    
-    console.log(`📧 Email para ${destinatario}: ${assunto}`);
-    console.log(`Mensagem: ${mensagem}`);
-    
-    // Em produção, você integraria com um serviço de email como:
-    // - SendGrid
-    // - Amazon SES
-    // - Mailgun
-    // - Serviço próprio SMTP
-    
-    // Exemplo de implementação com fetch (substitua pela sua API real):
-    /*
-    try {
-        const response = await fetch('/api/send-email', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                to: destinatario,
-                subject: assunto,
-                body: mensagem,
-                type: tipo
-            })
-        });
-        
-        if (!response.ok) {
-            throw new Error('Falha ao enviar email');
-        }
-        
-        console.log('✅ Email enviado com sucesso');
-        return true;
-    } catch (error) {
-        console.error('❌ Erro ao enviar email:', error);
-        return false;
-    }
-    */
-    
-    // Por enquanto, apenas logamos a simulação
-    showToast(`📧 Notificação enviada para ${destinatario}`, 'info');
-    return true;
 }
 
 // ============================================
@@ -2466,8 +2448,8 @@ async function notificarAdminSobreNovaOS(osData) {
     const admins = SYSTEM_USERS.filter(user => user.role === 'Administrador');
     
     for (const admin of admins) {
-        // Aqui você usaria o email real do admin
-        await enviarNotificacaoEmail(`${admin.username}@empresa.com`, assunto, mensagem, 'nova_os');
+        // Agora passamos o NOME do admin, não o username
+        await enviarNotificacaoEmail(admin.name, assunto, mensagem, 'nova_os');
     }
 }
 
@@ -2857,6 +2839,7 @@ function handleLogin(e) {
                 } else {
                     updateCounters();
                     renderOrdersTable();
+                    updateOSNotificationBell();
                 }
                 
                 // Configurar botão de reembolsos (AGORA DENTRO DO LOGIN)
@@ -3085,6 +3068,7 @@ async function loadOrders() {
         if (data && data.length > 0) {
             orders = data.map(order => ({
                 id: order.id,
+                user_notified: order.user_notified || false,
                 code: order.codigo || `OS-${order.id.toString().padStart(4, '0')}`,
                 productName: order.produto_nome || 'Sem nome',
                 linkAnuncio: order.link_anuncio || '',
@@ -3115,6 +3099,8 @@ async function loadOrders() {
             
             orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
             
+            updateOSNotificationBell();
+
             showToast(`✅ ${orders.length} ordens carregadas`, 'success');
         } else {
             orders = [];
@@ -3198,6 +3184,7 @@ async function saveOrder() {
         photosTaken: 0,
         editsMade: 0,
         createdBy: currentUser.name,
+        user_notified: (responsibleName !== currentUser.name) ? false : true,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         // NOVOS CAMPOS
@@ -3234,7 +3221,7 @@ async function saveOrder() {
 
                 // NOTIFICAR O RESPONSÁVEL (SE NÃO FOR O PRÓPRIO CRIADOR)
                 if (responsibleName !== currentUser.name) {
-                    await notifyResponsibleNewOS(orderData, responsibleName);
+                await notifyResponsibleNewOS(orderData, responsibleName);
                 }
                 
                 // NOTIFICAR ADMIN SOBRE NOVA OS
@@ -3249,6 +3236,7 @@ async function saveOrder() {
             updateCounters();
             renderOrdersTable();
             clearForm();
+            updateOSNotificationBell();
             
         } else {
             showToast('❌ Erro ao salvar: ' + result.error, 'error');
@@ -3290,6 +3278,7 @@ async function saveOrderToSupabase(order) {
             skus: order.skus,
             fotos: fotosParaSalvar,
             qtd_fotos: order.photosTaken,
+            user_notified: order.user_notified !== undefined ? order.user_notified : false,
             qtd_edicoes: order.editsMade,
             // NOVOS CAMPOS PARA CONFERÊNCIA
             conferido: order.conferido || false,
@@ -3552,6 +3541,8 @@ function updateCounters() {
             if (tableResponsive) tableResponsive.classList.remove('hidden');
         }
     }
+
+    updateOSNotificationBell();   // <-- COLE AQUI
 }
 
 // ============================================
@@ -3825,6 +3816,8 @@ if (order.status === 'concluida') {
         
         osTableBody.appendChild(row);
     });
+
+    updateOSNotificationBell();
 }
 
 // ============================================
@@ -7103,6 +7096,79 @@ function gerarHTMLImpressaoMultipla(oss) {
         </body>
         </html>
     `;
+}
+
+// ============================================
+// NOTIFICAÇÃO DE NOVA OS PARA O RESPONSÁVEL
+// ============================================
+async function notifyResponsibleNewOS(orderData, responsibleName) {
+    if (responsibleName === currentUser.name) return;
+    const assunto = `📸 Nova OS atribuída a você - ${orderData.code}`;
+    const mensagem = `...`; // sua mensagem
+    await enviarNotificacaoEmail(responsibleName, assunto, mensagem);
+}
+
+// ============================================
+// ATUALIZAR O SINO DE NOTIFICAÇÕES DA OS
+// ============================================
+function updateOSNotificationBell() {
+    if (!currentUser) return;
+    const userOS = filterOrdersByUser(orders);
+    const unreadOS = userOS.filter(os =>
+        os.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) &&
+        os.user_notified === false
+    ).length;
+
+    const notificationBell = document.getElementById('notificationBell');
+    const notificationCount = document.getElementById('notificationCount');
+    if (notificationCount) {
+        if (unreadOS > 0) {
+            notificationCount.textContent = unreadOS;
+            notificationBell.style.display = 'block';
+        } else {
+            notificationBell.style.display = 'none';
+        }
+    }
+}
+
+// ============================================
+// MARCAR TODAS AS OS COMO LIDAS
+// ============================================
+async function marcarOSComoLidas() {
+    if (!currentUser || !supabaseClient) return;
+
+    const osParaMarcar = orders.filter(os =>
+        os.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) &&
+        os.user_notified === false
+    );
+
+    if (osParaMarcar.length === 0) return;
+
+    const ids = osParaMarcar.map(os => os.id);
+    try {
+        const { error } = await supabaseClient
+            .from('ordens_service')
+            .update({ user_notified: true })
+            .in('id', ids);
+
+        if (error) throw error;
+
+        osParaMarcar.forEach(os => os.user_notified = true);
+        updateOSNotificationBell();
+        showToast(`✅ Notificações marcadas como lidas`, 'success');
+    } catch (error) {
+        console.error('❌ Erro ao marcar OS como lidas:', error);
+    }
+}
+
+// ============================================
+// NOTIFICAR ANDRESSA SOBRE NOVO REEMBOLSO
+// ============================================
+async function notificarAndressaNovoReembolso(reembolsoData) {
+    const destinatario = 'Andressa';
+    const assunto = `💰 Novo reembolso para verificar - Venda ${reembolsoData.numero_venda}`;
+    const mensagem = `...`; // sua mensagem
+    await enviarNotificacaoEmail(destinatario, assunto, mensagem);
 }
 
 // ===== ADICIONAR BOTÕES NA INTERFACE =====
