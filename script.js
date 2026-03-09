@@ -7198,9 +7198,12 @@ async function marcarOSComoLidas() {
 // NOTIFICAR ANDRESSA SOBRE NOVO REEMBOLSO
 // ============================================
 async function notificarAndressaNovoReembolso(reembolsoData) {
-    const destinatario = 'Andressa';
+    const destinatario = 'Andressa Miotto';
     const assunto = `💰 Novo reembolso para verificar - Venda ${reembolsoData.numero_venda}`;
-    const mensagem = `...`; // sua mensagem
+    const mensagem = `
+    Novo reembolso para verificar!
+    Entre no sistema para mais detalhes.
+    `; // sua mensagem
     await enviarNotificacaoEmail(destinatario, assunto, mensagem);
 }
 
