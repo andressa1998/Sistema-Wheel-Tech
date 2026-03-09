@@ -123,6 +123,7 @@ let currentFilter = 'pendente';
 let editingOrderId = null;
 let currentOSForPrint = null;
 let currentPrintStyle = 'detailed';
+let emailsEnviados = new Set();
 
 // ===== VARIÁVEIS PARA REEMBOLSOS =====
 let reembolsos = [];
@@ -144,7 +145,7 @@ const EMAIL_CONFIG = {
 
 // Mapeamento de usuários para emails
 const USER_EMAILS = {
-    'Elaine': 'andmiotto1998@gmail.com',
+    'Elaine': 'elainecguidelli@gmail.com',
     'Arthur': 'arthur@empresa.com',
     'Laura': 'laura@empresa.com',
     'Ronald': 'ronald@empresa.com',
@@ -352,65 +353,53 @@ function initSupabase() {
 // FUNÇÃO PARA ENVIAR NOTIFICAÇÕES POR EMAIL
 // ============================================
 async function enviarNotificacaoEmail(recipientName, subject, message, osData = null) {
-    // Mapeamento de nomes para e-mails (certifique-se de que está completo)
-    const USER_EMAILS = {
-        'Elaine': 'andmiotto1998@gmail.com',
-        'Arthur': 'arthur@empresa.com',
-        'Laura': 'laura@empresa.com',
-        'Ronald': 'ronald@empresa.com',
-        'Bruna': 'bruna@empresa.com',
-        'Andressa': 'andmiotto1998@gmail.com',
-        'Thalyta': 'thalyta@empresa.com',
-        'Andressa Miotto': 'andmiotto1998@gmail.com'
-    };
 
     const recipientEmail = USER_EMAILS[recipientName];
+
     if (!recipientEmail) {
-        console.warn(`❌ Email não configurado para: ${recipientName}`);
+        console.warn(`Email não configurado para: ${recipientName}`);
         return false;
     }
 
-    console.log('📧 Preparando envio de e-mail:', {
-        destinatario: recipientName,
-        email: recipientEmail,
-        assunto: subject,
-        mensagem: message.substring(0, 100) + '...' // resumo
-    });
+    // CRIA IDENTIFICADOR ÚNICO DO EMAIL
+    const emailId = `${recipientEmail}-${subject}`;
 
-    // IDs corretos (substitua se necessário)
-    const serviceId = 'service_lqj60lq';   // seu Service ID
-    const templateId = 'template_hq8vrdn'; // seu Template ID
+    if (emailsEnviados.has(emailId)) {
+        console.warn("⚠️ Email duplicado bloqueado:", emailId);
+        return false;
+    }
+
+    emailsEnviados.add(emailId);
+
+    console.log("📧 Enviando email para:", recipientEmail);
 
     try {
+
         const response = await emailjs.send(
-    'service_lqj60lq',                     // Service ID
-    'template_hq8vrdn',                     // Template ID
-    {
-        to_email: recipientEmail,
-        subject: subject,
-        message: message
-    },
-    {
-        publicKey: 'pVfIt22rOprU6KOzq'      // Sua Public Key com I maiúsculo
-    }
-        );
-        console.log('✅ E-mail enviado com sucesso:', response);
-        showToast(`📧 Notificação enviada para ${recipientName}`, 'success');
-        return true;
-    } catch (error) {
-        console.error('❌ Erro ao enviar e-mail:');
-        console.error('Status:', error.status);
-        console.error('Mensagem:', error.text || error.message);
-        if (error.text) {
-            // Tenta extrair mais detalhes
-            try {
-                const details = JSON.parse(error.text);
-                console.error('Detalhes:', details);
-            } catch (e) {
-                console.error('Resposta bruta:', error.text);
+            "service_lqj60lq",
+            "template_hq8vrdn",
+            {
+                to_email: recipientEmail,
+                subject: subject,
+                message: message
+            },
+            {
+                publicKey: "GtDq2kuz4ng-u8gYR"
             }
-        }
-        showToast('❌ Erro ao enviar e-mail. Verifique o console.', 'error');
+        );
+
+        console.log("✅ Email enviado:", response);
+
+        showToast(`📧 Email enviado para ${recipientName}`, "success");
+
+        return true;
+
+    } catch (error) {
+
+        console.error("❌ Erro EmailJS:", error);
+
+        showToast("Erro ao enviar email", "error");
+
         return false;
     }
 }
@@ -5579,6 +5568,18 @@ function inicializarBotaoReembolsos() {
 
 // Chame esta função no DOMContentLoaded
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Sistema OS Fotografia iniciado!');
+
+    // INICIALIZAR EMAILJS
+    if (window.emailjs) {
+        emailjs.init({
+            publicKey: "GtDq2kuz4ng-u8gYR"
+        });
+        console.log("✅ EmailJS inicializado");
+    } else {
+        console.error("❌ EmailJS não carregado");
+    }
+
     console.log('🚀 Sistema OS Fotografia com Reembolsos iniciado!');
     
     generateOSCode();
