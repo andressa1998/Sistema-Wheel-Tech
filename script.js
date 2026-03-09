@@ -349,6 +349,21 @@ function initSupabase() {
     }
 }
 
+function montarMensagemOS(os) {
+    return `
+Nova Ordem de Serviço criada
+
+Número da OS: ${os.numero}
+Cliente: ${os.cliente}
+Equipamento: ${os.equipamento}
+Responsável: ${os.responsavel}
+Status: ${os.status}
+
+Acesse o sistema para mais detalhes.
+Sistema Wheel Tech
+`;
+}
+
 // ============================================
 // FUNÇÃO PARA ENVIAR NOTIFICAÇÕES POR EMAIL
 // ============================================
@@ -7105,7 +7120,24 @@ function gerarHTMLImpressaoMultipla(oss) {
 async function notifyResponsibleNewOS(orderData, responsibleName) {
     if (responsibleName === currentUser.name) return;
     const assunto = `📸 Nova OS atribuída a você - ${orderData.code}`;
-    const mensagem = `...`; // sua mensagem
+    const mensagem = `
+    
+    Olá ${responsibleName},
+
+    Uma nova Ordem de Serviço foi atribuída a você.
+
+    📄 Número da OS: ${orderData.code}
+    👤 Criado por: ${orderData.createdBy || currentUser.name}
+    🛠 Serviço: ${orderData.service || 'Não informado'}
+
+    📝 Observação:
+    ${orderData.observacao || 'Nenhuma observação'}
+
+    🚨 Devolução urgente: ${orderData.devolucaoUrgente ? 'SIM - PRIORIDADE' : 'Não'}
+
+    Acesse o sistema para visualizar todos os detalhes.
+
+    Sistema Wheel Tech`; // sua mensagem
     await enviarNotificacaoEmail(responsibleName, assunto, mensagem);
 }
 
