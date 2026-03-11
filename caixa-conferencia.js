@@ -818,22 +818,30 @@ async function atualizarTotaisCaixa() {
     caixaData = data;
 }
 
-// ===== FUNÇÃO PARA FECHAR CAIXA (OPERADOR) =====
+// ===== FUNÇÃO PARA FECHAR CAIXA (OPERADOR) - VERSÃO FINAL SEM INFORMAÇÕES =====
 window.fecharCaixaOperador = async function() {
     if (!caixaData) {
         showToast('Caixa não encontrado', 'error');
         return;
     }
-    
+
     // Verificar se já está fechado
     if (caixaData.fechado_operador) {
         showToast('Caixa já está fechado', 'warning');
         return;
     }
+
+    // ---------- VALIDAR DIA DA SEMANA ----------
+    const dataSelecionada = new Date(dataCaixaAtual + 'T12:00:00');
+    const diaSemana = dataSelecionada.getDay();
     
-    let totalEntradas = 0;
-    let totalSaidas = 0;
-    
+    if (diaSemana === 0 || diaSemana === 6) {
+        showToast('⛔ Fechamento de caixa não permitido em sábados e domingos', 'warning');
+        return;
+    }
+
+    // Calcular saldo esperado internamente (não exibido)
+    let totalEntradas = 0, totalSaidas = 0;
     lancamentosCaixa.forEach(l => {
         if (l.tipo === 'entrada') totalEntradas += parseFloat(l.valor);
         else totalSaidas += parseFloat(l.valor);
@@ -841,91 +849,63 @@ window.fecharCaixaOperador = async function() {
     
     const saldoEsperado = totalEntradas - totalSaidas;
     const saldoComAnterior = (caixaData.saldo_anterior || 0) + saldoEsperado;
-    
-    const valorReal = prompt(
+
+    // ---------- PROMPT SIMPLES: APENAS SOLICITA O VALOR REAL ----------
+    const valorRealStr = prompt(
         '💰 FECHAMENTO DO CAIXA\n\n' +
-        `Saldo anterior: R$ ${(caixaData.saldo_anterior || 0).toFixed(2)}\n` +
-        `Entradas: R$ ${totalEntradas.toFixed(2)}\n` +
-        `Saídas: R$ ${totalSaidas.toFixed(2)}\n` +
-        `Saldo esperado: R$ ${saldoComAnterior.toFixed(2)}\n\n` +
-        'Valor real no caixa:',
-        saldoComAnterior.toFixed(2).replace('.', ',')
+        'Digite o valor real em dinheiro que está no caixa:',
+        '' // Campo vazio, sem valor padrão
     );
     
-    if (valorReal === null) return;
+    if (valorRealStr === null) return;
+
+    // Limpar formatação (vírgula, pontos, espaços)
+    const valorRealNum = parseFloat(valorRealStr.replace(',', '.').replace(/[^\d.-]/g, ''));
     
-    const valorRealNum = parseFloat(valorReal.replace(',', '.'));
     if (isNaN(valorRealNum)) {
-        showToast('Valor inválido', 'error');
+        showToast('❌ Valor inválido. Digite apenas números.', 'error');
         return;
     }
-    
+
+    // ---------- VERIFICAR DIVERGÊNCIA ----------
     const diferenca = valorRealNum - saldoComAnterior;
     const isDivergente = Math.abs(diferenca) > 0.01;
-    
+
+    if (isDivergente) {
+        showToast(`⚠️ DIVERGÊNCIA DETECTADA! Diferença de R$ ${diferenca.toFixed(2)}. Corrija os lançamentos antes de fechar.`, 'error');
+        return; // Impede fechamento
+    }
+
+    // ---------- FECHAR CAIXA ----------
     const btn = document.getElementById('fecharCaixaBtn');
     const originalText = btn.innerHTML;
     btn.innerHTML = '<span class="spinner"></span> Processando...';
     btn.disabled = true;
-    
+
     try {
-        if (isDivergente) {
-            if (confirm(
-                `⚠️ DIVERGÊNCIA!\n\n` +
-                `Esperado: R$ ${saldoComAnterior.toFixed(2)}\n` +
-                `Real: R$ ${valorRealNum.toFixed(2)}\n` +
-                `Diferença: R$ ${diferenca.toFixed(2)}\n\n` +
-                `Registrar divergência e aguardar admin?`
-            )) {
-                const { error } = await supabaseClient
-                    .from('caixa')
-                    .update({
-                        fechado_operador: true,
-                        fechado_por_operador: currentUser.name,
-                        data_fechamento_operador: new Date().toISOString(),
-                        valor_real_operador: valorRealNum,
-                        tem_divergencia: true,
-                        diferenca: diferenca,
-                        divergencia_registrada_por: currentUser.name,
-                        data_divergencia: new Date().toISOString()
-                    })
-                    .eq('data', dataCaixaAtual);
-                
-                if (error) throw error;
-                
-                caixaData.fechado_operador = true;
-                caixaData.fechado_por_operador = currentUser.name;
-                caixaData.tem_divergencia = true;
-                caixaData.diferenca = diferenca;
-                
-                atualizarPainelCaixa();
-                showToast('⚠️ Divergência registrada', 'warning');
-            }
-        } else {
-            const { error } = await supabaseClient
-                .from('caixa')
-                .update({
-                    fechado_operador: true,
-                    fechado_por_operador: currentUser.name,
-                    data_fechamento_operador: new Date().toISOString(),
-                    valor_real_operador: valorRealNum,
-                    tem_divergencia: false,
-                    diferenca: 0
-                })
-                .eq('data', dataCaixaAtual);
-            
-            if (error) throw error;
-            
-            caixaData.fechado_operador = true;
-            caixaData.fechado_por_operador = currentUser.name;
-            
-            atualizarPainelCaixa();
-            showToast('🔒 Caixa fechado com sucesso!', 'success');
-        }
-        
-        // Recarregar histórico
+        const { error } = await supabaseClient
+            .from('caixa')
+            .update({
+                fechado_operador: true,
+                fechado_por_operador: currentUser.name,
+                data_fechamento_operador: new Date().toISOString(),
+                valor_real_operador: valorRealNum,
+                tem_divergencia: false,
+                diferenca: 0
+            })
+            .eq('data', dataCaixaAtual);
+
+        if (error) throw error;
+
+        caixaData.fechado_operador = true;
+        caixaData.fechado_por_operador = currentUser.name;
+        caixaData.tem_divergencia = false;
+        caixaData.diferenca = 0;
+
+        atualizarPainelCaixa();
+        showToast('🔒 Caixa fechado com sucesso!', 'success');
         carregarHistoricoDias();
-        
+
     } catch (error) {
         console.error('❌ Erro ao fechar caixa:', error);
         showToast('❌ Erro ao fechar caixa: ' + error.message, 'error');
