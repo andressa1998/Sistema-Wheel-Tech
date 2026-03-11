@@ -6468,26 +6468,56 @@ window.buscarAvaliacoes = async function() {
 // Função que faz a chamada à API via proxy (igual às vendas)
 async function buscarReviewsML(itemId) {
     try {
-        // Obter token válido (reutiliza a função do ml_token_manager)
         const tokenData = await getValidToken(); // retorna { access_token, refresh_token, expires_at }
         if (!tokenData || !tokenData.access_token) {
             throw new Error('Token não disponível');
         }
-        
         const token = tokenData.access_token;
-        
-        // Montar URL da API do ML
-        const apiUrl = `https://api.mercadolibre.com/reviews/item/${itemId}`;
-        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(apiUrl)}&token=${encodeURIComponent(token)}`;
-        
-        const response = await fetch(proxyUrl);
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
+
+        let allReviews = [];
+        let offset = 0;
+        const limit = 50; // máximo permitido pela API do ML (pode ser 50)
+        let total = null;
+        let firstResponse = null;
+
+        while (total === null || offset < total) {
+            const apiUrl = `https://api.mercadolibre.com/reviews/item/${itemId}?limit=${limit}&offset=${offset}`;
+            const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(apiUrl)}&token=${encodeURIComponent(token)}`;
+
+            const response = await fetch(proxyUrl);
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
+
+            const data = await response.json();
+
+            if (!firstResponse) {
+                firstResponse = data; // guarda a primeira resposta para os resumos (rating_levels, rating_average)
+                total = data.paging?.total || 0;
+            }
+
+            if (data.reviews && data.reviews.length > 0) {
+                allReviews = allReviews.concat(data.reviews);
+            }
+
+            offset += limit;
         }
-        
-        const data = await response.json();
-        return { success: true, data };
+
+        // Monta o objeto final com os resumos da primeira página + todas as avaliações
+        const resultadoFinal = {
+            rating_average: firstResponse.rating_average,
+            rating_levels: firstResponse.rating_levels,
+            paging: {
+                total: allReviews.length,
+                offset: 0,
+                limit: allReviews.length
+            },
+            reviews: allReviews
+        };
+
+        return { success: true, data: resultadoFinal };
+
     } catch (error) {
         console.error('❌ Erro em buscarReviewsML:', error);
         return { success: false, error: error.message };
