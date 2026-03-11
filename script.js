@@ -2955,6 +2955,7 @@ function handleLogout() {
         if (mainSystem) mainSystem.classList.add('hidden');
         if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
         if (loginScreen) loginScreen.classList.remove('hidden');
+        if (folgasSystem) folgasSystem.classList.add('hidden');
         
         // Fechar modais abertos
         closeAllModals();
@@ -5627,6 +5628,7 @@ window.voltarParaOS = function() {
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (mainSystem) mainSystem.classList.remove('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
+    if (folgasSystem) folgasSystem.classList.add('hidden');
     showToast('Voltando para Sistema OS', 'info');
 };
 
@@ -6100,6 +6102,7 @@ window.abrirSistemaVendas = async function() {
     if (mainSystem) mainSystem.classList.add('hidden');
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (caixaSystem) caixaSystem.classList.add('hidden');
+    if (folgasSystem) folgasSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -6297,6 +6300,7 @@ window.abrirSistemaReembolsos = function() {
     if (caixaSystem) caixaSystem.classList.add('hidden');
     if (salesSystem) salesSystem.classList.add('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
+    if (folgasSystem) folgasSystem.classList.add('hidden');
     
     // Mostrar sistema de reembolsos
     const reembolsosSystem = document.getElementById('reembolsosSystem');
@@ -6338,6 +6342,7 @@ window.abrirSistemaCaixa = function() {
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (salesSystem) salesSystem.classList.add('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
+    if (folgasSystem) folgasSystem.classList.add('hidden');
     
     // Mostrar sistema de caixa
     const caixaSystem = document.getElementById('caixaSystem');
@@ -6372,6 +6377,7 @@ window.voltarParaOS = function() {
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (caixaSystem) caixaSystem.classList.add('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
+    if (folgasSystem) folgasSystem.classList.add('hidden');
     
     // Mostrar sistema principal
     if (mainSystem) mainSystem.classList.remove('hidden');
@@ -6402,6 +6408,7 @@ window.abrirSistemaReviews = function() {
     if (salesSystem) salesSystem.classList.add('hidden');
     if (caixaSystem) caixaSystem.classList.add('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
+    if (folgasSystem) folgasSystem.classList.add('hidden');
     
     // Mostrar sistema de avaliações
     if (reviewsSystem) reviewsSystem.classList.remove('hidden');
