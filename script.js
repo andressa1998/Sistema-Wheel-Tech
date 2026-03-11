@@ -5625,6 +5625,7 @@ document.addEventListener('DOMContentLoaded', function() {
 window.voltarParaOS = function() {
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (mainSystem) mainSystem.classList.remove('hidden');
+    if (reviewsSystem) reviewsSystem.classList.add('hidden');
     showToast('Voltando para Sistema OS', 'info');
 };
 
@@ -6374,7 +6375,192 @@ window.voltarParaOS = function() {
     showToast('Voltando para Sistema de Ordem de Serviço', 'info');
 };
 
-// Adicione esta função no script.js
+// ============================================
+// SISTEMA DE AVALIAÇÕES ML
+// ============================================
+
+// Elementos da aba de avaliações
+const reviewsSystem = document.getElementById('reviewsSystem');
+const reviewsBtn = document.getElementById('reviewsBtn');
+
+// Função para abrir o sistema de avaliações
+window.abrirSistemaReviews = function() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
+    }
+    
+    console.log('⭐ Iniciando sistema de avaliações...');
+    
+    // Esconder outros sistemas
+    if (mainSystem) mainSystem.classList.add('hidden');
+    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
+    if (salesSystem) salesSystem.classList.add('hidden');
+    if (caixaSystem) caixaSystem.classList.add('hidden');
+    
+    // Mostrar sistema de avaliações
+    if (reviewsSystem) reviewsSystem.classList.remove('hidden');
+    
+    // Atualizar informações do usuário
+    document.getElementById('reviewsUserName').textContent = currentUser.name;
+    document.getElementById('reviewsUserAvatar').textContent = currentUser.avatar;
+    document.getElementById('reviewsUserRole').textContent = currentUser.role;
+    
+    // Limpar campos anteriores
+    document.getElementById('mlbInput').value = '';
+    document.getElementById('reviewsResultCard').classList.add('hidden');
+    
+    showToast('⭐ Sistema de Avaliações carregado', 'info');
+};
+
+// Vincular evento do botão no cabeçalho
+if (reviewsBtn) {
+    reviewsBtn.addEventListener('click', abrirSistemaReviews);
+}
+
+// Função principal para buscar avaliações
+window.buscarAvaliacoes = async function() {
+    const mlbInput = document.getElementById('mlbInput').value.trim();
+    if (!mlbInput) {
+        showToast('Digite um MLB válido', 'warning');
+        return;
+    }
+    
+    // Se o MLB não começar com "MLB", adiciona automaticamente
+    let itemId = mlbInput;
+    if (!itemId.toUpperCase().startsWith('MLB')) {
+        itemId = 'MLB' + itemId;
+    }
+    
+    const btn = document.querySelector('button[onclick="buscarAvaliacoes()"]');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Buscando...';
+    btn.disabled = true;
+    
+    try {
+        const resultado = await buscarReviewsML(itemId);
+        if (resultado && resultado.success) {
+            renderizarReviews(resultado.data);
+        } else {
+            showToast('Erro ao buscar avaliações: ' + (resultado?.error || 'Desconhecido'), 'error');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao buscar avaliações:', error);
+        showToast('Erro ao buscar avaliações: ' + error.message, 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+};
+
+// Função que faz a chamada à API via proxy (igual às vendas)
+async function buscarReviewsML(itemId) {
+    try {
+        // Obter token válido (reutiliza a função do ml_token_manager)
+        const tokenData = await getValidToken(); // retorna { access_token, refresh_token, expires_at }
+        if (!tokenData || !tokenData.access_token) {
+            throw new Error('Token não disponível');
+        }
+        
+        const token = tokenData.access_token;
+        
+        // Montar URL da API do ML
+        const apiUrl = `https://api.mercadolibre.com/reviews/item/${itemId}`;
+        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(apiUrl)}&token=${encodeURIComponent(token)}`;
+        
+        const response = await fetch(proxyUrl);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        return { success: true, data };
+    } catch (error) {
+        console.error('❌ Erro em buscarReviewsML:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Renderizar as avaliações na tela
+function renderizarReviews(data) {
+    const card = document.getElementById('reviewsResultCard');
+    card.classList.remove('hidden');
+    
+    // Atualizar total de avaliações
+    const totalReviews = data.reviews ? data.reviews.length : 0;
+    document.getElementById('totalReviews').textContent = totalReviews + ' avaliações';
+    
+    // Resumo das estrelas
+    const ratingAverage = data.rating_average || 0;
+    const ratingLevels = data.rating_levels || {
+        one_star: 0,
+        two_star: 0,
+        three_star: 0,
+        four_star: 0,
+        five_star: 0
+    };
+    
+    let summaryHtml = `
+        <div class="d-flex align-items-center mb-3">
+            <h3 class="mb-0 mr-3">Média: ${ratingAverage.toFixed(1)} <i class="fas fa-star" style="color: #FFD700;"></i></h3>
+        </div>
+        <div class="row">
+            <div class="col-md-6">
+                <div><i class="fas fa-star" style="color: #FFD700;"></i> 5 estrelas: ${ratingLevels.five_star}</div>
+                <div><i class="fas fa-star" style="color: #FFD700;"></i> 4 estrelas: ${ratingLevels.four_star}</div>
+                <div><i class="fas fa-star" style="color: #FFD700;"></i> 3 estrelas: ${ratingLevels.three_star}</div>
+            </div>
+            <div class="col-md-6">
+                <div><i class="fas fa-star" style="color: #FFD700;"></i> 2 estrelas: ${ratingLevels.two_star}</div>
+                <div><i class="fas fa-star" style="color: #FFD700;"></i> 1 estrela: ${ratingLevels.one_star}</div>
+            </div>
+        </div>
+    `;
+    document.getElementById('reviewsSummary').innerHTML = summaryHtml;
+    
+    // Preencher tabela
+    const tbody = document.getElementById('reviewsTableBody');
+    tbody.innerHTML = '';
+    
+    if (!data.reviews || data.reviews.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center py-5">
+                    <i class="fas fa-star fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                    <h4 style="color: #6c757d;">Nenhuma avaliação encontrada</h4>
+                    <p style="color: #6c757d;">Este anúncio ainda não possui avaliações.</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    data.reviews.forEach(review => {
+        const row = document.createElement('tr');
+        
+        // Formatar datas
+        const dataCriacao = new Date(review.date_created).toLocaleDateString('pt-BR');
+        const dataCompra = review.buying_date ? new Date(review.buying_date).toLocaleDateString('pt-BR') : 'Não informada';
+        
+        // Estrelas
+        let starsHtml = '';
+        for (let i = 1; i <= 5; i++) {
+            starsHtml += i <= review.rate ? 
+                '<i class="fas fa-star" style="color: #FFD700;"></i>' : 
+                '<i class="far fa-star" style="color: #ddd;"></i>';
+        }
+        
+        row.innerHTML = `
+            <td>${dataCriacao}</td>
+            <td>${starsHtml}</td>
+            <td><strong>${review.title || 'Sem título'}</strong></td>
+            <td>${review.content || ''}</td>
+            <td>${dataCompra}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
 
 window.abrirSistemaVendas = async function() {
     if (!currentUser) {

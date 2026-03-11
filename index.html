@@ -1412,6 +1412,9 @@
             <button id="vendasBtn" class="btn btn-success btn-sm">
                 <i class="fas fa-store"></i> Vendas ML
             </button>   
+            <button id="reviewsBtn" class="btn btn-warning btn-sm">
+            <i class="fas fa-star"></i> Avaliações
+            </button>
             <button id="reembolsosBtn" class="btn btn-success btn-sm">
                 <i class="fas fa-exchange-alt"></i> Reembolsos
             </button>
@@ -3066,6 +3069,97 @@
             </div>
         </div>
     </div>
+
+    <!-- ===== SISTEMA DE AVALIAÇÕES ML ===== -->
+<div id="reviewsSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-star" style="color: #FFD700;"></i>
+                    Verificar Avaliações Mercado Livre
+                </h1>
+                
+                <div class="user-info">
+                    <div class="user-avatar" id="reviewsUserAvatar">A</div>
+                    <div>
+                        <div style="font-weight: 600;" id="reviewsUserName">Usuário</div>
+                        <div style="font-size: 12px; color: #6c757d;" id="reviewsUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
+                                <i class="fas fa-arrow-left"></i> Voltar para OS
+                            </button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-sign-out-alt"></i> Sair
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+    
+    <div class="container">
+        <!-- Card de busca -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-search"></i> Consultar Avaliações
+                </h2>
+            </div>
+            
+            <div class="d-flex gap-3 align-items-end">
+                <div style="flex: 1;">
+                    <label for="mlbInput"><i class="fas fa-tag"></i> MLB do Anúncio</label>
+                    <input type="text" id="mlbInput" class="form-control" placeholder="Ex: MLB1234567890">
+                    <small class="text-muted">Digite o código MLB do anúncio (sem espaços)</small>
+                </div>
+                <div>
+                    <button class="btn btn-primary" onclick="buscarAvaliacoes()">
+                        <i class="fas fa-search"></i> Buscar Avaliações
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card de resultados -->
+        <div id="reviewsResultCard" class="card hidden">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-star"></i> Resultado das Avaliações
+                </h2>
+                <div>
+                    <span class="badge badge-primary" id="totalReviews">0 avaliações</span>
+                </div>
+            </div>
+            
+            <div id="reviewsSummary" class="mb-4 p-3 bg-light rounded"></div>
+            
+            <div class="table-responsive">
+                <table class="table" id="reviewsTable">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Estrelas</th>
+                            <th>Título</th>
+                            <th>Comentário</th>
+                            <th>Data da Compra</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reviewsTableBody">
+                        <tr>
+                            <td colspan="5" class="text-center py-5">
+                                <i class="fas fa-star fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                                <h4 style="color: #6c757d;">Nenhuma avaliação encontrada</h4>
+                                <p style="color: #6c757d;">Digite um MLB válido para buscar as avaliações.</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
