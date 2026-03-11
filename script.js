@@ -6295,6 +6295,7 @@ window.abrirSistemaReembolsos = function() {
     if (mainSystem) mainSystem.classList.add('hidden');
     if (caixaSystem) caixaSystem.classList.add('hidden');
     if (salesSystem) salesSystem.classList.add('hidden');
+    if (reviewsSystem) reviewsSystem.classList.add('hidden');
     
     // Mostrar sistema de reembolsos
     const reembolsosSystem = document.getElementById('reembolsosSystem');
@@ -6335,6 +6336,7 @@ window.abrirSistemaCaixa = function() {
     if (mainSystem) mainSystem.classList.add('hidden');
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (salesSystem) salesSystem.classList.add('hidden');
+    if (reviewsSystem) reviewsSystem.classList.add('hidden');
     
     // Mostrar sistema de caixa
     const caixaSystem = document.getElementById('caixaSystem');
@@ -6368,6 +6370,7 @@ window.voltarParaOS = function() {
     if (salesSystem) salesSystem.classList.add('hidden');
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (caixaSystem) caixaSystem.classList.add('hidden');
+    if (reviewsSystem) reviewsSystem.classList.add('hidden');
     
     // Mostrar sistema principal
     if (mainSystem) mainSystem.classList.remove('hidden');
@@ -6393,10 +6396,11 @@ window.abrirSistemaReviews = function() {
     console.log('⭐ Iniciando sistema de avaliações...');
     
     // Esconder outros sistemas
-    if (mainSystem) mainSystem.classList.add('hidden');
+     if (mainSystem) mainSystem.classList.add('hidden');
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (salesSystem) salesSystem.classList.add('hidden');
     if (caixaSystem) caixaSystem.classList.add('hidden');
+    if (reviewsSystem) reviewsSystem.classList.add('hidden');
     
     // Mostrar sistema de avaliações
     if (reviewsSystem) reviewsSystem.classList.remove('hidden');
@@ -6518,6 +6522,11 @@ function renderizarReviews(data) {
         </div>
     `;
     document.getElementById('reviewsSummary').innerHTML = summaryHtml;
+
+    // Ordenar avaliações da mais recente para a mais antiga
+    if (data.reviews && data.reviews.length > 0) {
+        data.reviews.sort((a, b) => new Date(b.date_created) - new Date(a.date_created));
+    }
     
     // Preencher tabela
     const tbody = document.getElementById('reviewsTableBody');
