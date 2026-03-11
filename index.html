@@ -1644,6 +1644,9 @@
             <button onclick="abrirSistemaReembolsos(); fecharSidebar()">
                 <i class="fas fa-exchange-alt"></i> Reembolsos
             </button>
+            <button onclick="abrirSistemaFolgas(); fecharSidebar()">
+            <i class="fas fa-calendar-alt"></i> Calendário
+            </button>
         </div>
         <div class="sidebar-footer">
             <button onclick="handleLogout()">
@@ -2054,7 +2057,7 @@
                             <div style="font-size: 12px; color: #6c757d;" id="salesUserRole"></div>
                             <div class="d-flex gap-2 mt-2">
                                 <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
-                                    <i class="fas fa-arrow-left"></i> Voltar para OS
+                                    <i class="fas fa-arrow-left"></i> Voltar
                                 </button>
                                 <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
                                     <i class="fas fa-sign-out-alt"></i> Sair
@@ -2336,7 +2339,7 @@
                             <div style="font-size: 12px; color: #6c757d;" id="reembolsoUserRole"></div>
                             <div class="d-flex gap-2 mt-2">
                                 <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
-                                    <i class="fas fa-arrow-left"></i> Voltar para OS
+                                    <i class="fas fa-arrow-left"></i> Voltar
                                 </button>
                                 <button onclick="abrirSistemaVendas()" class="btn btn-success btn-sm">
                                     <i class="fas fa-store"></i> Vendas ML
@@ -3342,7 +3345,7 @@
                         <div style="font-size: 12px; color: #6c757d;" id="reviewsUserRole"></div>
                         <div class="d-flex gap-2 mt-2">
                             <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
-                                <i class="fas fa-arrow-left"></i> Voltar para OS
+                                <i class="fas fa-arrow-left"></i> Voltar
                             </button>
                             <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
                                 <i class="fas fa-sign-out-alt"></i> Sair
@@ -3415,13 +3418,145 @@
         </div>
     </div>
 </div>
+
+<!-- ===== SISTEMA DE CALENDÁRIO DE FOLGAS ===== -->
+<div id="folgasSystem" class="hidden">
+    <header class="main-header">
+        <div class="header-content">
+            <div class="header-left">
+                <!-- Botão de menu removido -->
+                <div class="header-title">
+                    <i class="fas fa-calendar-alt" style="color: #FF9800;"></i>
+                    <span>Calendário de Folgas</span>
+                </div>
+            </div>
+            <div class="user-info">
+                <div class="user-avatar" id="folgasUserAvatar">U</div>
+                <div>
+                    <div style="font-weight: 600;" id="folgasUserName">Usuário</div>
+                    <div style="font-size: 12px; color: #6c757d;" id="folgasUserRole"></div>
+                    <div class="d-flex gap-2 mt-2">
+                        <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
+                            <i class="fas fa-arrow-left"></i> Voltar
+                        </button>
+                        <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
+                            <i class="fas fa-sign-out-alt"></i> Sair
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Cabeçalho com botões de ação -->
+        <div class="card mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <h3 style="margin:0;"><i class="fas fa-calendar-plus"></i> Gerenciar Folgas</h3>
+                <div>
+                    <button class="btn btn-success" onclick="abrirModalNovaFolga()">
+                        <i class="fas fa-plus"></i> Nova Folga
+                    </button>
+                    <button class="btn btn-primary" onclick="carregarFolgas()">
+                        <i class="fas fa-sync-alt"></i> Atualizar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Calendário -->
+        <div class="card">
+            <div id="folgasCalendario" style="height: 600px;"></div>
+        </div>
+
+        <!-- Painel de solicitações pendentes (visível apenas para admin) -->
+        <div id="painelPendentes" class="card mt-4 hidden">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-clock"></i> Solicitações Pendentes
+                </h2>
+                <span class="badge badge-warning" id="contadorPendentes">0</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table" id="tabelaSolicitacoes">
+                    <thead>
+                        <tr>
+                            <th>Usuário</th>
+                            <th>Data</th>
+                            <th>Tipo</th>
+                            <th>Motivo</th>
+                            <th>Solicitado em</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="solicitacoesBody">
+                        <tr>
+                            <td colspan="6" class="text-center py-4">
+                                Nenhuma solicitação pendente.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para nova folga -->
+<div id="modalNovaFolga" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="fas fa-calendar-plus"></i> Solicitar Folga</h3>
+            <button onclick="fecharModalNovaFolga()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+        </div>
+        <form id="formNovaFolga">
+            <div class="form-group">
+                <label for="folgaData">Data *</label>
+                <input type="date" id="folgaData" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="folgaTipo">Tipo *</label>
+                <select id="folgaTipo" class="form-control" required>
+                    <option value="dia_inteiro">Dia inteiro</option>
+                    <option value="manha">Manhã</option>
+                    <option value="tarde">Tarde</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="folgaMotivo">Motivo (opcional)</label>
+                <textarea id="folgaMotivo" class="form-control" rows="2" placeholder="Descreva o motivo..."></textarea>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalNovaFolga()">Cancelar</button>
+                <button type="submit" class="btn btn-success">Solicitar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal para aprovação/rejeição (admin) -->
+<div id="modalAprovacao" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="fas fa-check-circle"></i> Aprovar/Rejeitar Folga</h3>
+            <button onclick="fecharModalAprovacao()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+        </div>
+        <div id="detalhesSolicitacao"></div>
+        <div class="d-flex justify-content-end gap-2 mt-4">
+            <button class="btn btn-danger" onclick="rejeitarSolicitacao()">Rejeitar</button>
+            <button class="btn btn-success" onclick="aprovarSolicitacao()">Aprovar</button>
+        </div>
+    </div>
+</div>
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="script.js"></script>
+    <script src="folgas.js"></script>
     <script src="ml_token_manager.js"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js"></script>
+    
 
     <script>
         // Funções para controle da sidebar

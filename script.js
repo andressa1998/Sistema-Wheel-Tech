@@ -340,6 +340,7 @@ function initSupabase() {
     try {
         if (window.supabase) {
             supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            window.supabaseClient = supabaseClient;
             console.log('✅ Supabase inicializado');
         } else {
             console.error('❌ Biblioteca Supabase não carregada');
