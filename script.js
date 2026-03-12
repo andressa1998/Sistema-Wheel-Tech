@@ -6574,7 +6574,7 @@ function renderizarReviews(data) {
         tbody.innerHTML = `
             <tr>
                 <td colspan="5" class="text-center py-5">
-                    <i class="fas fa-star fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                    <i class="fas fa-star fa-3x mb-3" style="color: #5d666d; opacity: 0.5;"></i>
                     <h4 style="color: #6c757d;">Nenhuma avaliação encontrada</h4>
                     <p style="color: #6c757d;">Este anúncio ainda não possui avaliações.</p>
                 </td>
