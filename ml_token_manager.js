@@ -1099,6 +1099,41 @@ function showTokenError(msg) {
 }
 
 // ============================================
+// BUSCAR FOTOS DO ANÚNCIO (ML)
+// ============================================
+async function buscarFotosAnuncio(itemId) {
+    if (!itemId) return [];
+    const tokenData = await getValidToken();
+    if (!tokenData?.access_token) {
+        console.error('❌ Token inválido para buscar fotos');
+        return [];
+    }
+    try {
+        const url = `https://api.mercadolibre.com/items/${itemId}`;
+        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(tokenData.access_token)}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) {
+            console.warn(`⚠️ Erro ${response.status} ao buscar item ${itemId}`);
+            return [];
+        }
+        const item = await response.json();
+        if (item.pictures && Array.isArray(item.pictures)) {
+            return item.pictures.map(pic => ({
+                url: pic.secure_url || pic.url,
+                thumbnail: pic.secure_url || pic.url
+            }));
+        }
+        return [];
+    } catch (error) {
+        console.error(`❌ Erro ao buscar fotos do item ${itemId}:`, error);
+        return [];
+    }
+}
+
+// Exportar para uso em outros módulos
+window.buscarFotosAnuncio = buscarFotosAnuncio;
+
+// ============================================
 // DEBUG
 // ============================================
 window.verificarTokenML = async function() {

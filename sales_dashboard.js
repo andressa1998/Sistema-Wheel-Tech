@@ -21,6 +21,9 @@ document.addEventListener('DOMContentLoaded', function() {
     carregarVendasDoBanco();
     configurarEventListeners();
     iniciarAutoSincronizacao();
+    setTimeout(() => {
+    atualizarFotosAnuncioEmLote().catch(console.error);
+}, 5000); // 5 segundos após carregar a página
 });
 
 // ============================================
@@ -212,6 +215,15 @@ async function sincronizarVendasML() {
         btn.innerHTML = '<i class="fas fa-sync-alt"></i> Sincronizar Agora';
         btn.disabled = false;
     }
+
+    // Após carregar vendas do banco
+await carregarVendasDoBanco();
+
+// Dispara atualização de fotos em segundo plano (não bloqueante)
+setTimeout(() => {
+    atualizarFotosAnuncioEmLote().catch(console.error);
+}, 1000);
+
 }
 
 // ============================================
@@ -2625,6 +2637,69 @@ function mostrarToast(mensagem, tipo = 'info') {
         setTimeout(() => toast.remove(), 3000);
     }
 }
+
+// ============================================
+// ATUALIZAR FOTOS DOS ANÚNCIOS EM LOTE
+// ============================================
+async function atualizarFotosAnuncioEmLote() {
+    console.log('🖼️ Verificando vendas sem fotos do anúncio...');
+    
+    // Busca vendas que têm mlb_id e fotos_anuncio vazio ou null
+    const { data: vendas, error } = await supabaseClient
+        .from('vendas_ml')
+        .select('id_venda_ml, mlb_id')
+        .not('mlb_id', 'is', null)
+        .or('fotos_anuncio.is.null,fotos_anuncio.eq.[]');
+    
+    if (error) {
+        console.error('Erro ao buscar vendas sem fotos:', error);
+        return;
+    }
+    
+    if (!vendas || vendas.length === 0) {
+        console.log('✅ Nenhuma venda precisa de atualização de fotos.');
+        return;
+    }
+    
+    console.log(`🔍 Encontradas ${vendas.length} vendas para atualizar fotos.`);
+    
+    let atualizadas = 0;
+    for (const venda of vendas) {
+        if (!venda.mlb_id) continue;
+        
+        // Aguarda um pouco para não sobrecarregar a API
+        await new Promise(resolve => setTimeout(resolve, 600));
+        
+        const fotos = await window.buscarFotosAnuncio(venda.mlb_id);
+        if (fotos.length > 0) {
+            const { error: updateError } = await supabaseClient
+                .from('vendas_ml')
+                .update({ fotos_anuncio: fotos })
+                .eq('id_venda_ml', venda.id_venda_ml);
+            
+            if (!updateError) {
+                atualizadas++;
+                console.log(`✅ Fotos salvas para ${venda.id_venda_ml}`);
+            } else {
+                console.error(`Erro ao salvar fotos para ${venda.id_venda_ml}:`, updateError);
+            }
+        } else {
+            // Se não há fotos, marca como array vazio para não tentar de novo
+            await supabaseClient
+                .from('vendas_ml')
+                .update({ fotos_anuncio: [] })
+                .eq('id_venda_ml', venda.id_venda_ml);
+        }
+    }
+    
+    console.log(`🏁 Atualização concluída: ${atualizadas} vendas com fotos salvas.`);
+    
+    // Recarrega as vendas na tela para exibir as novas miniaturas
+    await carregarVendasDoBanco();
+}
+
+// Exportar
+window.atualizarFotosAnuncioEmLote = atualizarFotosAnuncioEmLote;
 
 // ============================================
 // EXPORTAÇÕES GLOBAIS
