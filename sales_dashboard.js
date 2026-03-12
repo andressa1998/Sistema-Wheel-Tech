@@ -1176,17 +1176,6 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
         acoesHtml += `<button onclick="verDetalhesVenda('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-info" title="Ver detalhes">
                         <i class="fas fa-eye"></i>
                       </button>`;
-        
-        // Botão de fotos (se houver)
-        if (venda.fotos && venda.fotos.length > 0) {
-            acoesHtml += `<button onclick="verFotosVenda('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-primary" title="Ver ${venda.fotos.length} foto(s)">
-                            <i class="fas fa-images"></i> ${venda.fotos.length}
-                          </button>`;
-        } else {
-            acoesHtml += `<button onclick="abrirUploadFotos('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-outline-primary" title="Adicionar fotos">
-                            <i class="fas fa-camera"></i>
-                          </button>`;
-        }
 
         // ===== BOTÃO PARA REENVIAR DIVERGENTE (QUALQUER USUÁRIO) =====
         if (venda.divergente) {
@@ -2249,69 +2238,6 @@ async function salvarObservacoesVenda(idVenda) {
 
 function fecharDetalhesVenda() {
     document.getElementById('vendaDetalhesModal').classList.add('hidden');
-}
-
-// ============================================
-// FUNÇÕES PARA FOTOS
-// ============================================
-async function abrirUploadFotos(idVenda) {
-    const venda = vendasML.find(v => v.id_venda_ml === idVenda);
-    if (!venda) return;
-    
-    const modalHtml = `
-        <div id="modalUploadFotosVenda" class="modal" style="display: flex; z-index: 10000;">
-            <div class="modal-content" style="max-width: 600px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h3><i class="fas fa-camera"></i> Fotos da Venda</h3>
-                    <button onclick="fecharUploadFotos()" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
-                </div>
-                
-                <p><strong>Venda:</strong> ${venda.id_venda_ml}</p>
-                <p><strong>SKU:</strong> ${venda.sku}</p>
-                
-                <div style="border: 2px dashed #dee2e6; border-radius: 8px; padding: 20px; text-align: center; background: #f8f9fa; cursor: pointer; margin: 20px 0;" 
-                     id="uploadAreaVenda" onclick="document.getElementById('fotosVendaInput').click()">
-                    <i class="fas fa-cloud-upload-alt fa-2x"></i>
-                    <p>Clique ou arraste fotos aqui</p>
-                    <p style="font-size: 12px;">JPG, PNG (Máx. 5MB)</p>
-                </div>
-                
-                <input type="file" id="fotosVendaInput" multiple accept="image/*" style="display: none;">
-                <div id="previewsVenda" style="display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0;"></div>
-                
-                <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                    <button onclick="fecharUploadFotos()" class="btn btn-secondary">Cancelar</button>
-                    <button onclick="salvarFotosVenda('${idVenda}')" class="btn btn-success">Salvar Fotos</button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    const modalAnterior = document.getElementById('modalUploadFotosVenda');
-    if (modalAnterior) modalAnterior.remove();
-    
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    
-    document.getElementById('fotosVendaInput').addEventListener('change', (e) => handleFotosVenda(e.target.files));
-    
-    const area = document.getElementById('uploadAreaVenda');
-    area.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        area.style.borderColor = '#8A2BE2';
-        area.style.background = '#f0e6ff';
-    });
-    
-    area.addEventListener('dragleave', () => {
-        area.style.borderColor = '#dee2e6';
-        area.style.background = '#f8f9fa';
-    });
-    
-    area.addEventListener('drop', (e) => {
-        e.preventDefault();
-        area.style.borderColor = '#dee2e6';
-        area.style.background = '#f8f9fa';
-        handleFotosVenda(e.dataTransfer.files);
-    });
 }
 
 function handleFotosVenda(files) {

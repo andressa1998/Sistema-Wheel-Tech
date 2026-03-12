@@ -887,31 +887,71 @@ async function processarVendasComDetalhesESTOQUE(vendas, token) {
             let quantidadeVendida = primeiroItem.quantity || 1;
             
             // ===== BUSCAR ITEM PARA ESTOQUE =====
-            if (item.id) {
-                try {
-                    const itemUrl = `https://api.mercadolibre.com/items/${item.id}`;
-                    const itemProxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
+            // ===== BUSCAR ITEM PARA ESTOQUE E IMAGENS =====
+if (item.id) {
+    try {
+        const itemUrl = `https://api.mercadolibre.com/items/${item.id}`;
+        const itemProxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
+        
+        const itemRes = await fetch(itemProxyUrl);
+        
+        if (itemRes.ok) {
+            const itemData = await itemRes.json();
+            
+            // Inicializa array de fotos do anúncio
+            let fotosAnuncio = [];
+            
+            // Se tem variação, tentar obter a imagem específica
+            if (item.variation_id && itemData.variations) {
+                const variacao = itemData.variations.find(v => String(v.id) === String(item.variation_id));
+                if (variacao) {
+                    // Pega o estoque e SKU da variação
+                    estoqueAnuncio = variacao.available_quantity || 0;
+                    sku = variacao.seller_sku || sku;
                     
-                    const itemRes = await fetch(itemProxyUrl);
-                    
-                    if (itemRes.ok) {
-                        const itemData = await itemRes.json();
-                        
-                        if (item.variation_id && itemData.variations) {
-                            const variacao = itemData.variations.find(v => String(v.id) === String(item.variation_id));
-                            if (variacao) {
-                                estoqueAnuncio = variacao.available_quantity || 0;
-                                sku = variacao.seller_sku || sku;
+                    // Buscar imagem da variação (se houver picture_id)
+                    if (variacao.picture_ids && variacao.picture_ids.length > 0) {
+                        // Temos IDs de imagens, precisamos das URLs
+                        // Vamos buscar cada imagem individualmente? Ou podemos tentar construir a URL?
+                        // Uma forma simplificada: usar o mesmo padrão da URL do item, mas com o picture_id
+                        // Ex: https://http2.mlstatic.com/D_NQ_NP_{picture_id}-V.webp
+                        // Mas isso não é garantido. Melhor buscar no recurso de pictures.
+                        for (const picId of variacao.picture_ids.slice(0,1)) { // Pega só a primeira
+                            try {
+                                const picUrl = `https://api.mercadolibre.com/pictures/${picId}`;
+                                const picProxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(picUrl)}&token=${encodeURIComponent(token)}`;
+                                const picRes = await fetch(picProxyUrl);
+                                if (picRes.ok) {
+                                    const picData = await picRes.json();
+                                    fotosAnuncio.push({
+                                        url: picData.secure_url || picData.url,
+                                        thumbnail: picData.secure_url || picData.url
+                                    });
+                                }
+                            } catch (e) {
+                                console.warn(`Erro ao buscar imagem da variação ${picId}:`, e);
                             }
-                        } else {
-                            estoqueAnuncio = itemData.available_quantity || 0;
-                            sku = itemData.seller_sku || sku;
                         }
                     }
-                } catch (e) {
-                    console.warn(`⚠️ Erro ao buscar item: ${e.message}`);
                 }
+            } else {
+                // Sem variação, usa o item principal
+                estoqueAnuncio = itemData.available_quantity || 0;
+                sku = itemData.seller_sku || sku;
             }
+            
+            // Se ainda não temos fotos (ou não veio da variação), pegar as fotos do item principal
+            if (fotosAnuncio.length === 0 && itemData.pictures && itemData.pictures.length > 0) {
+                fotosAnuncio = itemData.pictures.map(pic => ({
+                    url: pic.secure_url || pic.url,
+                    thumbnail: pic.secure_url || pic.url
+                }));
+            }
+        }
+    } catch (e) {
+        console.warn(`⚠️ Erro ao buscar item: ${e.message}`);
+    }
+}
             
             // ===== BUSCAR ENVIO =====
             let tipoEnvio = 'N/I';

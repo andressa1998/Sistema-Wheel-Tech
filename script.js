@@ -6588,7 +6588,7 @@ function renderizarReviews(data) {
         
         // Formatar datas
         const dataCriacao = new Date(review.date_created).toLocaleDateString('pt-BR');
-        const dataCompra = review.buying_date ? new Date(review.buying_date).toLocaleDateString('pt-BR') : 'Não informada';
+        const dataCompra = review.buying_date ? new Date(review.buying_date).toLocaleString('pt-BR') : 'Não informada';
         
         // Estrelas
         let starsHtml = '';
