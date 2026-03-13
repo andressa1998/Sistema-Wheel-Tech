@@ -3816,16 +3816,16 @@
         <!-- Abas de navegação -->
 <div class="tabs-container" style="margin-bottom: 20px;">
     <div class="d-flex gap-2" id="estoqueTabs">
-        <button class="btn btn-outline-primary active" onclick="mudarAbaEstoque('produtos')">
+        <button class="btn btn-outline-primary active" onclick="mudarAbaEstoque('produtos', this)">
             <i class="fas fa-box"></i> Produtos
         </button>
-        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('clientes')">
+        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('clientes', this)">
             <i class="fas fa-users"></i> Clientes
         </button>
-        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('transportadoras')">
+        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('transportadoras', this)">
             <i class="fas fa-truck"></i> Transportadoras
         </button>
-        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('nfe')">
+        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('nfe', this)">
             <i class="fas fa-file-invoice"></i> Emissão NF-e
         </button>
     </div>

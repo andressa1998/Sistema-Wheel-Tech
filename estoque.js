@@ -210,6 +210,30 @@ window.mudarAbaEstoque = function(aba) {
 };
 
 // ============================================
+// FUNÇÃO PARA ALTERNAR ENTRE AS ABAS DO ESTOQUE
+// ============================================
+window.mudarAbaEstoque = function(aba, elementoClicado) {
+    // Lista de todas as abas (usando os IDs exatos)
+    const abas = ['abaProdutos', 'abaClientes', 'abaTransportadoras', 'abaNFe'];
+    
+    // Esconde todas as abas
+    abas.forEach(id => {
+        const div = document.getElementById(id);
+        if (div) div.classList.add('hidden');
+    });
+    
+    // Mostra a aba selecionada
+    const abaMostrar = document.getElementById('aba' + aba.charAt(0).toUpperCase() + aba.slice(1));
+    if (abaMostrar) abaMostrar.classList.remove('hidden');
+    
+    // Remove a classe 'active' de todos os botões
+    document.querySelectorAll('#estoqueTabs button').forEach(btn => btn.classList.remove('active'));
+    
+    // Adiciona a classe 'active' ao botão clicado
+    if (elementoClicado) elementoClicado.classList.add('active');
+}
+
+// ============================================
 // FUNÇÕES PARA PRODUTOS
 // ============================================
 async function carregarProdutos() {
