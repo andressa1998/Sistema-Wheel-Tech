@@ -146,13 +146,13 @@ const EMAIL_CONFIG = {
 // Mapeamento de usuários para emails
 const USER_EMAILS = {
     'Elaine': 'elainecguidelli@gmail.com',
-    'Arthur': 'bavaroski66@gmail.com',
+    'Arthur': 'arthur@wheeltech.com',
     'Laura': 'laura@empresa.com',
     'Ronald': 'ronald@empresa.com',
-    'Bruna': 'bruna@empresa.com',
-    'Andressa': 'andressasloboda99@gmail.com',
+    'Bruna': 'bruna@wheeltech.com.br',
+    'Andressa': 'andressasloboda99@erro',
     'Thalyta': 'thalyta@empresa.com',
-    'Andressa Miotto': 'andmiotto1998@gmail.com',
+    'AndressaMiotto': 'andmiotto1998@gmail.com',
     'Hosama': 'andmiotto1998@gmail.com'
 };
 
@@ -2010,7 +2010,7 @@ window.salvarReembolso = async function() {
 
         if (!editingReembolsoId) {
             await notificarAndressaNovoReembolso(reembolsoData);
-            const destinatario = 'Andressa Miotto';  // string literal, não variável
+            const destinatario = 'AndressaMiotto';  // string literal, não variável
         }
     } catch (error) {
         console.error('❌ Erro ao salvar reembolso:', error);
@@ -7431,7 +7431,7 @@ async function marcarOSComoLidas() {
 // NOTIFICAR ANDRESSA SOBRE NOVO REEMBOLSO
 // ============================================
 async function notificarAndressaNovoReembolso(reembolsoData) {
-    const destinatario = 'Andressa Miotto';
+    const destinatario = 'AndressaMiotto';
     const assunto = `💰 Novo reembolso para verificar - Venda ${reembolsoData.numero_venda}`;
     const mensagem = `
     Novo reembolso para verificar!

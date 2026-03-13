@@ -95,6 +95,13 @@ function isAdmin() {
     return false;
 }
 
+function getVendasSemFull(vendas = vendasML) {
+    return vendas.filter(v => {
+        const tipo = (v.tipo_envio || '').toUpperCase();
+        return !tipo.includes('FULL') && !tipo.includes('FULFILLMENT') && tipo !== 'FULL';
+    });
+}
+
 // ============================================
 // FUNÇÕES AUXILIARES PARA BADGES
 // ============================================
@@ -1384,6 +1391,7 @@ function atualizarEstatisticas() {
         return;
     }
     
+    const vendasFiltradasFull = getVendasSemFull(vendasML);
     const hoje = new Date().toISOString().split('T')[0];
     
     const vendasHoje = vendasML.filter(v => {
@@ -1423,6 +1431,7 @@ function atualizarEstatisticas() {
 // ATUALIZAR CONTADORES DE CONFERÊNCIA
 // ============================================
 function atualizarContadoresConferencia() {
+    const vendasFiltradasFull = getVendasSemFull(vendasML);
     const pendentes = vendasML.filter(v => v.status_conferencia === 'pendente' || !v.status_conferencia).length;
     const emAndamento = vendasML.filter(v => v.status_conferencia === 'conferido_estoque').length;
     const finalizados = vendasML.filter(v => v.status_conferencia === 'conferido_anuncio' && !v.divergente).length;
@@ -2562,13 +2571,6 @@ function mostrarToast(mensagem, tipo = 'info') {
         document.body.appendChild(toast);
         setTimeout(() => toast.remove(), 3000);
     }
-}
-
-function getVendasSemFull(vendas = vendasML) {
-    return vendas.filter(v => {
-        const tipo = (v.tipo_envio || '').toUpperCase();
-        return !tipo.includes('FULL') && !tipo.includes('FULFILLMENT') && tipo !== 'FULL';
-    });
 }
 
 // ============================================
