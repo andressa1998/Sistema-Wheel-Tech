@@ -153,7 +153,7 @@ const USER_EMAILS = {
     'Andressa': 'andressasloboda99@erro',
     'Thalyta': 'thalyta@empresa.com',
     'AndressaMiotto': 'andmiotto1998@gmail.com',
-    'Hosama': 'andmiotto1998@gmail.com'
+    'Hosama': 'hosama@wheeltech.com'
 };
 
 // ===== VARIÁVEIS PARA NOTIFICAÇÕES DO SISTEMA =====
@@ -2010,7 +2010,7 @@ window.salvarReembolso = async function() {
 
         if (!editingReembolsoId) {
             await notificarAndressaNovoReembolso(reembolsoData);
-            const destinatario = 'AndressaMiotto';  // string literal, não variável
+            const destinatario = 'Hosama';  // string literal, não variável
         }
     } catch (error) {
         console.error('❌ Erro ao salvar reembolso:', error);
@@ -7431,7 +7431,7 @@ async function marcarOSComoLidas() {
 // NOTIFICAR ANDRESSA SOBRE NOVO REEMBOLSO
 // ============================================
 async function notificarAndressaNovoReembolso(reembolsoData) {
-    const destinatario = 'AndressaMiotto';
+    const destinatario = 'Hosama';
     const assunto = `💰 Novo reembolso para verificar - Venda ${reembolsoData.numero_venda}`;
     const mensagem = `
     Novo reembolso para verificar!
