@@ -1393,19 +1393,16 @@ function atualizarEstatisticas() {
     
     const vendasFiltradasFull = getVendasSemFull(vendasML);
     const hoje = new Date().toISOString().split('T')[0];
-    
-    const vendasHoje = vendasML.filter(v => {
+    const vendasHoje = vendasFiltradasFull.filter(v => {
         if (!v.created_at) return false;
         return new Date(v.created_at).toISOString().split('T')[0] === hoje;
     });
-    
     const umaSemanaAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const vendasSemana = vendasML.filter(v => {
+    const vendasSemana = vendasFiltradasFull.filter(v => {
         if (!v.created_at) return false;
         return new Date(v.created_at) >= umaSemanaAtras;
     });
-    
-    const vendasNaoVerificadas = vendasML.filter(v => v.status_sistema === 'nova');
+    const vendasNaoVerificadas = vendasFiltradasFull.filter(v => v.status_sistema === 'nova');
     
     setElementText('countVendasHoje', vendasHoje.length);
     setElementText('countVendasSemana', vendasSemana.length);
@@ -1432,10 +1429,10 @@ function atualizarEstatisticas() {
 // ============================================
 function atualizarContadoresConferencia() {
     const vendasFiltradasFull = getVendasSemFull(vendasML);
-    const pendentes = vendasML.filter(v => v.status_conferencia === 'pendente' || !v.status_conferencia).length;
-    const emAndamento = vendasML.filter(v => v.status_conferencia === 'conferido_estoque').length;
-    const finalizados = vendasML.filter(v => v.status_conferencia === 'conferido_anuncio' && !v.divergente).length;
-    const divergentes = vendasML.filter(v => v.divergente === true).length;
+    const pendentes = vendasFiltradasFull.filter(v => v.status_conferencia === 'pendente' || !v.status_conferencia).length;
+    const emAndamento = vendasFiltradasFull.filter(v => v.status_conferencia === 'conferido_estoque').length;
+    const finalizados = vendasFiltradasFull.filter(v => v.status_conferencia === 'conferido_anuncio' && !v.divergente).length;
+    const divergentes = vendasFiltradasFull.filter(v => v.divergente === true).length;
     
     setElementText('badgePendentes', pendentes);
     setElementText('badgeEmAndamento', emAndamento);
@@ -1443,8 +1440,8 @@ function atualizarContadoresConferencia() {
     setElementText('badgeDivergentes', divergentes);
     
     setElementText('countPendentes', pendentes);
-    setElementText('countEstoqueConferido', emAndamento);
-    setElementText('countAnuncioConferido', finalizados);
+    setElementText('countEmAndamento', emAndamento);
+    setElementText('countFinalizados', finalizados);
     setElementText('countDivergentes', divergentes);
 }
 
