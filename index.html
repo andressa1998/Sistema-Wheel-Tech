@@ -1647,6 +1647,9 @@
             <button onclick="abrirSistemaFolgas(); fecharSidebar()">
             <i class="fas fa-calendar-alt"></i> Calendário de Folgas
             </button>
+            <button onclick="abrirSistemaFrete(); fecharSidebar()">
+            <i class="fas fa-truck"></i> Gerenciar Frete
+            </button>
         </div>
         <div class="sidebar-footer">
             <button onclick="handleLogout()">
@@ -3548,12 +3551,311 @@
         </div>
     </div>
 </div>
+
+<!-- ===== SISTEMA DE GERENCIAMENTO DE FRETE ===== -->
+<div id="shippingSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-truck" style="color: #fd7e14;"></i>
+                    Gerenciamento de Custos de Frete
+                </h1>
+                
+                <div class="user-info">
+                    <div class="user-avatar" id="shippingUserAvatar">F</div>
+                    <div>
+                        <div style="font-weight: 600;" id="shippingUserName">Usuário</div>
+                        <div style="font-size: 12px; color: #6c757d;" id="shippingUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
+                                <i class="fas fa-arrow-left"></i> Voltar
+                            </button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-sign-out-alt"></i> Sair
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+    
+    <div class="container">
+        <!-- Cards de resumo -->
+        <div class="card mb-4">
+            <div class="d-flex flex-wrap gap-4">
+                <div class="text-center" style="flex: 1; min-width: 150px;">
+                    <div style="font-size: 24px; font-weight: 700; color: #fd7e14;" id="totalDivergencias">0</div>
+                    <div style="font-size: 12px; color: #6c757d;">Divergências</div>
+                </div>
+                <div class="text-center" style="flex: 1; min-width: 150px;">
+                    <div style="font-size: 24px; font-weight: 700; color: #28a745;" id="totalReembolsados">0</div>
+                    <div style="font-size: 12px; color: #6c757d;">Reembolsados</div>
+                </div>
+                <div class="text-center" style="flex: 1; min-width: 150px;">
+                    <div style="font-size: 24px; font-weight: 700; color: #ffc107;" id="totalAguardando">0</div>
+                    <div style="font-size: 12px; color: #6c757d;">Aguardando</div>
+                </div>
+                <div class="text-center" style="flex: 1; min-width: 150px;">
+                    <div style="font-size: 24px; font-weight: 700; color: #dc3545;" id="totalNegados">0</div>
+                    <div style="font-size: 12px; color: #6c757d;">Negados</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Abas de navegação -->
+        <div style="margin-bottom: 20px;">
+            <div class="d-flex gap-2" style="border-bottom: 2px solid #dee2e6; padding-bottom: 10px;">
+                <button class="btn btn-sm btn-outline-primary active" onclick="shippingUI.mostrarAba('vendas')">Vendas</button>
+                <button class="btn btn-sm btn-outline-warning" onclick="shippingUI.mostrarAba('disputas')">Disputas de Frete</button>
+                <button class="btn btn-sm btn-outline-success" onclick="shippingUI.mostrarAba('relatorios')">Relatórios</button>
+            </div>
+        </div>
+
+        <!-- ABA 1: Vendas -->
+        <div id="abaVendas" class="tab-content active">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-list"></i> Vendas com Divergência de Frete</h2>
+                    <div>
+                        <button class="btn btn-primary" onclick="shippingManager.verificarVendasPendentes()">
+                            <i class="fas fa-check-double"></i> Verificar Pendentes
+                        </button>
+                        <button class="btn btn-success" onclick="shippingManager.exportarDivergencias()">
+                            <i class="fas fa-file-excel"></i> Exportar
+                        </button>
+                        <button class="btn btn-info" onclick="shippingManager.carregarVendasParaVerificacao()">
+                            <i class="fas fa-sync-alt"></i> Atualizar
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table" id="shippingTable">
+                        <thead>
+                            <tr>
+                                <th>Venda</th>
+                                <th>SKU</th>
+                                <th>Preço Unit.</th>
+                                <th>Peso (kg)</th>
+                                <th>Custo Real</th>
+                                <th>Custo Esperado</th>
+                                <th>Diferença</th>
+                                <th>Status</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="shippingTableBody">
+                            <tr>
+                                <td colspan="9" class="text-center py-5">
+                                    <i class="fas fa-truck fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                                    <h4>Nenhuma venda carregada</h4>
+                                    <p>Clique em "Atualizar" para carregar as vendas.</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ABA 2: Disputas de Frete -->
+        <div id="abaDisputas" class="tab-content hidden">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-exclamation-triangle"></i> Disputas / Reembolsos de Frete</h2>
+                    <div>
+                        <button class="btn btn-primary" onclick="shippingUI.filtrarDisputas()">
+                            <i class="fas fa-filter"></i> Filtrar
+                        </button>
+                        <button class="btn btn-success" onclick="shippingUI.exportarDisputas()">
+                            <i class="fas fa-file-excel"></i> Exportar
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table" id="disputasTable">
+                        <thead>
+                            <tr>
+                                <th>Venda</th>
+                                <th>Data Abertura</th>
+                                <th>Divergência</th>
+                                <th>Nº Operação</th>
+                                <th>Status</th>
+                                <th>Responsável</th>
+                                <th>Data Retorno</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="disputasTableBody">
+                            <tr>
+                                <td colspan="8" class="text-center py-5">
+                                    <i class="fas fa-exchange-alt fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                                    <h4>Nenhuma disputa registrada</h4>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ABA 3: Relatórios -->
+        <div id="abaRelatorios" class="tab-content hidden">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-chart-line"></i> Relatórios de Frete</h2>
+                </div>
+                <div class="p-3">
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label>Data Início</label>
+                                <input type="date" id="relDataInicio" class="form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label>Data Fim</label>
+                                <input type="date" id="relDataFim" class="form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label>Status</label>
+                                <select id="relStatus" class="form-control">
+                                    <option value="">Todos</option>
+                                    <option value="aberto">Aberto</option>
+                                    <option value="em_andamento">Em andamento</option>
+                                    <option value="reembolsado">Reembolsado</option>
+                                    <option value="negado">Negado</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label> </label>
+                                <button class="btn btn-primary btn-block" onclick="shippingUI.gerarRelatorio()">
+                                    <i class="fas fa-chart-bar"></i> Gerar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table" id="relatorioTable">
+                            <thead>
+                                <tr>
+                                    <th>Venda</th>
+                                    <th>Data Abertura</th>
+                                    <th>Divergência</th>
+                                    <th>Nº Operação</th>
+                                    <th>Status</th>
+                                    <th>Responsável</th>
+                                    <th>Data Retorno</th>
+                                </tr>
+                            </thead>
+                            <tbody id="relatorioTableBody">
+                                <tr>
+                                    <td colspan="7" class="text-center py-4">
+                                        Selecione os filtros e clique em "Gerar"
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para detalhes da disputa -->
+<div id="modalDisputa" class="modal hidden">
+    <div class="modal-content" style="max-width: 600px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="fas fa-exclamation-circle"></i> Gerenciar Reembolso de Frete</h3>
+            <button onclick="shippingUI.fecharModalDisputa()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+        </div>
+        
+        <div id="modalDisputaContent">
+            <input type="hidden" id="disputaId">
+            
+            <div class="form-group">
+                <label>Venda</label>
+                <input type="text" id="disputaVendaId" class="form-control" readonly>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>Custo Real</label>
+                        <input type="text" id="disputaCustoReal" class="form-control" readonly>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>Custo Esperado</label>
+                        <input type="text" id="disputaCustoEsperado" class="form-control" readonly>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>Divergência</label>
+                <input type="text" id="disputaDivergencia" class="form-control" readonly>
+            </div>
+            
+            <div class="form-group">
+                <label>Status</label>
+                <select id="disputaStatus" class="form-control">
+                    <option value="aberto">Aberto</option>
+                    <option value="em_andamento">Em andamento</option>
+                    <option value="reembolsado">Reembolsado</option>
+                    <option value="negado">Negado</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label>Número da Operação / Protocolo</label>
+                <input type="text" id="disputaNumeroOperacao" class="form-control" placeholder="Ex: PROTOCOLO123">
+            </div>
+            
+            <div class="form-group">
+                <label>Data de Retorno (quando receber resposta)</label>
+                <input type="date" id="disputaDataRetorno" class="form-control">
+            </div>
+            
+            <div class="form-group">
+                <label>Responsável</label>
+                <input type="text" id="disputaResponsavel" class="form-control" readonly value="">
+            </div>
+            
+            <div class="form-group">
+                <label>Observações / Histórico</label>
+                <textarea id="disputaObservacoes" class="form-control" rows="3" placeholder="Adicione comentários..."></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Comprovante (opcional)</label>
+                <input type="file" id="disputaComprovante" accept="image/*,.pdf">
+                <small class="text-muted">Envie uma imagem ou PDF do comprovante de reembolso.</small>
+            </div>
+            <div id="disputaComprovanteAtual" class="mb-2"></div>
+            
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <button class="btn btn-secondary" onclick="shippingUI.fecharModalDisputa()">Cancelar</button>
+                <button class="btn btn-success" onclick="shippingUI.salvarDisputa()">Salvar Alterações</button>
+            </div>
+        </div>
+    </div>
+</div>
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="script.js"></script>
     <script src="folgas.js"></script>
     <script src="ml_token_manager.js"></script>
+    <script src="shipping_manager.js"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js"></script>
     

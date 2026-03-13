@@ -7493,6 +7493,20 @@ function adicionarBotoesSelecaoOS() {
     }
 }
 
+function abrirSistemaFrete() {
+    document.querySelectorAll('[id$="System"]').forEach(sys => sys.classList.add('hidden'));
+    document.getElementById('shippingSystem').classList.remove('hidden');
+    
+    document.getElementById('shippingUserName').textContent = document.getElementById('userName').textContent;
+    document.getElementById('shippingUserRole').textContent = document.getElementById('userRole').textContent;
+    document.getElementById('shippingUserAvatar').textContent = document.getElementById('userAvatar').textContent;
+    
+    if (window.shippingManager) {
+        window.shippingManager.carregarVendasParaVerificacao();
+        window.shippingUI.mostrarAba('vendas');
+    }
+}
+
 // ===== INICIALIZAR QUANDO O DOM CARREGAR =====
 document.addEventListener('DOMContentLoaded', function() {
     // Aguardar um pouco para garantir que tudo carregou
