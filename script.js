@@ -2956,6 +2956,8 @@ function handleLogout() {
         if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
         if (loginScreen) loginScreen.classList.remove('hidden');
         if (folgasSystem) folgasSystem.classList.add('hidden');
+        if (shippingSystem) shippingSystem.classList.add('hidden');
+        if (estoqueSystem) estoqueSystem.classList.add('hidden');
         
         // Fechar modais abertos
         closeAllModals();
@@ -5629,6 +5631,8 @@ window.voltarParaOS = function() {
     if (mainSystem) mainSystem.classList.remove('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
     if (folgasSystem) folgasSystem.classList.add('hidden');
+    if (shippingSystem) shippingSystem.classList.add('hidden');
+    if (estoqueSystem) estoqueSystem.classList.add('hidden');
     showToast('Voltando para Sistema OS', 'info');
 };
 
@@ -6103,6 +6107,8 @@ window.abrirSistemaVendas = async function() {
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (caixaSystem) caixaSystem.classList.add('hidden');
     if (folgasSystem) folgasSystem.classList.add('hidden');
+    if (shippingSystem) shippingSystem.classList.add('hidden');
+    if (estoqueSystem) estoqueSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -6301,6 +6307,8 @@ window.abrirSistemaReembolsos = function() {
     if (salesSystem) salesSystem.classList.add('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
     if (folgasSystem) folgasSystem.classList.add('hidden');
+    if (shippingSystem) shippingSystem.classList.add('hidden');
+    if (estoqueSystem) estoqueSystem.classList.add('hidden');
     
     // Mostrar sistema de reembolsos
     const reembolsosSystem = document.getElementById('reembolsosSystem');
@@ -6343,6 +6351,8 @@ window.abrirSistemaCaixa = function() {
     if (salesSystem) salesSystem.classList.add('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
     if (folgasSystem) folgasSystem.classList.add('hidden');
+    if (shippingSystem) shippingSystem.classList.add('hidden');
+    if (estoqueSystem) estoqueSystem.classList.add('hidden');
     
     // Mostrar sistema de caixa
     const caixaSystem = document.getElementById('caixaSystem');
@@ -6378,6 +6388,8 @@ window.voltarParaOS = function() {
     if (caixaSystem) caixaSystem.classList.add('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
     if (folgasSystem) folgasSystem.classList.add('hidden');
+    if (shippingSystem) shippingSystem.classList.add('hidden');
+    if (estoqueSystem) estoqueSystem.classList.add('hidden');
     
     // Mostrar sistema principal
     if (mainSystem) mainSystem.classList.remove('hidden');
@@ -6409,6 +6421,8 @@ window.abrirSistemaReviews = function() {
     if (caixaSystem) caixaSystem.classList.add('hidden');
     if (reviewsSystem) reviewsSystem.classList.add('hidden');
     if (folgasSystem) folgasSystem.classList.add('hidden');
+    if (shippingSystem) shippingSystem.classList.add('hidden');
+    if (estoqueSystem) estoqueSystem.classList.add('hidden');
     
     // Mostrar sistema de avaliações
     if (reviewsSystem) reviewsSystem.classList.remove('hidden');
@@ -7494,16 +7508,25 @@ function adicionarBotoesSelecaoOS() {
 }
 
 function abrirSistemaFrete() {
-    document.querySelectorAll('[id$="System"]').forEach(sys => sys.classList.add('hidden'));
+    // Esconde todos os sistemas
+    document.getElementById('mainSystem').classList.add('hidden');
+    document.getElementById('salesSystem').classList.add('hidden');
+    document.getElementById('reembolsosSystem').classList.add('hidden');
+    document.getElementById('caixaSystem').classList.add('hidden');
+    document.getElementById('reviewsSystem').classList.add('hidden');
+    document.getElementById('folgasSystem').classList.add('hidden');
     document.getElementById('shippingSystem').classList.remove('hidden');
     
+    // Atualiza informações do usuário
     document.getElementById('shippingUserName').textContent = document.getElementById('userName').textContent;
     document.getElementById('shippingUserRole').textContent = document.getElementById('userRole').textContent;
     document.getElementById('shippingUserAvatar').textContent = document.getElementById('userAvatar').textContent;
     
+    // Carrega vendas
     if (window.shippingManager) {
-        window.shippingManager.carregarVendasParaVerificacao();
-        window.shippingUI.mostrarAba('vendas');
+        window.shippingManager.carregarVendas();
+        } else {
+        console.error('❌ shippingManager não encontrado');
     }
 }
 

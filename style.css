@@ -741,3 +741,109 @@ table {
 .btn-outline-primary i {
     margin-right: 5px;
 }
+
+/* ===== ESTILOS PARA GRID RESPONSIVO (substituto do Bootstrap) ===== */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-right: -10px;
+    margin-left: -10px;
+}
+
+.row > [class*="col-"] {
+    padding-right: 10px;
+    padding-left: 10px;
+    box-sizing: border-box;
+}
+
+.col-md-6 {
+    flex: 0 0 50%;
+    max-width: 50%;
+}
+
+/* Em telas pequenas, as colunas ocupam 100% */
+@media (max-width: 768px) {
+    .col-md-6 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}
+
+/* ===== MELHORIAS NO MODAL ===== */
+.modal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.modal-content {
+    max-width: 700px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 20px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+}
+
+/* Estilo para títulos de seção dentro do modal */
+.modal-content h4 {
+    margin-top: 20px;
+    margin-bottom: 15px;
+    color: var(--primary);
+    font-size: 16px;
+    border-bottom: 2px solid var(--primary);
+    padding-bottom: 5px;
+}
+
+/* Espaçamento entre grupos de formulário */
+.form-group {
+    margin-bottom: 15px;
+}
+
+/* Ajuste para botões no final do modal */
+.modal-content .d-flex.justify-content-end {
+    margin-top: 20px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+}
+
+/* ===== ESTILOS PARA AUTOCOMPLETE ===== */
+.sugestoes-container {
+    position: absolute;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    width: 100%;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.sugestao-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+
+.sugestao-item:hover {
+    background: #f0f0f0;
+}
+
+/* Ajuste para os campos de busca ficarem relativos */
+.form-group {
+    position: relative;
+}
+
+.alert-info {
+    background-color: #d1ecf1;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+    padding: 12px;
+    border-radius: 5px;
+    margin-top: 10px;
+}

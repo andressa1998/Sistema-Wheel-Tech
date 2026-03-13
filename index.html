@@ -1650,6 +1650,9 @@
             <button onclick="abrirSistemaFrete(); fecharSidebar()">
             <i class="fas fa-truck"></i> Gerenciar Frete
             </button>
+            <button onclick="abrirSistemaEstoque()">
+           <i class="fas fa-boxes"></i> Estoque
+           </button>
         </div>
         <div class="sidebar-footer">
             <button onclick="handleLogout()">
@@ -3584,269 +3587,997 @@
     <div class="container">
         <!-- Cards de resumo -->
         <div class="card mb-4">
-            <div class="d-flex flex-wrap gap-4">
-                <div class="text-center" style="flex: 1; min-width: 150px;">
-                    <div style="font-size: 24px; font-weight: 700; color: #fd7e14;" id="totalDivergencias">0</div>
-                    <div style="font-size: 12px; color: #6c757d;">Divergências</div>
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h3 style="margin:0;"><i class="fas fa-chart-line"></i> Resumo de Divergências</h3>
+                    <p class="text-muted">Vendas a partir de 01/03/2026</p>
                 </div>
-                <div class="text-center" style="flex: 1; min-width: 150px;">
-                    <div style="font-size: 24px; font-weight: 700; color: #28a745;" id="totalReembolsados">0</div>
-                    <div style="font-size: 12px; color: #6c757d;">Reembolsados</div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" onclick="shippingManager.abrirRelatorio()">
+                        <i class="fas fa-file-alt"></i> Relatório Completo
+                    </button>
+                    <button class="btn btn-success" onclick="shippingManager.exportarDivergencias()">
+                        <i class="fas fa-file-excel"></i> Exportar
+                    </button>
+                    <button class="btn btn-info" onclick="shippingManager.carregarVendas()">
+                        <i class="fas fa-sync-alt"></i> Atualizar Lista
+                    </button>
                 </div>
-                <div class="text-center" style="flex: 1; min-width: 150px;">
-                    <div style="font-size: 24px; font-weight: 700; color: #ffc107;" id="totalAguardando">0</div>
-                    <div style="font-size: 12px; color: #6c757d;">Aguardando</div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-md-3">
+                    <div class="info-card text-center p-3">
+                        <div class="h5">Pendentes</div>
+                        <div class="h3" id="shippingPendentes">0</div>
+                    </div>
                 </div>
-                <div class="text-center" style="flex: 1; min-width: 150px;">
-                    <div style="font-size: 24px; font-weight: 700; color: #dc3545;" id="totalNegados">0</div>
-                    <div style="font-size: 12px; color: #6c757d;">Negados</div>
+                <div class="col-md-3">
+                    <div class="info-card text-center p-3">
+                        <div class="h5">Divergentes</div>
+                        <div class="h3 text-danger" id="shippingDivergentes">0</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="info-card text-center p-3">
+                        <div class="h5">Em Reembolso</div>
+                        <div class="h3 text-warning" id="shippingEmReembolso">0</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="info-card text-center p-3">
+                        <div class="h5">Reembolsados</div>
+                        <div class="h3 text-success" id="shippingReembolsados">0</div>
+                    </div>
                 </div>
             </div>
         </div>
-
-        <!-- Abas de navegação -->
-        <div style="margin-bottom: 20px;">
-            <div class="d-flex gap-2" style="border-bottom: 2px solid #dee2e6; padding-bottom: 10px;">
-                <button class="btn btn-sm btn-outline-primary active" onclick="shippingUI.mostrarAba('vendas')">Vendas</button>
-                <button class="btn btn-sm btn-outline-warning" onclick="shippingUI.mostrarAba('disputas')">Disputas de Frete</button>
-                <button class="btn btn-sm btn-outline-success" onclick="shippingUI.mostrarAba('relatorios')">Relatórios</button>
-            </div>
-        </div>
-
-        <!-- ABA 1: Vendas -->
-        <div id="abaVendas" class="tab-content active">
-            <div class="card">
-                <div class="card-header">
-                    <h2 class="card-title"><i class="fas fa-list"></i> Vendas com Divergência de Frete</h2>
-                    <div>
-                        <button class="btn btn-primary" onclick="shippingManager.verificarVendasPendentes()">
-                            <i class="fas fa-check-double"></i> Verificar Pendentes
-                        </button>
-                        <button class="btn btn-success" onclick="shippingManager.exportarDivergencias()">
-                            <i class="fas fa-file-excel"></i> Exportar
-                        </button>
-                        <button class="btn btn-info" onclick="shippingManager.carregarVendasParaVerificacao()">
-                            <i class="fas fa-sync-alt"></i> Atualizar
-                        </button>
-                    </div>
-                </div>
-                <div class="table-responsive">
-                    <table class="table" id="shippingTable">
-                        <thead>
-                            <tr>
-                                <th>Venda</th>
-                                <th>SKU</th>
-                                <th>Preço Unit.</th>
-                                <th>Peso (kg)</th>
-                                <th>Custo Real</th>
-                                <th>Custo Esperado</th>
-                                <th>Diferença</th>
-                                <th>Status</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="shippingTableBody">
-                            <tr>
-                                <td colspan="9" class="text-center py-5">
-                                    <i class="fas fa-truck fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                                    <h4>Nenhuma venda carregada</h4>
-                                    <p>Clique em "Atualizar" para carregar as vendas.</p>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+        
+        <!-- Tabela de vendas -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title"><i class="fas fa-list"></i> Vendas para Verificação</h2>
+                <div>
+                    <button class="btn btn-sm btn-primary" onclick="shippingManager.verificarVendasPendentes()">
+                        <i class="fas fa-check-double"></i> Verificar Pendentes
+                    </button>
                 </div>
             </div>
-        </div>
-
-        <!-- ABA 2: Disputas de Frete -->
-        <div id="abaDisputas" class="tab-content hidden">
-            <div class="card">
-                <div class="card-header">
-                    <h2 class="card-title"><i class="fas fa-exclamation-triangle"></i> Disputas / Reembolsos de Frete</h2>
-                    <div>
-                        <button class="btn btn-primary" onclick="shippingUI.filtrarDisputas()">
-                            <i class="fas fa-filter"></i> Filtrar
-                        </button>
-                        <button class="btn btn-success" onclick="shippingUI.exportarDisputas()">
-                            <i class="fas fa-file-excel"></i> Exportar
-                        </button>
-                    </div>
-                </div>
-                <div class="table-responsive">
-                    <table class="table" id="disputasTable">
-                        <thead>
-                            <tr>
-                                <th>Venda</th>
-                                <th>Data Abertura</th>
-                                <th>Divergência</th>
-                                <th>Nº Operação</th>
-                                <th>Status</th>
-                                <th>Responsável</th>
-                                <th>Data Retorno</th>
-                                <th>Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="disputasTableBody">
-                            <tr>
-                                <td colspan="8" class="text-center py-5">
-                                    <i class="fas fa-exchange-alt fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                                    <h4>Nenhuma disputa registrada</h4>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- ABA 3: Relatórios -->
-        <div id="abaRelatorios" class="tab-content hidden">
-            <div class="card">
-                <div class="card-header">
-                    <h2 class="card-title"><i class="fas fa-chart-line"></i> Relatórios de Frete</h2>
-                </div>
-                <div class="p-3">
-                    <div class="row mb-4">
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label>Data Início</label>
-                                <input type="date" id="relDataInicio" class="form-control">
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label>Data Fim</label>
-                                <input type="date" id="relDataFim" class="form-control">
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label>Status</label>
-                                <select id="relStatus" class="form-control">
-                                    <option value="">Todos</option>
-                                    <option value="aberto">Aberto</option>
-                                    <option value="em_andamento">Em andamento</option>
-                                    <option value="reembolsado">Reembolsado</option>
-                                    <option value="negado">Negado</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label> </label>
-                                <button class="btn btn-primary btn-block" onclick="shippingUI.gerarRelatorio()">
-                                    <i class="fas fa-chart-bar"></i> Gerar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table" id="relatorioTable">
-                            <thead>
-                                <tr>
-                                    <th>Venda</th>
-                                    <th>Data Abertura</th>
-                                    <th>Divergência</th>
-                                    <th>Nº Operação</th>
-                                    <th>Status</th>
-                                    <th>Responsável</th>
-                                    <th>Data Retorno</th>
-                                </tr>
-                            </thead>
-                            <tbody id="relatorioTableBody">
-                                <tr>
-                                    <td colspan="7" class="text-center py-4">
-                                        Selecione os filtros e clique em "Gerar"
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+            <div class="table-responsive">
+                <table class="table" id="shippingTable">
+                    <thead>
+                        <tr>
+                            <th>Venda</th>
+                            <th>SKU</th>
+                            <th>Preço Unit.</th>
+                            <th>Peso (kg)</th>
+                            <th>Custo Real</th>
+                            <th>Custo Esperado</th>
+                            <th>Diferença</th>
+                            <th>Status Frete</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="shippingTableBody">
+                        <tr>
+                            <td colspan="9" class="text-center py-5">
+                                <i class="fas fa-truck fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                                <h4>Nenhuma venda carregada</h4>
+                                <p>Clique em "Atualizar Lista" para carregar as vendas a partir de 01/03/2026.</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modal para detalhes da disputa -->
-<div id="modalDisputa" class="modal hidden">
+<!-- Modal para registrar ação de reembolso -->
+<div id="modalAcaoReembolso" class="modal hidden">
     <div class="modal-content" style="max-width: 600px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h3><i class="fas fa-exclamation-circle"></i> Gerenciar Reembolso de Frete</h3>
-            <button onclick="shippingUI.fecharModalDisputa()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+            <h3><i class="fas fa-hand-holding-usd"></i> Registrar Ação de Reembolso</h3>
+            <button onclick="fecharModalAcaoReembolso()" style="background:none; border:none; font-size:24px;">&times;</button>
         </div>
-        
-        <div id="modalDisputaContent">
-            <input type="hidden" id="disputaId">
-            
+        <form id="formAcaoReembolso">
+            <input type="hidden" id="acaoVendaId">
             <div class="form-group">
-                <label>Venda</label>
-                <input type="text" id="disputaVendaId" class="form-control" readonly>
+                <label><i class="fas fa-phone"></i> Contato com Mercado Livre</label>
+                <div>
+                    <label><input type="radio" name="contatoFeito" value="sim"> Sim</label>
+                    <label><input type="radio" name="contatoFeito" value="nao" checked> Não</label>
+                </div>
             </div>
+            <div class="form-group">
+                <label for="dataContato">Data do Contato</label>
+                <input type="date" id="dataContato" class="form-control">
+            </div>
+            <div class="form-group">
+                <label for="numeroOperacao">Número da Operação / Protocolo</label>
+                <input type="text" id="numeroOperacao" class="form-control" placeholder="Ex: OP123456">
+            </div>
+            <div class="form-group">
+                <label for="dataRetorno">Data Prevista/Real de Retorno</label>
+                <input type="date" id="dataRetorno" class="form-control">
+            </div>
+            <div class="form-group">
+                <label><i class="fas fa-check-circle"></i> Reembolso Obtido?</label>
+                <div>
+                    <label><input type="radio" name="reembolsoObtido" value="sim"> Sim</label>
+                    <label><input type="radio" name="reembolsoObtido" value="nao" checked> Não</label>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="observacoesReembolso">Observações</label>
+                <textarea id="observacoesReembolso" class="form-control" rows="3"></textarea>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalAcaoReembolso()">Cancelar</button>
+                <button type="submit" class="btn btn-success">Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal de Relatório -->
+<div id="modalRelatorioFrete" class="modal hidden">
+    <div class="modal-content" style="max-width: 90%; width: 1200px; max-height: 90vh; padding: 0;">
+        <div style="background: linear-gradient(135deg, #fd7e14, #e8590c); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin:0;"><i class="fas fa-chart-bar"></i> Relatório de Frete e Reembolsos</h3>
+            <button onclick="fecharModalRelatorio()" style="background: rgba(255,255,255,0.2); border:none; color:white; font-size:24px;">&times;</button>
+        </div>
+        <div style="padding: 20px; max-height: 80vh; overflow-y: auto;">
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <label>Data Início</label>
+                    <input type="date" id="relDataInicio" class="form-control" value="2026-03-01">
+                </div>
+                <div class="col-md-3">
+                    <label>Data Fim</label>
+                    <input type="date" id="relDataFim" class="form-control" value="">
+                </div>
+                <div class="col-md-3">
+                    <label>Status</label>
+                    <select id="relStatus" class="form-control">
+                        <option value="">Todos</option>
+                        <option value="pendente">Pendente</option>
+                        <option value="divergente">Divergente</option>
+                        <option value="reembolsado">Reembolsado</option>
+                        <option value="contatado">Contatado ML</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label>Usuário Responsável</label>
+                    <select id="relUsuario" class="form-control">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+            </div>
+            <div class="d-flex justify-content-end mb-3">
+                <button class="btn btn-primary" onclick="shippingManager.gerarRelatorio()">Gerar</button>
+                <button class="btn btn-success" onclick="shippingManager.exportarRelatorio()">Exportar Excel</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-striped" id="relatorioTable">
+                    <thead>
+                        <tr>
+                            <th>Venda</th>
+                            <th>Data Venda</th>
+                            <th>SKU</th>
+                            <th>Peso</th>
+                            <th>Custo Real</th>
+                            <th>Custo Esperado</th>
+                            <th>Diferença</th>
+                            <th>Status</th>
+                            <th>Contato ML</th>
+                            <th>Nº Operação</th>
+                            <th>Reembolso</th>
+                            <th>Responsável</th>
+                        </tr>
+                    </thead>
+                    <tbody id="relatorioTableBody">
+                        <tr><td colspan="12" class="text-center">Clique em "Gerar" para carregar dados.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== SISTEMA DE ESTOQUE ===== -->
+<div id="estoqueSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-boxes" style="color: #28a745;"></i>
+                    Gestão de Estoque e NF-e
+                </h1>
+                <div class="user-info">
+                    <div class="user-avatar" id="estoqueUserAvatar">E</div>
+                    <div>
+                        <div style="font-weight: 600;" id="estoqueUserName">Usuário</div>
+                        <div style="font-size: 12px; color: #6c757d;" id="estoqueUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
+                                <i class="fas fa-arrow-left"></i> Voltar
+                            </button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-sign-out-alt"></i> Sair
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Abas de navegação -->
+<div class="tabs-container" style="margin-bottom: 20px;">
+    <div class="d-flex gap-2" id="estoqueTabs">
+        <button class="btn btn-outline-primary active" onclick="mudarAbaEstoque('produtos')">
+            <i class="fas fa-box"></i> Produtos
+        </button>
+        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('clientes')">
+            <i class="fas fa-users"></i> Clientes
+        </button>
+        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('transportadoras')">
+            <i class="fas fa-truck"></i> Transportadoras
+        </button>
+        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('nfe')">
+            <i class="fas fa-file-invoice"></i> Emissão NF-e
+        </button>
+    </div>
+</div>
+
+<!-- Conteúdo das Abas -->
+<div id="abaProdutos" class="tab-content-estoque active"> ... </div>
+<div id="abaClientes" class="tab-content-estoque hidden"> ... </div>
+<div id="abaTransportadoras" class="tab-content-estoque hidden"> ... </div>
+<div id="abaNFe" class="tab-content-estoque hidden"> ... </div>
+
+        <!-- ABA PRODUTOS (com estoque e botão movimentar) -->
+<div id="abaProdutos" class="tab-content-estoque active">
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="card-title"><i class="fas fa-box"></i> Produtos</h2>
+            <div class="d-flex gap-2">
+                <input type="text" id="buscaProdutos" class="form-control" placeholder="Buscar por nome, SKU, EAN..." style="width: 250px;">
+                <button class="btn btn-info" onclick="abrirModalMovimentacao()">
+                    <i class="fas fa-exchange-alt"></i> Movimentar
+                </button>
+                <button class="btn btn-success" onclick="abrirModalProduto()">
+                    <i class="fas fa-plus"></i> Novo Produto
+                </button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table" id="produtosTable">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>SKU</th>
+                        <th>EAN</th>
+                        <th>Tamanho</th>
+                        <th>Cor</th>
+                        <th>NCM</th>
+                        <th>CFOP</th>
+                        <th>Estoque</th>
+                        <th style="width: 120px;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="produtosTableBody">
+                    <tr><td colspan="9" class="text-center">Carregando produtos...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- Paginação Produtos -->
+        <div class="d-flex justify-content-between align-items-center p-3 border-top">
+            <div>
+                Mostrando <span id="produtosInicio">0</span>-<span id="produtosFim">0</span> de <span id="produtosTotal">0</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-primary" onclick="paginarProdutos('anterior')" id="btnProdutosAnterior" disabled>
+                    <i class="fas fa-chevron-left"></i> Anterior
+                </button>
+                <span id="produtosPaginaAtual" style="align-self: center;">1</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="paginarProdutos('proxima')" id="btnProdutosProxima" disabled>
+                    Próxima <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+        <!-- ABA CLIENTES -->
+        <div id="abaClientes" class="tab-content-estoque hidden">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-users"></i> Clientes</h2>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="buscaClientes" class="form-control" placeholder="Buscar por nome, CPF/CNPJ..." style="width: 250px;">
+                        <button class="btn btn-success" onclick="abrirModalCliente()">
+                            <i class="fas fa-plus"></i> Novo Cliente
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table" id="clientesTable">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>CPF/CNPJ</th>
+                                <th>Email</th>
+                                <th>Telefone</th>
+                                <th>Endereço</th>
+                                <th style="width: 120px;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="clientesTableBody">
+                            <tr><td colspan="6" class="text-center">Carregando clientes...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Paginação Clientes -->
+                <div class="d-flex justify-content-between align-items-center p-3 border-top">
+                    <div>
+                        Mostrando <span id="clientesInicio">0</span>-<span id="clientesFim">0</span> de <span id="clientesTotal">0</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary" onclick="paginarClientes('anterior')" id="btnClientesAnterior" disabled>
+                            <i class="fas fa-chevron-left"></i> Anterior
+                        </button>
+                        <span id="clientesPaginaAtual" style="align-self: center;">1</span>
+                        <button class="btn btn-sm btn-outline-primary" onclick="paginarClientes('proxima')" id="btnClientesProxima" disabled>
+                            Próxima <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Movimentação de Estoque -->
+<div id="modalMovimentacao" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="fas fa-exchange-alt"></i> Movimentar Estoque</h3>
+            <button onclick="fecharModalMovimentacao()" style="background:none; border:none; font-size:24px;">&times;</button>
+        </div>
+        <form id="formMovimentacao">
+            <div class="form-group">
+                <label for="movProdutoBusca">Produto *</label>
+                <input type="text" id="movProdutoBusca" class="form-control" placeholder="Digite nome ou SKU" autocomplete="off" required>
+                <input type="hidden" id="movProdutoId">
+                <div id="movProdutoSugestoes" class="sugestoes-container" style="display: none;"></div>
+            </div>
+            <div class="form-group">
+                <label for="movTipo">Tipo *</label>
+                <select id="movTipo" class="form-control" required>
+                    <option value="entrada">Entrada (adicionar)</option>
+                    <option value="saida">Saída (remover)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="movQuantidade">Quantidade *</label>
+                <input type="number" id="movQuantidade" class="form-control" min="1" required>
+            </div>
+            <div class="form-group">
+                <label for="movObservacao">Observação (opcional)</label>
+                <input type="text" id="movObservacao" class="form-control">
+            </div>
+            <div id="movEstoqueAtual" class="alert alert-info" style="display: none;">
+                Estoque atual: <span id="movEstoqueAtualValor">0</span>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalMovimentacao()">Cancelar</button>
+                <button type="submit" class="btn btn-success">Registrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ABA TRANSPORTADORAS -->
+<div id="abaTransportadoras" class="tab-content-estoque hidden">
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="card-title"><i class="fas fa-truck"></i> Transportadoras</h2>
+            <div class="d-flex gap-2">
+                <input type="text" id="buscaTransportadoras" class="form-control" placeholder="Buscar por nome ou CNPJ..." style="width: 250px;">
+                <button class="btn btn-success" onclick="abrirModalTransportadora()">
+                    <i class="fas fa-plus"></i> Nova Transportadora
+                </button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table" id="transportadorasTable">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>CNPJ</th>
+                        <th>Endereço</th>
+                        <th>Telefone</th>
+                        <th>Email</th>
+                        <th style="width: 120px;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="transportadorasTableBody">
+                    <tr><td colspan="6" class="text-center">Carregando transportadoras...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- Paginação Transportadoras -->
+        <div class="d-flex justify-content-between align-items-center p-3 border-top">
+            <div>
+                Mostrando <span id="transportadorasInicio">0</span>-<span id="transportadorasFim">0</span> de <span id="transportadorasTotal">0</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-primary" onclick="paginarTransportadoras('anterior')" id="btnTransportadorasAnterior" disabled>
+                    <i class="fas fa-chevron-left"></i> Anterior
+                </button>
+                <span id="transportadorasPaginaAtual" style="align-self: center;">1</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="paginarTransportadoras('proxima')" id="btnTransportadorasProxima" disabled>
+                    Próxima <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+        <!-- ABA EMISSÃO NF-e (com autocomplete) -->
+        <form id="formNFe">
+    <div class="row">
+        <div class="col-md-6">
+            <h4>Cliente</h4>
+            <div class="form-group">
+                <label for="nfeClienteBusca">Buscar Cliente *</label>
+                <input type="text" id="nfeClienteBusca" class="form-control" placeholder="Digite nome ou documento" autocomplete="off">
+                <input type="hidden" id="nfeClienteId">
+                <div id="nfeClienteSugestoes" class="sugestoes-container" style="display: none;"></div>
+            </div>
+            <div id="nfeClienteInfo" class="p-3 bg-light rounded small" style="display: none;"></div>
+        </div>
+        <div class="col-md-6">
+            <h4>Produto</h4>
+            <div class="form-group">
+                <label for="nfeProdutoBusca">Buscar Produto *</label>
+                <input type="text" id="nfeProdutoBusca" class="form-control" placeholder="Digite nome ou SKU" autocomplete="off">
+                <input type="hidden" id="nfeProdutoId">
+                <div id="nfeProdutoSugestoes" class="sugestoes-container" style="display: none;"></div>
+            </div>
+            <div id="nfeProdutoInfo" class="p-3 bg-light rounded small" style="display: none;"></div>
             
+            <div class="row mt-3">
+                <div class="col-6">
+                    <div class="form-group">
+                        <label for="nfeQuantidade">Quantidade *</label>
+                        <input type="number" id="nfeQuantidade" class="form-control" min="1" value="1" required>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="form-group">
+                        <label for="nfeValorUnit">Valor Unit. (R$) *</label>
+                        <input type="number" id="nfeValorUnit" class="form-control" step="0.01" min="0" required>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transportadora -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <h4>Transportadora</h4>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="nfeTransportadoraBusca">Selecionar Transportadora</label>
+                <input type="text" id="nfeTransportadoraBusca" class="form-control" placeholder="Digite nome ou CNPJ" autocomplete="off">
+                <input type="hidden" id="nfeTransportadoraId">
+                <div id="nfeTransportadoraSugestoes" class="sugestoes-container" style="display: none;"></div>
+            </div>
+            <div id="nfeTransportadoraInfo" class="p-3 bg-light rounded small" style="display: none;"></div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="nfeFrete">Frete (R$)</label>
+                <input type="number" id="nfeFrete" class="form-control" step="0.01" min="0" value="0">
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-md-4">
+            <div class="form-group">
+                <label for="nfeNatureza">Natureza da Operação</label>
+                <input type="text" id="nfeNatureza" class="form-control" value="Venda de mercadoria">
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-group">
+                <label for="nfeDesconto">Desconto (R$)</label>
+                <input type="number" id="nfeDesconto" class="form-control" step="0.01" min="0" value="0">
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-md-6">
+            <div class="form-group">
+                <label>Total da Nota</label>
+                <div class="h3" id="nfeTotal">R$ 0,00</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mt-4">
+        <button type="button" class="btn btn-secondary" onclick="limparFormNFe()">Limpar</button>
+        <button type="submit" class="btn btn-success">
+            <i class="fas fa-file-invoice"></i> Emitir NF-e (Simular)
+        </button>
+    </div>
+</form>
+
+<!-- ===== MODAIS DO SISTEMA DE ESTOQUE ===== -->
+
+<!-- Modal Produto (completo) -->
+<div id="modalProduto" class="modal hidden">
+    <div class="modal-content" style="max-width: 900px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 id="modalProdutoTitle"><i class="fas fa-box"></i> Novo Produto</h3>
+            <button onclick="fecharModalProduto()" style="background:none; border:none; font-size:24px;">&times;</button>
+        </div>
+        <form id="formProduto">
+            <input type="hidden" id="produtoId">
+
+            <!-- Abas internas do produto (simulando o estilo da imagem) -->
+            <div style="border-bottom: 2px solid #dee2e6; margin-bottom: 20px;">
+                <span style="padding: 10px 15px; display: inline-block; border-bottom: 3px solid #8A2BE2; font-weight: 600;">Principal</span>
+                <span style="padding: 10px 15px; display: inline-block; color: #6c757d;">Reforma Tributária</span>
+                <span style="padding: 10px 15px; display: inline-block; color: #6c757d;">Outros Impostos</span>
+                <span style="padding: 10px 15px; display: inline-block; color: #6c757d;">Outras Informações Fiscais</span>
+                <span style="padding: 10px 15px; display: inline-block; color: #6c757d;">Dados Específicos de Combustível</span>
+                <span style="padding: 10px 15px; display: inline-block; color: #6c757d;">Calcular preço ideal</span>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="produtoEAN">Cód. Barras/EAN/GTIN</label>
+                        <input type="text" id="produtoEAN" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="produtoNCM">NCM</label>
+                        <input type="text" id="produtoNCM" class="form-control" placeholder="Por favor selecione">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="produtoNome">Nome *</label>
+                        <input type="text" id="produtoNome" class="form-control" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="produtoSKU">Código de Identificação (SKU) *</label>
+                        <input type="text" id="produtoSKU" class="form-control" required>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="produtoOrigem">Origem</label>
+                        <select id="produtoOrigem" class="form-control">
+                            <option value="0">0 - Nacional, exceto as indicadas nos códigos 3,4,5 e 8</option>
+                            <option value="1">1 - Estrangeira - Importação direta</option>
+                            <option value="2">2 - Estrangeira - Adquirida no mercado interno</option>
+                            <option value="3">3 - Nacional, mercadoria ou bem com Conteúdo de Importação superior a 40%</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label>Produtos Combustíveis?</label><br>
+                        <input type="checkbox" id="produtoCombustivel"> <label for="produtoCombustivel">Sim</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label>Produtos Medicamentos?</label><br>
+                        <input type="checkbox" id="produtoMedicamento"> <label for="produtoMedicamento">Sim</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="produtoUnidade">Unidade Comercial</label>
+                        <input type="text" id="produtoUnidade" class="form-control" value="pc">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="produtoPreco">Preço Comercial</label>
+                        <input type="number" id="produtoPreco" class="form-control" step="0.01" value="0.00">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="produtoQuantidade">Quantidade Comercial</label>
+                        <input type="number" id="produtoQuantidade" class="form-control" step="0.001" value="0.000">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-group">
+                        <label for="produtoCFOP">CFOP para dentro do estado</label>
+                        <input type="text" id="produtoCFOP" class="form-control">
+                    </div>
+                </div>
+            </div>
+
             <div class="row">
                 <div class="col-md-6">
                     <div class="form-group">
-                        <label>Custo Real</label>
-                        <input type="text" id="disputaCustoReal" class="form-control" readonly>
+                        <label for="produtoTamanho">Tamanho</label>
+                        <input type="text" id="produtoTamanho" class="form-control">
                     </div>
                 </div>
                 <div class="col-md-6">
                     <div class="form-group">
-                        <label>Custo Esperado</label>
-                        <input type="text" id="disputaCustoEsperado" class="form-control" readonly>
+                        <label for="produtoCor">Cor</label>
+                        <input type="text" id="produtoCor" class="form-control">
                     </div>
                 </div>
             </div>
-            
+
             <div class="form-group">
-                <label>Divergência</label>
-                <input type="text" id="disputaDivergencia" class="form-control" readonly>
+                <label for="produtoLinks">Links de Anúncios (um por linha)</label>
+                <textarea id="produtoLinks" class="form-control" rows="2" placeholder="https://..."></textarea>
             </div>
-            
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalProduto()">Voltar</button>
+                <button type="submit" class="btn btn-success">Salvar</button>
+                <button type="button" class="btn btn-primary" onclick="salvarENovoProduto()">Salvar e Novo</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Cliente (completo) -->
+<div id="modalCliente" class="modal hidden">
+    <div class="modal-content" style="max-width: 900px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 id="modalClienteTitle"><i class="fas fa-user"></i> Novo Cliente</h3>
+            <button onclick="fecharModalCliente()" style="background:none; border:none; font-size:24px;">&times;</button>
+        </div>
+        <form id="formCliente">
+            <input type="hidden" id="clienteId">
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>Pessoas Físicas ou Jurídicas ou Estrangeiros? *</label>
+                        <select id="clienteTipo" class="form-control" required>
+                            <option value="F">Pessoa Física</option>
+                            <option value="J">Pessoa Jurídica</option>
+                            <option value="E">Estrangeiro</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>Contribuinte</label>
+                        <select id="clienteContribuinte" class="form-control">
+                            <option value="1">Contribuinte</option>
+                            <option value="2">Não Contribuinte</option>
+                            <option value="9">Não Contribuinte (Rural)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteMotivoNIF">Motivo de não informação do NIF</label>
+                        <input type="text" id="clienteMotivoNIF" class="form-control">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteNomeFantasia">Nome Fantasia</label>
+                        <input type="text" id="clienteNomeFantasia" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteEmail">Email</label>
+                        <input type="email" id="clienteEmail" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteTelefone">Telefone</label>
+                        <input type="text" id="clienteTelefone" class="form-control">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteInscSuframa">Insc. Suframa</label>
+                        <input type="text" id="clienteInscSuframa" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteRazaoSocial">Razão Social *</label>
+                        <input type="text" id="clienteRazaoSocial" class="form-control" required>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteDocumento">CPF / CNPJ *</label>
+                        <input type="text" id="clienteDocumento" class="form-control" required>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteIE">Inscrição Estadual</label>
+                        <input type="text" id="clienteIE" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteIM">Insc. Municipal</label>
+                        <input type="text" id="clienteIM" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label><input type="checkbox" id="clienteIsentoIE"> Isento de I.E.</label>
+                    </div>
+                </div>
+            </div>
+
+            <h4 class="mt-3">Endereço</h4>
+            <div class="row">
+                <div class="col-md-2">
+                    <div class="form-group">
+                        <label for="clienteCEP">CEP</label>
+                        <input type="text" id="clienteCEP" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteLogradouro">Logradouro</label>
+                        <input type="text" id="clienteLogradouro" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="form-group">
+                        <label for="clienteNumero">Número</label>
+                        <input type="text" id="clienteNumero" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteComplemento">Complemento</label>
+                        <input type="text" id="clienteComplemento" class="form-control">
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteBairro">Bairro</label>
+                        <input type="text" id="clienteBairro" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clienteCidade">Cidade - Estado</label>
+                        <input type="text" id="clienteCidade" class="form-control" placeholder="Ex: São Paulo - SP">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="clientePais">País</label>
+                        <input type="text" id="clientePais" class="form-control" value="BRASIL">
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalCliente()">Voltar</button>
+                <button type="submit" class="btn btn-success">Salvar</button>
+                <button type="button" class="btn btn-primary" onclick="salvarENovoCliente()">Salvar e Novo</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Transportadora (completo) -->
+<div id="modalTransportadora" class="modal hidden">
+    <div class="modal-content" style="max-width: 900px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 id="modalTransportadoraTitle"><i class="fas fa-truck"></i> Nova Transportadora</h3>
+            <button onclick="fecharModalTransportadora()" style="background:none; border:none; font-size:24px;">&times;</button>
+        </div>
+        <form id="formTransportadora">
+            <input type="hidden" id="transportadoraId">
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>Pessoas físicas ou jurídicas ou Estrangeiras?</label>
+                        <select id="transportadoraTipo" class="form-control">
+                            <option value="J">Pessoa Jurídica</option>
+                            <option value="F">Pessoa Física</option>
+                            <option value="E">Estrangeira</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraCNPJ">CNPJ</label>
+                        <input type="text" id="transportadoraCNPJ" class="form-control" placeholder="00.000.000/0001-00">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraNomeFantasia">Nome Fantasia</label>
+                        <input type="text" id="transportadoraNomeFantasia" class="form-control" value="Mercado Envios">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraInscMunicipal">Inscrição Municipal</label>
+                        <input type="text" id="transportadoraInscMunicipal" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraEndereco">Endereço</label>
+                        <input type="text" id="transportadoraEndereco" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="form-group">
+                        <label for="transportadoraCEP">CEP</label>
+                        <input type="text" id="transportadoraCEP" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="form-group">
+                        <label for="transportadoraNumero">Número</label>
+                        <input type="text" id="transportadoraNumero" class="form-control">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraLogradouro">Logradouro</label>
+                        <input type="text" id="transportadoraLogradouro" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraBairro">Bairro</label>
+                        <input type="text" id="transportadoraBairro" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraCidade">Cidade - Estado</label>
+                        <input type="text" id="transportadoraCidade" class="form-control" value="Rio de Janeiro - RJ">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraCodigoANTT">Código na ANTT</label>
+                        <input type="text" id="transportadoraCodigoANTT" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraRazaoSocial">Razão Social</label>
+                        <input type="text" id="transportadoraRazaoSocial" class="form-control" value="MERCADO ENVIOS SERVICOS DE LOGISTICA LTDA">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraIE">Inscrição Estadual</label>
+                        <input type="text" id="transportadoraIE" class="form-control" value="ISENTO">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraEmail">E-mail</label>
+                        <input type="email" id="transportadoraEmail" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraTelefone">Telefone</label>
+                        <input type="text" id="transportadoraTelefone" class="form-control">
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label for="transportadoraPais">País</label>
+                        <input type="text" id="transportadoraPais" class="form-control" value="BRASIL">
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalTransportadora()">Voltar</button>
+                <button type="submit" class="btn btn-success">Salvar</button>
+                <button type="button" class="btn btn-primary" onclick="salvarENovoTransportadora()">Salvar e Novo</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal Movimentação de Estoque (já existente) -->
+<div id="modalMovimentacao" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="fas fa-exchange-alt"></i> Movimentar Estoque</h3>
+            <button onclick="fecharModalMovimentacao()" style="background:none; border:none; font-size:24px;">&times;</button>
+        </div>
+        <form id="formMovimentacao">
             <div class="form-group">
-                <label>Status</label>
-                <select id="disputaStatus" class="form-control">
-                    <option value="aberto">Aberto</option>
-                    <option value="em_andamento">Em andamento</option>
-                    <option value="reembolsado">Reembolsado</option>
-                    <option value="negado">Negado</option>
+                <label for="movProdutoBusca">Produto *</label>
+                <input type="text" id="movProdutoBusca" class="form-control" placeholder="Digite nome ou SKU" autocomplete="off" required>
+                <input type="hidden" id="movProdutoId">
+                <div id="movProdutoSugestoes" class="sugestoes-container" style="display: none;"></div>
+            </div>
+            <div class="form-group">
+                <label for="movTipo">Tipo *</label>
+                <select id="movTipo" class="form-control" required>
+                    <option value="entrada">Entrada (adicionar)</option>
+                    <option value="saida">Saída (remover)</option>
                 </select>
             </div>
-            
             <div class="form-group">
-                <label>Número da Operação / Protocolo</label>
-                <input type="text" id="disputaNumeroOperacao" class="form-control" placeholder="Ex: PROTOCOLO123">
+                <label for="movQuantidade">Quantidade *</label>
+                <input type="number" id="movQuantidade" class="form-control" min="1" required>
             </div>
-            
             <div class="form-group">
-                <label>Data de Retorno (quando receber resposta)</label>
-                <input type="date" id="disputaDataRetorno" class="form-control">
+                <label for="movObservacao">Observação (opcional)</label>
+                <input type="text" id="movObservacao" class="form-control">
             </div>
-            
-            <div class="form-group">
-                <label>Responsável</label>
-                <input type="text" id="disputaResponsavel" class="form-control" readonly value="">
+            <div id="movEstoqueAtual" class="alert alert-info" style="display: none;">
+                Estoque atual: <span id="movEstoqueAtualValor">0</span>
             </div>
-            
-            <div class="form-group">
-                <label>Observações / Histórico</label>
-                <textarea id="disputaObservacoes" class="form-control" rows="3" placeholder="Adicione comentários..."></textarea>
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalMovimentacao()">Cancelar</button>
+                <button type="submit" class="btn btn-success">Registrar</button>
             </div>
-            
-            <div class="form-group">
-                <label>Comprovante (opcional)</label>
-                <input type="file" id="disputaComprovante" accept="image/*,.pdf">
-                <small class="text-muted">Envie uma imagem ou PDF do comprovante de reembolso.</small>
-            </div>
-            <div id="disputaComprovanteAtual" class="mb-2"></div>
-            
-            <div class="d-flex justify-content-end gap-2 mt-4">
-                <button class="btn btn-secondary" onclick="shippingUI.fecharModalDisputa()">Cancelar</button>
-                <button class="btn btn-success" onclick="shippingUI.salvarDisputa()">Salvar Alterações</button>
-            </div>
-        </div>
+        </form>
     </div>
 </div>
     
@@ -3856,6 +4587,7 @@
     <script src="folgas.js"></script>
     <script src="ml_token_manager.js"></script>
     <script src="shipping_manager.js"></script>
+    <script src="estoque.js"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js"></script>
     
