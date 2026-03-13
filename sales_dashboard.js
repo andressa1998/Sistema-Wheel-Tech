@@ -2564,6 +2564,13 @@ function mostrarToast(mensagem, tipo = 'info') {
     }
 }
 
+function getVendasSemFull(vendas = vendasML) {
+    return vendas.filter(v => {
+        const tipo = (v.tipo_envio || '').toUpperCase();
+        return !tipo.includes('FULL') && !tipo.includes('FULFILLMENT') && tipo !== 'FULL';
+    });
+}
+
 // ============================================
 // ATUALIZAR FOTOS DOS ANÚNCIOS EM LOTE
 // ============================================

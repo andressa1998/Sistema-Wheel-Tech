@@ -203,7 +203,7 @@ const SYSTEM_USERS = [
     { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Assistente' },
     { username: 'andressa', password: '220922', name: 'Andressa', avatar: 'A', role: 'Assistente 2' },
     { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' },
-    { username: 'hosama', password: '170999', name: 'Hosama', avatar: 'R', role: 'Administrador' },
+    { username: 'hosama', password: '170999', name: 'Hosama', avatar: 'H', role: 'Administrador' },
     { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
 ];
 
