@@ -1650,9 +1650,9 @@
             <button onclick="abrirSistemaFrete(); fecharSidebar()">
             <i class="fas fa-truck"></i> Gerenciar Frete
             </button>
-            <button onclick="abrirSistemaNFE(); fecharSidebar()">
-            <i class="fas fa-file-invoice"></i> NF-e
-            </button>
+            <button onclick="abrirSistemaEstoque()">
+           <i class="fas fa-boxes"></i> Estoque
+           </button>
         </div>
         <div class="sidebar-footer">
             <button onclick="handleLogout()">
@@ -3784,11 +3784,345 @@
     </div>
 </div>
 
+<!-- ===== SISTEMA DE ESTOQUE ===== -->
+<div id="estoqueSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-boxes" style="color: #28a745;"></i>
+                    Gestão de Estoque e NF-e
+                </h1>
+                <div class="user-info">
+                    <div class="user-avatar" id="estoqueUserAvatar">E</div>
+                    <div>
+                        <div style="font-weight: 600;" id="estoqueUserName">Usuário</div>
+                        <div style="font-size: 12px; color: #6c757d;" id="estoqueUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaOS()" class="btn btn-primary btn-sm">
+                                <i class="fas fa-arrow-left"></i> Voltar
+                            </button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-sign-out-alt"></i> Sair
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Abas de navegação -->
+<div class="tabs-container" style="margin-bottom: 20px;">
+    <div class="d-flex gap-2" id="estoqueTabs">
+        <button class="btn btn-outline-primary active" onclick="mudarAbaEstoque('produtos', this)">
+            <i class="fas fa-box"></i> Produtos
+        </button>
+        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('clientes', this)">
+            <i class="fas fa-users"></i> Clientes
+        </button>
+        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('transportadoras', this)">
+            <i class="fas fa-truck"></i> Transportadoras
+        </button>
+        <button class="btn btn-outline-primary" onclick="mudarAbaEstoque('nfe', this)">
+            <i class="fas fa-file-invoice"></i> Emissão NF-e
+        </button>
+    </div>
+</div>
+
+<!-- Conteúdo das Abas -->
+<div id="abaProdutos" class="tab-content-estoque active"> ... </div>
+<div id="abaClientes" class="tab-content-estoque hidden"> ... </div>
+<div id="abaTransportadoras" class="tab-content-estoque hidden"> ... </div>
+<div id="abaNFe" class="tab-content-estoque hidden"> ... </div>
+
+        <!-- ABA PRODUTOS (com estoque e botão movimentar) -->
+<div id="abaProdutos" class="tab-content-estoque active">
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="card-title"><i class="fas fa-box"></i> Produtos</h2>
+            <div class="d-flex gap-2">
+                <input type="text" id="buscaProdutos" class="form-control" placeholder="Buscar por nome, SKU, EAN..." style="width: 250px;">
+                <button class="btn btn-info" onclick="abrirModalMovimentacao()">
+                    <i class="fas fa-exchange-alt"></i> Movimentar
+                </button>
+                <button class="btn btn-success" onclick="abrirModalProduto()">
+                    <i class="fas fa-plus"></i> Novo Produto
+                </button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table" id="produtosTable">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>SKU</th>
+                        <th>EAN</th>
+                        <th>Tamanho</th>
+                        <th>Cor</th>
+                        <th>NCM</th>
+                        <th>CFOP</th>
+                        <th>Estoque</th>
+                        <th style="width: 120px;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="produtosTableBody">
+                    <tr><td colspan="9" class="text-center">Carregando produtos...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- Paginação Produtos -->
+        <div class="d-flex justify-content-between align-items-center p-3 border-top">
+            <div>
+                Mostrando <span id="produtosInicio">0</span>-<span id="produtosFim">0</span> de <span id="produtosTotal">0</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-primary" onclick="paginarProdutos('anterior')" id="btnProdutosAnterior" disabled>
+                    <i class="fas fa-chevron-left"></i> Anterior
+                </button>
+                <span id="produtosPaginaAtual" style="align-self: center;">1</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="paginarProdutos('proxima')" id="btnProdutosProxima" disabled>
+                    Próxima <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+        <!-- ABA CLIENTES -->
+        <div id="abaClientes" class="tab-content-estoque hidden">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-users"></i> Clientes</h2>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="buscaClientes" class="form-control" placeholder="Buscar por nome, CPF/CNPJ..." style="width: 250px;">
+                        <button class="btn btn-success" onclick="abrirModalCliente()">
+                            <i class="fas fa-plus"></i> Novo Cliente
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table" id="clientesTable">
+                        <thead>
+                            <tr>
+                                <th>Nome</th>
+                                <th>CPF/CNPJ</th>
+                                <th>Email</th>
+                                <th>Telefone</th>
+                                <th>Endereço</th>
+                                <th style="width: 120px;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="clientesTableBody">
+                            <tr><td colspan="6" class="text-center">Carregando clientes...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Paginação Clientes -->
+                <div class="d-flex justify-content-between align-items-center p-3 border-top">
+                    <div>
+                        Mostrando <span id="clientesInicio">0</span>-<span id="clientesFim">0</span> de <span id="clientesTotal">0</span>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary" onclick="paginarClientes('anterior')" id="btnClientesAnterior" disabled>
+                            <i class="fas fa-chevron-left"></i> Anterior
+                        </button>
+                        <span id="clientesPaginaAtual" style="align-self: center;">1</span>
+                        <button class="btn btn-sm btn-outline-primary" onclick="paginarClientes('proxima')" id="btnClientesProxima" disabled>
+                            Próxima <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Movimentação de Estoque -->
+<div id="modalMovimentacao" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="fas fa-exchange-alt"></i> Movimentar Estoque</h3>
+            <button onclick="fecharModalMovimentacao()" style="background:none; border:none; font-size:24px;">&times;</button>
+        </div>
+        <form id="formMovimentacao">
+            <div class="form-group">
+                <label for="movProdutoBusca">Produto *</label>
+                <input type="text" id="movProdutoBusca" class="form-control" placeholder="Digite nome ou SKU" autocomplete="off" required>
+                <input type="hidden" id="movProdutoId">
+                <div id="movProdutoSugestoes" class="sugestoes-container" style="display: none;"></div>
+            </div>
+            <div class="form-group">
+                <label for="movTipo">Tipo *</label>
+                <select id="movTipo" class="form-control" required>
+                    <option value="entrada">Entrada (adicionar)</option>
+                    <option value="saida">Saída (remover)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="movQuantidade">Quantidade *</label>
+                <input type="number" id="movQuantidade" class="form-control" min="1" required>
+            </div>
+            <div class="form-group">
+                <label for="movObservacao">Observação (opcional)</label>
+                <input type="text" id="movObservacao" class="form-control">
+            </div>
+            <div id="movEstoqueAtual" class="alert alert-info" style="display: none;">
+                Estoque atual: <span id="movEstoqueAtualValor">0</span>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="fecharModalMovimentacao()">Cancelar</button>
+                <button type="submit" class="btn btn-success">Registrar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ABA TRANSPORTADORAS -->
+<div id="abaTransportadoras" class="tab-content-estoque hidden">
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="card-title"><i class="fas fa-truck"></i> Transportadoras</h2>
+            <div class="d-flex gap-2">
+                <input type="text" id="buscaTransportadoras" class="form-control" placeholder="Buscar por nome ou CNPJ..." style="width: 250px;">
+                <button class="btn btn-success" onclick="abrirModalTransportadora()">
+                    <i class="fas fa-plus"></i> Nova Transportadora
+                </button>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table" id="transportadorasTable">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>CNPJ</th>
+                        <th>Endereço</th>
+                        <th>Telefone</th>
+                        <th>Email</th>
+                        <th style="width: 120px;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="transportadorasTableBody">
+                    <tr><td colspan="6" class="text-center">Carregando transportadoras...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- Paginação Transportadoras -->
+        <div class="d-flex justify-content-between align-items-center p-3 border-top">
+            <div>
+                Mostrando <span id="transportadorasInicio">0</span>-<span id="transportadorasFim">0</span> de <span id="transportadorasTotal">0</span>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-primary" onclick="paginarTransportadoras('anterior')" id="btnTransportadorasAnterior" disabled>
+                    <i class="fas fa-chevron-left"></i> Anterior
+                </button>
+                <span id="transportadorasPaginaAtual" style="align-self: center;">1</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="paginarTransportadoras('proxima')" id="btnTransportadorasProxima" disabled>
+                    Próxima <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+        <!-- ABA EMISSÃO NF-e (com autocomplete) -->
+        <form id="formNFe">
+    <div class="row">
+        <div class="col-md-6">
+            <h4>Cliente</h4>
+            <div class="form-group">
+                <label for="nfeClienteBusca">Buscar Cliente *</label>
+                <input type="text" id="nfeClienteBusca" class="form-control" placeholder="Digite nome ou documento" autocomplete="off">
+                <input type="hidden" id="nfeClienteId">
+                <div id="nfeClienteSugestoes" class="sugestoes-container" style="display: none;"></div>
+            </div>
+            <div id="nfeClienteInfo" class="p-3 bg-light rounded small" style="display: none;"></div>
+        </div>
+        <div class="col-md-6">
+            <h4>Produto</h4>
+            <div class="form-group">
+                <label for="nfeProdutoBusca">Buscar Produto *</label>
+                <input type="text" id="nfeProdutoBusca" class="form-control" placeholder="Digite nome ou SKU" autocomplete="off">
+                <input type="hidden" id="nfeProdutoId">
+                <div id="nfeProdutoSugestoes" class="sugestoes-container" style="display: none;"></div>
+            </div>
+            <div id="nfeProdutoInfo" class="p-3 bg-light rounded small" style="display: none;"></div>
+            
+            <div class="row mt-3">
+                <div class="col-6">
+                    <div class="form-group">
+                        <label for="nfeQuantidade">Quantidade *</label>
+                        <input type="number" id="nfeQuantidade" class="form-control" min="1" value="1" required>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="form-group">
+                        <label for="nfeValorUnit">Valor Unit. (R$) *</label>
+                        <input type="number" id="nfeValorUnit" class="form-control" step="0.01" min="0" required>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transportadora -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <h4>Transportadora</h4>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="nfeTransportadoraBusca">Selecionar Transportadora</label>
+                <input type="text" id="nfeTransportadoraBusca" class="form-control" placeholder="Digite nome ou CNPJ" autocomplete="off">
+                <input type="hidden" id="nfeTransportadoraId">
+                <div id="nfeTransportadoraSugestoes" class="sugestoes-container" style="display: none;"></div>
+            </div>
+            <div id="nfeTransportadoraInfo" class="p-3 bg-light rounded small" style="display: none;"></div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="nfeFrete">Frete (R$)</label>
+                <input type="number" id="nfeFrete" class="form-control" step="0.01" min="0" value="0">
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-md-4">
+            <div class="form-group">
+                <label for="nfeNatureza">Natureza da Operação</label>
+                <input type="text" id="nfeNatureza" class="form-control" value="Venda de mercadoria">
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-group">
+                <label for="nfeDesconto">Desconto (R$)</label>
+                <input type="number" id="nfeDesconto" class="form-control" step="0.01" min="0" value="0">
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-3">
+        <div class="col-md-6">
+            <div class="form-group">
+                <label>Total da Nota</label>
+                <div class="h3" id="nfeTotal">R$ 0,00</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mt-4">
+        <button type="button" class="btn btn-secondary" onclick="limparFormNFe()">Limpar</button>
+        <button type="submit" class="btn btn-success">
+            <i class="fas fa-file-invoice"></i> Emitir NF-e (Simular)
+        </button>
+    </div>
+</form>
+
 <!-- ===== MODAIS DO SISTEMA DE ESTOQUE ===== -->
 
-<!-- Modal Produto -->
+<!-- Modal Produto (completo) -->
 <div id="modalProduto" class="modal hidden">
-    <div class="modal-content" style="max-width: 900px; max-height: 80vh; overflow-y: auto;">
+    <div class="modal-content" style="max-width: 900px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h3 id="modalProdutoTitle"><i class="fas fa-box"></i> Novo Produto</h3>
             <button onclick="fecharModalProduto()" style="background:none; border:none; font-size:24px;">&times;</button>
@@ -3915,7 +4249,7 @@
     </div>
 </div>
 
-<!-- Modal Cliente -->
+<!-- Modal Cliente (completo) -->
 <div id="modalCliente" class="modal hidden">
     <div class="modal-content" style="max-width: 900px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -4073,7 +4407,7 @@
     </div>
 </div>
 
-<!-- Modal Transportadora -->
+<!-- Modal Transportadora (completo) -->
 <div id="modalTransportadora" class="modal hidden">
     <div class="modal-content" style="max-width: 900px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -4207,7 +4541,7 @@
     </div>
 </div>
 
-<!-- Modal Movimentação de Estoque (único) -->
+<!-- Modal Movimentação de Estoque (já existente) -->
 <div id="modalMovimentacao" class="modal hidden">
     <div class="modal-content" style="max-width: 500px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -4319,47 +4653,5 @@
             setTimeout(atualizarSidebarUsuario, 1000);
         });
     </script>
-
-    <div id="nfeSystem" class="hidden">
-    <header class="main-header">
-        <div class="container">
-            <div class="header-content">
-                <h1><i class="fas fa-file-invoice"></i> Emissão de NF-e</h1>
-                <div class="user-info">
-                    <div class="user-avatar" id="nfeUserAvatar">N</div>
-                    <div>
-                        <div id="nfeUserName">Usuário</div>
-                        <div id="nfeUserRole"></div>
-                        <button onclick="voltarParaOS()" class="btn btn-primary btn-sm mt-2">Voltar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </header>
-
-    <div class="container">
-        <div class="card">
-            <div class="card-header">
-                <h2>Selecionar Venda para Emitir NF-e</h2>
-            </div>
-            <div class="table-responsive">
-                <table class="table" id="nfeVendasTable">
-                    <thead>
-                        <tr>
-                            <th>Venda ML</th>
-                            <th>Cliente</th>
-                            <th>Valor</th>
-                            <th>Data</th>
-                            <th>Ações</th>
-                        </thead>
-                    <tbody id="nfeVendasBody">
-                        <tr><td colspan="5" class="text-center">Carregando vendas...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
-
 </body>
 </html>

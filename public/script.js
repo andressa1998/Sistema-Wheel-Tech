@@ -40,6 +40,15 @@ function handleLogin(e) {
         passwordInput.focus();
         return;
     }
+
+    // Elementos dos sistemas (já devem existir no HTML)
+    const salesSystem = document.getElementById('salesSystem');
+    const reembolsosSystem = document.getElementById('reembolsosSystem');
+    const caixaSystem = document.getElementById('caixaSystem');
+    const reviewsSystem = document.getElementById('reviewsSystem');
+    const folgasSystem = document.getElementById('folgasSystem');
+    const shippingSystem = document.getElementById('shippingSystem');
+    const estoqueSystem = document.getElementById('estoqueSystem');
     
     // Verificar usuário
     const foundUser = SYSTEM_USERS.find(user => 
