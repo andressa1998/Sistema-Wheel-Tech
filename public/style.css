@@ -1,0 +1,854 @@
+/* No arquivo HTML, dentro da tag <style>, adicione: */
+
+.btn-reenviar {
+    background: linear-gradient(135deg, #17a2b8, #138496) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.btn-reenviar:hover {
+    background: linear-gradient(135deg, #138496, #117a8b) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 5px 15px rgba(23, 162, 184, 0.3) !important;
+}
+
+.btn-pink {
+    background: linear-gradient(135deg, #e91e63, #ad1457) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.btn-pink:hover {
+    background: linear-gradient(135deg, #d81b60, #880e4f) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 5px 15px rgba(233, 30, 99, 0.3) !important;
+}
+
+/* Estilo especial para OS que precisam de foto */
+.os-precisa-foto {
+    border-left: 4px solid #e91e63 !important;
+    background: linear-gradient(45deg, #fff0f5, #ffeef8) !important;
+}
+
+.os-precisa-foto:hover {
+    background: linear-gradient(45deg, #ffeef8, #ffebf3) !important;
+}
+
+/* ===== ESTILOS PARA SISTEMA DE VENDAS ML ===== */
+
+/* Estilos para modal de autorização ML */
+#manualAuthCode {
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    letter-spacing: 1px;
+}
+
+/* Badge de status ML */
+#mlTokenStatus {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 10px;
+}
+
+/* Animações para status do token */
+@keyframes tokenWarning {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+.token-expiring {
+    animation: tokenWarning 2s infinite;
+}
+
+/* Responsividade para modal */
+@media (max-width: 600px) {
+    .modal-content {
+        width: 95% !important;
+        margin: 10px !important;
+        padding: 15px !important;
+    }
+}
+
+/* Estilos para o modal de token ML */
+#mlAccessTokenInput {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    padding: 12px;
+    background: #f8f9fa;
+    border: 2px solid #dee2e6;
+}
+
+#mlAccessTokenInput:focus {
+    border-color: #8A2BE2;
+    background: white;
+}
+
+.token-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.token-valid {
+    background: #d4edda;
+    color: #155724;
+}
+
+.token-expiring {
+    background: #fff3cd;
+    color: #856404;
+    animation: pulseWarning 2s infinite;
+}
+
+.token-expired {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+@keyframes pulseWarning {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+/* Status do token automático */
+.auto-token-status {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #28a745;
+    color: white;
+    animation: pulseAuto 3s infinite;
+}
+
+@keyframes pulseAuto {
+    0% { opacity: 0.8; }
+    50% { opacity: 1; }
+    100% { opacity: 0.8; }
+}
+
+/* Loading automático */
+.auto-loading {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #8A2BE2;
+    border-radius: 50%;
+    animation: spinAuto 1s linear infinite;
+}
+
+@keyframes spinAuto {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* ===== ESTILOS PARA CONFERÊNCIA DE VENDAS ===== */
+.item-conferencia {
+    transition: all 0.3s ease;
+    border-left: 4px solid #dee2e6;
+}
+
+.item-conferencia:hover {
+    background: #f8f9fa !important;
+    border-left-color: #8A2BE2;
+}
+
+.item-conferencia.completo {
+    border-left-color: #28a745;
+    background: rgba(40, 167, 69, 0.05) !important;
+}
+
+.item-conferencia.incompleto {
+    border-left-color: #ffc107;
+    background: rgba(255, 193, 7, 0.05) !important;
+}
+
+.item-conferencia.problema {
+    border-left-color: #dc3545;
+    background: rgba(220, 53, 69, 0.05) !important;
+    animation: pulseWarning 2s infinite;
+}
+
+/* Badges para status de conferência */
+.badge-conferencia-pendente {
+    background: rgba(255, 193, 7, 0.1);
+    color: #856404;
+    border: 1px solid #ffc107;
+}
+
+.badge-conferencia-completa {
+    background: rgba(40, 167, 69, 0.1);
+    color: #155724;
+    border: 1px solid #28a745;
+}
+
+.badge-conferencia-parcial {
+    background: rgba(23, 162, 184, 0.1);
+    color: #0c5460;
+    border: 1px solid #17a2b8;
+}
+
+/* Indicador de diferença */
+.diferencia-indicator {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.diferencia-ok {
+    background: #d4edda;
+    color: #155724;
+}
+
+.diferencia-alerta {
+    background: #fff3cd;
+    color: #856404;
+    animation: pulse 1.5s infinite;
+}
+
+.diferencia-problema {
+    background: #f8d7da;
+    color: #721c24;
+    animation: pulseWarning 1.5s infinite;
+}
+
+/* Modal de histórico */
+.historico-item {
+    padding: 15px;
+    border-bottom: 1px solid #e9ecef;
+    transition: background 0.3s;
+}
+
+.historico-item:hover {
+    background: #f8f9fa;
+}
+
+.historico-data {
+    font-size: 12px;
+    color: #6c757d;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.historico-usuario {
+    font-weight: 600;
+    color: #495057;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.historico-acao {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.historico-conferencia {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.historico-ajuste {
+    background: #d4edda;
+    color: #155724;
+}
+
+/* Botões de ação na conferência */
+.btn-conferencia {
+    padding: 8px 16px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s;
+}
+
+.btn-conferencia:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Campo de quantidade com validação */
+.input-quantidade-valido {
+    border-color: #28a745 !important;
+    background-color: rgba(40, 167, 69, 0.05) !important;
+}
+
+.input-quantidade-invalido {
+    border-color: #dc3545 !important;
+    background-color: rgba(220, 53, 69, 0.05) !important;
+    animation: pulseWarning 2s infinite;
+}
+
+/* Tooltip para conferência */
+.conferencia-tooltip {
+    position: relative;
+    display: inline-block;
+}
+
+.conferencia-tooltip .tooltiptext {
+    visibility: hidden;
+    width: 200px;
+    background-color: #495057;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 5px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    margin-left: -100px;
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 12px;
+}
+
+.conferencia-tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 1;
+}
+
+/* Responsividade para modal de conferência */
+@media (max-width: 768px) {
+    .item-conferencia > div {
+        flex-direction: column !important;
+    }
+    
+    .item-conferencia .d-flex {
+        flex-direction: column !important;
+        gap: 10px !important;
+    }
+    
+    .item-conferencia > div > div:first-child {
+        margin-bottom: 10px;
+    }
+}
+
+/* Remove qualquer trava de largura de containers superiores */
+.container, .container-fluid, .page-content, .main-content {
+    max-width: 100% !important;
+    width: 100% !important;
+    padding: 0 5px !important;
+}
+
+/* Ajusta especificamente os table-responsive para não limitarem a largura */
+.table-responsive {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    overflow-x: auto !important; /* Permite scroll se a tela for muito pequena */
+    border: none !important;
+}
+
+/* Configuração da Tabela Principal */
+#salesTableBody {
+    width: 100% !important;
+}
+
+table {
+    width: 100% !important;
+    min-width: 1150px !important; /* Mantém as colunas legíveis */
+    table-layout: auto !important; 
+}
+
+/* Impede que o nome do produto empurre as outras colunas para fora da tela */
+.venda-item td:first-child {
+    max-width: 350px !important;
+    min-width: 250px !important;
+}
+
+.venda-item td div {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+/* Container Principal - Centralização Total */
+#container-vendas-ml {
+    width: 100% !important;
+    max-width: 98% !important; /* Deixa uma pequena folga nas bordas da página */
+    margin: 0 auto !important; /* O segredo para centralizar */
+    overflow-x: auto !important;
+    display: block !important;
+    background: #fff;
+    border-radius: 8px;
+}
+
+#salesTable {
+    width: 100% !important;
+    min-width: 1100px !important;
+    margin: 0 auto !important;
+    table-layout: fixed !important; /* Ajuda a manter as colunas alinhadas */
+}
+
+/* Ajuste das Colunas para ficarem harmônicas */
+#salesTable thead th {
+    vertical-align: middle !important;
+    text-align: center;
+}
+
+/* Coluna do Produto alinhada à esquerda para leitura */
+.venda-item td:first-child {
+    text-align: left !important;
+    padding-left: 15px !important;
+}
+
+/* Restante das colunas sempre no centro */
+.venda-item td {
+    text-align: center !important;
+    vertical-align: middle !important;
+    white-space: nowrap !important;
+}
+
+/* Ajuste do Título do Produto */
+.produto-titulo {
+    font-weight: 600;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Remove recuos do card que podem estar empurrando a tabela */
+.card-body {
+    padding: 0 !important; /* Faz a barra verde encostar nas laterais do card */
+}
+
+#container-vendas-ml {
+    width: 100% !important;
+    overflow-x: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+#salesTable {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin: 0 !important;
+    table-layout: auto !important;
+}
+
+/* Cabeçalho Verde - Centralizando os textos */
+#salesTable thead th {
+    background-color: #28a745 !important;
+    color: white !important;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 15px 10px !important;
+    border: none !important;
+    vertical-align: middle !important;
+}
+
+/* Alinhamento das Células do Corpo */
+.venda-item td {
+    vertical-align: middle !important;
+    text-align: center !important; /* Centraliza tudo por padrão */
+    padding: 15px 10px !important;
+    border-bottom: 1px solid #eee !important;
+    background-color: #fff;
+}
+
+/* Exceção: Produto e SKU alinhados à esquerda para equilíbrio visual */
+.venda-item td:first-child {
+    text-align: left !important;
+    padding-left: 20px !important;
+    width: 30%; /* Dá mais espaço para o título */
+}
+
+/* Garante que os badges fiquem centralizados dentro da célula */
+.badge {
+    display: inline-block !important;
+    margin: 0 auto !important;
+}
+
+/* Estilo para a célula de conferência de estoque */
+.estoque-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+.input-estoque-fisico {
+    width: 60px !important;
+    height: 30px !important;
+    padding: 2px 5px !important;
+    text-align: center !important;
+    border: 1px solid #ced4da !important;
+    border-radius: 4px !important;
+    font-weight: bold;
+}
+
+/* Destaque caso os valores sejam diferentes */
+.estoque-divergente {
+    background-color: #fff3cd !important; /* Amarelo alerta */
+    border-color: #ffc107 !important;
+    color: #856404 !important;
+}
+
+#salesTable {
+    table-layout: fixed !important; /* Força as colunas a respeitarem a largura */
+    width: 100% !important;
+    border-collapse: collapse !important;
+}
+
+#salesTable thead th {
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* Adicione no seu arquivo CSS */
+.badge-full {
+    background-color: #6f42c1;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-flex {
+    background-color: #fd7e14;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-mercado {
+    background-color: #3498db;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-info {
+    background-color: #17a2b8;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-secondary {
+    background-color: #6c757d;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-danger {
+    background-color: #dc3545;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-warning {
+    background-color: #ffc107;
+    color: #000;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-success {
+    background-color: #28a745;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-nova {
+    background-color: #007bff;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-verificada {
+    background-color: #28a745;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-fraude {
+    background-color: #dc3545;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.estoque-fisico-input {
+    width: 70px;
+    padding: 4px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    transition: all 0.3s;
+}
+
+.estoque-fisico-input:focus {
+    border-color: #80bdff;
+    outline: 0;
+    box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+}
+
+/* Adicione ao seu CSS */
+
+/* Badges de Envio */
+.badge-full {
+    background: linear-gradient(135deg, #FFE600 0%, #FFC107 100%);
+    color: #000;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-flex {
+    background: linear-gradient(135deg, #00A650 0%, #28A745 100%);
+    color: white;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-mercado {
+    background: linear-gradient(135deg, #3483FA 0%, #2968C8 100%);
+    color: white;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Badges de Estoque */
+.badge-danger {
+    background: #dc3545;
+    color: white;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-warning {
+    background: #ffc107;
+    color: #000;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.badge-success {
+    background: #28a745;
+    color: white;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Input de estoque */
+.estoque-fisico-input {
+    transition: all 0.3s ease;
+}
+
+.estoque-fisico-input:focus {
+    border-color: #3483FA !important;
+    box-shadow: 0 0 0 2px rgba(52, 131, 250, 0.2);
+    outline: none;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Adicione no seu arquivo CSS ou no final do script */
+.btn-outline-primary {
+    background: transparent;
+    border: 2px solid #8A2BE2;
+    color: #8A2BE2;
+    padding: 8px 16px;
+    border-radius: 30px;
+    transition: all 0.3s;
+    font-weight: 600;
+}
+
+.btn-outline-primary:hover {
+    background: #8A2BE2;
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(138, 43, 226, 0.2);
+}
+
+.btn-outline-primary i {
+    margin-right: 5px;
+}
+
+/* ===== ESTILOS PARA GRID RESPONSIVO (substituto do Bootstrap) ===== */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-right: -10px;
+    margin-left: -10px;
+}
+
+.row > [class*="col-"] {
+    padding-right: 10px;
+    padding-left: 10px;
+    box-sizing: border-box;
+}
+
+.col-md-6 {
+    flex: 0 0 50%;
+    max-width: 50%;
+}
+
+/* Em telas pequenas, as colunas ocupam 100% */
+@media (max-width: 768px) {
+    .col-md-6 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}
+
+/* ===== MELHORIAS NO MODAL ===== */
+.modal {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.modal-content {
+    max-width: 700px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 20px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+}
+
+/* Estilo para títulos de seção dentro do modal */
+.modal-content h4 {
+    margin-top: 20px;
+    margin-bottom: 15px;
+    color: var(--primary);
+    font-size: 16px;
+    border-bottom: 2px solid var(--primary);
+    padding-bottom: 5px;
+}
+
+/* Espaçamento entre grupos de formulário */
+.form-group {
+    margin-bottom: 15px;
+}
+
+/* Ajuste para botões no final do modal */
+.modal-content .d-flex.justify-content-end {
+    margin-top: 20px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+}
+
+/* ===== ESTILOS PARA AUTOCOMPLETE ===== */
+.sugestoes-container {
+    position: absolute;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    width: 100%;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.sugestao-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+}
+
+.sugestao-item:hover {
+    background: #f0f0f0;
+}
+
+/* Ajuste para os campos de busca ficarem relativos */
+.form-group {
+    position: relative;
+}
+
+.alert-info {
+    background-color: #d1ecf1;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+    padding: 12px;
+    border-radius: 5px;
+    margin-top: 10px;
+}
+
+.modal-content {
+    max-height: 85vh;
+    overflow-y: auto;
+}
