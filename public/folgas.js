@@ -70,11 +70,9 @@ window.abrirSistemaFolgas = function() {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
-    
-    // Esconder outros sistemas
-    document.querySelectorAll('#mainSystem, #salesSystem, #reembolsosSystem, #caixaSystem, #reviewsSystem').forEach(el => {
-        if (el) el.classList.add('hidden');
-    });
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
     
     const folgasSystem = document.getElementById('folgasSystem');
     if (folgasSystem) folgasSystem.classList.remove('hidden');

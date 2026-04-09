@@ -582,6 +582,9 @@ window.abrirSistemaEstoque = function() {
     if (!window.currentUser) {
         window.currentUser = userData;
     }
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
     
     const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem'];
     sistemas.forEach(id => {

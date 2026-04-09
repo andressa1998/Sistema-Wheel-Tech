@@ -24,6 +24,9 @@ window.abrirSistemaEstoque = function() {
         return;
     }
 
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
+
     console.log('📦 Abrindo sistema de estoque...');
 
     // Esconder todos os outros sistemas

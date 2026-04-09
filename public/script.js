@@ -58,6 +58,8 @@ function handleLogin(e) {
     setTimeout(() => {
         if (foundUser) {
             currentUser = foundUser;
+
+            atualizarTodosAvatares();
             
             // SALVAR SESSÃO NO LOCALSTORAGE
             saveSessionToStorage();
@@ -74,7 +76,8 @@ function handleLogin(e) {
             
             // Mostrar sistema, esconder login
             if (loginScreen) loginScreen.classList.add('hidden');
-            if (mainSystem) mainSystem.classList.remove('hidden');
+            const menuSystem = document.getElementById('menuSystem');
+            if (menuSystem) menuSystem.classList.remove('hidden');
             
             showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
             
@@ -270,7 +273,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Mostrar sistema, esconder login
         if (loginScreen) loginScreen.classList.add('hidden');
-        if (mainSystem) mainSystem.classList.remove('hidden');
+        const menuSystem = document.getElementById('menuSystem');
+        if (menuSystem) menuSystem.classList.remove('hidden');
         
         // Iniciar timer de sessão
         startSessionTimer();
@@ -372,6 +376,28 @@ Status: ${os.status}
 Acesse o sistema para mais detalhes.
 Sistema Wheel Tech
 `;
+}
+
+// Função auxiliar para atualizar avatar em qualquer elemento
+function atualizarAvatar(elementId, avatar) {
+    const el = document.getElementById(elementId);
+    if (el) el.textContent = avatar;
+}
+
+// No login, após definir currentUser, atualize todos os avatares possíveis
+function atualizarTodosAvatares() {
+    if (!currentUser) return;
+    const avatar = currentUser.avatar;
+    atualizarAvatar('menuUserAvatar', avatar);
+    atualizarAvatar('userAvatar', avatar);
+    atualizarAvatar('caixaUserAvatar', avatar);
+    atualizarAvatar('salesUserAvatar', avatar);
+    atualizarAvatar('reembolsoUserAvatar', avatar);
+    atualizarAvatar('reviewsUserAvatar', avatar);
+    atualizarAvatar('folgasUserAvatar', avatar);
+    atualizarAvatar('shippingUserAvatar', avatar);
+    atualizarAvatar('estoqueUserAvatar', avatar);
+    atualizarAvatar('estoqueGestaoAvatar', avatar);
 }
 
 // ============================================
@@ -2832,6 +2858,8 @@ function handleLogin(e) {
     setTimeout(() => {
         if (foundUser) {
             currentUser = foundUser;
+
+            atualizarTodosAvatares();
             
             // Atualizar interface do usuário
             if (userName) userName.textContent = foundUser.name;
@@ -3934,6 +3962,36 @@ window.viewOrderPhotos = function(orderId) {
     } else {
         showToast('Nenhuma foto disponível para esta OS', 'info');
     }
+};
+
+window.abrirSistemaOS = function() {
+    if (!currentUser) {
+        showToast('Faça login primeiro', 'warning');
+        return;
+    }
+    // Esconder menu
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
+    
+    // Esconder outros sistemas
+    const sistemas = ['salesSystem', 'reembolsosSystem', 'caixaSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'estoqueGestaoSystem'];
+    sistemas.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+    
+    // Mostrar sistema principal de OS
+    const mainSystem = document.getElementById('mainSystem');
+    if (mainSystem) mainSystem.classList.remove('hidden');
+    
+    // Atualizar dados do usuário na interface OS
+    document.getElementById('userName').textContent = currentUser.name;
+    document.getElementById('userAvatar').textContent = currentUser.avatar;
+    document.getElementById('userRole').textContent = currentUser.role;
+    
+    // Carregar ordens se necessário
+    if (typeof loadOrders === 'function') loadOrders();
+    showToast('Sistema de Ordem de Serviço', 'info');
 };
 
 // ============================================
@@ -5635,14 +5693,19 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================================
 // FUNÇÃO PARA VOLTAR PARA SISTEMA OS
 // ============================================
-window.voltarParaOS = function() {
-    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
-    if (mainSystem) mainSystem.classList.remove('hidden');
-    if (reviewsSystem) reviewsSystem.classList.add('hidden');
-    if (folgasSystem) folgasSystem.classList.add('hidden');
-    if (shippingSystem) shippingSystem.classList.add('hidden');
-    if (estoqueSystem) estoqueSystem.classList.add('hidden');
-    showToast('Voltando para Sistema OS', 'info');
+window.voltarParaMenu = function() {
+    // Lista de todos os sistemas que podem estar abertos
+    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 
+                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 
+                      'estoqueGestaoSystem'];
+    sistemas.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+    // Mostrar menu
+    const menu = document.getElementById('menuSystem');
+    if (menu) menu.classList.remove('hidden');
+    showToast('Menu principal', 'info');
 };
 
 // Adicionar estilos CSS para o sistema de impressão
@@ -6108,6 +6171,9 @@ window.abrirSistemaVendas = async function() {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
     
     console.log('🛒 Iniciando sistema de vendas ML...');
     
@@ -6307,6 +6373,9 @@ window.abrirSistemaReembolsos = function() {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
     
     console.log('💰 Iniciando sistema de reembolsos...');
     
@@ -6351,6 +6420,9 @@ window.abrirSistemaCaixa = function() {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
     
     console.log('💰 Iniciando sistema de conferência de caixa...');
     
@@ -6390,20 +6462,19 @@ window.abrirSistemaCaixa = function() {
 };
 
 // Função para voltar ao sistema principal (OS)
-window.voltarParaOS = function() {
-    // Esconder todos os outros sistemas
-    if (salesSystem) salesSystem.classList.add('hidden');
-    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
-    if (caixaSystem) caixaSystem.classList.add('hidden');
-    if (reviewsSystem) reviewsSystem.classList.add('hidden');
-    if (folgasSystem) folgasSystem.classList.add('hidden');
-    if (shippingSystem) shippingSystem.classList.add('hidden');
-    if (estoqueSystem) estoqueSystem.classList.add('hidden');
-    
-    // Mostrar sistema principal
-    if (mainSystem) mainSystem.classList.remove('hidden');
-    
-    showToast('Voltando para Sistema de Ordem de Serviço', 'info');
+window.voltarParaMenu = function() {
+    // Lista de todos os sistemas que podem estar abertos
+    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 
+                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 
+                      'estoqueGestaoSystem'];
+    sistemas.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+    // Mostrar menu
+    const menu = document.getElementById('menuSystem');
+    if (menu) menu.classList.remove('hidden');
+    showToast('Menu principal', 'info');
 };
 
 // ============================================
@@ -6420,6 +6491,9 @@ window.abrirSistemaReviews = function() {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
     
     console.log('⭐ Iniciando sistema de avaliações...');
     
@@ -6637,6 +6711,9 @@ window.abrirSistemaVendas = async function() {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
     
     console.log('🛒 Iniciando sistema de vendas ML...');
     
@@ -7521,6 +7598,10 @@ window.abrirSistemaFrete = function() {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
+
     // Esconder outras abas
     const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem'];
     sistemas.forEach(id => {
@@ -7629,6 +7710,9 @@ async function abrirSistemaNFE() {
         showToast('Faça login primeiro', 'warning');
         return;
     }
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
 
     // Esconder outros sistemas
     document.querySelectorAll('#mainSystem, #salesSystem, #reembolsosSystem, #caixaSystem, #reviewsSystem, #folgasSystem, #shippingSystem, #estoqueSystem').forEach(el => {

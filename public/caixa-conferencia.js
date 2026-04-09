@@ -66,6 +66,9 @@ window.abrirSistemaCaixa = function() {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
+
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
     
     // Verifica se hoje é final de semana
     const todayStr = new Date().toISOString().split('T')[0];

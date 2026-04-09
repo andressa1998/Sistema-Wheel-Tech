@@ -852,3 +852,101 @@ table {
     max-height: 85vh;
     overflow-y: auto;
 }
+
+/* ===== RESTAURAR TAMANHOS ORIGINAIS ===== */
+body, .container, .card, .table, .btn, .form-control, .modal-content {
+    font-size: 14px;
+}
+
+/* Reduzir ícones do menu */
+.menu-icon {
+    font-size: 32px !important;
+}
+.menu-card h3 {
+    font-size: 16px !important;
+}
+.menu-card p {
+    font-size: 12px !important;
+}
+
+/* Ajustar cabeçalhos dos cards */
+.card-title {
+    font-size: 18px !important;
+}
+
+/* Botões menores */
+.btn-sm {
+    font-size: 12px !important;
+    padding: 4px 8px !important;
+}
+
+/* Tabelas */
+.table th, .table td {
+    font-size: 13px !important;
+    padding: 10px 8px !important;
+}
+
+/* Badges */
+.badge {
+    font-size: 11px !important;
+    padding: 4px 8px !important;
+}
+
+/* Ícones em geral */
+i, .fas, .far {
+    font-size: 14px;
+}
+
+/* Ícones dentro de botões */
+.btn i {
+    font-size: 13px;
+}
+
+/* Títulos principais */
+h1, .header-title {
+    font-size: 20px !important;
+}
+h2 {
+    font-size: 18px !important;
+}
+h3 {
+    font-size: 16px !important;
+}
+h4 {
+    font-size: 14px !important;
+}
+
+/* Código OS */
+.os-code {
+    font-size: 14px !important;
+}
+
+/* Inputs */
+.form-control {
+    font-size: 14px !important;
+    padding: 8px 12px !important;
+}
+
+/* Cabeçalho do usuário */
+.user-info div {
+    font-size: 14px;
+}
+
+/* Cards de informação (caixa, etc.) */
+.info-card {
+    font-size: 13px;
+}
+.info-card div[style*="font-size: 16px"] {
+    font-size: 14px !important;
+}
+.info-card div[style*="font-size: 24px"] {
+    font-size: 20px !important;
+}
+
+/* Cards do menu */
+.menu-card {
+    padding: 15px 10px !important;
+}
+.menu-card .menu-icon i {
+    font-size: 36px !important;
+}
