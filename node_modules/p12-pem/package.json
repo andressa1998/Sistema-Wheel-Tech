@@ -1,0 +1,58 @@
+{
+  "name": "p12-pem",
+  "version": "1.0.5",
+  "description": "Extracts the certificate and the private key from a p12/ pkcs12 file",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "test": "jest --config jestconfig.json",
+    "build": "tsc",
+    "format": "prettier --write \"src/**/*.ts\" \"src/**/*.js\"",
+    "lint": "tslint -p tsconfig.json",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm test && npm run lint",
+    "preversion": "npm run lint",
+    "version": "npm run format && git add -A src",
+    "postversion": "git push && git push --tags"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appit-online/p12-to-pem.git"
+  },
+  "keywords": [
+    "p12",
+    "cert",
+    "pem",
+    "private key",
+    "p12 to pem",
+    "concert p12",
+    "extract p12"
+  ],
+  "funding": {
+    "url": "https://paypal.me/dave7117",
+    "type": "paypal"
+  },
+  "author": "David Koller",
+  "license": "ISC",
+  "files": [
+    "lib/**/*"
+  ],
+  "bugs": {
+    "url": "https://github.com/appit-online/p12-to-pem/issues"
+  },
+  "homepage": "https://github.com/appit-online/p12-to-pem#readme",
+  "devDependencies": {
+    "@types/jest": "^27.0.3",
+    "@types/node": "^16.11.12",
+    "@types/node-forge": "^0.10.10",
+    "jest": "^27.4.4",
+    "prettier": "^2.5.1",
+    "ts-jest": "^27.1.1",
+    "tslint": "^6.1.3",
+    "tslint-config-prettier": "^1.18.0",
+    "typescript": "^4.5.3"
+  },
+  "dependencies": {
+    "node-forge": "^0.10.0"
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "name": "sistema-os-fotografia",
+  "version": "1.0.0",
+  "description": "",
+  "main": "caixa-conferencia.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andressa1998/Sistema-Wheel-Tech.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/andressa1998/Sistema-Wheel-Tech/issues"
+  },
+  "homepage": "https://github.com/andressa1998/Sistema-Wheel-Tech#readme",
+  "dependencies": {
+    "@peculiar/webcrypto": "^1.5.0",
+    "@supabase/supabase-js": "^2.100.1",
+    "@types/node": "^25.5.0",
+    "axios": "^1.14.0",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.5.9",
+    "jsrsasign": "^11.1.1",
+    "moment-timezone": "^0.6.1",
+    "multer": "^2.1.1",
+    "node-forge": "^1.4.0",
+    "p12-pem": "^1.0.5",
+    "pg": "^8.20.0",
+    "xml-c14n": "^0.0.6",
+    "xml-crypto": "^2.1.6",
+    "xml2js": "^0.6.2",
+    "xmlbuilder2": "^4.0.3",
+    "xmldom": "^0.6.0",
+    "xmldsigjs": "^2.8.6"
+  },
+  "devDependencies": {
+    "wrangler": "^4.79.0"
+  }
+}

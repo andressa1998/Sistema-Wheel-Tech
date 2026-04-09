@@ -7516,28 +7516,37 @@ function adicionarBotoesSelecaoOS() {
     }
 }
 
-function abrirSistemaFrete() {
-    // Esconde todos os sistemas
-    document.getElementById('mainSystem').classList.add('hidden');
-    document.getElementById('salesSystem').classList.add('hidden');
-    document.getElementById('reembolsosSystem').classList.add('hidden');
-    document.getElementById('caixaSystem').classList.add('hidden');
-    document.getElementById('reviewsSystem').classList.add('hidden');
-    document.getElementById('folgasSystem').classList.add('hidden');
-    document.getElementById('shippingSystem').classList.remove('hidden');
-    
-    // Atualiza informações do usuário
-    document.getElementById('shippingUserName').textContent = document.getElementById('userName').textContent;
-    document.getElementById('shippingUserRole').textContent = document.getElementById('userRole').textContent;
-    document.getElementById('shippingUserAvatar').textContent = document.getElementById('userAvatar').textContent;
-    
-    // Carrega vendas
-    if (window.shippingManager) {
-        window.shippingManager.carregarVendas();
-        } else {
-        console.error('❌ shippingManager não encontrado');
+window.abrirSistemaFrete = function() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
     }
-}
+    // Esconder outras abas
+    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem'];
+    sistemas.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+    const shippingSystem = document.getElementById('shippingSystem');
+    if (shippingSystem) shippingSystem.classList.remove('hidden');
+    
+    // Atualizar cabeçalho
+    document.getElementById('shippingUserName').textContent = currentUser.name;
+    document.getElementById('shippingUserAvatar').textContent = currentUser.avatar;
+    document.getElementById('shippingUserRole').textContent = currentUser.role;
+    
+    // Verificar se o shippingManager já está disponível
+    if (typeof window.shippingManager !== 'undefined' && window.shippingManager !== null) {
+        if (typeof window.shippingManager.carregarAnalises === 'function') {
+            window.shippingManager.carregarAnalises();
+        } else {
+            showToast('Módulo de fretes incompleto. Recarregue a página.', 'error');
+        }
+    } else {
+        showToast('Módulo de fretes não carregado. Recarregue a página.', 'error');
+        console.error('shippingManager não está definido. Verifique a ordem dos scripts.');
+    }
+};
 
 // ===== INICIALIZAR QUANDO O DOM CARREGAR =====
 document.addEventListener('DOMContentLoaded', function() {
