@@ -3985,6 +3985,7 @@ window.abrirSistemaOS = function() {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
+
     
     // Atualizar dados do usuário na interface OS
     document.getElementById('userName').textContent = currentUser.name;
