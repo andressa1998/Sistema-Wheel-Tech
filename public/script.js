@@ -2875,7 +2875,8 @@ function handleLogin(e) {
             
             // Mostrar sistema, esconder login
             if (loginScreen) loginScreen.classList.add('hidden');
-            if (mainSystem) mainSystem.classList.remove('hidden');
+            const menuSystem = document.getElementById('menuSystem');
+            if (menuSystem) menuSystem.classList.remove('hidden');
             
             showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
             
@@ -3984,10 +3985,6 @@ window.abrirSistemaOS = function() {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
-    
-    // Mostrar sistema principal de OS
-    const mainSystem = document.getElementById('mainSystem');
-    if (mainSystem) mainSystem.classList.remove('hidden');
     
     // Atualizar dados do usuário na interface OS
     document.getElementById('userName').textContent = currentUser.name;
