@@ -567,6 +567,11 @@ function loadSessionFromStorage() {
             clearSessionStorage();
             return false;
         }
+
+        // Mostrar MENU, esconder login
+        if (loginScreen) loginScreen.classList.add('hidden');
+        const menuSystem = document.getElementById('menuSystem');
+        if (menuSystem) menuSystem.classList.remove('hidden');
         
         // Restaurar usuário
         currentUser = user;
