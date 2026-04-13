@@ -10,6 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     
     <style>
         /* ===== ESTILOS GERAIS (mantidos originais) ===== */
@@ -491,9 +492,9 @@ h4 {
                 <p>Consultar avaliações ML</p>
             </div>
             <div class="menu-card" onclick="abrirSistemaReembolsos()">
-                <div class="menu-icon"><i class="fas fa-exchange-alt"></i></div>
-                <h3>Reembolsos</h3>
-                <p>Controle de reembolsos ML</p>
+                <div class="menu-icon"><i class="fas fa-comment-dots"></i></div>
+                <h3>Reclamações</h3>
+                <p>Controle de reclamações ML</p>
             </div>
             <div class="menu-card" onclick="abrirSistemaFolgas()">
                 <div class="menu-icon"><i class="fas fa-calendar-alt"></i></div>
@@ -514,6 +515,16 @@ h4 {
                 <div class="menu-icon"><i class="fas fa-box"></i></div>
                 <h3>Gestão de Estoque</h3>
                 <p>Produtos, entrada/saída</p>
+            </div>
+            <div class="menu-card" onclick="abrirGestaoEstoque()">
+                <div class="menu-icon"><i class="fas fa-tag"></i></div>
+                <h3>Promoções</h3>
+                <p>Gerenciar e organizar promoções</p>
+            </div>
+            <div class="menu-card" onclick="abrirGestaoEstoque()">
+                <div class="menu-icon"><i class="fas fa-exchange-alt"></i></div>
+                <h3>Entradas e Saídas</h3>
+                <p>Movimentação de estoque</p>
             </div>
         </div>
     </div>
@@ -1172,7 +1183,7 @@ h4 {
         <header class="main-header">
             <div class="container">
                 <div class="header-content">
-                    <h1><i class="fas fa-exchange-alt" style="color:var(--primary);"></i> Reembolsos ML</h1>
+                    <h1><i class="fas fa-exchange-alt" style="color:var(--primary);"></i> Reclamações ML</h1>
                     <div class="user-info">
                         <div class="user-avatar" id="reembolsoUserAvatar">U</div>
                         <div>
@@ -1195,7 +1206,7 @@ h4 {
                     <div>
                         <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
                             <i class="fas fa-money-check-alt" style="color: var(--success);"></i>
-                            Controle de Reembolsos
+                            Controle de Reclamações
                         </h3>
                         <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
                             <span id="countVerificar">0</span> a verificar •
@@ -1218,6 +1229,60 @@ h4 {
                     </div>
                 </div>
             </div>
+
+            <!-- Botão para abrir relatório por colaborador (visível apenas para admin) -->
+<div id="btnRelatorioColaborador" class="hidden" style="margin-top: 20px;">
+    <button class="btn btn-info" onclick="abrirRelatorioColaborador()">
+        <i class="fas fa-chart-line"></i> Relatório por Colaborador
+    </button>
+</div>
+
+<!-- Modal do relatório por colaborador -->
+<div id="relatorioColaboradorModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 1000px; max-height: 90vh; padding: 0;">
+        <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;"><i class="fas fa-users"></i> Relatório por Colaborador</h3>
+            <button onclick="closeRelatorioColaborador()" style="background: none; border: none; color: white; font-size: 24px;">&times;</button>
+        </div>
+        <div style="padding: 20px; max-height: 80vh; overflow-y: auto;">
+            <div class="card mb-4">
+                <div class="d-flex gap-2">
+                    <input type="date" id="relColabDataInicio" class="form-control" style="width: 150px;">
+                    <input type="date" id="relColabDataFim" class="form-control" style="width: 150px;">
+                    <button class="btn btn-primary" onclick="carregarRelatorioColaborador()">Filtrar</button>
+                    <button class="btn btn-success" onclick="exportarRelatorioColaboradorExcel()">Exportar Excel</button>
+                </div>
+            </div>
+            <div id="graficoColaborador" style="height: 300px; margin-bottom: 30px;"></div>
+            <div class="table-responsive">
+                <table class="table" id="relatorioColaboradorTable">
+                    <thead>
+                        <tr><th>Colaborador</th><th>Total Reclamações</th><th>Abertas</th><th>Solucionadas</th><th>Taxa Solução</th><th>Tempo Médio (dias)</th></tr>
+                    </thead>
+                    <tbody id="relatorioColaboradorBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para visualizar detalhes do reembolso -->
+<div id="detalhesReembolsoModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 600px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">
+                <i class="fas fa-file-alt"></i> Detalhes da Reclamação
+            </h3>
+            <button onclick="closeDetalhesReembolso()" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+        </div>
+        <div id="detalhesReembolsoContent">
+            <!-- Conteúdo será preenchido dinamicamente -->
+        </div>
+        <div class="d-flex justify-content-end mt-3">
+            <button class="btn btn-secondary" onclick="closeDetalhesReembolso()">Fechar</button>
+        </div>
+    </div>
+</div>
             
             <!-- Abas de Navegação -->
             <div class="card mb-4">
@@ -1247,7 +1312,7 @@ h4 {
                                 <th>Operação</th>
                                 <th>Valor</th>
                                 <th>Data</th>
-                                <th>Frete</th>
+                                <th>Motivo</th>
                                 <th>Status</th>
                                 <th>Criado por</th>
                                 <th>Ações</th>
@@ -1430,73 +1495,110 @@ h4 {
 
     <!-- Modal para Novo Reembolso -->
     <div id="reembolsoModal" class="modal hidden">
-        <div class="modal-content" style="max-width: 500px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h3 style="margin: 0;">
-                    <i class="fas fa-exchange-alt"></i> <span id="reembolsoModalTitle">Novo Reembolso</span>
-                </h3>
-                <button onclick="closeReembolsoModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
-                    &times;
-                </button>
+    <div class="modal-content" style="max-width: 600px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">
+                <i class="fas fa-exchange-alt"></i> <span id="reembolsoModalTitle">Novo Reembolso</span>
+            </h3>
+            <button onclick="closeReembolsoModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
+                &times;
+            </button>
+        </div>
+        
+        <div id="reembolsoFormContainer">
+            <input type="hidden" id="reembolsoId">
+            
+            <!-- Tipo de referência: Venda ou Retirada FULL -->
+            <div class="form-group mb-3">
+                <label><i class="fas fa-tag"></i> Tipo de referência *</label>
+                <div class="d-flex gap-3">
+                    <label>
+                        <input type="radio" name="tipoReferencia" value="venda" checked onchange="toggleReferenciaFields()"> Venda
+                    </label>
+                    <label>
+                        <input type="radio" name="tipoReferencia" value="retirada" onchange="toggleReferenciaFields()"> Retirada FULL
+                    </label>
+                </div>
             </div>
             
-            <div id="reembolsoFormContainer">
-                <input type="hidden" id="reembolsoId">
-                
-                <div class="form-group mb-3">
-                    <label for="numeroVenda"><i class="fas fa-tag"></i> Número da Venda *</label>
-                    <input type="text" id="numeroVenda" class="form-control" placeholder="Ex: VENDA123456" required>
+            <!-- Campo Número da Venda (aparece quando tipo = venda) -->
+            <div class="form-group mb-3" id="campoNumeroVenda">
+                <label for="numeroVenda"><i class="fas fa-tag"></i> Número da Venda * (16 caracteres)</label>
+                <input type="text" id="numeroVenda" class="form-control" placeholder="Ex: 1234567890123456" maxlength="16" required>
+                <small style="color: #6c757d;">Deve ter exatamente 16 caracteres</small>
+            </div>
+            
+            <!-- Campo Número da Retirada (aparece quando tipo = retirada) -->
+            <div class="form-group mb-3 hidden" id="campoNumeroRetirada">
+                <label for="numeroRetirada"><i class="fas fa-boxes"></i> Número da Retirada *</label>
+                <input type="text" id="numeroRetirada" class="form-control" placeholder="Ex: RET123456789" required>
+            </div>
+            
+            <!-- Número da Reclamação (obrigatório) -->
+            <div class="form-group mb-3">
+                <label for="numeroReclamacao"><i class="fas fa-exclamation-circle"></i> Número da Reclamação *</label>
+                <input type="text" id="numeroReclamacao" class="form-control" placeholder="Ex: REC123456" required>
+            </div>
+            
+            <!-- Número da Operação com opções -->
+            <div class="form-group mb-3">
+                <label><i class="fas fa-receipt"></i> Número da Operação</label>
+                <div class="d-flex gap-3 mb-2">
+                    <label>
+                        <input type="radio" name="tipoOperacao" value="adicionar" checked onchange="toggleOperacaoField()"> Adicionar número da operação
+                    </label>
+                    <label>
+                        <input type="radio" name="tipoOperacao" value="reembolso_venda" onchange="toggleOperacaoField()"> Reembolso na venda (sem número)
+                    </label>
                 </div>
-                
-                <div class="form-group mb-3">
-                    <label for="numeroOperacao"><i class="fas fa-receipt"></i> Número da Operação *</label>
-                    <input type="text" id="numeroOperacao" class="form-control" placeholder="Ex: OP789012" required>
+                <div id="campoNumeroOperacao">
+                    <input type="text" id="numeroOperacao" class="form-control" placeholder="Ex: OP789012">
                 </div>
-                
-                <div class="d-flex gap-3 mb-3">
-                    <div style="flex: 1;">
-                        <div class="form-group">
-                            <label for="valorReembolso"><i class="fas fa-money-bill-wave"></i> Valor *</label>
-                            <input type="number" id="valorReembolso" class="form-control" step="0.01" min="0" placeholder="0,00" required>
-                        </div>
+            </div>
+            
+            <!-- Valor e Data -->
+            <div class="d-flex gap-3 mb-3">
+                <div style="flex: 1;">
+                    <div class="form-group">
+                        <label for="valorReembolso"><i class="fas fa-money-bill-wave"></i> Valor *</label>
+                        <input type="number" id="valorReembolso" class="form-control" step="0.01" min="0" placeholder="0,00" required>
                     </div>
-                    
-                    <div style="flex: 1;">
-                        <div class="form-group">
-                            <label for="dataReembolso"><i class="fas fa-calendar"></i> Data *</label>
-                            <input type="date" id="dataReembolso" class="form-control" required>
-                        </div>
+                </div>
+                <div style="flex: 1;">
+                    <div class="form-group">
+                        <label for="dataReembolso"><i class="fas fa-calendar"></i> Data *</label>
+                        <input type="date" id="dataReembolso" class="form-control" required>
                     </div>
                 </div>
-                
-                <div class="form-group mb-3">
-                    <label for="tipoReembolso"><i class="fas fa-shipping-fast"></i> Tipo de Reembolso</label>
-                    <select id="tipoReembolso" class="form-control">
-                        <option value="normal" selected>Normal (Produto)</option>
-                        <option value="frete">Frete</option>
-                        <option value="outro">Outro</option>
-                    </select>
-                    <small style="color: #6c757d; font-size: 12px; display: block; margin-top: 5px;">
-                        <i class="fas fa-info-circle"></i> Selecione "Frete" se o reembolso for referente a custos de envio
-                    </small>
-                </div>
-                
-                <div class="form-group mb-4">
-                    <label for="observacoesReembolso"><i class="fas fa-sticky-note"></i> Observações</label>
-                    <textarea id="observacoesReembolso" class="form-control" rows="2" placeholder="Detalhes sobre o reembolso..."></textarea>
-                </div>
-                
-                <div class="d-flex justify-content-end gap-2">
-                    <button type="button" class="btn btn-secondary" onclick="closeReembolsoModal()">
-                        Cancelar
-                    </button>
-                    <button id="salvarReembolsoBtn" class="btn btn-success" onclick="salvarReembolso()">
-                        <i class="fas fa-save"></i> Salvar
-                    </button>
-                </div>
+            </div>
+            
+            <!-- Motivo (substitui o tipo) -->
+            <div class="form-group mb-3">
+                <label for="motivoReembolso"><i class="fas fa-question-circle"></i> Motivo *</label>
+                <select id="motivoReembolso" class="form-control" required>
+                    <option value="">Selecione o motivo</option>
+                    <option value="Frete">Frete</option>
+                    <option value="Extravio no envio">Extravio no envio</option>
+                    <option value="Extravio na devolução">Extravio na devolução</option>
+                    <option value="Devolução danificada">Devolução danificada</option>
+                </select>
+            </div>
+            
+            <!-- Observações -->
+            <div class="form-group mb-4">
+                <label for="observacoesReembolso"><i class="fas fa-sticky-note"></i> Observações</label>
+                <textarea id="observacoesReembolso" class="form-control" rows="2" placeholder="Detalhes sobre o reembolso..."></textarea>
+            </div>
+            
+            <div class="d-flex justify-content-end gap-2">
+                <button type="button" class="btn btn-secondary" onclick="closeReembolsoModal()">Cancelar</button>
+                <button id="salvarReembolsoBtn" class="btn btn-success" onclick="salvarReembolso()">
+                    <i class="fas fa-save"></i> Salvar
+                </button>
             </div>
         </div>
     </div>
+</div>
 
     <!-- Modal para Relatório de Reembolsos -->
     <div id="relatorioModal" class="modal hidden">
@@ -1504,7 +1606,7 @@ h4 {
             <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h3 style="margin: 0; font-weight: 600;">
-                        <i class="fas fa-chart-line"></i> Relatório de Reembolsos
+                        <i class="fas fa-chart-line"></i> Relatório de Reclamações
                     </h3>
                     <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
                         Análise de reembolsos por período
@@ -2555,7 +2657,7 @@ h4 {
 <div id="modalRelatorioFrete" class="modal hidden">
     <div class="modal-content" style="max-width: 90%; width: 1200px; max-height: 90vh; padding: 0;">
         <div style="background: linear-gradient(135deg, #fd7e14, #e8590c); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="margin:0;"><i class="fas fa-chart-bar"></i> Relatório de Frete e Reembolsos</h3>
+            <h3 style="margin:0;"><i class="fas fa-chart-bar"></i> Relatório de Reclamações</h3>
             <button onclick="fecharModalRelatorio()" style="background: rgba(255,255,255,0.2); border:none; color:white; font-size:24px;">&times;</button>
         </div>
         <div style="padding: 20px; max-height: 80vh; overflow-y: auto;">

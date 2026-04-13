@@ -11,6 +11,8 @@ let supabaseClient = null;
 const SESSION_TIMEOUT = 2 * 60 * 60 * 1000; // 24 horas em milissegundos
 let sessionTimer = null;
 let refreshTokenInterval = null;
+let reembolsoNotificationCount = null;
+let reembolsoNotificationBell = null;
 
 function handleLogin(e) {
     e.preventDefault();
@@ -275,12 +277,18 @@ document.addEventListener('DOMContentLoaded', function() {
         if (loginScreen) loginScreen.classList.add('hidden');
         const menuSystem = document.getElementById('menuSystem');
         if (menuSystem) menuSystem.classList.remove('hidden');
+
+        reembolsoNotificationCount = document.getElementById('reembolsoNotificationCount');
+        reembolsoNotificationBell = document.getElementById('reembolsoNotificationBell');
         
         // Iniciar timer de sessão
         startSessionTimer();
         
         // Configurar detectores de atividade
         setupActivityDetectors();
+
+        // Chamar após definir currentUser, por exemplo dentro do handleLogin
+        atualizarVisibilidadeRelatorioColaborador();
         
         // Carregar dados
         setTimeout(() => {
@@ -693,6 +701,13 @@ function setupEventListeners() {
                 e.preventDefault();
                 loginForm.dispatchEvent(new Event('submit'));
             }
+        });
+    }
+
+    const detalhesModal = document.getElementById('detalhesReembolsoModal');
+    if (detalhesModal) {
+        detalhesModal.addEventListener('click', function(e) {
+            if (e.target === detalhesModal) closeDetalhesReembolso();
         });
     }
     
@@ -1514,7 +1529,12 @@ async function loadReembolsos() {
             data_criacao: item.data_criacao,
             data_atualizacao: item.data_atualizacao,
             notificado_admin: item.notificado_admin,
-            notificado_usuario: item.notificado_usuario
+            notificado_usuario: item.notificado_usuario,
+            // NOVOS CAMPOS
+            motivo: item.motivo,
+            numero_reclamacao: item.numero_reclamacao,
+            tipo_referencia: item.tipo_referencia,
+            numero_retirada: item.numero_retirada
         }));
         
         // Verificar se o usuário atual é admin
@@ -1649,97 +1669,84 @@ function renderReembolsosTable() {
     const tbody = document.getElementById('reembolsosTableBody');
     const emptyMsg = document.getElementById('reembolsosEmpty');
     
-    if (!tbody) {
-        console.error('❌ Elemento reembolsosTableBody não encontrado');
-        return;
-    }
-    
+    if (!tbody) return;
     tbody.innerHTML = '';
     
     if (reembolsos.length === 0) {
         if (emptyMsg) emptyMsg.classList.remove('hidden');
         return;
     }
-    
     if (emptyMsg) emptyMsg.classList.add('hidden');
     
-    // Filtrar reembolsos baseado no filtro atual
     let filteredReembolsos = reembolsos;
     if (currentReembolsoFilter !== 'todos') {
         filteredReembolsos = reembolsos.filter(r => r.status === currentReembolsoFilter);
     }
     
-    // Verificar se o usuário atual é admin
     const isAdmin = currentUser && currentUser.role === 'Administrador';
     
     filteredReembolsos.forEach(reembolso => {
         const row = document.createElement('tr');
         row.className = 'reembolso-item';
         
-        // Formatar data
         const dataOp = new Date(reembolso.data_operacao);
         const dataFormatada = dataOp.toLocaleDateString('pt-BR');
         
-        // Status
+        // Badge de status
         let statusBadge = '';
-        if (reembolso.status === 'a_verificar') {
-            statusBadge = '<span class="status-a_verificar">A Verificar</span>';
-        } else if (reembolso.status === 'reembolsado') {
-            statusBadge = '<span class="status-reembolsado">Reembolsado</span>';
-        } else {
-            statusBadge = '<span class="status-pendente">Pendente</span>';
+        if (reembolso.status === 'a_verificar') statusBadge = '<span class="status-a_verificar">A Verificar</span>';
+        else if (reembolso.status === 'reembolsado') statusBadge = '<span class="status-reembolsado">Reembolsado</span>';
+        else statusBadge = '<span class="status-pendente">Pendente</span>';
+        
+        // Ícone de observação
+        let observacaoIcon = '';
+        if (reembolso.observacoes && reembolso.observacoes.trim() !== '') {
+            observacaoIcon = `<i class="fas fa-comment" style="color: #17a2b8; margin-left: 5px;" title="Observação: ${reembolso.observacoes.replace(/"/g, '&quot;')}"></i>`;
         }
         
-        // FRETE:
-        let tipoInfo = '';
-        if (reembolso.tipo === 'frete') {
-            tipoInfo = `
-                <div style="margin-top: 5px;">
-                    <span class="badge badge-warning" style="background: #ffc107; color: #212529;">
-                        <i class="fas fa-shipping-fast"></i> Frete
-                    </span>
-                </div>
-            `;
-        } else if (reembolso.tipo === 'outro') {
-            tipoInfo = `
-                <div style="margin-top: 5px;">
-                    <span class="badge badge-info">
-                        <i class="fas fa-question-circle"></i> Outro
-                    </span>
-                </div>
-            `;
-        }
+        // Motivo
+        const motivo = reembolso.motivo || 'Normal';
+        
+        // Número da reclamação
+        const numReclamacao = reembolso.numero_reclamacao || '-';
         
         // Ações
         let acoes = '';
-        
-        // Se for admin ou criador do reembolso
         if (isAdmin || reembolso.criado_por === currentUser?.name) {
             if (reembolso.status === 'a_verificar' && isAdmin) {
                 acoes = `
                     <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
-                        <i class="fas fa-check"></i> OK
+                        <i class="fas fa-check"></i>
                     </button>
                     <button class="btn btn-danger btn-sm" onclick="rejeitarReembolso(${reembolso.id})" title="Marcar como Pendente">
-                        <i class="fas fa-times"></i> Pendente
+                        <i class="fas fa-times"></i>
                     </button>
                 `;
             }
-            
             if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser?.name) {
                 acoes += `
-                    <button class="btn btn-info btn-sm btn-reenviar" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação">
-                        <i class="fas fa-paper-plane"></i> Reenviar
+                    <button class="btn btn-info btn-sm" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação">
+                        <i class="fas fa-paper-plane"></i>
                     </button>
                 `;
             }
-            
+            if (reembolso.status === 'reembolsado' && isAdmin) {
+                acoes += `
+                    <button class="btn btn-warning btn-sm" onclick="voltarParaVerificacao(${reembolso.id})" title="Voltar para A Verificar">
+                        <i class="fas fa-undo-alt"></i>
+                    </button>
+                `;
+            }
+            acoes += `
+            <button class="btn btn-info btn-sm" onclick="verDetalhesReembolso(${reembolso.id})" title="Ver detalhes">
+                <i class="fas fa-eye"></i>
+            </button>
+             `;
             acoes += `
                 <button class="btn btn-warning btn-sm" onclick="editarReembolso(${reembolso.id})" title="Editar">
                     <i class="fas fa-edit"></i>
                 </button>
             `;
-            
             if (isAdmin || reembolso.criado_por === currentUser?.name) {
                 acoes += `
                     <button class="btn btn-danger btn-sm" onclick="excluirReembolso(${reembolso.id})" title="Excluir">
@@ -1752,65 +1759,27 @@ function renderReembolsosTable() {
         }
         
         row.innerHTML = `
-            <td><strong>${reembolso.numero_venda}</strong></td>
-            <td>${reembolso.numero_operacao}</td>
+            <td><strong>${reembolso.numero_venda}</strong> ${observacaoIcon}<br>
+                <small class="text-muted">Rec: ${numReclamacao}</small>
+            </td>
+            <td>${reembolso.numero_operacao || '-'} ${reembolso.numero_retirada ? `<br><small>Retirada: ${reembolso.numero_retirada}</small>` : ''}</td>
             <td class="valor-cell">R$ ${parseFloat(reembolso.valor).toFixed(2)}</td>
             <td>${dataFormatada}</td>
-            <td>${tipoInfo}</td>
+            <td>${motivo}</td>
             <td>${statusBadge}</td>
             <td>${reembolso.criado_por}</td>
-            <td>
-                <div class="d-flex gap-2">
-                    ${acoes}
-                </div>
-            </td>
+            <td><div class="d-flex gap-2">${acoes}</div></td>
         `;
-        
         tbody.appendChild(row);
     });
     
-    // Calcular pendentes do usuário para os badges
-    const pendentesUsuario = reembolsos.filter(r => 
-        r.status === 'pendente' && r.criado_por === currentUser?.name
-    ).length;
-    
+    // Atualizar badges (código existente mantido)
+    const pendentesUsuario = reembolsos.filter(r => r.status === 'pendente' && r.criado_por === currentUser?.name).length;
     const aVerificar = reembolsos.filter(r => r.status === 'a_verificar').length;
-    
-    // Atualizar badges de forma segura
     const badgeNovos = document.getElementById('badgeNovos');
     const badgePendentes = document.getElementById('badgePendentes');
-    const reembolsoNotificationCount = document.getElementById('reembolsoNotificationCount');
-    const reembolsoNotificationBell = document.getElementById('reembolsoNotificationBell');
-    
-    if (badgeNovos) {
-        if (isAdmin && aVerificar > 0) {
-            badgeNovos.style.display = 'inline-block';
-            badgeNovos.textContent = aVerificar;
-        } else {
-            badgeNovos.style.display = 'none';
-        }
-    }
-    
-    if (badgePendentes) {
-        if (pendentesUsuario > 0) {
-            badgePendentes.style.display = 'inline-block';
-            badgePendentes.textContent = pendentesUsuario;
-        } else {
-            badgePendentes.style.display = 'none';
-        }
-    }
-    
-    const totalNotificacoes = (isAdmin ? aVerificar : 0) + pendentesUsuario;
-    
-    if (reembolsoNotificationCount) {
-        reembolsoNotificationCount.textContent = totalNotificacoes;
-    }
-    
-    if (reembolsoNotificationBell) {
-        reembolsoNotificationBell.style.display = totalNotificacoes > 0 ? 'block' : 'none';
-    }
-    
-    if (emptyMsg) emptyMsg.classList.add('hidden');
+    if (badgeNovos) badgeNovos.style.display = (isAdmin && aVerificar > 0) ? 'inline-block' : 'none';
+    if (badgePendentes) badgePendentes.style.display = (pendentesUsuario > 0) ? 'inline-block' : 'none';
 }
 
 // ===== FUNÇÃO PARA EDITAR REEMBOLSO =====
@@ -1821,38 +1790,44 @@ window.editarReembolso = async function(id) {
         return;
     }
     
-    // Verificar permissão - apenas admin ou criador pode editar
     const isAdmin = currentUser.role === 'Administrador';
     if (!isAdmin && reembolso.criado_por !== currentUser.name) {
-        showToast('Você não tem permissão para editar este reembolso', 'warning');
+        showToast('Sem permissão', 'warning');
         return;
     }
     
     editingReembolsoId = id;
-    
-    // Preencher o formulário com os dados do reembolso
     document.getElementById('reembolsoModalTitle').textContent = 'Editar Reembolso';
     document.getElementById('reembolsoId').value = id;
-    document.getElementById('numeroVenda').value = reembolso.numero_venda || '';
-    document.getElementById('numeroOperacao').value = reembolso.numero_operacao || '';
-    document.getElementById('valorReembolso').value = reembolso.valor || '';
     
-    // Formatar data para o input date (YYYY-MM-DD)
-    let dataOperacao = '';
-    if (reembolso.data_operacao) {
-        const data = new Date(reembolso.data_operacao);
-        dataOperacao = data.toISOString().split('T')[0];
+    // Detectar tipo de referência
+    const isRetirada = reembolso.numero_venda && reembolso.numero_venda.startsWith('RET-');
+    if (isRetirada) {
+        document.querySelector('input[name="tipoReferencia"][value="retirada"]').checked = true;
+        document.getElementById('numeroRetirada').value = reembolso.numero_retirada || reembolso.numero_venda.replace('RET-', '');
+        toggleReferenciaFields();
     } else {
-        dataOperacao = new Date().toISOString().split('T')[0];
+        document.querySelector('input[name="tipoReferencia"][value="venda"]').checked = true;
+        document.getElementById('numeroVenda').value = reembolso.numero_venda || '';
+        toggleReferenciaFields();
     }
-    document.getElementById('dataReembolso').value = dataOperacao;
     
-    // Definir tipo do reembolso
-    document.getElementById('tipoReembolso').value = reembolso.tipo || 'normal';
+    document.getElementById('numeroReclamacao').value = reembolso.numero_reclamacao || '';
     
+    if (reembolso.numero_operacao) {
+        document.querySelector('input[name="tipoOperacao"][value="adicionar"]').checked = true;
+        document.getElementById('numeroOperacao').value = reembolso.numero_operacao;
+        toggleOperacaoField();
+    } else {
+        document.querySelector('input[name="tipoOperacao"][value="reembolso_venda"]').checked = true;
+        toggleOperacaoField();
+    }
+    
+    document.getElementById('valorReembolso').value = reembolso.valor || '';
+    document.getElementById('dataReembolso').value = reembolso.data_operacao?.split('T')[0] || new Date().toISOString().split('T')[0];
+    document.getElementById('motivoReembolso').value = reembolso.motivo || (reembolso.tipo === 'frete' ? 'Frete' : (reembolso.tipo === 'outro' ? 'Outro' : ''));
     document.getElementById('observacoesReembolso').value = reembolso.observacoes || '';
     
-    // Mostrar modal
     document.getElementById('reembolsoModal').classList.remove('hidden');
 };
 
@@ -1922,11 +1897,18 @@ window.novoReembolso = function() {
     editingReembolsoId = null;
     document.getElementById('reembolsoModalTitle').textContent = 'Novo Reembolso';
     document.getElementById('reembolsoId').value = '';
+    // Resetar radio buttons
+    document.querySelector('input[name="tipoReferencia"][value="venda"]').checked = true;
+    document.querySelector('input[name="tipoOperacao"][value="adicionar"]').checked = true;
+    toggleReferenciaFields();
+    toggleOperacaoField();
     document.getElementById('numeroVenda').value = '';
+    document.getElementById('numeroRetirada').value = '';
+    document.getElementById('numeroReclamacao').value = '';
     document.getElementById('numeroOperacao').value = '';
     document.getElementById('valorReembolso').value = '';
     document.getElementById('dataReembolso').value = new Date().toISOString().split('T')[0];
-    document.getElementById('tipoReembolso').value = 'normal'; // Valor padrão
+    document.getElementById('motivoReembolso').value = '';
     document.getElementById('observacoesReembolso').value = '';
     document.getElementById('reembolsoModal').classList.remove('hidden');
 };
@@ -1985,76 +1967,157 @@ window.closeReembolsoModal = function() {
 
 // Salvar reembolso - VERSÃO CORRIGIDA
 window.salvarReembolso = async function() {
-    const numeroVenda = document.getElementById('numeroVenda').value.trim();
-    const numeroOperacao = document.getElementById('numeroOperacao').value.trim();
-    const valor = document.getElementById('valorReembolso').value;
-    const dataOperacao = document.getElementById('dataReembolso').value;
-    const tipoReembolso = document.getElementById('tipoReembolso').value; // NOVO CAMPO
-    const observacoes = document.getElementById('observacoesReembolso').value.trim();
-    const reembolsoId = document.getElementById('reembolsoId').value;
+    // --- Capturar tipo de referência ---
+    const tipoRefRadio = document.querySelector('input[name="tipoReferencia"]:checked');
+    if (!tipoRefRadio) {
+        showToast('Selecione o tipo de referência (Venda ou Retirada FULL)', 'warning');
+        return;
+    }
+    const tipoReferencia = tipoRefRadio.value;
     
-    // Validação
-    if (!numeroVenda || !numeroOperacao || !valor || !dataOperacao) {
+    let numeroVenda = '';
+    let numeroRetirada = '';
+    
+    // Validação conforme tipo
+    if (tipoReferencia === 'venda') {
+        const inputVenda = document.getElementById('numeroVenda');
+        if (!inputVenda) {
+            showToast('Campo número da venda não encontrado', 'error');
+            return;
+        }
+        numeroVenda = inputVenda.value.trim();
+        if (!numeroVenda || numeroVenda.length !== 16) {
+            showToast('Número da venda deve ter exatamente 16 caracteres!', 'warning');
+            return;
+        }
+    } else {
+        const inputRetirada = document.getElementById('numeroRetirada');
+        if (!inputRetirada) {
+            showToast('Campo número da retirada não encontrado', 'error');
+            return;
+        }
+        numeroRetirada = inputRetirada.value.trim();
+        if (!numeroRetirada) {
+            showToast('Número da retirada é obrigatório!', 'warning');
+            return;
+        }
+        numeroVenda = `RET-${numeroRetirada}`;
+    }
+    
+    // Número da reclamação (obrigatório)
+    const inputReclamacao = document.getElementById('numeroReclamacao');
+    if (!inputReclamacao) {
+        showToast('Campo número da reclamação não encontrado', 'error');
+        return;
+    }
+    const numeroReclamacao = inputReclamacao.value.trim();
+    if (!numeroReclamacao) {
+        showToast('Número da reclamação é obrigatório!', 'warning');
+        return;
+    }
+    
+    // Tipo de operação
+    const tipoOpRadio = document.querySelector('input[name="tipoOperacao"]:checked');
+    if (!tipoOpRadio) {
+        showToast('Selecione o tipo de operação', 'warning');
+        return;
+    }
+    const tipoOperacao = tipoOpRadio.value;
+    let numeroOperacao = '';
+    if (tipoOperacao === 'adicionar') {
+        const inputOp = document.getElementById('numeroOperacao');
+        if (!inputOp) {
+            showToast('Campo número da operação não encontrado', 'error');
+            return;
+        }
+        numeroOperacao = inputOp.value.trim();
+        if (!numeroOperacao) {
+            showToast('Número da operação é obrigatório!', 'warning');
+            return;
+        }
+    }
+    
+    // Valor, data, motivo, observações
+    const inputValor = document.getElementById('valorReembolso');
+    const inputData = document.getElementById('dataReembolso');
+    const inputMotivo = document.getElementById('motivoReembolso');
+    const inputObservacoes = document.getElementById('observacoesReembolso');
+    const inputId = document.getElementById('reembolsoId');
+    
+    if (!inputValor || !inputData || !inputMotivo) {
+        showToast('Campos obrigatórios não encontrados', 'error');
+        return;
+    }
+    
+    const valor = inputValor.value;
+    const dataOperacao = inputData.value;
+    const motivo = inputMotivo.value;
+    const observacoes = inputObservacoes ? inputObservacoes.value.trim() : '';
+    const reembolsoId = inputId ? inputId.value : '';
+    
+    if (!valor || !dataOperacao || !motivo) {
         showToast('Preencha todos os campos obrigatórios!', 'warning');
         return;
     }
     
+    // Montar objeto de dados (declarado aqui, ANTES de qualquer uso)
     const reembolsoData = {
         numero_venda: numeroVenda,
-        numero_operacao: numeroOperacao,
+        numero_retirada: tipoReferencia === 'retirada' ? numeroRetirada : null,
+        tipo_referencia: tipoReferencia,
+        numero_reclamacao: numeroReclamacao,
+        numero_operacao: numeroOperacao || null,
         valor: parseFloat(valor),
         data_operacao: dataOperacao,
-        tipo: tipoReembolso, // 'normal', 'frete' ou 'outro'
-        tem_frete: tipoReembolso === 'frete', // Mantém compatibilidade
-        observacoes: observacoes,
+        motivo: motivo,
+        observacoes: observacoes || null,
         criado_por: currentUser.name,
         status: 'a_verificar',
         notificado_admin: false,
         notificado_usuario: false
     };
     
+    // Log opcional (agora depois da declaração)
+    console.log('Enviando dados:', reembolsoData);
+    
     const btn = document.getElementById('salvarReembolsoBtn');
+    if (!btn) {
+        showToast('Botão salvar não encontrado', 'error');
+        return;
+    }
     const originalText = btn.innerHTML;
     btn.innerHTML = '<span class="spinner"></span> Salvando...';
     btn.disabled = true;
     
     try {
         let result;
-        
-        if (editingReembolsoId) {
-            // Atualizar reembolso existente
+        if (reembolsoId) {
             const { data, error } = await supabaseClient
                 .from('reembolsos_ml')
                 .update(reembolsoData)
-                .eq('id', editingReembolsoId)
+                .eq('id', reembolsoId)
                 .select();
-            
             if (error) throw error;
             result = { success: true, data };
         } else {
-            // Criar novo reembolso
             const { data, error } = await supabaseClient
                 .from('reembolsos_ml')
                 .insert([reembolsoData])
                 .select();
-            
             if (error) throw error;
             result = { success: true, data };
         }
         
         if (result.success) {
-            showToast(editingReembolsoId ? 'Reembolso atualizado!' : 'Reembolso criado!', 'success');
+            showToast(reembolsoId ? 'Reembolso atualizado!' : 'Reembolso criado!', 'success');
             closeReembolsoModal();
             await loadReembolsos();
         }
-
-        if (!editingReembolsoId) {
-            await notificarAndressaNovoReembolso(reembolsoData);
-            const destinatario = 'Hosama';  // string literal, não variável
-        }
     } catch (error) {
         console.error('❌ Erro ao salvar reembolso:', error);
-        showToast('Erro ao salvar reembolso: ' + error.message, 'error');
+        let msg = error.message;
+        if (error.code === '23502') msg = 'Campo obrigatório não preenchido. Verifique todos os dados.';
+        showToast('Erro ao salvar: ' + msg, 'error');
     } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
@@ -2245,12 +2308,25 @@ async function verificarNotificacoesReembolsos() {
     
     count += pendentesProprios;
     
-    // Atualizar badge
-    if (reembolsoNotificationCount && count > 0) {
-        reembolsoNotificationCount.textContent = count;
-        reembolsoNotificationBell.style.display = 'block';
-    } else if (reembolsoNotificationBell) {
-        reembolsoNotificationBell.style.display = 'none';
+    // Atualizar badge - verificando se os elementos existem
+    const reembolsoNotificationCountEl = document.getElementById('reembolsoNotificationCount');
+    const reembolsoNotificationBellEl = document.getElementById('reembolsoNotificationBell');
+    
+    if (reembolsoNotificationCountEl) {
+        reembolsoNotificationCountEl.textContent = count;
+        if (count > 0) {
+            reembolsoNotificationCountEl.style.display = 'inline-block';
+        } else {
+            reembolsoNotificationCountEl.style.display = 'none';
+        }
+    }
+    
+    if (reembolsoNotificationBellEl) {
+        if (count > 0) {
+            reembolsoNotificationBellEl.style.display = 'block';
+        } else {
+            reembolsoNotificationBellEl.style.display = 'none';
+        }
     }
 }
 
@@ -2927,6 +3003,8 @@ function abrirSistemaReembolsos() {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
+
+    atualizarVisibilidadeRelatorioColaborador();
     
     // Esconder sistema principal e mostrar sistema de reembolsos
     if (mainSystem) mainSystem.classList.add('hidden');
@@ -7819,6 +7897,252 @@ async function emitirNFEVenda(vendaId) {
         showToast(`Erro de comunicação: ${error.message}`, 'error');
     }
 }
+
+// Funções para controle dos campos dinâmicos no modal de reembolso
+function toggleReferenciaFields() {
+    const tipoRef = document.querySelector('input[name="tipoReferencia"]:checked').value;
+    const campoVenda = document.getElementById('campoNumeroVenda');
+    const campoRetirada = document.getElementById('campoNumeroRetirada');
+    
+    if (tipoRef === 'venda') {
+        campoVenda.classList.remove('hidden');
+        campoRetirada.classList.add('hidden');
+        document.getElementById('numeroVenda').required = true;
+        document.getElementById('numeroRetirada').required = false;
+    } else {
+        campoVenda.classList.add('hidden');
+        campoRetirada.classList.remove('hidden');
+        document.getElementById('numeroVenda').required = false;
+        document.getElementById('numeroRetirada').required = true;
+    }
+}
+
+function toggleOperacaoField() {
+    const tipoOp = document.querySelector('input[name="tipoOperacao"]:checked').value;
+    const campoOp = document.getElementById('campoNumeroOperacao');
+    const inputOp = document.getElementById('numeroOperacao');
+    
+    if (tipoOp === 'adicionar') {
+        campoOp.style.display = 'block';
+        inputOp.required = true;
+    } else {
+        campoOp.style.display = 'none';
+        inputOp.required = false;
+        inputOp.value = ''; // limpa
+    }
+}
+
+window.voltarParaVerificacao = async function(id) {
+    if (!confirm('Deseja voltar este reembolso para "A Verificar"? O administrador precisará aprovar novamente.')) return;
+    
+    try {
+        const { data, error } = await supabaseClient
+            .from('reembolsos_ml')
+            .update({ 
+                status: 'a_verificar',
+                verificado_por: null,
+                data_atualizacao: new Date().toISOString(),
+                notificado_admin: false
+            })
+            .eq('id', id)
+            .select();
+        
+        if (error) throw error;
+        
+        // Atualizar lista local
+        const index = reembolsos.findIndex(r => r.id === id);
+        if (index !== -1) {
+            reembolsos[index].status = 'a_verificar';
+            reembolsos[index].verificado_por = null;
+            reembolsos[index].notificado_admin = false;
+        }
+        
+        showToast('↪️ Reembolso voltado para verificação!', 'success');
+        updateReembolsoCounters();
+        renderReembolsosTable();
+        
+        if (currentUser.role === 'Administrador') {
+            verificarNotificacoes();
+        }
+    } catch (error) {
+        console.error('❌ Erro:', error);
+        showToast('❌ Erro ao voltar reembolso: ' + error.message, 'error');
+    }
+};
+
+// Mostrar botão de relatório apenas para admin
+function atualizarVisibilidadeRelatorioColaborador() {
+    const btnDiv = document.getElementById('btnRelatorioColaborador');
+    if (btnDiv && currentUser && currentUser.role === 'Administrador') {
+        btnDiv.classList.remove('hidden');
+    } else if (btnDiv) {
+        btnDiv.classList.add('hidden');
+    }
+}
+
+// Chamar essa função dentro de abrirSistemaReembolsos() após definir currentUser
+
+window.abrirRelatorioColaborador = function() {
+    if (currentUser.role !== 'Administrador') {
+        showToast('Apenas administradores podem acessar este relatório', 'warning');
+        return;
+    }
+    // Setar datas padrão (últimos 30 dias)
+    const hoje = new Date();
+    const trintaDias = new Date();
+    trintaDias.setDate(hoje.getDate() - 30);
+    document.getElementById('relColabDataInicio').value = trintaDias.toISOString().split('T')[0];
+    document.getElementById('relColabDataFim').value = hoje.toISOString().split('T')[0];
+    document.getElementById('relatorioColaboradorModal').classList.remove('hidden');
+    carregarRelatorioColaborador();
+};
+
+window.closeRelatorioColaborador = function() {
+    document.getElementById('relatorioColaboradorModal').classList.add('hidden');
+};
+
+window.carregarRelatorioColaborador = async function() {
+    const dataInicio = document.getElementById('relColabDataInicio').value;
+    const dataFim = document.getElementById('relColabDataFim').value;
+    
+    try {
+        let query = supabaseClient.from('reembolsos_ml').select('*');
+        if (dataInicio) query = query.gte('data_operacao', dataInicio);
+        if (dataFim) query = query.lte('data_operacao', dataFim);
+        
+        const { data, error } = await query;
+        if (error) throw error;
+        
+        // Agrupar por criado_por
+        const colaboradores = {};
+        data.forEach(item => {
+            const nome = item.criado_por;
+            if (!colaboradores[nome]) {
+                colaboradores[nome] = {
+                    total: 0,
+                    abertas: 0,
+                    solucionadas: 0,
+                    somaTempoResolucao: 0,
+                    countResolvidos: 0
+                };
+            }
+            colaboradores[nome].total++;
+            if (item.status === 'a_verificar' || item.status === 'pendente') {
+                colaboradores[nome].abertas++;
+            } else if (item.status === 'reembolsado') {
+                colaboradores[nome].solucionadas++;
+                // Calcular tempo de resolução (dias entre data_criacao e data_atualizacao)
+                const criacao = new Date(item.data_criacao);
+                const resolucao = new Date(item.data_atualizacao);
+                const diffDias = Math.ceil((resolucao - criacao) / (1000 * 60 * 60 * 24));
+                colaboradores[nome].somaTempoResolucao += diffDias;
+                colaboradores[nome].countResolvidos++;
+            }
+        });
+        
+        // Montar tabela
+        const tbody = document.getElementById('relatorioColaboradorBody');
+        tbody.innerHTML = '';
+        const dadosGrafico = [];
+        
+        for (const [nome, stats] of Object.entries(colaboradores)) {
+            const taxa = stats.solucionadas > 0 ? ((stats.solucionadas / stats.total) * 100).toFixed(1) : 0;
+            const tempoMedio = stats.countResolvidos > 0 ? (stats.somaTempoResolucao / stats.countResolvidos).toFixed(1) : 0;
+            dadosGrafico.push({ nome, total: stats.total, solucionadas: stats.solucionadas });
+            
+            const row = tbody.insertRow();
+            row.insertCell(0).textContent = nome;
+            row.insertCell(1).textContent = stats.total;
+            row.insertCell(2).textContent = stats.abertas;
+            row.insertCell(3).textContent = stats.solucionadas;
+            row.insertCell(4).textContent = `${taxa}%`;
+            row.insertCell(5).textContent = tempoMedio;
+        }
+        
+        // Gerar gráfico simples com Chart.js (carregue a biblioteca no cabeçalho)
+        if (typeof Chart !== 'undefined') {
+            const ctx = document.getElementById('graficoColaborador').getContext('2d');
+            if (window.graficoColabChart) window.graficoColabChart.destroy();
+            window.graficoColabChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: dadosGrafico.map(d => d.nome),
+                    datasets: [
+                        { label: 'Total Reclamações', data: dadosGrafico.map(d => d.total), backgroundColor: '#8A2BE2' },
+                        { label: 'Solucionadas', data: dadosGrafico.map(d => d.solucionadas), backgroundColor: '#28a745' }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: true }
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao carregar relatório:', error);
+        showToast('Erro ao carregar dados', 'error');
+    }
+};
+
+window.exportarRelatorioColaboradorExcel = function() {
+    const tabela = document.getElementById('relatorioColaboradorTable');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(tabela, { raw: true });
+    XLSX.utils.book_append_sheet(wb, ws, 'Reembolsos por Colaborador');
+    XLSX.writeFile(wb, `relatorio_colaborador_${new Date().toISOString().slice(0,10)}.xlsx`);
+};
+
+// Abrir modal de detalhes
+window.verDetalhesReembolso = async function(id) {
+    const reembolso = reembolsos.find(r => r.id === id);
+    if (!reembolso) {
+        showToast('Reembolso não encontrado', 'error');
+        return;
+    }
+    
+    const content = document.getElementById('detalhesReembolsoContent');
+    if (!content) return;
+    
+    // Formatar data
+    const dataOp = new Date(reembolso.data_operacao).toLocaleDateString('pt-BR');
+    const dataCriacao = new Date(reembolso.data_criacao).toLocaleString('pt-BR');
+    const dataAtualizacao = reembolso.data_atualizacao ? new Date(reembolso.data_atualizacao).toLocaleString('pt-BR') : '-';
+    
+    // Determinar tipo de referência
+    const tipoReferencia = reembolso.tipo_referencia || (reembolso.numero_venda?.startsWith('RET-') ? 'retirada' : 'venda');
+    const numeroReferencia = tipoReferencia === 'retirada' ? (reembolso.numero_retirada || reembolso.numero_venda?.replace('RET-', '')) : reembolso.numero_venda;
+    
+    // Status
+    let statusText = '';
+    if (reembolso.status === 'a_verificar') statusText = '<span class="status-a_verificar">A Verificar</span>';
+    else if (reembolso.status === 'reembolsado') statusText = '<span class="status-reembolsado">Reembolsado</span>';
+    else statusText = '<span class="status-pendente">Pendente</span>';
+    
+    content.innerHTML = `
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+            <div class="info-row"><strong>Número da Venda/Retirada:</strong> ${numeroReferencia || '-'}</div>
+            <div class="info-row"><strong>Número da Reclamação:</strong> ${reembolso.numero_reclamacao || '-'}</div>
+            <div class="info-row"><strong>Número da Operação:</strong> ${reembolso.numero_operacao || 'Reembolso na venda'}</div>
+            <div class="info-row"><strong>Valor:</strong> R$ ${parseFloat(reembolso.valor).toFixed(2)}</div>
+            <div class="info-row"><strong>Data da Operação:</strong> ${dataOp}</div>
+            <div class="info-row"><strong>Motivo:</strong> ${reembolso.motivo || 'Não informado'}</div>
+            <div class="info-row"><strong>Status:</strong> ${statusText}</div>
+            <div class="info-row"><strong>Criado por:</strong> ${reembolso.criado_por}</div>
+            <div class="info-row"><strong>Data de criação:</strong> ${dataCriacao}</div>
+            <div class="info-row"><strong>Última atualização:</strong> ${dataAtualizacao}</div>
+            ${reembolso.verificado_por ? `<div class="info-row"><strong>Verificado por:</strong> ${reembolso.verificado_por}</div>` : ''}
+        </div>
+        <div class="card">
+            <h4><i class="fas fa-comment"></i> Observações</h4>
+            <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef;">
+                ${reembolso.observacoes ? reembolso.observacoes.replace(/\n/g, '<br>') : '<em style="color: #6c757d;">Nenhuma observação registrada.</em>'}
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('detalhesReembolsoModal').classList.remove('hidden');
+};
+
+window.closeDetalhesReembolso = function() {
+    document.getElementById('detalhesReembolsoModal').classList.add('hidden');
+};
 
 // Exportar funções
 window.abrirSistemaNFE = abrirSistemaNFE;
