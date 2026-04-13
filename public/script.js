@@ -43,15 +43,6 @@ function handleLogin(e) {
         return;
     }
 
-    // Elementos dos sistemas (já devem existir no HTML)
-    const salesSystem = document.getElementById('salesSystem');
-    const reembolsosSystem = document.getElementById('reembolsosSystem');
-    const caixaSystem = document.getElementById('caixaSystem');
-    const reviewsSystem = document.getElementById('reviewsSystem');
-    const folgasSystem = document.getElementById('folgasSystem');
-    const shippingSystem = document.getElementById('shippingSystem');
-    const estoqueSystem = document.getElementById('estoqueSystem');
-    
     // Verificar usuário
     const foundUser = SYSTEM_USERS.find(user => 
         user.username === username && user.password === password
@@ -60,6 +51,9 @@ function handleLogin(e) {
     setTimeout(() => {
         if (foundUser) {
             currentUser = foundUser;
+
+            // 🔥 ATUALIZA VISIBILIDADE DO BOTÃO DE RELATÓRIO POR COLABORADOR
+            atualizarVisibilidadeRelatorioColaborador();
 
             atualizarTodosAvatares();
             
@@ -2899,104 +2893,7 @@ window.imprimirRelatorio = function() {
 };
 
 // ============================================
-// FUNÇÕES EXISTENTES DO SISTEMA OS
-// ============================================
-
-function handleLogin(e) {
-    e.preventDefault();
-    
-    const usernameInput = document.getElementById('username');
-    const passwordInput = document.getElementById('password');
-    
-    const username = usernameInput.value.trim().toLowerCase();
-    const password = passwordInput.value;
-    
-    // Feedback visual
-    const submitBtn = loginForm.querySelector('button[type="submit"]');
-    let originalBtnText = '';
-    if (submitBtn) {
-        originalBtnText = submitBtn.innerHTML;
-        submitBtn.innerHTML = '<span class="spinner"></span> Verificando...';
-        submitBtn.disabled = true;
-    }
-    
-    // Validação
-    if (!username || !password) {
-        showToast('Por favor, preencha usuário e senha!', 'warning');
-        if (submitBtn) {
-            submitBtn.innerHTML = originalBtnText;
-            submitBtn.disabled = false;
-        }
-        passwordInput.focus();
-        return;
-    }
-    
-    // Verificar usuário
-    const foundUser = SYSTEM_USERS.find(user => 
-        user.username === username && user.password === password
-    );
-    
-    setTimeout(() => {
-        if (foundUser) {
-            currentUser = foundUser;
-
-            atualizarTodosAvatares();
-            
-            // Atualizar interface do usuário
-            if (userName) userName.textContent = foundUser.name;
-            if (userAvatar) userAvatar.textContent = foundUser.avatar;
-            if (userRole) userRole.textContent = foundUser.role;
-            if (welcomeMessage) welcomeMessage.textContent = `Bem-vindo(a), ${foundUser.name}!`;
-            if (createdByInput) createdByInput.value = foundUser.name;
-            
-            // Mostrar sistema, esconder login
-            if (loginScreen) loginScreen.classList.add('hidden');
-            const menuSystem = document.getElementById('menuSystem');
-        if (menuSystem) menuSystem.classList.remove('hidden');
-            
-            showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
-            
-            // INICIALIZAR SISTEMA APÓS LOGIN
-            setTimeout(() => {
-                if (supabaseClient) {
-                    testSupabaseConnection();
-                } else {
-                    updateCounters();
-                    renderOrdersTable();
-                    updateOSNotificationBell();
-                }
-                
-                // Configurar botão de reembolsos (AGORA DENTRO DO LOGIN)
-                const reembolsosBtn = document.getElementById('reembolsosBtn');
-                if (reembolsosBtn) {
-                    reembolsosBtn.onclick = function() {
-                        abrirSistemaReembolsos();
-                    };
-                }
-                
-                // Configurar botão de logout (AGORA DENTRO DO LOGIN)
-                if (logoutBtn) {
-                    logoutBtn.onclick = handleLogout;
-                }
-                
-            }, 500);
-            
-        } else {
-            showToast('❌ Usuário ou senha incorretos', 'error');
-            passwordInput.value = '';
-            passwordInput.focus();
-        }
-        
-        // Restaurar botão
-        if (submitBtn) {
-            submitBtn.innerHTML = originalBtnText;
-            submitBtn.disabled = false;
-        }
-    }, 300);
-}
-
-// ============================================
-// FUNÇÃO PARA ABRIR SISTEMA DE REEMBOLSOS
+// FUNÇÃO PARA ABRIR SISTEMA DE RECLAMAÇÕES (REEMBOLSOS)
 // ============================================
 function abrirSistemaReembolsos() {
     if (!currentUser) {
@@ -3004,8 +2901,6 @@ function abrirSistemaReembolsos() {
         return;
     }
 
-    atualizarVisibilidadeRelatorioColaborador();
-    
     // Esconder sistema principal e mostrar sistema de reembolsos
     if (mainSystem) mainSystem.classList.add('hidden');
     if (reembolsosSystem) reembolsosSystem.classList.remove('hidden');
@@ -3015,7 +2910,7 @@ function abrirSistemaReembolsos() {
     if (reembolsoUserAvatar) reembolsoUserAvatar.textContent = currentUser.avatar;
     if (reembolsoUserRole) reembolsoUserRole.textContent = currentUser.role;
     
-    // Mostrar/ocultar botão de relatório baseado no usuário
+    // Mostrar/ocultar botão de relatório padrão (se existir)
     const btnRelatorio = document.getElementById('btnRelatorio');
     if (btnRelatorio) {
         if (currentUser.role === 'Administrador') {
@@ -3025,9 +2920,12 @@ function abrirSistemaReembolsos() {
         }
     }
     
+    // 🔥 FORÇAR A VISIBILIDADE DO BOTÃO DE RELATÓRIO POR COLABORADOR
+    atualizarVisibilidadeRelatorioColaborador();
+    
     // Carregar reembolsos
     loadReembolsos();
-    showToast('Sistema de Reembolsos carregado', 'info');
+    showToast('💰 Sistema de Reclamações carregado', 'info');
 }
 
 // ============================================
@@ -7972,12 +7870,23 @@ window.voltarParaVerificacao = async function(id) {
 
 // Mostrar botão de relatório apenas para admin
 function atualizarVisibilidadeRelatorioColaborador() {
-    const btnDiv = document.getElementById('btnRelatorioColaborador');
-    if (btnDiv && currentUser && currentUser.role === 'Administrador') {
-        btnDiv.classList.remove('hidden');
-    } else if (btnDiv) {
-        btnDiv.classList.add('hidden');
-    }
+    // Aguardar um pouco para garantir que o DOM está pronto
+    setTimeout(() => {
+        const btnDiv = document.getElementById('btnRelatorioColaborador');
+        if (!btnDiv) {
+            console.warn('Elemento btnRelatorioColaborador não encontrado no DOM');
+            return;
+        }
+        
+        // Verificar se o usuário está logado e é administrador
+        if (currentUser && currentUser.role === 'Administrador') {
+            btnDiv.classList.remove('hidden');
+            console.log('✅ Botão Relatório por Colaborador visível (Admin)');
+        } else {
+            btnDiv.classList.add('hidden');
+            console.log('❌ Botão Relatório por Colaborador oculto - role:', currentUser?.role);
+        }
+    }, 100); // pequeno atraso para garantir que o DOM foi renderizado
 }
 
 // Chamar essa função dentro de abrirSistemaReembolsos() após definir currentUser
