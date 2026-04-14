@@ -1,5 +1,5 @@
 // ============================================
-// SHIPPING MANAGER - GESTÃO DE FRETES (INDEPENDENTE)
+// SHIPPING MANAGER - GESTÃO DE FRETES (VERSÃO CORRIGIDA)
 // ============================================
 
 // Tabela de custos esperados (baseada em https://www.mercadolivre.com.br/ajuda/40538)
@@ -46,7 +46,7 @@ const SHIPPING_COST_TABLE = [
     { priceMin: 200,    priceMax: 10000,   weightMin: 1.5,    weightMax: 2,   cost: 24.65 }
 ];
 
-const DEFAULT_WEIGHT_KG = 0.3; // 300g padrão
+const DEFAULT_WEIGHT_KG = 0.3;
 
 function getExpectedShippingCost(price, weight) {
     for (const row of SHIPPING_COST_TABLE) {
@@ -70,11 +70,9 @@ async function getActualShippingCost(shipmentId, token) {
         const WORKER_URL = window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
         const url = `https://api.mercadolibre.com/shipments/${shipmentId}/costs`;
         const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
-        // Remove o header problemático
         const response = await fetch(proxyUrl);
         if (!response.ok) return null;
         const data = await response.json();
-        // O campo cost pode estar em senders[0].cost ou gross_amount
         let cost = data.senders?.[0]?.cost;
         if (cost === undefined) cost = data.gross_amount;
         return cost ? parseFloat(cost) : null;
@@ -84,11 +82,42 @@ async function getActualShippingCost(shipmentId, token) {
     }
 }
 
+// ==================== GESTÃO DE PESOS POR PRODUTO ====================
+async function getProductWeight(sku) {
+    if (!sku || sku === 'N/A') return DEFAULT_WEIGHT_KG;
+    try {
+        const { data, error } = await supabaseClient
+            .from('produtos_peso')
+            .select('peso_kg')
+            .eq('sku', sku)
+            .maybeSingle();
+        if (error) throw error;
+        return data ? parseFloat(data.peso_kg) : DEFAULT_WEIGHT_KG;
+    } catch (error) {
+        console.error('Erro ao buscar peso do produto:', error);
+        return DEFAULT_WEIGHT_KG;
+    }
+}
+
+async function setProductWeight(sku, peso_kg) {
+    if (!sku || sku === 'N/A') return false;
+    try {
+        const { error } = await supabaseClient
+            .from('produtos_peso')
+            .upsert({ sku: sku, peso_kg: parseFloat(peso_kg), updated_at: new Date().toISOString() });
+        if (error) throw error;
+        return true;
+    } catch (error) {
+        console.error('Erro ao salvar peso do produto:', error);
+        return false;
+    }
+}
+
+// ==================== SINCRONIZAÇÃO DE VENDAS ====================
 let analises = [];
 let filtroStatus = 'todos';
 let sincronizando = false;
 
-// ==================== SINCRONIZAÇÃO DE VENDAS (COM CÁLCULO AUTOMÁTICO) ====================
 async function sincronizarVendas(limite = 200) {
     if (sincronizando) {
         mostrarToast('Sincronização já em andamento...', 'info');
@@ -139,7 +168,6 @@ async function sincronizarVendas(limite = 200) {
         for (let i = 0; i < vendasColetadas.length && i < limite; i++) {
             const vendaResumo = vendasColetadas[i];
             try {
-                // Detalhes da venda
                 const orderUrl = `https://api.mercadolibre.com/orders/${vendaResumo.id}`;
                 const orderProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${token}`;
                 const orderResp = await fetch(orderProxy);
@@ -150,7 +178,6 @@ async function sincronizarVendas(limite = 200) {
                 let tipoEnvio = 'N/I';
                 let shipmentId = shipping.id;
 
-                // Se não tiver logistic_type, buscar shipment
                 if (!shipping.logistic_type && shipmentId) {
                     const shipUrl = `https://api.mercadolibre.com/shipments/${shipmentId}`;
                     const shipProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${token}`;
@@ -167,7 +194,6 @@ async function sincronizarVendas(limite = 200) {
                 else if (shipping.logistic_type) tipoEnvio = shipping.logistic_type;
                 else tipoEnvio = 'desconhecido';
 
-                // Apenas FULL e Mercado Envios
                 if (tipoEnvio !== 'FULL' && tipoEnvio !== 'MERCADO ENVIOS') {
                     ignoradasTipo++;
                     continue;
@@ -178,34 +204,49 @@ async function sincronizarVendas(limite = 200) {
                     continue;
                 }
 
-                const orderItem = venda.order_items?.[0] || {};
-                const item = orderItem.item || {};
-                const titulo = item.title || 'Sem título';
-                const sku = item.seller_sku || 'N/A';
-                const quantidade = orderItem.quantity || 1;
-                const valorTotal = venda.total_amount || 0;
-                const valorUnitario = valorTotal / quantidade;
+                // Processar todos os itens da venda
+                const orderItems = venda.order_items || [];
+                let quantidadeTotal = 0;
+                let pesoTotal = 0;
+                let primeiroPrecoUnitario = null;
+                let primeiroSku = null;
+                let primeiroTitulo = null;
 
-                // --- CÁLCULO DO FRETE AUTOMÁTICO ---
-                // Peso padrão (0.3 kg) - o usuário pode alterar depois
-                let peso = DEFAULT_WEIGHT_KG;
-                
-                // Buscar custo real
-                const custoReal = await getActualShippingCost(shipmentId, token);
-                if (custoReal === null) {
-                    console.warn(`Não foi possível obter custo real para venda ${venda.id}`);
-                    // Mesmo sem custo real, inserimos a análise para depois tentar novamente
+                for (const item of orderItems) {
+                    const qtd = item.quantity || 1;
+                    const precoUnit = item.unit_price || 0;
+                    const sku = item.item?.seller_sku || 'N/A';
+                    const titulo = item.item?.title || 'Sem título';
+
+                    if (primeiroPrecoUnitario === null) {
+                        primeiroPrecoUnitario = precoUnit;
+                        primeiroSku = sku;
+                        primeiroTitulo = titulo;
+                    }
+
+                    quantidadeTotal += qtd;
+
+                    // Buscar peso do produto (pode ser por SKU ou padrão)
+                    const pesoUnitario = await getProductWeight(sku);
+                    pesoTotal += pesoUnitario * qtd;
                 }
-                
-                // Calcular custo esperado
-                let custoEsperado = null;
+
+                if (quantidadeTotal === 0) quantidadeTotal = 1;
+                if (pesoTotal <= 0) pesoTotal = DEFAULT_WEIGHT_KG;
+
+                const valorTotalVenda = venda.total_amount || 0;
+                const precoUnitarioReferencia = primeiroPrecoUnitario || (valorTotalVenda / quantidadeTotal);
+
+                // Buscar custo real do frete
+                const custoReal = await getActualShippingCost(shipmentId, token);
+                let custoEsperadoTotal = null;
                 let divergencia = null;
                 let status = 'pendente';
-                
+
                 if (custoReal !== null) {
-                    custoEsperado = getExpectedShippingCost(valorUnitario, peso);
-                    if (custoEsperado !== null) {
-                        divergencia = parseFloat((custoReal - custoEsperado).toFixed(2));
+                    custoEsperadoTotal = getExpectedShippingCost(precoUnitarioReferencia, pesoTotal);
+                    if (custoEsperadoTotal !== null) {
+                        divergencia = parseFloat((custoReal - custoEsperadoTotal).toFixed(2));
                         status = Math.abs(divergencia) <= 0.01 ? 'ok' : 'divergente';
                     }
                 }
@@ -221,13 +262,13 @@ async function sincronizarVendas(limite = 200) {
                     const novaAnalise = {
                         venda_id: String(venda.id),
                         shipment_id: shipmentId,
-                        titulo: titulo,
-                        sku: sku,
-                        valor_unitario: valorUnitario,
-                        quantidade: quantidade,
-                        peso_kg: peso,
+                        titulo: primeiroTitulo,
+                        sku: primeiroSku,
+                        valor_unitario: precoUnitarioReferencia,
+                        quantidade: quantidadeTotal,
+                        peso_kg: pesoTotal,  // armazenamos o peso total calculado
                         custo_real: custoReal,
-                        custo_esperado: custoEsperado,
+                        custo_esperado: custoEsperadoTotal,
                         divergencia: divergencia,
                         status_frete: status,
                         data_venda: venda.date_created,
@@ -239,7 +280,7 @@ async function sincronizarVendas(limite = 200) {
                         errosInsercao++;
                     } else {
                         novas++;
-                        console.log(`✅ Inserida venda ${venda.id} (${tipoEnvio}) | custo_real: ${custoReal} | esperado: ${custoEsperado} | status: ${status}`);
+                        console.log(`✅ Inserida venda ${venda.id} | qtd_total:${quantidadeTotal} | peso_total:${pesoTotal}kg | custo_real:${custoReal} | esperado:${custoEsperadoTotal} | status:${status}`);
                     }
                 } else {
                     console.log(`ℹ️ Venda ${venda.id} já existe`);
@@ -279,13 +320,6 @@ async function carregarAnalises() {
         console.log(`✅ ${analises.length} análises carregadas`);
         atualizarTabela();
         atualizarResumo();
-
-        // Notificar se houver atrasados
-        const hoje = new Date().toISOString().split('T')[0];
-        const atrasados = analises.filter(a => a.data_retorno && a.data_retorno < hoje);
-        if (atrasados.length > 0) {
-            mostrarToast(`⚠️ ${atrasados.length} reembolso(s) com prazo vencido! Verifique a lista de atrasados.`, 'warning');
-        }
     } catch (error) {
         console.error('Erro ao carregar análises:', error);
         mostrarToast('Erro ao carregar dados', 'error');
@@ -300,7 +334,6 @@ function atualizarTabela() {
     let filtradas = analises;
     const hoje = new Date().toISOString().split('T')[0];
 
-    // Aplicar filtro de status
     if (filtroStatus !== 'todos') {
         if (filtroStatus === 'atrasado') {
             filtradas = analises.filter(a => a.data_retorno && a.data_retorno < hoje);
@@ -311,7 +344,7 @@ function atualizarTabela() {
 
     tbody.innerHTML = '';
     if (filtradas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-5">Nenhuma análise encontrada. Clique em "Sincronizar Vendas".</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-5">Nenhuma análise encontrada. Clique em "Sincronizar Vendas".</td></tr>';
         return;
     }
 
@@ -320,6 +353,8 @@ function atualizarTabela() {
         const custoEsperado = an.custo_esperado;
         const divergencia = (custoReal && custoEsperado) ? (custoReal - custoEsperado).toFixed(2) : '-';
         const status = an.status_frete || 'pendente';
+        const quantidade = an.quantidade || 1;
+        const pesoExibido = an.peso_kg ? an.peso_kg.toFixed(2) : DEFAULT_WEIGHT_KG;
 
         let statusBadge = '';
         if (status === 'pendente') statusBadge = '<span class="badge badge-secondary">A verificar</span>';
@@ -328,21 +363,22 @@ function atualizarTabela() {
         else if (status === 'reembolsado') statusBadge = '<span class="badge badge-success">Reembolso conseguido</span>';
         else if (status === 'contatado') statusBadge = '<span class="badge badge-warning">Reembolso solicitado</span>';
 
-        // Verificar se está atrasado
         const isAtrasado = an.data_retorno && an.data_retorno < hoje;
         let atrasadoBadge = '';
         let rowClass = (custoReal && custoEsperado && Math.abs(custoReal - custoEsperado) > 0.01) ? 'table-danger' : '';
         if (isAtrasado) {
             atrasadoBadge = '<span class="badge badge-danger ms-2"><i class="fas fa-exclamation-triangle"></i> Atrasado</span>';
-            rowClass += ' table-warning'; // fundo amarelado
+            rowClass += ' table-warning';
         }
 
         const row = document.createElement('tr');
         row.className = rowClass;
         row.innerHTML = `
             <td><strong>${an.venda_id}</strong><br><small>${new Date(an.data_venda).toLocaleDateString('pt-BR')}</small></td>
-            <td>${an.titulo}</td>
+            <td>${an.titulo}<br><small class="text-muted">SKU: ${an.sku}</small></td>
             <td>R$ ${(an.valor_unitario || 0).toFixed(2)}</td>
+            <td>${quantidade}</td>
+            <td>${pesoExibido} kg</td>
             <td>${custoReal ? 'R$ ' + custoReal.toFixed(2) : '-'}</td>
             <td>${custoEsperado ? 'R$ ' + custoEsperado.toFixed(2) : '-'}</td>
             <td class="${divergencia !== '-' && Math.abs(parseFloat(divergencia)) > 0.01 ? 'text-danger fw-bold' : ''}">
@@ -353,22 +389,55 @@ function atualizarTabela() {
                 ${atrasadoBadge}
             </td>
             <td>
-                <input type="number" class="peso-input form-control form-control-sm" 
-                       value="${an.peso_kg || DEFAULT_WEIGHT_KG}" step="0.1" min="0"
-                       data-id="${an.venda_id}" style="width: 80px; margin-bottom: 5px;">
-                <button class="btn btn-sm btn-primary w-100" onclick="shippingManager.verificarFrete('${an.venda_id}')" title="Recalcular com novo peso">
-                    <i class="fas fa-sync-alt"></i> Recalcular
-                </button>
-                <button class="btn btn-sm btn-warning mt-1 w-100" onclick="shippingManager.abrirModalReembolso('${an.venda_id}')" title="Registrar ação">
-                    <i class="fas fa-hand-holding-usd"></i> Reembolso
-                </button>
+                <div class="d-flex flex-column gap-1">
+                    <div class="d-flex align-items-center gap-1">
+                        <input type="number" class="peso-input form-control form-control-sm" 
+                               value="${an.peso_kg || DEFAULT_WEIGHT_KG}" step="0.1" min="0"
+                               data-id="${an.venda_id}" style="width: 80px;">
+                        <button class="btn btn-sm btn-primary" onclick="shippingManager.verificarFrete('${an.venda_id}')" title="Recalcular com novo peso">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                        <button class="btn btn-sm btn-info" onclick="shippingManager.salvarPesoProduto('${an.sku}')" title="Salvar este peso para o SKU">
+                            <i class="fas fa-save"></i>
+                        </button>
+                    </div>
+                    <button class="btn btn-sm btn-warning w-100" onclick="shippingManager.abrirModalReembolso('${an.venda_id}')" title="Registrar ação">
+                        <i class="fas fa-hand-holding-usd"></i> Reembolso
+                    </button>
+                </div>
             </td>
         `;
         tbody.appendChild(row);
     });
 }
 
-// ==================== VERIFICAR FRETE (RECALCULAR COM PESO INFORMADO) ====================
+// ==================== SALVAR PESO PARA O PRODUTO (SKU) ====================
+async function salvarPesoProduto(sku) {
+    if (!sku || sku === 'N/A') {
+        mostrarToast('Este produto não possui SKU definido. Não é possível salvar o peso.', 'warning');
+        return;
+    }
+    const analise = analises.find(a => a.sku === sku);
+    if (!analise) {
+        mostrarToast('Não foi possível encontrar o SKU na lista.', 'error');
+        return;
+    }
+    const inputPeso = document.querySelector(`.peso-input[data-id="${analise.venda_id}"]`);
+    const novoPeso = inputPeso ? parseFloat(inputPeso.value) : analise.peso_kg;
+    if (isNaN(novoPeso) || novoPeso <= 0) {
+        mostrarToast('Peso inválido.', 'error');
+        return;
+    }
+    const sucesso = await setProductWeight(sku, novoPeso);
+    if (sucesso) {
+        mostrarToast(`Peso do SKU ${sku} salvo como ${novoPeso} kg`, 'success');
+        await carregarAnalises();
+    } else {
+        mostrarToast('Erro ao salvar peso.', 'error');
+    }
+}
+
+// ==================== VERIFICAR FRETE (RECALCULAR) ====================
 async function verificarFrete(vendaId) {
     const analise = analises.find(a => a.venda_id === vendaId);
     if (!analise) {
@@ -376,7 +445,6 @@ async function verificarFrete(vendaId) {
         return;
     }
 
-    // Obter peso do input
     const inputPeso = document.querySelector(`.peso-input[data-id="${vendaId}"]`);
     let peso = inputPeso ? parseFloat(inputPeso.value) : analise.peso_kg;
     if (isNaN(peso) || peso <= 0) {
@@ -384,7 +452,6 @@ async function verificarFrete(vendaId) {
         if (inputPeso) inputPeso.value = peso;
     }
 
-    // Obter token
     const tokenData = await window.getValidToken();
     if (!tokenData?.access_token) {
         mostrarToast('Token ML inválido', 'error');
@@ -392,7 +459,6 @@ async function verificarFrete(vendaId) {
     }
     const token = tokenData.access_token;
 
-    // Buscar custo real
     mostrarToast('Consultando custo real na API...', 'info');
     const custoReal = await getActualShippingCost(analise.shipment_id, token);
     if (custoReal === null) {
@@ -400,36 +466,39 @@ async function verificarFrete(vendaId) {
         return;
     }
 
-    // Calcular custo esperado
-    const custoEsperado = getExpectedShippingCost(analise.valor_unitario, peso);
-    if (custoEsperado === null) {
+    const quantidade = analise.quantidade || 1;
+    // Recalcular peso total se necessário (o usuário pode ter alterado o peso unitário)
+    // Mas como salvamos o peso total no banco, usaremos o peso informado como total? 
+    // Melhor: o peso informado é o peso total (já multiplicado pela quantidade). Vamos manter assim.
+    const pesoTotal = peso; // o usuário está informando o peso total (já considerando quantidade)
+    const precoUnitario = analise.valor_unitario;
+
+    const custoEsperadoTotal = getExpectedShippingCost(precoUnitario, pesoTotal);
+    if (custoEsperadoTotal === null) {
         mostrarToast('Não foi possível calcular custo esperado', 'error');
         return;
     }
-
-    const divergencia = parseFloat((custoReal - custoEsperado).toFixed(2));
+    const divergencia = parseFloat((custoReal - custoEsperadoTotal).toFixed(2));
     const status = Math.abs(divergencia) <= 0.01 ? 'ok' : 'divergente';
 
-    // Atualizar banco
     await supabaseClient.from('frete_analises').update({
-        peso_kg: peso,
+        peso_kg: pesoTotal,
         custo_real: custoReal,
-        custo_esperado: custoEsperado,
+        custo_esperado: custoEsperadoTotal,
         divergencia: divergencia,
         status_frete: status,
         ultima_verificacao: new Date().toISOString()
     }).eq('venda_id', vendaId);
 
-    // Atualizar objeto local
-    analise.peso_kg = peso;
+    analise.peso_kg = pesoTotal;
     analise.custo_real = custoReal;
-    analise.custo_esperado = custoEsperado;
+    analise.custo_esperado = custoEsperadoTotal;
     analise.divergencia = divergencia;
     analise.status_frete = status;
 
     atualizarTabela();
     atualizarResumo();
-    mostrarToast(`Verificação concluída! Custo real: R$ ${custoReal.toFixed(2)} | Esperado: R$ ${custoEsperado.toFixed(2)} | Divergência: R$ ${divergencia.toFixed(2)}`, 'success');
+    mostrarToast(`Verificação concluída! Custo real: R$ ${custoReal.toFixed(2)} | Esperado (peso ${pesoTotal}kg): R$ ${custoEsperadoTotal.toFixed(2)} | Divergência: R$ ${divergencia.toFixed(2)}`, 'success');
 }
 
 // ==================== VERIFICAR TODAS AS PENDENTES ====================
@@ -447,7 +516,7 @@ async function verificarVendasPendentes() {
     mostrarToast('Recálculo concluído!', 'success');
 }
 
-// ==================== AÇÕES DE REEMBOLSO ====================
+// ==================== AÇÕES DE REEMBOLSO (mantido igual) ====================
 function abrirModalReembolso(vendaId) {
     const analise = analises.find(a => a.venda_id === vendaId);
     if (!analise) return;
@@ -512,8 +581,6 @@ function atualizarResumo() {
     const divergentes = analises.filter(a => a.status_frete === 'divergente').length;
     const contatados = analises.filter(a => a.status_frete === 'contatado').length;
     const reembolsados = analises.filter(a => a.status_frete === 'reembolsado').length;
-
-    // Contar atrasados: data_retorno não nula e < hoje
     const hoje = new Date().toISOString().split('T')[0];
     const atrasados = analises.filter(a => a.data_retorno && a.data_retorno < hoje).length;
 
@@ -532,8 +599,6 @@ function atualizarResumo() {
 function filtrarPorStatus(status) {
     filtroStatus = status;
     atualizarTabela();
-
-    // Atualizar estilo dos botões (opcional)
     document.querySelectorAll('#shippingSystem .filtro-botao').forEach(btn => {
         btn.classList.remove('btn-primary', 'active');
         btn.classList.add('btn-outline-secondary');
@@ -589,6 +654,8 @@ async function gerarRelatorio() {
             <td>${item.titulo}</td>
             <td>${item.sku}</td>
             <td>R$ ${(item.valor_unitario || 0).toFixed(2)}</td>
+            <td>${item.quantidade || 1}</td>
+            <td>${item.peso_kg ? item.peso_kg.toFixed(2) : DEFAULT_WEIGHT_KG} kg</td>
             <td>${item.custo_real ? 'R$ ' + item.custo_real.toFixed(2) : '-'}</td>
             <td>${item.custo_esperado ? 'R$ ' + item.custo_esperado.toFixed(2) : '-'}</td>
             <td>${item.status_frete || 'pendente'}</td>
@@ -618,6 +685,8 @@ function exportarDivergencias() {
         'Data': new Date(a.data_venda).toLocaleDateString('pt-BR'),
         'Produto': a.titulo,
         'SKU': a.sku,
+        'Quantidade': a.quantidade,
+        'Peso Total (kg)': a.peso_kg,
         'Valor Unitário': a.valor_unitario,
         'Custo Real': a.custo_real,
         'Custo Esperado': a.custo_esperado,
@@ -663,5 +732,6 @@ window.shippingManager = {
     gerarRelatorio,
     exportarRelatorio,
     exportarDivergencias,
-    filtrarPorStatus
+    filtrarPorStatus,
+    salvarPesoProduto
 };
