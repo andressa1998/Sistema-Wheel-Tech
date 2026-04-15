@@ -950,3 +950,24 @@ h4 {
 .menu-card .menu-icon i {
     font-size: 36px !important;
 }
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-right: -10px;
+    margin-left: -10px;
+}
+.col-md-6 {
+    flex: 0 0 50%;
+    max-width: 50%;
+    padding-right: 10px;
+    padding-left: 10px;
+}
+.form-group {
+    margin-bottom: 1rem;
+}
+@media (max-width: 768px) {
+    .col-md-6 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}

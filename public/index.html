@@ -2727,6 +2727,137 @@ h4 {
     </div>
 </div>
 
+<!-- ===== SISTEMA DE GESTÃO DE ESTOQUE ===== -->
+<div id="estoqueGestaoSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1><i class="fas fa-box" style="color: var(--success);"></i> Gestão de Estoque</h1>
+                <div class="user-info">
+                    <div class="user-avatar" id="estoqueGestaoUserAvatar">E</div>
+                    <div>
+                        <div id="estoqueGestaoUserName">Usuário</div>
+                        <div id="estoqueGestaoUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title"><i class="fas fa-boxes"></i> Produtos em Estoque</h2>
+                <button class="btn btn-success" onclick="abrirModalProdutoEstoque()">
+                    <i class="fas fa-plus"></i> Novo Produto
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table" id="produtosEstoqueTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Nome / Categoria</th>
+                            <th>SKU</th>
+                            <th>Quantidade</th>
+                            <th>Preço (R$)</th>
+                            <th>Atributos</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="produtosEstoqueBody">
+                        <tr><td colspan="7" class="text-center">Carregando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL PARA CADASTRO/EDIÇÃO DE PRODUTO -->
+<div id="modalProdutoEstoque" class="modal hidden">
+    <div class="modal-content" style="max-width: 800px; width: 90%;">
+        <h3 id="modalProdutoTitle">Novo Produto</h3>
+        <input type="hidden" id="produtoId">
+
+        <div class="form-group">
+            <label><i class="fas fa-tags"></i> Categoria *</label>
+            <select id="produtoCategoria" class="form-control" required>
+                <option value="">Selecione uma categoria</option>
+                <option value="Eixos">Eixos Passantes</option>
+                <option value="roupa">Roupa / Vestuário</option>
+                <option value="alimento">Alimento / Bebida</option>
+                <option value="moveis">Móveis</option>
+                <option value="outros">Outros</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Nome do Produto *</label>
+            <input type="text" id="produtoNome" class="form-control" required>
+        </div>
+
+        <div class="form-group">
+            <label>SKU *</label>
+            <input type="text" id="produtoSKU" class="form-control" required>
+        </div>
+
+        <div class="form-group">
+            <label>Preço (R$)</label>
+            <input type="number" id="produtoPreco" class="form-control" step="0.01" value="0">
+        </div>
+
+        <div class="form-group">
+            <label>Quantidade inicial</label>
+            <input type="number" id="produtoQuantidade" class="form-control" value="0" min="0">
+        </div>
+
+        <!-- Área dinâmica para atributos específicos da categoria -->
+        <div id="camposDinamicosContainer" style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px;">
+            <h5><i class="fas fa-cog"></i> Atributos específicos da categoria</h5>
+            <div id="camposDinamicos" class="row g-3"></div>
+        </div>
+
+        <div class="form-group">
+            <label>Descrição / Observações</label>
+            <textarea id="produtoDescricao" class="form-control" rows="2"></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between gap-2 mt-3">
+            <button class="btn btn-secondary" onclick="fecharModalProdutoEstoque()">Cancelar</button>
+            <button class="btn btn-success" onclick="salvarProdutoEstoque()">Salvar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL PARA MOVIMENTAÇÃO DE ESTOQUE (ENTRADA/SAÍDA) -->
+<div id="modalMovimentacaoEstoque" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+        <h3>Movimentar Estoque</h3>
+        <input type="hidden" id="movProdutoId">
+        <p><strong>Produto:</strong> <span id="movProdutoNome"></span></p>
+        <div class="form-group">
+            <label>Tipo</label>
+            <select id="movTipo" class="form-control">
+                <option value="entrada">Entrada (adicionar)</option>
+                <option value="saida">Saída (remover)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Quantidade</label>
+            <input type="number" id="movQuantidade" class="form-control" min="1" value="1" required>
+        </div>
+        <div class="d-flex justify-content-between gap-2 mt-3">
+            <button class="btn btn-secondary" onclick="fecharModalMovimentacaoEstoque()">Cancelar</button>
+            <button class="btn btn-primary" onclick="confirmarMovimentacaoEstoque()">Confirmar</button>
+        </div>
+    </div>
+</div>
+
 <!-- ===== SISTEMA DE ESTOQUE ===== -->
 <div id="estoqueSystem" class="hidden">
     <header class="main-header">
@@ -2970,101 +3101,30 @@ h4 {
         </div>
     </div>
 </div>
-<!-- E adicionar o novo sistema: Gestão de Estoque -->
-    <div id="estoqueGestaoSystem" class="hidden">
-        <header class="main-header">
-            <div class="container">
-                <div class="header-content">
-                    <h1><i class="fas fa-box" style="color:var(--success);"></i> Gestão de Estoque</h1>
-                    <div class="user-info">
-                        <div class="user-avatar" id="estoqueGestaoAvatar">E</div>
-                        <div>
-                            <div id="estoqueGestaoUserName">Usuário</div>
-                            <div id="estoqueGestaoUserRole"></div>
-                            <div class="d-flex gap-2 mt-2">
-                                <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </header>
-        <div class="container">
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h2 class="card-title"><i class="fas fa-boxes"></i> Produtos em Estoque</h2>
-                    <button class="btn btn-success" onclick="abrirModalProdutoEstoque()"><i class="fas fa-plus"></i> Novo Produto</button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table" id="produtosEstoqueTable">
-                        <thead>
-                            <tr><th>ID</th><th>Nome</th><th>SKU</th><th>Quantidade</th><th>Preço (R$)</th><th>Descrição</th><th>Ações</th></tr>
-                        </thead>
-                        <tbody id="produtosEstoqueBody">
-                            <tr><td colspan="7" class="text-center">Carregando...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
 
-    <!-- MODAL para produto -->
-    <div id="modalProdutoEstoque" class="modal hidden">
-        <div class="modal-content">
-            <h3 id="modalProdutoTitle">Novo Produto</h3>
-            <input type="hidden" id="produtoId">
-            <div class="form-group">
-                <label>Nome *</label>
-                <input type="text" id="produtoNome" class="form-control" required>
-            </div>
-            <div class="form-group">
-                <label>SKU *</label>
-                <input type="text" id="produtoSKU" class="form-control" required>
-            </div>
-            <div class="form-group">
-                <label>Quantidade inicial</label>
-                <input type="number" id="produtoQuantidade" class="form-control" value="0" min="0">
-            </div>
-            <div class="form-group">
-                <label>Preço (R$)</label>
-                <input type="number" id="produtoPreco" class="form-control" step="0.01" value="0">
-            </div>
-            <div class="form-group">
-                <label>Descrição</label>
-                <textarea id="produtoDescricao" class="form-control" rows="2"></textarea>
-            </div>
-            <div class="d-flex justify-content-between gap-2 mt-3">
-                <button class="btn btn-secondary" onclick="fecharModalProdutoEstoque()">Cancelar</button>
-                <button class="btn btn-success" onclick="salvarProdutoEstoque()">Salvar</button>
-            </div>
+<!-- MODAL MOVIMENTAÇÃO ESTOQUE -->
+<div id="modalMovimentacaoEstoque" class="modal hidden">
+    <div class="modal-content">
+        <h3>Movimentar Estoque</h3>
+        <input type="hidden" id="movProdutoId">
+        <p><strong>Produto:</strong> <span id="movProdutoNome"></span></p>
+        <div class="form-group">
+            <label>Tipo</label>
+            <select id="movTipo" class="form-control">
+                <option value="entrada">Entrada (adicionar)</option>
+                <option value="saida">Saída (remover)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Quantidade</label>
+            <input type="number" id="movQuantidade" class="form-control" min="1" value="1" required>
+        </div>
+        <div class="d-flex justify-content-between gap-2 mt-3">
+            <button class="btn btn-secondary" onclick="fecharModalMovimentacaoEstoque()">Cancelar</button>
+            <button class="btn btn-primary" onclick="confirmarMovimentacaoEstoque()">Confirmar</button>
         </div>
     </div>
-
-    <!-- MODAL para movimentação de estoque (entrada/saída) -->
-    <div id="modalMovimentacaoEstoque" class="modal hidden">
-        <div class="modal-content">
-            <h3>Movimentar Estoque</h3>
-            <input type="hidden" id="movProdutoId">
-            <p><strong>Produto:</strong> <span id="movProdutoNome"></span></p>
-            <div class="form-group">
-                <label>Tipo</label>
-                <select id="movTipo" class="form-control">
-                    <option value="entrada">Entrada (adicionar)</option>
-                    <option value="saida">Saída (remover)</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Quantidade</label>
-                <input type="number" id="movQuantidade" class="form-control" min="1" value="1" required>
-            </div>
-            <div class="d-flex justify-content-between gap-2 mt-3">
-                <button class="btn btn-secondary" onclick="fecharModalMovimentacaoEstoque()">Cancelar</button>
-                <button class="btn btn-primary" onclick="confirmarMovimentacaoEstoque()">Confirmar</button>
-            </div>
-        </div>
-    </div>
+</div>
                     </div>
                 </div>
             </div>
@@ -3078,10 +3138,11 @@ h4 {
     <script src="folgas.js"></script>
     <script src="ml_token_manager.js"></script>
     <script src="shipping_manager.js"></script>
-    <script src="estoque.js"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js"></script>
     <script src="nfe_manager.js"></script>
+    <script src="estoque_gestao.js"></script>
+    <script src="estoque.js"></script>
     
 
     <script>
