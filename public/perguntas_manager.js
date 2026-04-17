@@ -8,6 +8,16 @@ console.log('perguntas_manager.js carregado');
 let perguntas = [];
 let currentPerguntaFilter = 'todas';
 let perguntasPagination = { offset: 0, limit: 20, total: 0 };
+let municipiosCache = null; // cache da base de municípios
+
+// Mapeamento de código UF para sigla (IBGE)
+const codigoUfParaSigla = {
+    11: 'RO', 12: 'AC', 13: 'AM', 14: 'RR', 15: 'PA', 16: 'AP', 17: 'TO',
+    21: 'MA', 22: 'PI', 23: 'CE', 24: 'RN', 25: 'PB', 26: 'PE', 27: 'AL', 28: 'SE', 29: 'BA',
+    31: 'MG', 32: 'ES', 33: 'RJ', 35: 'SP',
+    41: 'PR', 42: 'SC', 43: 'RS',
+    50: 'MS', 51: 'MT', 52: 'GO', 53: 'DF'
+};
 
 // ============================================
 // FUNÇÃO PRINCIPAL PARA ABRIR O SISTEMA
@@ -15,13 +25,11 @@ let perguntasPagination = { offset: 0, limit: 20, total: 0 };
 window.abrirSistemaPerguntas = async function() {
     console.log('abrirSistemaPerguntas chamada');
     
-    // Verifica login
     if (typeof currentUser === 'undefined' || !currentUser) {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
     
-    // Esconde menu e outros sistemas
     const menuSystem = document.getElementById('menuSystem');
     if (menuSystem) menuSystem.classList.add('hidden');
     
@@ -33,7 +41,6 @@ window.abrirSistemaPerguntas = async function() {
         if (el) el.classList.add('hidden');
     });
     
-    // Mostra sistema de perguntas
     const perguntasSystem = document.getElementById('perguntasSystem');
     if (perguntasSystem) {
         perguntasSystem.classList.remove('hidden');
@@ -43,7 +50,6 @@ window.abrirSistemaPerguntas = async function() {
         return;
     }
     
-    // Atualiza header
     const userNameEl = document.getElementById('perguntasUserName');
     const userAvatarEl = document.getElementById('perguntasUserAvatar');
     const userRoleEl = document.getElementById('perguntasUserRole');
@@ -51,7 +57,6 @@ window.abrirSistemaPerguntas = async function() {
     if (userAvatarEl) userAvatarEl.textContent = currentUser.avatar;
     if (userRoleEl) userRoleEl.textContent = currentUser.role;
     
-    // Carrega perguntas (primeiro do banco, depois sincroniza com ML)
     await carregarPerguntasDoBanco();
     await sincronizarPerguntasComML();
     
@@ -66,7 +71,6 @@ async function carregarPerguntasDoBanco() {
         console.warn('Supabase não disponível');
         return;
     }
-    
     try {
         const { data, error } = await window.supabaseClient
             .from('perguntas_ml')
@@ -98,9 +102,7 @@ async function sincronizarPerguntasComML() {
     
     try {
         const tokenData = await getValidToken();
-        if (!tokenData || !tokenData.access_token) {
-            throw new Error('Token ML não disponível');
-        }
+        if (!tokenData || !tokenData.access_token) throw new Error('Token ML não disponível');
         
         const sellerId = ML_CONFIG?.USER_ID || '415176739';
         let offset = 0;
@@ -111,10 +113,7 @@ async function sincronizarPerguntasComML() {
             const url = `https://api.mercadolibre.com/questions/search?seller_id=${sellerId}&offset=${offset}&limit=50&sort=date_desc&api_version=4`;
             const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
             const response = await fetch(proxyUrl);
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             
             const data = await response.json();
             if (offset === 0) total = data.paging?.total || 0;
@@ -125,31 +124,32 @@ async function sincronizarPerguntasComML() {
             for (const q of questions) {
                 const existe = perguntas.some(p => p.id === q.id);
                 if (!existe) {
-                    // Buscar dados do comprador
                     // Buscar dados do comprador (nome e cidade)
-// Buscar dados do comprador (nome e cidade)
-let compradorNome = 'Anônimo';
-let compradorCidade = 'Não informado';
-
-if (q.from?.id) {
-    try {
-        const userUrl = `https://api.mercadolibre.com/users/${q.from.id}`;
-        const userProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(userUrl)}&token=${tokenData.access_token}`;
-        const userRes = await fetch(userProxy);
-        if (userRes.ok) {
-            const userData = await userRes.json();
-            compradorNome = userData.nickname || userData.first_name || userData.email || `Usuário ${q.from.id}`;
-            compradorCidade = userData.address?.city || userData.address?.state || 'Não informado';
-        } else {
-            compradorNome = q.from?.nickname || `Usuário ${q.from.id}`;
-        }
-    } catch (e) {
-        console.warn('Erro ao buscar dados do comprador:', e);
-        compradorNome = q.from?.nickname || `Usuário ${q.from.id}`;
-    }
-} else if (q.from?.nickname) {
-    compradorNome = q.from.nickname;
-}
+                    let compradorNome = 'Anônimo';
+                    let compradorCidade = 'Não informado';
+                    
+                    if (q.from?.id) {
+                        try {
+                            const userUrl = `https://api.mercadolibre.com/users/${q.from.id}`;
+                            const userProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(userUrl)}&token=${tokenData.access_token}`;
+                            const userRes = await fetch(userProxy);
+                            if (userRes.ok) {
+                                const userData = await userRes.json();
+                                compradorNome = userData.nickname || userData.first_name || userData.email || `Usuário ${q.from.id}`;
+                                compradorCidade = userData.address?.city || userData.address?.state || 'Não informado';
+                            } else {
+                                compradorNome = q.from?.nickname || `Usuário ${q.from.id}`;
+                            }
+                        } catch (e) {
+                            console.warn('Erro ao buscar dados do comprador:', e);
+                            compradorNome = q.from?.nickname || `Usuário ${q.from.id}`;
+                        }
+                    } else if (q.from?.nickname) {
+                        compradorNome = q.from.nickname;
+                    }
+                    
+                    // Buscar UF da cidade
+                    const estado = await buscarEstadoPorCidade(compradorCidade);
                     
                     const perguntaData = {
                         id: q.id,
@@ -161,7 +161,8 @@ if (q.from?.id) {
                         resposta: q.answer?.text || null,
                         data_resposta: q.answer?.date_created || null,
                         comprador_nome: compradorNome,
-                        comprador_cidade: compradorCidade
+                        comprador_cidade: compradorCidade,
+                        comprador_estado: estado
                     };
                     
                     const { error } = await window.supabaseClient
@@ -193,7 +194,6 @@ if (q.from?.id) {
                     }
                 }
             }
-            
             offset += questions.length;
         } while (offset < total);
         
@@ -202,7 +202,6 @@ if (q.from?.id) {
             showToast(`📥 ${novasPerguntas} nova(s) pergunta(s) sincronizada(s)`, 'success');
         }
         
-        // Reordenar
         perguntas.sort((a, b) => new Date(b.data_pergunta) - new Date(a.data_pergunta));
         perguntasPagination.total = perguntas.length;
         renderizarPerguntas();
@@ -245,14 +244,72 @@ async function carregarPerguntasML(offset = 0) {
 }
 
 // ============================================
-// ENRIQUECER DADOS DO COMPRADOR (FALLBACK)
+// CARREGAR BASE DE MUNICÍPIOS (IBGE)
+// ============================================
+
+async function carregarMunicipios() {
+    if (municipiosCache) return municipiosCache;
+    try {
+        const response = await fetch('municipios.json');
+        if (!response.ok) throw new Error('Erro ao carregar municipios.json');
+        const data = await response.json();
+        if (Array.isArray(data)) {
+            const mapa = new Map();
+            for (const mun of data) {
+                const nomeNorm = mun.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+                const sigla = codigoUfParaSigla[mun.codigo_uf];
+                if (sigla) mapa.set(nomeNorm, sigla);
+            }
+            municipiosCache = mapa;
+            console.log(`✅ ${mapa.size} municípios carregados`);
+        } else {
+            municipiosCache = new Map();
+        }
+        return municipiosCache;
+    } catch (error) {
+        console.error('Erro ao carregar municipios:', error);
+        return new Map();
+    }
+}
+
+// ============================================
+// BUSCAR ESTADO (UF) A PARTIR DO NOME DA CIDADE
+// ============================================
+async function buscarEstadoPorCidade(cidade) {
+    if (!cidade || cidade === 'Não informado') return 'UF não informada';
+    const mapa = await carregarMunicipios();
+    const cidadeNorm = cidade.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let uf = mapa.get(cidadeNorm);
+    if (!uf) {
+        for (let [nome, sigla] of mapa.entries()) {
+            if (nome.includes(cidadeNorm) || cidadeNorm.includes(nome)) {
+                uf = sigla;
+                break;
+            }
+        }
+    }
+    return uf || 'UF não informada';
+}
+
+// ============================================
+// ENRIQUECER PERGUNTAS COM NOME E CIDADE/ESTADO
 // ============================================
 async function enriquecerPerguntasComDadosComprador() {
     for (let pergunta of perguntas) {
+        // Se já temos os dados completos, apenas garante o estado
+        if (pergunta.comprador_nome && pergunta.comprador_nome !== 'Anônimo' &&
+            pergunta.comprador_cidade && pergunta.comprador_cidade !== 'Não informado') {
+            if (!pergunta.comprador_estado) {
+                pergunta.comprador_estado = await buscarEstadoPorCidade(pergunta.comprador_cidade);
+            }
+            continue;
+        }
+        
         const userId = pergunta.from?.id;
         let nome = pergunta.from?.nickname;
+        let cidade = 'Não informado';
         
-        if (!nome && userId) {
+        if (userId) {
             try {
                 const tokenData = await getValidToken();
                 if (tokenData?.access_token) {
@@ -262,33 +319,31 @@ async function enriquecerPerguntasComDadosComprador() {
                     if (userRes.ok) {
                         const userData = await userRes.json();
                         nome = userData.nickname || userData.first_name || userData.email || `Usuário ${userId}`;
-                        pergunta.comprador_cidade = userData.address?.city || userData.address?.state || 'Não informado';
+                        cidade = userData.address?.city || userData.address?.state || 'Não informado';
                     } else {
-                        nome = `Usuário ${userId}`;
-                        pergunta.comprador_cidade = 'Não informado';
+                        nome = pergunta.from?.nickname || `Usuário ${userId}`;
                     }
                 } else {
-                    nome = `Usuário ${userId}`;
-                    pergunta.comprador_cidade = 'Não informado';
+                    nome = pergunta.from?.nickname || `Usuário ${userId}`;
                 }
             } catch (e) {
-                nome = `Usuário ${userId}`;
-                pergunta.comprador_cidade = 'Não informado';
+                console.warn(`Erro ao buscar dados do comprador ${userId}:`, e);
+                nome = pergunta.from?.nickname || `Usuário ${userId}`;
             }
-        } else if (!nome && !userId) {
+        } else if (!nome) {
             nome = 'Anônimo';
-            pergunta.comprador_cidade = 'Não informado';
         }
         
         pergunta.comprador_nome = nome;
-        if (!pergunta.comprador_cidade) pergunta.comprador_cidade = 'Não informado';
+        pergunta.comprador_cidade = cidade;
+        pergunta.comprador_estado = await buscarEstadoPorCidade(cidade);
         
         await new Promise(resolve => setTimeout(resolve, 50));
     }
 }
 
 // ============================================
-// RENDERIZAR TABELA
+// RENDERIZAR TABELA (COM CIDADE/ESTADO)
 // ============================================
 function renderizarPerguntas() {
     const tbody = document.getElementById('perguntasTableBody');
@@ -328,10 +383,24 @@ function renderizarPerguntas() {
                </div>`
             : '';
         
+        // Exibe cidade e estado formatados
+        let localizacao = '';
+        if (pergunta.comprador_cidade && pergunta.comprador_cidade !== 'Não informado') {
+            localizacao = `${escapeHtml(pergunta.comprador_cidade)}`;
+            if (pergunta.comprador_estado && pergunta.comprador_estado !== 'UF não informada') {
+                localizacao += ` / ${escapeHtml(pergunta.comprador_estado)}`;
+            }
+        } else {
+            localizacao = 'Local não informado';
+        }
+        
         return `
             <tr class="pergunta-item" data-id="${pergunta.id}">
-                <td><strong>${escapeHtml(pergunta.comprador_nome || 'Anônimo')}</strong><br>
-                    <small class="text-muted"><i class="fas fa-map-marker-alt"></i> ${escapeHtml(pergunta.comprador_cidade)}</small>
+                <td>
+                    <strong>${escapeHtml(pergunta.comprador_nome || 'Anônimo')}</strong><br>
+                    <small class="text-muted">
+                        <i class="fas fa-map-marker-alt"></i> ${localizacao}
+                    </small>
                 </td>
                 <td>${escapeHtml(pergunta.pergunta)}</td>
                 <td><a href="https://produto.mercadolivre.com.br/${pergunta.item_id}" target="_blank">Ver anúncio</a></td>
@@ -415,7 +484,6 @@ window.enviarRespostaPergunta = async function() {
             throw new Error(errorData.message || 'Erro ao enviar resposta');
         }
         
-        // Atualizar no Supabase
         if (window.supabaseClient) {
             await window.supabaseClient
                 .from('perguntas_ml')
@@ -428,7 +496,6 @@ window.enviarRespostaPergunta = async function() {
                 .eq('id', questionId);
         }
         
-        // Atualizar localmente
         pergunta.status = 'respondida';
         pergunta.resposta = resposta;
         pergunta.data_resposta = new Date().toISOString();
@@ -453,7 +520,6 @@ window.filtrarPerguntas = function(filtro) {
     currentPerguntaFilter = filtro;
     renderizarPerguntas();
     
-    // Destacar botão ativo
     document.querySelectorAll('#perguntasSystem .btn-group .btn').forEach(btn => {
         btn.classList.remove('active');
     });
@@ -505,7 +571,6 @@ window.verRespostaPergunta = function(questionId) {
     alert(`Resposta:\n\n${pergunta.resposta}\n\nEnviada em: ${new Date(pergunta.data_resposta).toLocaleString('pt-BR')}`);
 };
 
-// ============================================
-// INICIALIZAÇÃO (sem fazer nada além de registrar)
-// ============================================
 console.log('perguntas_manager.js - pronto');
+
+window.buscarEstadoPorCidade = buscarEstadoPorCidade;
