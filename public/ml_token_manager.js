@@ -14,9 +14,10 @@ const ML_CONFIG = {
     CLIENT_ID: '5767896809769647',
     CLIENT_SECRET: 'aHu0XHAHekqQC6gPtxeBgJDgM99jXd7A',
     REDIRECT_URI: 'https://purple-bonus-3b1c.andmiotto1998.workers.dev/callback',
-    INITIAL_CODE: 'TG-698dc6a1c97d360001a048c2-415176739',
+    INITIAL_CODE: 'TG-69e22047c426d40001b65620-415176739',
     USER_ID: '415176739',
-    WORKER_URL: WORKER_URL
+    WORKER_URL: WORKER_URL,
+    SCOPE: 'read+write+inventory_write'
 };
 
 // ============================================
@@ -328,7 +329,8 @@ async function getNewTokenWithCode() {
         }
         
         const tokenData = await callWorker('/api/ml/token', 'POST', {
-            code: ML_CONFIG.INITIAL_CODE
+            code: ML_CONFIG.INITIAL_CODE,
+            scope: ML_CONFIG.SCOPE
         });
         
         if (!tokenData?.access_token) {
@@ -1170,6 +1172,20 @@ async function buscarFotosAnuncio(itemId) {
     }
 }
 
+async function verificarEscoposToken() {
+    const token = await autoManageMLToken();
+    if (!token) return;
+    const url = `https://api.mercadolibre.com/users/me?access_token=${token}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    console.log('🔑 Escopos do token atual:', data.scope?.split(' ') || 'não informado');
+    if (!data.scope?.includes('inventory_write')) {
+        console.error('❌ Token sem escopo inventory_write. Renove o token com scopes corretos.');
+        // Forçar renovação
+        await getNewTokenWithCode(); // ou autoManageMLToken(true)
+    }
+}
+
 // Exportar para uso em outros módulos
 window.buscarFotosAnuncio = buscarFotosAnuncio;
 
@@ -1228,6 +1244,7 @@ window.sincronizarVendasComSupabase = sincronizarVendasComSupabase;
 window.updateTokenStatusUI = updateTokenStatusUI;
 window.carregarTokenDoSupabase = carregarTokenDoSupabase;
 window.salvarTokenNoSupabase = salvarTokenNoSupabase;
+window.getNewTokenWithCode = getNewTokenWithCode;
 
 console.log('✅ ML Token Manager (híbrido) carregado e pronto!');
 

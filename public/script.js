@@ -5655,7 +5655,12 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
     setupPhotoUpload();
     setupReembolsoEventListeners();
-    inicializarBotaoReembolsos(); // ADICIONE ESTA LINHA
+    inicializarBotaoReembolsos();
+
+    // Inicializar sistema de perguntas
+    if (typeof inicializarSistemaPerguntas === 'function') {
+        inicializarSistemaPerguntas();
+    }
 
     if (currentUser) {
         setTimeout(() => {

@@ -526,10 +526,10 @@ h4 {
                 <h3>Entradas e Saídas</h3>
                 <p>Movimentação de estoque</p>
             </div>
-            <div class="menu-card" onclick="abrirGestaoEstoque()">
-                <div class="menu-icon"><i class="fas fa-undo"></i></div>
-                <h3>Fotos de devoluções</h3>
-                <p>Acompanhamento de devoluções</p>
+            <div class="menu-card" onclick="abrirSistemaPerguntas()">
+            <div class="menu-icon"><i class="fas fa-comments"></i></div>
+            <h3>Perguntas ML</h3>
+            <p>Responder perguntas dos clientes</p>
             </div>
         </div>
     </div>
@@ -2727,6 +2727,98 @@ h4 {
     </div>
 </div>
 
+<!-- ===== SISTEMA DE PERGUNTAS ML ===== -->
+<div id="perguntasSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1><i class="fas fa-comments" style="color: #17a2b8;"></i> Perguntas do Mercado Livre</h1>
+                <div class="user-info">
+                    <div class="user-avatar" id="perguntasUserAvatar">U</div>
+                    <div>
+                        <div id="perguntasUserName">Usuário</div>
+                        <div id="perguntasUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="card mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <h3><i class="fas fa-question-circle"></i> Perguntas dos clientes</h3>
+                <button class="btn btn-primary" onclick="carregarPerguntasML()">
+                    <i class="fas fa-sync-alt"></i> Atualizar
+                </button>
+            </div>
+        </div>
+        
+        <!-- Filtros -->
+        <div class="card mb-4">
+            <div class="btn-group" role="group">
+                <button class="btn btn-outline-secondary btn-sm active" onclick="filtrarPerguntas('todas')">Todas</button>
+                <button class="btn btn-outline-warning btn-sm" onclick="filtrarPerguntas('nao_respondidas')">Não respondidas</button>
+                <button class="btn btn-outline-success btn-sm" onclick="filtrarPerguntas('respondidas')">Respondidas</button>
+            </div>
+        </div>
+        
+        <!-- Tabela -->
+        <div class="card">
+            <div class="table-responsive">
+                <table class="table" id="perguntasTable">
+                    <thead>
+                        <tr>
+                            <th>Comprador / Cidade</th>
+                            <th>Pergunta</th>
+                            <th>Anúncio</th>
+                            <th>Data</th>
+                            <th>Status</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="perguntasTableBody">
+                        <tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Paginação -->
+            <div class="d-flex justify-content-between align-items-center p-3 border-top">
+                <div id="perguntasInfo">Mostrando 0-0 de 0</div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" id="btnPerguntasAnterior" onclick="paginarPerguntas('anterior')" disabled>Anterior</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="btnPerguntasProxima" onclick="paginarPerguntas('proxima')" disabled>Próxima</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para responder pergunta -->
+<div id="modalResponderPergunta" class="modal hidden">
+    <div class="modal-content" style="max-width: 600px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="fas fa-reply"></i> Responder Pergunta</h3>
+            <button onclick="fecharModalResponder()" style="background: none; border: none; font-size: 24px;">&times;</button>
+        </div>
+        <input type="hidden" id="responderQuestionId">
+        <div id="responderPerguntaText" style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;"></div>
+        <div class="form-group">
+            <label for="respostaTexto">Sua resposta *</label>
+            <textarea id="respostaTexto" class="form-control" rows="4" placeholder="Digite sua resposta..."></textarea>
+        </div>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <button class="btn btn-secondary" onclick="fecharModalResponder()">Cancelar</button>
+            <button class="btn btn-success" onclick="enviarRespostaPergunta()">Enviar Resposta</button>
+        </div>
+    </div>
+</div>
+
 <!-- ===== SISTEMA DE GESTÃO DE ESTOQUE ===== -->
 <div id="estoqueGestaoSystem" class="hidden">
     <header class="main-header">
@@ -3125,6 +3217,7 @@ h4 {
         </div>
     </div>
 </div>
+
                     </div>
                 </div>
             </div>
@@ -3143,7 +3236,7 @@ h4 {
     <script src="nfe_manager.js"></script>
     <script src="estoque_gestao.js"></script>
     <script src="estoque.js"></script>
-    
+    <script src="perguntas_manager.js"></script>
 
     <script>
         // Funções para controle da sidebar

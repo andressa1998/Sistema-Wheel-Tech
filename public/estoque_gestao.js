@@ -408,80 +408,240 @@ async function confirmarMovimentacaoEstoque() {
     }
 }
 
-// ===== SINCRONIZAÇÃO COM MERCADO LIVRE VIA PROXY =====
+// ===== SINCRONIZAÇÃO FINAL COM MERCADO LIVRE =====
+function encontrarVariacaoPorSKU(item, skuProduto) {
+    if (!item.variations || item.variations.length === 0) return null;
+
+    const skuAlvo = (skuProduto || '').toLowerCase().trim();
+    console.log(`🔍 Buscando variação para SKU: "${skuAlvo}"`);
+
+    const normalizar = (str) => (str || '').toLowerCase().trim().replace(/^0+/, '');
+    const skuAlvoNorm = normalizar(skuAlvo);
+
+    for (const v of item.variations) {
+        let identificador = extrairSkuDaVariacao(v);
+        if (identificador) {
+            let idNorm = normalizar(identificador);
+            // Remove prefixo de 3 dígitos (ex: "00100268..." -> "00268...")
+            if (/^\d{3}/.test(idNorm)) {
+                const semPrefixo = idNorm.replace(/^\d{3}/, '');
+                if (semPrefixo === skuAlvoNorm) {
+                    console.log(`✅ Match após remover prefixo: ${identificador}`);
+                    return v;
+                }
+            }
+            if (idNorm === skuAlvoNorm) {
+                console.log(`✅ Match exato: ${identificador}`);
+                return v;
+            }
+            if (idNorm.includes(skuAlvoNorm) || skuAlvoNorm.includes(idNorm)) {
+                console.log(`✅ Match por inclusão: ${identificador}`);
+                return v;
+            }
+        }
+        // Fallback por tamanho (opcional, mantido)
+        const numeros = skuAlvo.match(/\d+/g);
+        const tamanho = numeros?.find(n => n.length === 3 && n !== '000');
+        if (tamanho && v.attribute_combinations) {
+            const match = v.attribute_combinations.some(attr =>
+                (attr.name === 'Tamanho' || attr.name === 'Size') &&
+                String(attr.value_name) === tamanho
+            );
+            if (match) {
+                console.log(`✅ Match por tamanho ${tamanho}`);
+                return v;
+            }
+        }
+    }
+    console.warn(`⚠️ Nenhuma variação compatível. Usando a primeira.`);
+    return item.variations[0];
+}
+
+function extrairSkuDaVariacao(variacao) {
+    // 1. Prioriza seller_custom_field
+    if (variacao.seller_custom_field) {
+        return variacao.seller_custom_field;
+    }
+    // 2. Procura no array 'attributes' por SELLER_SKU
+    if (variacao.attributes && Array.isArray(variacao.attributes)) {
+        const skuAttr = variacao.attributes.find(attr => attr.id === 'SELLER_SKU');
+        if (skuAttr && skuAttr.value_name) {
+            return skuAttr.value_name;
+        }
+    }
+    return null;
+}
+
+// ===== FUNÇÃO PRINCIPAL DE SINCRONIZAÇÃO (MODIFICADA) =====
 async function sincronizarEstoqueML(produto) {
     let mlbCodes = produto.dados_extra?.mlb_codes;
     if (!mlbCodes || (Array.isArray(mlbCodes) && mlbCodes.length === 0)) {
-        console.log('ℹ️ Produto sem MLB cadastrado. Nada a sincronizar.');
+        console.log('ℹ️ Produto sem MLB cadastrado.');
         return { success: true, results: [] };
     }
-
-    let codigos = Array.isArray(mlbCodes) ? mlbCodes : mlbCodes.split(',').map(s => s.trim());
-    codigos = codigos.filter(c => c && c.length > 0);
+    let codigos = Array.isArray(mlbCodes) ? mlbCodes : mlbCodes.split(',').map(s => s.trim()).filter(c => c);
     if (codigos.length === 0) return { success: true, results: [] };
 
-    // Obter token ML (mesma lógica que você já usa)
-    let token = null;
-    try {
-        if (typeof window.autoManageMLToken === 'function') {
-            token = await window.autoManageMLToken();
-        } else if (typeof window.getValidToken === 'function') {
-            const tokenData = await window.getValidToken();
-            token = tokenData?.access_token;
-        } else {
-            token = localStorage.getItem('ml_access_token');
-        }
-        if (!token) throw new Error('Token ML não disponível');
-    } catch (err) {
-        console.error('Erro ao obter token ML:', err);
-        if (window.showToast) showToast('❌ Token ML inválido. Reconecte ao Mercado Livre.', 'error');
-        return { success: false, error: err.message };
+    let token = localStorage.getItem('ml_access_token');
+    if (!token) {
+        showToast('❌ Token ML não encontrado.', 'error');
+        return { success: false, error: 'Token não disponível' };
     }
 
-    // URL do seu Worker (igual ao usado em shipping_manager.js)
-    const WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+    const WORKER_URL = window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
     const results = [];
     const quantidade = produto.quantidade;
+    const skuProduto = produto.sku;
 
     for (const codigo of codigos) {
         const itemId = codigo.startsWith('MLB') ? codigo : `MLB${codigo}`;
         const apiUrl = `https://api.mercadolibre.com/items/${itemId}`;
-        // Chamada via proxy para evitar CORS
         const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(apiUrl)}&token=${encodeURIComponent(token)}`;
 
         try {
-            const response = await fetch(proxyUrl, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ available_quantity: quantidade })
-            });
+            console.log(`\n🔍 Obtendo ${itemId}...`);
+            const getRes = await fetch(proxyUrl);
+            if (!getRes.ok) throw new Error(`GET falhou: ${getRes.status}`);
+            const item = await getRes.json();
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || `HTTP ${response.status}`);
+            // 🔥 Buscar detalhes de cada variação individualmente
+            if (item.variations && item.variations.length > 0) {
+                console.log(`📦 Buscando detalhes de ${item.variations.length} variações...`);
+                for (let i = 0; i < item.variations.length; i++) {
+                    const v = item.variations[i];
+                    try {
+                        const variationUrl = `https://api.mercadolibre.com/items/${item.id}/variations/${v.id}?include_attributes=all`;
+                        const varProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(variationUrl)}&token=${encodeURIComponent(token)}`;
+                        const varRes = await fetch(varProxy);
+                        if (varRes.ok) {
+                            const varDetails = await varRes.json();
+                            item.variations[i] = {
+                                ...v,
+                                seller_custom_field: varDetails.seller_custom_field || v.seller_custom_field,
+                                attributes: varDetails.attributes || v.attributes,
+                                attribute_combinations: varDetails.attribute_combinations || v.attribute_combinations
+                            };
+                            const skuExtraido = extrairSkuDaVariacao(item.variations[i]);
+                            if (skuExtraido) console.log(`   Variação ${v.id}: SKU = ${skuExtraido}`);
+                        } else {
+                            console.warn(`   ⚠️ Não foi possível obter detalhes da variação ${v.id}`);
+                        }
+                    } catch (err) {
+                        console.warn(`   ⚠️ Erro ao buscar variação ${v.id}:`, err);
+                    }
+                    await new Promise(r => setTimeout(r, 100));
+                }
             }
 
-            const data = await response.json();
-            results.push({ codigo: itemId, success: true });
-            console.log(`✅ Estoque do anúncio ${itemId} atualizado para ${quantidade}`);
+            // Verifica oferta ativa
+            if (item.tags?.includes('has_price_by_rule')) {
+                console.warn(`⚠️ Item ${itemId} tem preço automático.`);
+                results.push({ codigo: itemId, success: false, reason: 'oferta_ativa' });
+                continue;
+            }
 
+            // --- FULL (inventory_id) ---
+            const isFulfillment = item.tags?.includes('fulfillment') || 
+                      item.shipping?.logistic_type === 'fulfillment' ||
+                      item.logistic_type === 'fulfillment';
+
+        if (item.inventory_id && isFulfillment) {
+            console.log(`📦 FULL inventory ${item.inventory_id}`);
+            const invUrl = `https://api.mercadolibre.com/inventories/${item.inventory_id}/stock`;
+            const invProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(invUrl)}&token=${encodeURIComponent(token)}`;
+            const invRes = await fetch(invProxy, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ total: { available_quantity: quantidade } })
+            });
+            if (invRes.ok) {
+                console.log(`✅ FULL atualizado`);
+                results.push({ codigo: itemId, success: true, method: 'inventory' });
+            } else {
+                const errorText = await invRes.text();
+                console.error(`❌ FULL falhou: ${invRes.status} - ${errorText}`);
+                results.push({ codigo: itemId, success: false, error: `FULL ${invRes.status}` });
+            }
+            continue;
+        } else if (item.inventory_id && !isFulfillment) {
+            console.log(`⚠️ inventory_id presente, mas item não é FULL. Ignorando e tratando como normal.`);
+        }
+
+            // --- COM VARIAÇÕES ---
+if (item.variations && item.variations.length > 0) {
+    const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+    if (!variacaoAlvo) {
+        console.warn(`⚠️ Nenhuma variação para ${itemId}`);
+        results.push({ codigo: itemId, success: false, reason: 'sem_variacao' });
+        continue;
+    }
+    const varId = variacaoAlvo.id;
+    const targetUrl = `https://api.mercadolibre.com/items/${itemId}/variations/${varId}`;
+    const putProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(targetUrl)}&token=${encodeURIComponent(token)}`;
+    console.log(`📦 Atualizando variação ${varId} para ${quantidade}`);
+    
+    const putRes = await fetch(putProxy, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ available_quantity: quantidade })
+    });
+    const responseText = await putRes.text();
+    console.log(`📡 Resposta da variação (status ${putRes.status}):`, responseText);
+    
+    let respData;
+    try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
+    
+    if (putRes.ok) {
+        // A resposta pode ser um array com todas as variações
+        let newQty = null;
+        if (Array.isArray(respData)) {
+            const updatedVar = respData.find(v => v.id == varId);
+            if (updatedVar) newQty = updatedVar.available_quantity;
+        } else {
+            newQty = respData.available_quantity;
+        }
+        
+        if (newQty === quantidade) {
+            console.log(`✅ Variação ${varId} atualizada para ${newQty}`);
+            results.push({ codigo: itemId, success: true, variation_id: varId });
+        } else {
+            console.warn(`⚠️ Resposta OK, mas estoque não mudou. Esperado: ${quantidade}, Recebido: ${newQty}`);
+            results.push({ codigo: itemId, success: false, reason: 'estoque_ignorado', details: respData });
+        }
+    } else {
+        console.error(`❌ Falha na variação: ${putRes.status} - ${responseText}`);
+        results.push({ codigo: itemId, success: false, error: `HTTP ${putRes.status}` });
+    }
+}
+            // --- SEM VARIAÇÃO ---
+            else {
+                console.log(`📦 Atualizando item principal`);
+                const putRes = await fetch(proxyUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ available_quantity: quantidade })
+                });
+                const responseText = await putRes.text();
+                let respData;
+                try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
+                if (putRes.ok && respData.available_quantity === quantidade) {
+                    console.log(`✅ Item ${itemId} atualizado`);
+                    results.push({ codigo: itemId, success: true });
+                } else {
+                    console.warn(`⚠️ Falha item: ${putRes.status}`);
+                    results.push({ codigo: itemId, success: false, reason: 'estoque_ignorado', details: respData });
+                }
+            }
         } catch (error) {
-            results.push({ codigo: itemId, success: false, message: error.message });
-            console.error(`❌ Erro ao sincronizar ${itemId}:`, error);
+            console.error(`❌ Erro ${itemId}:`, error);
+            results.push({ codigo: itemId, success: false, error: error.message });
         }
     }
 
     const sucessos = results.filter(r => r.success).length;
     const falhas = results.filter(r => !r.success).length;
-    if (sucessos > 0 && window.showToast) {
-        showToast(`✅ ${sucessos} anúncio(s) sincronizado(s) com estoque ${quantidade}`, 'success');
-    }
-    if (falhas > 0 && window.showToast) {
-        showToast(`⚠️ ${falhas} anúncio(s) falharam. Verifique console.`, 'warning');
-    }
+    if (sucessos) showToast(`✅ ${sucessos} anúncio(s) sincronizado(s)`, 'success');
+    if (falhas) showToast(`⚠️ ${falhas} anúncio(s) falharam. Verifique console.`, 'warning');
     return { success: falhas === 0, results };
 }
 
