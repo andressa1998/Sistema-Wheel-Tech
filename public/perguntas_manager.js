@@ -412,82 +412,184 @@ function renderizarPerguntas() {
         perguntasFiltradas = perguntasFiltradas.filter(p => p.status === 'respondida');
     }
     
-    if (perguntasFiltradas.length === 0) {
-        tbody.innerHTML = `
-            <tr><td colspan="6" class="text-center py-5">
-                <i class="fas fa-comment-slash fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                <h4 style="color: #6c757d;">Nenhuma pergunta encontrada</h4>
-                <p style="color: #6c757d;">Não há perguntas para os anúncios do Mercado Livre.</p>
-            </td></tr>
-        `;
+    // Agrupar perguntas por comprador + item
+    const grupos = agruparPerguntas(perguntasFiltradas);
+    
+    if (grupos.length === 0) {
+        tbody.innerHTML = `... (mesmo código de vazio) ...`;
         return;
     }
     
-    tbody.innerHTML = perguntasFiltradas.map(pergunta => {
-        const dataPergunta = new Date(pergunta.data_pergunta);
+    tbody.innerHTML = grupos.map(grupo => {
+        const p = grupo.ultima_pergunta; // última pergunta do grupo
+        const dataPergunta = new Date(p.data_pergunta);
         const dataFormatada = dataPergunta.toLocaleDateString('pt-BR') + ' ' + 
                              dataPergunta.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
         
-        const statusBadge = pergunta.status === 'respondida' 
+        const statusBadge = p.status === 'respondida' 
             ? '<span class="badge badge-success"><i class="fas fa-check-circle"></i> Respondida</span>'
             : '<span class="badge badge-warning"><i class="fas fa-hourglass-half"></i> Aguardando</span>';
         
-        const respostaPreview = pergunta.resposta 
+        const respostaPreview = p.resposta 
             ? `<div style="font-size: 12px; color: #28a745; margin-top: 5px; border-left: 2px solid #28a745; padding-left: 8px;">
-                   <i class="fas fa-reply"></i> ${escapeHtml(pergunta.resposta.substring(0, 100))}${pergunta.resposta.length > 100 ? '...' : ''}
+                   <i class="fas fa-reply"></i> ${escapeHtml(p.resposta.substring(0, 100))}${p.resposta.length > 100 ? '...' : ''}
                </div>`
             : '';
         
-        // Formata localização (cidade/estado)
         let localizacao = '';
-        if (pergunta.comprador_cidade && pergunta.comprador_cidade !== 'Não informado') {
-            localizacao = `${escapeHtml(pergunta.comprador_cidade)}`;
-            if (pergunta.comprador_estado && pergunta.comprador_estado !== 'UF não informada') {
-                localizacao += ` / ${escapeHtml(pergunta.comprador_estado)}`;
+        if (p.comprador_cidade && p.comprador_cidade !== 'Não informado') {
+            localizacao = `${escapeHtml(p.comprador_cidade)}`;
+            if (p.comprador_estado && p.comprador_estado !== 'UF não informada') {
+                localizacao += ` / ${escapeHtml(p.comprador_estado)}`;
             }
         } else {
             localizacao = 'Local não informado';
         }
         
-        // Extrai o número do item_id para montar o link (remove 'MLB' se presente)
-        let itemNumero = pergunta.item_id;
+        // Link do produto
+        let itemNumero = p.item_id;
         if (itemNumero && itemNumero.toUpperCase().startsWith('MLB')) {
             itemNumero = itemNumero.substring(3);
         }
         const linkProduto = itemNumero ? `https://produto.mercadolivre.com.br/MLB-${itemNumero}` : '#';
         
         return `
-            <tr class="pergunta-item" data-id="${pergunta.id}">
+            <tr class="pergunta-item" data-id="${p.id}">
                 <td>
-                    <strong>${escapeHtml(pergunta.comprador_nome || 'Anônimo')}</strong><br>
+                    <strong>${escapeHtml(p.comprador_nome || 'Anônimo')}</strong><br>
                     <small class="text-muted">
                         <i class="fas fa-map-marker-alt"></i> ${localizacao}
                     </small>
+                    ${grupo.total > 1 ? `<br><small class="text-info"><i class="fas fa-comments"></i> ${grupo.total} perguntas</small>` : ''}
                 </td>
-                <td>${escapeHtml(pergunta.pergunta)}</td>
+                <td>${escapeHtml(p.pergunta)}${respostaPreview}</td>
                 <td style="min-width: 200px;">
                     <a href="${linkProduto}" target="_blank" rel="noopener noreferrer" 
                        style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: #333;">
-                        ${pergunta.item_imagem ? 
-                            `<img src="${pergunta.item_imagem}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" alt="foto">` : 
+                        ${p.item_imagem ? 
+                            `<img src="${p.item_imagem}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" alt="foto">` : 
                             `<i class="fas fa-image" style="font-size: 24px; color: #ccc;"></i>`
                         }
-                        <span style="font-size: 13px; font-weight: 500;">${escapeHtml(pergunta.item_titulo || 'Ver anúncio')}</span>
+                        <span style="font-size: 13px; font-weight: 500;">${escapeHtml(p.item_titulo || 'Ver anúncio')}</span>
                     </a>
                  </td>
                 <td>${dataFormatada}</td>
                 <td>${statusBadge}</td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="abrirModalResponderPergunta('${pergunta.id}')" ${pergunta.status === 'respondida' ? 'disabled' : ''}>
+                    <button class="btn btn-sm btn-primary" onclick="abrirModalResponderPergunta('${p.id}')" ${p.status === 'respondida' ? 'disabled' : ''}>
                         <i class="fas fa-reply"></i> Responder
                     </button>
-                    ${pergunta.resposta ? `<button class="btn btn-sm btn-info" onclick="verRespostaPergunta('${pergunta.id}')"><i class="fas fa-eye"></i> Ver resposta</button>` : ''}
-                </td>
-            </tr>
-            ${respostaPreview}
+                    ${grupo.total > 1 ? 
+                        `<button class="btn btn-sm btn-info" onclick="abrirHistoricoPerguntas('${escapeHtml(p.comprador_nome)}', '${p.item_id}')" title="Ver todas as perguntas deste comprador">
+                            <i class="fas fa-history"></i> Histórico (${grupo.total})
+                        </button>` : 
+                        ''
+                    }
+                    ${p.resposta ? `<button class="btn btn-sm btn-info" onclick="verRespostaPergunta('${p.id}')"><i class="fas fa-eye"></i> Ver resposta</button>` : ''}
+                 </td>
+             </tr>
         `;
     }).join('');
 }
+
+// ============================================
+// AGRUPAR PERGUNTAS (uma linha por comprador+item)
+// ============================================
+function agruparPerguntas(perguntasLista) {
+    const grupos = new Map(); // chave: `${comprador_nome}|${item_id}`
+    
+    for (const p of perguntasLista) {
+        const chave = `${p.comprador_nome}|${p.item_id}`;
+        if (!grupos.has(chave)) {
+            grupos.set(chave, {
+                comprador_nome: p.comprador_nome,
+                comprador_cidade: p.comprador_cidade,
+                comprador_estado: p.comprador_estado,
+                item_id: p.item_id,
+                item_titulo: p.item_titulo,
+                item_imagem: p.item_imagem,
+                ultima_pergunta: p, // a mais recente (já que a lista vem ordenada)
+                total: 1,
+                todas: [p]
+            });
+        } else {
+            const grupo = grupos.get(chave);
+            grupo.total++;
+            grupo.todas.push(p);
+            // Atualizar última pergunta (a mais recente, que é a primeira do array)
+            if (new Date(p.data_pergunta) > new Date(grupo.ultima_pergunta.data_pergunta)) {
+                grupo.ultima_pergunta = p;
+            }
+        }
+    }
+    
+    // Retorna array com um objeto por grupo, ordenado pela data da última pergunta
+    return Array.from(grupos.values()).sort((a, b) => 
+        new Date(b.ultima_pergunta.data_pergunta) - new Date(a.ultima_pergunta.data_pergunta)
+    );
+}
+
+// ============================================
+// ABRIR MODAL COM HISTÓRICO DE PERGUNTAS
+// ============================================
+window.abrirHistoricoPerguntas = function(compradorNome, itemId) {
+    // Filtrar todas as perguntas desse comprador e item
+    const perguntasDoGrupo = perguntas.filter(p => 
+        p.comprador_nome === compradorNome && p.item_id === itemId
+    ).sort((a, b) => new Date(a.data_pergunta) - new Date(b.data_pergunta)); // ordem cronológica
+    
+    if (perguntasDoGrupo.length === 0) {
+        showToast('Nenhuma pergunta encontrada para este comprador.', 'warning');
+        return;
+    }
+    
+    const content = document.getElementById('historicoPerguntasContent');
+    const tituloItem = perguntasDoGrupo[0].item_titulo || 'Anúncio';
+    
+    // Montar HTML do histórico
+    let html = `
+        <div style="margin-bottom: 20px; padding: 10px; background: #f8f9fa; border-radius: 8px;">
+            <strong><i class="fas fa-user"></i> Comprador:</strong> ${escapeHtml(compradorNome)}<br>
+            <strong><i class="fas fa-box"></i> Produto:</strong> ${escapeHtml(tituloItem)}<br>
+            <strong><i class="fas fa-comments"></i> Total de perguntas:</strong> ${perguntasDoGrupo.length}
+        </div>
+        <div class="timeline-historico">
+    `;
+    
+    for (const p of perguntasDoGrupo) {
+        const dataPergunta = new Date(p.data_pergunta).toLocaleString('pt-BR');
+        const status = p.status === 'respondida' ? 'Respondida' : 'Não respondida';
+        const respostaHtml = p.resposta ? `
+            <div style="margin-top: 8px; padding: 8px; background: #e8f5e9; border-radius: 6px;">
+                <i class="fas fa-reply" style="color: #28a745;"></i>
+                <strong>Resposta:</strong> ${escapeHtml(p.resposta)}<br>
+                <small>${new Date(p.data_resposta).toLocaleString('pt-BR')}</small>
+            </div>
+        ` : '';
+        
+        html += `
+            <div class="historico-item" style="border-left: 3px solid ${p.status === 'respondida' ? '#28a745' : '#ffc107'}; padding: 12px; margin-bottom: 15px; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <strong style="color: #495057;">📅 ${dataPergunta}</strong>
+                    <span class="badge ${p.status === 'respondida' ? 'badge-success' : 'badge-warning'}">${status}</span>
+                </div>
+                <div style="margin-bottom: 8px;">
+                    <strong>Pergunta:</strong> ${escapeHtml(p.pergunta)}
+                </div>
+                ${respostaHtml}
+            </div>
+        `;
+    }
+    
+    html += `</div>`;
+    content.innerHTML = html;
+    
+    document.getElementById('modalHistoricoPerguntas').classList.remove('hidden');
+};
+
+window.fecharModalHistorico = function() {
+    document.getElementById('modalHistoricoPerguntas').classList.add('hidden');
+};
 
 // ============================================
 // MODAL PARA RESPONDER
