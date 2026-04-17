@@ -102,7 +102,9 @@ async function sincronizarPerguntasComML() {
     
     try {
         const tokenData = await getValidToken();
-        if (!tokenData || !tokenData.access_token) throw new Error('Token ML não disponível');
+        if (!tokenData || !tokenData.access_token) {
+            throw new Error('Token ML não disponível');
+        }
         
         const sellerId = ML_CONFIG?.USER_ID || '415176739';
         let offset = 0;
@@ -113,7 +115,10 @@ async function sincronizarPerguntasComML() {
             const url = `https://api.mercadolibre.com/questions/search?seller_id=${sellerId}&offset=${offset}&limit=50&sort=date_desc&api_version=4`;
             const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
             const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`HTTP ${response.status}: ${errorText}`);
+            }
             
             const data = await response.json();
             if (offset === 0) total = data.paging?.total || 0;
@@ -123,48 +128,69 @@ async function sincronizarPerguntasComML() {
             
             for (const q of questions) {
                 const existe = perguntas.some(p => p.id === q.id);
-                if (!existe) {
-                    // Buscar dados do comprador (nome e cidade)
-                    let compradorNome = 'Anônimo';
-                    let compradorCidade = 'Não informado';
-                    
-                    if (q.from?.id) {
-                        try {
-                            const userUrl = `https://api.mercadolibre.com/users/${q.from.id}`;
-                            const userProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(userUrl)}&token=${tokenData.access_token}`;
-                            const userRes = await fetch(userProxy);
-                            if (userRes.ok) {
-                                const userData = await userRes.json();
-                                compradorNome = userData.nickname || userData.first_name || userData.email || `Usuário ${q.from.id}`;
-                                compradorCidade = userData.address?.city || userData.address?.state || 'Não informado';
-                            } else {
-                                compradorNome = q.from?.nickname || `Usuário ${q.from.id}`;
-                            }
-                        } catch (e) {
-                            console.warn('Erro ao buscar dados do comprador:', e);
+                
+                // Buscar dados do comprador (nome e cidade)
+                let compradorNome = 'Anônimo';
+                let compradorCidade = 'Não informado';
+                
+                if (q.from?.id) {
+                    try {
+                        const userUrl = `https://api.mercadolibre.com/users/${q.from.id}`;
+                        const userProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(userUrl)}&token=${tokenData.access_token}`;
+                        const userRes = await fetch(userProxy);
+                        if (userRes.ok) {
+                            const userData = await userRes.json();
+                            compradorNome = userData.nickname || userData.first_name || userData.email || `Usuário ${q.from.id}`;
+                            compradorCidade = userData.address?.city || userData.address?.state || 'Não informado';
+                        } else {
                             compradorNome = q.from?.nickname || `Usuário ${q.from.id}`;
                         }
-                    } else if (q.from?.nickname) {
-                        compradorNome = q.from.nickname;
+                    } catch (e) {
+                        console.warn('Erro ao buscar dados do comprador:', e);
+                        compradorNome = q.from?.nickname || `Usuário ${q.from.id}`;
                     }
-                    
-                    // Buscar UF da cidade
-                    const estado = await buscarEstadoPorCidade(compradorCidade);
-                    
-                    const perguntaData = {
-                        id: q.id,
-                        item_id: q.item_id,
-                        seller_id: sellerId,
-                        pergunta: q.text,
-                        data_pergunta: q.date_created,
-                        status: q.answer ? 'respondida' : 'pendente',
-                        resposta: q.answer?.text || null,
-                        data_resposta: q.answer?.date_created || null,
-                        comprador_nome: compradorNome,
-                        comprador_cidade: compradorCidade,
-                        comprador_estado: estado
-                    };
-                    
+                } else if (q.from?.nickname) {
+                    compradorNome = q.from.nickname;
+                }
+                
+                // Buscar UF da cidade
+                const estado = await buscarEstadoPorCidade(compradorCidade);
+                
+                // Buscar título e imagem do anúncio
+                let itemTitulo = 'Produto não encontrado';
+                let itemImagem = '';
+                if (q.item_id) {
+                    try {
+                        const itemUrl = `https://api.mercadolibre.com/items/${q.item_id}`;
+                        const itemProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${tokenData.access_token}`;
+                        const itemRes = await fetch(itemProxy);
+                        if (itemRes.ok) {
+                            const itemData = await itemRes.json();
+                            itemTitulo = itemData.title || 'Sem título';
+                            itemImagem = (itemData.pictures && itemData.pictures[0] && itemData.pictures[0].url) || '';
+                        }
+                    } catch (e) {
+                        console.warn(`Erro ao buscar item ${q.item_id}:`, e);
+                    }
+                }
+                
+                const perguntaData = {
+                    id: q.id,
+                    item_id: q.item_id,
+                    seller_id: sellerId,
+                    pergunta: q.text,
+                    data_pergunta: q.date_created,
+                    status: q.answer ? 'respondida' : 'pendente',
+                    resposta: q.answer?.text || null,
+                    data_resposta: q.answer?.date_created || null,
+                    comprador_nome: compradorNome,
+                    comprador_cidade: compradorCidade,
+                    comprador_estado: estado,
+                    item_titulo: itemTitulo,
+                    item_imagem: itemImagem
+                };
+                
+                if (!existe) {
                     const { error } = await window.supabaseClient
                         .from('perguntas_ml')
                         .upsert(perguntaData, { onConflict: 'id' });
@@ -174,26 +200,36 @@ async function sincronizarPerguntasComML() {
                         novasPerguntas++;
                     }
                 } else {
-                    // Atualizar se a resposta mudou
+                    // Atualizar se resposta mudou ou faltam dados do item
                     const local = perguntas.find(p => p.id === q.id);
+                    let precisaUpdate = false;
+                    const updateData = { updated_at: new Date().toISOString() };
+                    
                     if (local.status === 'pendente' && q.answer) {
+                        updateData.status = 'respondida';
+                        updateData.resposta = q.answer.text;
+                        updateData.data_resposta = q.answer.date_created;
+                        precisaUpdate = true;
+                    }
+                    
+                    if (!local.item_titulo || !local.item_imagem) {
+                        updateData.item_titulo = itemTitulo;
+                        updateData.item_imagem = itemImagem;
+                        precisaUpdate = true;
+                    }
+                    
+                    if (precisaUpdate) {
                         const { error } = await window.supabaseClient
                             .from('perguntas_ml')
-                            .update({
-                                status: 'respondida',
-                                resposta: q.answer.text,
-                                data_resposta: q.answer.date_created,
-                                updated_at: new Date().toISOString()
-                            })
+                            .update(updateData)
                             .eq('id', q.id);
                         if (!error) {
-                            local.status = 'respondida';
-                            local.resposta = q.answer.text;
-                            local.data_resposta = q.answer.date_created;
+                            Object.assign(local, updateData);
                         }
                     }
                 }
             }
+            
             offset += questions.length;
         } while (offset < total);
         
@@ -202,6 +238,7 @@ async function sincronizarPerguntasComML() {
             showToast(`📥 ${novasPerguntas} nova(s) pergunta(s) sincronizada(s)`, 'success');
         }
         
+        // Reordenar por data (mais recente primeiro)
         perguntas.sort((a, b) => new Date(b.data_pergunta) - new Date(a.data_pergunta));
         perguntasPagination.total = perguntas.length;
         renderizarPerguntas();
@@ -289,6 +326,24 @@ async function buscarEstadoPorCidade(cidade) {
         }
     }
     return uf || 'UF não informada';
+}
+
+// Buscar título e imagem principal do anúncio
+async function buscarDetalhesItem(itemId, token) {
+    if (!itemId) return { titulo: 'Produto não encontrado', imagem: '' };
+    try {
+        const url = `https://api.mercadolibre.com/items/${itemId}`;
+        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        const titulo = data.title || 'Sem título';
+        const imagem = (data.pictures && data.pictures[0] && data.pictures[0].url) || '';
+        return { titulo, imagem };
+    } catch (error) {
+        console.error(`Erro ao buscar item ${itemId}:`, error);
+        return { titulo: 'Erro ao carregar', imagem: '' };
+    }
 }
 
 // ============================================
@@ -383,7 +438,7 @@ function renderizarPerguntas() {
                </div>`
             : '';
         
-        // Exibe cidade e estado formatados
+        // Formata localização (cidade/estado)
         let localizacao = '';
         if (pergunta.comprador_cidade && pergunta.comprador_cidade !== 'Não informado') {
             localizacao = `${escapeHtml(pergunta.comprador_cidade)}`;
@@ -394,6 +449,13 @@ function renderizarPerguntas() {
             localizacao = 'Local não informado';
         }
         
+        // Extrai o número do item_id para montar o link (remove 'MLB' se presente)
+        let itemNumero = pergunta.item_id;
+        if (itemNumero && itemNumero.toUpperCase().startsWith('MLB')) {
+            itemNumero = itemNumero.substring(3);
+        }
+        const linkProduto = itemNumero ? `https://produto.mercadolivre.com.br/MLB-${itemNumero}` : '#';
+        
         return `
             <tr class="pergunta-item" data-id="${pergunta.id}">
                 <td>
@@ -403,7 +465,16 @@ function renderizarPerguntas() {
                     </small>
                 </td>
                 <td>${escapeHtml(pergunta.pergunta)}</td>
-                <td><a href="https://produto.mercadolivre.com.br/${pergunta.item_id}" target="_blank">Ver anúncio</a></td>
+                <td style="min-width: 200px;">
+                    <a href="${linkProduto}" target="_blank" rel="noopener noreferrer" 
+                       style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: #333;">
+                        ${pergunta.item_imagem ? 
+                            `<img src="${pergunta.item_imagem}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" alt="foto">` : 
+                            `<i class="fas fa-image" style="font-size: 24px; color: #ccc;"></i>`
+                        }
+                        <span style="font-size: 13px; font-weight: 500;">${escapeHtml(pergunta.item_titulo || 'Ver anúncio')}</span>
+                    </a>
+                 </td>
                 <td>${dataFormatada}</td>
                 <td>${statusBadge}</td>
                 <td>
