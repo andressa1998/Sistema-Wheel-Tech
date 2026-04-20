@@ -47,6 +47,8 @@ async function handleLogin(e) {
     // Executa diretamente, sem setTimeout
     if (foundUser) {
         currentUser = foundUser;
+
+        atualizarVisibilidadeMenu();
         
         // Registrar histórico de login (agora await funciona)
         const ip = await getClientIP();
@@ -3447,6 +3449,18 @@ function clearForm() {
     if (cancelEditBtn) cancelEditBtn.classList.add('hidden');
     
     generateOSCode();
+}
+
+function atualizarVisibilidadeMenu() {
+    const historicoCard = document.getElementById('historicoMenuCard');
+    if (!historicoCard) return;
+    
+    const usuariosPermitidos = ['ronald', 'andressamiotto'];
+    if (currentUser && usuariosPermitidos.includes(currentUser.username)) {
+        historicoCard.style.display = '';      // mostra (volta ao normal)
+    } else {
+        historicoCard.style.display = 'none';  // esconde
+    }
 }
 
 function cancelEdit() {
@@ -7865,58 +7879,114 @@ window.voltarParaVerificacao = async function(id) {
 };
 
 async function abrirHistoricoAcessos() {
-    if (!currentUser) return;
-    const usuariosPermitidos = ['ronald', 'andressamiotto'];
-    if (!usuariosPermitidos.includes(currentUser.username)) {
-        showToast('Acesso negado. Apenas Ronald e Andressa Miotto podem visualizar.', 'error');
+    // Verifica se o usuário está logado
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
 
-    // Esconder menu e mostrar tela de histórico
-    document.getElementById('menuSystem').classList.add('hidden');
-    let historyScreen = document.getElementById('historicoAcessosScreen');
-    if (!historyScreen) {
-        historyScreen = document.createElement('div');
-        historyScreen.id = 'historicoAcessosScreen';
-        historyScreen.className = 'container';
-        historyScreen.innerHTML = `
-            <div class="card">
-                <div class="card-header">
-                    <h2><i class="fas fa-history"></i> Histórico de Acessos</h2>
-                    <button class="btn btn-secondary" onclick="voltarParaMenu()">Voltar</button>
-                </div>
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr><th>Usuário</th><th>Nome</th><th>IP</th><th>Data/Hora</th><th>Navegador</th></tr>
-                        </thead>
-                        <tbody id="historicoTableBody"></tbody>
-                    </table>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(historyScreen);
+    // Apenas Ronald e Andressa Miotto podem acessar
+    const usuariosPermitidos = ['ronald', 'andressamiotto'];
+    if (!usuariosPermitidos.includes(currentUser.username)) {
+        showToast('⛔ Acesso negado. Apenas Ronald e Andressa Miotto podem visualizar o histórico.', 'error');
+        return;
     }
-    historyScreen.classList.remove('hidden');
 
-    // Carregar dados
-    const { data, error } = await supabaseClient
-        .from('login_history')
-        .select('*')
-        .order('login_time', { ascending: false })
-        .limit(100);
-    if (error) throw error;
+    // Esconde o menu principal e outros sistemas
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
 
-    const tbody = document.getElementById('historicoTableBody');
-    tbody.innerHTML = '';
-    data.forEach(reg => {
-        const row = tbody.insertRow();
-        row.insertCell(0).textContent = reg.username;
-        row.insertCell(1).textContent = reg.user_name;
-        row.insertCell(2).textContent = reg.ip_address;
-        row.insertCell(3).textContent = new Date(reg.login_time).toLocaleString('pt-BR');
-        row.insertCell(4).textContent = reg.user_agent?.substring(0, 50) || '-';
-    });
+    // Se já existir uma tela de histórico, remove-a (para recriar atualizada)
+    const existingScreen = document.getElementById('historicoAcessosScreen');
+    if (existingScreen) existingScreen.remove();
+
+    // Cria o container da tela de histórico
+    const historyScreen = document.createElement('div');
+    historyScreen.id = 'historicoAcessosScreen';
+    historyScreen.className = 'container';
+    historyScreen.innerHTML = `
+        <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0;">
+                    <i class="fas fa-history"></i> Histórico de Acessos
+                </h2>
+                <button class="btn btn-secondary" onclick="voltarParaMenu()">
+                    <i class="fas fa-arrow-left"></i> Voltar
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-striped" id="historyTable">
+                    <thead>
+                        <tr>
+                            <th>Usuário</th>
+                            <th>Nome</th>
+                            <th>IP</th>
+                            <th>Data/Hora</th>
+                            <th>Navegador</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr><td colspan="5" class="text-center"><div class="spinner"></div> Carregando...</td><ee
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(historyScreen);
+
+    // Carrega os dados do Supabase
+    try {
+        if (!supabaseClient) {
+            throw new Error('Cliente Supabase não inicializado');
+        }
+
+        const { data, error } = await supabaseClient
+            .from('login_history')
+            .select('*')
+            .order('login_time', { ascending: false })
+            .limit(200); // Últimos 200 registros
+
+        if (error) throw error;
+
+        const tbody = document.getElementById('historyTableBody');
+        if (!tbody) return;
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nenhum registro encontrado</td></tr>';
+            return;
+        }
+
+        // Preenche a tabela
+        tbody.innerHTML = data.map(reg => `
+            <tr>
+                <td>${escapeHtml(reg.username || '')}</td>
+                <td>${escapeHtml(reg.user_name || '')}</td>
+                <td>${escapeHtml(reg.ip_address || '-')}</td>
+                <td>${new Date(reg.login_time).toLocaleString('pt-BR')}</td>
+                <td>${escapeHtml((reg.user_agent || '').substring(0, 60))}</td>
+            </tr>
+        `).join('');
+
+    } catch (err) {
+        console.error('Erro ao carregar histórico:', err);
+        const tbody = document.getElementById('historyTableBody');
+        if (tbody) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Erro ao carregar dados. Verifique o console.</td></tr>';
+        }
+        showToast('❌ Erro ao carregar histórico de acessos', 'error');
+    }
+}
+
+// Função auxiliar para escapar HTML (evita injeção)
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 async function getClientIP() {
