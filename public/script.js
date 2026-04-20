@@ -14,16 +14,14 @@ let refreshTokenInterval = null;
 let reembolsoNotificationCount = null;
 let reembolsoNotificationBell = null;
 
-function handleLogin(e) {
+async function handleLogin(e) {
     e.preventDefault();
     
     const usernameInput = document.getElementById('username');
     const passwordInput = document.getElementById('password');
-    
     const username = usernameInput.value.trim().toLowerCase();
     const password = passwordInput.value;
     
-    // Feedback visual
     const submitBtn = loginForm.querySelector('button[type="submit"]');
     let originalBtnText = '';
     if (submitBtn) {
@@ -32,7 +30,6 @@ function handleLogin(e) {
         submitBtn.disabled = true;
     }
     
-    // Validação
     if (!username || !password) {
         showToast('Por favor, preencha usuário e senha!', 'warning');
         if (submitBtn) {
@@ -42,78 +39,68 @@ function handleLogin(e) {
         passwordInput.focus();
         return;
     }
-
-    // Verificar usuário
+    
     const foundUser = SYSTEM_USERS.find(user => 
         user.username === username && user.password === password
     );
     
-    setTimeout(() => {
-        if (foundUser) {
-            currentUser = foundUser;
-
-            // 🔥 ATUALIZA VISIBILIDADE DO BOTÃO DE RELATÓRIO POR COLABORADOR
-            atualizarVisibilidadeRelatorioColaborador();
-
-            atualizarTodosAvatares();
-            
-            // SALVAR SESSÃO NO LOCALSTORAGE
-            saveSessionToStorage();
-            
-            // INICIAR TIMER DE SESSÃO
-            startSessionTimer();
-            
-            // Atualizar interface do usuário
-            if (userName) userName.textContent = foundUser.name;
-            if (userAvatar) userAvatar.textContent = foundUser.avatar;
-            if (userRole) userRole.textContent = foundUser.role;
-            if (welcomeMessage) welcomeMessage.textContent = `Bem-vindo(a), ${foundUser.name}!`;
-            if (createdByInput) createdByInput.value = foundUser.name;
-            
-            // Mostrar sistema, esconder login
-            if (loginScreen) loginScreen.classList.add('hidden');
-            const menuSystem = document.getElementById('menuSystem');
-            if (menuSystem) menuSystem.classList.remove('hidden');
-            
-            showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
-            
-            // INICIALIZAR SISTEMA APÓS LOGIN
-            setTimeout(() => {
-                if (supabaseClient) {
-                    testSupabaseConnection();
-                } else {
-                    updateCounters();
-                    renderOrdersTable();
-                    updateOSNotificationBell();
-                }
-                
-                // Configurar botão de reembolsos (AGORA DENTRO DO LOGIN)
-                const reembolsosBtn = document.getElementById('reembolsosBtn');
-                if (reembolsosBtn) {
-                    reembolsosBtn.onclick = function() {
-                        abrirSistemaReembolsos();
-                    };
-                }
-                
-                // Configurar botão de logout (AGORA DENTRO DO LOGIN)
-                if (logoutBtn) {
-                    logoutBtn.onclick = handleLogout;
-                }
-                
-            }, 500);
-            
-        } else {
-            showToast('❌ Usuário ou senha incorretos', 'error');
-            passwordInput.value = '';
-            passwordInput.focus();
-        }
+    // Executa diretamente, sem setTimeout
+    if (foundUser) {
+        currentUser = foundUser;
         
-        // Restaurar botão
-        if (submitBtn) {
-            submitBtn.innerHTML = originalBtnText;
-            submitBtn.disabled = false;
-        }
-    }, 300);
+        // Registrar histórico de login (agora await funciona)
+        const ip = await getClientIP();
+        const userAgent = navigator.userAgent;
+        await supabaseClient
+            .from('login_history')
+            .insert([{
+                username: foundUser.username,
+                user_name: foundUser.name,
+                ip_address: ip,
+                user_agent: userAgent,
+                login_time: new Date().toISOString()
+            }]);
+        
+        // Restante do seu código (atualizar interface, etc.)
+        atualizarVisibilidadeRelatorioColaborador();
+        atualizarTodosAvatares();
+        saveSessionToStorage();
+        startSessionTimer();
+        
+        if (userName) userName.textContent = foundUser.name;
+        if (userAvatar) userAvatar.textContent = foundUser.avatar;
+        if (userRole) userRole.textContent = foundUser.role;
+        if (welcomeMessage) welcomeMessage.textContent = `Bem-vindo(a), ${foundUser.name}!`;
+        if (createdByInput) createdByInput.value = foundUser.name;
+        
+        if (loginScreen) loginScreen.classList.add('hidden');
+        const menuSystem = document.getElementById('menuSystem');
+        if (menuSystem) menuSystem.classList.remove('hidden');
+        
+        showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
+        
+        setTimeout(() => {
+            if (supabaseClient) testSupabaseConnection();
+            else {
+                updateCounters();
+                renderOrdersTable();
+                updateOSNotificationBell();
+            }
+            const reembolsosBtn = document.getElementById('reembolsosBtn');
+            if (reembolsosBtn) reembolsosBtn.onclick = () => abrirSistemaReembolsos();
+            if (logoutBtn) logoutBtn.onclick = handleLogout;
+        }, 500);
+        
+    } else {
+        showToast('❌ Usuário ou senha incorretos', 'error');
+        passwordInput.value = '';
+        passwordInput.focus();
+    }
+    
+    if (submitBtn) {
+        submitBtn.innerHTML = originalBtnText;
+        submitBtn.disabled = false;
+    }
 }
 
 // Adicione no início do script.js, perto das outras variáveis globais
@@ -5689,6 +5676,8 @@ window.voltarParaMenu = function() {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
+    const historyScreen = document.getElementById('historicoAcessosScreen');
+    if (historyScreen) historyScreen.classList.add('hidden');
     // Mostrar menu
     const menu = document.getElementById('menuSystem');
     if (menu) menu.classList.remove('hidden');
@@ -6458,6 +6447,8 @@ window.voltarParaMenu = function() {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
+    const historyScreen = document.getElementById('historicoAcessosScreen');
+    if (historyScreen) historyScreen.classList.add('hidden');
     // Mostrar menu
     const menu = document.getElementById('menuSystem');
     if (menu) menu.classList.remove('hidden');
@@ -7872,6 +7863,72 @@ window.voltarParaVerificacao = async function(id) {
         showToast('❌ Erro ao voltar reembolso: ' + error.message, 'error');
     }
 };
+
+async function abrirHistoricoAcessos() {
+    if (!currentUser) return;
+    const usuariosPermitidos = ['ronald', 'andressamiotto'];
+    if (!usuariosPermitidos.includes(currentUser.username)) {
+        showToast('Acesso negado. Apenas Ronald e Andressa Miotto podem visualizar.', 'error');
+        return;
+    }
+
+    // Esconder menu e mostrar tela de histórico
+    document.getElementById('menuSystem').classList.add('hidden');
+    let historyScreen = document.getElementById('historicoAcessosScreen');
+    if (!historyScreen) {
+        historyScreen = document.createElement('div');
+        historyScreen.id = 'historicoAcessosScreen';
+        historyScreen.className = 'container';
+        historyScreen.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h2><i class="fas fa-history"></i> Histórico de Acessos</h2>
+                    <button class="btn btn-secondary" onclick="voltarParaMenu()">Voltar</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr><th>Usuário</th><th>Nome</th><th>IP</th><th>Data/Hora</th><th>Navegador</th></tr>
+                        </thead>
+                        <tbody id="historicoTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(historyScreen);
+    }
+    historyScreen.classList.remove('hidden');
+
+    // Carregar dados
+    const { data, error } = await supabaseClient
+        .from('login_history')
+        .select('*')
+        .order('login_time', { ascending: false })
+        .limit(100);
+    if (error) throw error;
+
+    const tbody = document.getElementById('historicoTableBody');
+    tbody.innerHTML = '';
+    data.forEach(reg => {
+        const row = tbody.insertRow();
+        row.insertCell(0).textContent = reg.username;
+        row.insertCell(1).textContent = reg.user_name;
+        row.insertCell(2).textContent = reg.ip_address;
+        row.insertCell(3).textContent = new Date(reg.login_time).toLocaleString('pt-BR');
+        row.insertCell(4).textContent = reg.user_agent?.substring(0, 50) || '-';
+    });
+}
+
+async function getClientIP() {
+    try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        return data.ip;
+    } catch (error) {
+        console.error('Erro ao obter IP:', error);
+        return 'IP não disponível';
+    }
+}
 
 // Mostrar botão de relatório apenas para admin
 function atualizarVisibilidadeRelatorioColaborador() {
