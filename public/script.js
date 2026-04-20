@@ -248,6 +248,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (hasValidSession && currentUser) {
         // Usuário já logado - restaurar sessão
         console.log('✅ Restaurando sessão existente');
+
+        atualizarVisibilidadeMenu();
         
         // Atualizar interface do usuário
         if (userName) userName.textContent = currentUser.name;
@@ -2950,6 +2952,8 @@ function handleLogout() {
         orders = [];
         selectedPhotos = [];
 
+        atualizarVisibilidadeMenu();
+
         // Limpar tokens do Mercado Livre
         clearMLTokenStorage();
 
@@ -3457,9 +3461,11 @@ function atualizarVisibilidadeMenu() {
     
     const usuariosPermitidos = ['ronald', 'andressamiotto'];
     if (currentUser && usuariosPermitidos.includes(currentUser.username)) {
-        historicoCard.style.display = '';      // mostra (volta ao normal)
+        historicoCard.style.display = '';       // volta ao normal (ou 'block'/'flex')
+        console.log('Card de histórico VISÍVEL para', currentUser.username);
     } else {
-        historicoCard.style.display = 'none';  // esconde
+        historicoCard.style.display = 'none';
+        console.log('Card de histórico OCULTO');
     }
 }
 
