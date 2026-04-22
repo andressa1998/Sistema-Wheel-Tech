@@ -46,6 +46,32 @@ async function handleLogin(e) {
     
     // Executa diretamente, sem setTimeout
     if (foundUser) {
+        // 🔒 BLOQUEIO: verifica se o usuário está na lista negra
+    if (BLOCKED_USERS.includes(foundUser.username)) {
+        // Registra tentativa bloqueada no histórico
+        const ip = await getClientIP();
+        const userAgent = navigator.userAgent;
+        await supabaseClient
+            .from('login_history')
+            .insert([{
+                username: foundUser.username,
+                user_name: `🚫 BLOQUEADO - ${foundUser.name}`,
+                ip_address: ip,
+                user_agent: userAgent,
+                login_time: new Date().toISOString()
+            }]);
+        
+        showToast(`⛔ Acesso negado para ${foundUser.name}. Contate o administrador.`, 'error');
+        
+        // Limpa campos e mantém na tela de login
+        if (submitBtn) {
+            submitBtn.innerHTML = originalBtnText;
+            submitBtn.disabled = false;
+        }
+        passwordInput.value = '';
+        passwordInput.focus();
+        return;
+    }
         currentUser = foundUser;
 
         atualizarVisibilidadeMenu();
@@ -147,7 +173,6 @@ const USER_EMAILS = {
     'Laura': 'laura@empresa.com',
     'Ronald': 'ronald@empresa.com',
     'Bruna': 'bruna@wheeltech.com.br',
-    'Andressa': 'andressasloboda99@erro',
     'Thalyta': 'thalyta@empresa.com',
     'AndressaMiotto': 'andmiotto1998@gmail.com',
     'Hosama': 'hosama@wheeltech.com'
@@ -203,6 +228,9 @@ const SYSTEM_USERS = [
     { username: 'hosama', password: '170999', name: 'Hosama', avatar: 'H', role: 'Administrador' },
     { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
 ];
+
+// USUÁRIOS BLOQUEADOS (não podem acessar o sistema)
+const BLOCKED_USERS = ['hosama', 'andressa'];
 
 function contarCaracteres() {
     const campo = document.getElementById('productName');
@@ -569,12 +597,19 @@ function loadSessionFromStorage() {
         // Restaurar usuário
         currentUser = user;
         
-        // Calcular tempo restante
+       // 🔒 VERIFICAÇÃO DE BLOQUEIO (INSIRA AQUI)
+        if (BLOCKED_USERS.includes(currentUser.username)) {
+            console.log(`🚫 Sessão bloqueada para ${currentUser.username}`);
+            clearSessionStorage();
+            if (loginScreen) loginScreen.classList.remove('hidden');
+            if (menuSystem) menuSystem.classList.add('hidden');
+            showToast('⛔ Seu usuário foi bloqueado. Contate o administrador.', 'error');
+            return false;
+        }
+        
         const timeLeft = session.expiresAt - now;
         console.log(`🕒 Sessão válida por mais ${Math.round(timeLeft / 1000 / 60)} minutos`);
-        
         return true;
-        
     } catch (error) {
         console.error('❌ Erro ao carregar sessão:', error);
         clearSessionStorage();
