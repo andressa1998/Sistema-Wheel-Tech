@@ -2930,6 +2930,8 @@ function abrirSistemaReembolsos() {
     // Esconder sistema principal e mostrar sistema de reembolsos
     if (mainSystem) mainSystem.classList.add('hidden');
     if (reembolsosSystem) reembolsosSystem.classList.remove('hidden');
+    if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     
     // Atualizar informações do usuário na tela de reembolsos
     if (reembolsoUserName) reembolsoUserName.textContent = currentUser.name;
@@ -3006,6 +3008,7 @@ function handleLogout() {
         if (shippingSystem) shippingSystem.classList.add('hidden');
         if (estoqueSystem) estoqueSystem.classList.add('hidden');
         if (perguntasSystem) perguntasSystem.classList.add('hidden');
+        if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
         
         // Fechar modais abertos
         closeAllModals();
@@ -4004,6 +4007,9 @@ window.abrirSistemaOS = function() {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
+
+    if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     
     // Mostrar sistema principal de OS
     const mainSystem = document.getElementById('mainSystem');
@@ -6217,6 +6223,7 @@ window.abrirSistemaVendas = async function() {
     if (shippingSystem) shippingSystem.classList.add('hidden');
     if (estoqueSystem) estoqueSystem.classList.add('hidden');
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -6421,6 +6428,7 @@ window.abrirSistemaReembolsos = function() {
     if (shippingSystem) shippingSystem.classList.add('hidden');
     if (estoqueSystem) estoqueSystem.classList.add('hidden');
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     
     // Mostrar sistema de reembolsos
     const reembolsosSystem = document.getElementById('reembolsosSystem');
@@ -6469,6 +6477,7 @@ window.abrirSistemaCaixa = function() {
     if (shippingSystem) shippingSystem.classList.add('hidden');
     if (estoqueSystem) estoqueSystem.classList.add('hidden');
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     
     // Mostrar sistema de caixa
     const caixaSystem = document.getElementById('caixaSystem');
@@ -6544,6 +6553,7 @@ window.abrirSistemaReviews = function() {
     if (shippingSystem) shippingSystem.classList.add('hidden');
     if (estoqueSystem) estoqueSystem.classList.add('hidden');
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     
     // Mostrar sistema de avaliações
     if (reviewsSystem) reviewsSystem.classList.remove('hidden');
@@ -6760,6 +6770,7 @@ window.abrirSistemaVendas = async function() {
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (caixaSystem) caixaSystem.classList.add('hidden');
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -7647,6 +7658,10 @@ window.abrirSistemaFrete = function() {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
+
+    if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
+
     const shippingSystem = document.getElementById('shippingSystem');
     if (shippingSystem) shippingSystem.classList.remove('hidden');
     
@@ -7757,6 +7772,9 @@ async function abrirSistemaNFE() {
     document.querySelectorAll('#mainSystem, #salesSystem, #reembolsosSystem, #perguntasSystem, #caixaSystem, #reviewsSystem, #folgasSystem, #shippingSystem, #estoqueSystem').forEach(el => {
         if (el) el.classList.add('hidden');
     });
+
+    if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
 
     const nfeSystem = document.getElementById('nfeSystem');
     if (!nfeSystem) {

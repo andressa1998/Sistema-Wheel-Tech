@@ -48,7 +48,7 @@ window.abrirGestaoEstoque = function() {
 
     // Esconder outros sistemas
     const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 
-                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'menuSystem'];
+                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'menuSystem', 'perguntasSystem'];
     sistemas.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
