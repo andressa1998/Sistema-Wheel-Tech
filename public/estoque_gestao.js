@@ -88,7 +88,7 @@ async function carregarProdutosEstoque() {
         console.error('Erro ao carregar produtos:', error);
         if (window.showToast) showToast('Erro ao carregar produtos', 'error');
         const tbody = document.getElementById('produtosEstoqueBody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-danger">Erro ao carregar produtos. Consulte o console.穷</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-danger">Erro ao carregar produtos. Consulte o console.穷</td></tr>';
     }
 }
 
@@ -97,7 +97,7 @@ function renderizarTabelaProdutos() {
     const tbody = document.getElementById('produtosEstoqueBody');
     if (!tbody) return;
     if (produtosEstoque.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Nenhum produto cadastrado.穷</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto cadastrado.穷</td></tr>';
         return;
     }
     tbody.innerHTML = '';
@@ -125,7 +125,6 @@ function renderizarTabelaProdutos() {
             <td><strong>${escapeHtml(prod.nome)}</strong><br><small class="text-muted">${escapeHtml(prod.categoria || 'sem categoria')}</small></td>
             <td>${escapeHtml(prod.sku)}</td>
             <td class="${prod.quantidade <= 5 ? 'text-danger fw-bold' : ''}">${prod.quantidade}</td>
-            <td>R$ ${(prod.preco || 0).toFixed(2)}</td>
             <td><span title="${escapeHtml(atributosResumo)}" class="badge bg-info">${Object.keys(prod.dados_extra || {}).length} atributos</span></td>
             <td>${botoes}</td>
         `;
