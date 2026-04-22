@@ -42,6 +42,7 @@ function initCalendario() {
     calendario = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         locale: 'pt-br',
+        timeZone: 'local',
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
@@ -149,11 +150,15 @@ function atualizarCalendario() {
             if (f.tipo === 'manha') cor = '#ffc107';
             if (f.tipo === 'tarde') cor = '#17a2b8';
             
+            // 🔧 Converte a string "YYYY-MM-DD" para Date no fuso local
+            const [year, month, day] = f.data_inicio.split('-');
+            const dataLocal = new Date(year, month - 1, day); // sem UTC
+            
             return {
                 id: f.id,
                 title: `${f.user_name} - ${tipoDisplay}`,
-                start: f.data_inicio,
-                end: f.data_fim || f.data_inicio,
+                start: dataLocal,
+                end: dataLocal,       // ou null se for apenas um dia
                 color: cor,
                 extendedProps: f
             };
