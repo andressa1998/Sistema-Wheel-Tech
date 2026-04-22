@@ -472,7 +472,7 @@ function extrairSkuDaVariacao(variacao) {
     return null;
 }
 
-// ===== FUNÇÃO PRINCIPAL DE SINCRONIZAÇÃO (MODIFICADA) =====
+// ===== FUNÇÃO PRINCIPAL DE SINCRONIZAÇÃO (ATUALIZADA COM REGRAS PARA EIXOS) =====
 async function sincronizarEstoqueML(produto) {
     let mlbCodes = produto.dados_extra?.mlb_codes;
     if (!mlbCodes || (Array.isArray(mlbCodes) && mlbCodes.length === 0)) {
@@ -490,8 +490,9 @@ async function sincronizarEstoqueML(produto) {
 
     const WORKER_URL = window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
     const results = [];
-    const quantidade = produto.quantidade;
+    const quantidadeReal = produto.quantidade;
     const skuProduto = produto.sku;
+    const categoria = produto.categoria;
 
     for (const codigo of codigos) {
         const itemId = codigo.startsWith('MLB') ? codigo : `MLB${codigo}`;
@@ -504,7 +505,7 @@ async function sincronizarEstoqueML(produto) {
             if (!getRes.ok) throw new Error(`GET falhou: ${getRes.status}`);
             const item = await getRes.json();
 
-            // 🔥 Buscar detalhes de cada variação individualmente
+            // Buscar detalhes de cada variação individualmente (para obter seller_custom_field e preço)
             if (item.variations && item.variations.length > 0) {
                 console.log(`📦 Buscando detalhes de ${item.variations.length} variações...`);
                 for (let i = 0; i < item.variations.length; i++) {
@@ -519,10 +520,11 @@ async function sincronizarEstoqueML(produto) {
                                 ...v,
                                 seller_custom_field: varDetails.seller_custom_field || v.seller_custom_field,
                                 attributes: varDetails.attributes || v.attributes,
-                                attribute_combinations: varDetails.attribute_combinations || v.attribute_combinations
+                                attribute_combinations: varDetails.attribute_combinations || v.attribute_combinations,
+                                price: varDetails.price || v.price   // Garantir que o preço da variação seja capturado
                             };
                             const skuExtraido = extrairSkuDaVariacao(item.variations[i]);
-                            if (skuExtraido) console.log(`   Variação ${v.id}: SKU = ${skuExtraido}`);
+                            if (skuExtraido) console.log(`   Variação ${v.id}: SKU = ${skuExtraido}, Preço = ${item.variations[i].price}`);
                         } else {
                             console.warn(`   ⚠️ Não foi possível obter detalhes da variação ${v.id}`);
                         }
@@ -540,91 +542,118 @@ async function sincronizarEstoqueML(produto) {
                 continue;
             }
 
+            // Determinar a quantidade a ser enviada com base na categoria e no preço do anúncio
+            let quantidadeParaEnviar = quantidadeReal; // padrão
+
+            if (categoria === 'Eixos') {
+                let precoAnuncio = 0;
+
+                // Tenta obter o preço da variação correspondente ao SKU do produto
+                if (item.variations && item.variations.length > 0) {
+                    const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+                    if (variacaoAlvo) {
+                        precoAnuncio = variacaoAlvo.price || 0;
+                        console.log(`💰 Preço da variação (${variacaoAlvo.id}) para o SKU ${skuProduto}: R$ ${precoAnuncio}`);
+                    } else {
+                        console.warn(`⚠️ Nenhuma variação compatível para o SKU ${skuProduto}, usando preço do item principal.`);
+                        precoAnuncio = item.price || 0;
+                    }
+                } else {
+                    precoAnuncio = item.price || 0;
+                }
+
+                // Aplica a regra de limite
+                const limite = precoAnuncio > 100 ? 2 : 10;
+                quantidadeParaEnviar = Math.min(quantidadeReal, limite);
+                console.log(`📊 Regra Eixos: preço=R$ ${precoAnuncio}, limite=${limite}, estoque real=${quantidadeReal}, enviando=${quantidadeParaEnviar}`);
+            } else {
+                console.log(`ℹ️ Categoria "${categoria}" - sem limite especial. Enviando estoque real = ${quantidadeReal}`);
+            }
+
             // --- FULL (inventory_id) ---
             const isFulfillment = item.tags?.includes('fulfillment') || 
                       item.shipping?.logistic_type === 'fulfillment' ||
                       item.logistic_type === 'fulfillment';
 
-        if (item.inventory_id && isFulfillment) {
-            console.log(`📦 FULL inventory ${item.inventory_id}`);
-            const invUrl = `https://api.mercadolibre.com/inventories/${item.inventory_id}/stock`;
-            const invProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(invUrl)}&token=${encodeURIComponent(token)}`;
-            const invRes = await fetch(invProxy, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ total: { available_quantity: quantidade } })
-            });
-            if (invRes.ok) {
-                console.log(`✅ FULL atualizado`);
-                results.push({ codigo: itemId, success: true, method: 'inventory' });
-            } else {
-                const errorText = await invRes.text();
-                console.error(`❌ FULL falhou: ${invRes.status} - ${errorText}`);
-                results.push({ codigo: itemId, success: false, error: `FULL ${invRes.status}` });
+            if (item.inventory_id && isFulfillment) {
+                console.log(`📦 FULL inventory ${item.inventory_id}`);
+                const invUrl = `https://api.mercadolibre.com/inventories/${item.inventory_id}/stock`;
+                const invProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(invUrl)}&token=${encodeURIComponent(token)}`;
+                const invRes = await fetch(invProxy, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ total: { available_quantity: quantidadeParaEnviar } })
+                });
+                if (invRes.ok) {
+                    console.log(`✅ FULL atualizado para ${quantidadeParaEnviar}`);
+                    results.push({ codigo: itemId, success: true, method: 'inventory' });
+                } else {
+                    const errorText = await invRes.text();
+                    console.error(`❌ FULL falhou: ${invRes.status} - ${errorText}`);
+                    results.push({ codigo: itemId, success: false, error: `FULL ${invRes.status}` });
+                }
+                continue;
+            } else if (item.inventory_id && !isFulfillment) {
+                console.log(`⚠️ inventory_id presente, mas item não é FULL. Ignorando e tratando como normal.`);
             }
-            continue;
-        } else if (item.inventory_id && !isFulfillment) {
-            console.log(`⚠️ inventory_id presente, mas item não é FULL. Ignorando e tratando como normal.`);
-        }
 
             // --- COM VARIAÇÕES ---
-if (item.variations && item.variations.length > 0) {
-    const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
-    if (!variacaoAlvo) {
-        console.warn(`⚠️ Nenhuma variação para ${itemId}`);
-        results.push({ codigo: itemId, success: false, reason: 'sem_variacao' });
-        continue;
-    }
-    const varId = variacaoAlvo.id;
-    const targetUrl = `https://api.mercadolibre.com/items/${itemId}/variations/${varId}`;
-    const putProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(targetUrl)}&token=${encodeURIComponent(token)}`;
-    console.log(`📦 Atualizando variação ${varId} para ${quantidade}`);
-    
-    const putRes = await fetch(putProxy, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ available_quantity: quantidade })
-    });
-    const responseText = await putRes.text();
-    console.log(`📡 Resposta da variação (status ${putRes.status}):`, responseText);
-    
-    let respData;
-    try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
-    
-    if (putRes.ok) {
-        // A resposta pode ser um array com todas as variações
-        let newQty = null;
-        if (Array.isArray(respData)) {
-            const updatedVar = respData.find(v => v.id == varId);
-            if (updatedVar) newQty = updatedVar.available_quantity;
-        } else {
-            newQty = respData.available_quantity;
-        }
-        
-        if (newQty === quantidade) {
-            console.log(`✅ Variação ${varId} atualizada para ${newQty}`);
-            results.push({ codigo: itemId, success: true, variation_id: varId });
-        } else {
-            console.warn(`⚠️ Resposta OK, mas estoque não mudou. Esperado: ${quantidade}, Recebido: ${newQty}`);
-            results.push({ codigo: itemId, success: false, reason: 'estoque_ignorado', details: respData });
-        }
-    } else {
-        console.error(`❌ Falha na variação: ${putRes.status} - ${responseText}`);
-        results.push({ codigo: itemId, success: false, error: `HTTP ${putRes.status}` });
-    }
-}
+            if (item.variations && item.variations.length > 0) {
+                const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+                if (!variacaoAlvo) {
+                    console.warn(`⚠️ Nenhuma variação para ${itemId}`);
+                    results.push({ codigo: itemId, success: false, reason: 'sem_variacao' });
+                    continue;
+                }
+                const varId = variacaoAlvo.id;
+                const targetUrl = `https://api.mercadolibre.com/items/${itemId}/variations/${varId}`;
+                const putProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(targetUrl)}&token=${encodeURIComponent(token)}`;
+                console.log(`📦 Atualizando variação ${varId} para ${quantidadeParaEnviar}`);
+                
+                const putRes = await fetch(putProxy, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ available_quantity: quantidadeParaEnviar })
+                });
+                const responseText = await putRes.text();
+                console.log(`📡 Resposta da variação (status ${putRes.status}):`, responseText);
+                
+                let respData;
+                try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
+                
+                if (putRes.ok) {
+                    let newQty = null;
+                    if (Array.isArray(respData)) {
+                        const updatedVar = respData.find(v => v.id == varId);
+                        if (updatedVar) newQty = updatedVar.available_quantity;
+                    } else {
+                        newQty = respData.available_quantity;
+                    }
+                    
+                    if (newQty === quantidadeParaEnviar) {
+                        console.log(`✅ Variação ${varId} atualizada para ${newQty}`);
+                        results.push({ codigo: itemId, success: true, variation_id: varId });
+                    } else {
+                        console.warn(`⚠️ Resposta OK, mas estoque não mudou. Esperado: ${quantidadeParaEnviar}, Recebido: ${newQty}`);
+                        results.push({ codigo: itemId, success: false, reason: 'estoque_ignorado', details: respData });
+                    }
+                } else {
+                    console.error(`❌ Falha na variação: ${putRes.status} - ${responseText}`);
+                    results.push({ codigo: itemId, success: false, error: `HTTP ${putRes.status}` });
+                }
+            }
             // --- SEM VARIAÇÃO ---
             else {
-                console.log(`📦 Atualizando item principal`);
+                console.log(`📦 Atualizando item principal para ${quantidadeParaEnviar}`);
                 const putRes = await fetch(proxyUrl, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ available_quantity: quantidade })
+                    body: JSON.stringify({ available_quantity: quantidadeParaEnviar })
                 });
                 const responseText = await putRes.text();
                 let respData;
                 try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
-                if (putRes.ok && respData.available_quantity === quantidade) {
+                if (putRes.ok && respData.available_quantity === quantidadeParaEnviar) {
                     console.log(`✅ Item ${itemId} atualizado`);
                     results.push({ codigo: itemId, success: true });
                 } else {
