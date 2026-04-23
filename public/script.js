@@ -1682,119 +1682,98 @@ function setupReembolsoEventListeners() {
 function renderReembolsosTable() {
     const tbody = document.getElementById('reembolsosTableBody');
     const emptyMsg = document.getElementById('reembolsosEmpty');
-    
     if (!tbody) return;
     tbody.innerHTML = '';
-    
+
     if (reembolsos.length === 0) {
         if (emptyMsg) emptyMsg.classList.remove('hidden');
         return;
     }
     if (emptyMsg) emptyMsg.classList.add('hidden');
-    
+
     let filteredReembolsos = reembolsos;
     if (currentReembolsoFilter !== 'todos') {
         filteredReembolsos = reembolsos.filter(r => r.status === currentReembolsoFilter);
     }
-    
+
     const isAdmin = currentUser && currentUser.role === 'Administrador';
-    
+
     filteredReembolsos.forEach(reembolso => {
         const row = document.createElement('tr');
         row.className = 'reembolso-item';
-        
-        // Data corrigida (sem fuso)
+
         const dataFormatada = formatarDataISO(reembolso.data_operacao);
-        
-        // Badge de status do novo campo
-        let statusBadge = '';
-        if (reembolso.status_reembolso === 'em_andamento') {
-            statusBadge = '<span class="badge badge-warning">Em andamento</span>';
-        } else if (reembolso.status_reembolso === 'finalizado') {
-            statusBadge = '<span class="badge badge-success">Reembolso finalizado</span>';
-        } else {
-            statusBadge = '<span class="badge badge-secondary">Não informado</span>';
-        }
-        
-        // Ícone de observação
-        let observacaoIcon = '';
-        if (reembolso.observacoes && reembolso.observacoes.trim() !== '') {
-            observacaoIcon = `<i class="fas fa-comment" style="color: #17a2b8; margin-left: 5px;" title="Observação: ${reembolso.observacoes.replace(/"/g, '&quot;')}"></i>`;
-        }
-        
-        const motivo = reembolso.motivo || 'Normal';
+        const motivo = reembolso.motivo || '-';
         const numReclamacao = reembolso.numero_reclamacao || '-';
-        
-        // Ações
+
+        // Tipo de reclamação badge
+        let tipoBadge = '';
+        if (reembolso.tipo_reclamacao === 'sem_reembolso') {
+            tipoBadge = '<span class="badge badge-secondary">📋 Acompanhamento</span>';
+        } else {
+            tipoBadge = '<span class="badge badge-primary">💰 Com reembolso</span>';
+        }
+
+        // Status ou Resolvida
+        let statusOrResolvida = '';
+        if (reembolso.tipo_reclamacao === 'sem_reembolso') {
+            if (reembolso.resolvida) {
+                statusOrResolvida = '<span class="badge badge-success">Resolvida</span>';
+            } else {
+                statusOrResolvida = `<button class="btn btn-sm btn-warning" onclick="marcarResolvida(${reembolso.id})" title="Marcar como resolvida">Marcar resolvida</button>`;
+            }
+        } else {
+            // Com reembolso: mostra status_reembolso
+            if (reembolso.status_reembolso === 'finalizado') {
+                statusOrResolvida = '<span class="badge badge-success">Reembolso finalizado</span>';
+            } else {
+                statusOrResolvida = '<span class="badge badge-warning">Em andamento</span>';
+            }
+        }
+
+        // Ações (mesmo de antes)
         let acoes = '';
         if (isAdmin || reembolso.criado_por === currentUser?.name) {
-            if (reembolso.status === 'a_verificar' && isAdmin) {
-                acoes = `
-                    <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
-                        <i class="fas fa-check"></i>
-                    </button>
-                    <button class="btn btn-danger btn-sm" onclick="rejeitarReembolso(${reembolso.id})" title="Marcar como Pendente">
-                        <i class="fas fa-times"></i>
-                    </button>
-                `;
+            if (reembolso.tipo_reclamacao === 'com_reembolso') {
+                if (reembolso.status === 'a_verificar' && isAdmin) {
+                    acoes = `
+                        <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
+                            <i class="fas fa-check"></i>
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="rejeitarReembolso(${reembolso.id})" title="Marcar como Pendente">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    `;
+                }
+                if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser?.name) {
+                    acoes += `<button class="btn btn-info btn-sm" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação"><i class="fas fa-paper-plane"></i></button>`;
+                }
+                if (reembolso.status === 'reembolsado' && isAdmin) {
+                    acoes += `<button class="btn btn-warning btn-sm" onclick="voltarParaVerificacao(${reembolso.id})" title="Voltar para A Verificar"><i class="fas fa-undo-alt"></i></button>`;
+                }
             }
-            if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser?.name) {
-                acoes += `
-                    <button class="btn btn-info btn-sm" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação">
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
-                `;
-            }
-            if (reembolso.status === 'reembolsado' && isAdmin) {
-                acoes += `
-                    <button class="btn btn-warning btn-sm" onclick="voltarParaVerificacao(${reembolso.id})" title="Voltar para A Verificar">
-                        <i class="fas fa-undo-alt"></i>
-                    </button>
-                `;
-            }
-            acoes += `
-            <button class="btn btn-info btn-sm" onclick="verDetalhesReembolso(${reembolso.id})" title="Ver detalhes">
-                <i class="fas fa-eye"></i>
-            </button>
-            `;
-            acoes += `
-                <button class="btn btn-warning btn-sm" onclick="editarReembolso(${reembolso.id})" title="Editar">
-                    <i class="fas fa-edit"></i>
-                </button>
-            `;
+            acoes += `<button class="btn btn-info btn-sm" onclick="verDetalhesReembolso(${reembolso.id})" title="Ver detalhes"><i class="fas fa-eye"></i></button>`;
+            acoes += `<button class="btn btn-warning btn-sm" onclick="editarReembolso(${reembolso.id})" title="Editar"><i class="fas fa-edit"></i></button>`;
             if (isAdmin || reembolso.criado_por === currentUser?.name) {
-                acoes += `
-                    <button class="btn btn-danger btn-sm" onclick="excluirReembolso(${reembolso.id})" title="Excluir">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                `;
+                acoes += `<button class="btn btn-danger btn-sm" onclick="excluirReembolso(${reembolso.id})" title="Excluir"><i class="fas fa-trash"></i></button>`;
             }
         } else {
             acoes = '<span class="text-muted">Sem permissão</span>';
         }
-        
+
         row.innerHTML = `
-            <td><strong>${reembolso.numero_venda}</strong> ${observacaoIcon}<br>
-                <small class="text-muted">Rec: ${numReclamacao}</small>
-            </td>
+            <td><strong>${reembolso.numero_venda}</strong><br><small class="text-muted">Rec: ${numReclamacao}</small></td>
             <td>${reembolso.numero_operacao || '-'} ${reembolso.numero_retirada ? `<br><small>Retirada: ${reembolso.numero_retirada}</small>` : ''}</td>
             <td class="valor-cell">R$ ${parseFloat(reembolso.valor).toFixed(2)}</td>
             <td>${dataFormatada}</td>
             <td>${motivo}</td>
-            <td>${statusBadge}</td>
+            <td>${tipoBadge}</td>
+            <td>${statusOrResolvida}</td>
             <td>${reembolso.criado_por}</td>
             <td><div class="d-flex gap-2">${acoes}</div></td>
         `;
         tbody.appendChild(row);
     });
-    
-    // Atualizar badges (código existente mantido)
-    const pendentesUsuario = reembolsos.filter(r => r.status === 'pendente' && r.criado_por === currentUser?.name).length;
-    const aVerificar = reembolsos.filter(r => r.status === 'a_verificar').length;
-    const badgeNovos = document.getElementById('badgeNovos');
-    const badgePendentes = document.getElementById('badgePendentes');
-    if (badgeNovos) badgeNovos.style.display = (isAdmin && aVerificar > 0) ? 'inline-block' : 'none';
-    if (badgePendentes) badgePendentes.style.display = (pendentesUsuario > 0) ? 'inline-block' : 'none';
 }
 
 // ===== FUNÇÃO PARA EDITAR REEMBOLSO =====
@@ -1804,48 +1783,65 @@ window.editarReembolso = async function(id) {
         showToast('Reembolso não encontrado', 'error');
         return;
     }
-    
+
     const isAdmin = currentUser.role === 'Administrador';
     if (!isAdmin && reembolso.criado_por !== currentUser.name) {
         showToast('Sem permissão', 'warning');
         return;
     }
-    
+
     editingReembolsoId = id;
-    document.getElementById('reembolsoModalTitle').textContent = 'Editar Reembolso';
+    document.getElementById('reembolsoModalTitle').textContent = 'Editar Reclamação';
     document.getElementById('reembolsoId').value = id;
-    document.getElementById('statusReembolso').value = reembolso.status_reembolso || 'em_andamento';
-    
-    // Detectar tipo de referência
-    const isRetirada = reembolso.numero_venda && reembolso.numero_venda.startsWith('RET-');
+
+    // Tipo de referência
+    const isRetirada = (reembolso.tipo_referencia === 'retirada') || (reembolso.numero_venda && reembolso.numero_venda.startsWith('RET-'));
     if (isRetirada) {
         document.querySelector('input[name="tipoReferencia"][value="retirada"]').checked = true;
-        document.getElementById('numeroRetirada').value = reembolso.numero_retirada || reembolso.numero_venda.replace('RET-', '');
-        toggleReferenciaFields();
+        document.getElementById('numeroRetirada').value = reembolso.numero_retirada || reembolso.numero_venda?.replace('RET-', '') || '';
     } else {
         document.querySelector('input[name="tipoReferencia"][value="venda"]').checked = true;
         document.getElementById('numeroVenda').value = reembolso.numero_venda || '';
-        toggleReferenciaFields();
     }
-    
-    document.getElementById('numeroReclamacao').value = reembolso.numero_reclamacao || '';
-    
+    toggleReferenciaFields();
+
+    // Tipo de operação
     if (reembolso.numero_operacao) {
         document.querySelector('input[name="tipoOperacao"][value="adicionar"]').checked = true;
         document.getElementById('numeroOperacao').value = reembolso.numero_operacao;
-        toggleOperacaoField();
     } else {
         document.querySelector('input[name="tipoOperacao"][value="reembolso_venda"]').checked = true;
-        toggleOperacaoField();
     }
-    
+    toggleOperacaoField();
+
+    // Dados comuns
+    document.getElementById('numeroReclamacao').value = reembolso.numero_reclamacao || '';
     document.getElementById('valorReembolso').value = reembolso.valor || '';
-    document.getElementById('dataReembolso').value = reembolso.data_operacao?.split('T')[0] || new Date().toISOString().split('T')[0];
-    document.getElementById('motivoReembolso').value = reembolso.motivo || (reembolso.tipo === 'frete' ? 'Frete' : (reembolso.tipo === 'outro' ? 'Outro' : ''));
+    document.getElementById('dataReembolso').value = reembolso.data_operacao?.split('T')[0] || '';
     document.getElementById('observacoesReembolso').value = reembolso.observacoes || '';
-    // NOVO: carregar status existente
-    document.getElementById('statusReembolso').value = reembolso.status_reembolso || 'em_andamento';
-    
+
+    // Tipo de reclamação
+    const tipoReclamacao = reembolso.tipo_reclamacao || 'com_reembolso';
+    document.querySelector(`input[name="tipoReclamacao"][value="${tipoReclamacao}"]`).checked = true;
+    toggleCamposReclamacao(); // ajusta visibilidade
+
+    if (tipoReclamacao === 'sem_reembolso') {
+        document.getElementById('responsabilidade').value = reembolso.responsabilidade || '';
+        if (reembolso.cliente_bloqueado) {
+            document.querySelector('input[name="clienteBloqueado"][value="sim"]').checked = true;
+        } else {
+            document.querySelector('input[name="clienteBloqueado"][value="nao"]').checked = true;
+        }
+        document.getElementById('motivoReclamacaoExtra').value = reembolso.motivo || '';
+        document.getElementById('resolvida').value = reembolso.resolvida ? 'sim' : 'nao';
+        // Esconder campos de reembolso
+        document.getElementById('statusReembolso').closest('.form-group').style.display = 'none';
+    } else {
+        document.getElementById('motivoReembolso').value = reembolso.motivo || '';
+        document.getElementById('statusReembolso').value = reembolso.status_reembolso || 'em_andamento';
+        document.getElementById('statusReembolso').closest('.form-group').style.display = 'block';
+    }
+
     document.getElementById('reembolsoModal').classList.remove('hidden');
 };
 
@@ -1913,14 +1909,15 @@ window.excluirReembolso = async function(id) {
 // ===== FUNÇÃO PARA NOVO REEMBOLSO =====
 window.novoReembolso = function() {
     editingReembolsoId = null;
-    document.getElementById('reembolsoModalTitle').textContent = 'Novo Reembolso';
+    document.getElementById('reembolsoModalTitle').textContent = 'Nova Reclamação';
     document.getElementById('reembolsoId').value = '';
-    document.getElementById('statusReembolso').value = 'em_andamento';
-    // Resetar radio buttons
+
+    // Resetar radios
     document.querySelector('input[name="tipoReferencia"][value="venda"]').checked = true;
     document.querySelector('input[name="tipoOperacao"][value="adicionar"]').checked = true;
-    toggleReferenciaFields();
-    toggleOperacaoField();
+    document.querySelector('input[name="tipoReclamacao"][value="com_reembolso"]').checked = true;
+
+    // Limpar campos
     document.getElementById('numeroVenda').value = '';
     document.getElementById('numeroRetirada').value = '';
     document.getElementById('numeroReclamacao').value = '';
@@ -1929,8 +1926,18 @@ window.novoReembolso = function() {
     document.getElementById('dataReembolso').value = new Date().toISOString().split('T')[0];
     document.getElementById('motivoReembolso').value = '';
     document.getElementById('observacoesReembolso').value = '';
-    // NOVO: resetar status
     document.getElementById('statusReembolso').value = 'em_andamento';
+    // Novos campos
+    document.getElementById('responsabilidade').value = '';
+    document.querySelector('input[name="clienteBloqueado"][value="nao"]').checked = true;
+    document.getElementById('motivoReclamacaoExtra').value = '';
+    document.getElementById('resolvida').value = 'nao';
+
+    // Mostrar/ocultar campos conforme tipo
+    toggleCamposReclamacao();
+    toggleReferenciaFields();
+    toggleOperacaoField();
+
     document.getElementById('reembolsoModal').classList.remove('hidden');
 };
 
@@ -2048,6 +2055,11 @@ window.salvarReembolso = async function() {
             return;
         }
         numeroOperacao = inputOp.value.trim();
+        // TORNEI OPCIONAL: não exige preenchimento
+        // if (!numeroOperacao) {
+        //     showToast('Número da operação é obrigatório!', 'warning');
+        //     return;
+        // }
     }
     
     const inputValor = document.getElementById('valorReembolso');
@@ -2062,16 +2074,50 @@ window.salvarReembolso = async function() {
         return;
     }
     
-    const valor = inputValor.value;
+    let valor = inputValor.value;
     const dataOperacao = inputData.value;
-    const motivo = inputMotivo.value;
+    let motivo = inputMotivo.value;
     const observacoes = inputObservacoes ? inputObservacoes.value.trim() : '';
     const statusReembolso = inputStatus.value;
     const reembolsoId = inputId ? inputId.value : '';
     
-    if (!valor || !dataOperacao || !motivo) {
-        showToast('Preencha todos os campos obrigatórios!', 'warning');
+    // NOVO: pegar tipo de reclamação
+    const tipoReclamacaoRadio = document.querySelector('input[name="tipoReclamacao"]:checked');
+    if (!tipoReclamacaoRadio) {
+        showToast('Selecione o tipo de reclamação', 'warning');
         return;
+    }
+    const tipoReclamacao = tipoReclamacaoRadio.value;
+    
+    let responsabilidade = null;
+    let clienteBloqueado = null;
+    let motivoReclamacaoExtra = null;
+    let resolvida = false;
+    
+    if (tipoReclamacao === 'sem_reembolso') {
+        responsabilidade = document.getElementById('responsabilidade')?.value || '';
+        const clienteBloq = document.querySelector('input[name="clienteBloqueado"]:checked')?.value;
+        clienteBloqueado = (clienteBloq === 'sim');
+        motivoReclamacaoExtra = document.getElementById('motivoReclamacaoExtra')?.value.trim() || '';
+        resolvida = (document.getElementById('resolvida')?.value === 'sim');
+        
+        if (!responsabilidade || !motivoReclamacaoExtra) {
+            showToast('Responsabilidade e Motivo da reclamação são obrigatórios!', 'warning');
+            return;
+        }
+        // Se não houver valor, definir como 0
+        valor = valor || 0;
+        motivo = motivoReclamacaoExtra; // usar o motivo estendido
+    } else {
+        // Reclamação com reembolso: validar valor
+        if (!valor || parseFloat(valor) <= 0) {
+            showToast('Valor do reembolso é obrigatório', 'warning');
+            return;
+        }
+        if (!motivo) {
+            showToast('Motivo é obrigatório!', 'warning');
+            return;
+        }
     }
     
     const reembolsoData = {
@@ -2080,14 +2126,19 @@ window.salvarReembolso = async function() {
         tipo_referencia: tipoReferencia,
         numero_reclamacao: numeroReclamacao,
         numero_operacao: numeroOperacao || null,
-        valor: parseFloat(valor),
+        valor: parseFloat(valor || 0),
         data_operacao: dataOperacao,
         motivo: motivo,
         observacoes: observacoes || null,
-        status: 'a_verificar',
-        notificado_admin: false,
-        notificado_usuario: false,
-        status_reembolso: statusReembolso
+        tipo_reclamacao: tipoReclamacao,
+        responsabilidade: responsabilidade,
+        cliente_bloqueado: clienteBloqueado,
+        resolvida: resolvida,
+        // Para com_reembolso, manter status original
+        status: tipoReclamacao === 'com_reembolso' ? 'a_verificar' : null,
+        status_reembolso: tipoReclamacao === 'com_reembolso' ? statusReembolso : null,
+        // Se não houver reembolso, garantir que status_reembolso seja null
+        data_atualizacao: new Date().toISOString()
     };
     
     // Só adicionar criado_por se for novo registro
@@ -2124,63 +2175,18 @@ window.salvarReembolso = async function() {
         }
         
         if (result.success) {
-            showToast(reembolsoId ? 'Reembolso atualizado!' : 'Reembolso criado!', 'success');
+            showToast(reembolsoId ? 'Reclamação atualizada!' : 'Reclamação criada!', 'success');
             closeReembolsoModal();
             await loadReembolsos();
         }
     } catch (error) {
-        console.error('❌ Erro ao salvar reembolso:', error);
+        console.error('❌ Erro ao salvar:', error);
         let msg = error.message;
         if (error.code === '23502') msg = 'Campo obrigatório não preenchido. Verifique todos os dados.';
         showToast('Erro ao salvar: ' + msg, 'error');
     } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
-    }
-};
-
-// Aprovar reembolso (marcar como reembolsado) - VERSÃO CORRIGIDA
-window.aprovarReembolso = async function(id) {
-    if (!confirm('Marcar este reembolso como reembolsado?')) return;
-    
-    try {
-        console.log('Aprovando reembolso ID:', id);
-        
-        const { data, error } = await supabaseClient
-            .from('reembolsos_ml')
-            .update({ 
-                status: 'reembolsado',
-                verificado_por: currentUser.name,
-                data_atualizacao: new Date().toISOString(),
-                notificado_admin: true // Marcar como notificado
-            })
-            .eq('id', id)
-            .select();
-        
-        if (error) {
-            console.error('Erro Supabase:', error);
-            throw error;
-        }
-        
-        console.log('Reembolso atualizado:', data);
-        
-        // Atualizar lista local
-        const index = reembolsos.findIndex(r => r.id === id);
-        if (index !== -1) {
-            reembolsos[index].status = 'reembolsado';
-            reembolsos[index].verificado_por = currentUser.name;
-            reembolsos[index].notificado_admin = true;
-        }
-        
-        showToast('✅ Reembolso marcado como reembolsado!', 'success');
-        
-        // Recarregar a tabela
-        updateReembolsoCounters();
-        renderReembolsosTable();
-        
-    } catch (error) {
-        console.error('❌ Erro ao aprovar reembolso:', error);
-        showToast('❌ Erro ao aprovar reembolso: ' + error.message, 'error');
     }
 };
 
@@ -2233,6 +2239,22 @@ window.rejeitarReembolso = async function(id) {
 window.atualizarReembolsos = function() {
     loadReembolsos();
     showToast('🔄 Atualizando lista de reembolsos...', 'info');
+};
+
+window.marcarResolvida = async function(id) {
+    if (!confirm('Marcar esta reclamação como resolvida?')) return;
+    try {
+        const { error } = await supabaseClient
+            .from('reembolsos_ml')
+            .update({ resolvida: true })
+            .eq('id', id);
+        if (error) throw error;
+        showToast('✅ Reclamação marcada como resolvida', 'success');
+        await loadReembolsos();
+    } catch (error) {
+        console.error(error);
+        showToast('Erro ao marcar como resolvida', 'error');
+    }
 };
 
 // ============================================
@@ -2302,6 +2324,34 @@ async function verificarNotificacoes() {
         
     } catch (error) {
         console.error('❌ Erro ao verificar notificações:', error);
+    }
+}
+
+function toggleCamposReclamacao() {
+    const tipo = document.querySelector('input[name="tipoReclamacao"]:checked').value;
+    const camposSemReembolso = document.getElementById('camposSemReembolso');
+    const campoResolvida = document.getElementById('campoResolvida');
+    const grupoValor = document.getElementById('valorReembolso')?.closest('.form-group');
+    const grupoStatusReembolso = document.getElementById('statusReembolso')?.closest('.form-group');
+    const grupoMotivoComReembolso = document.getElementById('motivoReembolso')?.closest('.form-group');
+
+    if (tipo === 'sem_reembolso') {
+        if (camposSemReembolso) camposSemReembolso.classList.remove('hidden');
+        if (campoResolvida) campoResolvida.classList.remove('hidden');
+        if (grupoValor) grupoValor.style.display = 'none';
+        if (grupoStatusReembolso) grupoStatusReembolso.style.display = 'none';
+        if (grupoMotivoComReembolso) grupoMotivoComReembolso.style.display = 'none';
+        // Tornar campos obrigatórios
+        if (document.getElementById('responsabilidade')) document.getElementById('responsabilidade').required = true;
+        if (document.getElementById('motivoReclamacaoExtra')) document.getElementById('motivoReclamacaoExtra').required = true;
+    } else {
+        if (camposSemReembolso) camposSemReembolso.classList.add('hidden');
+        if (campoResolvida) campoResolvida.classList.add('hidden');
+        if (grupoValor) grupoValor.style.display = 'block';
+        if (grupoStatusReembolso) grupoStatusReembolso.style.display = 'block';
+        if (grupoMotivoComReembolso) grupoMotivoComReembolso.style.display = 'block';
+        if (document.getElementById('responsabilidade')) document.getElementById('responsabilidade').required = false;
+        if (document.getElementById('motivoReclamacaoExtra')) document.getElementById('motivoReclamacaoExtra').required = false;
     }
 }
 
