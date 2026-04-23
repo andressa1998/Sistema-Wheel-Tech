@@ -1709,8 +1709,8 @@ function renderReembolsosTable() {
         const row = document.createElement('tr');
         row.className = 'reembolso-item';
         
-        const dataOp = new Date(reembolso.data_operacao);
-        const dataFormatada = dataOp.toLocaleDateString('pt-BR');
+        const dataOp = formatarDataISO(reembolso.data_operacao);
+        const dataFormatada = reembolso.data_operacao ? reembolso.data_operacao.split('-').reverse().join('/') : '';
         
         // Badge de status
         let statusBadge = '';
@@ -2693,7 +2693,7 @@ window.gerarRelatorio = async function() {
             `;
         } else {
             filteredData.forEach(item => {
-                const dataOp = new Date(item.data_operacao);
+                const dataOp = formatarDataISO(reembolso.data_operacao);
                 const row = document.createElement('tr');
                 row.innerHTML = `
                     <td>${item.numero_venda}</td>
@@ -7793,6 +7793,13 @@ async function abrirSistemaNFE() {
     document.getElementById('nfeUserRole').textContent = currentUser.role;
 }
 
+function formatarDataISO(dataISO) {
+    if (!dataISO) return '';
+    const [ano, mes, dia] = dataISO.split('-');
+    const dataLocal = new Date(ano, mes-1, dia);  // evita fuso
+    return `${dia}/${mes}/${ano}`;
+}
+
 async function carregarVendasParaNFE() {
     try {
         const { data, error } = await supabaseClient
@@ -8207,7 +8214,7 @@ window.verDetalhesReembolso = async function(id) {
     if (!content) return;
     
     // Formatar data
-    const dataOp = new Date(reembolso.data_operacao).toLocaleDateString('pt-BR');
+    const dataOp = formatarDataISO(reembolso.data_operacao);
     const dataCriacao = new Date(reembolso.data_criacao).toLocaleString('pt-BR');
     const dataAtualizacao = reembolso.data_atualizacao ? new Date(reembolso.data_atualizacao).toLocaleString('pt-BR') : '-';
     

@@ -7,22 +7,24 @@ let produtosEstoque = [];
 // Definição dos campos específicos por categoria (organizados em grade)
 const camposPorCategoria = {
     Eixos: [
-        { nome: "tamanho", label: "Tamanho", tipo: "number", obrigatorio: true, placeholder: "Ex: 175" },
+        { nome: "tamanhocabeça", label: "Tamanho Cabeça", tipo: "number", obrigatorio: true, placeholder: "Ex: 175" },
         { nome: "passo", label: "Passo da rosca", tipo: "number", obrigatorio: true, placeholder: "Ex: 1.5" },
         { nome: "posição", label: "Posição", tipo: "select", opcoes: ["Dianteiro", "Traseiro"] },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula (ex: MLB123, MLB456, MLB789)", obrigatorio: false, rows: 2}
     ],
-    roupa: [
-        { nome: "tamanho", label: "Tamanho", tipo: "select", opcoes: ["PP", "P", "M", "G", "GG", "XG"] },
-        { nome: "cor", label: "Cor", tipo: "text", placeholder: "Ex: Azul" },
-        { nome: "material", label: "Material", tipo: "text", placeholder: "Ex: Algodão" },
-        { nome: "genero", label: "Gênero", tipo: "select", opcoes: ["Masculino", "Feminino", "Unissex"] },
+    Parafusos: [
+        { nome: "tamanhocabeça", label: "Tamanho Cabeça", tipo: "text", obrigatorio: true, placeholder: "Ex: M6" },
+        { nome: "tamanhorosca", label: "Tamanho Rosca", tipo: "text", placeholder: "Ex: 30mm" },
+        { nome: "material", label: "Material", tipo: "text", opcoes: ["Titânio", "Aço"] },
+        { nome: "cabeça", label: "Cabeça", tipo: "select", opcoes: ["Abaulada", "Reta", "Enflexada", "Cônica"] },
+        { nome: "cor", label: "Cor", tipo: "select", opcoes: ["Preto", "Dourado", "Rainbow", "Natural"] },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
-    alimento: [
-        { nome: "validade", label: "Data de Validade", tipo: "date" },
-        { nome: "lote", label: "Lote", tipo: "text", placeholder: "Ex: LOT123" },
-        { nome: "unidade_medida", label: "Unidade", tipo: "select", opcoes: ["kg", "g", "L", "ml", "unidade"] },
+    Rolamentos: [
+        { nome: "diametroint", label: "Diâmetro Interno", tipo: "number", placeholder: "Ex: 15" },
+        { nome: "diametroext", label: "Diâmetro Externo", tipo: "number", placeholder: "Ex: 26" },
+        { nome: "largura", label: "Largura", tipo: "number", placeholder: "Ex: 7" },
+        { nome: "aplicaçao", label: "Aplicação", tipo: "select", opcoes: ["Cubo", "Caixa de Direção", "Movimento Central", "Outros"] },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
     moveis: [
