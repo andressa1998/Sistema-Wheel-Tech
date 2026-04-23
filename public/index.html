@@ -1575,6 +1575,19 @@ h4 {
                     <input type="text" id="numeroOperacao" class="form-control" placeholder="Ex: OP789012">
                 </div>
             </div>
+
+             <!-- Tipo de reclamação -->
+            <div class="form-group mb-3">
+                <label><i class="fas fa-tag"></i> Tipo de reclamação *</label>
+                <div class="d-flex gap-3">
+                    <label>
+                        <input type="radio" name="tipoReclamacao" value="com_reembolso" checked onchange="toggleCamposReclamacao()"> Com reembolso
+                    </label>
+                    <label>
+                        <input type="radio" name="tipoReclamacao" value="sem_reembolso" onchange="toggleCamposReclamacao()"> Sem reembolso (apenas acompanhamento)
+                    </label>
+                </div>
+            </div>
             
             <!-- Valor e Data -->
             <div class="d-flex gap-3 mb-3">
@@ -1602,19 +1615,6 @@ h4 {
                     <option value="Extravio na devolução">Extravio na devolução</option>
                     <option value="Devolução danificada">Devolução danificada</option>
                 </select>
-            </div>
-
-                        <!-- Tipo de reclamação -->
-            <div class="form-group mb-3">
-                <label><i class="fas fa-tag"></i> Tipo de reclamação *</label>
-                <div class="d-flex gap-3">
-                    <label>
-                        <input type="radio" name="tipoReclamacao" value="com_reembolso" checked onchange="toggleCamposReclamacao()"> Com reembolso
-                    </label>
-                    <label>
-                        <input type="radio" name="tipoReclamacao" value="sem_reembolso" onchange="toggleCamposReclamacao()"> Sem reembolso (apenas acompanhamento)
-                    </label>
-                </div>
             </div>
 
             <!-- Campos para SEM REEMBOLSO (inicialmente ocultos) -->
@@ -3019,21 +3019,35 @@ h4 {
         <h3>Movimentar Estoque</h3>
         <input type="hidden" id="movProdutoId">
         <p><strong>Produto:</strong> <span id="movProdutoNome"></span></p>
+        
         <div class="form-group">
             <label>Tipo</label>
-            <select id="movTipo" class="form-control">
+            <select id="movTipo" class="form-control" onchange="toggleTipoEntradaField()">
                 <option value="entrada">Entrada (adicionar)</option>
                 <option value="saida">Saída (remover)</option>
             </select>
-            <div class="form-group">
-            <label>Observação (opcional)</label>
-            <input type="text" id="movObservacao" class="form-control" placeholder="Ex: Devolução de cliente">
-            </div>
         </div>
+        
+        <!-- Campo para Número da Movimentação (obrigatório) -->
         <div class="form-group">
-            <label>Quantidade</label>
+            <label>Número da movimentação *</label>
+            <input type="text" id="movNumeroDocumento" class="form-control" placeholder="Ex: NF 12345, Devolução 789, etc." required>
+        </div>
+        
+        <div class="form-group">
+            <label>Quantidade *</label>
             <input type="number" id="movQuantidade" class="form-control" min="1" value="1" required>
         </div>
+        
+        <!-- Campo "Tipo de entrada" (só aparece quando for entrada) -->
+        <div id="campoTipoEntrada" class="form-group" style="display: none;">
+            <label>Tipo de entrada</label>
+            <select id="movTipoEntrada" class="form-control">
+                <option value="nova">Nova (compra)</option>
+                <option value="devolucao">Devolução de cliente</option>
+            </select>
+        </div>
+        
         <div class="d-flex justify-content-between gap-2 mt-3">
             <button class="btn btn-secondary" onclick="fecharModalMovimentacaoEstoque()">Cancelar</button>
             <button class="btn btn-primary" onclick="confirmarMovimentacaoEstoque()">Confirmar</button>

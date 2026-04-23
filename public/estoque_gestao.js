@@ -192,6 +192,66 @@ function obterRegraRaios(marca, modelo) {
     return null;
 }
 
+async function verHistoricoMovimentacoes(produtoId) {
+    const produto = produtosEstoque.find(p => p.id == produtoId);
+    if (!produto) return;
+    
+    const { data, error } = await window.supabaseClient
+        .from('estoque_movimentacoes')
+        .select('*')
+        .eq('produto_id', produtoId)
+        .order('data_hora', { ascending: false });
+    
+    if (error) {
+        console.error(error);
+        showToast('Erro ao carregar histórico', 'error');
+        return;
+    }
+    
+    if (!data || data.length === 0) {
+        showToast(`Nenhuma movimentação registrada para ${produto.nome}`, 'warning');
+        return;
+    }
+    
+    let html = `
+        <div style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
+            <h4>Histórico de movimentações - ${escapeHtml(produto.nome)}</h4>
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Data/Hora</th><th>Tipo</th><th>Quantidade</th><th>Nº Documento</th><th>Tipo Entrada</th><th>Usuário</th></tr>
+                </thead>
+                <tbody>
+    `;
+    data.forEach(mov => {
+        const dataHora = new Date(mov.data_hora).toLocaleString('pt-BR');
+        const tipoMov = mov.tipo === 'entrada' ? '➕ Entrada' : '➖ Saída';
+        const tipoEntrada = mov.tipo_entrada === 'nova' ? 'Nova' : (mov.tipo_entrada === 'devolucao' ? 'Devolução' : '-');
+        html += `<tr>
+            <td>${dataHora}</td>
+            <td>${tipoMov}</td>
+            <td>${mov.quantidade}</td>
+            <td>${mov.numero_documento || '-'}</td>
+            <td>${tipoEntrada}</td>
+            <td>${mov.usuario}</td>
+        </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.cssText = 'display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); z-index: 2000;';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 90%; max-height: 90%; overflow: auto;">
+            <div style="display: flex; justify-content: space-between;">
+                <h3>Histórico de movimentações</h3>
+                <button onclick="this.closest('.modal').remove()" style="background:none; border:none; font-size:24px;">&times;</button>
+            </div>
+            ${html}
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
 // ===== RENDERIZAR TABELA =====
 // Renderiza a tabela com produtos (opcionalmente filtrados)
 function renderizarTabelaProdutos(produtosParaRenderizar = null) {
@@ -216,10 +276,11 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
         }
         // Botões de ação
         let botoes = `
-            <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
-            <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
-            <button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})" title="Excluir"><i class="fas fa-trash"></i></button>
-        `;
+    <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})"><i class="fas fa-edit"></i></button>
+    <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')"><i class="fas fa-exchange-alt"></i></button>
+    <button class="btn btn-sm btn-secondary" onclick="verHistoricoMovimentacoes(${prod.id})" title="Histórico"><i class="fas fa-history"></i></button>
+    <button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})"><i class="fas fa-trash"></i></button>
+`;
         const mlbCodes = prod.dados_extra?.mlb_codes;
         if (mlbCodes && ((Array.isArray(mlbCodes) && mlbCodes.length > 0) || (typeof mlbCodes === 'string' && mlbCodes.trim() !== ''))) {
             botoes += `<button class="btn btn-sm btn-primary" onclick="sincronizarProdutoML(${prod.id})" title="Sincronizar estoque com ML"><i class="fab fa-mercadolibre"></i></button>`;
@@ -236,7 +297,7 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     });
 }
 
-async function registrarMovimentacao(produtoId, tipo, quantidade, observacao = '') {
+async function registrarMovimentacao(produtoId, tipo, quantidade, numeroDocumento, tipoEntrada = null) {
     const numero = await gerarNumeroMovimentacao();
     const usuario = (typeof currentUser !== 'undefined' && currentUser?.name) 
                 ? currentUser.name 
@@ -250,11 +311,17 @@ async function registrarMovimentacao(produtoId, tipo, quantidade, observacao = '
             quantidade: quantidade,
             usuario: usuario,
             numero_movimentacao: numero,
-            observacao: observacao
+            numero_documento: numeroDocumento,
+            tipo_entrada: tipoEntrada,
+            data_hora: new Date().toISOString()
         }]);
     
-    if (error) console.error('Erro ao registrar movimentação:', error);
-    else console.log(`✅ Movimentação ${numero} registrada: ${tipo} de ${quantidade}`);
+    if (error) {
+        console.error('❌ Erro ao registrar movimentação:', error);
+        if (window.showToast) showToast('Erro ao registrar movimentação', 'error');
+    } else {
+        console.log(`✅ Movimentação ${numero} registrada: ${tipo} de ${quantidade}`);
+    }
 }
 
 // ===== MODAL PRODUTO (COM CATEGORIA E CAMPOS DINÂMICOS) =====
@@ -525,7 +592,7 @@ async function salvarProdutoEstoque() {
             if (error) throw error;
             produtoSalvo = data[0];
             if (quantidade > 0) {
-            await registrarMovimentacao(produtoSalvo.id, 'entrada', quantidade, 'Criação do produto');
+            await registrarMovimentacao(produtoSalvo.id, 'entrada', quantidade, 'Criação do produto', 'nova');
             }
             if (window.showToast) showToast('Produto atualizado!', 'success');
         } else {
@@ -584,6 +651,9 @@ function abrirModalMovimentacaoEstoque(id, nome) {
     document.getElementById('movProdutoNome').textContent = nome;
     document.getElementById('movQuantidade').value = '1';
     document.getElementById('movTipo').value = 'entrada';
+    document.getElementById('movNumeroDocumento').value = '';   // limpar campo
+    document.getElementById('movTipoEntrada').value = 'nova';   // padrão
+    toggleTipoEntradaField();   // mostrar/esconder conforme tipo
     document.getElementById('modalMovimentacaoEstoque').classList.remove('hidden');
 }
 
@@ -596,6 +666,12 @@ async function confirmarMovimentacaoEstoque() {
     const id = document.getElementById('movProdutoId').value;
     const tipo = document.getElementById('movTipo').value;
     let quantidade = parseInt(document.getElementById('movQuantidade').value);
+    const numeroDocumento = document.getElementById('movNumeroDocumento').value.trim();
+    
+    if (!numeroDocumento) {
+        if (window.showToast) showToast('Número da movimentação é obrigatório!', 'warning');
+        return;
+    }
     if (isNaN(quantidade) || quantidade <= 0) {
         if (window.showToast) showToast('Quantidade inválida', 'warning');
         return;
@@ -605,8 +681,11 @@ async function confirmarMovimentacaoEstoque() {
     if (!produto) return;
 
     let novaQuantidade = produto.quantidade;
+    let tipoEntrada = null;
+    
     if (tipo === 'entrada') {
         novaQuantidade += quantidade;
+        tipoEntrada = document.getElementById('movTipoEntrada').value;
     } else {
         if (produto.quantidade < quantidade) {
             if (window.showToast) showToast('Estoque insuficiente!', 'error');
@@ -621,12 +700,13 @@ async function confirmarMovimentacaoEstoque() {
             .update({ quantidade: novaQuantidade })
             .eq('id', id);
         if (error) throw error;
+
+        await registrarMovimentacao(id, tipo, quantidade, numeroDocumento, tipoEntrada);
+
         if (window.showToast) showToast(`Movimentação: ${tipo === 'entrada' ? '+' : '-'}${quantidade}`, 'success');
-        await registrarMovimentacao(id, tipo, quantidade, observacao || '');
         fecharModalMovimentacaoEstoque();
         await carregarProdutosEstoque();
 
-        // Após movimentar, sincronizar com ML se houver MLB
         const produtoAtualizado = produtosEstoque.find(p => p.id == id);
         if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes && produtoAtualizado.dados_extra.mlb_codes.length > 0) {
             setTimeout(() => {
@@ -636,6 +716,16 @@ async function confirmarMovimentacaoEstoque() {
     } catch (error) {
         console.error(error);
         if (window.showToast) showToast('Erro ao movimentar', 'error');
+    }
+}
+
+function toggleTipoEntradaField() {
+    const tipo = document.getElementById('movTipo').value;
+    const campoTipoEntrada = document.getElementById('campoTipoEntrada');
+    if (tipo === 'entrada') {
+        campoTipoEntrada.style.display = 'block';
+    } else {
+        campoTipoEntrada.style.display = 'none';
     }
 }
 
