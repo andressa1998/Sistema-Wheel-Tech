@@ -13,7 +13,7 @@ const camposPorCategoria = {
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula (ex: MLB123, MLB456, MLB789)", obrigatorio: false, rows: 2}
     ],
     Parafusos: [
-        { nome: "tamanhocabeça", label: "Tamanho Cabeça", tipo: "text", obrigatorio: true, placeholder: "Ex: M6" },
+        { nome: "tamanhocabeça", label: "Diâmetro Cabeça", tipo: "text", obrigatorio: true, placeholder: "Ex: M6" },
         { nome: "tamanhorosca", label: "Tamanho Rosca", tipo: "text", placeholder: "Ex: 30mm" },
         { nome: "material", label: "Material", tipo: "text", opcoes: ["Titânio", "Aço"] },
         { nome: "cabeça", label: "Cabeça", tipo: "select", opcoes: ["Abaulada", "Reta", "Enflexada", "Cônica"] },
