@@ -7,7 +7,7 @@ let produtosEstoque = [];
 // Definição dos campos específicos por categoria (organizados em grade)
 const camposPorCategoria = {
     Eixos: [
-        { nome: "tamanhocabeça", label: "Tamanho Cabeça", tipo: "number", obrigatorio: true, placeholder: "Ex: 175" },
+        { nome: "tamanho", label: "Tamanho Eixo", tipo: "number", obrigatorio: true, placeholder: "Ex: 175" },
         { nome: "passo", label: "Passo da rosca", tipo: "number", obrigatorio: true, placeholder: "Ex: 1.5" },
         { nome: "posição", label: "Posição", tipo: "select", opcoes: ["Dianteiro", "Traseiro"] },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula (ex: MLB123, MLB456, MLB789)", obrigatorio: false, rows: 2}

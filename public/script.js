@@ -1819,6 +1819,7 @@ window.editarReembolso = async function(id) {
     editingReembolsoId = id;
     document.getElementById('reembolsoModalTitle').textContent = 'Editar Reembolso';
     document.getElementById('reembolsoId').value = id;
+    document.getElementById('statusReembolso').value = reembolso.status_reembolso || 'em_andamento';
     
     // Detectar tipo de referência
     const isRetirada = reembolso.numero_venda && reembolso.numero_venda.startsWith('RET-');
@@ -1917,6 +1918,7 @@ window.novoReembolso = function() {
     editingReembolsoId = null;
     document.getElementById('reembolsoModalTitle').textContent = 'Novo Reembolso';
     document.getElementById('reembolsoId').value = '';
+    document.getElementById('statusReembolso').value = reembolso.status_reembolso || 'em_andamento';
     // Resetar radio buttons
     document.querySelector('input[name="tipoReferencia"][value="venda"]').checked = true;
     document.querySelector('input[name="tipoOperacao"][value="adicionar"]').checked = true;
@@ -2095,6 +2097,7 @@ window.salvarReembolso = async function() {
         status: 'a_verificar',
         notificado_admin: false,
         notificado_usuario: false
+        status_reembolso: document.getElementById('statusReembolso').value,
     };
     
     // Log opcional (agora depois da declaração)
