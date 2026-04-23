@@ -7,7 +7,7 @@ let produtosEstoque = [];
 // Definição dos campos específicos por categoria (organizados em grade)
 const camposPorCategoria = {
     Eixos: [
-        { nome: "tamanho", label: "Tamanho Eixo", tipo: "number", obrigatorio: true, placeholder: "Ex: 175" },
+        { nome: "tamanho", label: "Tamanho Eixo", tipo: "text", obrigatorio: true, placeholder: "Ex: 175" },
         { nome: "passo", label: "Passo da rosca", tipo: "number", obrigatorio: true, placeholder: "Ex: 1.5" },
         { nome: "posição", label: "Posição", tipo: "select", opcoes: ["Dianteiro", "Traseiro"] },
         { nome: "tipodarosca", label: "Tipo da Rosca", tipo: "select", opcoes: ["Doublelead", "Singlelead"] },
@@ -28,17 +28,68 @@ const camposPorCategoria = {
         { nome: "aplicaçao", label: "Aplicação", tipo: "select", opcoes: ["Cubo", "Caixa de Direção", "Movimento Central", "Outros"] },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
-    moveis: [
-        { nome: "material", label: "Material", tipo: "text", placeholder: "Ex: Madeira" },
-        { nome: "dimensoes", label: "Dimensões (C x L x A)", tipo: "text", placeholder: "Ex: 100x50x80 cm" },
-        { nome: "cor", label: "Cor", tipo: "text", placeholder: "Ex: Carvalho" },
-        { nome: "montagem_necessaria", label: "Montagem necessária?", tipo: "checkbox" },
+    Raios: [
+        { nome: "marca", label: "Marca", tipo: "select", opcoes: ["Sapim", "Pillar", "Mavic", "Richman", "Green", "Dt Swiss", "Crank Brothers", "VeloForce", "Zincado", "Titânio", "T-Head"] },
+        { nome: "modelo", label: "Modelo", tipo: "select", opcoes: [] },
+        { nome: "cabeçaraio", label: "Cabeça do Raio", tipo: "select", opcoes: ["SP", "J"] },
+        { nome: "tamanhoraio", label: "Tamanho Raio", tipo: "number", placeholder: "Ex: 284"},
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
     outros: [
         { nome: "observacoes_adicionais", label: "Observações", tipo: "textarea", rows: 2 },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ]
+};
+
+// Mapeamento de modelos disponíveis por marca (para a categoria Raios)
+const modelosPorMarca = {
+    "Sapim": ["Laser", "Leader", "Cx-Ray", "Race"],
+    "Pillar": ["Butted 1.8 Preto", "Butted 1.8 Vermelho", "Butted 1.7", "Butted 1.5", "Trefilado 1.6", "Achatado", "Reforçado 2.0"],
+    "Mavic": ["Crossride", "Crossmax", "Crossride Light", "Crossride Fts", "Aksium Ksyrium"],
+    "Richman": ["Preto", "Fino Silver", "Grosso Silver"],
+    "Green": ["Silver", "Pro", "Aero"],
+    "Dt Swiss": ["Aero", "Competition", "Revolution", "Competition Especial", "Champion Preto", "Champion Prata", "Aero Comp"],
+    "Crank Brothers": ["Preto"],
+    "VeloForce": ["Preto", "Prata"],
+    "Zincado": ["Prata"],
+    "Titânio": ["Preto"],
+    "T-Head": ["Revolution", "Competition", "AeroLite"]
+};
+
+// Regras de limite de KITS por marca (categoria Raios)
+const regrasRaiosPorMarca = {
+
+    // Formato "marca|modelo"
+
+    "Sapim|Laser": { max_kits: 2 },
+    "Sapim|Leader": { max_kits: 2 },
+    "Sapim|Cx-Ray": {max_kits: 10},
+    "Sapim|Race": {max_kits: 10},
+    "Pillar|Butted 1.8 Preto": { max_kits: 2 },
+    "Pillar|Butted 1.8 Vermelho": { max_kits: 2 },
+    "Pillar|Butted 1.7": { max_kits: 2 },
+    "Pillar|Butted 1.5": { max_kits: 2 },
+    "Pillar|Trefilado 1.6": { max_kits: 2 },
+    "Pillar|Achatado": { max_kits: 10 },
+    "Pillar|Reforçado 2.0": { max_kits: 10 },
+    "Dt Swiss|Aero": { max_kits: 2 },
+    "Dt Swiss|Champion Preto": { max_kits: 10 },
+    "Dt Swiss|Champion Prata": { max_kits: 2 },
+    "Dt Swiss|Competition": { max_kits: 10 },
+    "Dt Swiss|Revolution": { max_kits: 10 },
+    "Dt Swiss|Competition Especial": { max_kits: 2 },
+    "Dt Swiss|Aero Comp": { max_kits: 2 },
+
+    // Formato apenas marca (vale para todos os modelos daquela marca)
+
+    "Mavic": { max_kits: 10 },
+    "Richman": { max_kits: 2 },
+    "Green": { max_kits: 2 },
+    "Crank Brothers": { max_kits: 2 },
+    "VeloForce": {max_kits: 10},
+    "Zincado": { max_kits: 2 },
+    "Titânio": { max_kits: 2 },
+    "T-Head": { max_kits: 10 }
 };
 
 // ===== ABRIR SISTEMA =====
@@ -93,6 +144,15 @@ async function carregarProdutosEstoque() {
         const tbody = document.getElementById('produtosEstoqueBody');
         if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-danger">Erro ao carregar produtos. Consulte o console.穷</td></tr>';
     }
+}
+
+function obterRegraRaios(marca, modelo) {
+    const chaveExata = `${marca}|${modelo}`;
+    if (regrasRaiosPorMarca[chaveExata]) return regrasRaiosPorMarca[chaveExata];
+    if (regrasRaiosPorMarca[marca]) return regrasRaiosPorMarca[marca];
+    const chaveCoringa = `${marca}|*`;
+    if (regrasRaiosPorMarca[chaveCoringa]) return regrasRaiosPorMarca[chaveCoringa];
+    return null;
 }
 
 // ===== RENDERIZAR TABELA =====
@@ -157,19 +217,37 @@ function abrirModalProdutoEstoque(produto = null) {
         precoInput.value = produto.preco || 0;
         descInput.value = produto.descricao || '';
         categoriaSelect.value = produto.categoria || '';
+        // Gera os campos dinâmicos baseados na categoria salva
         gerarCamposDinamicos(produto.categoria);
+        
         const dadosExtra = produto.dados_extra || {};
+        // Primeiro preenche todos os campos (exceto modelo, se for Raios)
         Object.keys(dadosExtra).forEach(chave => {
             const campo = document.getElementById(`campo_${chave}`);
             if (campo) {
-                if (campo.type === 'checkbox') campo.checked = dadosExtra[chave];
-                else if (chave === 'mlb_codes' && Array.isArray(dadosExtra[chave])) {
+                if (campo.type === 'checkbox') {
+                    campo.checked = dadosExtra[chave];
+                } else if (chave === 'mlb_codes' && Array.isArray(dadosExtra[chave])) {
                     campo.value = dadosExtra[chave].join(', ');
                 } else {
                     campo.value = dadosExtra[chave];
                 }
             }
         });
+
+        // --- Lógica especial para Raios: após definir a marca, carregar modelos e definir o modelo salvo ---
+        if (produto.categoria === 'Raios') {
+            const marcaField = document.getElementById('campo_marca');
+            if (marcaField && marcaField.value) {
+                // Força o preenchimento do select de modelo baseado na marca atual
+                atualizarModelosPorMarca(marcaField.value);
+                // Agora define o valor do modelo salvo
+                const modeloField = document.getElementById('campo_modelo');
+                if (modeloField && dadosExtra.modelo) {
+                    modeloField.value = dadosExtra.modelo;
+                }
+            }
+        }
     } else {
         title.textContent = 'Novo Produto';
         idInput.value = '';
@@ -182,12 +260,18 @@ function abrirModalProdutoEstoque(produto = null) {
         gerarCamposDinamicos('');
     }
 
+    // Evento de mudança de categoria (com confirmação)
     categoriaSelect.onchange = function() {
-        if (!produto || confirm('Alterar a categoria limpará os atributos específicos. Deseja continuar?')) {
-            gerarCamposDinamicos(categoriaSelect.value);
-        } else {
-            categoriaSelect.value = produto.categoria;
+        const novaCategoria = categoriaSelect.value;
+        if (produto && produto.categoria && novaCategoria !== produto.categoria) {
+            if (!confirm('Alterar a categoria limpará os atributos específicos. Deseja continuar?')) {
+                categoriaSelect.value = produto.categoria;
+                return;
+            }
         }
+        gerarCamposDinamicos(novaCategoria);
+        // Se a nova categoria for Raios, podemos resetar o evento do select de marca (já incluso no gerarCampos)
+        // Mas não há valor de marca pré-definido ainda
     };
 
     modal.classList.remove('hidden');
@@ -218,31 +302,107 @@ function gerarCamposDinamicos(categoria) {
     campos.forEach(campo => {
         const div = document.createElement('div');
         div.className = 'campo-dinamico';
-        let html = `<label style="font-weight: 600; display: block; margin-bottom: 5px;">${campo.label} ${campo.obrigatorio ? '*' : ''}</label>`;
+
+        const label = document.createElement('label');
+        label.style.fontWeight = '600';
+        label.style.display = 'block';
+        label.style.marginBottom = '5px';
+        label.textContent = `${campo.label} ${campo.obrigatorio ? '*' : ''}`;
+        div.appendChild(label);
 
         if (campo.tipo === 'select') {
-            html += `<select id="campo_${campo.nome}" class="form-control" ${campo.obrigatorio ? 'required' : ''}>`;
-            html += `<option value="">Selecione...</option>`;
-            campo.opcoes.forEach(op => {
-                html += `<option value="${op}">${op}</option>`;
-            });
-            html += `</select>`;
-        } else if (campo.tipo === 'checkbox') {
-            html += `<div class="form-check">`;
-            html += `<input type="checkbox" id="campo_${campo.nome}" class="form-check-input">`;
-            html += `<label class="form-check-label" for="campo_${campo.nome}">${campo.label}</label>`;
-            html += `</div>`;
-        } else if (campo.tipo === 'textarea') {
-            html += `<textarea id="campo_${campo.nome}" class="form-control" rows="${campo.rows || 2}" placeholder="${campo.placeholder || ''}"></textarea>`;
-        } else {
-            html += `<input type="${campo.tipo}" id="campo_${campo.nome}" class="form-control" 
-                         step="${campo.step || ''}" min="${campo.min || ''}" 
-                         placeholder="${campo.placeholder || ''}" ${campo.obrigatorio ? 'required' : ''}>`;
+            const select = document.createElement('select');
+            select.id = `campo_${campo.nome}`;
+            select.className = 'form-control';
+            if (campo.obrigatorio) select.required = true;
+
+            // Opção padrão vazia
+            const defaultOption = document.createElement('option');
+            defaultOption.value = '';
+            defaultOption.textContent = 'Selecione...';
+            select.appendChild(defaultOption);
+
+            // Adiciona opções fixas (se houver)
+            if (campo.opcoes && campo.opcoes.length > 0) {
+                campo.opcoes.forEach(op => {
+                    const option = document.createElement('option');
+                    option.value = op;
+                    option.textContent = op;
+                    select.appendChild(option);
+                });
+            }
+
+            // --- Lógica especial para campo "marca" na categoria "Raios" ---
+            if (categoria === 'Raios' && campo.nome === 'marca') {
+                select.addEventListener('change', (e) => {
+                    atualizarModelosPorMarca(e.target.value);
+                });
+            }
+
+            div.appendChild(select);
+        } 
+        else if (campo.tipo === 'checkbox') {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'form-check';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.id = `campo_${campo.nome}`;
+            checkbox.className = 'form-check-input';
+            const checkLabel = document.createElement('label');
+            checkLabel.className = 'form-check-label';
+            checkLabel.htmlFor = `campo_${campo.nome}`;
+            checkLabel.textContent = campo.label;
+            wrapper.appendChild(checkbox);
+            wrapper.appendChild(checkLabel);
+            div.appendChild(wrapper);
+        } 
+        else if (campo.tipo === 'textarea') {
+            const textarea = document.createElement('textarea');
+            textarea.id = `campo_${campo.nome}`;
+            textarea.className = 'form-control';
+            textarea.rows = campo.rows || 2;
+            if (campo.placeholder) textarea.placeholder = campo.placeholder;
+            div.appendChild(textarea);
+        } 
+        else {
+            const input = document.createElement('input');
+            input.type = campo.tipo;
+            input.id = `campo_${campo.nome}`;
+            input.className = 'form-control';
+            if (campo.step) input.step = campo.step;
+            if (campo.min) input.min = campo.min;
+            if (campo.placeholder) input.placeholder = campo.placeholder;
+            if (campo.obrigatorio) input.required = true;
+            div.appendChild(input);
         }
-        div.innerHTML = html;
+
         grid.appendChild(div);
     });
+
     container.appendChild(grid);
+}
+
+function atualizarModelosPorMarca(marcaSelecionada) {
+    const selectModelo = document.getElementById('campo_modelo');
+    if (!selectModelo) return;
+
+    // Limpa as opções atuais
+    selectModelo.innerHTML = '';
+
+    // Opção padrão vazia
+    const optionPadrao = document.createElement('option');
+    optionPadrao.value = '';
+    optionPadrao.textContent = '-- Selecione um modelo --';
+    selectModelo.appendChild(optionPadrao);
+
+    // Obtém modelos da marca (se não existir, array vazio)
+    const modelos = modelosPorMarca[marcaSelecionada] || [];
+    modelos.forEach(modelo => {
+        const option = document.createElement('option');
+        option.value = modelo;
+        option.textContent = modelo;
+        selectModelo.appendChild(option);
+    });
 }
 
 // ===== SALVAR PRODUTO (COM DADOS EXTRAS E SINCRONIZAÇÃO ML) =====
@@ -415,16 +575,17 @@ function encontrarVariacaoPorSKU(item, skuProduto) {
     if (!item.variations || item.variations.length === 0) return null;
 
     const skuAlvo = (skuProduto || '').toLowerCase().trim();
-    console.log(`🔍 Buscando variação para SKU: "${skuAlvo}"`);
+    console.log(`🔍 Buscando variação para SKU alvo: "${skuAlvo}"`);
 
     const normalizar = (str) => (str || '').toLowerCase().trim().replace(/^0+/, '');
     const skuAlvoNorm = normalizar(skuAlvo);
 
     for (const v of item.variations) {
         let identificador = extrairSkuDaVariacao(v);
+        console.log(`   Testando variação ${v.id}: "${identificador}"`);
         if (identificador) {
             let idNorm = normalizar(identificador);
-            // Remove prefixo de 3 dígitos (ex: "00100268..." -> "00268...")
+            // Remove prefixo de 3 dígitos
             if (/^\d{3}/.test(idNorm)) {
                 const semPrefixo = idNorm.replace(/^\d{3}/, '');
                 if (semPrefixo === skuAlvoNorm) {
@@ -441,40 +602,33 @@ function encontrarVariacaoPorSKU(item, skuProduto) {
                 return v;
             }
         }
-        // Fallback por tamanho (opcional, mantido)
-        const numeros = skuAlvo.match(/\d+/g);
-        const tamanho = numeros?.find(n => n.length === 3 && n !== '000');
-        if (tamanho && v.attribute_combinations) {
-            const match = v.attribute_combinations.some(attr =>
-                (attr.name === 'Tamanho' || attr.name === 'Size') &&
-                String(attr.value_name) === tamanho
-            );
-            if (match) {
-                console.log(`✅ Match por tamanho ${tamanho}`);
-                return v;
-            }
-        }
     }
-    console.warn(`⚠️ Nenhuma variação compatível. Usando a primeira.`);
-    return item.variations[0];
-}
-
-function extrairSkuDaVariacao(variacao) {
-    // 1. Prioriza seller_custom_field
-    if (variacao.seller_custom_field) {
-        return variacao.seller_custom_field;
-    }
-    // 2. Procura no array 'attributes' por SELLER_SKU
-    if (variacao.attributes && Array.isArray(variacao.attributes)) {
-        const skuAttr = variacao.attributes.find(attr => attr.id === 'SELLER_SKU');
-        if (skuAttr && skuAttr.value_name) {
-            return skuAttr.value_name;
-        }
-    }
+    console.warn(`⚠️ Nenhuma variação compatível.`);
     return null;
 }
 
-// ===== FUNÇÃO PRINCIPAL DE SINCRONIZAÇÃO (ATUALIZADA COM REGRAS PARA EIXOS) =====
+function extrairSkuDaVariacao(variacao) {
+    // Para variações
+    if (variacao.seller_custom_field) return variacao.seller_custom_field;
+    if (variacao.attributes && Array.isArray(variacao.attributes)) {
+        const skuAttr = variacao.attributes.find(attr => attr.id === 'SELLER_SKU');
+        if (skuAttr && skuAttr.value_name) return skuAttr.value_name;
+    }
+    if (variacao.sku) return variacao.sku;
+    return null;
+}
+
+// NOVA FUNÇÃO: extrair SKU do item principal (sem variações)
+function extrairSkuDoItem(item) {
+    if (item.seller_custom_field) return item.seller_custom_field;
+    if (item.attributes && Array.isArray(item.attributes)) {
+        const skuAttr = item.attributes.find(attr => attr.id === 'SELLER_SKU');
+        if (skuAttr && skuAttr.value_name) return skuAttr.value_name;
+    }
+    if (item.sku) return item.sku;
+    return null;
+}
+
 async function sincronizarEstoqueML(produto) {
     let mlbCodes = produto.dados_extra?.mlb_codes;
     if (!mlbCodes || (Array.isArray(mlbCodes) && mlbCodes.length === 0)) {
@@ -495,6 +649,8 @@ async function sincronizarEstoqueML(produto) {
     const quantidadeReal = produto.quantidade;
     const skuProduto = produto.sku;
     const categoria = produto.categoria;
+    const marcaProduto = produto.dados_extra?.marca || '';
+    const modeloProduto = produto.dados_extra?.modelo || '';
 
     for (const codigo of codigos) {
         const itemId = codigo.startsWith('MLB') ? codigo : `MLB${codigo}`;
@@ -507,7 +663,7 @@ async function sincronizarEstoqueML(produto) {
             if (!getRes.ok) throw new Error(`GET falhou: ${getRes.status}`);
             const item = await getRes.json();
 
-            // Buscar detalhes de cada variação individualmente (para obter seller_custom_field e preço)
+            // Buscar detalhes de cada variação
             if (item.variations && item.variations.length > 0) {
                 console.log(`📦 Buscando detalhes de ${item.variations.length} variações...`);
                 for (let i = 0; i < item.variations.length; i++) {
@@ -523,7 +679,7 @@ async function sincronizarEstoqueML(produto) {
                                 seller_custom_field: varDetails.seller_custom_field || v.seller_custom_field,
                                 attributes: varDetails.attributes || v.attributes,
                                 attribute_combinations: varDetails.attribute_combinations || v.attribute_combinations,
-                                price: varDetails.price || v.price   // Garantir que o preço da variação seja capturado
+                                price: varDetails.price || v.price
                             };
                             const skuExtraido = extrairSkuDaVariacao(item.variations[i]);
                             if (skuExtraido) console.log(`   Variação ${v.id}: SKU = ${skuExtraido}, Preço = ${item.variations[i].price}`);
@@ -537,40 +693,92 @@ async function sincronizarEstoqueML(produto) {
                 }
             }
 
-            // Verifica oferta ativa
             if (item.tags?.includes('has_price_by_rule')) {
                 console.warn(`⚠️ Item ${itemId} tem preço automático.`);
                 results.push({ codigo: itemId, success: false, reason: 'oferta_ativa' });
                 continue;
             }
 
-            // Determinar a quantidade a ser enviada com base na categoria e no preço do anúncio
-            let quantidadeParaEnviar = quantidadeReal; // padrão
+            // ------------------- CÁLCULO DA QUANTIDADE A ENVIAR -------------------
+            let quantidadeParaEnviar = quantidadeReal;
 
             if (categoria === 'Eixos') {
                 let precoAnuncio = 0;
-
-                // Tenta obter o preço da variação correspondente ao SKU do produto
                 if (item.variations && item.variations.length > 0) {
                     const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
-                    if (variacaoAlvo) {
-                        precoAnuncio = variacaoAlvo.price || 0;
-                        console.log(`💰 Preço da variação (${variacaoAlvo.id}) para o SKU ${skuProduto}: R$ ${precoAnuncio}`);
-                    } else {
-                        console.warn(`⚠️ Nenhuma variação compatível para o SKU ${skuProduto}, usando preço do item principal.`);
-                        precoAnuncio = item.price || 0;
-                    }
+                    if (variacaoAlvo) precoAnuncio = variacaoAlvo.price || 0;
+                    else precoAnuncio = item.price || 0;
                 } else {
                     precoAnuncio = item.price || 0;
                 }
-
-                // Aplica a regra de limite
                 const limite = precoAnuncio > 100 ? 2 : 10;
                 quantidadeParaEnviar = Math.min(quantidadeReal, limite);
-                console.log(`📊 Regra Eixos: preço=R$ ${precoAnuncio}, limite=${limite}, estoque real=${quantidadeReal}, enviando=${quantidadeParaEnviar}`);
-            } else {
-                console.log(`ℹ️ Categoria "${categoria}" - sem limite especial. Enviando estoque real = ${quantidadeReal}`);
+                console.log(`📊 Regra Eixos: preço=R$ ${precoAnuncio}, limite=${limite}, enviando=${quantidadeParaEnviar}`);
             }
+            else if (categoria === 'Raios') {
+    console.log(`\n===== PROCESSANDO RAIOS =====`);
+    console.log(`Produto: ${produto.nome}, SKU: ${skuProduto}`);
+    console.log(`Marca: ${marcaProduto}, Modelo: ${modeloProduto}`);
+    console.log(`Estoque real (unidades): ${quantidadeReal}`);
+
+    let skuAnuncio = null;
+
+    // 1. Se há variações, busca a variação correspondente
+    if (item.variations && item.variations.length > 0) {
+        console.log(`📦 Item possui ${item.variations.length} variação(ões).`);
+        let variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+        if (variacaoAlvo) {
+            skuAnuncio = extrairSkuDaVariacao(variacaoAlvo);
+            console.log(`🔎 Variação alvo (ID ${variacaoAlvo.id}): SKU = "${skuAnuncio}"`);
+        } else {
+            console.warn(`⚠️ Nenhuma variação compatível. Buscando em todas...`);
+            for (let v of item.variations) {
+                let testSku = extrairSkuDaVariacao(v);
+                if (testSku && testSku.match(/\d/)) {
+                    skuAnuncio = testSku;
+                    console.log(`🔎 Usando SKU da variação ${v.id}: "${skuAnuncio}"`);
+                    break;
+                }
+            }
+        }
+    } else {
+        // 2. Item sem variação: extrai SKU diretamente do item principal
+        skuAnuncio = extrairSkuDoItem(item);
+        console.log(`🔎 Item sem variação. SKU encontrado: "${skuAnuncio}"`);
+    }
+
+    // 3. Fallback: se nada funcionar, tenta o seller_custom_field do item principal (já tentamos acima) ou ID
+    if (!skuAnuncio) {
+        // Tenta pegar o ID numérico do anúncio (não recomendado, mas como último recurso)
+        const matchId = item.id.match(/\d+$/);
+        if (matchId) {
+            skuAnuncio = matchId[0];
+            console.log(`⚠️ Nenhum SKU encontrado. Usando ID do anúncio: "${skuAnuncio}" (isso pode levar a cálculos errados!)`);
+        }
+    }
+
+    // 4. Extrai a quantidade de raios por kit
+    const raiosPorKit = extrairUnidadesPorKit(skuAnuncio);
+    console.log(`📦 Raios por kit calculado: ${raiosPorKit}`);
+
+    // 5. Calcula kits possíveis
+    let kitsPossiveis = Math.floor(quantidadeReal / raiosPorKit);
+    if (kitsPossiveis < 0) kitsPossiveis = 0;
+    console.log(`📊 Estoque real: ${quantidadeReal} raios → ${kitsPossiveis} kits possíveis`);
+
+    // 6. Aplica regra de limite
+    const regra = obterRegraRaios(marcaProduto, modeloProduto);
+    let kitsEnviar = kitsPossiveis;
+    if (regra && regra.max_kits !== undefined) {
+        kitsEnviar = Math.min(kitsPossiveis, regra.max_kits);
+        console.log(`🏷️ Regra ${marcaProduto}|${modeloProduto}: limite ${regra.max_kits} kits → enviando ${kitsEnviar}`);
+    } else {
+        console.log(`🏷️ Sem regra específica. Enviando ${kitsEnviar} kits`);
+    }
+
+    quantidadeParaEnviar = kitsEnviar;
+    console.log(`✅ Quantidade final enviada ao ML: ${quantidadeParaEnviar} kits`);
+}
 
             // --- FULL (inventory_id) ---
             const isFulfillment = item.tags?.includes('fulfillment') || 
@@ -596,7 +804,7 @@ async function sincronizarEstoqueML(produto) {
                 }
                 continue;
             } else if (item.inventory_id && !isFulfillment) {
-                console.log(`⚠️ inventory_id presente, mas item não é FULL. Ignorando e tratando como normal.`);
+                console.log(`⚠️ inventory_id presente, mas item não é FULL.`);
             }
 
             // --- COM VARIAÇÕES ---
@@ -618,7 +826,7 @@ async function sincronizarEstoqueML(produto) {
                     body: JSON.stringify({ available_quantity: quantidadeParaEnviar })
                 });
                 const responseText = await putRes.text();
-                console.log(`📡 Resposta da variação (status ${putRes.status}):`, responseText);
+                console.log(`📡 Resposta (status ${putRes.status}):`, responseText);
                 
                 let respData;
                 try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
@@ -631,16 +839,15 @@ async function sincronizarEstoqueML(produto) {
                     } else {
                         newQty = respData.available_quantity;
                     }
-                    
                     if (newQty === quantidadeParaEnviar) {
                         console.log(`✅ Variação ${varId} atualizada para ${newQty}`);
                         results.push({ codigo: itemId, success: true, variation_id: varId });
                     } else {
-                        console.warn(`⚠️ Resposta OK, mas estoque não mudou. Esperado: ${quantidadeParaEnviar}, Recebido: ${newQty}`);
+                        console.warn(`⚠️ Estoque não mudou. Esperado: ${quantidadeParaEnviar}, Recebido: ${newQty}`);
                         results.push({ codigo: itemId, success: false, reason: 'estoque_ignorado', details: respData });
                     }
                 } else {
-                    console.error(`❌ Falha na variação: ${putRes.status} - ${responseText}`);
+                    console.error(`❌ Falha: ${putRes.status} - ${responseText}`);
                     results.push({ codigo: itemId, success: false, error: `HTTP ${putRes.status}` });
                 }
             }
@@ -685,6 +892,30 @@ window.sincronizarProdutoML = async function(produtoId) {
     if (window.showToast) showToast(`🔄 Sincronizando estoque (${produto.quantidade}) com ML...`, 'info');
     await sincronizarEstoqueML(produto);
 };
+
+function extrairUnidadesPorKit(skuAnuncio) {
+    console.log(`🔍 extrairUnidadesPorKit recebeu: "${skuAnuncio}" (tipo: ${typeof skuAnuncio})`);
+    if (!skuAnuncio || typeof skuAnuncio !== 'string') return 1;
+
+    // Tenta capturar 2 ou 3 dígitos logo no início
+    let match = skuAnuncio.match(/^(\d{2,3})/);
+    if (match) {
+        let val = parseInt(match[1], 10);
+        console.log(`✅ Prefixo encontrado (início): ${val}`);
+        return val;
+    }
+
+    // Tenta capturar 2 ou 3 dígitos em qualquer posição (ex: "RAIO064")
+    match = skuAnuncio.match(/(\d{2,3})/);
+    if (match) {
+        let val = parseInt(match[1], 10);
+        console.log(`✅ Prefixo encontrado (qualquer posição): ${val}`);
+        return val;
+    }
+
+    console.warn(`❌ Nenhum dígito encontrado, usando 1`);
+    return 1;
+}
 
 // ===== UTILITÁRIOS =====
 function escapeHtml(str) {
