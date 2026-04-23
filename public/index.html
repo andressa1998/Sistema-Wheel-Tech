@@ -1252,12 +1252,12 @@ h4 {
 
 <!-- Modal do relatório por colaborador -->
 <div id="relatorioColaboradorModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 1000px; max-height: 90vh; padding: 0;">
-        <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="margin: 0;"><i class="fas fa-users"></i> Relatório por Colaborador</h3>
-            <button onclick="closeRelatorioColaborador()" style="background: none; border: none; color: white; font-size: 24px;">&times;</button>
+    <div class="modal-content" style="max-width: 1000px;">
+        <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between;">
+            <h3><i class="fas fa-users"></i> Relatório por Colaborador</h3>
+            <button onclick="closeRelatorioColaborador()">&times;</button>
         </div>
-        <div style="padding: 20px; max-height: 80vh; overflow-y: auto;">
+        <div style="padding: 20px;">
             <div class="card mb-4">
                 <div class="d-flex gap-2">
                     <input type="date" id="relColabDataInicio" class="form-control" style="width: 150px;">
@@ -1270,7 +1270,13 @@ h4 {
             <div class="table-responsive">
                 <table class="table" id="relatorioColaboradorTable">
                     <thead>
-                        <tr><th>Colaborador</th><th>Total Reclamações</th><th>Abertas</th><th>Solucionadas</th><th>Taxa Solução</th><th>Tempo Médio (dias)</th></tr>
+                        <tr>
+                            <th>Colaborador</th>
+                            <th>Total Reclamações</th>
+                            <th>Reembolsadas</th>
+                            <th>Valor Reembolsado</th>
+                            <th>Taxa Sucesso</th>
+                        </tr>
                     </thead>
                     <tbody id="relatorioColaboradorBody"></tbody>
                 </table>
@@ -1574,7 +1580,7 @@ h4 {
                 <div style="flex: 1;">
                     <div class="form-group">
                         <label for="valorReembolso"><i class="fas fa-money-bill-wave"></i> Valor *</label>
-                        <input type="number" id="valorReembolso" class="form-control" step="0.01" min="0" placeholder="0,00" required>
+                        <input type="number" id="valorReembolso" class="form-control" step="0.01" min="0" placeholder="0,00">
                     </div>
                 </div>
                 <div style="flex: 1;">
@@ -2973,6 +2979,10 @@ h4 {
                 <option value="entrada">Entrada (adicionar)</option>
                 <option value="saida">Saída (remover)</option>
             </select>
+            <div class="form-group">
+            <label>Observação (opcional)</label>
+            <input type="text" id="movObservacao" class="form-control" placeholder="Ex: Devolução de cliente">
+            </div>
         </div>
         <div class="form-group">
             <label>Quantidade</label>

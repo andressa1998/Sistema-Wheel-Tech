@@ -236,6 +236,27 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     });
 }
 
+async function registrarMovimentacao(produtoId, tipo, quantidade, observacao = '') {
+    const numero = await gerarNumeroMovimentacao();
+    const usuario = (typeof currentUser !== 'undefined' && currentUser?.name) 
+                ? currentUser.name 
+                : localStorage.getItem('userName') || 'sistema';
+    
+    const { error } = await window.supabaseClient
+        .from('estoque_movimentacoes')
+        .insert([{
+            produto_id: produtoId,
+            tipo: tipo,
+            quantidade: quantidade,
+            usuario: usuario,
+            numero_movimentacao: numero,
+            observacao: observacao
+        }]);
+    
+    if (error) console.error('Erro ao registrar movimentação:', error);
+    else console.log(`✅ Movimentação ${numero} registrada: ${tipo} de ${quantidade}`);
+}
+
 // ===== MODAL PRODUTO (COM CATEGORIA E CAMPOS DINÂMICOS) =====
 function abrirModalProdutoEstoque(produto = null) {
     const modal = document.getElementById('modalProdutoEstoque');
@@ -250,19 +271,23 @@ function abrirModalProdutoEstoque(produto = null) {
     const categoriaSelect = document.getElementById('produtoCategoria');
 
     if (produto) {
+        // MODO EDIÇÃO
         title.textContent = 'Editar Produto';
         idInput.value = produto.id;
         nomeInput.value = produto.nome;
         skuInput.value = produto.sku;
         qtdInput.value = produto.quantidade;
+        qtdInput.readOnly = true;
+        qtdInput.classList.add('bg-light');
         precoInput.value = produto.preco || 0;
         descInput.value = produto.descricao || '';
         categoriaSelect.value = produto.categoria || '';
+
         // Gera os campos dinâmicos baseados na categoria salva
         gerarCamposDinamicos(produto.categoria);
         
         const dadosExtra = produto.dados_extra || {};
-        // Primeiro preenche todos os campos (exceto modelo, se for Raios)
+        // Preenche os dados extras
         Object.keys(dadosExtra).forEach(chave => {
             const campo = document.getElementById(`campo_${chave}`);
             if (campo) {
@@ -276,13 +301,11 @@ function abrirModalProdutoEstoque(produto = null) {
             }
         });
 
-        // --- Lógica especial para Raios: após definir a marca, carregar modelos e definir o modelo salvo ---
+        // Lógica especial para Raios
         if (produto.categoria === 'Raios') {
             const marcaField = document.getElementById('campo_marca');
             if (marcaField && marcaField.value) {
-                // Força o preenchimento do select de modelo baseado na marca atual
                 atualizarModelosPorMarca(marcaField.value);
-                // Agora define o valor do modelo salvo
                 const modeloField = document.getElementById('campo_modelo');
                 if (modeloField && dadosExtra.modelo) {
                     modeloField.value = dadosExtra.modelo;
@@ -290,11 +313,14 @@ function abrirModalProdutoEstoque(produto = null) {
             }
         }
     } else {
+        // MODO CRIAÇÃO
         title.textContent = 'Novo Produto';
         idInput.value = '';
         nomeInput.value = '';
         skuInput.value = '';
         qtdInput.value = '0';
+        qtdInput.readOnly = false;
+        qtdInput.classList.remove('bg-light');
         precoInput.value = '0';
         descInput.value = '';
         categoriaSelect.value = '';
@@ -311,8 +337,6 @@ function abrirModalProdutoEstoque(produto = null) {
             }
         }
         gerarCamposDinamicos(novaCategoria);
-        // Se a nova categoria for Raios, podemos resetar o evento do select de marca (já incluso no gerarCampos)
-        // Mas não há valor de marca pré-definido ainda
     };
 
     modal.classList.remove('hidden');
@@ -500,6 +524,9 @@ async function salvarProdutoEstoque() {
                 .select();
             if (error) throw error;
             produtoSalvo = data[0];
+            if (quantidade > 0) {
+            await registrarMovimentacao(produtoSalvo.id, 'entrada', quantidade, 'Criação do produto');
+            }
             if (window.showToast) showToast('Produto atualizado!', 'success');
         } else {
             const { data, error } = await window.supabaseClient
@@ -595,6 +622,7 @@ async function confirmarMovimentacaoEstoque() {
             .eq('id', id);
         if (error) throw error;
         if (window.showToast) showToast(`Movimentação: ${tipo === 'entrada' ? '+' : '-'}${quantidade}`, 'success');
+        await registrarMovimentacao(id, tipo, quantidade, observacao || '');
         fecharModalMovimentacaoEstoque();
         await carregarProdutosEstoque();
 
@@ -967,6 +995,32 @@ function escapeHtml(str) {
         if (m === '>') return '&gt;';
         return m;
     });
+}
+
+// Gera número único para movimentação: MOV-YYYYMMDD-XXXX
+async function gerarNumeroMovimentacao() {
+    const hoje = new Date();
+    const ano = hoje.getFullYear();
+    const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+    const dia = String(hoje.getDate()).padStart(2, '0');
+    const prefixo = `${ano}${mes}${dia}`;
+    
+    // Consulta o último número do dia
+    const { data, error } = await window.supabaseClient
+        .from('estoque_movimentacoes')
+        .select('numero_movimentacao')
+        .ilike('numero_movimentacao', `MOV-${prefixo}-%`)
+        .order('numero_movimentacao', { ascending: false })
+        .limit(1);
+    
+    let sequencial = 1;
+    if (data && data.length > 0) {
+        const ultimo = data[0].numero_movimentacao;
+        const match = ultimo.match(/\d{4}$/);
+        if (match) sequencial = parseInt(match[0]) + 1;
+    }
+    
+    return `MOV-${prefixo}-${String(sequencial).padStart(4, '0')}`;
 }
 
 // ===== INICIALIZAÇÃO (verifica tabela) =====
