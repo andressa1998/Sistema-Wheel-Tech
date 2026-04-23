@@ -168,6 +168,13 @@ function atualizarCalendario() {
     calendario.addEventSource(eventos);
 }
 
+// Formata string YYYY-MM-DD para DD/MM/YYYY sem fuso horário
+function formatarDataLocal(dataStr) {
+    if (!dataStr) return '-';
+    const [ano, mes, dia] = dataStr.split('-');
+    return `${dia}/${mes}/${ano}`;
+}
+
 // Carregar solicitações pendentes (admin)
 async function carregarSolicitacoesPendentes() {
     try {
@@ -192,7 +199,7 @@ async function carregarSolicitacoesPendentes() {
         
         let html = '';
         data.forEach(sol => {
-            const dataFormatada = new Date(sol.data_inicio).toLocaleDateString('pt-BR');
+            const dataFormatada = formatarDataLocal(sol.data_inicio);
             const solicitadoEm = new Date(sol.created_at).toLocaleString('pt-BR');
             const tipoDisplay = sol.tipo === 'dia_inteiro' ? 'Dia inteiro' : (sol.tipo === 'manha' ? 'Manhã' : 'Tarde');
             html += `
@@ -293,7 +300,7 @@ window.abrirModalAprovacao = function(id) {
     const tipoDisplay = sol.tipo === 'dia_inteiro' ? 'Dia inteiro' : (sol.tipo === 'manha' ? 'Manhã' : 'Tarde');
     detalhes.innerHTML = `
         <p><strong>Usuário:</strong> ${sol.user_name}</p>
-        <p><strong>Data:</strong> ${new Date(sol.data_inicio).toLocaleDateString('pt-BR')}</p>
+        <p><strong>Data:</strong> ${formatarDataLocal(sol.data_inicio)}</p>
         <p><strong>Tipo:</strong> ${tipoDisplay}</p>
         <p><strong>Motivo:</strong> ${sol.motivo || '-'}</p>
     `;
