@@ -125,6 +125,15 @@ window.abrirGestaoEstoque = function() {
     if (userRoleEl) userRoleEl.textContent = currentUser.role;
 
     carregarProdutosEstoque();
+
+    // Dentro de abrirGestaoEstoque, após carregarProdutosEstoque():
+    const buscaInput = document.getElementById('buscaEstoqueInput');
+    if (buscaInput) {
+    // Remove evento anterior para evitar duplicidade
+    buscaInput.removeEventListener('input', filtrarProdutosEstoque);
+    buscaInput.addEventListener('input', filtrarProdutosEstoque);
+}
+
 };
 
 // ===== CARREGAR PRODUTOS DO SUPABASE =====
@@ -146,6 +155,34 @@ async function carregarProdutosEstoque() {
     }
 }
 
+// Filtra produtos com base no termo digitado (nome, SKU, MLB)
+function filtrarProdutosEstoque() {
+    const termo = document.getElementById('buscaEstoqueInput').value.toLowerCase().trim();
+    if (!termo) {
+        // Se campo vazio, mostra todos
+        renderizarTabelaProdutos(produtosEstoque);
+        return;
+    }
+    
+    const produtosFiltrados = produtosEstoque.filter(prod => {
+        // Busca por nome
+        if (prod.nome && prod.nome.toLowerCase().includes(termo)) return true;
+        // Busca por SKU
+        if (prod.sku && prod.sku.toLowerCase().includes(termo)) return true;
+        // Busca por MLB codes (dentro de dados_extra)
+        if (prod.dados_extra && prod.dados_extra.mlb_codes) {
+            let mlbArray = prod.dados_extra.mlb_codes;
+            if (typeof mlbArray === 'string') mlbArray = mlbArray.split(',').map(s => s.trim());
+            if (Array.isArray(mlbArray)) {
+                return mlbArray.some(code => code.toLowerCase().includes(termo));
+            }
+        }
+        return false;
+    });
+    
+    renderizarTabelaProdutos(produtosFiltrados);
+}
+
 function obterRegraRaios(marca, modelo) {
     const chaveExata = `${marca}|${modelo}`;
     if (regrasRaiosPorMarca[chaveExata]) return regrasRaiosPorMarca[chaveExata];
@@ -156,15 +193,20 @@ function obterRegraRaios(marca, modelo) {
 }
 
 // ===== RENDERIZAR TABELA =====
-function renderizarTabelaProdutos() {
+// Renderiza a tabela com produtos (opcionalmente filtrados)
+function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     const tbody = document.getElementById('produtosEstoqueBody');
     if (!tbody) return;
-    if (produtosEstoque.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto cadastrado.穷</td></tr>';
+    
+    // Se recebeu uma lista filtrada, usa ela; senão usa a lista global já ordenada
+    const produtos = produtosParaRenderizar || produtosEstoque;
+    
+    if (produtos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto encontrado.穷</td></tr>';
         return;
     }
     tbody.innerHTML = '';
-    produtosEstoque.forEach(prod => {
+    produtos.forEach(prod => {
         const row = document.createElement('tr');
         let atributosResumo = '';
         if (prod.dados_extra) {
@@ -178,7 +220,6 @@ function renderizarTabelaProdutos() {
             <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
             <button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})" title="Excluir"><i class="fas fa-trash"></i></button>
         `;
-        // Botão sincronizar ML se houver MLB cadastrado
         const mlbCodes = prod.dados_extra?.mlb_codes;
         if (mlbCodes && ((Array.isArray(mlbCodes) && mlbCodes.length > 0) || (typeof mlbCodes === 'string' && mlbCodes.trim() !== ''))) {
             botoes += `<button class="btn btn-sm btn-primary" onclick="sincronizarProdutoML(${prod.id})" title="Sincronizar estoque com ML"><i class="fab fa-mercadolibre"></i></button>`;
@@ -930,6 +971,10 @@ function escapeHtml(str) {
 
 // ===== INICIALIZAÇÃO (verifica tabela) =====
 document.addEventListener('DOMContentLoaded', () => {
+    const buscaInput = document.getElementById('buscaEstoqueInput');
+    if (buscaInput) {
+        buscaInput.addEventListener('input', filtrarProdutosEstoque);
+    }
     setTimeout(async () => {
         if (!window.supabaseClient) return;
         try {

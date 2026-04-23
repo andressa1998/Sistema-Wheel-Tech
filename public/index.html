@@ -2877,9 +2877,12 @@ h4 {
         <div class="card mb-4">
             <div class="card-header">
                 <h2 class="card-title"><i class="fas fa-boxes"></i> Produtos em Estoque</h2>
+                <div class="d-flex gap-2">
+                <input type="text" id="buscaEstoqueInput" class="form-control" placeholder="🔍 Buscar por nome, SKU ou MLB..." style="width: 250px;">
                 <button class="btn btn-success" onclick="abrirModalProdutoEstoque()">
                     <i class="fas fa-plus"></i> Novo Produto
                 </button>
+                </div>
             </div>
             <div class="table-responsive">
                 <table class="table" id="produtosEstoqueTable">
