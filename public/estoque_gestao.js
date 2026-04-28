@@ -414,6 +414,59 @@ function fecharModalProdutoEstoque() {
     if (modal) modal.classList.add('hidden');
 }
 
+function configurarBulkModeEvents() {
+    const toggleBtn = document.getElementById('toggleBulkModeBtn');
+    const panel = document.getElementById('bulkModePanel');
+    const addRowBtn = document.getElementById('addBulkRowBtn');
+    const tbody = document.getElementById('bulkTamanhosBody');
+
+    if (!toggleBtn || !panel) return;
+
+    // Alternar exibição do painel
+    toggleBtn.onclick = () => {
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            toggleBtn.innerHTML = '<i class="fas fa-times-circle"></i> Desativar modo múltiplo';
+            // Oculta o campo de tamanho simples e o campo de quantidade (original)
+            const simpleTamanho = document.getElementById('campo_tamanhoraio');
+            const simpleQuantidade = document.getElementById('produtoQuantidade');
+            if (simpleTamanho) simpleTamanho.closest('.campo-dinamico').style.display = 'none';
+            if (simpleQuantidade) simpleQuantidade.closest('.form-group').style.display = 'none';
+        } else {
+            panel.style.display = 'none';
+            toggleBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Ativar modo múltiplo';
+            if (simpleTamanho) simpleTamanho.closest('.campo-dinamico').style.display = '';
+            if (simpleQuantidade) simpleQuantidade.closest('.form-group').style.display = '';
+        }
+    };
+
+    // Adicionar nova linha
+    if (addRowBtn) {
+        addRowBtn.onclick = () => {
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td><input type="number" class="form-control form-control-sm bulk-tamanho" placeholder="ex: 284"></td>
+                <td><input type="number" class="form-control form-control-sm bulk-quantidade" value="0" min="0"></td>
+                <td><button type="button" class="btn btn-sm btn-danger remove-bulk-row"><i class="fas fa-trash"></i></button></td>
+            `;
+            tbody.appendChild(newRow);
+            attachRemoveEvent(newRow);
+        };
+    }
+
+    // Remover linha (event delegation)
+    function attachRemoveEvent(row) {
+        const removeBtn = row.querySelector('.remove-bulk-row');
+        if (removeBtn) {
+            removeBtn.onclick = () => {
+                if (tbody.children.length > 1) row.remove();
+                else showToast('Mantenha pelo menos uma linha', 'warning');
+            };
+        }
+    }
+    document.querySelectorAll('#bulkTamanhosBody tr').forEach(row => attachRemoveEvent(row));
+}
+
 function gerarCamposDinamicos(categoria) {
     const container = document.getElementById('camposDinamicos');
     if (!container) return;
@@ -422,6 +475,9 @@ function gerarCamposDinamicos(categoria) {
     const campos = camposPorCategoria[categoria];
     if (!campos || campos.length === 0) {
         container.innerHTML = '<div class="alert alert-info">Nenhum campo específico para esta categoria.</div>';
+        // Oculta a seção bulk quando não há campos ou categoria diferente de Raios
+        const bulkSection = document.getElementById('bulkAddSection');
+        if (bulkSection) bulkSection.style.display = 'none';
         return;
     }
 
@@ -448,13 +504,11 @@ function gerarCamposDinamicos(categoria) {
             select.className = 'form-control';
             if (campo.obrigatorio) select.required = true;
 
-            // Opção padrão vazia
             const defaultOption = document.createElement('option');
             defaultOption.value = '';
             defaultOption.textContent = 'Selecione...';
             select.appendChild(defaultOption);
 
-            // Adiciona opções fixas (se houver)
             if (campo.opcoes && campo.opcoes.length > 0) {
                 campo.opcoes.forEach(op => {
                     const option = document.createElement('option');
@@ -464,7 +518,6 @@ function gerarCamposDinamicos(categoria) {
                 });
             }
 
-            // --- Lógica especial para campo "marca" na categoria "Raios" ---
             if (categoria === 'Raios' && campo.nome === 'marca') {
                 select.addEventListener('change', (e) => {
                     atualizarModelosPorMarca(e.target.value);
@@ -512,6 +565,16 @@ function gerarCamposDinamicos(categoria) {
     });
 
     container.appendChild(grid);
+
+    // --- BULK MODE para categoria Raios e apenas em modo criação (sem id) ---
+    const bulkSection = document.getElementById('bulkAddSection');
+    const isEditing = document.getElementById('produtoId').value !== '';
+    if (categoria === 'Raios' && !isEditing) {
+        if (bulkSection) bulkSection.style.display = 'block';
+        configurarBulkModeEvents();   // Configura os eventos do modo bulk
+    } else {
+        if (bulkSection) bulkSection.style.display = 'none';
+    }
 }
 
 function atualizarModelosPorMarca(marcaSelecionada) {
@@ -541,18 +604,17 @@ function atualizarModelosPorMarca(marcaSelecionada) {
 async function salvarProdutoEstoque() {
     const id = document.getElementById('produtoId').value;
     const nome = document.getElementById('produtoNome').value.trim();
-    const sku = document.getElementById('produtoSKU').value.trim();
-    const quantidade = parseInt(document.getElementById('produtoQuantidade').value) || 0;
+    const skuSimples = document.getElementById('produtoSKU').value.trim();
     const preco = parseFloat(document.getElementById('produtoPreco').value) || 0;
     const descricao = document.getElementById('produtoDescricao').value.trim();
     const categoria = document.getElementById('produtoCategoria').value;
 
-    if (!nome || !sku || !categoria) {
-        if (window.showToast) showToast('Nome, SKU e Categoria são obrigatórios', 'warning');
+    if (!nome || !categoria) {
+        if (window.showToast) showToast('Nome e Categoria são obrigatórios', 'warning');
         return;
     }
 
-    // Coletar dados específicos da categoria
+    // Coletar dados extras da categoria (comuns para todos os produtos em bulk)
     const dadosExtra = {};
     const campos = camposPorCategoria[categoria] || [];
     for (const campo of campos) {
@@ -570,6 +632,81 @@ async function salvarProdutoEstoque() {
             }
         }
     }
+
+    // --- MODO BULK (apenas para Raios, novo produto, e painel ativo) ---
+    const bulkPanel = document.getElementById('bulkModePanel');
+    const isBulkMode = (categoria === 'Raios' && !id && bulkPanel && bulkPanel.style.display === 'block');
+
+    if (isBulkMode) {
+        const rows = document.querySelectorAll('#bulkTamanhosBody tr');
+        const bulkItems = [];
+        for (let row of rows) {
+            const tamanho = row.querySelector('.bulk-tamanho')?.value;
+            const quantidade = parseInt(row.querySelector('.bulk-quantidade')?.value) || 0;
+            if (!tamanho || tamanho === '') {
+                showToast('Todos os tamanhos devem ser preenchidos', 'warning');
+                return;
+            }
+            bulkItems.push({ tamanho: String(tamanho), quantidade });
+        }
+
+        const skuBase = document.getElementById('bulkSkuBase')?.value.trim();
+        if (!skuBase) {
+            showToast('SKU base é obrigatório no modo múltiplo', 'warning');
+            return;
+        }
+
+        if (!confirm(`Deseja criar ${bulkItems.length} produtos com os atributos comuns?`)) return;
+
+        let created = 0;
+        let errors = [];
+        for (let item of bulkItems) {
+            // Copia os dados extras e força o campo "tamanhoraio"
+            const produtoDadosExtra = { ...dadosExtra };
+            produtoDadosExtra.tamanhoraio = item.tamanho;
+            const novoSKU = `${skuBase}-${item.tamanho}`;
+
+            const produtoData = {
+                nome: nome,
+                sku: novoSKU,
+                quantidade: item.quantidade,
+                preco: preco,
+                descricao: descricao,
+                categoria: categoria,
+                dados_extra: produtoDadosExtra
+            };
+
+            try {
+                const { data, error } = await window.supabaseClient
+                    .from('produtos_estoque')
+                    .insert([produtoData])
+                    .select();
+                if (error) throw error;
+                created++;
+                if (item.quantidade > 0) {
+                    await registrarMovimentacao(data[0].id, 'entrada', item.quantidade, 'Criação em massa', 'nova');
+                }
+            } catch (err) {
+                errors.push(`${novoSKU}: ${err.message}`);
+                console.error(err);
+            }
+        }
+
+        if (created > 0) showToast(`✅ ${created} produto(s) criado(s) em massa!`, 'success');
+        if (errors.length) showToast(`⚠️ Erros: ${errors.join(', ')}`, 'error');
+
+        fecharModalProdutoEstoque();
+        await carregarProdutosEstoque();
+        return;
+    }
+
+    // --- MODO NORMAL (um produto só, com SKU e quantidade comuns) ---
+    const sku = document.getElementById('produtoSKU').value.trim();
+    if (!sku) {
+        showToast('SKU é obrigatório', 'warning');
+        return;
+    }
+    const quantidade = parseInt(document.getElementById('produtoQuantidade').value) || 0;
 
     const produtoData = {
         nome,
@@ -591,10 +728,8 @@ async function salvarProdutoEstoque() {
                 .select();
             if (error) throw error;
             produtoSalvo = data[0];
-            if (quantidade > 0) {
-            await registrarMovimentacao(produtoSalvo.id, 'entrada', quantidade, 'Criação do produto', 'nova');
-            }
-            if (window.showToast) showToast('Produto atualizado!', 'success');
+            // Não registrar movimentação por edição (já existente)
+            showToast('Produto atualizado!', 'success');
         } else {
             const { data, error } = await window.supabaseClient
                 .from('produtos_estoque')
@@ -602,21 +737,21 @@ async function salvarProdutoEstoque() {
                 .select();
             if (error) throw error;
             produtoSalvo = data[0];
-            if (window.showToast) showToast('Produto adicionado!', 'success');
+            if (quantidade > 0) {
+                await registrarMovimentacao(produtoSalvo.id, 'entrada', quantidade, 'Criação do produto', 'nova');
+            }
+            showToast('Produto adicionado!', 'success');
         }
 
         fecharModalProdutoEstoque();
         await carregarProdutosEstoque();
 
-        // Sincronizar com ML se houver MLB cadastrado
-        if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes && produtoSalvo.dados_extra.mlb_codes.length > 0) {
-            setTimeout(() => {
-                sincronizarEstoqueML(produtoSalvo);
-            }, 500);
+        if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length) {
+            setTimeout(() => sincronizarEstoqueML(produtoSalvo), 500);
         }
     } catch (error) {
         console.error('Erro ao salvar produto:', error);
-        if (window.showToast) showToast('Erro: ' + error.message, 'error');
+        showToast('Erro: ' + error.message, 'error');
     }
 }
 
