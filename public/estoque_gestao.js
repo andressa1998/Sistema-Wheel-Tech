@@ -58,9 +58,6 @@ const modelosPorMarca = {
 
 // Regras de limite de KITS por marca (categoria Raios)
 const regrasRaiosPorMarca = {
-
-    // Formato "marca|modelo"
-
     "Sapim|Laser": { max_kits: 2 },
     "Sapim|Leader": { max_kits: 2 },
     "Sapim|Cx-Ray": {max_kits: 10},
@@ -79,9 +76,6 @@ const regrasRaiosPorMarca = {
     "Dt Swiss|Revolution": { max_kits: 10 },
     "Dt Swiss|Competition Especial": { max_kits: 2 },
     "Dt Swiss|Aero Comp": { max_kits: 2 },
-
-    // Formato apenas marca (vale para todos os modelos daquela marca)
-
     "Mavic": { max_kits: 10 },
     "Richman": { max_kits: 2 },
     "Green": { max_kits: 2 },
@@ -100,7 +94,6 @@ window.abrirGestaoEstoque = function() {
         return;
     }
 
-    // Esconder outros sistemas
     const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 
                       'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'menuSystem', 'perguntasSystem'];
     sistemas.forEach(id => {
@@ -116,7 +109,6 @@ window.abrirGestaoEstoque = function() {
     }
     gestaoSystem.classList.remove('hidden');
 
-    // Atualizar cabeçalho
     const userNameEl = document.getElementById('estoqueGestaoUserName');
     if (userNameEl) userNameEl.textContent = currentUser.name;
     const userAvatarEl = document.getElementById('estoqueGestaoUserAvatar');
@@ -126,14 +118,11 @@ window.abrirGestaoEstoque = function() {
 
     carregarProdutosEstoque();
 
-    // Dentro de abrirGestaoEstoque, após carregarProdutosEstoque():
     const buscaInput = document.getElementById('buscaEstoqueInput');
     if (buscaInput) {
-    // Remove evento anterior para evitar duplicidade
-    buscaInput.removeEventListener('input', filtrarProdutosEstoque);
-    buscaInput.addEventListener('input', filtrarProdutosEstoque);
-}
-
+        buscaInput.removeEventListener('input', filtrarProdutosEstoque);
+        buscaInput.addEventListener('input', filtrarProdutosEstoque);
+    }
 };
 
 // ===== CARREGAR PRODUTOS DO SUPABASE =====
@@ -155,21 +144,15 @@ async function carregarProdutosEstoque() {
     }
 }
 
-// Filtra produtos com base no termo digitado (nome, SKU, MLB)
 function filtrarProdutosEstoque() {
     const termo = document.getElementById('buscaEstoqueInput').value.toLowerCase().trim();
     if (!termo) {
-        // Se campo vazio, mostra todos
         renderizarTabelaProdutos(produtosEstoque);
         return;
     }
-    
     const produtosFiltrados = produtosEstoque.filter(prod => {
-        // Busca por nome
         if (prod.nome && prod.nome.toLowerCase().includes(termo)) return true;
-        // Busca por SKU
         if (prod.sku && prod.sku.toLowerCase().includes(termo)) return true;
-        // Busca por MLB codes (dentro de dados_extra)
         if (prod.dados_extra && prod.dados_extra.mlb_codes) {
             let mlbArray = prod.dados_extra.mlb_codes;
             if (typeof mlbArray === 'string') mlbArray = mlbArray.split(',').map(s => s.trim());
@@ -179,7 +162,6 @@ function filtrarProdutosEstoque() {
         }
         return false;
     });
-    
     renderizarTabelaProdutos(produtosFiltrados);
 }
 
@@ -195,24 +177,20 @@ function obterRegraRaios(marca, modelo) {
 async function verHistoricoMovimentacoes(produtoId) {
     const produto = produtosEstoque.find(p => p.id == produtoId);
     if (!produto) return;
-    
     const { data, error } = await window.supabaseClient
         .from('estoque_movimentacoes')
         .select('*')
         .eq('produto_id', produtoId)
         .order('data_hora', { ascending: false });
-    
     if (error) {
         console.error(error);
         showToast('Erro ao carregar histórico', 'error');
         return;
     }
-    
     if (!data || data.length === 0) {
         showToast(`Nenhuma movimentação registrada para ${produto.nome}`, 'warning');
         return;
     }
-    
     let html = `
         <div style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
             <h4>Histórico de movimentações - ${escapeHtml(produto.nome)}</h4>
@@ -236,7 +214,6 @@ async function verHistoricoMovimentacoes(produtoId) {
         </tr>`;
     });
     html += `</tbody></table></div>`;
-    
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.style.cssText = 'display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); z-index: 2000;';
@@ -252,15 +229,10 @@ async function verHistoricoMovimentacoes(produtoId) {
     document.body.appendChild(modal);
 }
 
-// ===== RENDERIZAR TABELA =====
-// Renderiza a tabela com produtos (opcionalmente filtrados)
 function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     const tbody = document.getElementById('produtosEstoqueBody');
     if (!tbody) return;
-    
-    // Se recebeu uma lista filtrada, usa ela; senão usa a lista global já ordenada
     const produtos = produtosParaRenderizar || produtosEstoque;
-    
     if (produtos.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto encontrado.穷</td></tr>';
         return;
@@ -274,7 +246,6 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             atributosResumo = keys.map(k => `${k}: ${prod.dados_extra[k]}`).join(', ');
             if (Object.keys(prod.dados_extra).length > 2) atributosResumo += '...';
         }
-        // Botões de ação
         let botoes = `
     <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})"><i class="fas fa-edit"></i></button>
     <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')"><i class="fas fa-exchange-alt"></i></button>
@@ -302,7 +273,6 @@ async function registrarMovimentacao(produtoId, tipo, quantidade, numeroDocument
     const usuario = (typeof currentUser !== 'undefined' && currentUser?.name) 
                 ? currentUser.name 
                 : localStorage.getItem('userName') || 'sistema';
-    
     const { error } = await window.supabaseClient
         .from('estoque_movimentacoes')
         .insert([{
@@ -315,7 +285,6 @@ async function registrarMovimentacao(produtoId, tipo, quantidade, numeroDocument
             tipo_entrada: tipoEntrada,
             data_hora: new Date().toISOString()
         }]);
-    
     if (error) {
         console.error('❌ Erro ao registrar movimentação:', error);
         if (window.showToast) showToast('Erro ao registrar movimentação', 'error');
@@ -338,7 +307,6 @@ function abrirModalProdutoEstoque(produto = null) {
     const categoriaSelect = document.getElementById('produtoCategoria');
 
     if (produto) {
-        // MODO EDIÇÃO
         title.textContent = 'Editar Produto';
         idInput.value = produto.id;
         nomeInput.value = produto.nome;
@@ -349,12 +317,8 @@ function abrirModalProdutoEstoque(produto = null) {
         precoInput.value = produto.preco || 0;
         descInput.value = produto.descricao || '';
         categoriaSelect.value = produto.categoria || '';
-
-        // Gera os campos dinâmicos baseados na categoria salva
         gerarCamposDinamicos(produto.categoria);
-        
         const dadosExtra = produto.dados_extra || {};
-        // Preenche os dados extras
         Object.keys(dadosExtra).forEach(chave => {
             const campo = document.getElementById(`campo_${chave}`);
             if (campo) {
@@ -367,8 +331,6 @@ function abrirModalProdutoEstoque(produto = null) {
                 }
             }
         });
-
-        // Lógica especial para Raios
         if (produto.categoria === 'Raios') {
             const marcaField = document.getElementById('campo_marca');
             if (marcaField && marcaField.value) {
@@ -380,7 +342,6 @@ function abrirModalProdutoEstoque(produto = null) {
             }
         }
     } else {
-        // MODO CRIAÇÃO
         title.textContent = 'Novo Produto';
         idInput.value = '';
         nomeInput.value = '';
@@ -394,7 +355,6 @@ function abrirModalProdutoEstoque(produto = null) {
         gerarCamposDinamicos('');
     }
 
-    // Evento de mudança de categoria (com confirmação)
     categoriaSelect.onchange = function() {
         const novaCategoria = categoriaSelect.value;
         if (produto && produto.categoria && novaCategoria !== produto.categoria) {
@@ -414,6 +374,7 @@ function fecharModalProdutoEstoque() {
     if (modal) modal.classList.add('hidden');
 }
 
+// ===== FUNÇÃO CORRIGIDA PARA CONFIGURAR EVENTOS DO MODO BULK =====
 function configurarBulkModeEvents() {
     const toggleBtn = document.getElementById('toggleBulkModeBtn');
     const panel = document.getElementById('bulkModePanel');
@@ -421,40 +382,58 @@ function configurarBulkModeEvents() {
     const tbody = document.getElementById('bulkTamanhosBody');
     const simpleTamanho = document.getElementById('campo_tamanhoraio');
     const simpleQuantidade = document.getElementById('produtoQuantidade');
+    const mainSkuField = document.getElementById('produtoSKU');
+    const mainSkuContainer = mainSkuField?.closest('.form-group');
 
     if (!toggleBtn || !panel) return;
 
-    // Remove listeners antigos
+    // Remove eventos antigos para evitar duplicidade
     const newToggle = toggleBtn.cloneNode(true);
     toggleBtn.parentNode.replaceChild(newToggle, toggleBtn);
-    
+
+    // Função que cria uma nova linha completa (com SKU)
+    function adicionarNovaLinha() {
+        const novaLinha = document.createElement('tr');
+        novaLinha.innerHTML = `
+            <td><input type="number" class="form-control form-control-sm bulk-tamanho" placeholder="ex: 284" step="1" min="1"></td>
+            <td><input type="text" class="form-control form-control-sm bulk-sku" placeholder="SKU"></td>
+            <td><input type="number" class="form-control form-control-sm bulk-quantidade" value="0" min="0" step="1"></td>
+            <td><button type="button" class="btn btn-sm btn-danger remove-bulk-row"><i class="fas fa-trash"></i></button></td>
+        `;
+        tbody.appendChild(novaLinha);
+        attachRemoveEvent(novaLinha);
+    }
+
+    // Configurar botão "Adicionar outra linha"
     if (addRowBtn) {
         const newAddRow = addRowBtn.cloneNode(true);
         addRowBtn.parentNode.replaceChild(newAddRow, addRowBtn);
-        newAddRow.onclick = () => {
-            const newRow = document.createElement('tr');
-            newRow.innerHTML = `
-                <td><input type="number" class="form-control form-control-sm bulk-tamanho" placeholder="ex: 284" step="1" min="1"></td>
-                <td><input type="text" class="form-control form-control-sm bulk-sku" placeholder="SKU do tamanho"></td>
-                <td><input type="number" class="form-control form-control-sm bulk-quantidade" value="0" min="0" step="1"></td>
-                <td><button type="button" class="btn btn-sm btn-danger remove-bulk-row"><i class="fas fa-trash"></i></button></td>
-            `;
-            tbody.appendChild(newRow);
-            attachRemoveEvent(newRow);
-        };
+        newAddRow.onclick = adicionarNovaLinha;
     }
 
+    // Botão toggle do modo múltiplo
     newToggle.onclick = () => {
-        if (panel.style.display === 'none') {
+        const isActive = panel.style.display !== 'none';
+        if (!isActive) {
             panel.style.display = 'block';
             newToggle.innerHTML = '<i class="fas fa-times-circle"></i> Desativar modo múltiplo';
             if (simpleTamanho) simpleTamanho.closest('.campo-dinamico').style.display = 'none';
             if (simpleQuantidade) simpleQuantidade.closest('.form-group').style.display = 'none';
+            if (mainSkuContainer) {
+                mainSkuContainer.style.display = 'none';
+                mainSkuField.required = false;
+            }
+            if (tbody.children.length === 0) adicionarNovaLinha();
         } else {
             panel.style.display = 'none';
             newToggle.innerHTML = '<i class="fas fa-plus-circle"></i> Ativar modo múltiplo';
             if (simpleTamanho) simpleTamanho.closest('.campo-dinamico').style.display = '';
             if (simpleQuantidade) simpleQuantidade.closest('.form-group').style.display = '';
+            if (mainSkuContainer) {
+                mainSkuContainer.style.display = '';
+                const isEditing = document.getElementById('produtoId').value !== '';
+                if (!isEditing) mainSkuField.required = true;
+            }
         }
     };
 
@@ -470,6 +449,7 @@ function configurarBulkModeEvents() {
     document.querySelectorAll('#bulkTamanhosBody tr').forEach(row => attachRemoveEvent(row));
 }
 
+// ===== GERAR CAMPOS DINÂMICOS (COM INTEGRAÇÃO DO MODO BULK) =====
 function gerarCamposDinamicos(categoria) {
     const container = document.getElementById('camposDinamicos');
     if (!container) return;
@@ -505,12 +485,10 @@ function gerarCamposDinamicos(categoria) {
             select.id = `campo_${campo.nome}`;
             select.className = 'form-control';
             if (campo.obrigatorio) select.required = true;
-
             const defaultOption = document.createElement('option');
             defaultOption.value = '';
             defaultOption.textContent = 'Selecione...';
             select.appendChild(defaultOption);
-
             if (campo.opcoes && campo.opcoes.length > 0) {
                 campo.opcoes.forEach(op => {
                     const option = document.createElement('option');
@@ -519,14 +497,11 @@ function gerarCamposDinamicos(categoria) {
                     select.appendChild(option);
                 });
             }
-
-            // Para a categoria Raios: atualiza modelos quando a marca mudar
             if (categoria === 'Raios' && campo.nome === 'marca') {
                 select.addEventListener('change', (e) => {
                     atualizarModelosPorMarca(e.target.value);
                 });
             }
-
             div.appendChild(select);
         } 
         else if (campo.tipo === 'checkbox') {
@@ -563,102 +538,30 @@ function gerarCamposDinamicos(categoria) {
             if (campo.obrigatorio) input.required = true;
             div.appendChild(input);
         }
-
         grid.appendChild(div);
     });
 
     container.appendChild(grid);
 
-    // --- Controle da seção de adição em massa (apenas Raios e modo criação) ---
+    // Controle da seção de adição em massa (apenas Raios e modo criação)
     const bulkSection = document.getElementById('bulkAddSection');
     const isEditing = document.getElementById('produtoId').value !== '';
     if (categoria === 'Raios' && !isEditing) {
         if (bulkSection) bulkSection.style.display = 'block';
-        configurarBulkModeEvents();   // Inicializa os eventos do modo bulk
+        configurarBulkModeEvents();
     } else {
         if (bulkSection) bulkSection.style.display = 'none';
     }
 }
 
-function configurarBulkModeEvents() {
-    const toggleBtn = document.getElementById('toggleBulkModeBtn');
-    const panel = document.getElementById('bulkModePanel');
-    const addRowBtn = document.getElementById('addBulkRowBtn');
-    const tbody = document.getElementById('bulkTamanhosBody');
-    const simpleTamanho = document.getElementById('campo_tamanhoraio');
-    const simpleQuantidade = document.getElementById('produtoQuantidade');
-
-    if (!toggleBtn || !panel) return;
-
-    // Remove eventos antigos (evita duplicidade)
-    const newToggle = toggleBtn.cloneNode(true);
-    toggleBtn.parentNode.replaceChild(newToggle, toggleBtn);
-    
-    if (addRowBtn) {
-        const newAddRow = addRowBtn.cloneNode(true);
-        addRowBtn.parentNode.replaceChild(newAddRow, addRowBtn);
-        newAddRow.onclick = () => {
-            const newRow = document.createElement('tr');
-            newRow.innerHTML = `
-                <td><input type="number" class="form-control form-control-sm bulk-tamanho" placeholder="ex: 284" step="1" min="1"></td>
-                <td><input type="number" class="form-control form-control-sm bulk-quantidade" value="0" min="0" step="1"></td>
-                <td><button type="button" class="btn btn-sm btn-danger remove-bulk-row"><i class="fas fa-trash"></i></button></td>
-            `;
-            tbody.appendChild(newRow);
-            attachRemoveEvent(newRow);
-        };
-    }
-
-    newToggle.onclick = () => {
-        if (panel.style.display === 'none') {
-            panel.style.display = 'block';
-            newToggle.innerHTML = '<i class="fas fa-times-circle"></i> Desativar modo múltiplo';
-            if (simpleTamanho) simpleTamanho.closest('.campo-dinamico').style.display = 'none';
-            if (simpleQuantidade) simpleQuantidade.closest('.form-group').style.display = 'none';
-        } else {
-            panel.style.display = 'none';
-            newToggle.innerHTML = '<i class="fas fa-plus-circle"></i> Ativar modo múltiplo';
-            if (simpleTamanho) simpleTamanho.closest('.campo-dinamico').style.display = '';
-            if (simpleQuantidade) simpleQuantidade.closest('.form-group').style.display = '';
-        }
-    };
-
-    function attachRemoveEvent(row) {
-        const removeBtn = row.querySelector('.remove-bulk-row');
-        if (removeBtn) {
-            removeBtn.onclick = () => {
-                if (tbody.children.length > 1) row.remove();
-                else showToast('Mantenha pelo menos uma linha', 'warning');
-            };
-        }
-    }
-    document.querySelectorAll('#bulkTamanhosBody tr').forEach(row => attachRemoveEvent(row));
-}
-
-// Opcional: gerar SKU automático a partir de marca/modelo
-function gerarSkuAutoRaio(marca, modelo, tamanho) {
-    const normalize = (str) => (str || '')
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase().replace(/\s+/g, '_');
-    const marcaNorm = normalize(marca) || 'SEM_MARCA';
-    const modeloNorm = normalize(modelo) || 'SEM_MODELO';
-    return `${marcaNorm}-${modeloNorm}-${tamanho}`;
-}
-
 function atualizarModelosPorMarca(marcaSelecionada) {
     const selectModelo = document.getElementById('campo_modelo');
     if (!selectModelo) return;
-
-    // Limpa as opções atuais
     selectModelo.innerHTML = '';
-
-    // Opção padrão vazia
     const optionPadrao = document.createElement('option');
     optionPadrao.value = '';
     optionPadrao.textContent = '-- Selecione um modelo --';
     selectModelo.appendChild(optionPadrao);
-
-    // Obtém modelos da marca (se não existir, array vazio)
     const modelos = modelosPorMarca[marcaSelecionada] || [];
     modelos.forEach(modelo => {
         const option = document.createElement('option');
@@ -668,21 +571,27 @@ function atualizarModelosPorMarca(marcaSelecionada) {
     });
 }
 
-document.getElementById('autoFillSkusBtn')?.addEventListener('click', function() {
-    const skuBase = prompt("Digite o SKU base (ex: RAIOSAPIMLASER):");
-    if (!skuBase) return;
-    const rows = document.querySelectorAll('#bulkTamanhosBody tr');
-    rows.forEach(row => {
-        const tamanho = row.querySelector('.bulk-tamanho')?.value;
-        const skuInput = row.querySelector('.bulk-sku');
-        if (tamanho && skuInput) {
-            skuInput.value = `${skuBase}-${tamanho}`;
-        }
-    });
-    showToast('SKUs gerados automaticamente!', 'success');
+// Evento para preenchimento automático de SKUs (opcional)
+document.addEventListener('DOMContentLoaded', () => {
+    const autoFillBtn = document.getElementById('autoFillSkusBtn');
+    if (autoFillBtn) {
+        autoFillBtn.addEventListener('click', function() {
+            const skuBase = prompt("Digite o SKU base (ex: RAIOSAPIMLASER):");
+            if (!skuBase) return;
+            const rows = document.querySelectorAll('#bulkTamanhosBody tr');
+            rows.forEach(row => {
+                const tamanho = row.querySelector('.bulk-tamanho')?.value;
+                const skuInput = row.querySelector('.bulk-sku');
+                if (tamanho && skuInput) {
+                    skuInput.value = `${skuBase}-${tamanho}`;
+                }
+            });
+            showToast('SKUs gerados automaticamente!', 'success');
+        });
+    }
 });
 
-// ===== SALVAR PRODUTO (COM DADOS EXTRAS E SINCRONIZAÇÃO ML) =====
+// ===== SALVAR PRODUTO (COM SUPORTE A MODO BULK) =====
 async function salvarProdutoEstoque() {
     const id = document.getElementById('produtoId').value;
     const nome = document.getElementById('produtoNome').value.trim();
@@ -726,8 +635,8 @@ async function salvarProdutoEstoque() {
 
         for (let row of rows) {
             const tamanho = row.querySelector('.bulk-tamanho')?.value?.trim();
-            const quantidade = parseInt(row.querySelector('.bulk-quantidade')?.value) || 0;
             const sku = row.querySelector('.bulk-sku')?.value?.trim();
+            const quantidade = parseInt(row.querySelector('.bulk-quantidade')?.value) || 0;
 
             if (!tamanho) {
                 showToast('Todos os tamanhos devem ser preenchidos', 'warning');
@@ -750,6 +659,11 @@ async function salvarProdutoEstoque() {
             bulkItems.push({ tamanho, quantidade, sku });
         }
 
+        if (bulkItems.length === 0) {
+            showToast('Adicione pelo menos um tamanho na tabela', 'warning');
+            return;
+        }
+
         if (!confirm(`Deseja criar ${bulkItems.length} produto(s) com os SKUs informados?`)) return;
 
         let created = 0;
@@ -757,7 +671,7 @@ async function salvarProdutoEstoque() {
 
         for (let item of bulkItems) {
             // Verifica se SKU já existe no banco
-            const { data: existing, error: checkError } = await window.supabaseClient
+            const { data: existing } = await window.supabaseClient
                 .from('produtos_estoque')
                 .select('id')
                 .eq('sku', item.sku)
@@ -768,7 +682,6 @@ async function salvarProdutoEstoque() {
                 continue;
             }
 
-            // Copia os dados extras e define o tamanho
             const produtoDadosExtra = { ...dadosExtra };
             produtoDadosExtra.tamanhoraio = item.tamanho;
 
@@ -891,9 +804,9 @@ function abrirModalMovimentacaoEstoque(id, nome) {
     document.getElementById('movProdutoNome').textContent = nome;
     document.getElementById('movQuantidade').value = '1';
     document.getElementById('movTipo').value = 'entrada';
-    document.getElementById('movNumeroDocumento').value = '';   // limpar campo
-    document.getElementById('movTipoEntrada').value = 'nova';   // padrão
-    toggleTipoEntradaField();   // mostrar/esconder conforme tipo
+    document.getElementById('movNumeroDocumento').value = '';
+    document.getElementById('movTipoEntrada').value = 'nova';
+    toggleTipoEntradaField();
     document.getElementById('modalMovimentacaoEstoque').classList.remove('hidden');
 }
 
@@ -969,45 +882,28 @@ function toggleTipoEntradaField() {
     }
 }
 
-// ===== SINCRONIZAÇÃO FINAL COM MERCADO LIVRE =====
+// ===== SINCRONIZAÇÃO COM MERCADO LIVRE =====
 function encontrarVariacaoPorSKU(item, skuProduto) {
     if (!item.variations || item.variations.length === 0) return null;
-
     const skuAlvo = (skuProduto || '').toLowerCase().trim();
-    console.log(`🔍 Buscando variação para SKU alvo: "${skuAlvo}"`);
-
     const normalizar = (str) => (str || '').toLowerCase().trim().replace(/^0+/, '');
     const skuAlvoNorm = normalizar(skuAlvo);
-
     for (const v of item.variations) {
         let identificador = extrairSkuDaVariacao(v);
-        console.log(`   Testando variação ${v.id}: "${identificador}"`);
         if (identificador) {
             let idNorm = normalizar(identificador);
-            // Remove prefixo de 3 dígitos
             if (/^\d{3}/.test(idNorm)) {
                 const semPrefixo = idNorm.replace(/^\d{3}/, '');
-                if (semPrefixo === skuAlvoNorm) {
-                    console.log(`✅ Match após remover prefixo: ${identificador}`);
-                    return v;
-                }
+                if (semPrefixo === skuAlvoNorm) return v;
             }
-            if (idNorm === skuAlvoNorm) {
-                console.log(`✅ Match exato: ${identificador}`);
-                return v;
-            }
-            if (idNorm.includes(skuAlvoNorm) || skuAlvoNorm.includes(idNorm)) {
-                console.log(`✅ Match por inclusão: ${identificador}`);
-                return v;
-            }
+            if (idNorm === skuAlvoNorm) return v;
+            if (idNorm.includes(skuAlvoNorm) || skuAlvoNorm.includes(idNorm)) return v;
         }
     }
-    console.warn(`⚠️ Nenhuma variação compatível.`);
     return null;
 }
 
 function extrairSkuDaVariacao(variacao) {
-    // Para variações
     if (variacao.seller_custom_field) return variacao.seller_custom_field;
     if (variacao.attributes && Array.isArray(variacao.attributes)) {
         const skuAttr = variacao.attributes.find(attr => attr.id === 'SELLER_SKU');
@@ -1017,7 +913,6 @@ function extrairSkuDaVariacao(variacao) {
     return null;
 }
 
-// NOVA FUNÇÃO: extrair SKU do item principal (sem variações)
 function extrairSkuDoItem(item) {
     if (item.seller_custom_field) return item.seller_custom_field;
     if (item.attributes && Array.isArray(item.attributes)) {
@@ -1055,14 +950,12 @@ async function sincronizarEstoqueML(produto) {
         const itemId = codigo.startsWith('MLB') ? codigo : `MLB${codigo}`;
         const apiUrl = `https://api.mercadolibre.com/items/${itemId}`;
         const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(apiUrl)}&token=${encodeURIComponent(token)}`;
-
         try {
             console.log(`\n🔍 Obtendo ${itemId}...`);
             const getRes = await fetch(proxyUrl);
             if (!getRes.ok) throw new Error(`GET falhou: ${getRes.status}`);
             const item = await getRes.json();
 
-            // Buscar detalhes de cada variação
             if (item.variations && item.variations.length > 0) {
                 console.log(`📦 Buscando detalhes de ${item.variations.length} variações...`);
                 for (let i = 0; i < item.variations.length; i++) {
@@ -1098,9 +991,7 @@ async function sincronizarEstoqueML(produto) {
                 continue;
             }
 
-            // ------------------- CÁLCULO DA QUANTIDADE A ENVIAR -------------------
             let quantidadeParaEnviar = quantidadeReal;
-
             if (categoria === 'Eixos') {
                 let precoAnuncio = 0;
                 if (item.variations && item.variations.length > 0) {
@@ -1115,71 +1006,43 @@ async function sincronizarEstoqueML(produto) {
                 console.log(`📊 Regra Eixos: preço=R$ ${precoAnuncio}, limite=${limite}, enviando=${quantidadeParaEnviar}`);
             }
             else if (categoria === 'Raios') {
-    console.log(`\n===== PROCESSANDO RAIOS =====`);
-    console.log(`Produto: ${produto.nome}, SKU: ${skuProduto}`);
-    console.log(`Marca: ${marcaProduto}, Modelo: ${modeloProduto}`);
-    console.log(`Estoque real (unidades): ${quantidadeReal}`);
-
-    let skuAnuncio = null;
-
-    // 1. Se há variações, busca a variação correspondente
-    if (item.variations && item.variations.length > 0) {
-        console.log(`📦 Item possui ${item.variations.length} variação(ões).`);
-        let variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
-        if (variacaoAlvo) {
-            skuAnuncio = extrairSkuDaVariacao(variacaoAlvo);
-            console.log(`🔎 Variação alvo (ID ${variacaoAlvo.id}): SKU = "${skuAnuncio}"`);
-        } else {
-            console.warn(`⚠️ Nenhuma variação compatível. Buscando em todas...`);
-            for (let v of item.variations) {
-                let testSku = extrairSkuDaVariacao(v);
-                if (testSku && testSku.match(/\d/)) {
-                    skuAnuncio = testSku;
-                    console.log(`🔎 Usando SKU da variação ${v.id}: "${skuAnuncio}"`);
-                    break;
+                console.log(`\n===== PROCESSANDO RAIOS =====`);
+                console.log(`Produto: ${produto.nome}, SKU: ${skuProduto}`);
+                console.log(`Marca: ${marcaProduto}, Modelo: ${modeloProduto}`);
+                console.log(`Estoque real (unidades): ${quantidadeReal}`);
+                let skuAnuncio = null;
+                if (item.variations && item.variations.length > 0) {
+                    let variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+                    if (variacaoAlvo) {
+                        skuAnuncio = extrairSkuDaVariacao(variacaoAlvo);
+                    } else {
+                        for (let v of item.variations) {
+                            let testSku = extrairSkuDaVariacao(v);
+                            if (testSku && testSku.match(/\d/)) {
+                                skuAnuncio = testSku;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    skuAnuncio = extrairSkuDoItem(item);
                 }
+                if (!skuAnuncio) {
+                    const matchId = item.id.match(/\d+$/);
+                    if (matchId) skuAnuncio = matchId[0];
+                }
+                const raiosPorKit = extrairUnidadesPorKit(skuAnuncio);
+                let kitsPossiveis = Math.floor(quantidadeReal / raiosPorKit);
+                if (kitsPossiveis < 0) kitsPossiveis = 0;
+                const regra = obterRegraRaios(marcaProduto, modeloProduto);
+                let kitsEnviar = kitsPossiveis;
+                if (regra && regra.max_kits !== undefined) {
+                    kitsEnviar = Math.min(kitsPossiveis, regra.max_kits);
+                }
+                quantidadeParaEnviar = kitsEnviar;
+                console.log(`✅ Quantidade final enviada ao ML: ${quantidadeParaEnviar} kits`);
             }
-        }
-    } else {
-        // 2. Item sem variação: extrai SKU diretamente do item principal
-        skuAnuncio = extrairSkuDoItem(item);
-        console.log(`🔎 Item sem variação. SKU encontrado: "${skuAnuncio}"`);
-    }
 
-    // 3. Fallback: se nada funcionar, tenta o seller_custom_field do item principal (já tentamos acima) ou ID
-    if (!skuAnuncio) {
-        // Tenta pegar o ID numérico do anúncio (não recomendado, mas como último recurso)
-        const matchId = item.id.match(/\d+$/);
-        if (matchId) {
-            skuAnuncio = matchId[0];
-            console.log(`⚠️ Nenhum SKU encontrado. Usando ID do anúncio: "${skuAnuncio}" (isso pode levar a cálculos errados!)`);
-        }
-    }
-
-    // 4. Extrai a quantidade de raios por kit
-    const raiosPorKit = extrairUnidadesPorKit(skuAnuncio);
-    console.log(`📦 Raios por kit calculado: ${raiosPorKit}`);
-
-    // 5. Calcula kits possíveis
-    let kitsPossiveis = Math.floor(quantidadeReal / raiosPorKit);
-    if (kitsPossiveis < 0) kitsPossiveis = 0;
-    console.log(`📊 Estoque real: ${quantidadeReal} raios → ${kitsPossiveis} kits possíveis`);
-
-    // 6. Aplica regra de limite
-    const regra = obterRegraRaios(marcaProduto, modeloProduto);
-    let kitsEnviar = kitsPossiveis;
-    if (regra && regra.max_kits !== undefined) {
-        kitsEnviar = Math.min(kitsPossiveis, regra.max_kits);
-        console.log(`🏷️ Regra ${marcaProduto}|${modeloProduto}: limite ${regra.max_kits} kits → enviando ${kitsEnviar}`);
-    } else {
-        console.log(`🏷️ Sem regra específica. Enviando ${kitsEnviar} kits`);
-    }
-
-    quantidadeParaEnviar = kitsEnviar;
-    console.log(`✅ Quantidade final enviada ao ML: ${quantidadeParaEnviar} kits`);
-}
-
-            // --- FULL (inventory_id) ---
             const isFulfillment = item.tags?.includes('fulfillment') || 
                       item.shipping?.logistic_type === 'fulfillment' ||
                       item.logistic_type === 'fulfillment';
@@ -1206,7 +1069,6 @@ async function sincronizarEstoqueML(produto) {
                 console.log(`⚠️ inventory_id presente, mas item não é FULL.`);
             }
 
-            // --- COM VARIAÇÕES ---
             if (item.variations && item.variations.length > 0) {
                 const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
                 if (!variacaoAlvo) {
@@ -1218,18 +1080,14 @@ async function sincronizarEstoqueML(produto) {
                 const targetUrl = `https://api.mercadolibre.com/items/${itemId}/variations/${varId}`;
                 const putProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(targetUrl)}&token=${encodeURIComponent(token)}`;
                 console.log(`📦 Atualizando variação ${varId} para ${quantidadeParaEnviar}`);
-                
                 const putRes = await fetch(putProxy, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ available_quantity: quantidadeParaEnviar })
                 });
                 const responseText = await putRes.text();
-                console.log(`📡 Resposta (status ${putRes.status}):`, responseText);
-                
                 let respData;
                 try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
-                
                 if (putRes.ok) {
                     let newQty = null;
                     if (Array.isArray(respData)) {
@@ -1250,7 +1108,6 @@ async function sincronizarEstoqueML(produto) {
                     results.push({ codigo: itemId, success: false, error: `HTTP ${putRes.status}` });
                 }
             }
-            // --- SEM VARIAÇÃO ---
             else {
                 console.log(`📦 Atualizando item principal para ${quantidadeParaEnviar}`);
                 const putRes = await fetch(proxyUrl, {
@@ -1295,28 +1152,22 @@ window.sincronizarProdutoML = async function(produtoId) {
 function extrairUnidadesPorKit(skuAnuncio) {
     console.log(`🔍 extrairUnidadesPorKit recebeu: "${skuAnuncio}" (tipo: ${typeof skuAnuncio})`);
     if (!skuAnuncio || typeof skuAnuncio !== 'string') return 1;
-
-    // Tenta capturar 2 ou 3 dígitos logo no início
     let match = skuAnuncio.match(/^(\d{2,3})/);
     if (match) {
         let val = parseInt(match[1], 10);
         console.log(`✅ Prefixo encontrado (início): ${val}`);
         return val;
     }
-
-    // Tenta capturar 2 ou 3 dígitos em qualquer posição (ex: "RAIO064")
     match = skuAnuncio.match(/(\d{2,3})/);
     if (match) {
         let val = parseInt(match[1], 10);
         console.log(`✅ Prefixo encontrado (qualquer posição): ${val}`);
         return val;
     }
-
     console.warn(`❌ Nenhum dígito encontrado, usando 1`);
     return 1;
 }
 
-// ===== UTILITÁRIOS =====
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>]/g, function(m) {
@@ -1327,33 +1178,27 @@ function escapeHtml(str) {
     });
 }
 
-// Gera número único para movimentação: MOV-YYYYMMDD-XXXX
 async function gerarNumeroMovimentacao() {
     const hoje = new Date();
     const ano = hoje.getFullYear();
     const mes = String(hoje.getMonth() + 1).padStart(2, '0');
     const dia = String(hoje.getDate()).padStart(2, '0');
     const prefixo = `${ano}${mes}${dia}`;
-    
-    // Consulta o último número do dia
     const { data, error } = await window.supabaseClient
         .from('estoque_movimentacoes')
         .select('numero_movimentacao')
         .ilike('numero_movimentacao', `MOV-${prefixo}-%`)
         .order('numero_movimentacao', { ascending: false })
         .limit(1);
-    
     let sequencial = 1;
     if (data && data.length > 0) {
         const ultimo = data[0].numero_movimentacao;
         const match = ultimo.match(/\d{4}$/);
         if (match) sequencial = parseInt(match[0]) + 1;
     }
-    
     return `MOV-${prefixo}-${String(sequencial).padStart(4, '0')}`;
 }
 
-// ===== INICIALIZAÇÃO (verifica tabela) =====
 document.addEventListener('DOMContentLoaded', () => {
     const buscaInput = document.getElementById('buscaEstoqueInput');
     if (buscaInput) {
