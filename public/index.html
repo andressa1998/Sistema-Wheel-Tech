@@ -3016,21 +3016,26 @@ h4 {
                 <thead>
                     <tr>
                         <th>Tamanho (mm)</th>
+                        <th>SKU</th>
                         <th>Quantidade inicial</th>
                         <th style="width: 40px"></th>
                     </tr>
                 </thead>
                 <tbody id="bulkTamanhosBody">
-                    <tr>
-                        <td><input type="number" class="form-control form-control-sm bulk-tamanho" placeholder="ex: 284"></td>
-                        <td><input type="number" class="form-control form-control-sm bulk-quantidade" value="0" min="0"></td>
-                        <td><button type="button" class="btn btn-sm btn-danger remove-bulk-row"><i class="fas fa-trash"></i></button></td>
-                    </tr>
-                </tbody>
+    <tr>
+        <td><input type="number" class="form-control form-control-sm bulk-tamanho" placeholder="ex: 284" step="1" min="1"></td>
+        <td><input type="text" class="form-control form-control-sm bulk-sku" placeholder="SKU"></td>
+        <td><input type="number" class="form-control form-control-sm bulk-quantidade" value="0" min="0" step="1"></td>
+        <td style="width: 40px"><button type="button" class="btn btn-sm btn-danger remove-bulk-row"><i class="fas fa-trash"></i></button></td>
+    </tr>
+</tbody>
             </table>
         </div>
         <button type="button" id="addBulkRowBtn" class="btn btn-sm btn-secondary mb-2">
             <i class="fas fa-plus"></i> Adicionar outra linha
+        </button>
+        <button type="button" id="autoFillSkusBtn" class="btn btn-sm btn-info mb-2">
+        <i class="fas fa-magic"></i> Gerar SKUs automaticamente (Base + Tamanho)
         </button>
         <div class="form-group mt-2">
             <label>SKU base (opcional)</label>
