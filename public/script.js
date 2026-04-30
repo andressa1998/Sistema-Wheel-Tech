@@ -1706,9 +1706,12 @@ function renderReembolsosTable() {
         const motivo = reembolso.motivo || '-';
         const numReclamacao = reembolso.numero_reclamacao || '-';
 
+        // 🔥 CORREÇÃO: fallback para tipo_reclamacao
+        const tipoReclamacao = reembolso.tipo_reclamacao || 'com_reembolso';
+
         // Tipo de reclamação badge
         let tipoBadge = '';
-        if (reembolso.tipo_reclamacao === 'sem_reembolso') {
+        if (tipoReclamacao === 'sem_reembolso') {
             tipoBadge = '<span class="badge badge-secondary">📋 Acompanhamento</span>';
         } else {
             tipoBadge = '<span class="badge badge-primary">💰 Com reembolso</span>';
@@ -1716,7 +1719,7 @@ function renderReembolsosTable() {
 
         // Status ou Resolvida
         let statusOrResolvida = '';
-        if (reembolso.tipo_reclamacao === 'sem_reembolso') {
+        if (tipoReclamacao === 'sem_reembolso') {
             if (reembolso.resolvida) {
                 statusOrResolvida = '<span class="badge badge-success">Resolvida</span>';
             } else {
@@ -1731,10 +1734,10 @@ function renderReembolsosTable() {
             }
         }
 
-        // Ações (mesmo de antes)
+        // Ações
         let acoes = '';
         if (isAdmin || reembolso.criado_por === currentUser?.name) {
-            if (reembolso.tipo_reclamacao === 'com_reembolso') {
+            if (tipoReclamacao === 'com_reembolso') {
                 if (reembolso.status === 'a_verificar' && isAdmin) {
                     acoes = `
                         <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
@@ -8372,6 +8375,55 @@ window.verDetalhesReembolso = async function(id) {
 
 window.closeDetalhesReembolso = function() {
     document.getElementById('detalhesReembolsoModal').classList.add('hidden');
+};
+
+// ============================================
+// FUNÇÃO PARA APROVAR REEMBOLSO (Marcar como Reembolsado)
+// ============================================
+window.aprovarReembolso = async function(id) {
+    if (!confirm('Marcar este reembolso como REEMBOLSADO?\n\nO valor será contabilizado como reembolso efetivo.')) return;
+    
+    try {
+        if (!supabaseClient) throw new Error('Supabase não conectado');
+        
+        const { data, error } = await supabaseClient
+            .from('reembolsos_ml')
+            .update({ 
+                status: 'reembolsado',
+                status_reembolso: 'finalizado',
+                verificado_por: currentUser.name,
+                data_atualizacao: new Date().toISOString(),
+                notificado_admin: true,
+                notificado_usuario: true
+            })
+            .eq('id', id)
+            .select();
+        
+        if (error) throw error;
+        
+        // Atualizar lista local
+        const index = reembolsos.findIndex(r => r.id === id);
+        if (index !== -1) {
+            reembolsos[index].status = 'reembolsado';
+            reembolsos[index].status_reembolso = 'finalizado';
+            reembolsos[index].verificado_por = currentUser.name;
+        }
+        
+        showToast('✅ Reembolso aprovado e marcado como reembolsado!', 'success');
+        
+        // Recarregar tabela e contadores
+        updateReembolsoCounters();
+        renderReembolsosTable();
+        
+        // Se for admin, atualizar notificações
+        if (currentUser.role === 'Administrador') {
+            verificarNotificacoes();
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao aprovar reembolso:', error);
+        showToast('❌ Erro ao aprovar: ' + error.message, 'error');
+    }
 };
 
 // Exportar funções

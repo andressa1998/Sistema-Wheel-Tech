@@ -6,16 +6,16 @@ const EMITENTE = {
     xNome: 'WHEEL TECH BICYCLING LTDA',
     xFant: 'WHEEL TECH BICYCLING',
     enderEmit: {
-        xLgr: 'RUA LOURENÇO JASIOCHA',
-        nro: '1927',
-        xBairro: 'CENTRO',
-        cMun: '4101804',
-        xMun: 'ARAUCÁRIA',
-        UF: 'PR',
-        CEP: '83702090',
-        cPais: '1058',
-        xPais: 'BRASIL'
-    },
+    xLgr: 'RUA LOURENCO JASIOCHA',  // sem acento
+    nro: '1927',
+    xBairro: 'CENTRO',
+    cMun: '4101804',
+    xMun: 'ARAUCARIA',              // sem acento
+    UF: 'PR',
+    CEP: '83702090',
+    cPais: '1058',
+    xPais: 'BRASIL'
+},
     IE: '9087859328',
     CRT: '1'
 };
@@ -157,9 +157,11 @@ function gerarXmlNfe({ cliente, produto, vendaId }) {
 
     const imposto = det.ele('imposto');
     const icms = imposto.ele('ICMS');
-    icms.ele('ICMSSN102')
+   icms.ele('ICMSSN101')
         .ele('orig').txt('0').up()
-        .ele('CSOSN').txt('102').up()
+        .ele('CSOSN').txt('101').up()
+        .ele('pCredSN').txt('0.00').up()
+        .ele('vCredICMSSN').txt('0.00').up()
         .up();
     const pis = imposto.ele('PIS');
     pis.ele('PISNT').ele('CST').txt('07').up().up();

@@ -923,6 +923,53 @@ function extrairSkuDoItem(item) {
     return null;
 }
 
+/**
+ * Analisa um SKU que pode conter múltiplas partes separadas por "."
+ * Ex: "03600000RARIJ280PTN_KSI.03600000RARIJ275PTN_KSI"
+ * Retorna um array de objetos: { quantidadePorKit, tamanho }
+ */
+function parseMultiSkuVariation(skuString) {
+    if (!skuString || typeof skuString !== 'string') return null;
+    
+    const partes = skuString.split('.');
+    const resultados = [];
+    
+    for (const parte of partes) {
+        // Extrai todos os grupos de 2 ou 3 dígitos
+        const grupos = parte.match(/\d{2,3}/g);
+        if (!grupos || grupos.length < 2) continue;
+        
+        // 1) Quantidade: primeiro grupo que seja > 0 (ignorar zeros à esquerda)
+        let quantidade = null;
+        for (let i = 0; i < grupos.length; i++) {
+            const num = parseInt(grupos[i], 10);
+            if (num > 0) {
+                quantidade = num;
+                break;
+            }
+        }
+        if (quantidade === null) quantidade = parseInt(grupos[0], 10); // fallback
+        
+        // 2) Tamanho: último grupo de 3 dígitos (assumindo que seja o tamanho)
+        let tamanho = null;
+        for (let i = grupos.length - 1; i >= 0; i--) {
+            if (grupos[i].length === 3) {
+                tamanho = parseInt(grupos[i], 10);
+                break;
+            }
+        }
+        
+        if (quantidade && tamanho) {
+            resultados.push({ 
+                quantidadePorKit: quantidade, 
+                tamanho: tamanho.toString() 
+            });
+        }
+    }
+    
+    return resultados.length ? resultados : null;
+}
+
 async function sincronizarEstoqueML(produto) {
     let mlbCodes = produto.dados_extra?.mlb_codes;
     if (!mlbCodes || (Array.isArray(mlbCodes) && mlbCodes.length === 0)) {
@@ -950,12 +997,14 @@ async function sincronizarEstoqueML(produto) {
         const itemId = codigo.startsWith('MLB') ? codigo : `MLB${codigo}`;
         const apiUrl = `https://api.mercadolibre.com/items/${itemId}`;
         const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(apiUrl)}&token=${encodeURIComponent(token)}`;
+
         try {
             console.log(`\n🔍 Obtendo ${itemId}...`);
             const getRes = await fetch(proxyUrl);
             if (!getRes.ok) throw new Error(`GET falhou: ${getRes.status}`);
             const item = await getRes.json();
 
+            // Buscar detalhes de cada variação
             if (item.variations && item.variations.length > 0) {
                 console.log(`📦 Buscando detalhes de ${item.variations.length} variações...`);
                 for (let i = 0; i < item.variations.length; i++) {
@@ -992,6 +1041,7 @@ async function sincronizarEstoqueML(produto) {
             }
 
             let quantidadeParaEnviar = quantidadeReal;
+
             if (categoria === 'Eixos') {
                 let precoAnuncio = 0;
                 if (item.variations && item.variations.length > 0) {
@@ -1010,7 +1060,9 @@ async function sincronizarEstoqueML(produto) {
                 console.log(`Produto: ${produto.nome}, SKU: ${skuProduto}`);
                 console.log(`Marca: ${marcaProduto}, Modelo: ${modeloProduto}`);
                 console.log(`Estoque real (unidades): ${quantidadeReal}`);
+
                 let skuAnuncio = null;
+
                 if (item.variations && item.variations.length > 0) {
                     let variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
                     if (variacaoAlvo) {
@@ -1027,22 +1079,68 @@ async function sincronizarEstoqueML(produto) {
                 } else {
                     skuAnuncio = extrairSkuDoItem(item);
                 }
+
                 if (!skuAnuncio) {
                     const matchId = item.id.match(/\d+$/);
                     if (matchId) skuAnuncio = matchId[0];
                 }
-                const raiosPorKit = extrairUnidadesPorKit(skuAnuncio);
-                let kitsPossiveis = Math.floor(quantidadeReal / raiosPorKit);
-                if (kitsPossiveis < 0) kitsPossiveis = 0;
+                console.log(`🔎 SKU encontrado no anúncio: "${skuAnuncio}"`);
+
+                const isMultiSku = skuAnuncio && skuAnuncio.includes('.');
+                let kitsPossiveis = 0;
+
+                if (isMultiSku) {
+                    const partes = parseMultiSkuVariation(skuAnuncio);
+                    if (!partes || partes.length === 0) {
+                        console.warn("⚠️ Não foi possível parsear o multi-SKU.");
+                        quantidadeParaEnviar = 0;
+                    } else {
+                        console.log(`📦 Kit com ${partes.length} tamanhos:`, partes);
+                        let kitsPorTamanho = [];
+                        for (const parte of partes) {
+                            const produtoTamanho = produtosEstoque.find(p =>
+                                p.categoria === 'Raios' &&
+                                p.dados_extra?.marca === marcaProduto &&
+                                p.dados_extra?.modelo === modeloProduto &&
+                                p.dados_extra?.cabeçaraio === produto.dados_extra?.cabeçaraio &&
+                                p.dados_extra?.tamanhoraio == parte.tamanho
+                            );
+                            if (!produtoTamanho) {
+                                console.warn(`⚠️ Produto com tamanho ${parte.tamanho} não encontrado no estoque.`);
+                                kitsPorTamanho.push(0);
+                            } else {
+                                const estoqueUnidades = produtoTamanho.quantidade;
+                                const kits = Math.floor(estoqueUnidades / parte.quantidadePorKit);
+                                console.log(`   Tamanho ${parte.tamanho}: ${estoqueUnidades} un. → ${kits} kits (${parte.quantidadePorKit} un/kit)`);
+                                kitsPorTamanho.push(kits);
+                            }
+                        }
+                        const minKits = Math.min(...kitsPorTamanho);
+                        kitsPossiveis = minKits > 0 ? minKits : 0;
+                        console.log(`📊 Kits possíveis (limitado pelo menor estoque): ${kitsPossiveis}`);
+                    }
+                } else {
+                    const raiosPorKit = extrairUnidadesPorKit(skuAnuncio);
+                    console.log(`📦 Raios por kit (normal): ${raiosPorKit}`);
+                    kitsPossiveis = Math.floor(quantidadeReal / raiosPorKit);
+                    if (kitsPossiveis < 0) kitsPossiveis = 0;
+                    console.log(`📊 Estoque real: ${quantidadeReal} raios → ${kitsPossiveis} kits possíveis`);
+                }
+
                 const regra = obterRegraRaios(marcaProduto, modeloProduto);
                 let kitsEnviar = kitsPossiveis;
                 if (regra && regra.max_kits !== undefined) {
                     kitsEnviar = Math.min(kitsPossiveis, regra.max_kits);
+                    console.log(`🏷️ Regra ${marcaProduto}|${modeloProduto}: limite ${regra.max_kits} kits → enviando ${kitsEnviar}`);
+                } else {
+                    console.log(`🏷️ Sem regra específica. Enviando ${kitsEnviar} kits`);
                 }
+
                 quantidadeParaEnviar = kitsEnviar;
                 console.log(`✅ Quantidade final enviada ao ML: ${quantidadeParaEnviar} kits`);
             }
 
+            // --- FULL (inventory_id) ---
             const isFulfillment = item.tags?.includes('fulfillment') || 
                       item.shipping?.logistic_type === 'fulfillment' ||
                       item.logistic_type === 'fulfillment';
@@ -1065,10 +1163,9 @@ async function sincronizarEstoqueML(produto) {
                     results.push({ codigo: itemId, success: false, error: `FULL ${invRes.status}` });
                 }
                 continue;
-            } else if (item.inventory_id && !isFulfillment) {
-                console.log(`⚠️ inventory_id presente, mas item não é FULL.`);
             }
 
+            // --- COM VARIAÇÕES ---
             if (item.variations && item.variations.length > 0) {
                 const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
                 if (!variacaoAlvo) {
@@ -1080,6 +1177,7 @@ async function sincronizarEstoqueML(produto) {
                 const targetUrl = `https://api.mercadolibre.com/items/${itemId}/variations/${varId}`;
                 const putProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(targetUrl)}&token=${encodeURIComponent(token)}`;
                 console.log(`📦 Atualizando variação ${varId} para ${quantidadeParaEnviar}`);
+                
                 const putRes = await fetch(putProxy, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -1088,6 +1186,7 @@ async function sincronizarEstoqueML(produto) {
                 const responseText = await putRes.text();
                 let respData;
                 try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
+                
                 if (putRes.ok) {
                     let newQty = null;
                     if (Array.isArray(respData)) {
@@ -1108,6 +1207,7 @@ async function sincronizarEstoqueML(produto) {
                     results.push({ codigo: itemId, success: false, error: `HTTP ${putRes.status}` });
                 }
             }
+            // --- SEM VARIAÇÃO ---
             else {
                 console.log(`📦 Atualizando item principal para ${quantidadeParaEnviar}`);
                 const putRes = await fetch(proxyUrl, {
@@ -1152,19 +1252,22 @@ window.sincronizarProdutoML = async function(produtoId) {
 function extrairUnidadesPorKit(skuAnuncio) {
     console.log(`🔍 extrairUnidadesPorKit recebeu: "${skuAnuncio}" (tipo: ${typeof skuAnuncio})`);
     if (!skuAnuncio || typeof skuAnuncio !== 'string') return 1;
-    let match = skuAnuncio.match(/^(\d{2,3})/);
-    if (match) {
-        let val = parseInt(match[1], 10);
-        console.log(`✅ Prefixo encontrado (início): ${val}`);
-        return val;
+    
+    // Encontra todos os grupos de 2 ou 3 dígitos
+    const grupos = skuAnuncio.match(/\d{2,3}/g);
+    if (!grupos) return 1;
+    
+    // Procura o primeiro grupo que seja maior que zero
+    for (let grupo of grupos) {
+        const valor = parseInt(grupo, 10);
+        if (valor > 0) {
+            console.log(`✅ Quantidade por kit extraída: ${valor} (do grupo "${grupo}")`);
+            return valor;
+        }
     }
-    match = skuAnuncio.match(/(\d{2,3})/);
-    if (match) {
-        let val = parseInt(match[1], 10);
-        console.log(`✅ Prefixo encontrado (qualquer posição): ${val}`);
-        return val;
-    }
-    console.warn(`❌ Nenhum dígito encontrado, usando 1`);
+    
+    // Se todos forem zero, retorna 1 (fallback seguro)
+    console.warn(`⚠️ Nenhum dígito positivo encontrado, usando 1`);
     return 1;
 }
 
