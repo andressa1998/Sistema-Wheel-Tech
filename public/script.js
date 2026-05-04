@@ -226,7 +226,8 @@ const SYSTEM_USERS = [
     { username: 'andressa', password: '220922', name: 'Andressa', avatar: 'A', role: 'Assistente 2' },
     { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' },
     { username: 'hosama', password: '170999', name: 'Hosama', avatar: 'H', role: 'Administrador' },
-    { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
+    { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' },
+    {userName: 'mirella', password: '455020', name: 'Mirella', avatar: 'M', role: 'Assistente 4'}
 ];
 
 // USUÁRIOS BLOQUEADOS (não podem acessar o sistema)
