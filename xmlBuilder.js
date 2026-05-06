@@ -1,25 +1,32 @@
 const { create } = require('xmlbuilder2');
 const moment = require('moment-timezone');
+const crypto = require('crypto');
 
+// ------------------------------
+// DADOS DO EMITENTE (FIXOS)
+// ------------------------------
 const EMITENTE = {
     CNPJ: '32830261000125',
     xNome: 'WHEEL TECH BICYCLING LTDA',
     xFant: 'WHEEL TECH BICYCLING',
     enderEmit: {
-    xLgr: 'RUA LOURENCO JASIOCHA',  // sem acento
-    nro: '1927',
-    xBairro: 'CENTRO',
-    cMun: '4101804',
-    xMun: 'ARAUCARIA',              // sem acento
-    UF: 'PR',
-    CEP: '83702090',
-    cPais: '1058',
-    xPais: 'BRASIL'
-},
+        xLgr: 'RUA LOURENCO JASIOCHA',   // sem acento (igual ao Sintegra)
+        nro: '1927',
+        xBairro: 'CENTRO',
+        cMun: '4101804',
+        xMun: 'ARAUCARIA',               // sem acento
+        UF: 'PR',
+        CEP: '83702090',
+        cPais: '1058',
+        xPais: 'BRASIL'
+    },
     IE: '9087859328',
     CRT: '1'
 };
 
+// ------------------------------
+// CÁLCULO DO DÍGITO VERIFICADOR DA CHAVE DE ACESSO
+// ------------------------------
 function calcularDigitoVerificador(chave) {
     let peso = 2;
     let soma = 0;
@@ -31,6 +38,9 @@ function calcularDigitoVerificador(chave) {
     return (resto === 0 || resto === 1) ? '0' : (11 - resto).toString();
 }
 
+// ------------------------------
+// GERAÇÃO DA CHAVE DE ACESSO (44 dígitos)
+// ------------------------------
 function gerarChaveAcesso(emitenteCnpj, uf, dataEmissao, modelo, serie, nNF, tpEmis) {
     const cUF = (uf === 'PR' ? '41' : '35');
     const ano = dataEmissao.slice(2, 4);
@@ -45,7 +55,41 @@ function gerarChaveAcesso(emitenteCnpj, uf, dataEmissao, modelo, serie, nNF, tpE
     return chaveSemDV + dv;
 }
 
+// ------------------------------
+// CÁLCULO DO hashCSRT (NT 2018.005)
+// ------------------------------
+function calcularHashCSRT(csrt, chaveAcesso) {
+    const concat = csrt + chaveAcesso;
+    const hash = crypto.createHash('sha1').update(concat, 'utf8').digest('base64');
+    return hash;
+}
+
+// ------------------------------
+// RETORNA O TOKEN (idCSRT e CSRT) CONFORME O AMBIENTE
+// ------------------------------
+function getTokenPorAmbiente(ambiente) {
+    if (ambiente === 'producao') {
+        return {
+            idCSRT: '2',
+            csrt: 'XYRVN1YSRXG0429BCZRIT9MMZM9X7QZRUBQP'   // Token de produção
+        };
+    } else {
+        // homologacao (padrão)
+        return {
+            idCSRT: '1',
+            csrt: '6113X8ABJ336C6C97E4KCG5N7ZH0H50ODWII'   // Token de homologação
+        };
+    }
+}
+
+// ------------------------------
+// FUNÇÃO PRINCIPAL – GERA O XML DA NF-e
+// ------------------------------
 function gerarXmlNfe({ cliente, produto, vendaId }) {
+    // Define o ambiente (homologacao ou producao)
+    const ambiente = process.env.NFE_AMBIENTE === 'producao' ? 'producao' : 'homologacao';
+    const token = getTokenPorAmbiente(ambiente);
+
     const now = moment().tz('America/Sao_Paulo');
     const dataEmissao = now.format('YYYY-MM-DD');
     const dataHoraEmi = now.format('YYYY-MM-DDTHH:mm:ssZ');
@@ -59,12 +103,16 @@ function gerarXmlNfe({ cliente, produto, vendaId }) {
         nNF,
         '1'
     );
+
+    // Calcula o hashCSRT com o token do ambiente atual
+    const hashCSRT = calcularHashCSRT(token.csrt, chaveAcesso);
+
     const valorTotal = (produto.quantidade * produto.valorUnitario).toFixed(2);
     const endereco = cliente.endereco || {};
     const logradouro = endereco.logradouro || 'NÃO INFORMADO';
     const numero = endereco.numero || 'S/N';
     const bairro = endereco.bairro || 'CENTRO';
-    let cidade = 'ARAUCÁRIA';
+    let cidade = 'ARAUCARIA';
     let uf = 'PR';
     if (endereco.cidadeUF && endereco.cidadeUF.includes('-')) {
         const partes = endereco.cidadeUF.split('-');
@@ -73,14 +121,14 @@ function gerarXmlNfe({ cliente, produto, vendaId }) {
     }
     const cep = (endereco.cep || '').replace(/\D/g, '') || '83702909';
     let cMunCliente = '4101804';
-    if (cidade.toUpperCase() === 'ARAUCÁRIA') cMunCliente = '4101804';
+    if (cidade.toUpperCase() === 'ARAUCARIA') cMunCliente = '4101804';
 
     const doc = create({ version: '1.0', encoding: 'UTF-8' })
         .ele('NFe', { xmlns: 'http://www.portalfiscal.inf.br/nfe' });
 
     const infNFe = doc.ele('infNFe', { versao: '4.00', Id: `NFe${chaveAcesso}` });
 
-    // ide
+    // ---------- ide (Informações da NF-e) ----------
     const ide = infNFe.ele('ide');
     ide.ele('cUF').txt('41').up();
     ide.ele('cNF').txt(chaveAcesso.slice(-8)).up();
@@ -102,7 +150,7 @@ function gerarXmlNfe({ cliente, produto, vendaId }) {
     ide.ele('procEmi').txt('0').up();
     ide.ele('verProc').txt('1.0').up();
 
-    // emit
+    // ---------- emit (Emitente) ----------
     const emit = infNFe.ele('emit');
     emit.ele('CNPJ').txt(EMITENTE.CNPJ).up();
     emit.ele('xNome').txt(EMITENTE.xNome).up();
@@ -120,7 +168,16 @@ function gerarXmlNfe({ cliente, produto, vendaId }) {
     emit.ele('IE').txt(EMITENTE.IE).up();
     emit.ele('CRT').txt(EMITENTE.CRT).up();
 
-    // dest
+    // ---------- infRespTec (Responsável Técnico – com CSRT) ----------
+    const infRespTec = infNFe.ele('infRespTec');
+    infRespTec.ele('CNPJ').txt('32830261000125').up();
+    infRespTec.ele('xContato').txt('Ronald de Carvalho').up();
+    infRespTec.ele('email').txt('ronald_carvalho@hotmail.com').up();
+    infRespTec.ele('fone').txt('4199613173').up();
+    infRespTec.ele('idCSRT').txt(token.idCSRT).up();
+    infRespTec.ele('hashCSRT').txt(hashCSRT).up();
+
+    // ---------- dest (Destinatário) ----------
     const dest = infNFe.ele('dest');
     const docType = cliente.documento.length === 14 ? 'CNPJ' : 'CPF';
     dest.ele(docType).txt(cliente.documento.replace(/\D/g, '')).up();
@@ -137,7 +194,7 @@ function gerarXmlNfe({ cliente, produto, vendaId }) {
     enderDest.ele('xPais').txt('BRASIL').up();
     dest.ele('indIEDest').txt('9').up();
 
-    // det
+    // ---------- det (Produto) ----------
     const det = infNFe.ele('det', { nItem: '1' });
     const prodElem = det.ele('prod');
     prodElem.ele('cProd').txt(vendaId || '1').up();
@@ -155,9 +212,10 @@ function gerarXmlNfe({ cliente, produto, vendaId }) {
     prodElem.ele('vUnTrib').txt(produto.valorUnitario.toFixed(2)).up();
     prodElem.ele('indTot').txt('1').up();
 
+    // ---------- imposto (ICMS, PIS, COFINS) ----------
     const imposto = det.ele('imposto');
     const icms = imposto.ele('ICMS');
-   icms.ele('ICMSSN101')
+    icms.ele('ICMSSN101')
         .ele('orig').txt('0').up()
         .ele('CSOSN').txt('101').up()
         .ele('pCredSN').txt('0.00').up()
@@ -168,7 +226,7 @@ function gerarXmlNfe({ cliente, produto, vendaId }) {
     const cofins = imposto.ele('COFINS');
     cofins.ele('COFINSNT').ele('CST').txt('07').up().up();
 
-    // total
+    // ---------- total (Totais) ----------
     const total = infNFe.ele('total');
     const icmsTot = total.ele('ICMSTot');
     const vBC = valorTotal;
@@ -196,26 +254,18 @@ function gerarXmlNfe({ cliente, produto, vendaId }) {
     icmsTot.ele('vOutro').txt('0.00').up();
     icmsTot.ele('vNF').txt(valorTotal).up();
 
-    // transp
+    // ---------- transp (Transporte) ----------
     const transp = infNFe.ele('transp');
     transp.ele('modFrete').txt('0').up();
 
-    // cobr (opcional)
-    const cobr = infNFe.ele('cobr');
-    const fat = cobr.ele('fat');
-    fat.ele('nFat').txt('1').up();
-    fat.ele('vOrig').txt(valorTotal).up();
-    fat.ele('vDesc').txt('0.00').up();
-    fat.ele('vLiq').txt(valorTotal).up();
-
-    // pag (obrigatório)
+    // ---------- pag (Pagamento – obrigatório) ----------
     const pag = infNFe.ele('pag');
     const detPag = pag.ele('detPag');
     detPag.ele('indPag').txt('0').up();
     detPag.ele('tPag').txt('01').up();
     detPag.ele('vPag').txt(valorTotal).up();
 
-    // infAdic (opcional)
+    // ---------- infAdic (Informações complementares – opcional) ----------
     const infAdic = infNFe.ele('infAdic');
     infAdic.ele('infCpl').txt('Teste de emissão em homologação').up();
 
