@@ -223,11 +223,10 @@ const SYSTEM_USERS = [
     { username: 'laura', password: '123456', name: 'Laura', avatar: 'L', role: 'Midia' },
     { username: 'ronald', password: '210188', name: 'Ronald', avatar: 'R', role: 'Administrador' },
     { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Assistente' },
-    { username: 'andressa', password: '220922', name: 'Andressa', avatar: 'A', role: 'Assistente 2' },
+    { username: 'mirella', password: '220922', name: 'Mirella', avatar: 'M', role: 'Assistente 2' },
     { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' },
     { username: 'hosama', password: '170999', name: 'Hosama', avatar: 'H', role: 'Administrador' },
-    { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' },
-    { userName: 'mirella', password: '455020', name: 'Mirella', avatar: 'M', role: 'Assistente 4'}
+    { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
 ];
 
 // USUÁRIOS BLOQUEADOS (não podem acessar o sistema)
