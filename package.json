@@ -1,0 +1,16 @@
+{
+  "dependencies": {
+    "@supabase/supabase-js": "^2.105.3",
+    "@xmldom/xmldom": "^0.9.10",
+    "axios": "^1.16.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "fast-xml-parser": "^5.7.3",
+    "moment-timezone": "^0.6.2",
+    "node-forge": "^1.4.0",
+    "xml-crypto": "^6.1.2",
+    "xmlbuilder2": "^4.0.3",
+    "xmldom": "^0.6.0",
+    "xpath": "^0.0.34"
+  }
+}

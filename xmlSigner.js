@@ -1,83 +1,75 @@
-const forge = require('node-forge');
-const { DOMParser, XMLSerializer } = require('xmldom');
+const { SignedXml } = require('xml-crypto');
 
-function assinarXml(xml, privateKeyPem, certificatePem) {
-    const privateKey = forge.pki.privateKeyFromPem(privateKeyPem);
-    const cert = forge.pki.certificateFromPem(certificatePem);
+function assinarXml(xml, certData) {
 
-    const doc = new DOMParser().parseFromString(xml, 'application/xml');
-    const nfeRoot = doc.documentElement;
-    if (!nfeRoot) throw new Error('Elemento NFe não encontrado');
+    const sig = new SignedXml();
 
-    const infNFe = nfeRoot.getElementsByTagName('infNFe')[0];
-    if (!infNFe) throw new Error('Elemento infNFe não encontrado');
+    sig.privateKey = certData.privateKey;
 
-    const idAttr = infNFe.getAttribute('Id');
-    if (!idAttr) throw new Error('Atributo Id não encontrado em infNFe');
+    sig.signatureAlgorithm =
+        'http://www.w3.org/2000/09/xmldsig#rsa-sha1';
 
-    // Clona o infNFe e canonicaliza (sem a assinatura)
-    const infNFeClone = infNFe.cloneNode(true);
-    const canonXml = canonicalizeXml(infNFeClone);
-    const digest = forge.md.sha1.create().update(canonXml, 'utf8').digest();
-    const digestBase64 = forge.util.encode64(digest.getBytes());
+    sig.canonicalizationAlgorithm =
+        'http://www.w3.org/TR/2001/REC-xml-c14n-20010315';
 
-    // SignedInfo com os algoritmos corretos (SHA-1 e RSA-SHA1)
-    const signedInfoXml = `
-        <SignedInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
-            <CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
-            <SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
-            <Reference URI="#${idAttr}">
-                <Transforms>
-                    <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
-                    <Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
-                </Transforms>
-                <DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
-                <DigestValue>${digestBase64}</DigestValue>
-            </Reference>
-        </SignedInfo>
-    `.replace(/\s*\n\s*/g, ' ').trim();
+    sig.addReference({
+        xpath: "//*[local-name(.)='infNFe']",
 
-    const signedInfoCanon = canonicalizeXmlString(signedInfoXml);
-    // Assinatura usando RSA-SHA1
-    const signatureBytes = privateKey.sign(forge.md.sha1.create().update(signedInfoCanon, 'utf8'), 'RSASSA-PKCS1-V1_5');
-    const signatureBase64 = forge.util.encode64(signatureBytes);
+        transforms: [
+            'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
+            'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
+        ],
 
-    // Monta o elemento Signature
-    const signatureElem = doc.createElementNS('http://www.w3.org/2000/09/xmldsig#', 'Signature');
+        digestAlgorithm:
+            'http://www.w3.org/2000/09/xmldsig#sha1',
 
-    const signedInfoDom = new DOMParser().parseFromString(signedInfoXml, 'application/xml').documentElement;
-    signatureElem.appendChild(signedInfoDom);
+        uri: ''
+    });
 
-    const sigValueElem = doc.createElement('SignatureValue');
-    sigValueElem.textContent = signatureBase64;
-    signatureElem.appendChild(sigValueElem);
+    // REMOVE QUALQUER KEYINFO AUTOMÁTICO
+    sig.getKeyInfoContent = function () {
 
-    const keyInfoElem = doc.createElement('KeyInfo');
-    const x509DataElem = doc.createElement('X509Data');
-    const x509CertElem = doc.createElement('X509Certificate');
-    const certBase64 = certificatePem
-        .replace(/-----BEGIN CERTIFICATE-----/g, '')
-        .replace(/-----END CERTIFICATE-----/g, '')
-        .replace(/\s/g, '');
-    x509CertElem.textContent = certBase64;
-    x509DataElem.appendChild(x509CertElem);
-    keyInfoElem.appendChild(x509DataElem);
-    signatureElem.appendChild(keyInfoElem);
+        const cert = certData.cert
+            .replace('-----BEGIN CERTIFICATE-----', '')
+            .replace('-----END CERTIFICATE-----', '')
+            .replace(/\r/g, '')
+            .replace(/\n/g, '');
 
-    nfeRoot.appendChild(signatureElem);
+        return `
+<X509Data>
+<X509Certificate>${cert}</X509Certificate>
+</X509Data>
+`;
+    };
 
-    return new XMLSerializer().serializeToString(doc);
+    sig.computeSignature(xml, {
+
+        location: {
+            reference:
+                "//*[local-name(.)='infNFe']",
+
+            action: 'after'
+        }
+    });
+
+    let signedXml = sig.getSignedXml();
+
+    // FORCE SIGNATURE NAMESPACE
+    signedXml = signedXml.replace(
+        '<Signature>',
+        '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">'
+    );
+
+    // REMOVE xmlns="" QUEBRADO
+    signedXml = signedXml.replace(/xmlns=""/g, '');
+
+    console.log('\n========== XML ASSINADO ==========\n');
+    console.log(signedXml);
+    console.log('\n==================================\n');
+
+    return signedXml;
 }
 
-function canonicalizeXml(node) {
-    const serializer = new XMLSerializer();
-    let str = serializer.serializeToString(node);
-    str = str.replace(/\s*\n\s*/g, ' ').replace(/>\s+</g, '><');
-    return str;
-}
-
-function canonicalizeXmlString(xmlString) {
-    return xmlString.replace(/\s*\n\s*/g, ' ').replace(/>\s+</g, '><');
-}
-
-module.exports = { assinarXml };
+module.exports = {
+    assinarXml
+};

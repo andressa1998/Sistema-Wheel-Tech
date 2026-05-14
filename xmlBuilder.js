@@ -1,279 +1,429 @@
 const { create } = require('xmlbuilder2');
-const moment = require('moment-timezone');
-const crypto = require('crypto');
 
-// ------------------------------
-// DADOS DO EMITENTE (FIXOS)
-// ------------------------------
-const EMITENTE = {
-    CNPJ: '32830261000125',
-    xNome: 'WHEEL TECH BICYCLING LTDA',
-    xFant: 'WHEEL TECH BICYCLING',
-    enderEmit: {
-        xLgr: 'RUA LOURENCO JASIOCHA',   // sem acento (igual ao Sintegra)
-        nro: '1927',
-        xBairro: 'CENTRO',
-        cMun: '4101804',
-        xMun: 'ARAUCARIA',               // sem acento
-        UF: 'PR',
-        CEP: '83702090',
-        cPais: '1058',
-        xPais: 'BRASIL'
-    },
-    IE: '9087859328',
-    CRT: '1'
-};
+function gerarXmlNfe(dados) {
 
-// ------------------------------
-// CÁLCULO DO DÍGITO VERIFICADOR DA CHAVE DE ACESSO
-// ------------------------------
-function calcularDigitoVerificador(chave) {
-    let peso = 2;
-    let soma = 0;
-    for (let i = chave.length - 1; i >= 0; i--) {
-        soma += parseInt(chave.charAt(i)) * peso;
-        peso = peso === 9 ? 2 : peso + 1;
-    }
-    const resto = soma % 11;
-    return (resto === 0 || resto === 1) ? '0' : (11 - resto).toString();
-}
+    const {
+        nNF = 1,
+        serie = 1,
+        cNF = '00000001',
+        cDV = '1',
 
-// ------------------------------
-// GERAÇÃO DA CHAVE DE ACESSO (44 dígitos)
-// ------------------------------
-function gerarChaveAcesso(emitenteCnpj, uf, dataEmissao, modelo, serie, nNF, tpEmis) {
-    const cUF = (uf === 'PR' ? '41' : '35');
-    const ano = dataEmissao.slice(2, 4);
-    const mes = dataEmissao.slice(5, 7);
-    const cnpj = emitenteCnpj.replace(/\D/g, '');
-    const cNF = Math.floor(Math.random() * 100000000).toString().padStart(8, '0');
-    const nNFStr = nNF.toString().padStart(9, '0');
-    const serieStr = serie.toString().padStart(3, '0');
-    const tpEmisStr = tpEmis.toString();
-    let chaveSemDV = cUF + ano + mes + cnpj + modelo + serieStr + nNFStr + tpEmisStr + cNF;
-    const dv = calcularDigitoVerificador(chaveSemDV);
-    return chaveSemDV + dv;
-}
+        emitente = {},
+        destinatario = {},
+        produto = {}
+    } = dados;
 
-// ------------------------------
-// CÁLCULO DO hashCSRT (NT 2018.005)
-// ------------------------------
-function calcularHashCSRT(csrt, chaveAcesso) {
-    const concat = csrt + chaveAcesso;
-    const hash = crypto.createHash('sha1').update(concat, 'utf8').digest('base64');
-    return hash;
-}
+    // DATA/HORA NO PADRÃO ACEITO PELA NF-E
+    const dhEmi = new Date()
+        .toLocaleString('sv-SE', {
+            timeZone: 'America/Sao_Paulo'
+        })
+        .replace(' ', 'T') + '-03:00';
 
-// ------------------------------
-// RETORNA O TOKEN (idCSRT e CSRT) CONFORME O AMBIENTE
-// ------------------------------
-function getTokenPorAmbiente(ambiente) {
-    if (ambiente === 'producao') {
-        return {
-            idCSRT: '2',
-            csrt: 'XYRVN1YSRXG0429BCZRIT9MMZM9X7QZRUBQP'   // Token de produção
-        };
-    } else {
-        // homologacao (padrão)
-        return {
-            idCSRT: '1',
-            csrt: '6113X8ABJ336C6C97E4KCG5N7ZH0H50ODWII'   // Token de homologação
-        };
-    }
-}
+    // ID DA NF-E
+    const idNFe =
+        `NFe4126053283026100012555001${String(nNF).padStart(9, '0')}1000000011`;
 
-// ------------------------------
-// FUNÇÃO PRINCIPAL – GERA O XML DA NF-e
-// ------------------------------
-function gerarXmlNfe({ cliente, produto, vendaId }) {
-    // Define o ambiente (homologacao ou producao)
-    const ambiente = process.env.NFE_AMBIENTE === 'producao' ? 'producao' : 'homologacao';
-    const token = getTokenPorAmbiente(ambiente);
+    const xml = create({ version: '1.0', encoding: 'UTF-8' })
 
-    const now = moment().tz('America/Sao_Paulo');
-    const dataEmissao = now.format('YYYY-MM-DD');
-    const dataHoraEmi = now.format('YYYY-MM-DDTHH:mm:ssZ');
-    const nNF = (parseInt(now.format('MMDDHHmmss')) % 1000000000).toString().padStart(9, '0');
-    const chaveAcesso = gerarChaveAcesso(
-        EMITENTE.CNPJ,
-        'PR',
-        dataEmissao,
-        '55',
-        '1',
-        nNF,
-        '1'
-    );
+        .ele('NFe', {
+            xmlns: 'http://www.portalfiscal.inf.br/nfe'
+        })
 
-    // Calcula o hashCSRT com o token do ambiente atual
-    const hashCSRT = calcularHashCSRT(token.csrt, chaveAcesso);
+        .ele('infNFe', {
+            versao: '4.00',
+            Id: idNFe
+        })
 
-    const valorTotal = (produto.quantidade * produto.valorUnitario).toFixed(2);
-    const endereco = cliente.endereco || {};
-    const logradouro = endereco.logradouro || 'NÃO INFORMADO';
-    const numero = endereco.numero || 'S/N';
-    const bairro = endereco.bairro || 'CENTRO';
-    let cidade = 'ARAUCARIA';
-    let uf = 'PR';
-    if (endereco.cidadeUF && endereco.cidadeUF.includes('-')) {
-        const partes = endereco.cidadeUF.split('-');
-        cidade = partes[0].trim().toUpperCase();
-        uf = partes[1].trim();
-    }
-    const cep = (endereco.cep || '').replace(/\D/g, '') || '83702909';
-    let cMunCliente = '4101804';
-    if (cidade.toUpperCase() === 'ARAUCARIA') cMunCliente = '4101804';
+        // =========================
+        // IDE
+        // =========================
 
-    const doc = create({ version: '1.0', encoding: 'UTF-8' })
-        .ele('NFe', { xmlns: 'http://www.portalfiscal.inf.br/nfe' });
+        .ele('ide')
 
-    const infNFe = doc.ele('infNFe', { versao: '4.00', Id: `NFe${chaveAcesso}` });
+        .ele('cUF').txt('41').up()
+        .ele('cNF').txt(cNF).up()
+        .ele('natOp').txt('VENDA').up()
+        .ele('mod').txt('55').up()
+        .ele('serie').txt(String(serie)).up()
+        .ele('nNF').txt(String(nNF)).up()
 
-    // ---------- ide (Informações da NF-e) ----------
-    const ide = infNFe.ele('ide');
-    ide.ele('cUF').txt('41').up();
-    ide.ele('cNF').txt(chaveAcesso.slice(-8)).up();
-    ide.ele('natOp').txt('Venda de mercadorias').up();
-    ide.ele('mod').txt('55').up();
-    ide.ele('serie').txt('1').up();
-    ide.ele('nNF').txt(nNF).up();
-    ide.ele('dhEmi').txt(dataHoraEmi).up();
-    ide.ele('tpNF').txt('1').up();
-    ide.ele('idDest').txt('1').up();
-    ide.ele('cMunFG').txt(EMITENTE.enderEmit.cMun).up();
-    ide.ele('tpImp').txt('1').up();
-    ide.ele('tpEmis').txt('1').up();
-    ide.ele('cDV').txt(chaveAcesso.slice(-1)).up();
-    ide.ele('tpAmb').txt(process.env.NFE_AMBIENTE === 'producao' ? '1' : '2').up();
-    ide.ele('finNFe').txt('1').up();
-    ide.ele('indFinal').txt('1').up();
-    ide.ele('indPres').txt('1').up();
-    ide.ele('procEmi').txt('0').up();
-    ide.ele('verProc').txt('1.0').up();
+        // CORRIGIDO
+        .ele('dhEmi').txt(dhEmi).up()
 
-    // ---------- emit (Emitente) ----------
-    const emit = infNFe.ele('emit');
-    emit.ele('CNPJ').txt(EMITENTE.CNPJ).up();
-    emit.ele('xNome').txt(EMITENTE.xNome).up();
-    emit.ele('xFant').txt(EMITENTE.xFant).up();
-    const enderEmit = emit.ele('enderEmit');
-    enderEmit.ele('xLgr').txt(EMITENTE.enderEmit.xLgr).up();
-    enderEmit.ele('nro').txt(EMITENTE.enderEmit.nro).up();
-    enderEmit.ele('xBairro').txt(EMITENTE.enderEmit.xBairro).up();
-    enderEmit.ele('cMun').txt(EMITENTE.enderEmit.cMun).up();
-    enderEmit.ele('xMun').txt(EMITENTE.enderEmit.xMun).up();
-    enderEmit.ele('UF').txt(EMITENTE.enderEmit.UF).up();
-    enderEmit.ele('CEP').txt(EMITENTE.enderEmit.CEP).up();
-    enderEmit.ele('cPais').txt(EMITENTE.enderEmit.cPais).up();
-    enderEmit.ele('xPais').txt(EMITENTE.enderEmit.xPais).up();
-    emit.ele('IE').txt(EMITENTE.IE).up();
-    emit.ele('CRT').txt(EMITENTE.CRT).up();
+        .ele('tpNF').txt('1').up()
+        .ele('idDest').txt('1').up()
+        .ele('cMunFG').txt('4101804').up()
+        .ele('tpImp').txt('1').up()
+        .ele('tpEmis').txt('1').up()
+        .ele('cDV').txt(cDV).up()
+        .ele('tpAmb').txt('2').up()
+        .ele('finNFe').txt('1').up()
+        .ele('indFinal').txt('1').up()
+        .ele('indPres').txt('1').up()
+        .ele('procEmi').txt('0').up()
+        .ele('verProc').txt('1.0').up()
 
-    // ---------- infRespTec (Responsável Técnico – com CSRT) ----------
-    const infRespTec = infNFe.ele('infRespTec');
-    infRespTec.ele('CNPJ').txt('32830261000125').up();
-    infRespTec.ele('xContato').txt('Ronald de Carvalho').up();
-    infRespTec.ele('email').txt('ronald_carvalho@hotmail.com').up();
-    infRespTec.ele('fone').txt('4199613173').up();
-    infRespTec.ele('idCSRT').txt(token.idCSRT).up();
-    infRespTec.ele('hashCSRT').txt(hashCSRT).up();
+        .up()
 
-    // ---------- dest (Destinatário) ----------
-    const dest = infNFe.ele('dest');
-    const docType = cliente.documento.length === 14 ? 'CNPJ' : 'CPF';
-    dest.ele(docType).txt(cliente.documento.replace(/\D/g, '')).up();
-    dest.ele('xNome').txt(cliente.nome).up();
-    const enderDest = dest.ele('enderDest');
-    enderDest.ele('xLgr').txt(logradouro).up();
-    enderDest.ele('nro').txt(numero).up();
-    enderDest.ele('xBairro').txt(bairro).up();
-    enderDest.ele('cMun').txt(cMunCliente).up();
-    enderDest.ele('xMun').txt(cidade).up();
-    enderDest.ele('UF').txt(uf).up();
-    enderDest.ele('CEP').txt(cep).up();
-    enderDest.ele('cPais').txt('1058').up();
-    enderDest.ele('xPais').txt('BRASIL').up();
-    dest.ele('indIEDest').txt('9').up();
+        // =========================
+        // EMITENTE
+        // =========================
 
-    // ---------- det (Produto) ----------
-    const det = infNFe.ele('det', { nItem: '1' });
-    const prodElem = det.ele('prod');
-    prodElem.ele('cProd').txt(vendaId || '1').up();
-    prodElem.ele('cEAN').txt('SEM GTIN').up();
-    prodElem.ele('xProd').txt(produto.descricao).up();
-    prodElem.ele('NCM').txt(produto.ncm || '87149990').up();
-    prodElem.ele('CFOP').txt(produto.cfop || '5102').up();
-    prodElem.ele('uCom').txt('UN').up();
-    prodElem.ele('qCom').txt(produto.quantidade).up();
-    prodElem.ele('vUnCom').txt(produto.valorUnitario.toFixed(2)).up();
-    prodElem.ele('vProd').txt(valorTotal).up();
-    prodElem.ele('cEANTrib').txt('SEM GTIN').up();
-    prodElem.ele('uTrib').txt('UN').up();
-    prodElem.ele('qTrib').txt(produto.quantidade).up();
-    prodElem.ele('vUnTrib').txt(produto.valorUnitario.toFixed(2)).up();
-    prodElem.ele('indTot').txt('1').up();
+        .ele('emit')
 
-    // ---------- imposto (ICMS, PIS, COFINS) ----------
-    const imposto = det.ele('imposto');
-    const icms = imposto.ele('ICMS');
-    icms.ele('ICMSSN101')
-        .ele('orig').txt('0').up()
-        .ele('CSOSN').txt('101').up()
-        .ele('pCredSN').txt('0.00').up()
-        .ele('vCredICMSSN').txt('0.00').up()
+        .ele('CNPJ')
+        .txt(emitente.CNPJ || '32830261000125')
+        .up()
+
+        .ele('xNome')
+        .txt(
+            emitente.xNome ||
+            'WHEEL TECH BICYCLING LTDA'
+        )
+        .up()
+
+        .ele('xFant')
+        .txt(
+            emitente.xFant ||
+            'WHEEL TECH'
+        )
+        .up()
+
+        .ele('enderEmit')
+
+        .ele('xLgr')
+        .txt(
+            emitente.xLgr ||
+            'RUA LOURENCO JASIOCHA'
+        )
+        .up()
+
+        .ele('nro')
+        .txt(
+            emitente.nro ||
+            '1927'
+        )
+        .up()
+
+        .ele('xBairro')
+        .txt(
+            emitente.xBairro ||
+            'CENTRO'
+        )
+        .up()
+
+        .ele('cMun')
+        .txt('4101804')
+        .up()
+
+        .ele('xMun')
+        .txt('ARAUCARIA')
+        .up()
+
+        .ele('UF')
+        .txt('PR')
+        .up()
+
+        .ele('CEP')
+        .txt('83702090')
+        .up()
+
+        .ele('cPais')
+        .txt('1058')
+        .up()
+
+        .ele('xPais')
+        .txt('BRASIL')
+        .up()
+
+        .up()
+
+        .ele('IE')
+        .txt(
+            emitente.IE ||
+            '9087859328'
+        )
+        .up()
+
+        .ele('CRT')
+        .txt('1')
+        .up()
+
+        .up()
+
+        // =========================
+        // DESTINATÁRIO
+        // =========================
+
+        .ele('dest')
+
+        .ele('CPF')
+        .txt(
+            destinatario.CPF ||
+            '47840605885'
+        )
+        .up()
+
+        .ele('xNome')
+        .txt(
+            destinatario.xNome ||
+            'Andressa Miotto'
+        )
+        .up()
+
+        .ele('enderDest')
+
+        .ele('xLgr')
+        .txt(
+            destinatario.xLgr ||
+            'Rua Jardineira'
+        )
+        .up()
+
+        .ele('nro')
+        .txt(
+            destinatario.nro ||
+            '156'
+        )
+        .up()
+
+        .ele('xBairro')
+        .txt(
+            destinatario.xBairro ||
+            'Campina da Barra'
+        )
+        .up()
+
+        .ele('cMun')
+        .txt('4101804')
+        .up()
+
+        .ele('xMun')
+        .txt('ARAUCARIA')
+        .up()
+
+        .ele('UF')
+        .txt('PR')
+        .up()
+
+        .ele('CEP')
+        .txt('83709310')
+        .up()
+
+        .ele('cPais')
+        .txt('1058')
+        .up()
+
+        .ele('xPais')
+        .txt('BRASIL')
+        .up()
+
+        .up()
+
+        .ele('indIEDest')
+        .txt('9')
+        .up()
+
+        .up()
+
+        // =========================
+        // PRODUTO
+        // =========================
+
+        .ele('det', {
+            nItem: '1'
+        })
+
+        .ele('prod')
+
+        .ele('cProd')
+        .txt(
+            produto.cProd ||
+            '1'
+        )
+        .up()
+
+        .ele('cEAN')
+        .txt('SEM GTIN')
+        .up()
+
+        .ele('xProd')
+        .txt(
+            produto.xProd ||
+            'BICICLETA'
+        )
+        .up()
+
+        .ele('NCM')
+        .txt(
+            produto.NCM ||
+            '87120010'
+        )
+        .up()
+
+        .ele('CFOP')
+        .txt(
+            produto.CFOP ||
+            '5102'
+        )
+        .up()
+
+        .ele('uCom')
+        .txt('UN')
+        .up()
+
+        .ele('qCom')
+        .txt('1.0000')
+        .up()
+
+        .ele('vUnCom')
+        .txt('150.00')
+        .up()
+
+        .ele('vProd')
+        .txt('150.00')
+        .up()
+
+        .ele('cEANTrib')
+        .txt('SEM GTIN')
+        .up()
+
+        .ele('uTrib')
+        .txt('UN')
+        .up()
+
+        .ele('qTrib')
+        .txt('1.0000')
+        .up()
+
+        .ele('vUnTrib')
+        .txt('150.00')
+        .up()
+
+        .ele('indTot')
+        .txt('1')
+        .up()
+
+        .up()
+
+        // =========================
+        // IMPOSTOS
+        // =========================
+
+        .ele('imposto')
+
+        .ele('ICMS')
+
+        .ele('ICMSSN102')
+
+        .ele('orig')
+        .txt('0')
+        .up()
+
+        .ele('CSOSN')
+        .txt('102')
+        .up()
+
+        .up()
+        .up()
+
+        .ele('PIS')
+
+        .ele('PISNT')
+
+        .ele('CST')
+        .txt('07')
+        .up()
+
+        .up()
+        .up()
+
+        .ele('COFINS')
+
+        .ele('COFINSNT')
+
+        .ele('CST')
+        .txt('07')
+        .up()
+
+        .up()
+        .up()
+
+        .up()
+
+        .up()
+
+        // =========================
+        // TOTAL
+        // =========================
+
+        .ele('total')
+
+        .ele('ICMSTot')
+
+        .ele('vBC').txt('0.00').up()
+        .ele('vICMS').txt('0.00').up()
+        .ele('vICMSDeson').txt('0.00').up()
+        .ele('vFCP').txt('0.00').up()
+        .ele('vBCST').txt('0.00').up()
+        .ele('vST').txt('0.00').up()
+        .ele('vFCPST').txt('0.00').up()
+        .ele('vFCPSTRet').txt('0.00').up()
+        .ele('vProd').txt('150.00').up()
+        .ele('vFrete').txt('0.00').up()
+        .ele('vSeg').txt('0.00').up()
+        .ele('vDesc').txt('0.00').up()
+        .ele('vII').txt('0.00').up()
+        .ele('vIPI').txt('0.00').up()
+        .ele('vIPIDevol').txt('0.00').up()
+        .ele('vPIS').txt('0.00').up()
+        .ele('vCOFINS').txt('0.00').up()
+        .ele('vOutro').txt('0.00').up()
+        .ele('vNF').txt('150.00').up()
+
+        .up()
+        .up()
+
+        // =========================
+        // TRANSPORTE
+        // =========================
+
+        .ele('transp')
+
+        .ele('modFrete')
+        .txt('9')
+        .up()
+
+        .up()
+
+        // =========================
+        // PAGAMENTO
+        // =========================
+
+        .ele('pag')
+
+        .ele('detPag')
+
+        .ele('tPag')
+        .txt('01')
+        .up()
+
+        .ele('vPag')
+        .txt('150.00')
+        .up()
+
+        .up()
+        .up()
+
+        .up()
         .up();
-    const pis = imposto.ele('PIS');
-    pis.ele('PISNT').ele('CST').txt('07').up().up();
-    const cofins = imposto.ele('COFINS');
-    cofins.ele('COFINSNT').ele('CST').txt('07').up().up();
 
-    // ---------- total (Totais) ----------
-    const total = infNFe.ele('total');
-    const icmsTot = total.ele('ICMSTot');
-    const vBC = valorTotal;
-    const vICMS = (parseFloat(valorTotal) * 0.18).toFixed(2);
-    icmsTot.ele('vBC').txt(vBC).up();
-    icmsTot.ele('vICMS').txt(vICMS).up();
-    icmsTot.ele('vICMSDeson').txt('0.00').up();
-    icmsTot.ele('vFCPUFDest').txt('0.00').up();
-    icmsTot.ele('vICMSUFDest').txt('0.00').up();
-    icmsTot.ele('vICMSUFRemet').txt('0.00').up();
-    icmsTot.ele('vFCP').txt('0.00').up();
-    icmsTot.ele('vBCST').txt('0.00').up();
-    icmsTot.ele('vST').txt('0.00').up();
-    icmsTot.ele('vFCPST').txt('0.00').up();
-    icmsTot.ele('vFCPSTRet').txt('0.00').up();
-    icmsTot.ele('vProd').txt(valorTotal).up();
-    icmsTot.ele('vFrete').txt('0.00').up();
-    icmsTot.ele('vSeg').txt('0.00').up();
-    icmsTot.ele('vDesc').txt('0.00').up();
-    icmsTot.ele('vII').txt('0.00').up();
-    icmsTot.ele('vIPI').txt('0.00').up();
-    icmsTot.ele('vIPIDevol').txt('0.00').up();
-    icmsTot.ele('vPIS').txt('0.00').up();
-    icmsTot.ele('vCOFINS').txt('0.00').up();
-    icmsTot.ele('vOutro').txt('0.00').up();
-    icmsTot.ele('vNF').txt(valorTotal).up();
-
-    // ---------- transp (Transporte) ----------
-    const transp = infNFe.ele('transp');
-    transp.ele('modFrete').txt('0').up();
-
-    // ---------- pag (Pagamento – obrigatório) ----------
-    const pag = infNFe.ele('pag');
-    const detPag = pag.ele('detPag');
-    detPag.ele('indPag').txt('0').up();
-    detPag.ele('tPag').txt('01').up();
-    detPag.ele('vPag').txt(valorTotal).up();
-
-    // ---------- infAdic (Informações complementares – opcional) ----------
-    const infAdic = infNFe.ele('infAdic');
-    infAdic.ele('infCpl').txt('Teste de emissão em homologação').up();
-
-    // Gera XML compactado (sem espaços extras)
-    const xml = doc.end({ prettyPrint: false })
-        .replace(/>\s+</g, '><')
-        .replace(/^\s+|\s+$/g, '');
-    return xml;
+    return xml.end({
+        prettyPrint: false
+    });
 }
 
-module.exports = { gerarXmlNfe };
+module.exports = {
+    gerarXmlNfe
+};

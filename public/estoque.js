@@ -1,87 +1,60 @@
-console.log('estoque.js carregado');
-// estoque.js - minimal tab control
-function mudarAbaEstoque(abaId) {
-    // Ocultar todas as abas
-    document.querySelectorAll('.tab-content-estoque').forEach(tab => {
-        tab.classList.add('hidden');
+// estoque.js - Controle das abas do sistema de estoque/NF-e
+function mudarAbaEstoque(aba) {
+    // Oculta todas as abas (elementos com classe 'tab-content-estoque')
+    document.querySelectorAll('.tab-content-estoque').forEach(el => {
+        el.classList.add('hidden');
+        // Remove qualquer display inline que possa travar
+        el.style.display = '';
     });
-    // Mostrar a aba selecionada
-    const abaElement = document.getElementById(`aba${abaId.charAt(0).toUpperCase() + abaId.slice(1)}`);
-    if (abaElement) abaElement.classList.remove('hidden');
 
-    // Atualizar estilo dos botões
+    // Mostra a aba selecionada
+    const abaId = `aba${aba.charAt(0).toUpperCase() + aba.slice(1)}`;
+    const abaAtiva = document.getElementById(abaId);
+    if (abaAtiva) {
+        abaAtiva.classList.remove('hidden');
+        abaAtiva.style.display = ''; // garante que o display padrão (block) seja restaurado
+    } else {
+        console.error(`Aba não encontrada: ${abaId}`);
+        return;
+    }
+
+    // Atualiza estilo dos botões (opcional)
     document.querySelectorAll('#estoqueTabs .btn').forEach(btn => {
-        btn.classList.remove('active');
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline-primary');
     });
-    const activeBtn = document.querySelector(`#estoqueTabs .btn[onclick*="'${abaId}'"]`);
-    if (activeBtn) activeBtn.classList.add('active');
+    const botaoAtivo = document.querySelector(`#estoqueTabs .btn[onclick*="'${aba}'"]`);
+    if (botaoAtivo) {
+        botaoAtivo.classList.remove('btn-outline-primary');
+        botaoAtivo.classList.add('btn-primary');
+    }
+
+    // Carrega dados específicos da aba nfe
+    if (aba === 'nfe') {
+        if (typeof carregarVendasSemNFE === 'function') carregarVendasSemNFE();
+        if (typeof carregarVendasComNFE === 'function') carregarVendasComNFE();
+        if (typeof carregarTransportadoras === 'function') carregarTransportadoras();
+    }
 }
 
-// Função para abrir o sistema de estoque (que contém a aba NF-e)
-window.abrirSistemaEstoque = function() {
-    if (!currentUser) {
-        showToast('⚠️ Faça login primeiro', 'warning');
-        return;
-    }
-
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-
-    console.log('📦 Abrindo sistema de estoque...');
-
-    // Esconder todos os outros sistemas
-    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem'];
-    sistemas.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
-
-    // Mostrar sistema de estoque
-    const estoqueSystem = document.getElementById('estoqueSystem');
-    if (!estoqueSystem) {
-        showToast('❌ Sistema de estoque não encontrado', 'error');
-        return;
-    }
-    estoqueSystem.classList.remove('hidden');
-
-    // Atualizar informações do usuário na interface do estoque
-    const estoqueUserName = document.getElementById('estoqueUserName');
-    const estoqueUserAvatar = document.getElementById('estoqueUserAvatar');
-    const estoqueUserRole = document.getElementById('estoqueUserRole');
-    if (estoqueUserName) estoqueUserName.textContent = currentUser.name;
-    if (estoqueUserAvatar) estoqueUserAvatar.textContent = currentUser.avatar;
-    if (estoqueUserRole) estoqueUserRole.textContent = currentUser.role;
-
-    // Ativar a aba NF-e (se existir a função de troca de abas)
-    if (typeof mudarAbaEstoque === 'function') {
-        mudarAbaEstoque('nfe');
-    }
-
-    // Carregar vendas pendentes para NF-e (se a função estiver disponível)
-    if (typeof carregarVendasSemNFE === 'function') {
-        carregarVendasSemNFE();
-    }
-
-    showToast('📦 Sistema de estoque carregado', 'info');
-};
-
-// Função para alternar abas dentro do sistema de estoque
-window.mudarAbaEstoque = function(abaId) {
-    // Esconder todas as abas
-    const abas = document.querySelectorAll('.tab-content-estoque');
-    abas.forEach(tab => tab.classList.add('hidden'));
-
-    // Mostrar a aba correspondente
-    const abaSelecionada = document.getElementById(`aba${abaId.charAt(0).toUpperCase() + abaId.slice(1)}`);
-    if (abaSelecionada) {
-        abaSelecionada.classList.remove('hidden');
-    } else {
-        console.warn(`Aba ${abaId} não encontrada.`);
-    }
-
-    // Atualizar estilo dos botões
-    const botoes = document.querySelectorAll('#estoqueTabs .btn');
-    botoes.forEach(btn => btn.classList.remove('active'));
-    const botaoAtivo = document.querySelector(`#estoqueTabs .btn[onclick*="'${abaId}'"]`);
-    if (botaoAtivo) botaoAtivo.classList.add('active');
-};
+// Função auxiliar showToast (caso não exista globalmente)
+if (typeof showToast !== 'function') {
+    window.showToast = function(message, type = 'info') {
+        // Cria um toast simples se a função original não existir
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.style.position = 'fixed';
+        toast.style.bottom = '20px';
+        toast.style.right = '20px';
+        toast.style.zIndex = '9999';
+        toast.style.background = type === 'error' ? '#dc3545' : (type === 'success' ? '#28a745' : '#17a2b8');
+        toast.style.color = 'white';
+        toast.style.padding = '12px 20px';
+        toast.style.borderRadius = '8px';
+        toast.style.fontSize = '14px';
+        toast.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+        toast.innerText = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+    };
+}

@@ -1,3 +1,6 @@
+### `0.6.2` _2026-04-26_
+* Updated data to IANA TZDB `2026b`. [#1145](https://github.com/moment/moment-timezone/pull/1145)
+
 ### `0.6.1` _2026-03-18_
 * Updated data to IANA TZDB `2026a`. [#1140](https://github.com/moment/moment-timezone/pull/1140)
 

@@ -225,6 +225,7 @@ const SYSTEM_USERS = [
     { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Assistente' },
     { username: 'mirella', password: '220922', name: 'Mirella', avatar: 'M', role: 'Assistente 2' },
     { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' },
+    { username: 'leticia', password: '181094', name: 'Leticia', avatar: 'L', role: 'Administrador' },
     { username: 'hosama', password: '170999', name: 'Hosama', avatar: 'H', role: 'Administrador' },
     { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
 ];
@@ -8375,6 +8376,118 @@ window.verDetalhesReembolso = async function(id) {
 
 window.closeDetalhesReembolso = function() {
     document.getElementById('detalhesReembolsoModal').classList.add('hidden');
+};
+
+window.abrirSistemaEstoque = function() {
+    console.log('▶️ Abrindo sistema de NF-e (versão final)');
+
+    // 1. Esconder outros sistemas principais
+    const sistemas = [
+        'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
+        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem',
+        'estoqueGestaoSystem'
+    ];
+    sistemas.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+
+    // 2. Se o container #estoqueSystem não existir, aborta (deveria existir)
+    const estoqueSystem = document.getElementById('estoqueSystem');
+    if (!estoqueSystem) {
+        console.error('❌ #estoqueSystem não encontrado');
+        showToast('Erro: sistema de notas não encontrado', 'error');
+        return;
+    }
+    estoqueSystem.classList.remove('hidden');
+    estoqueSystem.style.display = 'block';
+
+    // ========== PADRONIZAR O HEADER DENTRO DO #estoqueSystem ==========
+    // Verifica se já tem um header personalizado; se não, cria um igual ao das outras abas
+    let header = estoqueSystem.querySelector('.main-header');
+    if (!header) {
+        header = document.createElement('header');
+        header.className = 'main-header';
+        header.innerHTML = `
+            <div class="container">
+                <div class="header-content">
+                    <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-exchange-alt" style="color:var(--primary);"></i>
+                        <span>Emissão de NF-e</span>
+                    </h1>
+                    <div class="user-info">
+                        <div class="user-avatar" id="estoqueUserAvatar">U</div>
+                        <div>
+                            <div style="font-weight: 600;" id="estoqueUserName">Usuário</div>
+                            <div style="font-size: 12px; color: #6c757d;" id="estoqueUserRole"></div>
+                            <div class="d-flex gap-2 mt-2">
+                                <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        // Insere o header no início do #estoqueSystem
+        estoqueSystem.insertBefore(header, estoqueSystem.firstChild);
+    }
+
+    // Atualiza os dados do usuário no header
+    const estoqueUserName = document.getElementById('estoqueUserName');
+    const estoqueUserAvatar = document.getElementById('estoqueUserAvatar');
+    const estoqueUserRole = document.getElementById('estoqueUserRole');
+    if (estoqueUserName) estoqueUserName.textContent = currentUser?.name || 'Usuário';
+    if (estoqueUserAvatar) estoqueUserAvatar.textContent = currentUser?.avatar || 'U';
+    if (estoqueUserRole) estoqueUserRole.textContent = currentUser?.role || 'Usuário';
+
+    // 3. Garantir que a aba NF-e esteja visível (usar o HTML já existente)
+    const todasAbas = document.querySelectorAll('.tab-content-estoque');
+    todasAbas.forEach(aba => aba.classList.add('hidden'));
+
+    const abaNfe = document.getElementById('abaNfe');
+    if (!abaNfe) {
+        console.error('❌ #abaNfe não encontrado – verifique se o HTML está completo');
+        showToast('Erro: aba NF-e não encontrada', 'error');
+        return;
+    }
+    abaNfe.classList.remove('hidden');
+    abaNfe.style.display = 'block';
+    abaNfe.style.visibility = 'visible';
+    abaNfe.style.opacity = '1';
+
+    // 4. Atualizar os botões das abas (se existirem)
+    const botoes = document.querySelectorAll('#estoqueTabs .btn');
+    botoes.forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline-primary');
+    });
+    const btnAtivo = document.querySelector('#estoqueTabs .btn[onclick*="nfe"]');
+    if (btnAtivo) {
+        btnAtivo.classList.remove('btn-outline-primary');
+        btnAtivo.classList.add('btn-primary');
+    }
+
+    // 5. Carregar os dados (transportadoras, vendas pendentes, vendas com NF-e)
+    if (typeof window.carregarTransportadoras === 'function') {
+        window.carregarTransportadoras();
+    } else {
+        console.warn('⚠️ carregarTransportadoras não definida');
+        const select = document.getElementById('nfeTransportadora');
+        if (select) select.innerHTML = '<option value="">Módulo não carregado</option>';
+    }
+    if (typeof window.carregarVendasSemNFE === 'function') {
+        window.carregarVendasSemNFE();
+    } else {
+        const tbody = document.getElementById('listaVendasNFE');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Erro: nfe_manager.js não carregado. Recarregue a página.您</td></tr>';
+    }
+    if (typeof window.carregarVendasComNFE === 'function') {
+        window.carregarVendasComNFE();
+    }
+
+    showToast('📄 Emissão de NF-e carregada', 'info');
+    console.log('✅ Aba NF-e exibida com sucesso');
 };
 
 // ============================================
