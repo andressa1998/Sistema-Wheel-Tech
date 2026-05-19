@@ -6473,16 +6473,16 @@ window.abrirSistemaReembolsos = function() {
     
     console.log('💰 Iniciando sistema de reembolsos...');
     
-    // Esconder outros sistemas
-    if (mainSystem) mainSystem.classList.add('hidden');
-    if (caixaSystem) caixaSystem.classList.add('hidden');
-    if (salesSystem) salesSystem.classList.add('hidden');
-    if (reviewsSystem) reviewsSystem.classList.add('hidden');
-    if (folgasSystem) folgasSystem.classList.add('hidden');
-    if (shippingSystem) shippingSystem.classList.add('hidden');
-    if (estoqueSystem) estoqueSystem.classList.add('hidden');
-    if (perguntasSystem) perguntasSystem.classList.add('hidden');
-    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
+    // Esconder outros sistemas - usando getElementById com verificação
+    const sistemasIds = [
+        'mainSystem', 'caixaSystem', 'salesSystem', 'reviewsSystem', 
+        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'perguntasSystem', 
+        'estoqueGestaoSystem'
+    ];
+    sistemasIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
     
     // Mostrar sistema de reembolsos
     const reembolsosSystem = document.getElementById('reembolsosSystem');
@@ -6598,28 +6598,38 @@ window.abrirSistemaReviews = function() {
     console.log('⭐ Iniciando sistema de avaliações...');
     
     // Esconder outros sistemas
-     if (mainSystem) mainSystem.classList.add('hidden');
-    if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
-    if (salesSystem) salesSystem.classList.add('hidden');
-    if (caixaSystem) caixaSystem.classList.add('hidden');
-    if (reviewsSystem) reviewsSystem.classList.add('hidden');
-    if (folgasSystem) folgasSystem.classList.add('hidden');
-    if (shippingSystem) shippingSystem.classList.add('hidden');
-    if (estoqueSystem) estoqueSystem.classList.add('hidden');
-    if (perguntasSystem) perguntasSystem.classList.add('hidden');
-    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
+    const sistemasIds = [
+        'mainSystem', 'reembolsosSystem', 'salesSystem', 'caixaSystem', 
+        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'perguntasSystem', 
+        'estoqueGestaoSystem'
+    ];
+    sistemasIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
     
     // Mostrar sistema de avaliações
-    if (reviewsSystem) reviewsSystem.classList.remove('hidden');
+    const reviewsSystem = document.getElementById('reviewsSystem');
+    if (!reviewsSystem) {
+        showToast('❌ Sistema de avaliações não encontrado', 'error');
+        return;
+    }
+    reviewsSystem.classList.remove('hidden');
     
     // Atualizar informações do usuário
-    document.getElementById('reviewsUserName').textContent = currentUser.name;
-    document.getElementById('reviewsUserAvatar').textContent = currentUser.avatar;
-    document.getElementById('reviewsUserRole').textContent = currentUser.role;
+    const reviewsUserName = document.getElementById('reviewsUserName');
+    const reviewsUserAvatar = document.getElementById('reviewsUserAvatar');
+    const reviewsUserRole = document.getElementById('reviewsUserRole');
+    
+    if (reviewsUserName) reviewsUserName.textContent = currentUser.name;
+    if (reviewsUserAvatar) reviewsUserAvatar.textContent = currentUser.avatar;
+    if (reviewsUserRole) reviewsUserRole.textContent = currentUser.role;
     
     // Limpar campos anteriores
-    document.getElementById('mlbInput').value = '';
-    document.getElementById('reviewsResultCard').classList.add('hidden');
+    const mlbInput = document.getElementById('mlbInput');
+    const reviewsResultCard = document.getElementById('reviewsResultCard');
+    if (mlbInput) mlbInput.value = '';
+    if (reviewsResultCard) reviewsResultCard.classList.add('hidden');
     
     showToast('⭐ Sistema de Avaliações carregado', 'info');
 };
@@ -7707,22 +7717,27 @@ window.abrirSistemaFrete = function() {
     if (menuSystem) menuSystem.classList.add('hidden');
 
     // Esconder outras abas
-    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'perguntasSystem', 'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem'];
-    sistemas.forEach(id => {
+    const sistemasIds = [
+        'mainSystem', 'salesSystem', 'reembolsosSystem', 'perguntasSystem', 
+        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem', 
+        'estoqueGestaoSystem'
+    ];
+    sistemasIds.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
     });
-
-    if (perguntasSystem) perguntasSystem.classList.add('hidden');
-    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
 
     const shippingSystem = document.getElementById('shippingSystem');
     if (shippingSystem) shippingSystem.classList.remove('hidden');
     
     // Atualizar cabeçalho
-    document.getElementById('shippingUserName').textContent = currentUser.name;
-    document.getElementById('shippingUserAvatar').textContent = currentUser.avatar;
-    document.getElementById('shippingUserRole').textContent = currentUser.role;
+    const shippingUserName = document.getElementById('shippingUserName');
+    const shippingUserAvatar = document.getElementById('shippingUserAvatar');
+    const shippingUserRole = document.getElementById('shippingUserRole');
+    
+    if (shippingUserName) shippingUserName.textContent = currentUser.name;
+    if (shippingUserAvatar) shippingUserAvatar.textContent = currentUser.avatar;
+    if (shippingUserRole) shippingUserRole.textContent = currentUser.role;
     
     // Verificar se o shippingManager já está disponível
     if (typeof window.shippingManager !== 'undefined' && window.shippingManager !== null) {
