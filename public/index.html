@@ -509,7 +509,7 @@ h4 {
                 <h3>Gerenciar Frete</h3>
                 <p>Análise de custos de frete</p>
             </div>
-            <div class="menu-card" onclick="abrirSistemaEstoque()">
+            <div class="menu-card" id="menuCardNFE" onclick="abrirSistemaNFE()">
                 <div class="menu-icon"><i class="fas fa-boxes"></i></div>
                 <h3>Emissão NF-e</h3>
                 <p>Nota fiscal eletrônica</p>
@@ -530,19 +530,19 @@ h4 {
                 <p>Movimentação de estoque</p>
             </div>
             <div class="menu-card" onclick="abrirSistemaPerguntas()">
-            <div class="menu-icon"><i class="fas fa-comments"></i></div>
-            <h3>Perguntas ML</h3>
-            <p>Responder perguntas dos clientes</p>
+                <div class="menu-icon"><i class="fas fa-comments"></i></div>
+                <h3>Perguntas ML</h3>
+                <p>Responder perguntas dos clientes</p>
             </div>
             <div class="menu-card" id="historicoMenuCard" onclick="abrirHistoricoAcessos()">
-            <div class="menu-icon"><i class="fas fa-history"></i></div>
-            <h3>Histórico de Acessos</h3>
-            <p>IP, data e hora dos logins</p>
+                <div class="menu-icon"><i class="fas fa-history"></i></div>
+                <h3>Histórico de Acessos</h3>
+                <p>IP, data e hora dos logins</p>
             </div>
         </div>
     </div>
 
-    <!-- ===== SISTEMA PRINCIPAL ===== -->
+    <!-- ===== SISTEMA PRINCIPAL (OS) ===== -->
     <div id="mainSystem" class="hidden">
         <header class="main-header">
             <div class="header-content">
@@ -623,20 +623,16 @@ h4 {
                     <div class="os-code" id="osCodeDisplay">OS: Gerando código...</div>
                 </div>
                 
-                <!-- FORMULÁRIO SIMPLES SEM TAG <form> -->
                 <div id="osFormContainer">
                     <div class="d-flex flex-wrap gap-3 mb-4">
                         <div style="flex: 1; min-width: 250px;">
-                        <div class="form-group">
-                            <label for="productName"><i class="fas fa-box"></i> Nome do Produto *</label>
-                            <input type="text" id="productName" class="form-control" placeholder="Ex: Bicicleta Mountain Bike" required
-               maxlength="200">
-        <div style="height: 18px; padding-top: 2px;">
-            <small id="contadorProduto" style="float: right; font-size: 11px; color: #6c757d;">
-                0/200
-            </small>
-                        </div>
-                        </div>
+                            <div class="form-group">
+                                <label for="productName"><i class="fas fa-box"></i> Nome do Produto *</label>
+                                <input type="text" id="productName" class="form-control" placeholder="Ex: Bicicleta Mountain Bike" required maxlength="200">
+                                <div style="height: 18px; padding-top: 2px;">
+                                    <small id="contadorProduto" style="float: right; font-size: 11px; color: #6c757d;">0/200</small>
+                                </div>
+                            </div>
                         </div>                        
                         <div style="flex: 1; min-width: 250px;">
                             <div class="form-group">
@@ -662,7 +658,8 @@ h4 {
                                     <option value="Ronald">Ronald</option>
                                     <option value="Bruna">Bruna</option>
                                     <option value="Andressa">Andressa</option>
-                                    <option value="Thalyta">Thalyta</option>                                   
+                                    <option value="Thalyta">Thalyta</option>
+                                    <option value="Leticia">Leticia</option>                         
                                 </select>
                             </div>
                         </div>
@@ -759,7 +756,6 @@ h4 {
                     <div class="form-group mb-4">
                         <label for="photoUpload"><i class="fas fa-images"></i> Fotos de Referência</label>
                         
-                        <!-- Campo para link de foto -->
                         <div class="photo-link-section">
                             <h5><i class="fas fa-link"></i> Adicionar foto por link</h5>
                             <div class="d-flex gap-2">
@@ -770,7 +766,6 @@ h4 {
                             </div>
                         </div>
                         
-                        <!-- Upload de arquivos -->
                         <div id="photoUploadArea" style="border: 2px dashed #dee2e6; border-radius: 8px; padding: 20px; text-align: center; background: #f8f9fa; min-height: 100px; cursor: pointer; margin-top: 10px;">
                             <i class="fas fa-cloud-upload-alt fa-2x" style="color: #6c757d; margin-bottom: 10px;"></i>
                             <p style="color: #6c757d; margin-bottom: 5px;">Clique ou arraste fotos aqui</p>
@@ -778,7 +773,6 @@ h4 {
                         </div>
                         <input type="file" id="photoUploadInput" multiple accept="image/*" style="display: none;">
                         
-                        <!-- Preview das fotos selecionadas -->
                         <div id="photoPreviews" class="mt-3" style="display: none; flex-wrap: wrap; gap: 10px;"></div>
                     </div>
                     
@@ -805,31 +799,18 @@ h4 {
                     
                     <div class="d-flex flex-wrap gap-2" style="align-items: center;">
                         <div class="filter-group" style="display: flex; gap: 5px;">
-                            <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">
-                                Pendentes (<span id="countPending">0</span>)
-                            </button>
-                            <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">
-                                Andamento (<span id="countProgress">0</span>)
-                            </button>
-                            <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
-                                Concluídas (<span id="countCompleted">0</span>)
-                            </button>
-                            <button class="btn btn-danger btn-sm" onclick="filterOS('nao_conferidas')">
-                                Não Conferidas (<span id="countNotChecked">0</span>)
-                            </button>
-                            <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
-                                Todas (<span id="countTotal">0</span>)
-                            </button>
+                            <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">Pendentes (<span id="countPending">0</span>)</button>
+                            <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">Andamento (<span id="countProgress">0</span>)</button>
+                            <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">Concluídas (<span id="countCompleted">0</span>)</button>
+                            <button class="btn btn-danger btn-sm" onclick="filterOS('nao_conferidas')">Não Conferidas (<span id="countNotChecked">0</span>)</button>
+                            <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">Todas (<span id="countTotal">0</span>)</button>
                         </div>
-                        
-                        <!-- NOVO BOTÃO DE SELEÇÃO MÚLTIPLA -->
                         <button class="btn btn-success" id="selectOSBtn" onclick="ativarModoSelecaoOS()">
                             <i class="fas fa-check-double"></i> Selecionar OS
                         </button>
                     </div>
                 </div>
                 
-                <!-- NOVA BARRA DE AÇÕES PARA OS SELECIONADAS -->
                 <div id="selectedOSBar" class="selected-os-bar hidden">
                     <div style="background: #f0f0f0; padding: 10px 20px; margin: 10px 0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; border-left: 4px solid #8A2BE2;">
                         <div>
@@ -837,18 +818,10 @@ h4 {
                             <strong id="selectedOSCount">0</strong> OS selecionada(s)
                         </div>
                         <div style="display: flex; gap: 10px;">
-                            <button class="btn btn-sm btn-info" onclick="selecionarTodasOS()">
-                                <i class="fas fa-check-double"></i> Selecionar Todas
-                            </button>
-                            <button class="btn btn-sm btn-warning" onclick="limparSelecaoOS()">
-                                <i class="fas fa-eraser"></i> Limpar
-                            </button>
-                            <button class="btn btn-sm btn-primary" id="printSelectedOSBtn" onclick="imprimirOSSelecionadas()" disabled>
-                                <i class="fas fa-print"></i> Imprimir Selecionadas
-                            </button>
-                            <button class="btn btn-sm btn-danger" onclick="ativarModoSelecaoOS()">
-                                <i class="fas fa-times"></i> Cancelar
-                            </button>
+                            <button class="btn btn-sm btn-info" onclick="selecionarTodasOS()"><i class="fas fa-check-double"></i> Selecionar Todas</button>
+                            <button class="btn btn-sm btn-warning" onclick="limparSelecaoOS()"><i class="fas fa-eraser"></i> Limpar</button>
+                            <button class="btn btn-sm btn-primary" id="printSelectedOSBtn" onclick="imprimirOSSelecionadas()" disabled><i class="fas fa-print"></i> Imprimir Selecionadas</button>
+                            <button class="btn btn-sm btn-danger" onclick="ativarModoSelecaoOS()"><i class="fas fa-times"></i> Cancelar</button>
                         </div>
                     </div>
                 </div>
@@ -856,31 +829,12 @@ h4 {
                 <div class="table-responsive">
                     <table class="table" id="osTable">
                         <thead>
-                            <tr>
-                                <th>Código</th>
-                                <th>Produto</th>
-                                <th>Responsável</th>
-                                <th>Urgência</th>
-                                <th>Status</th>
-                                <th>Criado em</th>
-                                <th>Ações</th>
-                            </tr>
+                            <tr><th>Código</th><th>Produto</th><th>Responsável</th><th>Urgência</th><th>Status</th><th>Criado em</th><th>Ações</th></tr>
                         </thead>
-                        <tbody id="osTableBody">
-                            <!-- As OS serão carregadas aqui -->
-                        </tbody>
+                        <tbody id="osTableBody"></tbody>
                     </table>
                 </div>
-                
-                <div id="emptyMessage" class="text-center py-5 hidden">
-                    <i class="fas fa-user-lock fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                    <h4 style="color: #6c757d;">Nenhuma ordem disponível</h4>
-                    <p style="color: #6c757d;">Você não tem permissão para visualizar ordens ou não há ordens com seu filtro atual.</p>
-                    <p style="color: #6c757d; font-size: 12px; margin-top: 10px;">
-                        <i class="fas fa-info-circle"></i>
-                        Você só vê ordens onde é <strong>responsável</strong> ou <strong>criador</strong>
-                    </p>
-                </div>
+                <div id="emptyMessage" class="text-center py-5 hidden">...</div>
             </div>
         </div>
         
@@ -888,34 +842,22 @@ h4 {
         <div id="completeModal" class="modal hidden">
             <div class="modal-content">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h3 style="margin: 0;">
-                        <i class="fas fa-flag-checkered"></i> Finalizar OS
-                    </h3>
-                    <button onclick="closeCompleteModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
-                        &times;
-                    </button>
+                    <h3 style="margin: 0;"><i class="fas fa-flag-checkered"></i> Finalizar OS</h3>
+                    <button onclick="closeCompleteModal()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">&times;</button>
                 </div>
-                
                 <div id="completeFormContainer">
                     <input type="hidden" id="completeOSId">
-                    
                     <div class="form-group mb-3">
                         <label for="photosTaken"><i class="fas fa-camera"></i> Fotos tiradas</label>
                         <input type="number" id="photosTaken" class="form-control" min="0" value="0" required>
                     </div>
-                    
                     <div class="form-group mb-4">
                         <label for="editsMade"><i class="fas fa-edit"></i> Edições realizadas</label>
                         <input type="number" id="editsMade" class="form-control" min="0" value="0" required>
                     </div>
-                    
                     <div class="d-flex justify-content-end gap-2">
-                        <button type="button" class="btn btn-secondary" onclick="closeCompleteModal()">
-                            Cancelar
-                        </button>
-                        <button id="finalizarOSBtn" class="btn btn-success">
-                            <i class="fas fa-check"></i> Finalizar
-                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="closeCompleteModal()">Cancelar</button>
+                        <button id="finalizarOSBtn" class="btn btn-success"><i class="fas fa-check"></i> Finalizar</button>
                     </div>
                 </div>
             </div>
@@ -2904,6 +2846,192 @@ h4 {
     </div>
 </div>
 
+<!-- SISTEMA DE EMISSÃO NF-e -->
+<div id="nfeSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <i class="fas fa-file-invoice" style="color: #007bff;"></i>
+                    Emissão de NF-e para Vendas ML
+                </h1>
+                <div class="user-info">
+                    <div class="user-avatar" id="nfeUserAvatar">N</div>
+                    <div>
+                        <div id="nfeUserName">Usuário</div>
+                        <div id="nfeUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Filtros -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h3><i class="fas fa-filter"></i> Filtros</h3>
+            </div>
+            <div class="d-flex gap-3 align-items-end">
+                <div class="form-group" style="flex:1">
+                    <label>Status da NF-e</label>
+                    <select id="filtroStatusNFE" class="form-control">
+                        <option value="pendente">Pendentes (não emitidas)</option>
+                        <option value="emitida">Emitidas</option>
+                        <option value="todas">Todas</option>
+                    </select>
+                </div>
+                <div>
+                    <button onclick="atualizarVendasNFE()" class="btn btn-success">
+                    <i class="fas fa-sync-alt"></i> Atualizar Lista
+                </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabela de vendas -->
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-list"></i> Vendas do Mercado Livre</h3>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover" id="nfeVendasTable">
+                    <thead>
+                        <tr>
+                            <th>Venda ID</th>
+                            <th>Produto</th>
+                            <th>Cliente</th>
+                            <th>Valor</th>
+                            <th>Data</th>
+                            <th>NF-e</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="nfeVendasBody">
+                        <tr><td colspan="7" class="text-center">Carregando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de edição/emissão da NF-e -->
+<div id="modalEmissaoNFE" class="modal hidden">
+    <div class="modal-content" style="max-width: 800px;">
+        <div style="background: #007bff; color: white; padding: 15px 20px; display: flex; justify-content: space-between;">
+            <h3><i class="fas fa-file-invoice"></i> Emitir NF-e</h3>
+            <button onclick="fecharModalEmissaoNFE()" style="background:none; border:none; color:white; font-size:24px;">&times;</button>
+        </div>
+        <div style="padding: 20px;">
+            <form id="formEmissaoNFE">
+                <input type="hidden" id="nfeVendaId">
+                <input type="hidden" id="nfeShipmentId">
+                <input type="hidden" id="nfePackId">
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label>Número da Venda</label>
+                        <input type="text" id="nfeNumeroVenda" class="form-control" readonly>
+                    </div>
+                    <div class="col-md-6">
+                        <label>Data da Venda</label>
+                        <input type="text" id="nfeDataVenda" class="form-control" readonly>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label>Cliente (Nome)</label>
+                        <input type="text" id="nfeClienteNome" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label>CPF/CNPJ</label>
+                        <input type="text" id="nfeClienteDocumento" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label>CEP</label>
+                        <input type="text" id="nfeClienteCep" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label>UF</label>
+                        <input type="text" id="nfeClienteUf" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label>Cidade</label>
+                        <input type="text" id="nfeClienteCidade" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label>Logradouro</label>
+                        <input type="text" id="nfeClienteEndereco" class="form-control" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label>Número</label>
+                        <input type="text" id="nfeClienteNumero" class="form-control" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label>Bairro</label>
+                        <input type="text" id="nfeClienteBairro" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <strong>Produto(s)</strong>
+                    </div>
+                    <div id="nfeProdutosContainer">
+                        <!-- produtos via JS -->
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label>CFOP</label>
+                        <select id="nfeCfop" class="form-control">
+                            <option value="5102">5102 - Venda de mercadoria</option>
+                            <option value="5405">5405 - Venda de produção do estabelecimento</option>
+                            <option value="6108">6108 - Venda fora do estado (interestadual)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label>Natureza da Operação</label>
+                        <input type="text" id="nfeNatOp" class="form-control" value="VENDA">
+                    </div>
+                    <div class="col-md-4">
+                        <label>Modalidade Frete</label>
+                        <select id="nfeModFrete" class="form-control">
+                            <option value="0">Contratação do frete por conta do emitente</option>
+                            <option value="1">Contratação do frete por conta do destinatário</option>
+                            <option value="9">Sem frete</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i> O NCM será salvo automaticamente pelo SKU para próximas vendas.
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-4">
+                    <button type="button" class="btn btn-secondary" onclick="fecharModalEmissaoNFE()">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btnEmitirNFE" onclick="emitirNFE()">
+                        <i class="fas fa-file-invoice-dollar"></i> Emitir NF-e
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <!-- ===== SISTEMA DE GESTÃO DE ESTOQUE ===== -->
 <div id="estoqueGestaoSystem" class="hidden">
     <header class="main-header">
@@ -3101,37 +3229,6 @@ h4 {
         <div class="d-flex justify-content-between gap-2 mt-3">
             <button class="btn btn-secondary" onclick="fecharModalMovimentacaoEstoque()">Cancelar</button>
             <button class="btn btn-primary" onclick="confirmarMovimentacaoEstoque()">Confirmar</button>
-        </div>
-    </div>
-</div>
-
-<!-- MODAL MOVIMENTAÇÃO ESTOQUE -->
-<div id="modalMovimentacaoEstoque" class="modal hidden">
-    <div class="modal-content">
-        <h3>Movimentar Estoque</h3>
-        <input type="hidden" id="movProdutoId">
-        <p><strong>Produto:</strong> <span id="movProdutoNome"></span></p>
-        <div class="form-group">
-            <label>Tipo</label>
-            <select id="movTipo" class="form-control">
-                <option value="entrada">Entrada (adicionar)</option>
-                <option value="saida">Saída (remover)</option>
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Quantidade</label>
-            <input type="number" id="movQuantidade" class="form-control" min="1" value="1" required>
-        </div>
-        <div class="d-flex justify-content-between gap-2 mt-3">
-            <button class="btn btn-secondary" onclick="fecharModalMovimentacaoEstoque()">Cancelar</button>
-            <button class="btn btn-primary" onclick="confirmarMovimentacaoEstoque()">Confirmar</button>
-        </div>
-    </div>
-</div>
-
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 </div>

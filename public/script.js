@@ -7828,78 +7828,10 @@ selecaoStyles.innerHTML = `
 
 document.head.appendChild(selecaoStyles);
 
-async function abrirSistemaNFE() {
-    if (!currentUser) {
-        showToast('Faça login primeiro', 'warning');
-        return;
-    }
-
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-
-    // Esconder outros sistemas
-    document.querySelectorAll('#mainSystem, #salesSystem, #reembolsosSystem, #perguntasSystem, #caixaSystem, #reviewsSystem, #folgasSystem, #shippingSystem, #estoqueSystem').forEach(el => {
-        if (el) el.classList.add('hidden');
-    });
-
-    if (perguntasSystem) perguntasSystem.classList.add('hidden');
-    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
-
-    const nfeSystem = document.getElementById('nfeSystem');
-    if (!nfeSystem) {
-        showToast('Sistema NF-e não encontrado', 'error');
-        return;
-    }
-
-    nfeSystem.classList.remove('hidden');
-
-    // Carregar lista de vendas que podem gerar NF-e (ex: vendas do ML com status 'paid' e que ainda não têm nota emitida)
-    await carregarVendasParaNFE();
-
-    // Atualizar informações do usuário
-    document.getElementById('nfeUserAvatar').textContent = currentUser.avatar;
-    document.getElementById('nfeUserName').textContent = currentUser.name;
-    document.getElementById('nfeUserRole').textContent = currentUser.role;
-}
-
 function formatarDataISO(dataISO) {
     if (!dataISO) return '';
     const [ano, mes, dia] = dataISO.split('-');
     return `${dia}/${mes}/${ano}`;
-}
-
-async function carregarVendasParaNFE() {
-    try {
-        const { data, error } = await supabaseClient
-            .from('vendas_ml')
-            .select('*')
-            .is('nfe_emitida', null) // só as que ainda não tiveram NF-e emitida
-            .order('created_at', { ascending: false });
-        if (error) throw error;
-
-        const tbody = document.getElementById('nfeVendasBody');
-        if (!data || data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nenhuma venda disponível para emissão</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = data.map(v => `
-            <tr>
-                <td>${v.id_venda_ml}</td>
-                <td>${v.cliente || 'Não informado'}</td>
-                <td>R$ ${(v.valor_total || 0).toFixed(2)}</td>
-                <td>${new Date(v.created_at).toLocaleDateString('pt-BR')}</td>
-                <td>
-                    <button class="btn btn-primary btn-sm" onclick="emitirNFEVenda('${v.id_venda_ml}')">
-                        <i class="fas fa-file-invoice"></i> Emitir NF-e
-                    </button>
-                </td>
-            </tr>
-        `).join('');
-    } catch (error) {
-        console.error(error);
-        showToast('Erro ao carregar vendas', 'error');
-    }
 }
 
 async function emitirNFEVenda(vendaId) {
@@ -8394,7 +8326,7 @@ window.closeDetalhesReembolso = function() {
 };
 
 window.abrirSistemaEstoque = function() {
-    console.log('▶️ Abrindo sistema de NF-e (versão final)');
+    console.log('▶️ Abrindo sistema de Estoque');
 
     // 1. Esconder outros sistemas principais
     const sistemas = [
@@ -8495,7 +8427,7 @@ window.abrirSistemaEstoque = function() {
         window.carregarVendasSemNFE();
     } else {
         const tbody = document.getElementById('listaVendasNFE');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Erro: nfe_manager.js não carregado. Recarregue a página.您</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Erro: nfe_manager.js não carregado. Recarregue a página.</td></tr>';
     }
     if (typeof window.carregarVendasComNFE === 'function') {
         window.carregarVendasComNFE();
@@ -8555,7 +8487,6 @@ window.aprovarReembolso = async function(id) {
 };
 
 // Exportar funções
-window.abrirSistemaNFE = abrirSistemaNFE;
 window.emitirNFEVenda = emitirNFEVenda;
 
 // ===== EXPORTAR FUNÇÕES PARA USO GLOBAL =====
