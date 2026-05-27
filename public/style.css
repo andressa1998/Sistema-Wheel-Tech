@@ -1015,3 +1015,13 @@ h4 {
     overflow-y: auto;
     z-index: 9999;
 }
+.badge-warning i.fa-exclamation-triangle {
+    margin-right: 4px;
+}
+.badge-warning {
+    cursor: help;
+    transition: all 0.2s;
+}
+.badge-warning:hover {
+    transform: scale(1.02);
+}

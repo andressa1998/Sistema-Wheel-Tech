@@ -169,13 +169,13 @@ const EMAIL_CONFIG = {
 // Mapeamento de usuários para emails
 const USER_EMAILS = {
     'Elaine': 'elainecguidelli@gmail.com',
-    'Arthur': 'arthur@wheeltech.com',
+    'Arthur': 'arthur@wheeltech.com.br',
     'Laura': 'laura@empresa.com',
     'Ronald': 'ronald@empresa.com',
     'Bruna': 'bruna@wheeltech.com.br',
+    'Elaine': 'leticia@wheeltech.com.br',
     'Thalyta': 'thalyta@empresa.com',
-    'AndressaMiotto': 'andmiotto1998@gmail.com',
-    'Hosama': 'hosama@wheeltech.com'
+    'AndressaMiotto': 'andmiotto1998@gmail.com'
 };
 
 // ===== VARIÁVEIS PARA NOTIFICAÇÕES DO SISTEMA =====
@@ -226,7 +226,6 @@ const SYSTEM_USERS = [
     { username: 'mirella', password: '220922', name: 'Mirella', avatar: 'M', role: 'Assistente 2' },
     { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' },
     { username: 'leticia', password: '181094', name: 'Leticia', avatar: 'L', role: 'Administrador' },
-    { username: 'hosama', password: '170999', name: 'Hosama', avatar: 'H', role: 'Administrador' },
     { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
 ];
 
@@ -1559,6 +1558,29 @@ async function loadReembolsos() {
         
         // Verificar se o usuário atual é admin
         const isAdmin = currentUser.role === 'Administrador';
+
+        // 🔥 NOVO: Verificar se a OS está pendente e tem motivo de rejeição
+        const isRejectedPending = (order.status === 'pendente' && order.motivo_rejeicao && order.motivo_rejeicao.trim() !== '');
+        
+        // Estilos especiais
+        if (isRejectedPending) {
+            // OS pendente que foi rejeitada – fundo amarelado e borda laranja
+            row.style.backgroundColor = '#fff3cd';
+            row.style.borderLeft = '4px solid #ffc107';
+            row.title = `Motivo da rejeição: ${order.motivo_rejeicao}`; // tooltip nativo
+        } else if (order.status === 'concluida' && !order.conferido) {
+            row.className = 'urgent-high';
+            row.style.animation = 'pulseReturn 2s infinite';
+            row.style.backgroundColor = '#fff5f5';
+        } else if (order.osType === 'devolucao') {
+            row.className = 'return-highlight';
+        } else if (order.urgency === 'alta') {
+            row.className = 'urgent-high';
+        } else if (order.urgency === 'normal') {
+            row.className = 'urgent-medium';
+        } else {
+            row.className = 'urgent-low';
+        }
         
         // Filtrar reembolsos se não for admin
         if (!isAdmin) {
@@ -3199,15 +3221,16 @@ async function loadOrders() {
                 createdAt: order.data_criacao,
                 completionDate: order.data_conclusao,
                 updatedAt: order.ultima_atualizacao || order.data_criacao,
-                // NOVOS CAMPOS PARA CONFERÊNCIA
                 conferido: order.conferido || false,
                 conferidoPor: order.conferido_por || null,
                 dataConferencia: order.data_conferencia || null,
-                // NOVOS CAMPOS PARA ANÚNCIO
                 valorAnuncio: order.valor_anuncio || 0,
                 descricaoAnuncio: order.descricao_anuncio || '',
                 linkNovoAnuncio: order.link_novo_anuncio || '',
-                precisaFoto: order.precisa_foto || 'nao'
+                precisaFoto: order.precisa_foto || 'nao',
+                motivo_rejeicao: order.motivo_rejeicao || null,
+                rejeitado_por: order.rejeitado_por || null,
+                data_rejeicao: order.data_rejeicao || null
             }));
             
             orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
@@ -3258,20 +3281,15 @@ async function saveOrder() {
         return;
     }
     
-    // Coletar dados específicos para criar/replicar anúncio OU APENAS EDIÇÃO
     const valorAnuncio = document.getElementById('valorAnuncio')?.value || 0;
     const descricaoAnuncio = document.getElementById('descricaoAnuncio')?.value || '';
     const linkNovoAnuncio = document.getElementById('linkNovoAnuncio')?.value || '';
     const precisaFoto = document.getElementById('precisaFoto')?.value || 'nao';
 
-    // VERIFICAR SE PRECISA DE FOTO E É CRIAR/REPLICAR ANÚNCIO OU APENAS EDIÇÃO
     let finalResponsibleName = responsibleName;
-    
-    // Lista de tipos que precisam mostrar os campos de anúncio
     const tiposComAnuncio = ['criar_anuncio', 'replicar_anuncio', 'edicao'];
     
     if (tiposComAnuncio.includes(photoType) && precisaFoto === 'sim') {
-        // Adicionar Elaine como responsável junto com o responsável selecionado
         if (responsibleName && responsibleName !== 'Elaine') {
             finalResponsibleName = `${responsibleName} e Elaine`;
             showToast('📸 Elaine adicionada como responsável (precisa de foto)', 'info');
@@ -3281,31 +3299,64 @@ async function saveOrder() {
         }
     }
     
-    const orderData = {
-        id: editingOrderId || orderCounter,
-        code: editingOrderId ? orders.find(o => o.id == editingOrderId)?.code : generateOSCode(),
+    // 🔥 Se for edição, buscar dados atuais da OS
+    let existingOrder = null;
+    if (editingOrderId) {
+        existingOrder = orders.find(o => o.id == editingOrderId);
+    }
+    
+    // Montar objeto com os dados do formulário (apenas campos editáveis)
+    const formData = {
         productName: productName,
         responsibleName: finalResponsibleName,
         linkAnuncio: linkAnuncio || '',
         urgency: document.getElementById('urgency')?.value || 'normal',
         osType: document.getElementById('osType')?.value || 'normal',
-        status: 'pendente',
         photoType: photoType,
         skus: document.getElementById('skus')?.value.split(',').map(s => s.trim()).filter(s => s) || [],
         observations: document.getElementById('observations')?.value || '',
-        photos: selectedPhotos,
-        photosTaken: 0,
-        editsMade: 0,
-        createdBy: currentUser.name,
-        user_notified: (responsibleName !== currentUser.name) ? false : true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        // NOVOS CAMPOS
         valorAnuncio: parseFloat(valorAnuncio),
         descricaoAnuncio: descricaoAnuncio,
         linkNovoAnuncio: linkNovoAnuncio,
-        precisaFoto: precisaFoto
+        precisaFoto: precisaFoto,
+        photos: selectedPhotos,
+        updatedAt: new Date().toISOString()
     };
+    
+    // Se for nova OS, adiciona campos obrigatórios de criação
+    if (!editingOrderId) {
+        formData.id = orderCounter;
+        formData.code = generateOSCode();
+        formData.status = 'pendente';
+        formData.photosTaken = 0;
+        formData.editsMade = 0;
+        formData.createdBy = currentUser.name;
+        formData.user_notified = (responsibleName !== currentUser.name) ? false : true;
+        formData.createdAt = new Date().toISOString();
+        formData.conferido = false;
+        formData.conferidoPor = null;
+        formData.dataConferencia = null;
+        formData.motivo_rejeicao = null;
+        formData.rejeitado_por = null;
+        formData.data_rejeicao = null;
+    } else {
+        // 🔥 EDIÇÃO: preserva todos os campos que NÃO estão no formulário
+        formData.id = existingOrder.id;
+        formData.code = existingOrder.code;
+        formData.status = existingOrder.status;              // mantém o status atual
+        formData.photosTaken = existingOrder.photosTaken || 0;
+        formData.editsMade = existingOrder.editsMade || 0;
+        formData.createdBy = existingOrder.createdBy;
+        formData.user_notified = existingOrder.user_notified;
+        formData.createdAt = existingOrder.createdAt;
+        formData.completionDate = existingOrder.completionDate || null;
+        formData.conferido = existingOrder.conferido || false;
+        formData.conferidoPor = existingOrder.conferidoPor || null;
+        formData.dataConferencia = existingOrder.dataConferencia || null;
+        formData.motivo_rejeicao = existingOrder.motivo_rejeicao || null;
+        formData.rejeitado_por = existingOrder.rejeitado_por || null;
+        formData.data_rejeicao = existingOrder.data_rejeicao || null;
+    }
     
     if (saveOSBtn) {
         saveOSBtn.innerHTML = '<span class="spinner"></span> Salvando...';
@@ -3315,8 +3366,30 @@ async function saveOrder() {
     try {
         let result;
         
+        // ========== SE FOR EDIÇÃO, SALVAR HISTÓRICO ANTES ==========
+        if (editingOrderId && supabaseClient) {
+            const oldOrder = orders.find(o => o.id == editingOrderId);
+            if (oldOrder) {
+                const dadosAntigos = {
+                    productName: oldOrder.productName,
+                    responsibleName: oldOrder.responsibleName,
+                    linkAnuncio: oldOrder.linkAnuncio,
+                    urgency: oldOrder.urgency,
+                    osType: oldOrder.osType,
+                    photoType: oldOrder.photoType,
+                    skus: oldOrder.skus,
+                    observations: oldOrder.observations,
+                    valorAnuncio: oldOrder.valorAnuncio,
+                    descricaoAnuncio: oldOrder.descricaoAnuncio,
+                    linkNovoAnuncio: oldOrder.linkNovoAnuncio,
+                    precisaFoto: oldOrder.precisaFoto,
+                };
+                await salvarHistoricoOS(editingOrderId, dadosAntigos, formData, currentUser.name);
+            }
+        }
+        
         if (supabaseClient) {
-            result = await saveOrderToSupabase(orderData);
+            result = await saveOrderToSupabase(formData);
         } else {
             result = { success: true, offline: true };
         }
@@ -3324,25 +3397,19 @@ async function saveOrder() {
         if (result.success) {
             if (editingOrderId) {
                 const index = orders.findIndex(o => o.id == editingOrderId);
-                if (index !== -1) orders[index] = orderData;
+                if (index !== -1) orders[index] = { ...orders[index], ...formData };
                 editingOrderId = null;
-                showToast(`✅ OS "${orderData.productName}" atualizada`, 'success');
+                showToast(`✅ OS "${formData.productName}" atualizada (status mantido: ${formData.status})`, 'success');
             } else {
-                orders.unshift(orderData);
+                orders.unshift(formData);
                 orderCounter++;
-                showToast(`✅ OS "${orderData.productName}" criada`, 'success');
-
-                // NOTIFICAR O RESPONSÁVEL (SE NÃO FOR O PRÓPRIO CRIADOR)
+                showToast(`✅ OS "${formData.productName}" criada`, 'success');
                 if (responsibleName !== currentUser.name) {
-                await notifyResponsibleNewOS(orderData, responsibleName);
+                    await notifyResponsibleNewOS(formData, responsibleName);
                 }
-                
-                // NOTIFICAR ADMIN SOBRE NOVA OS
-                await notificarAdminSobreNovaOS(orderData);
-
-                // NOTIFICAR ELAINE SE PRECISAR DE FOTOS (para qualquer tipo com anúncio)
+                await notificarAdminSobreNovaOS(formData);
                 if (tiposComAnuncio.includes(photoType) && precisaFoto === 'sim') {
-                    await notificarElaineSobreFotos(orderData);
+                    await notificarElaineSobreFotos(formData);
                 }
             }
             
@@ -3350,17 +3417,44 @@ async function saveOrder() {
             renderOrdersTable();
             clearForm();
             updateOSNotificationBell();
-            
         } else {
             showToast('❌ Erro ao salvar: ' + result.error, 'error');
         }
-        
     } finally {
         if (saveOSBtn) {
             saveOSBtn.innerHTML = '<i class="fas fa-save"></i> <span id="submitBtnText">Salvar OS</span>';
             saveOSBtn.disabled = false;
         }
     }
+}
+
+// Função auxiliar para salvar histórico (adicione no script.js)
+async function salvarHistoricoOS(osId, dadosAntes, dadosDepois, alteradoPor) {
+    if (!supabaseClient) return;
+    
+    const camposAlterados = {};
+    for (let key in dadosDepois) {
+        if (dadosAntes[key] !== dadosDepois[key]) {
+            camposAlterados[key] = {
+                de: dadosAntes[key],
+                para: dadosDepois[key]
+            };
+        }
+    }
+    
+    const historico = {
+        os_id: osId,
+        dados_anteriores: dadosAntes,
+        alterado_por: alteradoPor,
+        data_alteracao: new Date().toISOString(),
+        campos_alterados: Object.keys(camposAlterados).length ? camposAlterados : null
+    };
+    
+    const { error } = await supabaseClient
+        .from('ordens_service_historico')
+        .insert(historico);
+    
+    if (error) console.error('Erro ao salvar histórico:', error);
 }
 
 async function saveOrderToSupabase(order) {
@@ -3712,16 +3806,18 @@ function renderOrdersTable() {
         return;
     }
     
-    // Ordenar: OS finalizadas não conferidas primeiro, depois por data
+    // Ordenação
     filteredOrders.sort((a, b) => {
-        // Primeiro: OS concluídas não conferidas
         const aIsCompletedNotChecked = a.status === 'concluida' && !a.conferido;
         const bIsCompletedNotChecked = b.status === 'concluida' && !b.conferido;
-        
         if (aIsCompletedNotChecked && !bIsCompletedNotChecked) return -1;
         if (!aIsCompletedNotChecked && bIsCompletedNotChecked) return 1;
         
-        // Depois: por data de atualização (mais recente primeiro)
+        const aIsRejected = (a.status === 'pendente' && a.motivo_rejeicao);
+        const bIsRejected = (b.status === 'pendente' && b.motivo_rejeicao);
+        if (aIsRejected && !bIsRejected) return -1;
+        if (!aIsRejected && bIsRejected) return 1;
+        
         return new Date(b.updatedAt) - new Date(a.updatedAt);
     });
     
@@ -3730,11 +3826,17 @@ function renderOrdersTable() {
         const hasPermission = checkOrderPermission(order);
         const isAdmin = currentUser.role === 'Administrador';
         
-        // ESTILO ESPECIAL PARA OS FINALIZADAS NÃO CONFERIDAS
-        if (order.status === 'concluida' && !order.conferido) {
-            row.className = 'urgent-high'; // Destaque vermelho
-            row.style.animation = 'pulseReturn 2s infinite'; // Pulsação para chamar atenção
-            row.style.backgroundColor = '#fff5f5'; // Fundo vermelho claro
+        const isRejectedPending = (order.status === 'pendente' && order.motivo_rejeicao && order.motivo_rejeicao.trim() !== '');
+        
+        // Estilos
+        if (isRejectedPending) {
+            row.style.backgroundColor = '#fff3cd';
+            row.style.borderLeft = '4px solid #ffc107';
+            row.title = `Motivo: ${order.motivo_rejeicao} | Rejeitado por: ${order.rejeitado_por || '-'} em ${order.data_rejeicao ? new Date(order.data_rejeicao).toLocaleString('pt-BR') : '-'}`;
+        } else if (order.status === 'concluida' && !order.conferido) {
+            row.className = 'urgent-high';
+            row.style.animation = 'pulseReturn 2s infinite';
+            row.style.backgroundColor = '#fff5f5';
         } else if (order.osType === 'devolucao') {
             row.className = 'return-highlight';
         } else if (order.urgency === 'alta') {
@@ -3766,58 +3868,58 @@ function renderOrdersTable() {
             }
         }
         
-        // LINK DO ANÚNCIO - AGORA APARECE PARA TODAS AS OS CONCLUÍDAS (NÃO APENAS NÃO CONFERIDAS)
-       // LINKS DO ANÚNCIO - MOSTRA AMBOS SE EXISTIREM (APENAS PARA OS CONCLUÍDAS)
-let linkAnuncioDisplay = '';
-if (order.status === 'concluida') {
-    const temLinkOriginal = order.linkAnuncio && order.linkAnuncio.trim() !== '';
-    const temLinkNovo = order.linkNovoAnuncio && order.linkNovoAnuncio.trim() !== '';
-    
-    if (temLinkOriginal || temLinkNovo) {
-        linkAnuncioDisplay = '<div style="margin-top: 12px;">';
-        
-        // Link Original (se existir)
-        if (temLinkOriginal) {
-            linkAnuncioDisplay += `
-                <div style="margin-bottom: 8px; padding: 10px; background: #f0f7ff; border-radius: 6px; border-left: 4px solid #0066cc; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
-                        <i class="fas fa-link" style="color: #0066cc; font-size: 14px;"></i>
-                        <span style="font-weight: 600; color: #0066cc; font-size: 12px;">LINK ORIGINAL DO ANÚNCIO</span>
-                    </div>
-                    <a href="${order.linkAnuncio}" target="_blank" rel="noopener noreferrer" 
-                       style="color: #0066cc; text-decoration: none; font-size: 13px; word-break: break-all; display: block; padding: 5px 8px; background: white; border-radius: 4px; border: 1px solid #b8daff;">
-                        <i class="fas fa-external-link-alt" style="margin-right: 5px; font-size: 11px;"></i>
-                        ${order.linkAnuncio.length > 50 ? order.linkAnuncio.substring(0, 50) + '...' : order.linkAnuncio}
-                    </a>
-                </div>
+        // Badge para OS pendente rejeitada
+        let ajusteBadge = '';
+        if (isRejectedPending) {
+            ajusteBadge = `
+                <span class="badge badge-warning" style="background: #ffc107; color: #856404; margin-left: 5px; cursor: help;" 
+                      title="${order.motivo_rejeicao.replace(/"/g, '&quot;')}">
+                    <i class="fas fa-exclamation-triangle"></i> Ajustes necessários
+                </span>
+                <span class="badge badge-danger" style="margin-left: 5px; cursor: help;" 
+                      title="Rejeitado por: ${order.rejeitado_por || '?'} em ${order.data_rejeicao ? new Date(order.data_rejeicao).toLocaleString('pt-BR') : '-'}">
+                    <i class="fas fa-ban"></i> Não autorizado
+                </span>
             `;
         }
         
-        // Link Novo (se existir)
-        if (temLinkNovo) {
-            linkAnuncioDisplay += `
-                <div style="margin-bottom: ${temLinkOriginal ? '8px' : '0'}; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #28a745; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
-                        <i class="fas fa-link" style="color: #28a745; font-size: 14px;"></i>
-                        <span style="font-weight: 600; color: #28a745; font-size: 12px;">LINK DO NOVO ANÚNCIO</span>
-                    </div>
-                    <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" 
-                       style="color: #28a745; text-decoration: none; font-size: 13px; word-break: break-all; display: block; padding: 5px 8px; background: white; border-radius: 4px; border: 1px solid #c3e6cb;">
-                        <i class="fas fa-external-link-alt" style="margin-right: 5px; font-size: 11px;"></i>
-                        ${order.linkNovoAnuncio.length > 50 ? order.linkNovoAnuncio.substring(0, 50) + '...' : order.linkNovoAnuncio}
-                    </a>
-                    ${order.valorAnuncio ? `
-                    <div style="margin-top: 6px; font-size: 12px; color: #28a745; font-weight: 600;">
-                        <i class="fas fa-tag"></i> R$ ${parseFloat(order.valorAnuncio).toFixed(2)}
-                    </div>
-                    ` : ''}
-                </div>
-            `;
+        // Links dos anúncios (mantido igual)
+        let linkAnuncioDisplay = '';
+        if (order.status === 'concluida') {
+            const temLinkOriginal = order.linkAnuncio && order.linkAnuncio.trim() !== '';
+            const temLinkNovo = order.linkNovoAnuncio && order.linkNovoAnuncio.trim() !== '';
+            if (temLinkOriginal || temLinkNovo) {
+                linkAnuncioDisplay = '<div style="margin-top: 12px;">';
+                if (temLinkOriginal) {
+                    linkAnuncioDisplay += `
+                        <div style="margin-bottom: 8px; padding: 10px; background: #f0f7ff; border-radius: 6px; border-left: 4px solid #0066cc;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                                <i class="fas fa-link" style="color: #0066cc;"></i>
+                                <span style="font-weight: 600; color: #0066cc;">LINK ORIGINAL</span>
+                            </div>
+                            <a href="${order.linkAnuncio}" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: none; font-size: 13px; word-break: break-all;">
+                                ${order.linkAnuncio.length > 50 ? order.linkAnuncio.substring(0, 50) + '...' : order.linkAnuncio}
+                            </a>
+                        </div>
+                    `;
+                }
+                if (temLinkNovo) {
+                    linkAnuncioDisplay += `
+                        <div style="margin-bottom: 8px; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #28a745;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                                <i class="fas fa-link" style="color: #28a745;"></i>
+                                <span style="font-weight: 600; color: #28a745;">NOVO ANÚNCIO</span>
+                            </div>
+                            <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" style="color: #28a745; text-decoration: none; font-size: 13px; word-break: break-all;">
+                                ${order.linkNovoAnuncio.length > 50 ? order.linkNovoAnuncio.substring(0, 50) + '...' : order.linkNovoAnuncio}
+                            </a>
+                            ${order.valorAnuncio ? `<div style="margin-top: 6px; font-size: 12px; font-weight: 600;">R$ ${parseFloat(order.valorAnuncio).toFixed(2)}</div>` : ''}
+                        </div>
+                    `;
+                }
+                linkAnuncioDisplay += '</div>';
+            }
         }
-        
-        linkAnuncioDisplay += '</div>';
-    }
-}
         
         // Badges de permissão
         let permissionBadge = '';
@@ -3829,18 +3931,12 @@ if (order.status === 'concluida') {
             permissionBadge = '<span class="badge badge-info" style="margin-left: 5px;"><i class="fas fa-user-edit"></i> Criador</span>';
         }
         
-        // Badge de acesso admin
         let accessBadge = '';
-        if (isAdmin) {
-            const isDirectAccess = order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) || 
-                                  order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase());
-            if (!isDirectAccess) {
-                accessBadge = '<span class="badge badge-secondary" style="margin-left: 5px;"><i class="fas fa-user-shield"></i> Acesso Admin</span>';
-            }
+        if (isAdmin && !order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) && !order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
+            accessBadge = '<span class="badge badge-secondary" style="margin-left: 5px;"><i class="fas fa-user-shield"></i> Acesso Admin</span>';
         }
         
-        let typeBadge = order.osType === 'devolucao' ? 
-            '<span class="badge badge-danger" style="margin-left: 5px;"><i class="fas fa-exchange-alt"></i> Devolução</span>' : '';
+        let typeBadge = order.osType === 'devolucao' ? '<span class="badge badge-danger" style="margin-left: 5px;"><i class="fas fa-exchange-alt"></i> Devolução</span>' : '';
         
         let urgencyBadge = '';
         if (order.urgency === 'alta') urgencyBadge = '<span class="badge badge-danger">Alta</span>';
@@ -3852,93 +3948,71 @@ if (order.status === 'concluida') {
         else if (order.status === 'andamento') statusBadge = '<span class="status-progress">Em Andamento</span>';
         else statusBadge = '<span class="status-completed">Concluída</span>';
         
-        // Formatar data
         const createdDate = order.createdAt ? new Date(order.createdAt) : new Date();
         const formattedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
                              createdDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
         
-        // Botões
+        // Montagem dos botões de ação
         let actionButtons = '';
-
-        // Botão de VISUALIZAR
+        
         if (hasPermission || isAdmin) {
-            actionButtons += `<button class="btn btn-primary btn-sm" onclick="viewOrderDetails('${order.id}')" title="Visualizar OS">
-                <i class="fas fa-eye"></i>
-            </button>`;
+            actionButtons += `<button class="btn btn-primary btn-sm" onclick="viewOrderDetails('${order.id}')" title="Visualizar OS"><i class="fas fa-eye"></i></button>`;
         }
-
-        // Botão para visualizar fotos (se houver fotos)
-        if (order.photos && order.photos.length > 0) {
-            if (hasPermission || isAdmin) {
-                actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos">
-                    <i class="fas fa-images"></i> ${order.photos.length}
-                </button>`;
-            }
+        
+        if (order.photos && order.photos.length > 0 && (hasPermission || isAdmin)) {
+            actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos"><i class="fas fa-images"></i> ${order.photos.length}</button>`;
         }
-
-        // BOTÃO DE CONFERIR (apenas para OS concluídas não conferidas)
+        
+        // Botão CONFERIR (apenas OS concluídas não conferidas)
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Marcar como Conferido">
-                <i class="fas fa-check-double"></i>
-            </button>`;
+            actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Marcar como Conferido"><i class="fas fa-check-double"></i></button>`;
         }
-
+        
+        // Botão NÃO AUTORIZADO (apenas OS concluídas não conferidas)
+        if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
+            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado - Voltar para Pendentes"><i class="fas fa-ban"></i> Não Autorizado</button>`;
+        }
+        
         if (hasPermission || isAdmin) {
             if (order.status === 'pendente') {
-                actionButtons += `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS">
-                    <i class="fas fa-play"></i>
-                </button>`;
+                actionButtons += `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS"><i class="fas fa-play"></i></button>`;
             } else if (order.status === 'andamento') {
-                actionButtons += `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS">
-                    <i class="fas fa-flag-checkered"></i>
-                </button>`;
+                actionButtons += `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS"><i class="fas fa-flag-checkered"></i></button>`;
             }
-            
-            actionButtons += `<button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')" title="Editar OS">
-                <i class="fas fa-edit"></i>
-            </button>`;
         }
-
-        // Botão de impressão
-        actionButtons += `<button class="btn btn-primary btn-sm" onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})" title="Imprimir OS">
-            <i class="fas fa-print"></i>
-        </button>`;
         
-        // Botão de excluir apenas para admin ou criador
+        // 🔥 BOTÃO EDITAR: agora liberado para o CRIADOR mesmo após concluída
+        const podeEditar = (hasPermission || isAdmin || order.createdBy === currentUser.name);
+        if (podeEditar) {
+            actionButtons += `<button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')" title="Editar OS"><i class="fas fa-edit"></i></button>`;
+        }
+        
+        actionButtons += `<button class="btn btn-primary btn-sm" onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})" title="Imprimir OS"><i class="fas fa-print"></i></button>`;
+        
         if (isAdmin || order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
-            actionButtons += `<button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')" title="Excluir OS">
-                <i class="fas fa-trash"></i>
-            </button>`;
+            actionButtons += `<button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')" title="Excluir OS"><i class="fas fa-trash"></i></button>`;
         }
         
         row.innerHTML = `
             <td>
                 <strong>${order.code}</strong>
                 ${conferenciaBadge}
+                ${ajusteBadge}
                 ${permissionBadge}
                 ${accessBadge}
                 ${typeBadge}
-                <!-- LINK VISÍVEL PARA TODAS AS OS CONCLUÍDAS -->
                 ${linkAnuncioDisplay}
             </td>
             <td>${order.productName}</td>
             <td>
                 <div>${order.responsibleName}</div>
                 <small><i class="fas fa-user-plus"></i> Criado por: ${order.createdBy || 'Sistema'}</small>
-                ${order.status === 'concluida' && order.conferidoPor ? `
-                <small style="display: block; color: #28a745; margin-top: 2px;">
-                    <i class="fas fa-user-check"></i> Conferido por: ${order.conferidoPor}
-                </small>
-                ` : ''}
-            </td>
+                ${order.status === 'concluida' && order.conferidoPor ? `<small style="display: block; color: #28a745;">Conferido por: ${order.conferidoPor}</small>` : ''}
+              </td>
             <td>${urgencyBadge}</td>
             <td>${statusBadge}</td>
             <td>${formattedDate}</td>
-            <td>
-                <div class="d-flex gap-2">
-                    ${actionButtons}
-                </div>
-            </td>
+            <td><div class="d-flex gap-2">${actionButtons}</div></td>
         `;
         
         osTableBody.appendChild(row);
@@ -4380,7 +4454,6 @@ async function completeOrder() {
                     qtd_fotos: photosTaken,
                     qtd_edicoes: editsMade,
                     data_conclusao: new Date().toISOString(),
-                    // Resetar conferência quando finalizar novamente
                     conferido: false,
                     conferido_por: null,
                     data_conferencia: null,
@@ -4393,18 +4466,110 @@ async function completeOrder() {
         order.photosTaken = photosTaken;
         order.editsMade = editsMade;
         order.completionDate = new Date().toISOString();
-        // Resetar conferência
         order.conferido = false;
         order.conferidoPor = null;
         order.dataConferencia = null;
         
+        // ========== NOVO: Notificar o CRIADOR da OS por e-mail ==========
+        const criador = order.createdBy;
+        if (criador && criador !== currentUser.name) { // evita enviar para si mesmo se o finalizador for o criador
+            const assunto = `✅ OS Concluída: ${order.code}`;
+            const mensagem = `
+                Olá ${criador},
+                
+                A Ordem de Serviço que você criou foi concluída!
+                
+                📄 Número: ${order.code}
+                📦 Produto: ${order.productName}
+                🔧 Concluída por: ${currentUser.name}
+                📸 Fotos tiradas: ${photosTaken}
+                ✏️ Edições realizadas: ${editsMade}
+                🕒 Data de conclusão: ${new Date().toLocaleString('pt-BR')}
+                
+                Acesse o sistema para mais detalhes.
+                
+                Sistema Wheel Tech
+            `;
+            await enviarNotificacaoEmail(criador, assunto, mensagem);
+        }
+        // ================================================================
+        
         updateCounters();
         renderOrdersTable();
         closeCompleteModal();
-        showToast(`✅ OS finalizada`, 'success');
+        showToast(`✅ OS finalizada e criador notificado!`, 'success');
     } catch (error) {
+        console.error('❌ Erro ao finalizar:', error);
         showToast('❌ Erro ao finalizar', 'error');
     }
+}
+
+async function salvarHistoricoOS(osId, dadosAntes, dadosDepois, alteradoPor) {
+    if (!supabaseClient) return;
+    
+    // Identificar quais campos foram alterados (opcional, mas útil)
+    const camposAlterados = {};
+    for (let key in dadosDepois) {
+        if (dadosAntes[key] !== dadosDepois[key]) {
+            camposAlterados[key] = {
+                de: dadosAntes[key],
+                para: dadosDepois[key]
+            };
+        }
+    }
+    
+    const historico = {
+        os_id: osId,
+        dados_anteriores: dadosAntes,
+        alterado_por: alteradoPor,
+        data_alteracao: new Date().toISOString(),
+        campos_alterados: Object.keys(camposAlterados).length ? camposAlterados : null
+    };
+    
+    const { error } = await supabaseClient
+        .from('ordens_service_historico')
+        .insert(historico);
+    
+    if (error) console.error('Erro ao salvar histórico:', error);
+}
+
+async function carregarHistoricoEdicoes(osId) {
+    if (!supabaseClient) return [];
+    const { data, error } = await supabaseClient
+        .from('ordens_service_historico')
+        .select('*')
+        .eq('os_id', osId)
+        .order('data_alteracao', { ascending: false });
+    if (error) {
+        console.error('Erro ao carregar histórico:', error);
+        return [];
+    }
+    return data;
+}
+
+function gerarTimelineComHistorico(order, historico) {
+    let html = `<div class="info-card"><h4><i class="fas fa-history"></i> Histórico da OS</h4>`;
+    
+    if (historico.length === 0) {
+        html += `<p>Nenhuma edição registrada.</p>`;
+    } else {
+        html += `<ul class="list-group">`;
+        historico.forEach(entry => {
+            const data = new Date(entry.data_alteracao).toLocaleString('pt-BR');
+            const autor = entry.alterado_por;
+            const campos = entry.campos_alterados ? Object.keys(entry.campos_alterados).join(', ') : 'diversos';
+            html += `
+                <li class="list-group-item">
+                    <strong>${data}</strong> - por ${autor}<br>
+                    <small>Campos alterados: ${campos}</small>
+                    <button class="btn btn-sm btn-link" onclick="detalhesAlteracao(${entry.id})">Ver detalhes</button>
+                </li>
+            `;
+        });
+        html += `</ul>`;
+    }
+    html += `</div>`;
+    return html;
 }
 
 window.deleteOrderPrompt = async function(orderId) {
@@ -5217,7 +5382,7 @@ function closeViewOSModal() {
     currentViewingOS = null;
 }
 
-function switchViewOSTab(tabName) {
+async function switchViewOSTab(tabName) {
     // Atualizar botões das abas
     const tabButtons = document.querySelectorAll('#viewOSTabs .tab-button');
     tabButtons.forEach(button => {
@@ -5245,8 +5410,10 @@ function switchViewOSTab(tabName) {
             contentContainer.innerHTML = generatePhotosTab();
             break;
         case 'timeline':
-            contentContainer.innerHTML = generateTimelineTab();
-            break;
+    contentContainer.innerHTML = '<div class="text-center"><div class="spinner"></div> Carregando histórico...</div>';
+    const timelineHtml = await generateTimelineTab();
+    contentContainer.innerHTML = timelineHtml;
+    break;
     }
 }
 
@@ -5255,19 +5422,16 @@ function generateDetailsTab() {
     
     const order = currentViewingOS;
     
-    // Mapear valores para texto amigável
     const statusMap = {
         'pendente': { text: 'Pendente', class: 'status-pending-view' },
         'andamento': { text: 'Em Andamento', class: 'status-progress-view' },
         'concluida': { text: 'Concluída', class: 'status-completed-view' }
     };
-    
     const urgencyMap = {
         'baixa': { text: 'Baixa', color: '#28a745' },
         'normal': { text: 'Normal', color: '#ffc107' },
         'alta': { text: 'Alta', color: '#dc3545' }
     };
-    
     const photoTypeMap = {
         'estudio': 'Estúdio',
         'bike': 'Na Bike',
@@ -5276,18 +5440,13 @@ function generateDetailsTab() {
         'criar_anuncio': 'Criar anúncio',
         'replicar_anuncio': 'Replicar anúncio'
     };
-    
-    const osTypeMap = {
-        'normal': 'Normal',
-        'devolucao': 'Devolução'
-    };
+    const osTypeMap = { 'normal': 'Normal', 'devolucao': 'Devolução' };
     
     const statusInfo = statusMap[order.status] || { text: order.status, class: '' };
     const urgencyInfo = urgencyMap[order.urgency] || { text: order.urgency, color: '#6c757d' };
     const photoTypeText = photoTypeMap[order.photoType] || order.photoType;
     const osTypeText = osTypeMap[order.osType] || order.osType;
     
-    // Formatar datas
     const createdDate = new Date(order.createdAt);
     const formattedCreatedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
                                 createdDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
@@ -5315,16 +5474,14 @@ function generateDetailsTab() {
                     <div class="info-item">
                         <div class="info-label">Precisa de foto?</div>
                         <div class="info-value">
-                            ${order.precisaFoto === 'sim' ? 
-                            '<span class="badge badge-warning">Sim - Elaine notificada</span>' : 
-                            '<span class="badge badge-success">Não</span>'}
+                            ${order.precisaFoto === 'sim' ? '<span class="badge badge-warning">Sim - Elaine notificada</span>' : '<span class="badge badge-success">Não</span>'}
                         </div>
                     </div>
                 </div>
                 <div class="info-item" style="margin-top: 10px;">
                     <div class="info-label">Descrição</div>
                     <div class="info-value">
-                        <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; margin-top: 5px;">
+                        <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef;">
                             ${order.descricaoAnuncio || 'Nenhuma descrição fornecida'}
                         </div>
                     </div>
@@ -5333,14 +5490,10 @@ function generateDetailsTab() {
                 <div class="info-item" style="margin-top: 10px;">
                     <div class="info-label">Link do Novo Anúncio</div>
                     <div class="info-value">
-                        <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" 
-                           style="color: #8A2BE2; text-decoration: none; display: flex; align-items: center; gap: 5px;">
-                            <i class="fas fa-external-link-alt"></i>
-                            Ver novo anúncio
+                        <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" style="color: #8A2BE2;">
+                            <i class="fas fa-external-link-alt"></i> Ver novo anúncio
                         </a>
-                        <small style="display: block; color: #6c757d; margin-top: 5px; font-size: 12px; word-break: break-all;">
-                            ${order.linkNovoAnuncio}
-                        </small>
+                        <small style="display: block; color: #6c757d; margin-top: 5px; word-break: break-all;">${order.linkNovoAnuncio}</small>
                     </div>
                 </div>
                 ` : ''}
@@ -5348,156 +5501,127 @@ function generateDetailsTab() {
         `;
     }
     
+    // SEÇÃO DO MOTIVO DE REJEIÇÃO (se existir)
+    let motivoRejeicaoSection = '';
+    if (order.motivo_rejeicao) {
+        motivoRejeicaoSection = `
+            <div class="info-card" style="margin-top: 20px; background: #fff3cd; border-left: 4px solid #ffc107;">
+                <h4><i class="fas fa-exclamation-triangle"></i> Motivo da Não Autorização</h4>
+                <div class="info-item">
+                    <div class="info-label">Rejeitado por</div>
+                    <div class="info-value">${order.rejeitado_por || '-'}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Data da rejeição</div>
+                    <div class="info-value">${order.data_rejeicao ? new Date(order.data_rejeicao).toLocaleString('pt-BR') : '-'}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Motivo</div>
+                    <div class="info-value">
+                        <div style="background: white; padding: 15px; border-radius: 8px; margin-top: 5px;">
+                            ${order.motivo_rejeicao}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
     return `
         <div class="tab-content active">
             <div class="info-grid">
-                <!-- Informações do Produto -->
                 <div class="info-card">
                     <h4><i class="fas fa-box"></i> Informações do Produto</h4>
                     <div class="info-item">
                         <div class="info-label">Produto</div>
-                        <div class="info-value" style="font-size: 18px; font-weight: 700; color: #8A2BE2;">
-                            ${order.productName}
-                        </div>
+                        <div class="info-value" style="font-size: 18px; font-weight: 700; color: #8A2BE2;">${order.productName}</div>
                     </div>
-                    
                     ${order.linkAnuncio ? `
                     <div class="info-item">
                         <div class="info-label">Link do Anúncio</div>
                         <div class="info-value">
-                            <a href="${order.linkAnuncio}" target="_blank" rel="noopener noreferrer" 
-                               style="color: #8A2BE2; text-decoration: none; display: flex; align-items: center; gap: 5px;">
-                                <i class="fas fa-external-link-alt"></i>
-                                Ver anúncio
+                            <a href="${order.linkAnuncio}" target="_blank" rel="noopener noreferrer" style="color: #8A2BE2;">
+                                <i class="fas fa-external-link-alt"></i> Ver anúncio
                             </a>
-                            <small style="display: block; color: #6c757d; margin-top: 5px; font-size: 12px; word-break: break-all;">
-                                ${order.linkAnuncio}
-                            </small>
+                            <small style="display: block; color: #6c757d; word-break: break-all;">${order.linkAnuncio}</small>
                         </div>
                     </div>
                     ` : ''}
-                    
                     <div class="info-item">
                         <div class="info-label">Serviço(s)</div>
-                        <div class="info-value">
-                            <i class="fas fa-camera" style="margin-right: 8px;"></i>
-                            ${photoTypeText}
-                        </div>
+                        <div class="info-value"><i class="fas fa-camera"></i> ${photoTypeText}</div>
                     </div>
                 </div>
                 
-                <!-- Status e Prioridade -->
                 <div class="info-card">
                     <h4><i class="fas fa-tasks"></i> Status e Prioridade</h4>
                     <div class="info-item">
                         <div class="info-label">Status</div>
-                        <div class="info-value">
-                            <span class="status-badge-view ${statusInfo.class}">
-                                ${statusInfo.text}
-                            </span>
-                        </div>
+                        <div class="info-value"><span class="status-badge-view ${statusInfo.class}">${statusInfo.text}</span></div>
                     </div>
-                    
                     <div class="info-item">
                         <div class="info-label">Urgência</div>
-                        <div class="info-value">
-                            <span class="badge-view" style="background: ${urgencyInfo.color}; color: white;">
-                                ${urgencyInfo.text}
-                            </span>
-                        </div>
+                        <div class="info-value"><span class="badge-view" style="background: ${urgencyInfo.color}; color: white;">${urgencyInfo.text}</span></div>
                     </div>
-                    
                     <div class="info-item">
                         <div class="info-label">Tipo de OS</div>
                         <div class="info-value">
-                            <i class="fas fa-file-alt" style="margin-right: 8px;"></i>
-                            ${osTypeText}
-                            ${order.osType === 'devolucao' ? 
-                            '<span style="background: #dc3545; color: white; padding: 3px 10px; border-radius: 4px; font-size: 11px; margin-left: 10px;">DEVOLUÇÃO</span>' : ''}
+                            <i class="fas fa-file-alt"></i> ${osTypeText}
+                            ${order.osType === 'devolucao' ? '<span class="badge badge-danger" style="margin-left: 10px;">DEVOLUÇÃO</span>' : ''}
                         </div>
                     </div>
                 </div>
                 
-                <!-- Responsáveis -->
                 <div class="info-card">
                     <h4><i class="fas fa-users"></i> Responsáveis</h4>
                     <div class="info-item">
                         <div class="info-label">Responsável</div>
-                        <div class="info-value" style="font-size: 16px; font-weight: 600;">
-                            ${order.responsibleName}
-                        </div>
+                        <div class="info-value" style="font-size: 16px; font-weight: 600;">${order.responsibleName}</div>
                     </div>
-                    
                     <div class="info-item">
                         <div class="info-label">Criado por</div>
-                        <div class="info-value">
-                            <i class="fas fa-user-edit" style="margin-right: 8px;"></i>
-                            ${order.createdBy}
-                        </div>
+                        <div class="info-value"><i class="fas fa-user-edit"></i> ${order.createdBy}</div>
                     </div>
-                    
                     <div class="info-item">
                         <div class="info-label">Data de Criação</div>
-                        <div class="info-value">
-                            <i class="far fa-calendar-alt" style="margin-right: 8px;"></i>
-                            ${formattedCreatedDate}
-                        </div>
+                        <div class="info-value"><i class="far fa-calendar-alt"></i> ${formattedCreatedDate}</div>
                     </div>
                 </div>
                 
-                <!-- Datas -->
                 <div class="info-card">
                     <h4><i class="fas fa-calendar-alt"></i> Datas</h4>
                     <div class="info-item">
                         <div class="info-label">Criado em</div>
-                        <div class="info-value">
-                            ${formattedCreatedDate}
-                        </div>
+                        <div class="info-value">${formattedCreatedDate}</div>
                     </div>
-                    
                     <div class="info-item">
                         <div class="info-label">Última atualização</div>
-                        <div class="info-value">
-                            ${new Date(order.updatedAt).toLocaleString('pt-BR')}
-                        </div>
+                        <div class="info-value">${new Date(order.updatedAt).toLocaleString('pt-BR')}</div>
                     </div>
-                    
                     ${order.status === 'concluida' ? `
                     <div class="info-item">
                         <div class="info-label">Concluído em</div>
-                        <div class="info-value">
-                            ${completionDateText}
-                        </div>
+                        <div class="info-value">${completionDateText}</div>
                     </div>
-                    
                     <div class="info-item">
                         <div class="info-label">Fotos tiradas</div>
-                        <div class="info-value">
-                            <i class="fas fa-camera-retro"></i> ${order.photosTaken || '0'}
-                        </div>
+                        <div class="info-value"><i class="fas fa-camera-retro"></i> ${order.photosTaken || '0'}</div>
                     </div>
-                    
                     <div class="info-item">
                         <div class="info-label">Edições realizadas</div>
-                        <div class="info-value">
-                            <i class="fas fa-edit"></i> ${order.editsMade || '0'}
-                        </div>
+                        <div class="info-value"><i class="fas fa-edit"></i> ${order.editsMade || '0'}</div>
                     </div>
                     ` : ''}
                 </div>
             </div>
             
             ${anuncioSection}
+            ${motivoRejeicaoSection}
             
-            <!-- Observações -->
             <div class="info-card" style="margin-top: 20px;">
                 <h4><i class="fas fa-sticky-note"></i> Observações</h4>
-                <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef; min-height: 100px;">
-                    ${order.observations || 
-                    '<div style="text-align: center; color: #adb5bd; padding: 20px;">' +
-                    '<i class="fas fa-info-circle" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>' +
-                    'Nenhuma observação registrada para esta ordem de serviço.' +
-                    '</div>'}
+                <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef;">
+                    ${order.observations || '<div style="text-align: center; color: #adb5bd;">Nenhuma observação registrada.</div>'}
                 </div>
             </div>
         </div>
@@ -5560,14 +5684,27 @@ function generatePhotosTab() {
     `;
 }
 
-function generateTimelineTab() {
+// Substitua a função generateTimelineTab por esta versão assíncrona
+async function generateTimelineTab() {
     if (!currentViewingOS) return '<p>Carregando...</p>';
     
     const order = currentViewingOS;
-    const timeline = [];
     
-    // Evento: Criação
-    timeline.push({
+    // Carregar histórico de edições do Supabase
+    let historico = [];
+    if (supabaseClient) {
+        const { data, error } = await supabaseClient
+            .from('ordens_service_historico')
+            .select('*')
+            .eq('os_id', order.id)
+            .order('data_alteracao', { ascending: false });
+        if (!error && data) historico = data;
+    }
+    
+    // Eventos padrão (criação, início, conclusão)
+    const timelineEvents = [];
+    
+    timelineEvents.push({
         date: order.createdAt,
         title: 'OS Criada',
         description: `Ordem de serviço criada por ${order.createdBy}`,
@@ -5575,9 +5712,8 @@ function generateTimelineTab() {
         color: '#8A2BE2'
     });
     
-    // Evento: Atualização (se diferente da criação)
-    if (order.updatedAt && order.updatedAt !== order.createdAt) {
-        timeline.push({
+    if (order.updatedAt && order.updatedAt !== order.createdAt && historico.length === 0) {
+        timelineEvents.push({
             date: order.updatedAt,
             title: 'OS Atualizada',
             description: 'Última atualização do sistema',
@@ -5586,10 +5722,9 @@ function generateTimelineTab() {
         });
     }
     
-    // Evento: Início (se em andamento ou concluída)
     if (order.status === 'andamento' || order.status === 'concluida') {
-        timeline.push({
-            date: order.updatedAt, // Usar updatedAt como proxy
+        timelineEvents.push({
+            date: order.updatedAt,
             title: 'OS Iniciada',
             description: `Iniciada por ${order.responsibleName}`,
             icon: 'play-circle',
@@ -5597,9 +5732,8 @@ function generateTimelineTab() {
         });
     }
     
-    // Evento: Conclusão (se concluída)
     if (order.status === 'concluida' && order.completionDate) {
-        timeline.push({
+        timelineEvents.push({
             date: order.completionDate,
             title: 'OS Concluída',
             description: `Concluída com ${order.photosTaken || 0} fotos tiradas e ${order.editsMade || 0} edições`,
@@ -5608,48 +5742,102 @@ function generateTimelineTab() {
         });
     }
     
-    // Ordenar por data (mais recente primeiro)
-    timeline.sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Ordenar eventos padrão por data (mais recente primeiro)
+    timelineEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
     
-    return `
-        <div class="tab-content active">
-            <div class="info-card">
-                <h4><i class="fas fa-history"></i> Histórico da OS</h4>
-                
-                ${timeline.length === 0 ? `
-                    <div style="text-align: center; padding: 40px 20px;">
-                        <i class="fas fa-history fa-3x" style="color: #e9ecef; margin-bottom: 15px;"></i>
-                        <p style="color: #6c757d;">Nenhum evento registrado no histórico.</p>
-                    </div>
-                ` : `
-                    <div class="timeline">
-                        ${timeline.map((event, index) => {
-                            const eventDate = new Date(event.date);
-                            const formattedDate = eventDate.toLocaleDateString('pt-BR') + ' ' + 
-                                                eventDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
-                            
-                            return `
-                                <div class="timeline-item">
-                                    <div class="timeline-date">
-                                        <i class="far fa-clock"></i> ${formattedDate}
-                                    </div>
-                                    <div class="timeline-content">
-                                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                                            <i class="fas fa-${event.icon}" style="color: ${event.color};"></i>
-                                            <strong style="color: #495057;">${event.title}</strong>
-                                        </div>
-                                        <p style="color: #6c757d; margin: 0; font-size: 14px;">
-                                            ${event.description}
-                                        </p>
-                                    </div>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                `}
+    // Montar HTML combinando eventos padrão + histórico de edições
+    let html = `<div class="info-card"><h4><i class="fas fa-history"></i> Linha do Tempo e Edições</h4>`;
+    
+    if (timelineEvents.length === 0 && historico.length === 0) {
+        html += `<p>Nenhum evento registrado.</p>`;
+    } else {
+        html += `<ul class="timeline-list" style="list-style: none; padding-left: 0;">`;
+        
+        // Exibir eventos padrão
+        timelineEvents.forEach(event => {
+            const eventDate = new Date(event.date);
+            const formattedDate = eventDate.toLocaleDateString('pt-BR') + ' ' + 
+                                 eventDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+            html += `
+                <li style="margin-bottom: 20px; border-left: 3px solid ${event.color}; padding-left: 15px;">
+                    <div><strong>${formattedDate}</strong> - ${event.title}</div>
+                    <div style="color: #6c757d; font-size: 14px;">${event.description}</div>
+                </li>
+            `;
+        });
+        
+        // Exibir histórico de edições
+        historico.forEach(entry => {
+            const dataAlt = new Date(entry.data_alteracao);
+            const formattedDate = dataAlt.toLocaleDateString('pt-BR') + ' ' + 
+                                 dataAlt.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+            const campos = entry.campos_alterados ? Object.keys(entry.campos_alterados).join(', ') : 'diversos';
+            html += `
+                <li style="margin-bottom: 20px; border-left: 3px solid #ffc107; padding-left: 15px;">
+                    <div><strong>${formattedDate}</strong> - Edição por ${entry.alterado_por}</div>
+                    <div style="color: #6c757d; font-size: 14px;">Campos alterados: ${campos}</div>
+                    <button class="btn btn-sm btn-link p-0" onclick="verDetalhesAlteracao(${entry.id})">Ver detalhes</button>
+                </li>
+            `;
+        });
+        
+        html += `</ul>`;
+    }
+    
+    html += `</div>`;
+    return html;
+}
+
+window.verDetalhesAlteracao = async function(historicoId) {
+    if (!supabaseClient) return;
+    const { data, error } = await supabaseClient
+        .from('ordens_service_historico')
+        .select('*')
+        .eq('id', historicoId)
+        .single();
+    if (error || !data) {
+        showToast('Erro ao carregar detalhes', 'error');
+        return;
+    }
+    
+    const campos = data.campos_alterados;
+    let detalhesHtml = `<div style="max-height: 400px; overflow-y: auto;">`;
+    if (campos) {
+        for (let [campo, valores] of Object.entries(campos)) {
+            detalhesHtml += `
+                <div style="margin-bottom: 15px; border-bottom: 1px solid #dee2e6; padding-bottom: 10px;">
+                    <strong>${campo}</strong><br>
+                    <span style="color: #dc3545;">De: ${valores.de ?? '(vazio)'}</span><br>
+                    <span style="color: #28a745;">Para: ${valores.para ?? '(vazio)'}</span>
+                </div>
+            `;
+        }
+    } else {
+        detalhesHtml += '<p>Nenhum detalhe de campos registrado.</p>';
+    }
+    detalhesHtml += `</div>`;
+    
+    showModalDialog('Detalhes da Alteração', detalhesHtml);
+};
+
+// Função simples para exibir modal genérico
+function showModalDialog(title, contentHtml) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3>${title}</h3>
+                <button onclick="this.closest('.modal').remove()" style="background:none; border:none; font-size:24px;">&times;</button>
+            </div>
+            ${contentHtml}
+            <div class="d-flex justify-content-end mt-3">
+                <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Fechar</button>
             </div>
         </div>
     `;
+    document.body.appendChild(modal);
 }
 
 window.viewPhotoInModal = function(photoIndex) {
@@ -7645,7 +7833,7 @@ async function marcarOSComoLidas() {
 // NOTIFICAR ANDRESSA SOBRE NOVO REEMBOLSO
 // ============================================
 async function notificarAndressaNovoReembolso(reembolsoData) {
-    const destinatario = 'Hosama';
+    const destinatario = 'Leticia';
     const assunto = `💰 Novo reembolso para verificar - Venda ${reembolsoData.numero_venda}`;
     const mensagem = `
     Novo reembolso para verificar!
@@ -8435,6 +8623,67 @@ window.abrirSistemaEstoque = function() {
 
     showToast('📄 Emissão de NF-e carregada', 'info');
     console.log('✅ Aba NF-e exibida com sucesso');
+};
+
+window.abrirRejeitarModal = function(orderId) {
+    document.getElementById('rejeitarOSId').value = orderId;
+    document.getElementById('motivoRejeicao').value = '';
+    document.getElementById('rejeitarOSModal').classList.remove('hidden');
+};
+
+window.closeRejeitarModal = function() {
+    document.getElementById('rejeitarOSModal').classList.add('hidden');
+};
+
+window.confirmarRejeicaoOS = async function() {
+    const orderId = document.getElementById('rejeitarOSId').value;
+    const motivo = document.getElementById('motivoRejeicao').value.trim();
+    
+    if (!motivo) {
+        showToast('⚠️ Informe o motivo da não autorização', 'warning');
+        return;
+    }
+    
+    if (!confirm('Esta OS voltará para PENDENTE. O motivo será registrado. Continuar?')) return;
+    
+    try {
+        if (!supabaseClient) throw new Error('Supabase não conectado');
+        
+        const { error } = await supabaseClient
+            .from('ordens_service')
+            .update({
+                status: 'pendente',
+                motivo_rejeicao: motivo,
+                rejeitado_por: currentUser.name,
+                data_rejeicao: new Date().toISOString(),
+                conferido: false,
+                conferido_por: null,
+                data_conferencia: null,
+                ultima_atualizacao: new Date().toISOString()
+            })
+            .eq('id', orderId);
+        
+        if (error) throw error;
+        
+        // Atualiza a OS na lista local
+        const index = orders.findIndex(o => o.id == orderId);
+        if (index !== -1) {
+            orders[index].status = 'pendente';
+            orders[index].motivo_rejeicao = motivo;
+            orders[index].rejeitado_por = currentUser.name;
+            orders[index].data_rejeicao = new Date().toISOString();
+            orders[index].conferido = false;
+        }
+        
+        showToast('✅ OS rejeitada e movida para Pendentes', 'success');
+        closeRejeitarModal();
+        updateCounters();
+        renderOrdersTable();
+        
+    } catch (error) {
+        console.error('❌ Erro ao rejeitar OS:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
+    }
 };
 
 // ============================================
