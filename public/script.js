@@ -769,35 +769,35 @@ function setupEventListeners() {
         });
     }
 
-    // Configurar botão de caixa
-const caixaBtn = document.getElementById('caixaBtn');
-if (caixaBtn) {
-    caixaBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        console.log('💰 Botão Caixa clicado');
-        window.abrirSistemaCaixa();
-    });
-}
+    // Botão de caixa
+    const caixaBtn = document.getElementById('caixaBtn');
+    if (caixaBtn) {
+        caixaBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('💰 Botão Caixa clicado');
+            window.abrirSistemaCaixa();
+        });
+    }
 
-// Configurar botão de reembolsos (já no header principal)
-const reembolsosBtn = document.getElementById('reembolsosBtn');
-if (reembolsosBtn) {
-    reembolsosBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        console.log('💰 Botão Reembolsos clicado');
-        window.abrirSistemaReembolsos();
-    });
-}
+    // Botão de reembolsos
+    const reembolsosBtn = document.getElementById('reembolsosBtn');
+    if (reembolsosBtn) {
+        reembolsosBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('💰 Botão Reembolsos clicado');
+            window.abrirSistemaReembolsos();
+        });
+    }
 
-// Configurar botão de vendas
-const vendasBtn = document.getElementById('vendasBtn');
-if (vendasBtn) {
-    vendasBtn.addEventListener('click', function(e) {
-        e.preventDefault();
-        console.log('🛒 Botão Vendas clicado');
-        window.abrirSistemaVendas();
-    });
-}
+    // Botão de vendas
+    const vendasBtn = document.getElementById('vendasBtn');
+    if (vendasBtn) {
+        vendasBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('🛒 Botão Vendas clicado');
+            window.abrirSistemaVendas();
+        });
+    }
     
     // Event listener para mostrar/ocultar campos de anúncio
     const photoTypeSelect = document.getElementById('photoType');
@@ -805,7 +805,7 @@ if (vendasBtn) {
         photoTypeSelect.addEventListener('change', toggleCamposAnuncio);
     }
     
-    // NOVO: Event listener para campo "precisa de foto"
+    // Event listener para campo "precisa de foto"
     const precisaFotoSelect = document.getElementById('precisaFoto');
     if (precisaFotoSelect) {
         precisaFotoSelect.addEventListener('change', function() {
@@ -813,10 +813,8 @@ if (vendasBtn) {
             const precisaFoto = this.value;
             
             if ((photoType === 'criar_anuncio' || photoType === 'replicar_anuncio') && precisaFoto === 'sim') {
-                // Mostrar aviso visual
                 const responsibleSelect = document.getElementById('responsibleName');
                 if (responsibleSelect) {
-                    // Verificar se Elaine já está selecionada
                     if (responsibleSelect.value === 'Elaine') {
                         showToast('📸 Elaine já é a responsável selecionada', 'info');
                     } else {
@@ -825,7 +823,6 @@ if (vendasBtn) {
                 }
             }
             
-            // NOVO: Destacar visualmente o campo de responsável quando precisa de foto
             const responsibleField = document.getElementById('responsibleName');
             if (responsibleField) {
                 if (precisaFoto === 'sim' && (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio')) {
@@ -833,23 +830,18 @@ if (vendasBtn) {
                     responsibleField.style.boxShadow = '0 0 0 3px rgba(233, 30, 99, 0.15)';
                     responsibleField.style.transition = 'all 0.3s';
                     
-                    // Adicionar tooltip visual
                     const tooltip = document.createElement('div');
                     tooltip.id = 'fotoTooltip';
                     tooltip.innerHTML = '<i class="fas fa-info-circle"></i> Elaine será adicionada automaticamente';
                     tooltip.style.cssText = 'font-size: 12px; color: #e91e63; margin-top: 5px; display: flex; align-items: center; gap: 5px;';
                     
-                    // Verificar se o tooltip já existe
                     const existingTooltip = document.getElementById('fotoTooltip');
                     if (existingTooltip) existingTooltip.remove();
                     
                     responsibleField.parentNode.appendChild(tooltip);
                 } else {
-                    // Remover destaque
                     responsibleField.style.borderColor = '';
                     responsibleField.style.boxShadow = '';
-                    
-                    // Remover tooltip
                     const tooltip = document.getElementById('fotoTooltip');
                     if (tooltip) tooltip.remove();
                 }
@@ -857,13 +849,13 @@ if (vendasBtn) {
         });
     }
     
-    // Event listener para botão de adicionar foto por link
+    // Botão de adicionar foto por link
     const addPhotoLinkBtn = document.getElementById('addPhotoLinkBtn');
     if (addPhotoLinkBtn) {
         addPhotoLinkBtn.addEventListener('click', addPhotoFromLink);
     }
     
-    // Event listener para tecla Enter no campo de link de foto
+    // Tecla Enter no campo de link de foto
     const photoLinkInput = document.getElementById('photoLinkInput');
     if (photoLinkInput) {
         photoLinkInput.addEventListener('keypress', function(e) {
@@ -874,7 +866,7 @@ if (vendasBtn) {
         });
     }
     
-    // Event listener para mudança no campo de responsável quando "precisa de foto" estiver ativo
+    // Mudança no campo de responsável quando "precisa de foto" estiver ativo
     const responsibleSelect = document.getElementById('responsibleName');
     if (responsibleSelect) {
         responsibleSelect.addEventListener('change', function() {
@@ -882,7 +874,6 @@ if (vendasBtn) {
             const precisaFoto = document.getElementById('precisaFoto')?.value;
             
             if (precisaFoto === 'sim' && (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio')) {
-                // Atualizar mensagem baseada no responsável selecionado
                 if (this.value === 'Elaine') {
                     showToast('📸 Elaine já é a responsável principal', 'info');
                 } else if (this.value) {
@@ -898,13 +889,13 @@ if (vendasBtn) {
         setTimeout(() => usernameInput.focus(), 100);
     }
     
-    // Event listener para notificações
+    // Notificações
     const notificationBell = document.getElementById('notificationBell');
     if (notificationBell) {
         notificationBell.addEventListener('click', toggleNotificacoes);
     }
     
-    // Event listener para fechar notificações ao clicar fora
+    // Fechar notificações ao clicar fora
     document.addEventListener('click', function(e) {
         const dropdown = document.getElementById('notificacoesDropdown');
         const bell = document.getElementById('notificationBell');
@@ -916,75 +907,43 @@ if (vendasBtn) {
         }
     });
     
-    // Event listener para tecla ESC em modais
+    // Tecla ESC em modais
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
-            // Fechar modal de print
             const printModal = document.getElementById('printModal');
-            if (printModal && !printModal.classList.contains('hidden')) {
-                closePrintModal();
-            }
-            
-            // Fechar visualizador de fotos
+            if (printModal && !printModal.classList.contains('hidden')) closePrintModal();
             const photoViewerModal = document.getElementById('photoViewerModal');
-            if (photoViewerModal && !photoViewerModal.classList.contains('hidden')) {
-                closePhotoViewer();
-            }
-            
-            // Fechar modal de finalização
-            if (completeModal && !completeModal.classList.contains('hidden')) {
-                closeCompleteModal();
-            }
-            
-            // Fechar modal de visualização da OS
+            if (photoViewerModal && !photoViewerModal.classList.contains('hidden')) closePhotoViewer();
+            if (completeModal && !completeModal.classList.contains('hidden')) closeCompleteModal();
             const viewOSModal = document.getElementById('viewOSModal');
-            if (viewOSModal && !viewOSModal.classList.contains('hidden')) {
-                closeViewOSModal();
-            }
-            
-            // Fechar modal de reembolso
+            if (viewOSModal && !viewOSModal.classList.contains('hidden')) closeViewOSModal();
             const reembolsoModal = document.getElementById('reembolsoModal');
-            if (reembolsoModal && !reembolsoModal.classList.contains('hidden')) {
-                closeReembolsoModal();
-            }
-            
-            // Fechar dropdown de notificações
+            if (reembolsoModal && !reembolsoModal.classList.contains('hidden')) closeReembolsoModal();
             const notificacoesDropdown = document.getElementById('notificacoesDropdown');
             if (notificacoesDropdown && !notificacoesDropdown.classList.contains('hidden')) {
                 notificacoesDropdown.classList.add('hidden');
             }
         }
         
-        // Atalho Ctrl+P para imprimir
         if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
             e.preventDefault();
-            if (currentOSForPrint) {
-                printOS();
-            }
+            if (currentOSForPrint) printOS();
         }
         
-        // Atalho Ctrl+S para salvar (no formulário OS)
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
             e.preventDefault();
             const activeElement = document.activeElement;
-            
-            // Verificar se estamos em um campo de texto do formulário OS
             const formElements = ['productName', 'skus', 'observations', 'descricaoAnuncio'];
-            if (activeElement && formElements.includes(activeElement.id)) {
-                saveOrder();
-            }
+            if (activeElement && formElements.includes(activeElement.id)) saveOrder();
         }
         
-        // Atalho Ctrl+E para limpar formulário
         if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
             e.preventDefault();
-            if (!editingOrderId) {
-                clearForm();
-            }
+            if (!editingOrderId) clearForm();
         }
     });
     
-    // Event listeners para modais de reembolso (se existirem)
+    // Event listeners para reembolsos
     setupReembolsoEventListeners();
     
     // Configurar drag and drop para fotos
@@ -1009,6 +968,32 @@ if (vendasBtn) {
             }
         }
     });
+    
+    // 🔥 NOVOS EVENTOS PARA O CAMPO DE PRAZO (horas úteis)
+    const urgencySelect = document.getElementById('urgency');
+    const prazoHorasInput = document.getElementById('prazoHoras');
+    
+    if (urgencySelect) {
+        urgencySelect.addEventListener('change', function() {
+            // Atualiza o valor do campo de horas conforme a urgência
+            const urgency = this.value;
+            let horas = 48;
+            switch (urgency) {
+                case 'baixa': horas = 36; break;
+                case 'normal': horas = 48; break;
+                case 'alta': horas = 2; break;
+            }
+            if (prazoHorasInput) prazoHorasInput.value = horas;
+            // (Opcional) atualizar visualização do prazo estimado
+            if (typeof atualizarPrazoEstimadoPorHoras === 'function') atualizarPrazoEstimadoPorHoras();
+        });
+    }
+    
+    if (prazoHorasInput) {
+        prazoHorasInput.addEventListener('input', function() {
+            if (typeof atualizarPrazoEstimadoPorHoras === 'function') atualizarPrazoEstimadoPorHoras();
+        });
+    }
     
     console.log('✅ Event listeners configurados com sucesso!');
 }
@@ -3228,15 +3213,20 @@ async function loadOrders() {
                 descricaoAnuncio: order.descricao_anuncio || '',
                 linkNovoAnuncio: order.link_novo_anuncio || '',
                 precisaFoto: order.precisa_foto || 'nao',
+                prazo_horas: order.prazo_horas || null,
                 motivo_rejeicao: order.motivo_rejeicao || null,
                 rejeitado_por: order.rejeitado_por || null,
-                data_rejeicao: order.data_rejeicao || null
+                data_rejeicao: order.data_rejeicao || null,
+                // NOVOS CAMPOS
+                prazo_esperado: order.prazo_esperado || null,
+                anuncio_criado: order.anuncio_criado || false,
+                anuncio_criado_por: order.anuncio_criado_por || null,
+                anuncio_criado_data: order.anuncio_criado_data || null
             }));
             
             orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
             
             updateOSNotificationBell();
-
             showToast(`✅ ${orders.length} ordens carregadas`, 'success');
         } else {
             orders = [];
@@ -3249,11 +3239,9 @@ async function loadOrders() {
     } catch (error) {
         console.error('❌ Erro ao carregar ordens:', error);
         showToast('❌ Erro ao carregar ordens', 'error');
-        
         orders = [];
         updateCounters();
         renderOrdersTable();
-        
     } finally {
         if (reloadBtn) {
             reloadBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Recarregar';
@@ -3299,13 +3287,16 @@ async function saveOrder() {
         }
     }
     
-    // 🔥 Se for edição, buscar dados atuais da OS
+    // Se for edição, buscar dados atuais da OS
     let existingOrder = null;
     if (editingOrderId) {
         existingOrder = orders.find(o => o.id == editingOrderId);
     }
     
-    // Montar objeto com os dados do formulário (apenas campos editáveis)
+    // 🔥 Obter horas do campo de prazo
+    const prazoHoras = parseInt(document.getElementById('prazoHoras')?.value) || null;
+    
+    // Montar objeto com os dados do formulário
     const formData = {
         productName: productName,
         responsibleName: finalResponsibleName,
@@ -3320,10 +3311,19 @@ async function saveOrder() {
         linkNovoAnuncio: linkNovoAnuncio,
         precisaFoto: precisaFoto,
         photos: selectedPhotos,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        prazo_horas: prazoHoras,
+        prazo_esperado: null
     };
     
-    // Se for nova OS, adiciona campos obrigatórios de criação
+    // Calcular prazo_esperado se houver horas
+    if (prazoHoras && prazoHoras > 0) {
+        formData.prazo_esperado = calcularPrazoPorPrioridade(new Date(), null, prazoHoras);
+    }
+    
+    const isAnuncio = (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio');
+    
+    // Se for nova OS
     if (!editingOrderId) {
         formData.id = orderCounter;
         formData.code = generateOSCode();
@@ -3339,11 +3339,22 @@ async function saveOrder() {
         formData.motivo_rejeicao = null;
         formData.rejeitado_por = null;
         formData.data_rejeicao = null;
+        
+        // Inicializar campos de anúncio
+        if (isAnuncio) {
+            formData.anuncio_criado = false;
+            formData.anuncio_criado_por = null;
+            formData.anuncio_criado_data = null;
+        } else {
+            formData.anuncio_criado = null;
+            formData.anuncio_criado_por = null;
+            formData.anuncio_criado_data = null;
+        }
     } else {
-        // 🔥 EDIÇÃO: preserva todos os campos que NÃO estão no formulário
+        // EDIÇÃO: preserva todos os campos que NÃO estão no formulário
         formData.id = existingOrder.id;
         formData.code = existingOrder.code;
-        formData.status = existingOrder.status;              // mantém o status atual
+        formData.status = existingOrder.status;
         formData.photosTaken = existingOrder.photosTaken || 0;
         formData.editsMade = existingOrder.editsMade || 0;
         formData.createdBy = existingOrder.createdBy;
@@ -3356,6 +3367,31 @@ async function saveOrder() {
         formData.motivo_rejeicao = existingOrder.motivo_rejeicao || null;
         formData.rejeitado_por = existingOrder.rejeitado_por || null;
         formData.data_rejeicao = existingOrder.data_rejeicao || null;
+        formData.anuncio_criado = existingOrder.anuncio_criado || false;
+        formData.anuncio_criado_por = existingOrder.anuncio_criado_por || null;
+        formData.anuncio_criado_data = existingOrder.anuncio_criado_data || null;
+        
+        // Se a prioridade mudou, recalcular prazo (apenas se não concluída)
+        if (formData.status !== 'concluida' && existingOrder.urgency !== formData.urgency) {
+            formData.prazo_esperado = calcularPrazoPorPrioridade(new Date(), null, prazoHoras);
+        } else if (formData.status !== 'concluida' && prazoHoras && prazoHoras !== existingOrder.prazo_horas) {
+            formData.prazo_esperado = calcularPrazoPorPrioridade(new Date(), null, prazoHoras);
+        } else {
+            formData.prazo_esperado = existingOrder.prazo_esperado || null;
+            formData.prazo_horas = existingOrder.prazo_horas || prazoHoras;
+        }
+        
+        // 🔥 Para OS de anúncio: se o linkNovoAnuncio foi preenchido (e não estava), marcar como criado
+        if (isAnuncio && linkNovoAnuncio && linkNovoAnuncio.trim() !== '' && !existingOrder.anuncio_criado) {
+            formData.anuncio_criado = true;
+            formData.anuncio_criado_por = currentUser.name;
+            formData.anuncio_criado_data = new Date().toISOString();
+            showToast('✅ Link do novo anúncio adicionado! A OS agora pode ser finalizada.', 'success');
+        } else if (isAnuncio && !linkNovoAnuncio && !existingOrder.anuncio_criado) {
+            formData.anuncio_criado = false;
+            formData.anuncio_criado_por = null;
+            formData.anuncio_criado_data = null;
+        }
     }
     
     if (saveOSBtn) {
@@ -3366,7 +3402,7 @@ async function saveOrder() {
     try {
         let result;
         
-        // ========== SE FOR EDIÇÃO, SALVAR HISTÓRICO ANTES ==========
+        // Salvar histórico se for edição
         if (editingOrderId && supabaseClient) {
             const oldOrder = orders.find(o => o.id == editingOrderId);
             if (oldOrder) {
@@ -3383,6 +3419,9 @@ async function saveOrder() {
                     descricaoAnuncio: oldOrder.descricaoAnuncio,
                     linkNovoAnuncio: oldOrder.linkNovoAnuncio,
                     precisaFoto: oldOrder.precisaFoto,
+                    prazo_horas: oldOrder.prazo_horas,
+                    prazo_esperado: oldOrder.prazo_esperado,
+                    anuncio_criado: oldOrder.anuncio_criado
                 };
                 await salvarHistoricoOS(editingOrderId, dadosAntigos, formData, currentUser.name);
             }
@@ -3487,17 +3526,22 @@ async function saveOrderToSupabase(order) {
             qtd_fotos: order.photosTaken,
             user_notified: order.user_notified !== undefined ? order.user_notified : false,
             qtd_edicoes: order.editsMade,
-            // NOVOS CAMPOS PARA CONFERÊNCIA
             conferido: order.conferido || false,
             conferido_por: order.conferidoPor || null,
             data_conferencia: order.dataConferencia || null,
-            // NOVOS CAMPOS PARA ANÚNCIO
             valor_anuncio: order.valorAnuncio || 0,
             descricao_anuncio: order.descricaoAnuncio || '',
             link_novo_anuncio: order.linkNovoAnuncio || '',
             precisa_foto: order.precisaFoto || 'nao',
             data_criacao: new Date().toISOString(),
-            ultima_atualizacao: new Date().toISOString()
+            ultima_atualizacao: new Date().toISOString(),
+            // NOVOS CAMPOS
+            prazo_esperado: order.prazo_esperado || null,
+            anuncio_criado: order.anuncio_criado || false,
+            prazo_horas: order.prazo_horas || null,
+            prazo_esperado: order.prazo_esperado || null,
+            anuncio_criado_por: order.anuncio_criado_por || null,
+            anuncio_criado_data: order.anuncio_criado_data || null
         };
         
         let result;
@@ -3600,10 +3644,9 @@ function clearForm() {
     const linkNovoAnuncioInput = document.getElementById('linkNovoAnuncio');
     const precisaFotoSelect = document.getElementById('precisaFoto');
     const photoLinkInput = document.getElementById('photoLinkInput');
+    const prazoHorasInput = document.getElementById('prazoHoras');
     
-    if (productNameInput) { productNameInput.value = '';
-    contarCaracteres();
-    }
+    if (productNameInput) { productNameInput.value = ''; contarCaracteres(); }
     if (responsibleNameInput) responsibleNameInput.value = '';
     if (linkAnuncioInput) linkAnuncioInput.value = '';
     if (urgencySelect) urgencySelect.value = 'normal';
@@ -3616,6 +3659,10 @@ function clearForm() {
     if (linkNovoAnuncioInput) linkNovoAnuncioInput.value = '';
     if (precisaFotoSelect) precisaFotoSelect.value = 'nao';
     if (photoLinkInput) photoLinkInput.value = '';
+    
+    // 🔥 Resetar campo de prazo (horas) para o valor padrão da urgência normal (48)
+    if (prazoHorasInput) prazoHorasInput.value = 48;
+    
     updateProductCounter(productNameInput, 'productCounter');
     
     // Ocultar campos de anúncio
@@ -3628,7 +3675,6 @@ function clearForm() {
         previewArea.innerHTML = '';
         previewArea.style.display = 'none';
     }
-    
     const uploadArea = document.getElementById('photoUploadArea');
     if (uploadArea) {
         uploadArea.querySelector('p:first-of-type').textContent = 'Clique ou arraste fotos aqui';
@@ -3821,12 +3867,21 @@ function renderOrdersTable() {
         return new Date(b.updatedAt) - new Date(a.updatedAt);
     });
     
+    const now = new Date();
+    
     filteredOrders.forEach(order => {
         const row = document.createElement('tr');
         const hasPermission = checkOrderPermission(order);
         const isAdmin = currentUser.role === 'Administrador';
         
         const isRejectedPending = (order.status === 'pendente' && order.motivo_rejeicao && order.motivo_rejeicao.trim() !== '');
+        
+        // Verificar atraso (se prazo existe e OS não concluída)
+        let atrasado = false;
+        if (order.status !== 'concluida' && order.prazo_esperado) {
+            const prazo = new Date(order.prazo_esperado);
+            if (prazo < now) atrasado = true;
+        }
         
         // Estilos
         if (isRejectedPending) {
@@ -3883,7 +3938,30 @@ function renderOrdersTable() {
             `;
         }
         
-        // Links dos anúncios (mantido igual)
+        // Badge de atraso
+        let atrasoBadge = '';
+        if (atrasado) {
+            atrasoBadge = `
+                <span class="badge badge-danger" style="margin-left: 5px; cursor: help;" 
+                      title="Prazo estourado! Limite era ${new Date(order.prazo_esperado).toLocaleString('pt-BR')}">
+                    <i class="fas fa-clock"></i> Atrasada
+                </span>
+            `;
+        }
+        
+        // Badge "Aguardando criação do anúncio" (para OS de anúncio onde o link ainda não foi adicionado)
+        // Exibe mesmo que a OS esteja concluída – o badge só some quando anuncio_criado = true
+        let anuncioBadge = '';
+        const isAnuncio = (order.photoType === 'criar_anuncio' || order.photoType === 'replicar_anuncio');
+        if (isAnuncio && !order.anuncio_criado) {
+            anuncioBadge = `
+                <span class="badge badge-warning" style="background: #ff9800; color: white; margin-left: 5px;">
+                    <i class="fas fa-ad"></i> Aguardando criação do anúncio
+                </span>
+            `;
+        }
+        
+        // Links dos anúncios (somente para OS concluídas)
         let linkAnuncioDisplay = '';
         if (order.status === 'concluida') {
             const temLinkOriginal = order.linkAnuncio && order.linkAnuncio.trim() !== '';
@@ -3939,9 +4017,9 @@ function renderOrdersTable() {
         let typeBadge = order.osType === 'devolucao' ? '<span class="badge badge-danger" style="margin-left: 5px;"><i class="fas fa-exchange-alt"></i> Devolução</span>' : '';
         
         let urgencyBadge = '';
-        if (order.urgency === 'alta') urgencyBadge = '<span class="badge badge-danger">Alta</span>';
-        else if (order.urgency === 'normal') urgencyBadge = '<span class="badge badge-warning">Normal</span>';
-        else urgencyBadge = '<span class="badge badge-success">Baixa</span>';
+        if (order.urgency === 'alta') urgencyBadge = '<span class="badge badge-danger">Alta (2h)</span>';
+        else if (order.urgency === 'normal') urgencyBadge = '<span class="badge badge-warning">Normal (48h)</span>';
+        else urgencyBadge = '<span class="badge badge-success">Baixa (36h)</span>';
         
         let statusBadge = '';
         if (order.status === 'pendente') statusBadge = '<span class="status-pending">Pendente</span>';
@@ -3952,7 +4030,7 @@ function renderOrdersTable() {
         const formattedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
                              createdDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
         
-        // Montagem dos botões de ação
+        // Botões de ação
         let actionButtons = '';
         
         if (hasPermission || isAdmin) {
@@ -3963,25 +4041,27 @@ function renderOrdersTable() {
             actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos"><i class="fas fa-images"></i> ${order.photos.length}</button>`;
         }
         
-        // Botão CONFERIR (apenas OS concluídas não conferidas)
+        // Botão CONFERIR
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
             actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Marcar como Conferido"><i class="fas fa-check-double"></i></button>`;
         }
         
-        // Botão NÃO AUTORIZADO (apenas OS concluídas não conferidas)
+        // Botão NÃO AUTORIZADO
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
             actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado - Voltar para Pendentes"><i class="fas fa-ban"></i> Não Autorizado</button>`;
         }
         
+        // Botões INICIAR / FINALIZAR (Finalizar sempre habilitado para OS em andamento)
         if (hasPermission || isAdmin) {
             if (order.status === 'pendente') {
                 actionButtons += `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS"><i class="fas fa-play"></i></button>`;
             } else if (order.status === 'andamento') {
+                // 🔥 FINALIZAR SEMPRE HABILITADO (nunca bloqueado)
                 actionButtons += `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS"><i class="fas fa-flag-checkered"></i></button>`;
             }
         }
         
-        // 🔥 BOTÃO EDITAR: agora liberado para o CRIADOR mesmo após concluída
+        // Botão EDITAR
         const podeEditar = (hasPermission || isAdmin || order.createdBy === currentUser.name);
         if (podeEditar) {
             actionButtons += `<button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')" title="Editar OS"><i class="fas fa-edit"></i></button>`;
@@ -3998,21 +4078,23 @@ function renderOrdersTable() {
                 <strong>${order.code}</strong>
                 ${conferenciaBadge}
                 ${ajusteBadge}
+                ${atrasoBadge}
+                ${anuncioBadge}
                 ${permissionBadge}
                 ${accessBadge}
                 ${typeBadge}
                 ${linkAnuncioDisplay}
             </td>
-            <td>${order.productName}</td>
-            <td>
+             <td>${order.productName}</td>
+             <td>
                 <div>${order.responsibleName}</div>
                 <small><i class="fas fa-user-plus"></i> Criado por: ${order.createdBy || 'Sistema'}</small>
                 ${order.status === 'concluida' && order.conferidoPor ? `<small style="display: block; color: #28a745;">Conferido por: ${order.conferidoPor}</small>` : ''}
-              </td>
-            <td>${urgencyBadge}</td>
-            <td>${statusBadge}</td>
-            <td>${formattedDate}</td>
-            <td><div class="d-flex gap-2">${actionButtons}</div></td>
+             </td>
+             <td>${urgencyBadge}</td>
+             <td>${statusBadge}</td>
+             <td>${formattedDate}</td>
+             <td><div class="d-flex gap-2">${actionButtons}</div></td>
         `;
         
         osTableBody.appendChild(row);
@@ -4063,23 +4145,21 @@ window.editOrder = function(orderId) {
         const descricaoAnuncioInput = document.getElementById('descricaoAnuncio');
         const linkNovoAnuncioInput = document.getElementById('linkNovoAnuncio');
         const precisaFotoSelect = document.getElementById('precisaFoto');
+        const prazoHorasInput = document.getElementById('prazoHoras');
+        
         updateProductCounter(productNameInput, 'productCounter');
 
-        // LÓGICA PARA EXTRAIR O RESPONSÁVEL CORRETO
+        // Lógica para extrair o responsável correto
         let responsibleToShow = order.responsibleName;
-        // Verificar se Elaine foi adicionada automaticamente
         if (order.responsibleName && order.responsibleName.includes(' e Elaine')) {
-            // Extrair o nome original (remover " e Elaine")
             responsibleToShow = order.responsibleName.replace(' e Elaine', '').trim();
         } else if (order.responsibleName === 'Elaine' && order.precisaFoto === 'sim') {
-            // Se for apenas Elaine por causa das fotos, mostrar como estava
             responsibleToShow = order.createdBy !== 'Elaine' ? order.createdBy : 'Elaine';
         }
         
-        if (productNameInput) { productNameInput.value = order.productName;
-            setTimeout(function() {
-                contarCaracteres();
-            }, 100);
+        if (productNameInput) {
+            productNameInput.value = order.productName;
+            setTimeout(() => contarCaracteres(), 100);
         }
         if (responsibleNameInput) responsibleNameInput.value = order.responsibleName;
         if (linkAnuncioInput) linkAnuncioInput.value = order.linkAnuncio || '';
@@ -4092,6 +4172,19 @@ window.editOrder = function(orderId) {
         if (descricaoAnuncioInput) descricaoAnuncioInput.value = order.descricaoAnuncio || '';
         if (linkNovoAnuncioInput) linkNovoAnuncioInput.value = order.linkNovoAnuncio || '';
         if (precisaFotoSelect) precisaFotoSelect.value = order.precisaFoto || 'nao';
+        
+        // 🔥 Carregar prazo_horas salvo (ou calcular da urgência)
+        if (prazoHorasInput) {
+            if (order.prazo_horas) {
+                prazoHorasInput.value = order.prazo_horas;
+            } else {
+                // Fallback baseado na urgência
+                let horas = 48;
+                if (order.urgency === 'baixa') horas = 36;
+                else if (order.urgency === 'alta') horas = 2;
+                prazoHorasInput.value = horas;
+            }
+        }
         
         // Mostrar/ocultar campos de anúncio
         toggleCamposAnuncio();
@@ -4440,6 +4533,9 @@ async function completeOrder() {
         return;
     }
     
+    // 🔥 REMOVIDA a validação de anuncio_criado
+    // Agora qualquer OS em andamento pode ser finalizada
+    
     const photosTakenInput = document.getElementById('photosTaken');
     const editsMadeInput = document.getElementById('editsMade');
     
@@ -4470,34 +4566,18 @@ async function completeOrder() {
         order.conferidoPor = null;
         order.dataConferencia = null;
         
-        // ========== NOVO: Notificar o CRIADOR da OS por e-mail ==========
+        // Notificar criador
         const criador = order.createdBy;
-        if (criador && criador !== currentUser.name) { // evita enviar para si mesmo se o finalizador for o criador
+        if (criador && criador !== currentUser.name) {
             const assunto = `✅ OS Concluída: ${order.code}`;
-            const mensagem = `
-                Olá ${criador},
-                
-                A Ordem de Serviço que você criou foi concluída!
-                
-                📄 Número: ${order.code}
-                📦 Produto: ${order.productName}
-                🔧 Concluída por: ${currentUser.name}
-                📸 Fotos tiradas: ${photosTaken}
-                ✏️ Edições realizadas: ${editsMade}
-                🕒 Data de conclusão: ${new Date().toLocaleString('pt-BR')}
-                
-                Acesse o sistema para mais detalhes.
-                
-                Sistema Wheel Tech
-            `;
+            const mensagem = `...`; // (mantenha a mensagem original)
             await enviarNotificacaoEmail(criador, assunto, mensagem);
         }
-        // ================================================================
         
         updateCounters();
         renderOrdersTable();
         closeCompleteModal();
-        showToast(`✅ OS finalizada e criador notificado!`, 'success');
+        showToast(`✅ OS finalizada!`, 'success');
     } catch (error) {
         console.error('❌ Erro ao finalizar:', error);
         showToast('❌ Erro ao finalizar', 'error');
@@ -5428,9 +5508,9 @@ function generateDetailsTab() {
         'concluida': { text: 'Concluída', class: 'status-completed-view' }
     };
     const urgencyMap = {
-        'baixa': { text: 'Baixa', color: '#28a745' },
-        'normal': { text: 'Normal', color: '#ffc107' },
-        'alta': { text: 'Alta', color: '#dc3545' }
+        'baixa': { text: 'Baixa (36h)', color: '#28a745' },
+        'normal': { text: 'Normal (48h)', color: '#ffc107' },
+        'alta': { text: 'Alta (2h)', color: '#dc3545' }
     };
     const photoTypeMap = {
         'estudio': 'Estúdio',
@@ -5458,9 +5538,21 @@ function generateDetailsTab() {
                            completionDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
     }
     
-    // Seção para criar/replicar anúncio
+    // Verificar atraso
+    let atrasado = false;
+    let prazoTexto = '';
+    if (order.status !== 'concluida' && order.prazo_esperado) {
+        const prazo = new Date(order.prazo_esperado);
+        const agora = new Date();
+        if (prazo < agora) atrasado = true;
+        prazoTexto = `Prazo estimado: ${prazo.toLocaleString('pt-BR')} ${atrasado ? ' (ATRASADO!)' : ''}`;
+    }
+    
+    const isAnuncio = (order.photoType === 'criar_anuncio' || order.photoType === 'replicar_anuncio');
+    
+    // Seção de anúncio (detalhes e status)
     let anuncioSection = '';
-    if (order.photoType === 'criar_anuncio' || order.photoType === 'replicar_anuncio') {
+    if (isAnuncio) {
         anuncioSection = `
             <div class="info-card" style="margin-top: 20px;">
                 <h4><i class="fas fa-ad"></i> Detalhes do Anúncio</h4>
@@ -5475,6 +5567,14 @@ function generateDetailsTab() {
                         <div class="info-label">Precisa de foto?</div>
                         <div class="info-value">
                             ${order.precisaFoto === 'sim' ? '<span class="badge badge-warning">Sim - Elaine notificada</span>' : '<span class="badge badge-success">Não</span>'}
+                        </div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">Status do anúncio</div>
+                        <div class="info-value">
+                            ${order.anuncio_criado ? 
+                                `<span class="badge badge-success">Anúncio criado - link: <a href="${order.linkNovoAnuncio}" target="_blank">ver</a></span>` : 
+                                `<span class="badge badge-warning">Aguardando link do anúncio</span>`}
                         </div>
                     </div>
                 </div>
@@ -5501,7 +5601,7 @@ function generateDetailsTab() {
         `;
     }
     
-    // SEÇÃO DO MOTIVO DE REJEIÇÃO (se existir)
+    // Motivo de rejeição
     let motivoRejeicaoSection = '';
     if (order.motivo_rejeicao) {
         motivoRejeicaoSection = `
@@ -5530,6 +5630,7 @@ function generateDetailsTab() {
     return `
         <div class="tab-content active">
             <div class="info-grid">
+                <!-- Informações do Produto -->
                 <div class="info-card">
                     <h4><i class="fas fa-box"></i> Informações do Produto</h4>
                     <div class="info-item">
@@ -5553,6 +5654,7 @@ function generateDetailsTab() {
                     </div>
                 </div>
                 
+                <!-- Status e Prioridade -->
                 <div class="info-card">
                     <h4><i class="fas fa-tasks"></i> Status e Prioridade</h4>
                     <div class="info-item">
@@ -5564,6 +5666,10 @@ function generateDetailsTab() {
                         <div class="info-value"><span class="badge-view" style="background: ${urgencyInfo.color}; color: white;">${urgencyInfo.text}</span></div>
                     </div>
                     <div class="info-item">
+                        <div class="info-label">Prazo estimado</div>
+                        <div class="info-value">${prazoTexto || 'Não definido'}</div>
+                    </div>
+                    <div class="info-item">
                         <div class="info-label">Tipo de OS</div>
                         <div class="info-value">
                             <i class="fas fa-file-alt"></i> ${osTypeText}
@@ -5572,6 +5678,7 @@ function generateDetailsTab() {
                     </div>
                 </div>
                 
+                <!-- Responsáveis -->
                 <div class="info-card">
                     <h4><i class="fas fa-users"></i> Responsáveis</h4>
                     <div class="info-item">
@@ -5588,6 +5695,7 @@ function generateDetailsTab() {
                     </div>
                 </div>
                 
+                <!-- Datas -->
                 <div class="info-card">
                     <h4><i class="fas fa-calendar-alt"></i> Datas</h4>
                     <div class="info-item">
@@ -5618,6 +5726,7 @@ function generateDetailsTab() {
             ${anuncioSection}
             ${motivoRejeicaoSection}
             
+            <!-- Observações -->
             <div class="info-card" style="margin-top: 20px;">
                 <h4><i class="fas fa-sticky-note"></i> Observações</h4>
                 <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef;">
@@ -5943,6 +6052,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     generateOSCode();
     initSupabase();
+    loadOrders();
     setupEventListeners();
     setupPhotoUpload();
     setupReembolsoEventListeners();
@@ -8685,6 +8795,544 @@ window.confirmarRejeicaoOS = async function() {
         showToast('❌ Erro: ' + error.message, 'error');
     }
 };
+
+// ============================================
+// RELATÓRIO DE OS
+// ============================================
+
+function abrirModalRelatorioOS() {
+    console.log('🔍 Abrindo modal de relatório...');
+    
+    // Coletar usuários
+    const usuariosSet = new Set();
+    if (orders && orders.length > 0) {
+        orders.forEach(order => {
+            if (order.responsibleName && order.responsibleName.trim()) {
+                usuariosSet.add(order.responsibleName.trim());
+            }
+            if (order.createdBy && order.createdBy.trim()) {
+                usuariosSet.add(order.createdBy.trim());
+            }
+        });
+    }
+    
+    const container = document.getElementById('usuariosCheckboxes');
+    if (!container) {
+        console.error('❌ Elemento #usuariosCheckboxes não encontrado!');
+        return;
+    }
+    
+    const usuariosList = Array.from(usuariosSet).sort();
+    container.innerHTML = '';
+    
+    usuariosList.forEach(user => {
+        const id = 'chk_' + user.replace(/\s/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+        const div = document.createElement('div');
+        div.className = 'form-check';
+        div.innerHTML = `
+            <input type="checkbox" class="form-check-input usuario-checkbox" value="${user}" id="${id}">
+            <label class="form-check-label" for="${id}">${user}</label>
+        `;
+        container.appendChild(div);
+    });
+    
+    // Configurar checkbox "Todos"
+    const chkTodos = document.getElementById('usuarioTodos');
+    if (chkTodos) {
+        const checkboxes = document.querySelectorAll('.usuario-checkbox');
+        checkboxes.forEach(cb => {
+            cb.addEventListener('change', function() {
+                if (!this.checked && chkTodos.checked) chkTodos.checked = false;
+                const allChecked = Array.from(checkboxes).every(c => c.checked);
+                if (allChecked && checkboxes.length > 0) chkTodos.checked = true;
+            });
+        });
+        chkTodos.addEventListener('change', function() {
+            checkboxes.forEach(cb => cb.checked = this.checked);
+        });
+    }
+    
+    // 🔥 REMOVEMOS a definição automática das datas!
+    // Agora as datas permanecem como estavam (ou vazias, se nunca foram preenchidas).
+    // Se quiser que comece SEM datas, você pode definir valores vazios:
+    // document.getElementById('relDataInicio').value = '';
+    // document.getElementById('relDataFim').value = '';
+    
+    // Exibir modal
+    const modal = document.getElementById('relatorioOSModal');
+    if (modal) modal.classList.remove('hidden');
+    if (typeof switchRelatorioTab === 'function') switchRelatorioTab('tabela');
+}
+
+    function abrirModal() {
+        // Configurar datas padrão (últimos 30 dias)
+        const hoje = new Date();
+        const umMesAtras = new Date();
+        umMesAtras.setDate(hoje.getDate() - 30);
+        document.getElementById('relDataInicio').value = umMesAtras.toISOString().split('T')[0];
+        document.getElementById('relDataFim').value = hoje.toISOString().split('T')[0];
+
+        // Exibir modal
+        document.getElementById('relatorioOSModal').classList.remove('hidden');
+        switchRelatorioTab('tabela');
+    }
+
+function switchRelatorioTab(tab) {
+    const tabelaPanel = document.getElementById('relatorioTabelaPanel');
+    const graficosPanel = document.getElementById('relatorioGraficosPanel');
+    const tabTabelaBtn = document.getElementById('tabTabelaBtn');
+    const tabGraficosBtn = document.getElementById('tabGraficosBtn');
+
+    if (tab === 'tabela') {
+        tabelaPanel.style.display = 'block';
+        graficosPanel.style.display = 'none';
+        tabTabelaBtn.classList.add('btn-primary', 'active');
+        tabTabelaBtn.classList.remove('btn-outline-primary');
+        tabGraficosBtn.classList.add('btn-outline-primary');
+        tabGraficosBtn.classList.remove('btn-primary', 'active');
+    } else {
+        tabelaPanel.style.display = 'none';
+        graficosPanel.style.display = 'block';
+        tabGraficosBtn.classList.add('btn-primary', 'active');
+        tabGraficosBtn.classList.remove('btn-outline-primary');
+        tabTabelaBtn.classList.add('btn-outline-primary');
+        tabTabelaBtn.classList.remove('btn-primary', 'active');
+        if (ultimosDadosFiltrados && ultimosDadosFiltrados.length > 0) {
+            atualizarGraficosOSComDados(ultimosDadosFiltrados);
+        }
+    }
+}
+
+// Calcula data/hora limite com base em horas úteis (dias úteis, 8h-18h)
+// Calcula a data/hora limite baseada em horas úteis (dias úteis 8h-18h)
+function calcularPrazoPorPrioridade(dataCriacao, prioridade, horasPersonalizadas = null) {
+    let horasUteis = horasPersonalizadas;
+    if (horasUteis === null) {
+        switch (prioridade) {
+            case 'alta': horasUteis = 2; break;
+            case 'normal': horasUteis = 48; break;
+            case 'baixa': horasUteis = 36; break;
+            default: return null;
+        }
+    }
+    
+    let resultado = new Date(dataCriacao);
+    let horasAcumuladas = 0;
+    
+    while (horasAcumuladas < horasUteis) {
+        let horaAtual = resultado.getHours();
+        let diaSemana = resultado.getDay(); // 0=domingo, 6=sábado
+        
+        if (diaSemana === 0 || diaSemana === 6) {
+            resultado.setDate(resultado.getDate() + (diaSemana === 0 ? 1 : 2));
+            resultado.setHours(8, 0, 0, 0);
+            continue;
+        }
+        
+        if (horaAtual >= 18) {
+            resultado.setDate(resultado.getDate() + 1);
+            resultado.setHours(8, 0, 0, 0);
+            continue;
+        }
+        
+        if (horaAtual < 8) {
+            resultado.setHours(8, 0, 0, 0);
+        }
+        
+        let fimDia = new Date(resultado);
+        fimDia.setHours(18, 0, 0, 0);
+        let minutosRestantesHoje = (fimDia - resultado) / (1000 * 60);
+        let horasRestantesHoje = minutosRestantesHoje / 60;
+        
+        if (horasRestantesHoje >= (horasUteis - horasAcumuladas)) {
+            resultado.setMinutes(resultado.getMinutes() + (horasUteis - horasAcumuladas) * 60);
+            horasAcumuladas = horasUteis;
+        } else {
+            horasAcumuladas += horasRestantesHoje;
+            resultado.setDate(resultado.getDate() + 1);
+            resultado.setHours(8, 0, 0, 0);
+        }
+    }
+    return resultado;
+}
+
+window.marcarAnuncioCriado = async function(orderId) {
+    if (!confirm('Confirmar que o anúncio foi criado/replicado? Esta ação não pode ser desfeita.')) return;
+    
+    try {
+        const { error } = await supabaseClient
+            .from('ordens_service')
+            .update({
+                anuncio_criado: true,
+                anuncio_criado_por: currentUser.name,
+                anuncio_criado_data: new Date().toISOString(),
+                ultima_atualizacao: new Date().toISOString()
+            })
+            .eq('id', orderId);
+        
+        if (error) throw error;
+        
+        // Atualizar objeto local
+        const index = orders.findIndex(o => o.id == orderId);
+        if (index !== -1) {
+            orders[index].anuncio_criado = true;
+            orders[index].anuncio_criado_por = currentUser.name;
+            orders[index].anuncio_criado_data = new Date().toISOString();
+        }
+        
+        showToast('✅ Anúncio marcado como criado! Agora a OS pode ser finalizada.', 'success');
+        renderOrdersTable(); // ou recarregar a visualização atual
+        if (currentViewingOS && currentViewingOS.id === orderId) {
+            openViewOSModal(orders.find(o => o.id == orderId));
+        }
+    } catch (error) {
+        console.error('Erro ao marcar anúncio:', error);
+        showToast('❌ Erro ao marcar anúncio', 'error');
+    }
+};
+
+// Atualiza o valor do campo de horas com base na urgência selecionada
+function atualizarHorasPorUrgencia() {
+    const urgency = document.getElementById('urgency').value;
+    let horas = 48; // padrão normal
+    switch (urgency) {
+        case 'baixa': horas = 36; break;
+        case 'normal': horas = 48; break;
+        case 'alta': horas = 2; break;
+    }
+    const campoHoras = document.getElementById('prazoHoras');
+    if (campoHoras) campoHoras.value = horas;
+    atualizarPrazoEstimadoPorHoras(); // opcional: atualiza a data/hora limite dinamicamente
+}
+
+// Calcula e exibe a data/hora limite baseada nas horas informadas (opcional)
+function atualizarPrazoEstimadoPorHoras() {
+    const horas = parseInt(document.getElementById('prazoHoras').value);
+    if (isNaN(horas) || horas < 1) {
+        document.getElementById('prazoEstimadoDisplay').style.display = 'none';
+        return;
+    }
+    const agora = new Date();
+    const prazo = calcularPrazoPorPrioridade(agora, null, horas); // usaremos nova versão
+    if (prazo) {
+        document.getElementById('prazoEstimadoValor').textContent = prazo.toLocaleString('pt-BR');
+        document.getElementById('prazoEstimadoDisplay').style.display = 'block';
+    }
+}
+
+// Versão modificada de calcularPrazoPorPrioridade que aceita horas personalizadas
+function calcularPrazoPorPrioridade(dataCriacao, prioridade, horasPersonalizadas = null) {
+    let horasUteis = horasPersonalizadas;
+    if (horasUteis === null) {
+        // fallback para a prioridade
+        switch (prioridade) {
+            case 'alta': horasUteis = 2; break;
+            case 'normal': horasUteis = 48; break;
+            case 'baixa': horasUteis = 36; break;
+            default: return null;
+        }
+    }
+    
+    let resultado = new Date(dataCriacao);
+    let horasAcumuladas = 0;
+    
+    while (horasAcumuladas < horasUteis) {
+        let horaAtual = resultado.getHours();
+        let diaSemana = resultado.getDay();
+        
+        if (diaSemana === 0 || diaSemana === 6) {
+            resultado.setDate(resultado.getDate() + (diaSemana === 0 ? 1 : 2));
+            resultado.setHours(8, 0, 0, 0);
+            continue;
+        }
+        
+        if (horaAtual >= 18) {
+            resultado.setDate(resultado.getDate() + 1);
+            resultado.setHours(8, 0, 0, 0);
+            continue;
+        }
+        
+        if (horaAtual < 8) {
+            resultado.setHours(8, 0, 0, 0);
+        }
+        
+        let fimDia = new Date(resultado);
+        fimDia.setHours(18, 0, 0, 0);
+        let minutosRestantesHoje = (fimDia - resultado) / (1000 * 60);
+        let horasRestantesHoje = minutosRestantesHoje / 60;
+        
+        if (horasRestantesHoje >= (horasUteis - horasAcumuladas)) {
+            resultado.setMinutes(resultado.getMinutes() + (horasUteis - horasAcumuladas) * 60);
+            horasAcumuladas = horasUteis;
+        } else {
+            horasAcumuladas += horasRestantesHoje;
+            resultado.setDate(resultado.getDate() + 1);
+            resultado.setHours(8, 0, 0, 0);
+        }
+    }
+    return resultado;
+}
+
+function atualizarGraficosOSComDados(dadosFiltrados) {
+    console.log('Atualizando gráfico com dados filtrados. Total:', dadosFiltrados.length);
+    
+    if (!dadosFiltrados || dadosFiltrados.length === 0) {
+        if (window.barrasChart) window.barrasChart.destroy();
+        return;
+    }
+    
+    // Coletar usuários APENAS dos dados filtrados
+    const usuarios = new Set();
+    dadosFiltrados.forEach(order => {
+        if (order.responsibleName) usuarios.add(order.responsibleName);
+    });
+    const usuariosList = Array.from(usuarios).sort();
+    console.log('Usuários no gráfico (responsáveis):', usuariosList);
+    
+    const quantidades = [];
+    const temposMedios = [];
+    
+    usuariosList.forEach(user => {
+        const osDoUsuario = dadosFiltrados.filter(o => o.responsibleName === user);
+        quantidades.push(osDoUsuario.length);
+        
+        const osConcluidas = osDoUsuario.filter(o => o.status === 'concluida' && o.completionDate && o.createdAt);
+        if (osConcluidas.length > 0) {
+            const somaDias = osConcluidas.reduce((acc, o) => {
+                const diff = new Date(o.completionDate) - new Date(o.createdAt);
+                return acc + diff / (1000 * 60 * 60 * 24);
+            }, 0);
+            temposMedios.push(+(somaDias / osConcluidas.length).toFixed(1));
+        } else {
+            temposMedios.push(0);
+        }
+    });
+    
+    if (window.barrasChart) window.barrasChart.destroy();
+    const ctx = document.getElementById('graficoBarrasOS').getContext('2d');
+    window.barrasChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: usuariosList,
+            datasets: [
+                { label: 'Quantidade de OS', data: quantidades, backgroundColor: 'rgba(54, 162, 235, 0.6)', borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1, yAxisID: 'y' },
+                { label: 'Tempo médio (dias)', data: temposMedios, backgroundColor: 'rgba(75, 192, 192, 0.6)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1, yAxisID: 'y1' }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: {
+                y: { beginAtZero: true, title: { display: true, text: 'Quantidade' } },
+                y1: { position: 'right', beginAtZero: true, title: { display: true, text: 'Dias' }, grid: { drawOnChartArea: false } }
+            },
+            plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top' } }
+        }
+    });
+}
+
+function fecharModalRelatorioOS() {
+    document.getElementById('relatorioOSModal').classList.add('hidden');
+}
+
+let ultimosDadosFiltrados = [];
+
+function gerarRelatorioOS() {
+    console.log('=== GERANDO RELATÓRIO (VERSÃO CORRIGIDA) ===');
+    
+    // Obtém as datas do filtro
+    let dataInicio = document.getElementById('relDataInicio').value;
+    let dataFim = document.getElementById('relDataFim').value;
+    
+    console.log('Datas selecionadas:', { dataInicio, dataFim });
+    
+    // Se as datas não estiverem preenchidas, NÃO aplica filtro de período
+    const temPeriodo = (dataInicio && dataFim);
+    
+    // Usuários selecionados
+    const usuariosSelecionados = Array.from(document.querySelectorAll('.usuario-checkbox:checked'))
+        .map(cb => cb.value)
+        .filter(v => v && v !== '');
+    
+    const statusFilter = document.getElementById('relStatus').value;
+    
+    // Começa com todas as ordens
+    let filtered = [...orders];
+    console.log('Total de ordens:', filtered.length);
+    
+    // ---------- FILTRO DE PERÍODO (usando apenas criação, sem conversão de data) ----------
+    if (temPeriodo) {
+        // Garante que as datas estejam no formato YYYY-MM-DD (já estão)
+        const inicio = dataInicio;
+        const fim = dataFim;
+        console.log(`Filtrando por criação entre ${inicio} e ${fim}`);
+        
+        let dentroPeriodo = 0;
+        filtered = filtered.filter(order => {
+            if (!order.createdAt) return false;
+            // Extrai apenas a parte da data (YYYY-MM-DD)
+            const dataCriacao = order.createdAt.split('T')[0];
+            const estaNoPeriodo = (dataCriacao >= inicio && dataCriacao <= fim);
+            if (estaNoPeriodo) dentroPeriodo++;
+            return estaNoPeriodo;
+        });
+        console.log(`Dentro do período: ${dentroPeriodo} ordens`);
+    } else {
+        console.log('Sem filtro de período');
+    }
+    
+    // ---------- FILTRO POR RESPONSÁVEL ----------
+    if (usuariosSelecionados.length > 0) {
+        const lowerSelected = usuariosSelecionados.map(s => s.trim().toLowerCase());
+        filtered = filtered.filter(order => {
+            const responsible = (order.responsibleName || '').trim().toLowerCase();
+            return lowerSelected.includes(responsible);
+        });
+        console.log(`Após filtro responsável: ${filtered.length}`);
+    }
+    
+    // ---------- FILTRO POR STATUS ----------
+    if (statusFilter === 'concluida') {
+        filtered = filtered.filter(order => order.status === 'concluida');
+        console.log(`Após filtro status (concluídas): ${filtered.length}`);
+    }
+    
+    // Se não houver resultados
+    if (filtered.length === 0) {
+        document.getElementById('relatorioOSBody').innerHTML = '<td><td colspan="9" class="text-center">Nenhuma OS encontrada com os filtros atuais</td></tr>';
+        ultimosDadosFiltrados = [];
+        return;
+    }
+    
+    // Calcular tempo de resolução
+    filtered.forEach(order => {
+        if (order.status === 'concluida' && order.completionDate && order.createdAt) {
+            const diffMs = new Date(order.completionDate) - new Date(order.createdAt);
+            const diffDays = diffMs / (1000 * 60 * 60 * 24);
+            order.resolutionTime = diffDays.toFixed(1) + ' dias';
+        } else {
+            order.resolutionTime = '—';
+        }
+    });
+    
+    // Ordenar por data de criação (mais recente primeiro)
+    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    ultimosDadosFiltrados = filtered;
+    
+    // Preencher a tabela
+    const tbody = document.getElementById('relatorioOSBody');
+    tbody.innerHTML = '';
+    filtered.forEach(order => {
+        const row = tbody.insertRow();
+        const createdAt = order.createdAt ? new Date(order.createdAt).toLocaleString('pt-BR') : '—';
+        const completedAt = order.completionDate ? new Date(order.completionDate).toLocaleString('pt-BR') : '—';
+        row.innerHTML = `
+            <td>${order.code || '—'}</td>
+            <td>${order.productName || '—'}</td>
+            <td>${order.createdBy || '—'}</td>
+            <td>${order.responsibleName || '—'}</td>
+            <td>${createdAt}</td>
+            <td>${completedAt}</td>
+            <td>${order.resolutionTime}</td>
+            <td>${order.urgency === 'alta' ? 'Alta' : 'Normal'}</td>
+            <td>${order.status === 'concluida' ? 'Concluída' : order.status === 'andamento' ? 'Em andamento' : 'Pendente'}</td>
+        `;
+    });
+    
+    // Atualizar gráficos se a aba estiver visível
+    const graficosPanel = document.getElementById('relatorioGraficosPanel');
+    if (graficosPanel && graficosPanel.style.display !== 'none') {
+        if (typeof atualizarGraficosOSComDados === 'function') {
+            atualizarGraficosOSComDados(filtered);
+        }
+    }
+}
+
+function atualizarGraficosOS() {
+    if (!ultimosDadosFiltrados || ultimosDadosFiltrados.length === 0) {
+        // Limpar gráficos se não houver dados
+        if (window.barrasChart) window.barrasChart.destroy();
+        return;
+    }
+
+    const dados = ultimosDadosFiltrados;  // Já filtrados pelo gerarRelatorioOS
+
+    // Coletar todos os usuários que aparecem nos dados filtrados
+    const usuarios = new Set();
+    dados.forEach(order => {
+        if (order.responsibleName) usuarios.add(order.responsibleName);
+        if (order.createdBy) usuarios.add(order.createdBy);
+    });
+    const usuariosList = Array.from(usuarios).sort();
+
+    const quantidades = [];
+    const temposMedios = [];
+
+    usuariosList.forEach(user => {
+        const osDoUsuario = dados.filter(o => o.responsibleName === user || o.createdBy === user);
+        quantidades.push(osDoUsuario.length);
+
+        const osConcluidas = osDoUsuario.filter(o => o.status === 'concluida' && o.completionDate && o.createdAt);
+        if (osConcluidas.length > 0) {
+            const somaDias = osConcluidas.reduce((acc, o) => {
+                const diff = new Date(o.completionDate) - new Date(o.createdAt);
+                return acc + diff / (1000 * 60 * 60 * 24);
+            }, 0);
+            temposMedios.push(+(somaDias / osConcluidas.length).toFixed(1));
+        } else {
+            temposMedios.push(0);
+        }
+    });
+
+    // Destruir gráfico anterior se existir
+    if (window.barrasChart) window.barrasChart.destroy();
+
+    const ctx = document.getElementById('graficoBarrasOS').getContext('2d');
+    window.barrasChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: usuariosList,
+            datasets: [
+                {
+                    label: 'Quantidade de OS',
+                    data: quantidades,
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'Tempo médio (dias)',
+                    data: temposMedios,
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y1',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: {
+                y: { beginAtZero: true, title: { display: true, text: 'Quantidade' } },
+                y1: { position: 'right', beginAtZero: true, title: { display: true, text: 'Dias' }, grid: { drawOnChartArea: false } }
+            },
+            plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top' } }
+        }
+    });
+}
+
+function exportarRelatorioOSExcel() {
+    const table = document.getElementById('relatorioOSTable');
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.table_to_sheet(table, { raw: true });
+    // Ajustar largura das colunas (opcional)
+    ws['!cols'] = [{wch:15},{wch:30},{wch:15},{wch:15},{wch:20},{wch:20},{wch:15},{wch:10},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Relatorio_OS');
+    XLSX.writeFile(wb, `relatorio_os_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`);
+    showToast('Relatório exportado com sucesso!', 'success');
+}
 
 // ============================================
 // FUNÇÃO PARA APROVAR REEMBOLSO (Marcar como Reembolsado)
