@@ -1505,19 +1505,20 @@ function processarVendasML(vendas) {
 
 async function loadReembolsos() {
     if (!currentUser) return;
-    
+
     try {
         if (!supabaseClient) {
             throw new Error('Supabase não conectado');
         }
-        
+
         const { data, error } = await supabaseClient
             .from('reembolsos_ml')
             .select('*')
             .order('data_criacao', { ascending: false });
-        
+
         if (error) throw error;
-        
+
+        // Mapeia os dados do Supabase para o formato usado internamente
         reembolsos = (data || []).map(item => ({
             id: item.id,
             numero_venda: item.numero_venda,
@@ -1538,54 +1539,28 @@ async function loadReembolsos() {
             numero_reclamacao: item.numero_reclamacao,
             tipo_referencia: item.tipo_referencia,
             numero_retirada: item.numero_retirada,
-            status_reembolso: item.status_reembolso || 'em_andamento'   // NOVO CAMPO
+            status_reembolso: item.status_reembolso || 'em_andamento',
+            tipo_reclamacao: item.tipo_reclamacao || 'com_reembolso',
+            resolvida: item.resolvida || false,
+            responsabilidade: item.responsabilidade,
+            cliente_bloqueado: item.cliente_bloqueado
         }));
-        
-        // Verificar se o usuário atual é admin
-        const isAdmin = currentUser.role === 'Administrador';
 
-        // 🔥 NOVO: Verificar se a OS está pendente e tem motivo de rejeição
-        const isRejectedPending = (order.status === 'pendente' && order.motivo_rejeicao && order.motivo_rejeicao.trim() !== '');
-        
-        // Estilos especiais
-        if (isRejectedPending) {
-            // OS pendente que foi rejeitada – fundo amarelado e borda laranja
-            row.style.backgroundColor = '#fff3cd';
-            row.style.borderLeft = '4px solid #ffc107';
-            row.title = `Motivo da rejeição: ${order.motivo_rejeicao}`; // tooltip nativo
-        } else if (order.status === 'concluida' && !order.conferido) {
-            row.className = 'urgent-high';
-            row.style.animation = 'pulseReturn 2s infinite';
-            row.style.backgroundColor = '#fff5f5';
-        } else if (order.osType === 'devolucao') {
-            row.className = 'return-highlight';
-        } else if (order.urgency === 'alta') {
-            row.className = 'urgent-high';
-        } else if (order.urgency === 'normal') {
-            row.className = 'urgent-medium';
-        } else {
-            row.className = 'urgent-low';
+        // Se não for administrador, filtra apenas os reembolsos criados pelo próprio usuário
+        if (currentUser.role !== 'Administrador') {
+            reembolsos = reembolsos.filter(r => r.criado_por === currentUser.name);
         }
-        
-        // Filtrar reembolsos se não for admin
-        if (!isAdmin) {
-            reembolsos = reembolsos.filter(reembolso => 
-                reembolso.criado_por === currentUser.name || 
-                currentUser.role === 'Administrador'
-            );
-        }
-        
+
         updateReembolsoCounters();
         renderReembolsosTable();
-        
-        // Verificar notificações
         verificarNotificacoesReembolsos();
-        
+
     } catch (error) {
         console.error('❌ Erro ao carregar reembolsos:', error);
         reembolsos = [];
         updateReembolsoCounters();
         renderReembolsosTable();
+        showToast('Erro ao carregar reembolsos. Verifique o console.', 'error');
     }
 }
 
@@ -1594,68 +1569,83 @@ async function loadReembolsos() {
 // ============================================
 function updateReembolsoCounters() {
     if (!currentUser) return;
-    
-    const aVerificar = reembolsos.filter(r => r.status === 'a_verificar').length;
-    const reembolsados = reembolsos.filter(r => r.status === 'reembolsado').length;
-    const pendentes = reembolsos.filter(r => r.status === 'pendente').length;
+
+    // A verificar: com reembolso em andamento + sem reembolso não resolvidas
+    const aVerificar = reembolsos.filter(r => 
+        (r.tipo_reclamacao === 'com_reembolso' && (r.status === 'a_verificar' || r.status_reembolso === 'em_andamento')) ||
+        (r.tipo_reclamacao === 'sem_reembolso' && !r.resolvida)
+    ).length;
+
+    // Reembolsados: com reembolso e que obtiveram sucesso
+    const reembolsados = reembolsos.filter(r => 
+        r.tipo_reclamacao === 'com_reembolso' && 
+        (r.status === 'reembolsado' || r.status_reembolso === 'finalizado')
+    ).length;
+
+    // Pendentes: com reembolso mas não obtiveram (status pendente)
+    const pendentes = reembolsos.filter(r => 
+        r.tipo_reclamacao === 'com_reembolso' && 
+        r.status === 'pendente'
+    ).length;
+
+    // Finalizadas: sem reembolso resolvidas
+    const finalizadas = reembolsos.filter(r => 
+        r.tipo_reclamacao === 'sem_reembolso' && 
+        r.resolvida === true
+    ).length;
+
     const total = reembolsos.length;
-    
-    // Calcular total de valores reembolsados
+
+    // Total de valores reembolsados (apenas os que foram aprovados)
     const totalValor = reembolsos
-        .filter(r => r.status === 'reembolsado')
+        .filter(r => r.tipo_reclamacao === 'com_reembolso' && (r.status === 'reembolsado' || r.status_reembolso === 'finalizado'))
         .reduce((sum, r) => sum + parseFloat(r.valor || 0), 0);
-    
-    // Função segura para setar texto
+
     const setText = (id, value) => {
         const el = document.getElementById(id);
         if (el) el.textContent = value;
     };
-    
-    // Função segura para setar display
     const setDisplay = (id, display) => {
         const el = document.getElementById(id);
         if (el) el.style.display = display;
     };
-    
-    // Atualizar contadores principais
+
     setText('countVerificar', aVerificar);
     setText('countReembolsados', reembolsados);
     setText('countPendentes', pendentes);
+    setText('countFinalizadas', finalizadas); // novo contador
     setText('totalReembolsos', totalValor.toFixed(2));
-    
+
     setText('tabVerificar', aVerificar);
     setText('tabReembolsados', reembolsados);
     setText('tabPendentes', pendentes);
+    setText('tabFinalizadas', finalizadas);
     setText('tabTodos', total);
-    
-    // Badges de notificação
+
+    // Badges de notificação (admin)
     if (currentUser.role === 'Administrador' && aVerificar > 0) {
         setDisplay('badgeNovos', 'inline-block');
         setText('badgeNovos', aVerificar);
     } else {
         setDisplay('badgeNovos', 'none');
     }
-    
+
     const pendentesUsuario = reembolsos.filter(r => 
-        r.status === 'pendente' && r.criado_por === currentUser.name
+        r.tipo_reclamacao === 'com_reembolso' && 
+        r.status === 'pendente' && 
+        r.criado_por === currentUser.name
     ).length;
-    
+
     if (pendentesUsuario > 0) {
         setDisplay('badgePendentes', 'inline-block');
         setText('badgePendentes', pendentesUsuario);
     } else {
         setDisplay('badgePendentes', 'none');
     }
-    
-    // Notificação do sino
+
     const totalNotificacoes = aVerificar + pendentesUsuario;
     setText('reembolsoNotificationCount', totalNotificacoes);
-    
-    if (totalNotificacoes > 0) {
-        setDisplay('reembolsoNotificationBell', 'block');
-    } else {
-        setDisplay('reembolsoNotificationBell', 'none');
-    }
+    setDisplay('reembolsoNotificationBell', totalNotificacoes > 0 ? 'block' : 'none');
 }
 
 // Adicione esta função se não existir:
@@ -1699,54 +1689,80 @@ function renderReembolsosTable() {
     }
     if (emptyMsg) emptyMsg.classList.add('hidden');
 
-    let filteredReembolsos = reembolsos;
-    if (currentReembolsoFilter !== 'todos') {
-        filteredReembolsos = reembolsos.filter(r => r.status === currentReembolsoFilter);
+    let filteredReembolsos = [];
+
+    // Lógica de filtro conforme o valor de currentReembolsoFilter
+    switch (currentReembolsoFilter) {
+        case 'a_verificar':
+            filteredReembolsos = reembolsos.filter(r => 
+                // Com reembolso em andamento
+                (r.tipo_reclamacao === 'com_reembolso' && 
+                 (r.status === 'a_verificar' || r.status_reembolso === 'em_andamento')) ||
+                // Sem reembolso não resolvidas
+                (r.tipo_reclamacao === 'sem_reembolso' && !r.resolvida)
+            );
+            break;
+        case 'reembolsados':
+            filteredReembolsos = reembolsos.filter(r => 
+                r.tipo_reclamacao === 'com_reembolso' && 
+                (r.status === 'reembolsado' || r.status_reembolso === 'finalizado')
+            );
+            break;
+        case 'pendentes':
+            filteredReembolsos = reembolsos.filter(r => 
+                r.tipo_reclamacao === 'com_reembolso' && 
+                r.status === 'pendente'
+            );
+            break;
+        case 'finalizadas':
+            filteredReembolsos = reembolsos.filter(r => 
+                r.tipo_reclamacao === 'sem_reembolso' && 
+                r.resolvida === true
+            );
+            break;
+        case 'todos':
+        default:
+            filteredReembolsos = [...reembolsos];
+            break;
     }
 
     const isAdmin = currentUser && currentUser.role === 'Administrador';
 
     filteredReembolsos.forEach(reembolso => {
         const row = document.createElement('tr');
-        row.className = 'reembolso-item';
-
         const dataFormatada = formatarDataISO(reembolso.data_operacao);
         const motivo = reembolso.motivo || '-';
         const numReclamacao = reembolso.numero_reclamacao || '-';
-
-        // 🔥 CORREÇÃO: fallback para tipo_reclamacao
         const tipoReclamacao = reembolso.tipo_reclamacao || 'com_reembolso';
 
-        // Tipo de reclamação badge
-        let tipoBadge = '';
-        if (tipoReclamacao === 'sem_reembolso') {
-            tipoBadge = '<span class="badge badge-secondary">📋 Acompanhamento</span>';
-        } else {
-            tipoBadge = '<span class="badge badge-primary">💰 Com reembolso</span>';
-        }
+        // Badge do tipo
+        let tipoBadge = tipoReclamacao === 'sem_reembolso' 
+            ? '<span class="badge badge-secondary">📋 Acompanhamento</span>'
+            : '<span class="badge badge-primary">💰 Com reembolso</span>';
 
-        // Status ou Resolvida
+        // Status/Resolução
         let statusOrResolvida = '';
         if (tipoReclamacao === 'sem_reembolso') {
-            if (reembolso.resolvida) {
-                statusOrResolvida = '<span class="badge badge-success">Resolvida</span>';
-            } else {
-                statusOrResolvida = `<button class="btn btn-sm btn-warning" onclick="marcarResolvida(${reembolso.id})" title="Marcar como resolvida">Marcar resolvida</button>`;
-            }
+            statusOrResolvida = reembolso.resolvida
+                ? '<span class="badge badge-success">Resolvida</span>'
+                : `<span class="badge badge-warning">Pendente</span>
+                   <button class="btn btn-sm btn-success ml-1" onclick="marcarResolvida(${reembolso.id})">Resolver</button>`;
         } else {
-            // Com reembolso: mostra status_reembolso
-            if (reembolso.status_reembolso === 'finalizado') {
+            // Com reembolso
+            if (reembolso.status === 'reembolsado' || reembolso.status_reembolso === 'finalizado') {
                 statusOrResolvida = '<span class="badge badge-success">Reembolso finalizado</span>';
+            } else if (reembolso.status === 'pendente') {
+                statusOrResolvida = '<span class="badge badge-danger">Reembolso negado</span>';
             } else {
                 statusOrResolvida = '<span class="badge badge-warning">Em andamento</span>';
             }
         }
 
-        // Ações
+        // Botões de ação
         let acoes = '';
         if (isAdmin || reembolso.criado_por === currentUser?.name) {
             if (tipoReclamacao === 'com_reembolso') {
-                if (reembolso.status === 'a_verificar' && isAdmin) {
+                if ((reembolso.status === 'a_verificar' || reembolso.status_reembolso === 'em_andamento') && isAdmin) {
                     acoes = `
                         <button class="btn btn-success btn-sm" onclick="aprovarReembolso(${reembolso.id})" title="Marcar como Reembolsado">
                             <i class="fas fa-check"></i>
@@ -1759,10 +1775,11 @@ function renderReembolsosTable() {
                 if (reembolso.status === 'pendente' && reembolso.criado_por === currentUser?.name) {
                     acoes += `<button class="btn btn-info btn-sm" onclick="reenviarParaVerificacao(${reembolso.id})" title="Reenviar para Verificação"><i class="fas fa-paper-plane"></i></button>`;
                 }
-                if (reembolso.status === 'reembolsado' && isAdmin) {
+                if ((reembolso.status === 'reembolsado' || reembolso.status_reembolso === 'finalizado') && isAdmin) {
                     acoes += `<button class="btn btn-warning btn-sm" onclick="voltarParaVerificacao(${reembolso.id})" title="Voltar para A Verificar"><i class="fas fa-undo-alt"></i></button>`;
                 }
             }
+            // Botões comuns
             acoes += `<button class="btn btn-info btn-sm" onclick="verDetalhesReembolso(${reembolso.id})" title="Ver detalhes"><i class="fas fa-eye"></i></button>`;
             acoes += `<button class="btn btn-warning btn-sm" onclick="editarReembolso(${reembolso.id})" title="Editar"><i class="fas fa-edit"></i></button>`;
             if (isAdmin || reembolso.criado_por === currentUser?.name) {
@@ -1858,17 +1875,25 @@ window.editarReembolso = async function(id) {
 
 // Filtrar reembolsos
 window.filtrarReembolsos = function(filter) {
-    currentReembolsoFilter = filter;
+    // Normaliza o filtro: mapeia singular para plural se necessário
+    let normalizedFilter = filter;
+    if (filter === 'reembolsado') normalizedFilter = 'reembolsados';
+    if (filter === 'pendente') normalizedFilter = 'pendentes';
+    
+    console.log(`📌 Aplicando filtro: ${filter} -> normalizado: ${normalizedFilter}`);
+    
+    currentReembolsoFilter = normalizedFilter;
     renderReembolsosTable();
     
-    // Atualizar botões ativos
+    // Atualizar estilo dos botões
     document.querySelectorAll('#reembolsosSystem .btn-sm').forEach(btn => {
-        btn.classList.remove('filtro-ativo');
+        btn.classList.remove('btn-primary', 'active');
+        btn.classList.add('btn-outline-secondary');
     });
-    
-    const activeButton = document.querySelector(`#reembolsosSystem .btn-sm[onclick*="${filter}"]`);
-    if (activeButton) {
-        activeButton.classList.add('filtro-ativo');
+    const activeBtn = document.querySelector(`#reembolsosSystem .btn-sm[onclick*="${filter.replace(/'/g, '')}"]`);
+    if (activeBtn) {
+        activeBtn.classList.remove('btn-outline-secondary');
+        activeBtn.classList.add('btn-primary', 'active');
     }
 };
 
@@ -2066,11 +2091,7 @@ window.salvarReembolso = async function() {
             return;
         }
         numeroOperacao = inputOp.value.trim();
-        // TORNEI OPCIONAL: não exige preenchimento
-        // if (!numeroOperacao) {
-        //     showToast('Número da operação é obrigatório!', 'warning');
-        //     return;
-        // }
+        // Opcional – não obrigatório
     }
     
     const inputValor = document.getElementById('valorReembolso');
@@ -2092,7 +2113,6 @@ window.salvarReembolso = async function() {
     const statusReembolso = inputStatus.value;
     const reembolsoId = inputId ? inputId.value : '';
     
-    // NOVO: pegar tipo de reclamação
     const tipoReclamacaoRadio = document.querySelector('input[name="tipoReclamacao"]:checked');
     if (!tipoReclamacaoRadio) {
         showToast('Selecione o tipo de reclamação', 'warning');
@@ -2116,11 +2136,9 @@ window.salvarReembolso = async function() {
             showToast('Responsabilidade e Motivo da reclamação são obrigatórios!', 'warning');
             return;
         }
-        // Se não houver valor, definir como 0
         valor = valor || 0;
-        motivo = motivoReclamacaoExtra; // usar o motivo estendido
+        motivo = motivoReclamacaoExtra;
     } else {
-        // Reclamação com reembolso: validar valor
         if (!valor || parseFloat(valor) <= 0) {
             showToast('Valor do reembolso é obrigatório', 'warning');
             return;
@@ -2131,6 +2149,7 @@ window.salvarReembolso = async function() {
         }
     }
     
+    // Monta o objeto para salvar
     const reembolsoData = {
         numero_venda: numeroVenda,
         numero_retirada: tipoReferencia === 'retirada' ? numeroRetirada : null,
@@ -2145,14 +2164,12 @@ window.salvarReembolso = async function() {
         responsabilidade: responsabilidade,
         cliente_bloqueado: clienteBloqueado,
         resolvida: resolvida,
-        // Para com_reembolso, manter status original
-        status: tipoReclamacao === 'com_reembolso' ? 'a_verificar' : null,
+        // 🔥 CORREÇÃO: para sem_reembolso, status = 'pendente'
+        status: tipoReclamacao === 'com_reembolso' ? 'a_verificar' : 'pendente',
         status_reembolso: tipoReclamacao === 'com_reembolso' ? statusReembolso : null,
-        // Se não houver reembolso, garantir que status_reembolso seja null
         data_atualizacao: new Date().toISOString()
     };
     
-    // Só adicionar criado_por se for novo registro
     if (!reembolsoId) {
         reembolsoData.criado_por = currentUser.name;
     }
@@ -2203,46 +2220,24 @@ window.salvarReembolso = async function() {
 
 // Rejeitar reembolso (marcar como pendente) - VERSÃO CORRIGIDA
 window.rejeitarReembolso = async function(id) {
-    if (!confirm('Marcar este reembolso como pendente?')) return;
-    
+    if (!confirm('⚠️ Confirmar que o reembolso NÃO foi obtido? Irá para "Pendentes".')) return;
+
     try {
-        console.log('Rejeitando reembolso ID:', id);
-        
-        const { data, error } = await supabaseClient
+        await supabaseClient
             .from('reembolsos_ml')
-            .update({ 
+            .update({
                 status: 'pendente',
+                status_reembolso: null,
                 verificado_por: currentUser.name,
-                data_atualizacao: new Date().toISOString(),
-                notificado_usuario: false // Resetar notificação para usuário
+                data_atualizacao: new Date().toISOString()
             })
-            .eq('id', id)
-            .select();
-        
-        if (error) {
-            console.error('Erro Supabase:', error);
-            throw error;
-        }
-        
-        console.log('Reembolso atualizado:', data);
-        
-        // Atualizar lista local
-        const index = reembolsos.findIndex(r => r.id === id);
-        if (index !== -1) {
-            reembolsos[index].status = 'pendente';
-            reembolsos[index].verificado_por = currentUser.name;
-            reembolsos[index].notificado_usuario = false;
-        }
-        
-        showToast('⚠️ Reembolso marcado como pendente!', 'warning');
-        
-        // Recarregar a tabela
-        updateReembolsoCounters();
-        renderReembolsosTable();
-        
+            .eq('id', id);
+
+        await loadReembolsos();
+        showToast('⚠️ Reembolso marcado como pendente', 'warning');
     } catch (error) {
-        console.error('❌ Erro ao rejeitar reembolso:', error);
-        showToast('❌ Erro ao rejeitar reembolso: ' + error.message, 'error');
+        console.error(error);
+        showToast('Erro ao rejeitar', 'error');
     }
 };
 
@@ -2680,100 +2675,110 @@ window.closeRelatorioModal = function() {
 };
 
 // Gerar relatório
-window.gerarRelatorio = async function() {
+window.gerarRelatorioReembolsos = async function() {
     const dataInicio = document.getElementById('dataInicio').value;
     const dataFim = document.getElementById('dataFim').value;
     const filtroMes = document.getElementById('filtroMes').value;
-    
-    // Validar datas
+
+    console.log('📅 Relatório Reembolsos - Datas:', { dataInicio, dataFim, filtroMes });
+
     if (dataInicio && dataFim && new Date(dataInicio) > new Date(dataFim)) {
         showToast('Data início não pode ser maior que data fim', 'warning');
         return;
     }
-    
+
     try {
-        // Construir query baseada nos filtros
-        let query = supabaseClient
+        // Buscar todos os registros
+        const { data, error } = await supabaseClient
             .from('reembolsos_ml')
-            .select('*')
-            .eq('status', 'reembolsado');
-        
-        // Aplicar filtro de data
-        if (dataInicio) {
-            query = query.gte('data_operacao', dataInicio);
-        }
-        if (dataFim) {
-            query = query.lte('data_operacao', dataFim);
-        }
-        
-        // Aplicar filtro de mês
-        if (filtroMes) {
-            // Para filtrar por mês, precisamos de uma lógica diferente
-            // Aqui simplificamos pegando todos e filtrando depois
-        }
-        
-        const { data, error } = await query;
-        
+            .select('*');
+
         if (error) throw error;
-        
-        // Aplicar filtro de mês se necessário
-        filteredData.forEach(item => {
-    const dataOp = formatarDataISO(item.data_operacao);
-    const row = document.createElement('tr');
-    row.innerHTML = `
-        <td>${item.numero_venda}</td>
-        <td>${dataOp}</td>
-        <td>R$ ${parseFloat(item.valor).toFixed(2)}</td>
-        <td>${item.tem_frete ? `R$ ${parseFloat(item.valor_frete || 0).toFixed(2)}` : '-'}</td>
-        <td><span class="status-reembolsado">Reembolsado</span></td>
-    `;
-    tbody.appendChild(row);
-});
-        
-        // Calcular estatísticas
-        const total = filteredData.reduce((sum, item) => sum + parseFloat(item.valor), 0);
+        console.log(`📊 Total de registros no Supabase: ${data?.length || 0}`);
+
+        if (!data || data.length === 0) {
+            document.getElementById('totalPeriodo').textContent = '0,00';
+            document.getElementById('quantidadePeriodo').textContent = '0';
+            document.getElementById('mediaPeriodo').textContent = '0,00';
+            document.getElementById('relatorioTableBody').innerHTML = '<tr><td colspan="5" class="text-center">Nenhum dado encontrado</td</tr>';
+            return;
+        }
+
+        // Função auxiliar para converter string YYYY-MM-DD para Date
+        const parseDate = (dateStr) => new Date(dateStr + 'T00:00:00');
+
+        // Filtrar por data (em memória)
+        let filteredData = data;
+        if (dataInicio && dataFim) {
+            const inicioDate = parseDate(dataInicio);
+            const fimDate = parseDate(dataFim);
+            filteredData = filteredData.filter(item => {
+                if (!item.data_operacao) return false;
+                const itemDate = parseDate(item.data_operacao);
+                return itemDate >= inicioDate && itemDate <= fimDate;
+            });
+            console.log(`📆 Após filtro de data: ${filteredData.length} registros`);
+        }
+
+        // Filtrar por mês
+        if (filtroMes && filtroMes !== '') {
+            const mes = parseInt(filtroMes);
+            filteredData = filteredData.filter(item => {
+                if (!item.data_operacao) return false;
+                const itemDate = parseDate(item.data_operacao);
+                return itemDate.getMonth() + 1 === mes;
+            });
+            console.log(`📆 Após filtro de mês (${mes}): ${filteredData.length} registros`);
+        }
+
+        // Calcular reembolsados
+        const reembolsados = filteredData.filter(item => 
+            item.status === 'reembolsado' || item.status_reembolso === 'finalizado'
+        );
+        const total = reembolsados.reduce((sum, item) => sum + parseFloat(item.valor || 0), 0);
         const quantidade = filteredData.length;
         const media = quantidade > 0 ? total / quantidade : 0;
-        
+
+        console.log(`💰 Total reembolsado: R$ ${total.toFixed(2)}, Quantidade: ${quantidade}`);
+
         // Atualizar resumo
         document.getElementById('totalPeriodo').textContent = total.toFixed(2);
         document.getElementById('quantidadePeriodo').textContent = quantidade;
         document.getElementById('mediaPeriodo').textContent = media.toFixed(2);
-        
-        // Atualizar tabela
+
+        // Preencher tabela
         const tbody = document.getElementById('relatorioTableBody');
         tbody.innerHTML = '';
-        
+
         if (filteredData.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="5" class="text-center" style="padding: 20px;">
-                        Nenhum dado encontrado para o período selecionado
-                    </td>
-                </tr>
-            `;
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center">Nenhum dado encontrado no período</td</tr>`;
         } else {
             filteredData.forEach(item => {
-                const dataOp = formatarDataISO(reembolso.data_operacao);
-                const row = document.createElement('tr');
+                const dataOp = item.data_operacao ? new Date(item.data_operacao).toLocaleDateString('pt-BR') : '-';
+                const isReembolsado = (item.status === 'reembolsado' || item.status_reembolso === 'finalizado');
+                const statusBadge = isReembolsado 
+                    ? '<span class="badge badge-success">Reembolsado</span>' 
+                    : (item.tipo_reclamacao === 'sem_reembolso' ? '<span class="badge badge-secondary">Acompanhamento</span>' : '<span class="badge badge-warning">Pendente</span>');
+                const row = tbody.insertRow();
                 row.innerHTML = `
-                    <td>${item.numero_venda}</td>
-                    <td>${dataOp.toLocaleDateString('pt-BR')}</td>
-                    <td>R$ ${parseFloat(item.valor).toFixed(2)}</td>
-                    <td>${item.tem_frete ? `R$ ${parseFloat(item.valor_frete || 0).toFixed(2)}` : '-'}</td>
-                    <td><span class="status-reembolsado">Reembolsado</span></td>
+                    <td>${item.numero_venda || '-'}</td>
+                    <td>${dataOp}</td>
+                    <td>R$ ${parseFloat(item.valor || 0).toFixed(2)}</td>
+                    <td>${item.motivo || '-'}</td>
+                    <td>${statusBadge}</td>
                 `;
-                tbody.appendChild(row);
             });
         }
-        
-        // Gerar gráfico (simplificado)
-        gerarGraficoReembolsos(filteredData);
-        
-        showToast('Relatório gerado com sucesso!', 'success');
-        
+
+        // Gráfico (se existir)
+        if (typeof gerarGraficoReembolsos === 'function') {
+            gerarGraficoReembolsos(filteredData);
+        }
+
+        showToast(`✅ Relatório gerado: ${filteredData.length} registros, total reembolsado R$ ${total.toFixed(2)}`, 'success');
+
     } catch (error) {
-        console.error('❌ Erro ao gerar relatório:', error);
+        console.error('❌ Erro ao gerar relatório de reembolsos:', error);
         showToast('Erro ao gerar relatório: ' + error.message, 'error');
     }
 };
@@ -3287,16 +3292,13 @@ async function saveOrder() {
         }
     }
     
-    // Se for edição, buscar dados atuais da OS
     let existingOrder = null;
     if (editingOrderId) {
         existingOrder = orders.find(o => o.id == editingOrderId);
     }
     
-    // 🔥 Obter horas do campo de prazo
     const prazoHoras = parseInt(document.getElementById('prazoHoras')?.value) || null;
     
-    // Montar objeto com os dados do formulário
     const formData = {
         productName: productName,
         responsibleName: finalResponsibleName,
@@ -3316,15 +3318,14 @@ async function saveOrder() {
         prazo_esperado: null
     };
     
-    // Calcular prazo_esperado se houver horas
     if (prazoHoras && prazoHoras > 0) {
         formData.prazo_esperado = calcularPrazoPorPrioridade(new Date(), null, prazoHoras);
     }
     
     const isAnuncio = (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio');
     
-    // Se for nova OS
     if (!editingOrderId) {
+        // Nova OS
         formData.id = orderCounter;
         formData.code = generateOSCode();
         formData.status = 'pendente';
@@ -3333,25 +3334,18 @@ async function saveOrder() {
         formData.createdBy = currentUser.name;
         formData.user_notified = (responsibleName !== currentUser.name) ? false : true;
         formData.createdAt = new Date().toISOString();
+        formData.completionDate = null;
         formData.conferido = false;
         formData.conferidoPor = null;
         formData.dataConferencia = null;
         formData.motivo_rejeicao = null;
         formData.rejeitado_por = null;
         formData.data_rejeicao = null;
-        
-        // Inicializar campos de anúncio
-        if (isAnuncio) {
-            formData.anuncio_criado = false;
-            formData.anuncio_criado_por = null;
-            formData.anuncio_criado_data = null;
-        } else {
-            formData.anuncio_criado = null;
-            formData.anuncio_criado_por = null;
-            formData.anuncio_criado_data = null;
-        }
+        formData.anuncio_criado = isAnuncio ? false : null;
+        formData.anuncio_criado_por = null;
+        formData.anuncio_criado_data = null;
     } else {
-        // EDIÇÃO: preserva todos os campos que NÃO estão no formulário
+        // Edição: preserva campos não editáveis
         formData.id = existingOrder.id;
         formData.code = existingOrder.code;
         formData.status = existingOrder.status;
@@ -3371,26 +3365,29 @@ async function saveOrder() {
         formData.anuncio_criado_por = existingOrder.anuncio_criado_por || null;
         formData.anuncio_criado_data = existingOrder.anuncio_criado_data || null;
         
-        // Se a prioridade mudou, recalcular prazo (apenas se não concluída)
-        if (formData.status !== 'concluida' && existingOrder.urgency !== formData.urgency) {
-            formData.prazo_esperado = calcularPrazoPorPrioridade(new Date(), null, prazoHoras);
-        } else if (formData.status !== 'concluida' && prazoHoras && prazoHoras !== existingOrder.prazo_horas) {
+        // 🔥 VALIDAÇÃO: Se a OS está sendo marcada como concluída e completionDate é inválida
+        if (formData.status === 'concluida' && formData.completionDate) {
+            const createdAtDate = new Date(formData.createdAt);
+            const completionDateObj = new Date(formData.completionDate);
+            if (completionDateObj < createdAtDate) {
+                console.warn(`Data de conclusão ${formData.completionDate} anterior à criação. Corrigindo para agora.`);
+                formData.completionDate = new Date().toISOString();
+                showToast('⚠️ Data de conclusão corrigida (estava anterior à criação)', 'warning');
+            }
+        }
+        
+        // Recalcular prazo se urgência ou horas mudaram
+        if (formData.status !== 'concluida' && (existingOrder.urgency !== formData.urgency || existingOrder.prazo_horas !== prazoHoras)) {
             formData.prazo_esperado = calcularPrazoPorPrioridade(new Date(), null, prazoHoras);
         } else {
             formData.prazo_esperado = existingOrder.prazo_esperado || null;
-            formData.prazo_horas = existingOrder.prazo_horas || prazoHoras;
         }
         
-        // 🔥 Para OS de anúncio: se o linkNovoAnuncio foi preenchido (e não estava), marcar como criado
         if (isAnuncio && linkNovoAnuncio && linkNovoAnuncio.trim() !== '' && !existingOrder.anuncio_criado) {
             formData.anuncio_criado = true;
             formData.anuncio_criado_por = currentUser.name;
             formData.anuncio_criado_data = new Date().toISOString();
-            showToast('✅ Link do novo anúncio adicionado! A OS agora pode ser finalizada.', 'success');
-        } else if (isAnuncio && !linkNovoAnuncio && !existingOrder.anuncio_criado) {
-            formData.anuncio_criado = false;
-            formData.anuncio_criado_por = null;
-            formData.anuncio_criado_data = null;
+            showToast('✅ Link do novo anúncio adicionado!', 'success');
         }
     }
     
@@ -3401,28 +3398,10 @@ async function saveOrder() {
     
     try {
         let result;
-        
-        // Salvar histórico se for edição
         if (editingOrderId && supabaseClient) {
             const oldOrder = orders.find(o => o.id == editingOrderId);
             if (oldOrder) {
-                const dadosAntigos = {
-                    productName: oldOrder.productName,
-                    responsibleName: oldOrder.responsibleName,
-                    linkAnuncio: oldOrder.linkAnuncio,
-                    urgency: oldOrder.urgency,
-                    osType: oldOrder.osType,
-                    photoType: oldOrder.photoType,
-                    skus: oldOrder.skus,
-                    observations: oldOrder.observations,
-                    valorAnuncio: oldOrder.valorAnuncio,
-                    descricaoAnuncio: oldOrder.descricaoAnuncio,
-                    linkNovoAnuncio: oldOrder.linkNovoAnuncio,
-                    precisaFoto: oldOrder.precisaFoto,
-                    prazo_horas: oldOrder.prazo_horas,
-                    prazo_esperado: oldOrder.prazo_esperado,
-                    anuncio_criado: oldOrder.anuncio_criado
-                };
+                const dadosAntigos = { /* campos relevantes */ };
                 await salvarHistoricoOS(editingOrderId, dadosAntigos, formData, currentUser.name);
             }
         }
@@ -3438,7 +3417,7 @@ async function saveOrder() {
                 const index = orders.findIndex(o => o.id == editingOrderId);
                 if (index !== -1) orders[index] = { ...orders[index], ...formData };
                 editingOrderId = null;
-                showToast(`✅ OS "${formData.productName}" atualizada (status mantido: ${formData.status})`, 'success');
+                showToast(`✅ OS "${formData.productName}" atualizada`, 'success');
             } else {
                 orders.unshift(formData);
                 orderCounter++;
@@ -3451,7 +3430,6 @@ async function saveOrder() {
                     await notificarElaineSobreFotos(formData);
                 }
             }
-            
             updateCounters();
             renderOrdersTable();
             clearForm();
@@ -8800,68 +8778,112 @@ window.confirmarRejeicaoOS = async function() {
 // RELATÓRIO DE OS
 // ============================================
 
-function abrirModalRelatorioOS() {
+async function abrirModalRelatorioOS() {
     console.log('🔍 Abrindo modal de relatório...');
     
-    // Coletar usuários
-    const usuariosSet = new Set();
-    if (orders && orders.length > 0) {
-        orders.forEach(order => {
-            if (order.responsibleName && order.responsibleName.trim()) {
-                usuariosSet.add(order.responsibleName.trim());
-            }
-            if (order.createdBy && order.createdBy.trim()) {
-                usuariosSet.add(order.createdBy.trim());
-            }
-        });
+    // 1. Garantir que as OS estão carregadas
+    if (!orders || orders.length === 0) {
+        console.log('⏳ Nenhuma OS carregada. Aguardando...');
+        showToast('Carregando ordens de serviço...', 'info');
+        
+        // Tenta carregar as OS (se a função existir)
+        if (typeof loadOrders === 'function') {
+            await loadOrders();
+        }
+        
+        // Se ainda estiver vazio, exibe erro
+        if (!orders || orders.length === 0) {
+            showToast('Não foi possível carregar as OS. Verifique a conexão.', 'error');
+            return;
+        }
     }
     
-    const container = document.getElementById('usuariosCheckboxes');
-    if (!container) {
-        console.error('❌ Elemento #usuariosCheckboxes não encontrado!');
+    console.log(`✅ ${orders.length} OS carregadas`);
+    
+    // 2. Obter o modal
+    const modal = document.getElementById('relatorioOSModal');
+    if (!modal) {
+        console.error('Modal #relatorioOSModal não encontrado!');
+        showToast('Erro: elemento do modal não encontrado', 'error');
         return;
     }
     
-    const usuariosList = Array.from(usuariosSet).sort();
-    container.innerHTML = '';
+    // 3. Exibir o modal
+    modal.classList.remove('hidden');
     
-    usuariosList.forEach(user => {
-        const id = 'chk_' + user.replace(/\s/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-        const div = document.createElement('div');
-        div.className = 'form-check';
-        div.innerHTML = `
-            <input type="checkbox" class="form-check-input usuario-checkbox" value="${user}" id="${id}">
-            <label class="form-check-label" for="${id}">${user}</label>
-        `;
-        container.appendChild(div);
-    });
-    
-    // Configurar checkbox "Todos"
-    const chkTodos = document.getElementById('usuarioTodos');
-    if (chkTodos) {
-        const checkboxes = document.querySelectorAll('.usuario-checkbox');
-        checkboxes.forEach(cb => {
-            cb.addEventListener('change', function() {
-                if (!this.checked && chkTodos.checked) chkTodos.checked = false;
-                const allChecked = Array.from(checkboxes).every(c => c.checked);
-                if (allChecked && checkboxes.length > 0) chkTodos.checked = true;
+    // 4. Preencher a lista de usuários
+    try {
+        const container = document.getElementById('usuariosCheckboxes');
+        if (container) {
+            const usuariosSet = new Set();
+            orders.forEach(order => {
+                if (order.responsibleName && order.responsibleName.trim())
+                    usuariosSet.add(order.responsibleName.trim());
+                if (order.createdBy && order.createdBy.trim())
+                    usuariosSet.add(order.createdBy.trim());
             });
-        });
-        chkTodos.addEventListener('change', function() {
-            checkboxes.forEach(cb => cb.checked = this.checked);
-        });
+            
+            const usuariosList = Array.from(usuariosSet).sort();
+            container.innerHTML = '';
+            
+            if (usuariosList.length === 0) {
+                container.innerHTML = '<div class="text-muted">Nenhum usuário encontrado</div>';
+            } else {
+                usuariosList.forEach(user => {
+                    const id = 'chk_' + user.replace(/\s/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+                    const div = document.createElement('div');
+                    div.className = 'form-check';
+                    div.innerHTML = `
+                        <input type="checkbox" class="form-check-input usuario-checkbox" value="${user}" id="${id}">
+                        <label class="form-check-label" for="${id}">${user}</label>
+                    `;
+                    container.appendChild(div);
+                });
+            }
+            
+            // Comportamento do checkbox "Todos"
+            const chkTodos = document.getElementById('usuarioTodos');
+            if (chkTodos) {
+                const checkboxes = document.querySelectorAll('.usuario-checkbox');
+                const updateTodos = () => {
+                    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+                    chkTodos.checked = allChecked && checkboxes.length > 0;
+                };
+                checkboxes.forEach(cb => {
+                    cb.removeEventListener('change', updateTodos);
+                    cb.addEventListener('change', updateTodos);
+                });
+                chkTodos.removeEventListener('change', updateTodos);
+                chkTodos.addEventListener('change', function() {
+                    checkboxes.forEach(cb => cb.checked = this.checked);
+                });
+                updateTodos();
+            }
+        } else {
+            console.warn('Elemento #usuariosCheckboxes não encontrado');
+        }
+    } catch (error) {
+        console.error('Erro ao preencher usuários:', error);
     }
     
-    // 🔥 REMOVEMOS a definição automática das datas!
-    // Agora as datas permanecem como estavam (ou vazias, se nunca foram preenchidas).
-    // Se quiser que comece SEM datas, você pode definir valores vazios:
-    // document.getElementById('relDataInicio').value = '';
-    // document.getElementById('relDataFim').value = '';
+    // 5. Definir datas padrão (últimos 30 dias)
+    const dataInicio = document.getElementById('relDataInicio');
+    const dataFim = document.getElementById('relDataFim');
+    if (dataInicio && !dataInicio.value) {
+        const d = new Date();
+        d.setDate(d.getDate() - 30);
+        dataInicio.value = d.toISOString().split('T')[0];
+    }
+    if (dataFim && !dataFim.value) {
+        dataFim.value = new Date().toISOString().split('T')[0];
+    }
     
-    // Exibir modal
-    const modal = document.getElementById('relatorioOSModal');
-    if (modal) modal.classList.remove('hidden');
-    if (typeof switchRelatorioTab === 'function') switchRelatorioTab('tabela');
+    // 6. Garantir que a aba ativa seja a de tabela
+    if (typeof switchRelatorioTab === 'function') {
+        switchRelatorioTab('tabela');
+    }
+    
+    showToast(`Relatório pronto - ${orders.length} OS disponíveis`, 'success');
 }
 
     function abrirModal() {
@@ -9074,20 +9096,21 @@ function calcularPrazoPorPrioridade(dataCriacao, prioridade, horasPersonalizadas
 }
 
 function atualizarGraficosOSComDados(dadosFiltrados) {
-    console.log('Atualizando gráfico com dados filtrados. Total:', dadosFiltrados.length);
+    console.log('📊 Atualizando gráfico com dados filtrados. Total:', dadosFiltrados.length);
     
     if (!dadosFiltrados || dadosFiltrados.length === 0) {
         if (window.barrasChart) window.barrasChart.destroy();
         return;
     }
     
-    // Coletar usuários APENAS dos dados filtrados
+    // Coletar usuários responsáveis
     const usuarios = new Set();
     dadosFiltrados.forEach(order => {
-        if (order.responsibleName) usuarios.add(order.responsibleName);
+        if (order.responsibleName && order.responsibleName.trim()) {
+            usuarios.add(order.responsibleName.trim());
+        }
     });
     const usuariosList = Array.from(usuarios).sort();
-    console.log('Usuários no gráfico (responsáveis):', usuariosList);
     
     const quantidades = [];
     const temposMedios = [];
@@ -9096,37 +9119,91 @@ function atualizarGraficosOSComDados(dadosFiltrados) {
         const osDoUsuario = dadosFiltrados.filter(o => o.responsibleName === user);
         quantidades.push(osDoUsuario.length);
         
-        const osConcluidas = osDoUsuario.filter(o => o.status === 'concluida' && o.completionDate && o.createdAt);
-        if (osConcluidas.length > 0) {
-            const somaDias = osConcluidas.reduce((acc, o) => {
-                const diff = new Date(o.completionDate) - new Date(o.createdAt);
-                return acc + diff / (1000 * 60 * 60 * 24);
-            }, 0);
-            temposMedios.push(+(somaDias / osConcluidas.length).toFixed(1));
+        // Filtrar apenas OS concluídas com datas válidas (conclusão > criação)
+        const osConcluidasValidas = osDoUsuario.filter(o => 
+            o.status === 'concluida' && 
+            o.completionDate && 
+            o.createdAt &&
+            new Date(o.completionDate) > new Date(o.createdAt)
+        );
+        
+        if (osConcluidasValidas.length > 0) {
+            let somaDias = 0;
+            osConcluidasValidas.forEach(o => {
+                const diffMs = new Date(o.completionDate) - new Date(o.createdAt);
+                const diffDias = diffMs / (1000 * 60 * 60 * 24);
+                somaDias += diffDias;
+            });
+            const media = +(somaDias / osConcluidasValidas.length).toFixed(1);
+            temposMedios.push(media);
         } else {
             temposMedios.push(0);
         }
     });
     
-    if (window.barrasChart) window.barrasChart.destroy();
+    // Destruir gráfico anterior se existir
+    if (window.barrasChart) {
+        window.barrasChart.destroy();
+    }
+    
     const ctx = document.getElementById('graficoBarrasOS').getContext('2d');
     window.barrasChart = new Chart(ctx, {
         type: 'bar',
         data: {
             labels: usuariosList,
             datasets: [
-                { label: 'Quantidade de OS', data: quantidades, backgroundColor: 'rgba(54, 162, 235, 0.6)', borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1, yAxisID: 'y' },
-                { label: 'Tempo médio (dias)', data: temposMedios, backgroundColor: 'rgba(75, 192, 192, 0.6)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1, yAxisID: 'y1' }
+                {
+                    label: 'Quantidade de OS',
+                    data: quantidades,
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y',
+                    borderRadius: 5
+                },
+                {
+                    label: 'Tempo médio (dias)',
+                    data: temposMedios,
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y1',
+                    borderRadius: 5
+                }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: true,
             scales: {
-                y: { beginAtZero: true, title: { display: true, text: 'Quantidade' } },
-                y1: { position: 'right', beginAtZero: true, title: { display: true, text: 'Dias' }, grid: { drawOnChartArea: false } }
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Quantidade de OS' }
+                },
+                y1: {
+                    position: 'right',
+                    beginAtZero: true,
+                    title: { display: true, text: 'Tempo médio (dias)' },
+                    grid: { drawOnChartArea: false }
+                }
             },
-            plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top' } }
+            plugins: {
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            let value = context.raw;
+                            if (context.dataset.label.includes('Tempo')) {
+                                return `${label}: ${value} dias`;
+                            }
+                            return `${label}: ${value}`;
+                        }
+                    }
+                },
+                legend: { position: 'top' }
+            }
         }
     });
 }
@@ -9135,118 +9212,116 @@ function fecharModalRelatorioOS() {
     document.getElementById('relatorioOSModal').classList.add('hidden');
 }
 
-let ultimosDadosFiltrados = [];
-
-function gerarRelatorioOS() {
-    console.log('=== GERANDO RELATÓRIO (VERSÃO CORRIGIDA) ===');
+async function gerarRelatorioOS() {
+    console.log('📊 Gerando relatório de OS...');
     
-    // Obtém as datas do filtro
-    let dataInicio = document.getElementById('relDataInicio').value;
-    let dataFim = document.getElementById('relDataFim').value;
-    
-    console.log('Datas selecionadas:', { dataInicio, dataFim });
-    
-    // Se as datas não estiverem preenchidas, NÃO aplica filtro de período
-    const temPeriodo = (dataInicio && dataFim);
-    
-    // Usuários selecionados
-    const usuariosSelecionados = Array.from(document.querySelectorAll('.usuario-checkbox:checked'))
-        .map(cb => cb.value)
-        .filter(v => v && v !== '');
-    
-    const statusFilter = document.getElementById('relStatus').value;
-    
-    // Começa com todas as ordens
-    let filtered = [...orders];
-    console.log('Total de ordens:', filtered.length);
-    
-    // ---------- FILTRO DE PERÍODO (usando apenas criação, sem conversão de data) ----------
-    if (temPeriodo) {
-        // Garante que as datas estejam no formato YYYY-MM-DD (já estão)
-        const inicio = dataInicio;
-        const fim = dataFim;
-        console.log(`Filtrando por criação entre ${inicio} e ${fim}`);
-        
-        let dentroPeriodo = 0;
-        filtered = filtered.filter(order => {
-            if (!order.createdAt) return false;
-            // Extrai apenas a parte da data (YYYY-MM-DD)
-            const dataCriacao = order.createdAt.split('T')[0];
-            const estaNoPeriodo = (dataCriacao >= inicio && dataCriacao <= fim);
-            if (estaNoPeriodo) dentroPeriodo++;
-            return estaNoPeriodo;
-        });
-        console.log(`Dentro do período: ${dentroPeriodo} ordens`);
-    } else {
-        console.log('Sem filtro de período');
-    }
-    
-    // ---------- FILTRO POR RESPONSÁVEL ----------
-    if (usuariosSelecionados.length > 0) {
-        const lowerSelected = usuariosSelecionados.map(s => s.trim().toLowerCase());
-        filtered = filtered.filter(order => {
-            const responsible = (order.responsibleName || '').trim().toLowerCase();
-            return lowerSelected.includes(responsible);
-        });
-        console.log(`Após filtro responsável: ${filtered.length}`);
-    }
-    
-    // ---------- FILTRO POR STATUS ----------
-    if (statusFilter === 'concluida') {
-        filtered = filtered.filter(order => order.status === 'concluida');
-        console.log(`Após filtro status (concluídas): ${filtered.length}`);
-    }
-    
-    // Se não houver resultados
-    if (filtered.length === 0) {
-        document.getElementById('relatorioOSBody').innerHTML = '<td><td colspan="9" class="text-center">Nenhuma OS encontrada com os filtros atuais</td></tr>';
-        ultimosDadosFiltrados = [];
-        return;
-    }
-    
-    // Calcular tempo de resolução
-    filtered.forEach(order => {
-        if (order.status === 'concluida' && order.completionDate && order.createdAt) {
-            const diffMs = new Date(order.completionDate) - new Date(order.createdAt);
-            const diffDays = diffMs / (1000 * 60 * 60 * 24);
-            order.resolutionTime = diffDays.toFixed(1) + ' dias';
+    if (!orders || orders.length === 0) {
+        showToast('Nenhuma OS carregada. Aguarde alguns segundos e tente novamente.', 'warning');
+        if (typeof loadOrders === 'function') {
+            await loadOrders();
+            if (!orders || orders.length === 0) {
+                showToast('Falha ao carregar OS. Verifique o console.', 'error');
+                return;
+            }
         } else {
-            order.resolutionTime = '—';
-        }
-    });
-    
-    // Ordenar por data de criação (mais recente primeiro)
-    filtered.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    ultimosDadosFiltrados = filtered;
-    
-    // Preencher a tabela
-    const tbody = document.getElementById('relatorioOSBody');
-    tbody.innerHTML = '';
-    filtered.forEach(order => {
-        const row = tbody.insertRow();
-        const createdAt = order.createdAt ? new Date(order.createdAt).toLocaleString('pt-BR') : '—';
-        const completedAt = order.completionDate ? new Date(order.completionDate).toLocaleString('pt-BR') : '—';
-        row.innerHTML = `
-            <td>${order.code || '—'}</td>
-            <td>${order.productName || '—'}</td>
-            <td>${order.createdBy || '—'}</td>
-            <td>${order.responsibleName || '—'}</td>
-            <td>${createdAt}</td>
-            <td>${completedAt}</td>
-            <td>${order.resolutionTime}</td>
-            <td>${order.urgency === 'alta' ? 'Alta' : 'Normal'}</td>
-            <td>${order.status === 'concluida' ? 'Concluída' : order.status === 'andamento' ? 'Em andamento' : 'Pendente'}</td>
-        `;
-    });
-    
-    // Atualizar gráficos se a aba estiver visível
-    const graficosPanel = document.getElementById('relatorioGraficosPanel');
-    if (graficosPanel && graficosPanel.style.display !== 'none') {
-        if (typeof atualizarGraficosOSComDados === 'function') {
-            atualizarGraficosOSComDados(filtered);
+            return;
         }
     }
+    
+    const dataInicio = document.getElementById('relDataInicio')?.value || '';
+    const dataFim = document.getElementById('relDataFim')?.value || '';
+    const tipoPeriodo = document.getElementById('relTipoPeriodo')?.value || 'criacao';
+    const statusFiltro = document.getElementById('relStatus')?.value || 'todas';
+    
+    const usuariosSelecionados = [];
+    document.querySelectorAll('.usuario-checkbox:checked').forEach(cb => {
+        usuariosSelecionados.push(cb.value);
+    });
+    const todosUsuarios = document.getElementById('usuarioTodos')?.checked || false;
+    const filtroUsuarios = todosUsuarios ? null : usuariosSelecionados;
+    
+    let dados = [...orders];
+    
+    // Filtrar por data
+    if (dataInicio && dataFim) {
+        const inicio = new Date(dataInicio);
+        const fim = new Date(dataFim);
+        fim.setHours(23, 59, 59);
+        dados = dados.filter(order => {
+            let dataRef = tipoPeriodo === 'criacao' ? order.createdAt : order.completionDate;
+            if (!dataRef) return false;
+            const data = new Date(dataRef);
+            return data >= inicio && data <= fim;
+        });
+    }
+    
+    // Filtrar por status
+    if (statusFiltro === 'concluida') {
+        dados = dados.filter(order => order.status === 'concluida');
+    }
+    
+    // Filtrar por usuário
+    if (filtroUsuarios && filtroUsuarios.length > 0) {
+        dados = dados.filter(order => 
+            filtroUsuarios.includes(order.responsibleName) || 
+            filtroUsuarios.includes(order.createdBy)
+        );
+    }
+    
+    // Preencher tabela
+    const tbody = document.getElementById('relatorioOSBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    
+    if (dados.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhuma OS encontrada no período</td</tr>';
+    } else {
+        dados.forEach(order => {
+            const criacao = order.createdAt ? new Date(order.createdAt).toLocaleString('pt-BR') : '-';
+            let conclusao = '-';
+            let tempo = '-';
+            
+            if (order.completionDate) {
+                const dataConclusao = new Date(order.completionDate);
+                const dataCriacao = new Date(order.createdAt);
+                if (dataConclusao > dataCriacao) {
+                    conclusao = dataConclusao.toLocaleString('pt-BR');
+                    const diffMs = dataConclusao - dataCriacao;
+                    tempo = (diffMs / (1000 * 60 * 60)).toFixed(1) + ' h';
+                } else {
+                    conclusao = 'Data inválida (anterior à criação)';
+                    tempo = 'Inválido';
+                }
+            } else if (order.status === 'concluida') {
+                conclusao = 'Data não registrada';
+            }
+            
+            const statusText = order.status === 'concluida' ? 'Concluída' : (order.status === 'andamento' ? 'Em andamento' : 'Pendente');
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td>${order.code || order.id}</td>
+                <td>${order.productName || '-'}</td>
+                <td>${order.createdBy || '-'}</td>
+                <td>${order.responsibleName || '-'}</td>
+                <td>${criacao}</td>
+                <td>${conclusao}</td>
+                <td>${tempo}</td>
+                <td>${order.urgency || '-'}</td>
+                <td>${statusText}</td>
+            `;
+        });
+    }
+    
+    // Atualizar gráficos (somente com dados válidos)
+    if (typeof atualizarGraficosOSComDados === 'function') {
+        atualizarGraficosOSComDados(dados);
+    }
+    
+    window.ultimosDadosFiltrados = dados;
+    showToast(`✅ Relatório gerado: ${dados.length} OS`, 'success');
 }
+
+let ultimosDadosFiltrados = [];
 
 function atualizarGraficosOS() {
     if (!ultimosDadosFiltrados || ultimosDadosFiltrados.length === 0) {
@@ -9338,48 +9413,36 @@ function exportarRelatorioOSExcel() {
 // FUNÇÃO PARA APROVAR REEMBOLSO (Marcar como Reembolsado)
 // ============================================
 window.aprovarReembolso = async function(id) {
-    if (!confirm('Marcar este reembolso como REEMBOLSADO?\n\nO valor será contabilizado como reembolso efetivo.')) return;
-    
+    if (!confirm('✅ Confirmar que o reembolso foi obtido com sucesso?')) return;
+
     try {
         if (!supabaseClient) throw new Error('Supabase não conectado');
-        
-        const { data, error } = await supabaseClient
+
+        const { error } = await supabaseClient
             .from('reembolsos_ml')
-            .update({ 
+            .update({
                 status: 'reembolsado',
                 status_reembolso: 'finalizado',
                 verificado_por: currentUser.name,
-                data_atualizacao: new Date().toISOString(),
-                notificado_admin: true,
-                notificado_usuario: true
+                data_atualizacao: new Date().toISOString()
             })
-            .eq('id', id)
-            .select();
-        
+            .eq('id', id);
+
         if (error) throw error;
-        
-        // Atualizar lista local
-        const index = reembolsos.findIndex(r => r.id === id);
-        if (index !== -1) {
-            reembolsos[index].status = 'reembolsado';
-            reembolsos[index].status_reembolso = 'finalizado';
-            reembolsos[index].verificado_por = currentUser.name;
+
+        // Atualiza local
+        const idx = reembolsos.findIndex(r => r.id === id);
+        if (idx !== -1) {
+            reembolsos[idx].status = 'reembolsado';
+            reembolsos[idx].status_reembolso = 'finalizado';
+            reembolsos[idx].verificado_por = currentUser.name;
         }
-        
-        showToast('✅ Reembolso aprovado e marcado como reembolsado!', 'success');
-        
-        // Recarregar tabela e contadores
-        updateReembolsoCounters();
-        renderReembolsosTable();
-        
-        // Se for admin, atualizar notificações
-        if (currentUser.role === 'Administrador') {
-            verificarNotificacoes();
-        }
-        
+
+        await loadReembolsos(); // recarrega tudo
+        showToast('✅ Reembolso aprovado!', 'success');
     } catch (error) {
-        console.error('❌ Erro ao aprovar reembolso:', error);
-        showToast('❌ Erro ao aprovar: ' + error.message, 'error');
+        console.error(error);
+        showToast('Erro ao aprovar: ' + error.message, 'error');
     }
 };
 

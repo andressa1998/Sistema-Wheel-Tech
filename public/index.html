@@ -496,7 +496,7 @@ h4 {
             </div>
             <div class="menu-card" onclick="abrirSistemaReembolsos()">
                 <div class="menu-icon"><i class="fas fa-comment-dots"></i></div>
-                <h3>Reclamações</h3>
+                <h3>Reclamações contra Mercado Livre</h3>
                 <p>Controle de reclamações ML</p>
             </div>
             <div class="menu-card" onclick="abrirSistemaFolgas()">
@@ -1179,6 +1179,7 @@ h4 {
                             <span id="countVerificar">0</span> a verificar •
                             <span id="countReembolsados">0</span> reembolsados •
                             <span id="countPendentes">0</span> pendentes •
+                            <span id="countReclamaçoesFinalizadas">0</span> Reclamaões Finalizdas •
                             Total: R$ <span id="totalReembolsos">0,00</span>
                         </p>
                     </div>
@@ -1270,6 +1271,9 @@ h4 {
                     <button class="btn btn-danger btn-sm" onclick="filtrarReembolsos('pendente')">
                         <i class="fas fa-exclamation-circle"></i> Pendentes (<span id="tabPendentes">0</span>)
                         <span id="badgePendentes" class="badge badge-warning ml-1" style="display: none;">!</span>
+                    </button>
+                    <button class="btn btn-success btn-sm" onclick="filtrarReembolsos('finalizadas')">
+                    <i class="fas fa-check-double"></i> Reclamações finalizadas (<span id="tabFinalizadas">0</span>)
                     </button>
                     <button class="btn btn-primary btn-sm" onclick="filtrarReembolsos('todos')">
                         <i class="fas fa-list"></i> Todos (<span id="tabTodos">0</span>)
@@ -1684,7 +1688,7 @@ h4 {
                         </div>
                     </div>
                     <div class="d-flex justify-content-end mt-3">
-                        <button onclick="gerarRelatorio()" class="btn btn-primary">
+                        <button onclick="gerarRelatorioReembolsos()" class="btn btn-primary">
                             <i class="fas fa-chart-bar"></i> Gerar Relatório
                         </button>
                     </div>
