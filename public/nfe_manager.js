@@ -1,5 +1,4 @@
-// nfe_manager.js
-// Funções para gerenciar emissão de NF-e, sincronização, etc.
+window.showToast = window.showToast || showToast;
 
 // URL do back-end online (Render)
 const API_BASE_URL = 'https://backend-nfe.onrender.com'; // <-- ALTERAR PARA SUA URL
@@ -93,11 +92,20 @@ async function sincronizarVendasML() {
 async function emitirNFEParaVenda(orderId) {
     const venda = vendasPendentes.find(v => v.order_id === orderId);
     if (!venda) return;
-    
-    // Pega transportadora selecionada (se houver)
+
+    // Busca o botão que foi clicado (usando o seletor do orderId)
+    const btn = document.querySelector(`button[onclick="emitirNFEParaVenda('${orderId}')"]`);
+    if (!btn) {
+        console.error('Botão não encontrado para orderId:', orderId);
+        return;
+    }
+
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Emitindo...';
+    btn.disabled = true;
+
     const transportadoraId = document.getElementById('avulsaTransportadoraId')?.value || null;
-    
-    // Monta dados da venda para o backend
+
     const dados = {
         venda_id: orderId,
         cliente: {
@@ -119,8 +127,8 @@ async function emitirNFEParaVenda(orderId) {
         shipment_id: null,
         pack_id: null
     };
-    
-    // Extrair produtos do JSON armazenado
+
+    // Extrair produtos do JSON
     try {
         const produtosML = JSON.parse(venda.produtos);
         if (produtosML.order_items) {
@@ -136,14 +144,11 @@ async function emitirNFEParaVenda(orderId) {
         }
     } catch (e) {
         showToast('Erro ao interpretar produtos da venda', 'error');
+        btn.innerHTML = originalText;
+        btn.disabled = false;
         return;
     }
-    
-    const btn = event.target;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner"></span> Emitindo...';
-    btn.disabled = true;
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
@@ -159,6 +164,7 @@ async function emitirNFEParaVenda(orderId) {
             showToast('Erro na emissão: ' + result.error, 'error');
         }
     } catch (error) {
+        console.error('Erro na requisição:', error);
         showToast('Erro de comunicação', 'error');
     } finally {
         btn.innerHTML = originalText;
