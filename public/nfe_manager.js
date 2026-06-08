@@ -1,6 +1,9 @@
 // nfe_manager.js
 // Funções para gerenciar emissão de NF-e, sincronização, etc.
 
+// URL do back-end online (Render)
+const API_BASE_URL = 'https://backend-nfe.onrender.com'; // <-- ALTERAR PARA SUA URL
+
 let vendasPendentes = [];
 
 async function mostrarAbaNFE(aba) {
@@ -38,9 +41,9 @@ async function mostrarAbaNFE(aba) {
 
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    tbody.innerHTML = '<td><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
     try {
-        const response = await fetch('/nfe/vendas-sem-nfe');
+        const response = await fetch(`${API_BASE_URL}/nfe/vendas-sem-nfe`);
         if (!response.ok) throw new Error('Erro ao carregar vendas');
         vendasPendentes = await response.json();
         if (vendasPendentes.length === 0) {
@@ -71,7 +74,7 @@ async function sincronizarVendasML() {
     btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
     btn.disabled = true;
     try {
-        const response = await fetch('/nfe/sync-vendas', { method: 'POST' });
+        const response = await fetch(`${API_BASE_URL}/nfe/sync-vendas`, { method: 'POST' });
         const data = await response.json();
         if (data.success) {
             showToast(`${data.novas} novas vendas sincronizadas a partir de 01/06/2026`, 'success');
@@ -108,7 +111,7 @@ async function emitirNFEParaVenda(orderId) {
             cep: ''
         },
         produtos: [],
-        cfop: venda.meio_envio === 'FULL' ? '6108' : '5102', // ajuste conforme sua regra
+        cfop: venda.meio_envio === 'FULL' ? '6108' : '5102',
         natureza_operacao: 'VENDA',
         modalidade_frete: '0',
         transportadora_id: transportadoraId,
@@ -117,7 +120,7 @@ async function emitirNFEParaVenda(orderId) {
         pack_id: null
     };
     
-    // Extrair produtos do JSON armazenado (venda.produtos)
+    // Extrair produtos do JSON armazenado
     try {
         const produtosML = JSON.parse(venda.produtos);
         if (produtosML.order_items) {
@@ -126,7 +129,7 @@ async function emitirNFEParaVenda(orderId) {
                 quantidade: item.quantity,
                 valor_unitario: item.unit_price,
                 sku: item.item.seller_sku || 'SEM_SKU',
-                ncm: '87149990' // padrão, pode melhorar
+                ncm: '87149990'
             }));
         } else {
             throw new Error('Formato de produtos inválido');
@@ -142,7 +145,7 @@ async function emitirNFEParaVenda(orderId) {
     btn.disabled = true;
     
     try {
-        const response = await fetch('/nfe/emitir', {
+        const response = await fetch(`${API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(dados)
@@ -167,7 +170,7 @@ async function carregarNFesEmitidas() {
     const tbody = document.getElementById('nfesEmitidasBody');
     tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
     try {
-        const response = await fetch('/nfe/listar-nfes');
+        const response = await fetch(`${API_BASE_URL}/nfe/listar-nfes`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
         const nfes = data.notas || [];
@@ -197,17 +200,14 @@ async function carregarNFesEmitidas() {
 
 async function visualizarNFE(chaveAcesso) {
     try {
-        // Busca o XML da NF-e no backend
-        const response = await fetch(`/nfe/buscar-xml?chave=${chaveAcesso}`);
+        const response = await fetch(`${API_BASE_URL}/nfe/buscar-xml?chave=${chaveAcesso}`);
         const data = await response.json();
         if (!data.xml) {
             showToast('XML não encontrado', 'error');
             return;
         }
-        // Gera um HTML estilizado (DANFE) a partir do XML
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(data.xml, 'application/xml');
-        // Extrai dados principais (exemplo simplificado)
         const infNFe = xmlDoc.querySelector('infNFe');
         const chave = infNFe.getAttribute('Id').replace('NFe', '');
         const emitNome = infNFe.querySelector('emit xNome')?.textContent || '';
@@ -270,7 +270,7 @@ async function visualizarNFE(chaveAcesso) {
 
 async function baixarXMLNFE(chaveAcesso) {
     try {
-        const response = await fetch(`/nfe/buscar-xml?chave=${chaveAcesso}`);
+        const response = await fetch(`${API_BASE_URL}/nfe/buscar-xml?chave=${chaveAcesso}`);
         const data = await response.json();
         if (!data.xml) {
             showToast('XML não encontrado', 'error');
@@ -294,7 +294,7 @@ async function cancelarNFE(chaveAcesso) {
     const justificativa = prompt('Informe a justificativa para cancelamento:');
     if (!justificativa) return;
     try {
-        const response = await fetch('/nfe/cancelar', {
+        const response = await fetch(`${API_BASE_URL}/nfe/cancelar`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ chaveAcesso, justificativa })
@@ -311,12 +311,11 @@ async function cancelarNFE(chaveAcesso) {
     }
 }
 
-// Transportadoras
 async function carregarTransportadoras() {
     const tbody = document.getElementById('transportadorasBody');
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    tbody.innerHTML = '<td><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
     try {
-        const response = await fetch('/nfe/transportadoras');
+        const response = await fetch(`${API_BASE_URL}/nfe/transportadoras`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
         const transportadoras = data.transportadoras || [];
@@ -332,7 +331,6 @@ async function carregarTransportadoras() {
                 <td><button class="btn btn-sm btn-danger" onclick="excluirTransportadora(${t.id})">Excluir</button></td>
             </tr>
         `).join('');
-        // Atualiza selects
         const select = document.getElementById('avulsaTransportadoraId');
         if (select) {
             select.innerHTML = '<option value="">Selecione</option>' + transportadoras.map(t => `<option value="${t.id}">${t.nome}</option>`).join('');
@@ -342,12 +340,11 @@ async function carregarTransportadoras() {
     }
 }
 
-// Clientes
 async function carregarClientes() {
     const tbody = document.getElementById('clientesBody');
     tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
     try {
-        const response = await fetch('/nfe/clientes');
+        const response = await fetch(`${API_BASE_URL}/nfe/clientes`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
         const clientes = data.clientes || [];
@@ -363,7 +360,6 @@ async function carregarClientes() {
                 <td><button class="btn btn-sm btn-danger" onclick="excluirCliente(${c.id})">Excluir</button></td>
             </tr>
         `).join('');
-        // Atualiza select de cliente na emissão avulsa
         const select = document.getElementById('avulsaClienteId');
         if (select) {
             select.innerHTML = '<option value="">Selecione</option>' + clientes.map(c => `<option value="${c.id}">${c.nome} (${c.documento})</option>`).join('');
@@ -373,7 +369,6 @@ async function carregarClientes() {
     }
 }
 
-// Emissão avulsa
 async function emitirNFEAvulsa() {
     const clienteId = document.getElementById('avulsaClienteId').value;
     if (!clienteId) {
@@ -394,7 +389,7 @@ async function emitirNFEAvulsa() {
     }
     
     const dados = {
-        cliente: { id: clienteId }, // o backend irá buscar os dados do cliente pelo ID
+        cliente: { id: clienteId },
         produtos: produtos,
         cfop,
         natureza_operacao: natOp,
@@ -407,7 +402,7 @@ async function emitirNFEAvulsa() {
     btn.innerHTML = '<span class="spinner"></span> Emitindo...';
     btn.disabled = true;
     try {
-        const response = await fetch('/nfe/emitir-avulsa', {
+        const response = await fetch(`${API_BASE_URL}/nfe/emitir-avulsa`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(dados)
@@ -437,7 +432,6 @@ function limparFormAvulsa() {
     document.getElementById('avulsaProdutos').value = '';
 }
 
-// Inicialização quando o sistema de NF-e for aberto
 function inicializarAbaNFE() {
     mostrarAbaNFE('vendas');
 }
