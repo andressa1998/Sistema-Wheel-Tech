@@ -448,10 +448,144 @@ async function consultarStatusNFE(req, res) {
 
 // ===================== NOVAS FUNÇÕES PARA INTEGRAÇÃO ML =====================
 
+// ===================== Sincronizar Vendas ML (sem dependência externa) =====================
 async function sincronizarVendasML(req, res) {
-    console.log('🔄 Sincronização de vendas desativada no back-end. Use o front-end.');
-    // Retorna sucesso com 0 novas vendas para não quebrar o front-end
-    res.json({ success: true, novas: 0, total: 0, message: 'Sincronização deve ser feita pelo front-end' });
+    console.log('🔄 Sincronizando vendas do ML para NF-e...');
+    
+    // Token do ML - você precisa configurar no ambiente do Render
+    const token = process.env.ML_ACCESS_TOKEN;
+    const refreshToken = process.env.ML_REFRESH_TOKEN;
+    const userId = process.env.ML_USER_ID || '415176739';
+    
+    if (!token) {
+        console.error('❌ Token do Mercado Livre não configurado');
+        return res.status(500).json({ success: false, error: 'Token ML não configurado' });
+    }
+    
+    try {
+        // Buscar vendas diretamente da API do ML
+        const dataInicio = new Date('2026-06-01');
+        const dataFim = new Date();
+        
+        let todasVendas = [];
+        let offset = 0;
+        const limit = 50;
+        let hasMore = true;
+        
+        while (hasMore) {
+            const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&sort=date_desc&order.status=paid&limit=${limit}&offset=${offset}`;
+            const response = await fetch(url, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                if (response.status === 401 && refreshToken) {
+                    // Tentar renovar token (se tiver refresh token)
+                    console.log('🔄 Token expirado, tentando renovar...');
+                    const newToken = await renovarTokenML(refreshToken);
+                    if (newToken) {
+                        // Salvar novo token no ambiente? (opcional, mas para simplificar, refaz a requisição)
+                        return sincronizarVendasML(req, res);
+                    }
+                }
+                throw new Error(`Erro na API do ML: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            const vendas = data.results || [];
+            if (vendas.length === 0) break;
+            
+            todasVendas = todasVendas.concat(vendas);
+            offset += limit;
+            hasMore = vendas.length === limit;
+            
+            // Pequeno delay
+            await new Promise(r => setTimeout(r, 200));
+        }
+        
+        // Filtrar a partir de 01/06/2026
+        const vendasFiltradas = todasVendas.filter(v => new Date(v.date_created) >= dataInicio);
+        
+        let novas = 0;
+        for (const venda of vendasFiltradas) {
+            // Verificar se já existe no Supabase
+            const { data: existing } = await supabase
+                .from('vendas_ml')
+                .select('order_id')
+                .eq('order_id', venda.id.toString())
+                .maybeSingle();
+            
+            if (!existing) {
+                // Buscar detalhes do item para obter SKU e outros dados
+                let sku = 'SEM_SKU';
+                let produtoTitulo = '';
+                let quantidade = 1;
+                let valorUnitario = 0;
+                let meioEnvio = 'N/I';
+                
+                if (venda.order_items && venda.order_items.length > 0) {
+                    const item = venda.order_items[0].item;
+                    produtoTitulo = item.title || '';
+                    quantidade = venda.order_items[0].quantity || 1;
+                    valorUnitario = venda.order_items[0].unit_price || 0;
+                    
+                    // Buscar SKU do item
+                    try {
+                        const itemUrl = `https://api.mercadolibre.com/items/${item.id}`;
+                        const itemRes = await fetch(itemUrl, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        });
+                        if (itemRes.ok) {
+                            const itemData = await itemRes.json();
+                            sku = itemData.seller_sku || item.seller_sku || 'SEM_SKU';
+                        }
+                    } catch (e) { console.warn('Erro ao buscar SKU:', e.message); }
+                    
+                    // Identificar tipo de envio
+                    if (venda.shipping && venda.shipping.id) {
+                        try {
+                            const shipUrl = `https://api.mercadolibre.com/shipments/${venda.shipping.id}`;
+                            const shipRes = await fetch(shipUrl, {
+                                headers: { 'Authorization': `Bearer ${token}` }
+                            });
+                            if (shipRes.ok) {
+                                const shipData = await shipRes.json();
+                                const logType = (shipData.logistic_type || '').toLowerCase();
+                                if (logType === 'fulfillment') meioEnvio = 'FULL';
+                                else if (logType === 'self_service') meioEnvio = 'FLEX';
+                                else if (logType === 'cross_docking') meioEnvio = 'MERCADO ENVIOS';
+                            }
+                        } catch (e) { console.warn('Erro ao buscar envio:', e.message); }
+                    }
+                }
+                
+                // Inserir venda
+                await supabase.from('vendas_ml').insert({
+                    order_id: venda.id.toString(),
+                    cliente_nome: venda.buyer?.nickname || 'N/I',
+                    cpf_cnpj: null,
+                    endereco: null,
+                    sku: sku,
+                    mlb_id: venda.order_items?.[0]?.item?.id || null,
+                    valor_total: venda.total_amount || 0,
+                    data_venda: venda.date_created,
+                    produtos: JSON.stringify(venda),
+                    meio_envio: meioEnvio,
+                    nfe_emitida: false
+                });
+                novas++;
+            }
+        }
+        
+        res.json({ success: true, novas, total: vendasFiltradas.length });
+        
+    } catch (error) {
+        console.error('❌ Erro ao sincronizar vendas:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 }
 
 // Função auxiliar para renovar token (se necessário)
