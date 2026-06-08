@@ -90,22 +90,40 @@ async function sincronizarVendasML() {
 }
 
 async function emitirNFEParaVenda(orderId) {
-    const venda = vendasPendentes.find(v => v.order_id === orderId);
-    if (!venda) return;
+    console.log('🔵 emitirNFEParaVenda chamada com orderId:', orderId);
 
-    // Busca o botão que foi clicado (usando o seletor do orderId)
-    const btn = document.querySelector(`button[onclick="emitirNFEParaVenda('${orderId}')"]`);
-    if (!btn) {
-        console.error('Botão não encontrado para orderId:', orderId);
+    // 1. Verificar se a lista de vendas está carregada
+    if (!vendasPendentes || vendasPendentes.length === 0) {
+        console.error('❌ vendasPendentes vazio ou não carregado');
+        showToast('Lista de vendas não carregada. Atualize a página.', 'error');
         return;
     }
 
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner"></span> Emitindo...';
-    btn.disabled = true;
+    // 2. Encontrar a venda correspondente
+    const venda = vendasPendentes.find(v => v.order_id === orderId);
+    if (!venda) {
+        console.error('❌ Venda não encontrada para orderId:', orderId);
+        showToast('Venda não encontrada', 'error');
+        return;
+    }
+    console.log('✅ Venda encontrada:', venda);
 
+    // 3. Encontrar o botão que foi clicado (para desabilitar e mostrar spinner)
+    const btn = document.querySelector(`button[onclick*="emitirNFEParaVenda('${orderId}')"]`);
+    let originalText = '';
+    if (btn) {
+        originalText = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner"></span> Emitindo...';
+        btn.disabled = true;
+        console.log('🔄 Botão desabilitado e spinner ativado');
+    } else {
+        console.warn('⚠️ Botão não encontrado via seletor, continuando sem feedback visual.');
+    }
+
+    // 4. Obter transportadora selecionada (se houver)
     const transportadoraId = document.getElementById('avulsaTransportadoraId')?.value || null;
 
+    // 5. Montar dados para o backend
     const dados = {
         venda_id: orderId,
         cliente: {
@@ -128,7 +146,7 @@ async function emitirNFEParaVenda(orderId) {
         pack_id: null
     };
 
-    // Extrair produtos do JSON
+    // 6. Extrair produtos do JSON armazenado na venda
     try {
         const produtosML = JSON.parse(venda.produtos);
         if (produtosML.order_items) {
@@ -139,36 +157,50 @@ async function emitirNFEParaVenda(orderId) {
                 sku: item.item.seller_sku || 'SEM_SKU',
                 ncm: '87149990'
             }));
+            console.log(`✅ ${dados.produtos.length} produto(s) extraído(s):`, dados.produtos);
         } else {
             throw new Error('Formato de produtos inválido');
         }
     } catch (e) {
+        console.error('❌ Erro ao interpretar produtos da venda:', e);
         showToast('Erro ao interpretar produtos da venda', 'error');
-        btn.innerHTML = originalText;
-        btn.disabled = false;
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
         return;
     }
 
+    // 7. Enviar requisição para o backend
     try {
+        console.log('📡 Enviando requisição POST para:', `${API_BASE_URL}/nfe/emitir`);
         const response = await fetch(`${API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(dados)
         });
+        console.log('📥 Resposta recebida. Status:', response.status);
         const result = await response.json();
+        console.log('📦 Resultado:', result);
+
         if (result.success) {
-            showToast(`NF-e emitida com sucesso! Protocolo: ${result.protocolo}`, 'success');
+            showToast(`✅ NF-e emitida com sucesso! Protocolo: ${result.protocolo}`, 'success');
+            // Recarregar listas
             await carregarVendasPendentes();
             await carregarNFesEmitidas();
         } else {
-            showToast('Erro na emissão: ' + result.error, 'error');
+            showToast(`❌ Erro na emissão: ${result.error}`, 'error');
         }
     } catch (error) {
-        console.error('Erro na requisição:', error);
-        showToast('Erro de comunicação', 'error');
+        console.error('❌ Erro na requisição:', error);
+        showToast(`Erro de comunicação: ${error.message}`, 'error');
     } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
+        // Reativar botão
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            console.log('🔄 Botão reativado');
+        }
     }
 }
 
