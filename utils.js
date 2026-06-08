@@ -1,31 +1,36 @@
-const fs = require('fs');
-const path = require('path');
+const forge = require('node-forge');
 
 function loadCertificates() {
-    const privateKeyPath = path.join(__dirname, 'chave_privada.pem');
-    const certPath = path.join(__dirname, 'certificado.pem');
-    const caPath = path.join(__dirname, 'cadeia_completa.pem');
+    // Lê as variáveis de ambiente
+    const pfxBase64 = process.env.PFX_BASE64;
+    const pfxPassword = process.env.PFX_PASSWORD;
 
-    if (!fs.existsSync(privateKeyPath)) {
-        throw new Error(`Chave privada não encontrada: ${privateKeyPath}`);
-    }
-    if (!fs.existsSync(certPath)) {
-        throw new Error(`Certificado não encontrado: ${certPath}`);
-    }
-    if (!fs.existsSync(caPath)) {
-        console.warn('⚠️ Arquivo cadeia_completa.pem não encontrado – a conexão TLS pode falhar');
+    if (!pfxBase64 || !pfxPassword) {
+        throw new Error('Certificado não configurado nas variáveis de ambiente (PFX_BASE64 e PFX_PASSWORD)');
     }
 
-    const privateKey = fs.readFileSync(privateKeyPath, 'utf8');
-    const cert = fs.readFileSync(certPath, 'utf8');
-    const ca = fs.existsSync(caPath) ? fs.readFileSync(caPath, 'utf8') : null;
+    const pfxBuffer = Buffer.from(pfxBase64, 'base64');
+    const p12Asn1 = forge.asn1.fromDer(pfxBuffer.toString('binary'));
+    const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, pfxPassword);
 
-    // Validação básica do formato PEM
-    if (!privateKey.includes('-----BEGIN PRIVATE KEY-----') && !privateKey.includes('-----BEGIN RSA PRIVATE KEY-----')) {
-        console.warn('⚠️ Chave privada pode estar em formato inválido');
+    // Chave privada
+    const bags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
+    if (!bags[forge.pki.oids.pkcs8ShroudedKeyBag] || bags[forge.pki.oids.pkcs8ShroudedKeyBag].length === 0) {
+        throw new Error('Chave privada não encontrada no PFX');
     }
-    if (!cert.includes('-----BEGIN CERTIFICATE-----')) {
-        console.warn('⚠️ Certificado pode estar em formato inválido');
+    const privateKey = forge.pki.privateKeyToPem(bags[forge.pki.oids.pkcs8ShroudedKeyBag][0].key);
+
+    // Certificado
+    const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
+    if (!certBags[forge.pki.oids.certBag] || certBags[forge.pki.oids.certBag].length === 0) {
+        throw new Error('Certificado não encontrado no PFX');
+    }
+    const cert = forge.pki.certificateToPem(certBags[forge.pki.oids.certBag][0].cert);
+
+    // Cadeia de certificados (opcional)
+    let ca = null;
+    if (certBags[forge.pki.oids.certBag].length > 1) {
+        ca = certBags[forge.pki.oids.certBag].slice(1).map(c => forge.pki.certificateToPem(c.cert)).join('');
     }
 
     return { privateKey, cert, ca };

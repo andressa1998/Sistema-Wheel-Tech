@@ -1,5 +1,5 @@
 // ============================================
-// SHIPPING MANAGER - GESTÃO DE FRETES (VERSÃO CORRIGIDA)
+// SHIPPING MANAGER - GESTÃO DE FRETES (CORRIGIDO COM BUSCA FUNCIONAL)
 // ============================================
 
 // Tabela de custos esperados (baseada em https://www.mercadolivre.com.br/ajuda/40538)
@@ -63,7 +63,6 @@ function getExpectedShippingCost(price, weight) {
     return null;
 }
 
-// Buscar custo real via API do ML
 async function getActualShippingCost(shipmentId, token) {
     if (!shipmentId) return null;
     try {
@@ -82,7 +81,7 @@ async function getActualShippingCost(shipmentId, token) {
     }
 }
 
-// ==================== GESTÃO DE PESOS POR PRODUTO ====================
+// ==================== GESTÃO DE PESOS E DIMENSÕES ====================
 async function getProductWeight(sku) {
     if (!sku || sku === 'N/A') return DEFAULT_WEIGHT_KG;
     try {
@@ -113,10 +112,90 @@ async function setProductWeight(sku, peso_kg) {
     }
 }
 
+function calcularVolumeMetroCubico(comprimento, largura, altura) {
+    if (!comprimento || !largura || !altura) return null;
+    const volumeCm3 = comprimento * largura * altura;
+    return parseFloat((volumeCm3 / 1000000).toFixed(4));
+}
+
+function calcularPesoVolumetricoKg(comprimento, largura, altura) {
+    if (!comprimento || !largura || !altura) return null;
+    const volumeCm3 = comprimento * largura * altura;
+    return parseFloat((volumeCm3 / 6000).toFixed(2));
+}
+
+async function getProductDimensions(sku) {
+    if (!sku || sku === 'N/A') return null;
+    try {
+        const { data, error } = await supabaseClient
+            .from('produto_dimensoes_padrao')
+            .select('comprimento_cm, largura_cm, altura_cm, peso_kg')
+            .eq('sku', sku)
+            .maybeSingle();
+        if (error) throw error;
+        return data;
+    } catch (error) {
+        console.error('Erro ao buscar dimensões padrão:', error);
+        return null;
+    }
+}
+
+async function setProductDimensions(sku, comprimento, largura, altura, pesoKg) {
+    if (!sku || sku === 'N/A') return false;
+    try {
+        const { error } = await supabaseClient
+            .from('produto_dimensoes_padrao')
+            .upsert({
+                sku: sku,
+                comprimento_cm: parseFloat(comprimento),
+                largura_cm: parseFloat(largura),
+                altura_cm: parseFloat(altura),
+                peso_kg: parseFloat(pesoKg),
+                atualizado_por: getNomeUsuario(),
+                data_atualizacao: new Date().toISOString()
+            });
+        if (error) throw error;
+        return true;
+    } catch (error) {
+        console.error('Erro ao salvar dimensões padrão:', error);
+        return false;
+    }
+}
+
+async function salvarDimensoesVenda(vendaId, comprimento, largura, altura, pesoKg, salvarComoPadrao = false) {
+    const analise = analises.find(a => a.venda_id === vendaId);
+    if (!analise) return false;
+    const volumetrico = calcularPesoVolumetricoKg(comprimento, largura, altura);
+    const updateData = {
+        comprimento_cm: parseFloat(comprimento),
+        largura_cm: parseFloat(largura),
+        altura_cm: parseFloat(altura),
+        peso_volumetrico_kg: volumetrico,
+        peso_kg: parseFloat(pesoKg)
+    };
+    const { error } = await supabaseClient
+        .from('frete_analises')
+        .update(updateData)
+        .eq('venda_id', vendaId);
+    if (error) {
+        console.error('Erro ao salvar dimensões:', error);
+        return false;
+    }
+    Object.assign(analise, updateData);
+    atualizarTabela();
+    if (salvarComoPadrao && analise.sku && analise.sku !== 'N/A') {
+        const saved = await setProductDimensions(analise.sku, comprimento, largura, altura, pesoKg);
+        if (saved) mostrarToast(`Dimensões salvas como padrão para o SKU ${analise.sku}`, 'success');
+    }
+    return true;
+}
+
 // ==================== SINCRONIZAÇÃO DE VENDAS ====================
 let analises = [];
 let filtroStatus = 'todos';
 let sincronizando = false;
+let skuDimensionsList = [];
+let currentSkuFilter = ''; // filtro para a tabela de SKU
 
 async function sincronizarVendas(limite = 200) {
     if (sincronizando) {
@@ -130,21 +209,17 @@ async function sincronizarVendas(limite = 200) {
         btn.innerHTML = '<span class="spinner"></span> Sincronizando e calculando fretes...';
     }
     mostrarToast(`Buscando até ${limite} vendas FULL e Mercado Envios...`, 'info');
-
     try {
         const tokenData = await window.getValidToken();
         if (!tokenData?.access_token) throw new Error('Token ML inválido');
         const token = tokenData.access_token;
         const WORKER_URL = window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
-
         const dataLimite = new Date();
         dataLimite.setDate(dataLimite.getDate() - 90);
         const dataStr = dataLimite.toISOString();
-
         let offset = 0;
         const limit = 50;
         let vendasColetadas = [];
-
         while (vendasColetadas.length < limite) {
             const mlUrl = `https://api.mercadolibre.com/orders/search?seller=415176739&sort=date_desc&order.status=paid&order.date_created.from=${dataStr}&limit=${limit}&offset=${offset}`;
             const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(mlUrl)}&token=${token}`;
@@ -156,15 +231,12 @@ async function sincronizarVendas(limite = 200) {
             if (data.results.length < limit) break;
             offset += limit;
         }
-
         console.log(`📦 Total de vendas obtidas: ${vendasColetadas.length}`);
         mostrarToast(`Processando ${vendasColetadas.length} vendas...`, 'info');
-
         let novas = 0;
         let ignoradasTipo = 0;
         let ignoradasShipment = 0;
         let errosInsercao = 0;
-
         for (let i = 0; i < vendasColetadas.length && i < limite; i++) {
             const vendaResumo = vendasColetadas[i];
             try {
@@ -173,11 +245,9 @@ async function sincronizarVendas(limite = 200) {
                 const orderResp = await fetch(orderProxy);
                 if (!orderResp.ok) continue;
                 const venda = await orderResp.json();
-
                 const shipping = venda.shipping || {};
                 let tipoEnvio = 'N/I';
                 let shipmentId = shipping.id;
-
                 if (!shipping.logistic_type && shipmentId) {
                     const shipUrl = `https://api.mercadolibre.com/shipments/${shipmentId}`;
                     const shipProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${token}`;
@@ -187,62 +257,61 @@ async function sincronizarVendas(limite = 200) {
                         shipping.logistic_type = shipData.logistic_type;
                     }
                 }
-
                 if (shipping.logistic_type === 'fulfillment') tipoEnvio = 'FULL';
                 else if (shipping.logistic_type === 'cross_docking') tipoEnvio = 'MERCADO ENVIOS';
                 else if (shipping.logistic_type === 'self_service') tipoEnvio = 'FLEX';
                 else if (shipping.logistic_type) tipoEnvio = shipping.logistic_type;
                 else tipoEnvio = 'desconhecido';
-
                 if (tipoEnvio !== 'FULL' && tipoEnvio !== 'MERCADO ENVIOS') {
                     ignoradasTipo++;
                     continue;
                 }
-
                 if (!shipmentId) {
                     ignoradasShipment++;
                     continue;
                 }
-
-                // Processar todos os itens da venda
                 const orderItems = venda.order_items || [];
                 let quantidadeTotal = 0;
                 let pesoTotal = 0;
                 let primeiroPrecoUnitario = null;
                 let primeiroSku = null;
                 let primeiroTitulo = null;
-
+                let primeiroMLB = null;
                 for (const item of orderItems) {
                     const qtd = item.quantity || 1;
                     const precoUnit = item.unit_price || 0;
                     const sku = item.item?.seller_sku || 'N/A';
                     const titulo = item.item?.title || 'Sem título';
-
+                    const itemId = item.item?.id || null;
+                    const mlb = itemId ? itemId.replace('MLB', '') : null;
                     if (primeiroPrecoUnitario === null) {
                         primeiroPrecoUnitario = precoUnit;
                         primeiroSku = sku;
                         primeiroTitulo = titulo;
+                        primeiroMLB = mlb;
                     }
-
                     quantidadeTotal += qtd;
-
-                    // Buscar peso do produto (pode ser por SKU ou padrão)
                     const pesoUnitario = await getProductWeight(sku);
                     pesoTotal += pesoUnitario * qtd;
                 }
-
                 if (quantidadeTotal === 0) quantidadeTotal = 1;
                 if (pesoTotal <= 0) pesoTotal = DEFAULT_WEIGHT_KG;
-
                 const valorTotalVenda = venda.total_amount || 0;
                 const precoUnitarioReferencia = primeiroPrecoUnitario || (valorTotalVenda / quantidadeTotal);
-
-                // Buscar custo real do frete
+                let comprimentoPadrao = null, larguraPadrao = null, alturaPadrao = null, pesoPadrao = null;
+                if (primeiroSku && primeiroSku !== 'N/A') {
+                    const dims = await getProductDimensions(primeiroSku);
+                    if (dims) {
+                        comprimentoPadrao = dims.comprimento_cm;
+                        larguraPadrao = dims.largura_cm;
+                        alturaPadrao = dims.altura_cm;
+                        pesoPadrao = dims.peso_kg;
+                    }
+                }
                 const custoReal = await getActualShippingCost(shipmentId, token);
                 let custoEsperadoTotal = null;
                 let divergencia = null;
                 let status = 'pendente';
-
                 if (custoReal !== null) {
                     custoEsperadoTotal = getExpectedShippingCost(precoUnitarioReferencia, pesoTotal);
                     if (custoEsperadoTotal !== null) {
@@ -250,23 +319,22 @@ async function sincronizarVendas(limite = 200) {
                         status = Math.abs(divergencia) <= 0.01 ? 'ok' : 'divergente';
                     }
                 }
-
-                // Verificar se já existe análise
                 const { data: existente } = await supabaseClient
                     .from('frete_analises')
                     .select('venda_id')
                     .eq('venda_id', String(venda.id))
                     .maybeSingle();
-
                 if (!existente) {
                     const novaAnalise = {
                         venda_id: String(venda.id),
                         shipment_id: shipmentId,
                         titulo: primeiroTitulo,
                         sku: primeiroSku,
-                        valor_unitario: precoUnitarioReferencia,
-                        quantidade: quantidadeTotal,
-                        peso_kg: pesoTotal,  // armazenamos o peso total calculado
+                        mlb: primeiroMLB,
+                        comprimento_cm: comprimentoPadrao,
+                        largura_cm: larguraPadrao,
+                        altura_cm: alturaPadrao,
+                        peso_kg: pesoTotal,
                         custo_real: custoReal,
                         custo_esperado: custoEsperadoTotal,
                         divergencia: divergencia,
@@ -280,22 +348,19 @@ async function sincronizarVendas(limite = 200) {
                         errosInsercao++;
                     } else {
                         novas++;
-                        console.log(`✅ Inserida venda ${venda.id} | qtd_total:${quantidadeTotal} | peso_total:${pesoTotal}kg | custo_real:${custoReal} | esperado:${custoEsperadoTotal} | status:${status}`);
+                        console.log(`✅ Inserida venda ${venda.id} | MLB:${primeiroMLB} | qtd_total:${quantidadeTotal} | peso_total:${pesoTotal}kg | custo_real:${custoReal} | esperado:${custoEsperadoTotal} | status:${status}`);
                     }
                 } else {
                     console.log(`ℹ️ Venda ${venda.id} já existe`);
                 }
-
                 if (i % 10 === 0) await new Promise(r => setTimeout(r, 100));
             } catch (err) {
                 console.error(`❌ Erro na venda ${vendaResumo.id}:`, err);
             }
         }
-
         console.log(`📊 Resumo: novas=${novas}, ignoradasTipo=${ignoradasTipo}, ignoradasShipment=${ignoradasShipment}, errosInsercao=${errosInsercao}`);
         mostrarToast(`Sincronização concluída! ${novas} novas análises.`, 'success');
         await carregarAnalises();
-
     } catch (error) {
         console.error('Erro na sincronização:', error);
         mostrarToast('Erro na sincronização: ' + error.message, 'error');
@@ -308,7 +373,6 @@ async function sincronizarVendas(limite = 200) {
     }
 }
 
-// ==================== CARREGAR ANÁLISES DO BANCO ====================
 async function carregarAnalises() {
     try {
         const { data, error } = await supabaseClient
@@ -326,14 +390,11 @@ async function carregarAnalises() {
     }
 }
 
-// ==================== ATUALIZAR TABELA ====================
 function atualizarTabela() {
     const tbody = document.getElementById('shippingTableBody');
     if (!tbody) return;
-
     let filtradas = analises;
     const hoje = new Date().toISOString().split('T')[0];
-
     if (filtroStatus !== 'todos') {
         if (filtroStatus === 'atrasado') {
             filtradas = analises.filter(a => a.data_retorno && a.data_retorno < hoje);
@@ -341,13 +402,11 @@ function atualizarTabela() {
             filtradas = analises.filter(a => a.status_frete === filtroStatus);
         }
     }
-
     tbody.innerHTML = '';
     if (filtradas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-5">Nenhuma análise encontrada. Clique em "Sincronizar Vendas".</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" class="text-center py-5">Nenhuma análise encontrada. Clique em "Sincronizar Vendas".</td</tr>';
         return;
     }
-
     filtradas.forEach(an => {
         const custoReal = an.custo_real;
         const custoEsperado = an.custo_esperado;
@@ -355,14 +414,12 @@ function atualizarTabela() {
         const status = an.status_frete || 'pendente';
         const quantidade = an.quantidade || 1;
         const pesoExibido = an.peso_kg ? an.peso_kg.toFixed(2) : DEFAULT_WEIGHT_KG;
-
         let statusBadge = '';
         if (status === 'pendente') statusBadge = '<span class="badge badge-secondary">A verificar</span>';
         else if (status === 'ok') statusBadge = '<span class="badge badge-success">OK</span>';
         else if (status === 'divergente') statusBadge = '<span class="badge badge-danger">Divergente</span>';
         else if (status === 'reembolsado') statusBadge = '<span class="badge badge-success">Reembolso conseguido</span>';
         else if (status === 'contatado') statusBadge = '<span class="badge badge-warning">Reembolso solicitado</span>';
-
         const isAtrasado = an.data_retorno && an.data_retorno < hoje;
         let atrasadoBadge = '';
         let rowClass = (custoReal && custoEsperado && Math.abs(custoReal - custoEsperado) > 0.01) ? 'table-danger' : '';
@@ -370,12 +427,12 @@ function atualizarTabela() {
             atrasadoBadge = '<span class="badge badge-danger ms-2"><i class="fas fa-exclamation-triangle"></i> Atrasado</span>';
             rowClass += ' table-warning';
         }
-
         const row = document.createElement('tr');
         row.className = rowClass;
         row.innerHTML = `
             <td><strong>${an.venda_id}</strong><br><small>${new Date(an.data_venda).toLocaleDateString('pt-BR')}</small></td>
             <td>${an.titulo}<br><small class="text-muted">SKU: ${an.sku}</small></td>
+            <td>${an.mlb || '-'}</td>
             <td>R$ ${(an.valor_unitario || 0).toFixed(2)}</td>
             <td>${quantidade}</td>
             <td>${pesoExibido} kg</td>
@@ -384,26 +441,15 @@ function atualizarTabela() {
             <td class="${divergencia !== '-' && Math.abs(parseFloat(divergencia)) > 0.01 ? 'text-danger fw-bold' : ''}">
                 ${divergencia !== '-' ? 'R$ ' + divergencia : '-'}
             </td>
-            <td>
-                ${statusBadge}
-                ${atrasadoBadge}
-            </td>
+            <td>${statusBadge}${atrasadoBadge}</td>
             <td>
                 <div class="d-flex flex-column gap-1">
                     <div class="d-flex align-items-center gap-1">
-                        <input type="number" class="peso-input form-control form-control-sm" 
-                               value="${an.peso_kg || DEFAULT_WEIGHT_KG}" step="0.1" min="0"
-                               data-id="${an.venda_id}" style="width: 80px;">
-                        <button class="btn btn-sm btn-primary" onclick="shippingManager.verificarFrete('${an.venda_id}')" title="Recalcular com novo peso">
-                            <i class="fas fa-sync-alt"></i>
-                        </button>
-                        <button class="btn btn-sm btn-info" onclick="shippingManager.salvarPesoProduto('${an.sku}')" title="Salvar este peso para o SKU">
-                            <i class="fas fa-save"></i>
-                        </button>
+                        <input type="number" class="peso-input form-control form-control-sm" value="${an.peso_kg || DEFAULT_WEIGHT_KG}" step="0.1" min="0" data-id="${an.venda_id}" style="width: 80px;">
+                        <button class="btn btn-sm btn-primary" onclick="shippingManager.verificarFrete('${an.venda_id}')" title="Recalcular com novo peso"><i class="fas fa-sync-alt"></i></button>
+                        <button class="btn btn-sm btn-info" onclick="shippingManager.salvarPesoProduto('${an.sku}')" title="Salvar este peso para o SKU"><i class="fas fa-save"></i></button>
                     </div>
-                    <button class="btn btn-sm btn-warning w-100" onclick="shippingManager.abrirModalReembolso('${an.venda_id}')" title="Registrar ação">
-                        <i class="fas fa-hand-holding-usd"></i> Reembolso
-                    </button>
+                    <button class="btn btn-sm btn-warning w-100" onclick="shippingManager.abrirModalReembolso('${an.venda_id}')" title="Registrar ação"><i class="fas fa-hand-holding-usd"></i> Reembolso</button>
                 </div>
             </td>
         `;
@@ -411,10 +457,9 @@ function atualizarTabela() {
     });
 }
 
-// ==================== SALVAR PESO PARA O PRODUTO (SKU) ====================
 async function salvarPesoProduto(sku) {
     if (!sku || sku === 'N/A') {
-        mostrarToast('Este produto não possui SKU definido. Não é possível salvar o peso.', 'warning');
+        mostrarToast('Este produto não possui SKU definido.', 'warning');
         return;
     }
     const analise = analises.find(a => a.sku === sku);
@@ -437,42 +482,33 @@ async function salvarPesoProduto(sku) {
     }
 }
 
-// ==================== VERIFICAR FRETE (RECALCULAR) ====================
 async function verificarFrete(vendaId) {
     const analise = analises.find(a => a.venda_id === vendaId);
     if (!analise) {
         mostrarToast('Análise não encontrada', 'error');
         return;
     }
-
     const inputPeso = document.querySelector(`.peso-input[data-id="${vendaId}"]`);
     let peso = inputPeso ? parseFloat(inputPeso.value) : analise.peso_kg;
     if (isNaN(peso) || peso <= 0) {
         peso = DEFAULT_WEIGHT_KG;
         if (inputPeso) inputPeso.value = peso;
     }
-
     const tokenData = await window.getValidToken();
     if (!tokenData?.access_token) {
         mostrarToast('Token ML inválido', 'error');
         return;
     }
     const token = tokenData.access_token;
-
     mostrarToast('Consultando custo real na API...', 'info');
     const custoReal = await getActualShippingCost(analise.shipment_id, token);
     if (custoReal === null) {
         mostrarToast('Não foi possível obter custo real', 'error');
         return;
     }
-
     const quantidade = analise.quantidade || 1;
-    // Recalcular peso total se necessário (o usuário pode ter alterado o peso unitário)
-    // Mas como salvamos o peso total no banco, usaremos o peso informado como total? 
-    // Melhor: o peso informado é o peso total (já multiplicado pela quantidade). Vamos manter assim.
-    const pesoTotal = peso; // o usuário está informando o peso total (já considerando quantidade)
+    const pesoTotal = peso;
     const precoUnitario = analise.valor_unitario;
-
     const custoEsperadoTotal = getExpectedShippingCost(precoUnitario, pesoTotal);
     if (custoEsperadoTotal === null) {
         mostrarToast('Não foi possível calcular custo esperado', 'error');
@@ -480,7 +516,6 @@ async function verificarFrete(vendaId) {
     }
     const divergencia = parseFloat((custoReal - custoEsperadoTotal).toFixed(2));
     const status = Math.abs(divergencia) <= 0.01 ? 'ok' : 'divergente';
-
     await supabaseClient.from('frete_analises').update({
         peso_kg: pesoTotal,
         custo_real: custoReal,
@@ -489,19 +524,16 @@ async function verificarFrete(vendaId) {
         status_frete: status,
         ultima_verificacao: new Date().toISOString()
     }).eq('venda_id', vendaId);
-
     analise.peso_kg = pesoTotal;
     analise.custo_real = custoReal;
     analise.custo_esperado = custoEsperadoTotal;
     analise.divergencia = divergencia;
     analise.status_frete = status;
-
     atualizarTabela();
     atualizarResumo();
     mostrarToast(`Verificação concluída! Custo real: R$ ${custoReal.toFixed(2)} | Esperado (peso ${pesoTotal}kg): R$ ${custoEsperadoTotal.toFixed(2)} | Divergência: R$ ${divergencia.toFixed(2)}`, 'success');
 }
 
-// ==================== VERIFICAR TODAS AS PENDENTES ====================
 async function verificarVendasPendentes() {
     const pendentes = analises.filter(a => a.status_frete === 'pendente' || a.status_frete === 'divergente');
     if (pendentes.length === 0) {
@@ -516,11 +548,9 @@ async function verificarVendasPendentes() {
     mostrarToast('Recálculo concluído!', 'success');
 }
 
-// ==================== AÇÕES DE REEMBOLSO (mantido igual) ====================
 function abrirModalReembolso(vendaId) {
     const analise = analises.find(a => a.venda_id === vendaId);
     if (!analise) return;
-
     document.getElementById('acaoVendaId').value = vendaId;
     document.querySelectorAll('input[name="contatoFeito"]').forEach(r => {
         r.checked = (r.value === 'sim' && analise.contato_ml_feito) ? true : (r.value === 'nao' && !analise.contato_ml_feito);
@@ -545,11 +575,9 @@ async function salvarAcaoReembolso(event) {
     const reembolsoObtido = document.querySelector('input[name="reembolsoObtido"]:checked')?.value === 'sim';
     const observacoes = document.getElementById('observacoesReembolso').value || null;
     const usuario = getNomeUsuario();
-
     let statusFrete = null;
     if (reembolsoObtido) statusFrete = 'reembolsado';
     else if (contatoFeito) statusFrete = 'contatado';
-
     const updateData = {
         contato_ml_feito: contatoFeito,
         data_contato: dataContato,
@@ -560,9 +588,7 @@ async function salvarAcaoReembolso(event) {
         observacoes: observacoes
     };
     if (statusFrete) updateData.status_frete = statusFrete;
-
     await supabaseClient.from('frete_analises').update(updateData).eq('venda_id', vendaId);
-
     const analise = analises.find(a => a.venda_id === vendaId);
     Object.assign(analise, updateData);
     atualizarTabela();
@@ -575,7 +601,6 @@ function fecharModalAcaoReembolso() {
     document.getElementById('modalAcaoReembolso').classList.add('hidden');
 }
 
-// ==================== RESUMO E FILTROS ====================
 function atualizarResumo() {
     const pendentes = analises.filter(a => a.status_frete === 'pendente').length;
     const divergentes = analises.filter(a => a.status_frete === 'divergente').length;
@@ -583,7 +608,6 @@ function atualizarResumo() {
     const reembolsados = analises.filter(a => a.status_frete === 'reembolsado').length;
     const hoje = new Date().toISOString().split('T')[0];
     const atrasados = analises.filter(a => a.data_retorno && a.data_retorno < hoje).length;
-
     const elPend = document.getElementById('shippingPendentes');
     if (elPend) elPend.textContent = pendentes;
     const elDiv = document.getElementById('shippingDivergentes');
@@ -610,7 +634,6 @@ function filtrarPorStatus(status) {
     }
 }
 
-// ==================== RELATÓRIOS ====================
 function abrirRelatorio() {
     const usuarios = [...new Set(analises.map(a => a.usuario_responsavel).filter(u => u))];
     const selectUsuario = document.getElementById('relUsuario');
@@ -631,19 +654,16 @@ async function gerarRelatorio() {
     const dataFim = document.getElementById('relDataFim').value;
     const status = document.getElementById('relStatus').value;
     const usuario = document.getElementById('relUsuario').value;
-
     let query = supabaseClient.from('frete_analises').select('*');
     if (dataInicio) query = query.gte('data_venda', dataInicio);
     if (dataFim) query = query.lte('data_venda', dataFim);
     if (status && status !== '') query = query.eq('status_frete', status);
     if (usuario) query = query.eq('usuario_responsavel', usuario);
-
     const { data, error } = await query.order('data_venda', { ascending: false });
     if (error) {
         mostrarToast('Erro ao gerar relatório', 'error');
         return;
     }
-
     const tbody = document.getElementById('relatorioTableBody');
     tbody.innerHTML = '';
     data.forEach(item => {
@@ -715,6 +735,349 @@ function getNomeUsuario() {
     return document.getElementById('userName')?.textContent || 'Sistema';
 }
 
+// ==================== MODAL GERENCIAR PESOS (COM BUSCA FUNCIONAL) ====================
+async function abrirModalGerenciarPesos() {
+    await carregarListaDimensoesSku();
+    document.getElementById('modalGerenciarPesos').classList.remove('hidden');
+
+    // Configurar o evento de busca do campo de texto (apenas uma vez)
+    const buscaInput = document.getElementById('buscaSkuModal');
+    if (buscaInput && !buscaInput._listenerAdicionado) {
+        buscaInput.addEventListener('input', function() {
+            currentSkuFilter = this.value.trim();
+            renderizarTabelaDimensoes();  // a tabela será filtrada em tempo real
+        });
+        buscaInput._listenerAdicionado = true;
+    }
+}
+
+function fecharModalGerenciarPesos() {
+    document.getElementById('modalGerenciarPesos').classList.add('hidden');
+    // Opcional: limpar filtro ao fechar
+    currentSkuFilter = '';
+}
+
+async function carregarListaDimensoesSku() {
+    const tbody = document.getElementById('tabelaDimensoesSkuBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center"><div class="spinner"></div> Carregando SKUs...</td></tr>';
+    try {
+        const { data: analisesData, error: analisesError } = await supabaseClient
+            .from('frete_analises')
+            .select('sku')
+            .not('sku', 'is', null)
+            .not('sku', 'eq', 'N/A');
+        if (analisesError) throw analisesError;
+        const skusSet = new Set();
+        analisesData.forEach(item => {
+            if (item.sku && item.sku.trim() !== '') skusSet.add(item.sku.trim());
+        });
+        const { data: dimensoesData, error: dimError } = await supabaseClient
+            .from('produto_dimensoes_padrao')
+            .select('*');
+        if (dimError) throw dimError;
+        const dimensoesMap = new Map();
+        dimensoesData.forEach(d => dimensoesMap.set(d.sku, d));
+        skuDimensionsList = Array.from(skusSet).map(sku => {
+            const existente = dimensoesMap.get(sku);
+            return {
+                sku: sku,
+                comprimento_cm: existente?.comprimento_cm || '',
+                largura_cm: existente?.largura_cm || '',
+                altura_cm: existente?.altura_cm || '',
+                peso_kg: existente?.peso_kg || ''
+            };
+        }).sort((a, b) => a.sku.localeCompare(b.sku));
+        renderizarTabelaDimensoes();
+    } catch (error) {
+        console.error('Erro ao carregar SKUs:', error);
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Erro ao carregar dados. Recarregue a página.</td></tr>';
+    }
+}
+
+async function renderizarTabelaDimensoes() {
+    const tbody = document.getElementById('tabelaDimensoesSkuBody');
+    if (!tbody) return;
+    let dadosExibir = skuDimensionsList;
+    // Aplica o filtro de busca (case-insensitive)
+    if (currentSkuFilter.trim() !== '') {
+        const filtro = currentSkuFilter.trim().toLowerCase();
+        dadosExibir = skuDimensionsList.filter(item => item.sku.toLowerCase().includes(filtro));
+    }
+    if (dadosExibir.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Nenhum SKU encontrado. Clique em "Novo SKU" para adicionar.</td</tr>';
+        return;
+    }
+    tbody.innerHTML = '';
+    for (const item of dadosExibir) {
+        const fotos = await carregarFotosSku(item.sku);
+        const primeiraFoto = fotos.length > 0 ? fotos[0].foto_url : null;
+        const comp = item.comprimento_cm ? parseFloat(item.comprimento_cm) : null;
+        const larg = item.largura_cm ? parseFloat(item.largura_cm) : null;
+        const alt = item.altura_cm ? parseFloat(item.altura_cm) : null;
+        let volume = '';
+        let tooltip = '';
+        if (comp && larg && alt) {
+            const m3 = calcularVolumeMetroCubico(comp, larg, alt);
+            const pesoVolKg = calcularPesoVolumetricoKg(comp, larg, alt);
+            volume = m3 !== null ? m3.toFixed(4) : '';
+            tooltip = `Peso volumétrico (frete): ${pesoVolKg} kg`;
+        }
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-sku', item.sku);
+        tr.innerHTML = `
+            <td><strong>${escapeHtml(item.sku)}</strong></td>
+            <td><input type="number" step="0.1" class="form-control form-control-sm dim-comp" value="${item.comprimento_cm !== '' ? item.comprimento_cm : ''}" placeholder="cm" data-sku="${item.sku}"></td>
+            <td><input type="number" step="0.1" class="form-control form-control-sm dim-larg" value="${item.largura_cm !== '' ? item.largura_cm : ''}" placeholder="cm" data-sku="${item.sku}"></td>
+            <td><input type="number" step="0.1" class="form-control form-control-sm dim-alt" value="${item.altura_cm !== '' ? item.altura_cm : ''}" placeholder="cm" data-sku="${item.sku}"></td>
+            <td><input type="number" step="0.01" class="form-control form-control-sm dim-peso" value="${item.peso_kg !== '' ? item.peso_kg : ''}" placeholder="kg" data-sku="${item.sku}"></td>
+            <td class="text-center" style="font-size: 12px;" title="${tooltip}">${volume ? volume : '-'}</td>
+            <td class="text-center">
+                <div class="d-flex flex-column align-items-center gap-2">
+                    ${primeiraFoto ? `<img src="${primeiraFoto}" style="width: 50px; height: 50px; object-fit: cover; border-radius: 5px; cursor: pointer;" onclick="visualizarFotosSku('${item.sku}')">` : '<div style="width:50px; height:50px; background:#f0f0f0; border-radius:5px; display:flex; align-items:center; justify-content:center;"><i class="fas fa-image text-muted"></i></div>'}
+                    <button class="btn btn-sm btn-outline-primary" onclick="uploadFotoSku('${item.sku}')"><i class="fas fa-upload"></i> ${primeiraFoto ? 'Trocar' : 'Adicionar'}</button>
+                    ${fotos.length > 1 ? `<small class="text-muted">+${fotos.length-1} mais</small>` : ''}
+                </div>
+            </td>
+            <td>
+                <button class="btn btn-sm btn-primary mb-1" onclick="salvarDimensoesSkuPorSku('${item.sku}')"><i class="fas fa-save"></i> Salvar</button>
+                <button class="btn btn-sm btn-danger" onclick="excluirDimensoesSkuPorSku('${item.sku}')"><i class="fas fa-trash"></i> Excluir</button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    }
+    // Adicionar eventos para recalcular volume em tempo real
+    document.querySelectorAll('#tabelaDimensoesSkuBody .dim-comp, #tabelaDimensoesSkuBody .dim-larg, #tabelaDimensoesSkuBody .dim-alt').forEach(input => {
+        input.addEventListener('input', function() {
+            const row = this.closest('tr');
+            const comp = parseFloat(row.querySelector('.dim-comp').value) || 0;
+            const larg = parseFloat(row.querySelector('.dim-larg').value) || 0;
+            const alt = parseFloat(row.querySelector('.dim-alt').value) || 0;
+            const volumeTd = row.cells[5];
+            if (comp && larg && alt) {
+                const m3 = calcularVolumeMetroCubico(comp, larg, alt);
+                const pesoVolKg = calcularPesoVolumetricoKg(comp, larg, alt);
+                volumeTd.textContent = m3 !== null ? m3.toFixed(4) : '-';
+                volumeTd.title = `Peso volumétrico (frete): ${pesoVolKg} kg`;
+            } else {
+                volumeTd.textContent = '-';
+                volumeTd.title = '';
+            }
+        });
+    });
+}
+
+async function salvarDimensoesSkuPorSku(sku) {
+    const row = document.querySelector(`#tabelaDimensoesSkuBody tr[data-sku="${sku}"]`);
+    if (!row) return;
+    const comp = parseFloat(row.querySelector('.dim-comp').value);
+    const larg = parseFloat(row.querySelector('.dim-larg').value);
+    const alt = parseFloat(row.querySelector('.dim-alt').value);
+    const peso = parseFloat(row.querySelector('.dim-peso').value);
+    if (isNaN(comp) || isNaN(larg) || isNaN(alt) || isNaN(peso)) {
+        mostrarToast('Preencha todas as dimensões e peso corretamente', 'warning');
+        return;
+    }
+    const sucesso = await setProductDimensions(sku, comp, larg, alt, peso);
+    if (sucesso) {
+        const index = skuDimensionsList.findIndex(item => item.sku === sku);
+        if (index !== -1) {
+            skuDimensionsList[index].comprimento_cm = comp;
+            skuDimensionsList[index].largura_cm = larg;
+            skuDimensionsList[index].altura_cm = alt;
+            skuDimensionsList[index].peso_kg = peso;
+        }
+        mostrarToast(`Dimensões do SKU ${sku} salvas!`, 'success');
+        await renderizarTabelaDimensoes();
+    } else {
+        mostrarToast('Erro ao salvar dimensões.', 'error');
+    }
+}
+
+async function excluirDimensoesSkuPorSku(sku) {
+    if (!confirm(`Remover todas as dimensões padrão do SKU ${sku}?`)) return;
+    try {
+        const { error } = await supabaseClient
+            .from('produto_dimensoes_padrao')
+            .delete()
+            .eq('sku', sku);
+        if (error) throw error;
+        const index = skuDimensionsList.findIndex(item => item.sku === sku);
+        if (index !== -1) {
+            skuDimensionsList[index].comprimento_cm = '';
+            skuDimensionsList[index].largura_cm = '';
+            skuDimensionsList[index].altura_cm = '';
+            skuDimensionsList[index].peso_kg = '';
+        }
+        await renderizarTabelaDimensoes();
+        mostrarToast(`Dimensões removidas para ${sku}`, 'success');
+    } catch (error) {
+        console.error(error);
+        mostrarToast('Erro ao excluir', 'error');
+    }
+}
+
+function filtrarTabelaSku() {
+    const buscaInput = document.getElementById('buscaSkuModal');
+    if (buscaInput) {
+        currentSkuFilter = buscaInput.value;
+        renderizarTabelaDimensoes();
+    }
+}
+
+async function adicionarNovoSkuModal() {
+    const novoSkus = prompt('Digite o SKU do produto (ex: BICICLETA123):');
+    if (!novoSkus) return;
+    const sku = novoSkus.trim().toUpperCase();
+    if (skuDimensionsList.some(s => s.sku === sku)) {
+        mostrarToast('SKU já existe na lista!', 'warning');
+        return;
+    }
+    skuDimensionsList.push({
+        sku: sku,
+        comprimento_cm: '',
+        largura_cm: '',
+        altura_cm: '',
+        peso_kg: ''
+    });
+    await setProductDimensions(sku, null, null, null, null);
+    await renderizarTabelaDimensoes();
+    mostrarToast(`SKU ${sku} adicionado. Preencha as dimensões.`, 'success');
+}
+
+async function aplicarDimensoesPadraoGlobal() {
+    if (skuDimensionsList.length === 0) {
+        mostrarToast('Nenhum SKU disponível para definir como padrão global.', 'warning');
+        return;
+    }
+    const primeiro = skuDimensionsList[0];
+    const comp = primeiro.comprimento_cm;
+    const larg = primeiro.largura_cm;
+    const alt = primeiro.altura_cm;
+    const peso = primeiro.peso_kg;
+    if (!comp || !larg || !alt || !peso) {
+        mostrarToast('O primeiro SKU da lista não possui todas as dimensões preenchidas.', 'warning');
+        return;
+    }
+    localStorage.setItem('global_default_dimensions', JSON.stringify({ comp, larg, alt, peso }));
+    mostrarToast(`Medida padrão global definida: ${comp}x${larg}x${alt} cm, ${peso} kg`, 'success');
+}
+
+// ==================== FOTOS POR SKU ====================
+async function carregarFotosSku(sku) {
+    const { data, error } = await supabaseClient
+        .from('sku_fotos')
+        .select('*')
+        .eq('sku', sku)
+        .order('data_upload', { ascending: false });
+    if (error) {
+        console.error('Erro ao carregar fotos do SKU:', error);
+        return [];
+    }
+    return data;
+}
+
+async function adicionarFotoSku(sku, file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async function(e) {
+            const base64 = e.target.result;
+            const { data, error } = await supabaseClient
+                .from('sku_fotos')
+                .insert([{
+                    sku: sku,
+                    foto_url: base64,
+                    uploaded_by: getNomeUsuario(),
+                    data_upload: new Date().toISOString()
+                }]);
+            if (error) reject(error);
+            else resolve(data);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
+}
+
+async function removerFotoSku(fotoId) {
+    const { error } = await supabaseClient
+        .from('sku_fotos')
+        .delete()
+        .eq('id', fotoId);
+    if (error) throw error;
+}
+
+async function uploadFotoSku(sku) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (file.size > 5 * 1024 * 1024) {
+            mostrarToast('Arquivo muito grande (máx. 5MB)', 'error');
+            return;
+        }
+        try {
+            await adicionarFotoSku(sku, file);
+            mostrarToast(`Foto adicionada ao SKU ${sku}`, 'success');
+            await renderizarTabelaDimensoes();
+        } catch (error) {
+            console.error(error);
+            mostrarToast('Erro ao fazer upload da foto', 'error');
+        }
+    };
+    input.click();
+}
+
+async function visualizarFotosSku(sku) {
+    const fotos = await carregarFotosSku(sku);
+    if (fotos.length === 0) {
+        mostrarToast('Nenhuma foto para este SKU', 'info');
+        return;
+    }
+    let html = `<div class="d-flex flex-wrap gap-3 justify-content-center">`;
+    for (const foto of fotos) {
+        html += `
+            <div class="text-center" style="width: 150px;">
+                <img src="${foto.foto_url}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px;">
+                <button class="btn btn-sm btn-danger mt-1" onclick="removerFotoSkuConfirm(${foto.id}, '${sku}')">Excluir</button>
+            </div>
+        `;
+    }
+    html += `</div>`;
+    showModalDialog(`Fotos do SKU: ${sku}`, html);
+}
+
+window.removerFotoSkuConfirm = async function(fotoId, sku) {
+    if (confirm('Remover esta foto?')) {
+        await removerFotoSku(fotoId);
+        mostrarToast('Foto removida', 'success');
+        await renderizarTabelaDimensoes();
+        const modal = document.querySelector('#modalFotoSku');
+        if (modal) modal.remove();
+    }
+};
+
+function showModalDialog(title, contentHtml) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'modalFotoSku';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3>${title}</h3>
+                <button onclick="this.closest('.modal').remove()" style="background:none; border:none; font-size:24px;">&times;</button>
+            </div>
+            ${contentHtml}
+            <div class="d-flex justify-content-end mt-3">
+                <button class="btn btn-secondary" onclick="this.closest('.modal').remove()">Fechar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
 // ==================== INICIALIZAÇÃO ====================
 document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('formAcaoReembolso');
@@ -722,6 +1085,7 @@ document.addEventListener('DOMContentLoaded', () => {
     carregarAnalises();
 });
 
+// ==================== EXPOSIÇÃO GLOBAL ====================
 window.shippingManager = {
     sincronizarVendas,
     carregarAnalises,
@@ -733,5 +1097,56 @@ window.shippingManager = {
     exportarRelatorio,
     exportarDivergencias,
     filtrarPorStatus,
-    salvarPesoProduto
+    salvarPesoProduto,
+    salvarDimensoesVenda,
+    adicionarFotoVenda,
+    listarFotosVenda,
+    removerFotoVenda,
+    getProductDimensions,
+    setProductDimensions,
+    calcularPesoVolumetrico: calcularPesoVolumetricoKg,
+    abrirModalGerenciarPesos,
+    fecharModalGerenciarPesos,
+    carregarListaDimensoesSku,
+    renderizarTabelaDimensoes,
+    salvarDimensoesSku,
+    excluirDimensoesSku,
+    adicionarNovoSkuModal,
+    aplicarDimensoesPadraoGlobal,
+    uploadFotoSku,
+    visualizarFotosSku,
+    removerFotoSkuConfirm,
+    salvarDimensoesSkuPorSku,
+    excluirDimensoesSkuPorSku,
+    filtrarTabelaSku,
+    calcularVolumeMetroCubico,
+    calcularPesoVolumetricoKg
 };
+
+// Funções globais para uso nos botões HTML
+window.abrirModalGerenciarPesos = abrirModalGerenciarPesos;
+window.fecharModalGerenciarPesos = fecharModalGerenciarPesos;
+window.salvarDimensoesSkuPorSku = salvarDimensoesSkuPorSku;
+window.excluirDimensoesSkuPorSku = excluirDimensoesSkuPorSku;
+window.adicionarNovoSkuModal = adicionarNovoSkuModal;
+window.aplicarDimensoesPadraoGlobal = aplicarDimensoesPadraoGlobal;
+window.uploadFotoSku = uploadFotoSku;
+window.visualizarFotosSku = visualizarFotosSku;
+window.removerFotoSkuConfirm = removerFotoSkuConfirm;
+window.filtrarTabelaSku = filtrarTabelaSku;
+
+// Forçar a vinculação do campo de busca assim que o DOM estiver pronto
+document.addEventListener('DOMContentLoaded', function() {
+    const buscaInput = document.getElementById('buscaSkuModal');
+    if (buscaInput) {
+        console.log('✅ Campo de busca encontrado, vinculando evento...');
+        buscaInput.addEventListener('input', function(e) {
+            const valor = e.target.value.trim();
+            console.log('🔍 Buscando por:', valor);
+            currentSkuFilter = valor;
+            renderizarTabelaDimensoes();
+        });
+    } else {
+        console.error('❌ Campo de busca #buscaSkuModal não encontrado no DOM!');
+    }
+});

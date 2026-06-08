@@ -73,6 +73,7 @@ async function handleLogin(e) {
         return;
     }
         currentUser = foundUser;
+        window.currentUser = currentUser;
 
         atualizarVisibilidadeMenu();
         
@@ -140,6 +141,7 @@ let salesSyncStatus = {
 
 // ===== VARIÁVEIS GLOBAIS =====
 let currentUser = null;
+window.currentUser = currentUser;
 let orders = [];
 let orderCounter = 1;
 let currentFilter = 'pendente';
@@ -596,6 +598,7 @@ function loadSessionFromStorage() {
         
         // Restaurar usuário
         currentUser = user;
+        window.currentUser = currentUser;
         
        // 🔒 VERIFICAÇÃO DE BLOQUEIO (INSIRA AQUI)
         if (BLOCKED_USERS.includes(currentUser.username)) {
@@ -1159,6 +1162,152 @@ function processMLSales(sales) {
     });
 }
 
+window.verDetalhesVenda = async function(vendaId) {
+    // Buscar venda atual a partir da lista global (vendasAtuais)
+    const venda = vendasAtuais.find(v => v.id == vendaId);
+    if (!venda) {
+        mostrarToast('Venda não encontrada', 'error');
+        return;
+    }
+
+    // Preencher cabeçalho
+    document.getElementById('vendaCodigo').textContent = venda.id;
+
+    // Preencher aba de informações
+    const detalhesContent = document.getElementById('vendaDetalhesContent');
+    detalhesContent.innerHTML = `
+        <div class="info-card">
+            <p><strong>ID Venda:</strong> ${venda.id}</p>
+            <p><strong>Data:</strong> ${new Date(venda.date_created).toLocaleString('pt-BR')}</p>
+            <p><strong>Cliente:</strong> ${venda.buyer_nickname || 'Não informado'}</p>
+            <p><strong>Total:</strong> R$ ${(venda.total_amount || 0).toFixed(2)}</p>
+            <p><strong>SKU:</strong> ${venda.sku || 'N/A'}</p>
+            <p><strong>MLB:</strong> ${venda.mlb || 'Não informado'}</p>
+            <p><strong>Produto:</strong> ${venda.produto_titulo || '-'}</p>
+            <p><strong>Tipo de Envio:</strong> ${venda.meio_envio || '-'}</p>
+        </div>
+    `;
+
+    // Carregar dimensões salvas (se houver)
+    const analise = analises.find(a => a.venda_id === String(venda.id));
+    if (analise) {
+        document.getElementById('dimensaoComprimento').value = analise.comprimento_cm || '';
+        document.getElementById('dimensaoLargura').value = analise.largura_cm || '';
+        document.getElementById('dimensaoAltura').value = analise.altura_cm || '';
+        document.getElementById('dimensaoPeso').value = analise.peso_kg || '';
+        if (analise.comprimento_cm && analise.largura_cm && analise.altura_cm) {
+            const vol = (analise.comprimento_cm * analise.largura_cm * analise.altura_cm) / 6000;
+            document.getElementById('pesoVolumetricoValor').textContent = vol.toFixed(2);
+        } else {
+            document.getElementById('pesoVolumetricoValor').textContent = '-';
+        }
+    } else {
+        // Tentar buscar dimensões padrão pelo SKU
+        if (venda.sku && venda.sku !== 'N/A') {
+            const dims = await window.shippingManager.getProductDimensions(venda.sku);
+            if (dims) {
+                document.getElementById('dimensaoComprimento').value = dims.comprimento_cm || '';
+                document.getElementById('dimensaoLargura').value = dims.largura_cm || '';
+                document.getElementById('dimensaoAltura').value = dims.altura_cm || '';
+                document.getElementById('dimensaoPeso').value = dims.peso_kg || '';
+                if (dims.comprimento_cm && dims.largura_cm && dims.altura_cm) {
+                    const vol = (dims.comprimento_cm * dims.largura_cm * dims.altura_cm) / 6000;
+                    document.getElementById('pesoVolumetricoValor').textContent = vol.toFixed(2);
+                }
+            }
+        }
+    }
+
+    // Carregar fotos
+    await carregarFotosVenda(venda.id);
+
+    // Configurar eventos dos botões
+    const salvarBtn = document.getElementById('salvarDimensoesBtn');
+    const salvarPadraoBtn = document.getElementById('salvarComoPadraoBtn');
+    const uploadBtn = document.getElementById('uploadFotoVendaBtn');
+    const uploadInput = document.getElementById('uploadFotoVendaInput');
+
+    // Remover listeners antigos (para evitar duplicação)
+    const newSalvarBtn = salvarBtn.cloneNode(true);
+    salvarBtn.parentNode.replaceChild(newSalvarBtn, salvarBtn);
+    const newSalvarPadraoBtn = salvarPadraoBtn.cloneNode(true);
+    salvarPadraoBtn.parentNode.replaceChild(newSalvarPadraoBtn, salvarPadraoBtn);
+    const newUploadBtn = uploadBtn.cloneNode(true);
+    uploadBtn.parentNode.replaceChild(newUploadBtn, uploadBtn);
+
+    newSalvarBtn.onclick = async () => {
+        const comp = parseFloat(document.getElementById('dimensaoComprimento').value);
+        const larg = parseFloat(document.getElementById('dimensaoLargura').value);
+        const alt = parseFloat(document.getElementById('dimensaoAltura').value);
+        const peso = parseFloat(document.getElementById('dimensaoPeso').value);
+        await window.shippingManager.salvarDimensoesVenda(venda.id, comp, larg, alt, peso, false);
+        mostrarToast('Dimensões salvas para esta venda', 'success');
+    };
+
+    newSalvarPadraoBtn.onclick = async () => {
+        if (!venda.sku || venda.sku === 'N/A') {
+            mostrarToast('Este produto não possui SKU, não é possível salvar como padrão', 'warning');
+            return;
+        }
+        const comp = parseFloat(document.getElementById('dimensaoComprimento').value);
+        const larg = parseFloat(document.getElementById('dimensaoLargura').value);
+        const alt = parseFloat(document.getElementById('dimensaoAltura').value);
+        const peso = parseFloat(document.getElementById('dimensaoPeso').value);
+        await window.shippingManager.salvarDimensoesVenda(venda.id, comp, larg, alt, peso, true);
+        mostrarToast(`Dimensões salvas como padrão para o SKU ${venda.sku}`, 'success');
+    };
+
+    newUploadBtn.onclick = () => uploadInput.click();
+    uploadInput.onchange = async (e) => {
+        if (e.target.files.length) {
+            await window.shippingManager.adicionarFotoVenda(venda.id, e.target.files[0]);
+            await carregarFotosVenda(venda.id);
+            uploadInput.value = '';
+        }
+    };
+
+    // Adicionar listeners para atualizar peso volumétrico em tempo real
+    const compInput = document.getElementById('dimensaoComprimento');
+    const largInput = document.getElementById('dimensaoLargura');
+    const altInput = document.getElementById('dimensaoAltura');
+    const atualizarVol = () => {
+        const comp = parseFloat(compInput.value);
+        const larg = parseFloat(largInput.value);
+        const alt = parseFloat(altInput.value);
+        if (comp && larg && alt) {
+            const vol = (comp * larg * alt) / 6000;
+            document.getElementById('pesoVolumetricoValor').textContent = vol.toFixed(2);
+        } else {
+            document.getElementById('pesoVolumetricoValor').textContent = '-';
+        }
+    };
+    compInput.addEventListener('input', atualizarVol);
+    largInput.addEventListener('input', atualizarVol);
+    altInput.addEventListener('input', atualizarVol);
+
+    // Exibir modal
+    document.getElementById('vendaDetalhesModal').classList.remove('hidden');
+};
+
+async function carregarFotosVenda(vendaId) {
+    const fotos = await window.shippingManager.listarFotosVenda(vendaId);
+    const galeria = document.getElementById('galeriaFotosVenda');
+    galeria.innerHTML = fotos.map(foto => `
+        <div class="position-relative" style="width: 100px; margin: 5px;">
+            <img src="${foto.foto_url}" style="width: 100%; height: 80px; object-fit: cover; border-radius: 5px;">
+            <button class="btn btn-sm btn-danger position-absolute top-0 end-0" onclick="removerFoto(${foto.id}, '${vendaId}')">&times;</button>
+        </div>
+    `).join('');
+}
+
+window.removerFoto = async function(fotoId, vendaId) {
+    if (confirm('Remover esta foto?')) {
+        await window.shippingManager.removerFotoVenda(fotoId);
+        await carregarFotosVenda(vendaId);
+        mostrarToast('Foto removida', 'success');
+    }
+};
+
 // ===== FUNÇÃO PARA RENDERIZAR VENDAS NA TELA =====
 function renderVendasML(vendas) {
     const salesTableBody = document.getElementById('salesTableBody');
@@ -1497,6 +1646,40 @@ function processarVendasML(vendas) {
             dados_completos: venda
         };
     });
+}
+
+async function adicionarFotoVenda(vendaId, file) {
+    // Converte para base64 ou upload para storage
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        const base64 = e.target.result;
+        const { data, error } = await supabaseClient
+            .from('vendas_fotos')
+            .insert([{
+                venda_id: vendaId,
+                foto_url: base64,
+                uploaded_by: currentUser.name
+            }]);
+        if (error) console.error(error);
+        else carregarFotosVenda(vendaId);
+    };
+    reader.readAsDataURL(file);
+}
+
+async function carregarFotosVenda(vendaId) {
+    const { data, error } = await supabaseClient
+        .from('vendas_fotos')
+        .select('*')
+        .eq('venda_id', vendaId);
+    if (!error && data) {
+        const galeria = document.getElementById('galeriaFotosVenda');
+        galeria.innerHTML = data.map(foto => `
+            <div class="position-relative">
+                <img src="${foto.foto_url}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 5px;">
+                <button class="btn btn-sm btn-danger position-absolute top-0 end-0" onclick="removerFotoVenda(${foto.id})">&times;</button>
+            </div>
+        `).join('');
+    }
 }
 
 // ============================================
@@ -8026,6 +8209,226 @@ window.abrirSistemaFrete = function() {
         showToast('Módulo de fretes não carregado. Recarregue a página.', 'error');
         console.error('shippingManager não está definido. Verifique a ordem dos scripts.');
     }
+};
+
+// ============================================
+// FUNÇÃO PARA ABRIR SISTEMA DE EMISSÃO DE NF-e
+// ============================================
+window.abrirSistemaNFE = async function() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
+    }
+
+    // Esconde o menu principal e outros sistemas
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
+
+    const sistemasIds = [
+        'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem',
+        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem',
+        'perguntasSystem', 'estoqueGestaoSystem'
+    ];
+    sistemasIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+
+    // Garante que o container #estoqueSystem exista (se não, cria)
+    let nfeContainer = document.getElementById('estoqueSystem');
+    if (!nfeContainer) {
+        nfeContainer = document.createElement('div');
+        nfeContainer.id = 'estoqueSystem';
+        nfeContainer.className = 'hidden';
+        document.body.appendChild(nfeContainer);
+    }
+
+    // Limpa o conteúdo anterior e recria a estrutura da aba NF-e (se necessário)
+    // Para evitar duplicação, verificamos se o cabeçalho já existe
+    if (!nfeContainer.querySelector('.main-header')) {
+        nfeContainer.innerHTML = `
+            <header class="main-header">
+                <div class="container">
+                    <div class="header-content">
+                        <h1><i class="fas fa-file-invoice-dollar" style="color: var(--primary);"></i> Emissão de NF-e</h1>
+                        <div class="user-info">
+                            <div class="user-avatar" id="nfeUserAvatar">U</div>
+                            <div>
+                                <div id="nfeUserName">Usuário</div>
+                                <div id="nfeUserRole"></div>
+                                <div class="d-flex gap-2 mt-2">
+                                    <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                                    <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            <div class="container">
+                <!-- Abas -->
+                <div class="card mb-4">
+                    <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-primary" id="tabVendasBtn" onclick="mostrarAbaNFE('vendas')">Vendas sem NF-e</button>
+                            <button class="btn btn-outline-primary" id="tabEmitidasBtn" onclick="mostrarAbaNFE('emitidas')">NF-es Emitidas</button>
+                            <button class="btn btn-outline-primary" id="tabAvulsaBtn" onclick="mostrarAbaNFE('avulsa')">Emitir Avulsa</button>
+                            <button class="btn btn-outline-primary" id="tabTransportadorasBtn" onclick="mostrarAbaNFE('transportadoras')">Transportadoras</button>
+                            <button class="btn btn-outline-primary" id="tabClientesBtn" onclick="mostrarAbaNFE('clientes')">Clientes</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Aba: Vendas sem NF-e -->
+                <div id="abaVendas" class="card">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fas fa-store"></i> Vendas sem Nota Fiscal</h2>
+                        <button class="btn btn-success" onclick="sincronizarVendasML()">
+                            <i class="fas fa-sync-alt"></i> Sincronizar Vendas (ML)
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table" id="tabelaVendasPendentes">
+                            <thead><tr><th>Venda</th><th>Data</th><th>Cliente</th><th>SKU</th><th>Valor</th><th>Ações</th></tr></thead>
+                            <tbody id="vendasPendentesBody"><tr><td colspan="6" class="text-center">Carregando...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Aba: NF-es Emitidas -->
+                <div id="abaEmitidas" class="card hidden">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fas fa-list"></i> Notas Fiscais Emitidas</h2>
+                        <button class="btn btn-info" onclick="carregarNFesEmitidas()">Atualizar</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table" id="tabelaNFesEmitidas">
+                            <thead><tr><th>Chave</th><th>Protocolo</th><th>Cliente</th><th>Valor</th><th>Data</th><th>Ações</th></tr></thead>
+                            <tbody id="nfesEmitidasBody"><tr><td colspan="6" class="text-center">Carregando...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Aba: Emissão Avulsa -->
+                <div id="abaAvulsa" class="card hidden">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fas fa-plus-circle"></i> Emitir NF-e Avulsa</h2>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Cliente *</label>
+                                <select id="avulsaClienteId" class="form-control"></select>
+                                <button type="button" class="btn btn-sm btn-link" onclick="abrirModalNovoCliente()">+ Novo Cliente</button>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Transportadora</label>
+                                <select id="avulsaTransportadoraId" class="form-control"></select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>CFOP</label>
+                                <input type="text" id="avulsaCfop" class="form-control" value="5102">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Natureza da Operação</label>
+                                <input type="text" id="avulsaNatOp" class="form-control" value="VENDA">
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Modalidade Frete</label>
+                                <select id="avulsaModFrete" class="form-control">
+                                    <option value="0">Contratado pelo emitente</option>
+                                    <option value="1">Contratado pelo destinatário</option>
+                                    <option value="2">Contratado por terceiros</option>
+                                    <option value="9">Sem frete</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Produtos (JSON)</label>
+                        <textarea id="avulsaProdutos" rows="3" class="form-control" placeholder='[{"nome":"Produto A","quantidade":1,"valor_unitario":100,"sku":"SKU123","ncm":"87149990"}]'></textarea>
+                        <small>Use o formato JSON. Exemplo: [{"nome":"Bicicleta","quantidade":1,"valor_unitario":1500,"sku":"BIKE001","ncm":"87120000"}]</small>
+                    </div>
+                    <div class="d-flex gap-2 mt-3">
+                        <button class="btn btn-success" onclick="emitirNFEAvulsa()">Emitir NF-e</button>
+                        <button class="btn btn-secondary" onclick="limparFormAvulsa()">Limpar</button>
+                    </div>
+                </div>
+
+                <!-- Aba: Transportadoras -->
+                <div id="abaTransportadoras" class="card hidden">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fas fa-truck"></i> Transportadoras</h2>
+                        <button class="btn btn-primary" onclick="abrirModalTransportadora()">Nova Transportadora</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table" id="tabelaTransportadoras">
+                            <thead><tr><th>Nome</th><th>CNPJ</th><th>IE</th><th>Ações</th></tr></thead>
+                            <tbody id="transportadorasBody"><tr><td colspan="4" class="text-center">Carregando...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Aba: Clientes -->
+                <div id="abaClientes" class="card hidden">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fas fa-users"></i> Clientes</h2>
+                        <button class="btn btn-primary" onclick="abrirModalNovoCliente()">Novo Cliente</button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table" id="tabelaClientes">
+                            <thead><tr><th>Nome</th><th>Documento</th><th>Endereço</th><th>Ações</th></tr></thead>
+                            <tbody id="clientesBody"><tr><td colspan="4" class="text-center">Carregando...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // Atualiza informações do usuário no header
+    const nfeUserName = document.getElementById('nfeUserName');
+    const nfeUserAvatar = document.getElementById('nfeUserAvatar');
+    const nfeUserRole = document.getElementById('nfeUserRole');
+    if (nfeUserName) nfeUserName.textContent = currentUser.name;
+    if (nfeUserAvatar) nfeUserAvatar.textContent = currentUser.avatar;
+    if (nfeUserRole) nfeUserRole.textContent = currentUser.role;
+
+    // Garante que o script nfe_manager.js está carregado
+    if (typeof mostrarAbaNFE !== 'function') {
+        const script = document.createElement('script');
+        script.src = 'nfe_manager.js';
+        script.onload = () => {
+            console.log('✅ nfe_manager.js carregado');
+            inicializarAbaNFE();
+        };
+        document.head.appendChild(script);
+    } else {
+        inicializarAbaNFE();
+    }
+
+    function inicializarAbaNFE() {
+        // Mostra o container e a aba inicial
+        nfeContainer.classList.remove('hidden');
+        if (typeof mostrarAbaNFE === 'function') {
+            mostrarAbaNFE('vendas');
+        } else {
+            console.error('❌ mostrarAbaNFE não encontrada');
+            showToast('Erro ao carregar módulo NF-e', 'error');
+        }
+    }
+
+    showToast('📄 Sistema de NF-e carregado', 'info');
 };
 
 // ===== INICIALIZAR QUANDO O DOM CARREGAR =====

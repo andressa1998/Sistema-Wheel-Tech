@@ -1,607 +1,443 @@
-// ==================== NF-e MANAGER - VERSÃO ORIGINAL + CORREÇÃO ENDEREÇO ====================
-let vendasNFE = [];
-let ncmPorSku = {};
-const CACHE_KEY = 'wheeltech_nfe_vendas';
-const CACHE_EXPIRY = 24 * 60 * 60 * 1000; // 24 horas
+// nfe_manager.js
+// Funções para gerenciar emissão de NF-e, sincronização, etc.
 
-// ===== CACHE =====
-function carregarCacheVendas() {
-    const cached = localStorage.getItem(CACHE_KEY);
-    if (!cached) return null;
-    try {
-        const { vendas, timestamp } = JSON.parse(cached);
-        if (Date.now() - timestamp < CACHE_EXPIRY) return vendas;
-    } catch(e) {}
-    return null;
-}
+let vendasPendentes = [];
 
-function salvarCacheVendas(vendas) {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({
-        vendas: vendas,
-        timestamp: Date.now()
-    }));
-}
-
-// ===== FILTRO DE VENDAS FULL =====
-function filtrarVendasFull(vendas) {
-    if (!vendas) return [];
-    return vendas.filter(v => {
-        const isFull = 
-            v.meio_envio === 'FULL' ||
-            v.logistic_type === 'fulfillment' ||
-            (v.shipping && v.shipping.logistic_type === 'fulfillment') ||
-            (v.tags && v.tags.includes('fulfillment'));
-        return !isFull;
+async function mostrarAbaNFE(aba) {
+    // Esconde todas as abas
+    document.getElementById('abaVendas').classList.add('hidden');
+    document.getElementById('abaEmitidas').classList.add('hidden');
+    document.getElementById('abaAvulsa').classList.add('hidden');
+    document.getElementById('abaTransportadoras').classList.add('hidden');
+    document.getElementById('abaClientes').classList.add('hidden');
+    
+    // Mostra a aba selecionada
+    document.getElementById(`aba${aba.charAt(0).toUpperCase() + aba.slice(1)}`).classList.remove('hidden');
+    
+    // Atualiza estilo dos botões
+    const botoes = ['Vendas', 'Emitidas', 'Avulsa', 'Transportadoras', 'Clientes'];
+    botoes.forEach(btn => {
+        const el = document.getElementById(`tab${btn}Btn`);
+        if (el) {
+            if (btn.toLowerCase() === aba) {
+                el.classList.remove('btn-outline-primary');
+                el.classList.add('btn-primary');
+            } else {
+                el.classList.remove('btn-primary');
+                el.classList.add('btn-outline-primary');
+            }
+        }
     });
+    
+    // Carrega dados conforme a aba
+    if (aba === 'vendas') await carregarVendasPendentes();
+    if (aba === 'emitidas') await carregarNFesEmitidas();
+    if (aba === 'transportadoras') await carregarTransportadoras();
+    if (aba === 'clientes') await carregarClientes();
 }
 
-// ===== CONSULTA STATUS NF-e (USANDO WORKER) =====
-async function consultarStatusNFE(orderId, token) {
+async function carregarVendasPendentes() {
+    const tbody = document.getElementById('vendasPendentesBody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
     try {
-        const cleanId = String(orderId).replace(/^ML/, '');
-        const workerUrl = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
-        const apiUrl = `https://api.mercadolibre.com/users/me/invoices/orders/${cleanId}`;
-        const proxyUrl = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(apiUrl)}&token=${token}`;
-        const response = await fetch(proxyUrl);
-        if (response.status === 404) return { emitida: false };
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        const emitida = data && data.status === 'authorized';
-        return {
-            emitida: emitida,
-            chave: data.attributes?.invoice_key,
-            protocolo: data.attributes?.protocol
-        };
+        const response = await fetch('/nfe/vendas-sem-nfe');
+        if (!response.ok) throw new Error('Erro ao carregar vendas');
+        vendasPendentes = await response.json();
+        if (vendasPendentes.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda pendente de NF-e</td></tr>';
+            return;
+        }
+        tbody.innerHTML = vendasPendentes.map(v => `
+            <tr>
+                <td>${v.order_id}</td>
+                <td>${new Date(v.data_venda).toLocaleDateString('pt-BR')}</td>
+                <td>${v.cliente_nome || '-'}</td>
+                <td>${v.sku || '-'}</td>
+                <td>R$ ${parseFloat(v.valor_total).toFixed(2)}</td>
+                <td>
+                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${v.order_id}')">Emitir NF-e</button>
+                </td>
+            </tr>
+        `).join('');
     } catch (error) {
-        console.warn(`Erro consulta NF-e ${orderId}:`, error);
-        return { emitida: false };
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar vendas</td></tr>';
+        console.error(error);
     }
 }
 
-// ===== BUSCAR DADOS DO COMPRADOR =====
-const estadoParaSigla = {
-    'Acre': 'AC', 'Alagoas': 'AL', 'Amapá': 'AP', 'Amazonas': 'AM',
-    'Bahia': 'BA', 'Ceará': 'CE', 'Distrito Federal': 'DF', 'Espírito Santo': 'ES',
-    'Goiás': 'GO', 'Maranhão': 'MA', 'Mato Grosso': 'MT', 'Mato Grosso do Sul': 'MS',
-    'Minas Gerais': 'MG', 'Pará': 'PA', 'Paraíba': 'PB', 'Paraná': 'PR',
-    'Pernambuco': 'PE', 'Piauí': 'PI', 'Rio de Janeiro': 'RJ', 'Rio Grande do Norte': 'RN',
-    'Rio Grande do Sul': 'RS', 'Rondônia': 'RO', 'Roraima': 'RR', 'Santa Catarina': 'SC',
-    'São Paulo': 'SP', 'Sergipe': 'SE', 'Tocantins': 'TO'
-};
-
-// ===== BUSCAR DADOS DO COMPRADOR (VERSÃO ROBUSTA COM LOGS) =====
-async function buscarDadosComprador(venda, token) {
-    console.log('🔍 Buscando dados do comprador para venda:', venda.id);
-    
-    let dados = {
-        nome: venda.buyer_nickname || venda.cliente || '',
-        documento: '',
-        endereco: '',
-        numero: '',
-        complemento: '',
-        bairro: '',
-        cidade: '',
-        estado: '',
-        cep: ''
-    };
-
-    const workerUrl = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
-    
-    // 1. Tentar obter shipping_id da venda
-    let shipmentId = venda.shipping_id || venda.id_envio;
-    if (!shipmentId && venda.dados_completos) {
-        try {
-            const completo = typeof venda.dados_completos === 'string' ? JSON.parse(venda.dados_completos) : venda.dados_completos;
-            shipmentId = completo.shipping?.id;
-            console.log('📦 shipmentId obtido de dados_completos:', shipmentId);
-        } catch(e) { console.warn('Erro ao parsear dados_completos:', e); }
-    }
-
-    // 2. Se não tem shipmentId, tenta buscar os dados da ordem diretamente
-    if (!shipmentId) {
-        console.log('⚠️ Sem shipmentId, tentando buscar ordem completa...');
-        try {
-            const orderUrl = `https://api.mercadolibre.com/orders/${venda.id}`;
-            const orderProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${token}`;
-            const orderResp = await fetch(orderProxy);
-            if (orderResp.ok) {
-                const orderData = await orderResp.json();
-                shipmentId = orderData.shipping?.id;
-                console.log('📦 shipmentId obtido da ordem:', shipmentId);
-            }
-        } catch(e) { console.warn('Erro ao buscar ordem:', e); }
-    }
-
-    // 3. Se tem shipmentId, buscar billing_info e também dados do envio
-    if (shipmentId) {
-        // 3a. Billing info (contém endereço do comprador)
-        try {
-            const billingUrl = `https://api.mercadolibre.com/shipments/${shipmentId}/billing_info`;
-            const billingProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(billingUrl)}&token=${token}`;
-            const billingResp = await fetch(billingProxy);
-            console.log('📡 Billing response status:', billingResp.status);
-            if (billingResp.ok) {
-                const billing = await billingResp.json();
-                console.log('📄 Billing data:', billing);
-                if (billing.receiver) {
-                    dados.nome = billing.receiver.name || dados.nome;
-                    if (billing.receiver.document) {
-                        dados.documento = `${billing.receiver.document.type || 'CPF'}: ${billing.receiver.document.value}`;
-                    }
-                    if (billing.receiver.address) {
-                        const addr = billing.receiver.address;
-                        dados.endereco = addr.street_name || '';
-                        dados.numero = addr.street_number || '';
-                        dados.bairro = addr.neighborhood || '';
-                        dados.cidade = addr.city || '';
-                        const estadoNome = addr.state || '';
-                        dados.estado = estadoParaSigla[estadoNome] || estadoNome.toUpperCase().substring(0, 2);
-                        dados.cep = addr.zip_code || '';
-                        console.log('✅ Endereço obtido do billing_info:', dados);
-                    }
-                }
-            }
-        } catch(e) { console.warn('Erro ao buscar billing_info:', e); }
-
-        // 3b. Se ainda faltam dados, buscar shipment (para complementar)
-        if (!dados.endereco || !dados.cidade) {
-            try {
-                const shipUrl = `https://api.mercadolibre.com/shipments/${shipmentId}`;
-                const shipProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${token}`;
-                const shipResp = await fetch(shipProxy);
-                if (shipResp.ok) {
-                    const shipData = await shipResp.json();
-                    console.log('📄 Shipment data:', shipData);
-                    // Tentar extrair endereço de recebimento (receiver_address)
-                    const receiverAddr = shipData.receiver_address;
-                    if (receiverAddr) {
-                        dados.endereco = dados.endereco || receiverAddr.street_name || '';
-                        dados.numero = dados.numero || receiverAddr.street_number || '';
-                        dados.bairro = dados.bairro || receiverAddr.neighborhood || '';
-                        dados.cidade = dados.cidade || receiverAddr.city || {};
-                        dados.estado = dados.estado || receiverAddr.state?.name || '';
-                        dados.cep = dados.cep || receiverAddr.zip_code || '';
-                        console.log('✅ Endereço complementado pelo shipment:', dados);
-                    }
-                }
-            } catch(e) { console.warn('Erro ao buscar shipment:', e); }
-        }
-    } else {
-        console.warn('❌ Nenhum shipmentId encontrado para a venda');
-    }
-
-    // 4. Fallback: se ainda não tem endereço, tentar buscar pelo CEP (caso ele exista em algum lugar)
-    if ((!dados.endereco || !dados.cidade) && dados.cep && dados.cep.length === 8) {
-        try {
-            console.log('🔍 Buscando endereço pelo CEP:', dados.cep);
-            const cepResponse = await fetch(`https://brasilapi.com.br/api/cep/v1/${dados.cep}`);
-            if (cepResponse.ok) {
-                const cepData = await cepResponse.json();
-                dados.endereco = dados.endereco || cepData.street;
-                dados.bairro = dados.bairro || cepData.neighborhood;
-                dados.cidade = dados.cidade || cepData.city;
-                dados.estado = dados.estado || cepData.state;
-                console.log('✅ Endereço preenchido via CEP:', dados);
-            }
-        } catch(e) { console.warn('Erro ao buscar CEP:', e); }
-    }
-
-    console.log('🏁 Dados finais do comprador:', dados);
-    return dados;
-}
-
-// ===== ABRIR SISTEMA (ORIGINAL) =====
-async function abrirSistemaNFE() {
-    console.log('🚀 [NFE] Abrindo sistema');
-
-    if (!currentUser) {
-        showToast('Faça login primeiro', 'warning');
-        return;
-    }
-
-    // Oculta menu e outros sistemas
-    const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
-
-    const sistemas = [
-        'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem',
-        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueGestaoSystem'
-    ];
-    sistemas.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
-
-    // Mostra tela NF-e
-    const nfeDiv = document.getElementById('nfeSystem');
-    if (!nfeDiv) return;
-    nfeDiv.classList.remove('hidden');
-    nfeDiv.style.display = 'block';
-
-    // Atualiza cabeçalho
-    const nomeEl = document.getElementById('nfeUserName');
-    const avatarEl = document.getElementById('nfeUserAvatar');
-    const roleEl = document.getElementById('nfeUserRole');
-    if (nomeEl) nomeEl.textContent = currentUser.name;
-    if (avatarEl) avatarEl.textContent = currentUser.avatar;
-    if (roleEl) roleEl.textContent = currentUser.role;
-
-    await carregarNcmPorSku();
-
-    // Tenta carregar do cache
-    const cache = carregarCacheVendas();
-    if (cache && cache.length > 0) {
-        vendasNFE = cache;
-        renderizarTabelaNFE(vendasNFE);
-        showToast(`📋 ${vendasNFE.length} vendas em cache (use "Atualizar" para novas)`, 'info');
-    } else {
-        const tbody = document.getElementById('nfeVendasBody');
-        if (tbody) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center">
-                <i class="fas fa-info-circle"></i> Nenhuma venda em cache.<br>
-                Clique em <strong>"Atualizar Lista"</strong> para carregar as vendas.
-             </div><tr>`;
-        }
-        showToast('⚠️ Nenhuma venda em cache. Clique em "Atualizar Lista"', 'warning');
-    }
-}
-
-// ===== CARREGAR VENDAS (BOTÃO ATUALIZAR) =====
-async function carregarVendasParaNFE(forcarBusca = true) {
-    const filtro = document.getElementById('filtroStatusNFE')?.value || 'pendente';
-    const tbody = document.getElementById('nfeVendasBody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-center"><div class="spinner"></div> Carregando...</div></tr>';
-
+async function sincronizarVendasML() {
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
+    btn.disabled = true;
     try {
-        let vendas;
-        if (!forcarBusca) {
-            vendas = carregarCacheVendas();
-            if (vendas) {
-                vendasNFE = vendas;
-                renderizarTabelaNFE(vendas);
-                return;
-            }
+        const response = await fetch('/nfe/sync-vendas', { method: 'POST' });
+        const data = await response.json();
+        if (data.success) {
+            showToast(`${data.novas} novas vendas sincronizadas a partir de 01/06/2026`, 'success');
+            await carregarVendasPendentes();
+        } else {
+            showToast('Erro na sincronização: ' + data.error, 'error');
         }
-        const token = await autoManageMLToken();
-        if (!token) throw new Error('Token ML não disponível');
-        const resultado = await buscarVendasML(50);
-        if (!resultado.success) throw new Error(resultado.error);
-        vendas = resultado.vendas;
-        vendas = filtrarVendasFull(vendas);
-
-        // Consulta status NF-e para cada venda
-        for (let i = 0; i < vendas.length; i++) {
-            const statusNFE = await consultarStatusNFE(vendas[i].id, token);
-            vendas[i].nfe_emitida = statusNFE.emitida;
-            vendas[i].nfe_chave = statusNFE.chave;
-            vendas[i].nfe_protocolo = statusNFE.protocolo;
-            if (statusNFE.emitida && supabaseClient) {
-                await supabaseClient.from('vendas_ml').upsert({
-                    id_venda_ml: vendas[i].id,
-                    nfe_emitida: true,
-                    nfe_chave: statusNFE.chave,
-                    nfe_protocolo: statusNFE.protocolo,
-                    data_consulta: new Date().toISOString()
-                }, { onConflict: 'id_venda_ml' });
-            }
-        }
-        if (filtro === 'pendente') vendas = vendas.filter(v => !v.nfe_emitida);
-        else if (filtro === 'emitida') vendas = vendas.filter(v => v.nfe_emitida);
-        vendasNFE = vendas;
-        salvarCacheVendas(vendas);
-        renderizarTabelaNFE(vendas);
-        showToast(`✅ ${vendas.length} vendas carregadas`, 'success');
-    } catch (err) {
-        console.error(err);
-        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Erro: ${err.message} </div></tr>`;
+    } catch (error) {
+        showToast('Erro de rede', 'error');
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
     }
 }
 
-// ===== RENDERIZAR TABELA (COM STATUS E BOTÃO CANCELAR) =====
-function renderizarTabelaNFE(vendas) {
-    const tbody = document.getElementById('nfeVendasBody');
-    if (!tbody) return;
-    if (!vendas.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center">Nenhuma venda encontrada (FULL removidas)</div></tr>';
+async function emitirNFEParaVenda(orderId) {
+    const venda = vendasPendentes.find(v => v.order_id === orderId);
+    if (!venda) return;
+    
+    // Pega transportadora selecionada (se houver)
+    const transportadoraId = document.getElementById('avulsaTransportadoraId')?.value || null;
+    
+    // Monta dados da venda para o backend
+    const dados = {
+        venda_id: orderId,
+        cliente: {
+            nome: venda.cliente_nome,
+            documento: venda.cpf_cnpj || '',
+            endereco: venda.endereco || '',
+            numero: '',
+            bairro: '',
+            cidade: '',
+            uf: '',
+            cep: ''
+        },
+        produtos: [],
+        cfop: venda.meio_envio === 'FULL' ? '6108' : '5102', // ajuste conforme sua regra
+        natureza_operacao: 'VENDA',
+        modalidade_frete: '0',
+        transportadora_id: transportadoraId,
+        access_token: null,
+        shipment_id: null,
+        pack_id: null
+    };
+    
+    // Extrair produtos do JSON armazenado (venda.produtos)
+    try {
+        const produtosML = JSON.parse(venda.produtos);
+        if (produtosML.order_items) {
+            dados.produtos = produtosML.order_items.map(item => ({
+                nome: item.item.title,
+                quantidade: item.quantity,
+                valor_unitario: item.unit_price,
+                sku: item.item.seller_sku || 'SEM_SKU',
+                ncm: '87149990' // padrão, pode melhorar
+            }));
+        } else {
+            throw new Error('Formato de produtos inválido');
+        }
+    } catch (e) {
+        showToast('Erro ao interpretar produtos da venda', 'error');
         return;
     }
-    tbody.innerHTML = vendas.map(v => {
-        let statusNFE = '';
-        if (v.nfe_cancelada) {
-            statusNFE = '<span class="badge badge-danger"><i class="fas fa-ban"></i> Cancelada</span>';
-        } else if (v.nfe_emitida) {
-            statusNFE = '<span class="badge badge-success"><i class="fas fa-check-circle"></i> NF-e Emitida</span>';
-        } else {
-            statusNFE = '<span class="badge badge-warning"><i class="fas fa-clock"></i> Pendente</span>';
-        }
-        return `
-        <tr>
-            <td>${v.id || ''} </div>
-            <td>${v.titulo || v.produto_titulo || '-'} </div>
-            <td>${v.cliente || v.buyer_nickname || '-'} </div>
-            <td>R$ ${parseFloat(v.valor_total || 0).toFixed(2)}</div>
-            <td>${statusNFE}</div>
-            <td>
-                ${v.nfe_emitida && !v.nfe_cancelada ? `
-                    <button class="btn btn-secondary btn-sm" onclick="verDetalhesNFE('${v.id}')">Ver NF-e</button>
-                    <button class="btn btn-danger btn-sm" onclick="cancelarNFE('${v.id}', '${v.nfe_chave}', '${v.nfe_protocolo}')">Cancelar</button>
-                ` : v.nfe_cancelada ? `
-                    <button class="btn btn-secondary btn-sm" onclick="verDetalhesNFE('${v.id}')">Ver NF-e</button>
-                    <span class="badge badge-danger">Cancelada</span>
-                ` : `
-                    <button class="btn btn-primary btn-sm" onclick="abrirModalEmissaoNFE('${v.id}')">Emitir</button>
-                `}
-             </div>
-        </td>`;
-    }).join('');
-}
-
-window.atualizarVendasNFE = async function() {
-    const btn = document.querySelector('#nfeSystem button[onclick="atualizarVendasNFE()"]');
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span> Buscando...';
-    }
-    await carregarVendasParaNFE(true);
-    if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-sync-alt"></i> Atualizar Lista';
-    }
-};
-
-// ===== MODAL DE EMISSÃO (COM CORREÇÃO DE ENDEREÇO - BUSCA POR CEP) =====
-async function abrirModalEmissaoNFE(vendaId) {
-    const venda = vendasNFE.find(v => String(v.id) === String(vendaId));
-    if (!venda) { showToast('Venda não encontrada', 'error'); return; }
-    const token = await autoManageMLToken();
-    let dadosComprador = { nome: '', documento: '', endereco: '', numero: '', bairro: '', cidade: '', estado: '', cep: '' };
-    if (token) dadosComprador = await buscarDadosComprador(venda, token);
-    document.getElementById('nfeVendaId').value = venda.id;
-    document.getElementById('nfeNumeroVenda').value = venda.id;
-    document.getElementById('nfeDataVenda').value = new Date(venda.data_venda).toLocaleString('pt-BR');
-    document.getElementById('nfeClienteNome').value = dadosComprador.nome;
-    document.getElementById('nfeClienteDocumento').value = dadosComprador.documento;
-    document.getElementById('nfeClienteCep').value = dadosComprador.cep;
-    document.getElementById('nfeClienteUf').value = dadosComprador.estado;
-    document.getElementById('nfeClienteCidade').value = dadosComprador.cidade;
-    document.getElementById('nfeClienteEndereco').value = dadosComprador.endereco;
-    document.getElementById('nfeClienteNumero').value = dadosComprador.numero;
-    document.getElementById('nfeClienteBairro').value = dadosComprador.bairro;
-
-    // --- ADIÇÃO: BUSCA AUTOMÁTICA DE ENDEREÇO PELO CEP ---
-    const cepInput = document.getElementById('nfeClienteCep');
-    if (cepInput && !cepInput.hasAttribute('data-cep-listener')) {
-        cepInput.setAttribute('data-cep-listener', 'true');
-        cepInput.addEventListener('blur', async function() {
-            let cep = this.value.replace(/\D/g, '');
-            if (cep.length === 8) {
-                try {
-                    const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cep}`);
-                    if (response.ok) {
-                        const data = await response.json();
-                        document.getElementById('nfeClienteEndereco').value = data.street || '';
-                        document.getElementById('nfeClienteBairro').value = data.neighborhood || '';
-                        document.getElementById('nfeClienteCidade').value = data.city || '';
-                        document.getElementById('nfeClienteUf').value = data.state || '';
-                        showToast('Endereço preenchido automaticamente pelo CEP', 'success');
-                    } else {
-                        showToast('CEP não encontrado', 'warning');
-                    }
-                } catch(e) {
-                    console.warn('Erro ao buscar CEP:', e);
-                }
-            }
-        });
-    }
-
-    const container = document.getElementById('nfeProdutosContainer');
-    if (container) {
-        container.innerHTML = '';
-        const items = venda.dados_completos ? (JSON.parse(venda.dados_completos)?.order_items || []) : [];
-        if (items.length) {
-            for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                const sku = item.item?.seller_sku || 'SEM_SKU';
-                const ncmSalvo = ncmPorSku[sku] || '';
-                const div = document.createElement('div');
-                div.className = 'row mb-2';
-                div.innerHTML = `
-                    <div class="col-md-4"><input type="text" class="form-control" value="${item.item?.title || 'Produto'}" readonly></div>
-                    <div class="col-md-2"><input type="number" class="form-control" value="${item.quantity || 1}" id="qtd_${i}" step="1" min="1"></div>
-                    <div class="col-md-2"><input type="number" class="form-control" value="${item.unit_price || 0}" id="preco_${i}" step="0.01"></div>
-                    <div class="col-md-3"><input type="text" class="form-control" placeholder="NCM" id="ncm_${i}" value="${ncmSalvo}"></div>
-                    <input type="hidden" id="sku_${i}" value="${sku}">
-                    <div class="col-md-1"><i class="fas fa-trash-alt text-danger" style="cursor:pointer" onclick="this.parentElement.parentElement.remove()"></i></div>
-                `;
-                container.appendChild(div);
-            }
-        } else {
-            container.innerHTML = '<div class="alert alert-warning">Nenhum produto encontrado na venda.</div>';
-        }
-    }
-    document.getElementById('modalEmissaoNFE').classList.remove('hidden');
-}
-
-function fecharModalEmissaoNFE() {
-    document.getElementById('modalEmissaoNFE').classList.add('hidden');
-}
-
-// ===== EMITIR NF-E (COM VALIDAÇÃO DE ENDEREÇO) =====
-async function emitirNFE() {
-    const vendaId = document.getElementById('nfeVendaId').value;
-    const venda = vendasNFE.find(v => String(v.id) === String(vendaId));
-    if (!venda) { showToast('Venda não encontrada', 'error'); return; }
-
-    const dadosCliente = {
-        nome: document.getElementById('nfeClienteNome').value.trim(),
-        documento: document.getElementById('nfeClienteDocumento').value.trim(),
-        cep: document.getElementById('nfeClienteCep').value.replace(/\D/g, ''),
-        uf: document.getElementById('nfeClienteUf').value.toUpperCase().trim(),
-        cidade: document.getElementById('nfeClienteCidade').value.trim(),
-        endereco: document.getElementById('nfeClienteEndereco').value.trim(),
-        numero: document.getElementById('nfeClienteNumero').value.trim(),
-        bairro: document.getElementById('nfeClienteBairro').value.trim()
-    };
-
-    // Validação de campos obrigatórios
-    if (!dadosCliente.nome) { showToast('Nome do cliente é obrigatório', 'error'); return; }
-    if (!dadosCliente.documento) { showToast('CPF/CNPJ do cliente é obrigatório', 'error'); return; }
-    if (!dadosCliente.cep || dadosCliente.cep.length !== 8) { showToast('CEP inválido (8 dígitos)', 'error'); return; }
-    if (!dadosCliente.uf || dadosCliente.uf.length !== 2) { showToast('UF inválida (ex: SP, RJ, PR)', 'error'); return; }
-    if (!dadosCliente.cidade) { showToast('Cidade é obrigatória', 'error'); return; }
-    if (!dadosCliente.endereco) { showToast('Logradouro é obrigatório', 'error'); return; }
-    if (!dadosCliente.numero) { showToast('Número é obrigatório', 'error'); return; }
-
-    const cfop = document.getElementById('nfeCfop').value;
-    const cfopNum = parseInt(cfop);
-    const SELLER_UF = 'PR';
-    if (dadosCliente.uf === SELLER_UF && cfopNum !== 5102) {
-        showToast(`Venda dentro do estado exige CFOP 5102.`, 'error'); return;
-    }
-    if (dadosCliente.uf !== SELLER_UF && cfopNum !== 6108) {
-        showToast(`Venda fora do estado exige CFOP 6108.`, 'error'); return;
-    }
-
-    const produtos = [];
-    const container = document.getElementById('nfeProdutosContainer');
-    const rows = container.querySelectorAll('.row');
-    for (let i = 0; i < rows.length; i++) {
-        const skuInput = rows[i].querySelector(`input[id^="sku_"]`);
-        const qtdInput = rows[i].querySelector(`input[id^="qtd_"]`);
-        const precoInput = rows[i].querySelector(`input[id^="preco_"]`);
-        const ncmInput = rows[i].querySelector(`input[id^="ncm_"]`);
-        if (skuInput && qtdInput && precoInput && ncmInput) {
-            const sku = skuInput.value;
-            const ncm = ncmInput.value;
-            if (ncm) await salvarNcmParaSku(sku, ncm);
-            produtos.push({
-                sku: sku,
-                nome: rows[i].querySelector('input:first-child').value,
-                quantidade: parseFloat(qtdInput.value),
-                valor_unitario: parseFloat(precoInput.value),
-                ncm: ncm
-            });
-        }
-    }
-    if (produtos.length === 0) { showToast('Nenhum produto válido', 'warning'); return; }
-
-    const payload = {
-        venda_id: venda.id,
-        cliente: dadosCliente,
-        produtos,
-        cfop,
-        natureza_operacao: document.getElementById('nfeNatOp').value,
-        modalidade_frete: document.getElementById('nfeModFrete').value,
-        access_token: await autoManageMLToken(),
-        shipment_id: venda.id_envio,
-        pack_id: venda.pack_id
-    };
-
-    console.log('📤 Enviando para backend:', payload); // LOG
-
-    const btn = document.getElementById('btnEmitirNFE');
+    
+    const btn = event.target;
     const originalText = btn.innerHTML;
     btn.innerHTML = '<span class="spinner"></span> Emitindo...';
     btn.disabled = true;
-
+    
     try {
-        const backendUrl = 'http://localhost:3000/nfe/emitir';
-        const response = await fetch(backendUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        const text = await response.text();
-        let result;
-        try { result = JSON.parse(text); } catch(e) { throw new Error(`Resposta inválida do servidor: ${text.substring(0,200)}`); }
-        if (!response.ok) throw new Error(result.error);
-        const index = vendasNFE.findIndex(v => String(v.id) === String(venda.id));
-        if (index !== -1) {
-            vendasNFE[index].nfe_emitida = true;
-            vendasNFE[index].nfe_chave = result.chaveAcesso;
-            vendasNFE[index].nfe_protocolo = result.protocolo;
-        }
-        salvarCacheVendas(vendasNFE);
-        renderizarTabelaNFE(vendasNFE);
-        showToast('✅ NF-e emitida com sucesso!', 'success');
-        fecharModalEmissaoNFE();
-    } catch (err) {
-        console.error(err);
-        showToast('Erro: ' + err.message, 'error');
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-    }
-}
-
-// ===== VER DETALHES DA NF-e =====
-async function verDetalhesNFE(vendaId) {
-    const venda = vendasNFE.find(v => String(v.id) === String(vendaId));
-    if (!venda) { showToast('Venda não encontrada', 'error'); return; }
-    if (venda.nfe_cancelada) {
-        alert(`NF-e CANCELADA\nChave: ${venda.nfe_chave}\nProtocolo original: ${venda.nfe_protocolo}\nCancelamento: ${venda.nfe_cancelamento_protocolo || 'N/A'}`);
-    } else if (venda.nfe_emitida) {
-        alert(`NF-e Emitida\nChave: ${venda.nfe_chave}\nProtocolo: ${venda.nfe_protocolo}`);
-    } else {
-        showToast('Nenhuma NF-e encontrada para esta venda', 'warning');
-    }
-}
-
-// ===== CANCELAR NF-e =====
-window.cancelarNFE = async function(vendaId, chaveAcesso, protocolo) {
-    if (!confirm('Tem certeza que deseja cancelar esta NF-e?\n\nEsta ação não pode ser desfeita.')) return;
-    const justificativa = prompt('Digite a justificativa para o cancelamento (máx. 255 caracteres):');
-    if (!justificativa) return;
-    const btn = event.target;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner"></span> Cancelando...';
-    btn.disabled = true;
-    try {
-        const response = await fetch('http://localhost:3000/nfe/cancelar', {
+        const response = await fetch('/nfe/emitir', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ venda_id: vendaId, chaveAcesso, protocolo, justificativa })
+            body: JSON.stringify(dados)
         });
         const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
-        const index = vendasNFE.findIndex(v => v.id === vendaId);
-        if (index !== -1) {
-            vendasNFE[index].nfe_cancelada = true;
-            vendasNFE[index].nfe_emitida = false;
+        if (result.success) {
+            showToast(`NF-e emitida com sucesso! Protocolo: ${result.protocolo}`, 'success');
+            await carregarVendasPendentes();
+            await carregarNFesEmitidas();
+        } else {
+            showToast('Erro na emissão: ' + result.error, 'error');
         }
-        renderizarTabelaNFE(vendasNFE);
-        showToast('✅ NF-e cancelada com sucesso!', 'success');
-    } catch (err) {
-        console.error(err);
-        showToast('Erro ao cancelar: ' + err.message, 'error');
+    } catch (error) {
+        showToast('Erro de comunicação', 'error');
     } finally {
         btn.innerHTML = originalText;
         btn.disabled = false;
     }
-};
+}
 
-// ===== NCM =====
-async function carregarNcmPorSku() {
+async function carregarNFesEmitidas() {
+    const tbody = document.getElementById('nfesEmitidasBody');
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
     try {
-        if (!supabaseClient) return;
-        const { data, error } = await supabaseClient.from('ncm_por_sku').select('sku, ncm');
-        if (error) throw error;
-        if (data) {
-            ncmPorSku = {};
-            data.forEach(item => { ncmPorSku[item.sku] = item.ncm; });
+        const response = await fetch('/nfe/listar-nfes');
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+        const nfes = data.notas || [];
+        if (nfes.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma NF-e emitida</td></tr>';
+            return;
         }
-    } catch (err) { console.error('Erro ao carregar NCM:', err); }
-}
-async function salvarNcmParaSku(sku, ncm) {
-    try {
-        if (!supabaseClient) return;
-        await supabaseClient.from('ncm_por_sku').upsert({ sku, ncm }, { onConflict: 'sku' });
-        ncmPorSku[sku] = ncm;
-    } catch (err) { console.warn(err); }
+        tbody.innerHTML = nfes.map(nfe => `
+            <tr>
+                <td><small>${nfe.chave}</small></td>
+                <td>${nfe.protocolo || '-'}</td>
+                <td>${nfe.clientes?.nome || '-'}</td>
+                <td>R$ ${parseFloat(nfe.valor_total).toFixed(2)}</td>
+                <td>${new Date(nfe.data_emissao).toLocaleDateString('pt-BR')}</td>
+                <td>
+                    <button class="btn btn-sm btn-info" onclick="visualizarNFE('${nfe.chave}')">Visualizar</button>
+                    <button class="btn btn-sm btn-secondary" onclick="baixarXMLNFE('${nfe.chave}')">XML</button>
+                    ${!nfe.cancelada ? `<button class="btn btn-sm btn-danger" onclick="cancelarNFE('${nfe.chave}')">Cancelar</button>` : '<span class="badge badge-danger">Cancelada</span>'}
+                </td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar NF-es</td></tr>';
+        console.error(error);
+    }
 }
 
-// ===== EXPORTA GLOBAL =====
-window.abrirSistemaNFE = abrirSistemaNFE;
-window.atualizarVendasNFE = atualizarVendasNFE;
-window.carregarVendasParaNFE = carregarVendasParaNFE;
-window.abrirModalEmissaoNFE = abrirModalEmissaoNFE;
-window.fecharModalEmissaoNFE = fecharModalEmissaoNFE;
-window.emitirNFE = emitirNFE;
-window.verDetalhesNFE = verDetalhesNFE;
-window.cancelarNFE = cancelarNFE;
+async function visualizarNFE(chaveAcesso) {
+    try {
+        // Busca o XML da NF-e no backend
+        const response = await fetch(`/nfe/buscar-xml?chave=${chaveAcesso}`);
+        const data = await response.json();
+        if (!data.xml) {
+            showToast('XML não encontrado', 'error');
+            return;
+        }
+        // Gera um HTML estilizado (DANFE) a partir do XML
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(data.xml, 'application/xml');
+        // Extrai dados principais (exemplo simplificado)
+        const infNFe = xmlDoc.querySelector('infNFe');
+        const chave = infNFe.getAttribute('Id').replace('NFe', '');
+        const emitNome = infNFe.querySelector('emit xNome')?.textContent || '';
+        const destNome = infNFe.querySelector('dest xNome')?.textContent || '';
+        const vNF = infNFe.querySelector('ICMSTot vNF')?.textContent || '0';
+        const protocolo = infNFe.querySelector('nProt')?.textContent || 'Não informado';
+        
+        const html = `
+            <!DOCTYPE html>
+            <html>
+            <head><title>DANFE - ${chave}</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                .header { text-align: center; margin-bottom: 20px; }
+                .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
+                .row { display: flex; margin-bottom: 5px; }
+                .label { width: 130px; font-weight: bold; }
+                @media print { body { margin: 0; } .no-print { display: none; } }
+            </style>
+            </head>
+            <body>
+                <div class="no-print" style="text-align:center; margin-bottom:20px;">
+                    <button onclick="window.print()">Imprimir</button>
+                    <button onclick="window.close()">Fechar</button>
+                </div>
+                <div class="header">
+                    <h2>Nota Fiscal Eletrônica</h2>
+                    <p>Chave de Acesso: ${chave}</p>
+                    <p>Protocolo: ${protocolo}</p>
+                </div>
+                <div class="card">
+                    <h3>Emitente</h3>
+                    <div class="row"><div class="label">Nome:</div><div>${emitNome}</div></div>
+                </div>
+                <div class="card">
+                    <h3>Destinatário</h3>
+                    <div class="row"><div class="label">Nome:</div><div>${destNome}</div></div>
+                </div>
+                <div class="card">
+                    <h3>Valor Total</h3>
+                    <div class="row"><div class="label">R$:</div><div>${vNF}</div></div>
+                </div>
+                <div class="card">
+                    <h3>Produtos</h3>
+                    ${Array.from(xmlDoc.querySelectorAll('det')).map(det => {
+                        const prod = det.querySelector('prod');
+                        return `<div>${prod.querySelector('xProd')?.textContent} - Quant: ${prod.querySelector('qCom')?.textContent} - Valor: R$ ${prod.querySelector('vProd')?.textContent}</div>`;
+                    }).join('')}
+                </div>
+            </body>
+            </html>
+        `;
+        const win = window.open();
+        win.document.write(html);
+        win.document.close();
+    } catch (error) {
+        showToast('Erro ao visualizar NF-e', 'error');
+    }
+}
+
+async function baixarXMLNFE(chaveAcesso) {
+    try {
+        const response = await fetch(`/nfe/buscar-xml?chave=${chaveAcesso}`);
+        const data = await response.json();
+        if (!data.xml) {
+            showToast('XML não encontrado', 'error');
+            return;
+        }
+        const blob = new Blob([data.xml], { type: 'application/xml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `NFe_${chaveAcesso}.xml`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        showToast('Erro ao baixar XML', 'error');
+    }
+}
+
+async function cancelarNFE(chaveAcesso) {
+    const justificativa = prompt('Informe a justificativa para cancelamento:');
+    if (!justificativa) return;
+    try {
+        const response = await fetch('/nfe/cancelar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chaveAcesso, justificativa })
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('NF-e cancelada com sucesso', 'success');
+            await carregarNFesEmitidas();
+        } else {
+            showToast('Erro ao cancelar: ' + result.error, 'error');
+        }
+    } catch (error) {
+        showToast('Erro de comunicação', 'error');
+    }
+}
+
+// Transportadoras
+async function carregarTransportadoras() {
+    const tbody = document.getElementById('transportadorasBody');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    try {
+        const response = await fetch('/nfe/transportadoras');
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+        const transportadoras = data.transportadoras || [];
+        if (transportadoras.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhuma transportadora cadastrada</td></tr>';
+            return;
+        }
+        tbody.innerHTML = transportadoras.map(t => `
+            <tr>
+                <td>${t.nome}</td>
+                <td>${t.cnpj}</td>
+                <td>${t.ie || '-'}</td>
+                <td><button class="btn btn-sm btn-danger" onclick="excluirTransportadora(${t.id})">Excluir</button></td>
+            </tr>
+        `).join('');
+        // Atualiza selects
+        const select = document.getElementById('avulsaTransportadoraId');
+        if (select) {
+            select.innerHTML = '<option value="">Selecione</option>' + transportadoras.map(t => `<option value="${t.id}">${t.nome}</option>`).join('');
+        }
+    } catch (error) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar</td></tr>';
+    }
+}
+
+// Clientes
+async function carregarClientes() {
+    const tbody = document.getElementById('clientesBody');
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    try {
+        const response = await fetch('/nfe/clientes');
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+        const clientes = data.clientes || [];
+        if (clientes.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhum cliente cadastrado</td></tr>';
+            return;
+        }
+        tbody.innerHTML = clientes.map(c => `
+            <tr>
+                <td>${c.nome}</td>
+                <td>${c.documento || '-'}</td>
+                <td>${c.logradouro || ''}, ${c.numero || ''} - ${c.cidade || ''}</td>
+                <td><button class="btn btn-sm btn-danger" onclick="excluirCliente(${c.id})">Excluir</button></td>
+            </tr>
+        `).join('');
+        // Atualiza select de cliente na emissão avulsa
+        const select = document.getElementById('avulsaClienteId');
+        if (select) {
+            select.innerHTML = '<option value="">Selecione</option>' + clientes.map(c => `<option value="${c.id}">${c.nome} (${c.documento})</option>`).join('');
+        }
+    } catch (error) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar</td></tr>';
+    }
+}
+
+// Emissão avulsa
+async function emitirNFEAvulsa() {
+    const clienteId = document.getElementById('avulsaClienteId').value;
+    if (!clienteId) {
+        showToast('Selecione um cliente', 'warning');
+        return;
+    }
+    const transportadoraId = document.getElementById('avulsaTransportadoraId').value || null;
+    const cfop = document.getElementById('avulsaCfop').value;
+    const natOp = document.getElementById('avulsaNatOp').value;
+    const modFrete = document.getElementById('avulsaModFrete').value;
+    let produtos;
+    try {
+        produtos = JSON.parse(document.getElementById('avulsaProdutos').value);
+        if (!Array.isArray(produtos) || produtos.length === 0) throw new Error();
+    } catch (e) {
+        showToast('Produtos inválidos. Use um array JSON válido.', 'error');
+        return;
+    }
+    
+    const dados = {
+        cliente: { id: clienteId }, // o backend irá buscar os dados do cliente pelo ID
+        produtos: produtos,
+        cfop,
+        natureza_operacao: natOp,
+        modalidade_frete: modFrete,
+        transportadora_id: transportadoraId
+    };
+    
+    const btn = event.target;
+    const original = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Emitindo...';
+    btn.disabled = true;
+    try {
+        const response = await fetch('/nfe/emitir-avulsa', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dados)
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('NF-e avulsa emitida com sucesso!', 'success');
+            limparFormAvulsa();
+            await carregarNFesEmitidas();
+        } else {
+            showToast('Erro: ' + result.error, 'error');
+        }
+    } catch (error) {
+        showToast('Erro de comunicação', 'error');
+    } finally {
+        btn.innerHTML = original;
+        btn.disabled = false;
+    }
+}
+
+function limparFormAvulsa() {
+    document.getElementById('avulsaClienteId').value = '';
+    document.getElementById('avulsaTransportadoraId').value = '';
+    document.getElementById('avulsaCfop').value = '5102';
+    document.getElementById('avulsaNatOp').value = 'VENDA';
+    document.getElementById('avulsaModFrete').value = '9';
+    document.getElementById('avulsaProdutos').value = '';
+}
+
+// Inicialização quando o sistema de NF-e for aberto
+function inicializarAbaNFE() {
+    mostrarAbaNFE('vendas');
+}
