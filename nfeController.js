@@ -6,9 +6,8 @@ const { loadCertificates } = require('./utils');
 const supabase = require('./supabaseClient');
 const { extrairProtocolo, extrairChaveAcesso } = require('./nfeUtils');
 
-// ===================== Obter código IBGE (já existente) =====================
+// ===================== Obter código IBGE =====================
 async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
-    console.log(`🔍 Buscando IBGE para: ${nomeCidade}/${uf}`);
     const { data: municipioData, error: dbError } = await supabase
         .from('municipios')
         .select('codigo_ibge')
@@ -17,21 +16,18 @@ async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
         .maybeSingle();
 
     if (municipioData && !dbError) {
-        console.log(`✅ IBGE encontrado no banco: ${municipioData.codigo_ibge}`);
         return String(municipioData.codigo_ibge);
     }
 
     if (cep) {
         try {
             const cepLimpo = cep.replace(/\D/g, '');
-            console.log(`📡 Consultando BrasilAPI para CEP: ${cepLimpo}`);
             const fetch = require('node-fetch');
             const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cepLimpo}`);
             if (response.ok) {
                 const data = await response.json();
                 if (data && data.ibge_code) {
                     const ibge = String(data.ibge_code);
-                    console.log(`✅ IBGE encontrado via CEP: ${ibge}`);
                     await supabase.from('municipios').upsert({
                         codigo_ibge: parseInt(ibge),
                         nome: data.city,
@@ -40,12 +36,12 @@ async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
                     return ibge;
                 }
             }
-        } catch (err) { console.warn('⚠️ Erro na consulta de CEP:', err.message); }
+        } catch (err) { console.warn('Erro na consulta de CEP:', err.message); }
     }
     throw new Error(`IBGE não encontrado para ${nomeCidade}/${uf}`);
 }
 
-// ===================== Importar NF-e no ML (já existente) =====================
+// ===================== Importar NF-e no ML =====================
 async function importarNFEnoML(shipment_id, xml, token) {
     if (!shipment_id) return { ok: true };
     const url = `https://api.mercadolibre.com/shipments/${shipment_id}/invoice_data?siteId=MLB`;
@@ -68,7 +64,7 @@ async function importarNFEnoML(shipment_id, xml, token) {
     }
 }
 
-// ===================== Emissão de NF-e (MODIFICADA: salva cliente e NF-e no Supabase) =====================
+// ===================== Emissão de NF-e =====================
 async function emitirNFe(req, res) {
     console.log('📨 Requisição recebida:', req.method, req.url);
     try {
@@ -144,7 +140,7 @@ async function emitirNFe(req, res) {
         const certData = loadCertificates();
         const xmlAssinado = assinarXml(xml, { privateKey: certData.privateKey, cert: certData.cert });
 
-        const nfeService = new NFEService('homologacao'); // ou 'producao' dependendo do ambiente
+        const nfeService = new NFEService('homologacao'); // use 'producao' quando for definitivo
         const respostaSefaz = await nfeService.sendNFe(xmlAssinado, certData);
         const protocolo = await extrairProtocolo(respostaSefaz);
         const chaveAcesso = extrairChaveAcesso(xmlAssinado);
@@ -152,7 +148,7 @@ async function emitirNFe(req, res) {
         if (!protocolo) throw new Error('SEFAZ não retornou protocolo');
         console.log('✅ NF-e autorizada. Protocolo:', protocolo);
 
-        // ========== SALVAR CLIENTE (se não existir) ==========
+        // Salvar cliente
         let clienteId = null;
         const { data: clienteExistente } = await supabase
             .from('clientes')
@@ -179,7 +175,7 @@ async function emitirNFe(req, res) {
             else if (novoCliente) clienteId = novoCliente[0].id;
         }
 
-        // ========== SALVAR NF-e EMITIDA ==========
+        // Salvar NF-e emitida
         const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
         await supabase.from('nfe_emitidas').insert({
             venda_id: venda_id || null,
@@ -245,7 +241,7 @@ async function cancelarNFe(req, res) {
         const chaveNumerica = chaveAcesso ? chaveAcesso.replace(/\D/g, '') : venda.nfe_chave.replace(/\D/g, '');
         if (chaveNumerica.length !== 44) throw new Error('Chave de acesso inválida');
 
-        // Buscar último seq da NF-e (usar tabela nfe_emitidas)
+        // Buscar último seq da NF-e
         const { data: nfeData } = await supabase
             .from('nfe_emitidas')
             .select('ultimo_evento_seq, protocolo')
@@ -345,7 +341,6 @@ async function listarTransportadoras(req, res) {
     }
 }
 
-// ===================== Cadastrar transportadora =====================
 async function cadastrarTransportadora(req, res) {
     try {
         const { nome, cnpj, ie, endereco, cidade, uf } = req.body;
@@ -377,13 +372,12 @@ async function listarClientes(req, res) {
     }
 }
 
-// ===================== Emitir NF-e avulsa (sem venda) =====================
+// ===================== Emitir NF-e avulsa =====================
 async function emitirNFEAvulsa(req, res) {
     try {
         const { cliente, produtos, cfop, natureza_operacao, modalidade_frete, transportadora_id } = req.body;
         if (!cliente || !produtos || !produtos.length) throw new Error('Dados incompletos');
 
-        // Se cliente veio apenas com id, buscar dados completos
         let clienteCompleto = cliente;
         if (cliente.id && !cliente.nome) {
             const { data, error } = await supabase
@@ -407,7 +401,7 @@ async function emitirNFEAvulsa(req, res) {
             pack_id: null,
             transportadora_id
         };
-        // Reutiliza a função de emissão (mas sem venda_id)
+        // Reutiliza a função de emissão
         const emitResult = await new Promise((resolve, reject) => {
             emitirNFe({
                 body: dados,
@@ -446,111 +440,63 @@ async function consultarStatusNFE(req, res) {
     }
 }
 
-// ===================== NOVAS FUNÇÕES PARA INTEGRAÇÃO ML =====================
-
-// ===================== Sincronizar Vendas ML (sem dependência externa) =====================
+// ===================== Sincronizar Vendas ML =====================
 async function sincronizarVendasML(req, res) {
     console.log('🔄 Sincronizando vendas do ML para NF-e...');
-    
-    // Token do ML - você precisa configurar no ambiente do Render
     const token = process.env.ML_ACCESS_TOKEN;
-    const refreshToken = process.env.ML_REFRESH_TOKEN;
-    const userId = process.env.ML_USER_ID || '415176739';
-    
     if (!token) {
-        console.error('❌ Token do Mercado Livre não configurado');
         return res.status(500).json({ success: false, error: 'Token ML não configurado' });
     }
-    
     try {
-        // Buscar vendas diretamente da API do ML
         const dataInicio = new Date('2026-06-01');
-        const dataFim = new Date();
-        
         let todasVendas = [];
         let offset = 0;
         const limit = 50;
         let hasMore = true;
-        
+
         while (hasMore) {
-            const url = `https://api.mercadolibre.com/orders/search?seller=${userId}&sort=date_desc&order.status=paid&limit=${limit}&offset=${offset}`;
+            const url = `https://api.mercadolibre.com/orders/search?seller=415176739&sort=date_desc&order.status=paid&limit=${limit}&offset=${offset}`;
             const response = await fetch(url, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/json'
-                }
+                headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
             });
-            
-            if (!response.ok) {
-                if (response.status === 401 && refreshToken) {
-                    // Tentar renovar token (se tiver refresh token)
-                    console.log('🔄 Token expirado, tentando renovar...');
-                    const newToken = await renovarTokenML(refreshToken);
-                    if (newToken) {
-                        // Salvar novo token no ambiente? (opcional, mas para simplificar, refaz a requisição)
-                        return sincronizarVendasML(req, res);
-                    }
-                }
-                throw new Error(`Erro na API do ML: ${response.status}`);
-            }
-            
+            if (!response.ok) throw new Error(`Erro na API do ML: ${response.status}`);
             const data = await response.json();
             const vendas = data.results || [];
             if (vendas.length === 0) break;
-            
             todasVendas = todasVendas.concat(vendas);
             offset += limit;
             hasMore = vendas.length === limit;
-            
-            // Pequeno delay
             await new Promise(r => setTimeout(r, 200));
         }
-        
-        // Filtrar a partir de 01/06/2026
+
         const vendasFiltradas = todasVendas.filter(v => new Date(v.date_created) >= dataInicio);
-        
         let novas = 0;
         for (const venda of vendasFiltradas) {
-            // Verificar se já existe no Supabase
             const { data: existing } = await supabase
                 .from('vendas_ml')
                 .select('order_id')
                 .eq('order_id', venda.id.toString())
                 .maybeSingle();
-            
+
             if (!existing) {
-                // Buscar detalhes do item para obter SKU e outros dados
                 let sku = 'SEM_SKU';
                 let produtoTitulo = '';
-                let quantidade = 1;
-                let valorUnitario = 0;
                 let meioEnvio = 'N/I';
-                
                 if (venda.order_items && venda.order_items.length > 0) {
                     const item = venda.order_items[0].item;
                     produtoTitulo = item.title || '';
-                    quantidade = venda.order_items[0].quantity || 1;
-                    valorUnitario = venda.order_items[0].unit_price || 0;
-                    
-                    // Buscar SKU do item
                     try {
                         const itemUrl = `https://api.mercadolibre.com/items/${item.id}`;
-                        const itemRes = await fetch(itemUrl, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        });
+                        const itemRes = await fetch(itemUrl, { headers: { 'Authorization': `Bearer ${token}` } });
                         if (itemRes.ok) {
                             const itemData = await itemRes.json();
                             sku = itemData.seller_sku || item.seller_sku || 'SEM_SKU';
                         }
                     } catch (e) { console.warn('Erro ao buscar SKU:', e.message); }
-                    
-                    // Identificar tipo de envio
                     if (venda.shipping && venda.shipping.id) {
                         try {
                             const shipUrl = `https://api.mercadolibre.com/shipments/${venda.shipping.id}`;
-                            const shipRes = await fetch(shipUrl, {
-                                headers: { 'Authorization': `Bearer ${token}` }
-                            });
+                            const shipRes = await fetch(shipUrl, { headers: { 'Authorization': `Bearer ${token}` } });
                             if (shipRes.ok) {
                                 const shipData = await shipRes.json();
                                 const logType = (shipData.logistic_type || '').toLowerCase();
@@ -561,8 +507,6 @@ async function sincronizarVendasML(req, res) {
                         } catch (e) { console.warn('Erro ao buscar envio:', e.message); }
                     }
                 }
-                
-                // Inserir venda
                 await supabase.from('vendas_ml').insert({
                     order_id: venda.id.toString(),
                     cliente_nome: venda.buyer?.nickname || 'N/I',
@@ -579,52 +523,20 @@ async function sincronizarVendasML(req, res) {
                 novas++;
             }
         }
-        
         res.json({ success: true, novas, total: vendasFiltradas.length });
-        
     } catch (error) {
         console.error('❌ Erro ao sincronizar vendas:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 }
 
-// Função auxiliar para renovar token (se necessário)
-async function renovarTokenML(refreshToken) {
-    const clientId = process.env.ML_CLIENT_ID;
-    const clientSecret = process.env.ML_CLIENT_SECRET;
-    if (!clientId || !clientSecret) return null;
-    
-    try {
-        const params = new URLSearchParams();
-        params.append('grant_type', 'refresh_token');
-        params.append('client_id', clientId);
-        params.append('client_secret', clientSecret);
-        params.append('refresh_token', refreshToken);
-        
-        const response = await fetch('https://api.mercadolibre.com/oauth/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: params
-        });
-        
-        if (!response.ok) return null;
-        const data = await response.json();
-        // Aqui você poderia salvar o novo token no banco ou no ambiente, mas por simplicidade, retornamos
-        return data.access_token;
-    } catch (error) {
-        console.error('Erro ao renovar token:', error);
-        return null;
-    }
-}
-
-// Listar vendas sem NF-e
+// ===================== Listar vendas sem NF-e =====================
 async function listarVendasSemNFE(req, res) {
     try {
         const { data, error } = await supabase
             .from('vendas_ml')
-            .select('*')
-            .eq('nfe_emitida', false)
-            .order('data_venda', { ascending: false });
+            .select('order_id, cliente_nome, sku, valor_total, data_venda, produtos')
+            .eq('nfe_emitida', false);
         if (error) throw error;
         res.json(data);
     } catch (error) {
@@ -632,14 +544,13 @@ async function listarVendasSemNFE(req, res) {
     }
 }
 
-// Listar vendas com NF-e (opcional)
+// ===================== Listar vendas com NF-e =====================
 async function listarVendasComNFE(req, res) {
     try {
         const { data, error } = await supabase
             .from('vendas_ml')
             .select('*, nfe_emitidas(*)')
-            .eq('nfe_emitida', true)
-            .order('data_venda', { ascending: false });
+            .eq('nfe_emitida', true);
         if (error) throw error;
         res.json(data);
     } catch (error) {
@@ -647,7 +558,7 @@ async function listarVendasComNFE(req, res) {
     }
 }
 
-// Buscar XML da NF-e por chave
+// ===================== Buscar XML da NF-e =====================
 async function buscarXMLPorChave(req, res) {
     const { chave } = req.query;
     if (!chave) return res.status(400).json({ error: 'Chave não informada' });
@@ -664,7 +575,7 @@ async function buscarXMLPorChave(req, res) {
     }
 }
 
-// ===================== Funções auxiliares (cancelamento) =====================
+// ===================== Funções auxiliares de cancelamento =====================
 function montarXmlCancelamentoCorrigido({ chaveAcesso, protocolo, justificativa, tpAmb = '1', nSeqEvento }) {
     const now = new Date();
     const dhEvento = now.toISOString().replace(/\.\d{3}Z$/, '-03:00');

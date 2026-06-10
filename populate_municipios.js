@@ -1,6 +1,6 @@
 // populate_municipios.js
-import { createClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
+const { createClient } = require('@supabase/supabase-js');
+const fetch = require('node-fetch');
 
 const supabaseUrl = 'https://nvlmtinpcayrpkhulefs.supabase.co';
 const supabaseKey = 'sb_publishable_7AaXEKbS9roL57PO5lQkuQ_fkVWnGoL';
