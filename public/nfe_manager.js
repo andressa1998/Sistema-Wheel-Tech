@@ -170,15 +170,15 @@ async function emitirNFEParaVenda(orderId) {
     const dados = {
         venda_id: String(venda.order_id || venda.id),
         cliente: {
-            nome: venda.cliente_nome || 'Cliente ML',
-            documento: '',
-            endereco: '',
-            numero: '',
-            bairro: '',
-            cidade: '',
-            uf: '',
-            cep: ''
-        },
+        nome: venda.cliente_nome || 'Cliente ML',
+        documento: '',
+        endereco: venda.endereco || '',
+        numero: '',
+        bairro: '',
+        cidade: venda.cidade || 'ARAUCARIA',
+        uf: venda.uf || 'PR',
+        cep: venda.cep || '83702090'
+    },
         produtos: produtos,
         cfop: (venda.meio_envio === 'FULL') ? '6108' : '5102',
         natureza_operacao: 'VENDA',

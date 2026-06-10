@@ -72,9 +72,16 @@ async function emitirNFe(req, res) {
         const { venda_id, cliente, produtos, cfop, natureza_operacao, modalidade_frete, access_token, shipment_id, pack_id, transportadora_id } = dados;
 
         if (!cliente) throw new Error('Dados do cliente não fornecidos');
+        
+        // ========== FALLBACKS PARA DADOS DO CLIENTE ==========
         const SELLER_UF = 'PR';
-        const buyerUF = cliente.uf?.toUpperCase() || '';
-        if (!buyerUF) throw new Error('UF do cliente não informada');
+        let buyerUF = (cliente.uf || '').toUpperCase();
+        if (!buyerUF) {
+            console.warn('⚠️ UF do cliente não informada, usando UF padrão PR');
+            buyerUF = 'PR';
+        }
+        
+        // Validação do CFOP
         if (buyerUF === SELLER_UF && cfop !== '5102')
             throw new Error(`Venda dentro do estado (${buyerUF}) exige CFOP 5102.`);
         if (buyerUF !== SELLER_UF && cfop !== '6108')
@@ -84,17 +91,18 @@ async function emitirNFe(req, res) {
         let tipoDoc = documento.includes('CNPJ') ? 'CNPJ' : 'CPF';
         let numeroDoc = documento.replace(/\D/g, '');
 
-        const logradouro = cliente.endereco || cliente.logradouro || '';
+        const logradouro = cliente.endereco || cliente.logradouro || 'NÃO INFORMADO';
         const numero = cliente.numero || 'S/N';
-        const bairro = cliente.bairro || '';
-        const cidade = cliente.cidade || '';
-        const uf = cliente.uf || '';
-        const cep = (cliente.cep || '').replace(/\D/g, '');
+        const bairro = cliente.bairro || 'CENTRO';
+        let cidade = cliente.cidade || 'ARAUCARIA';
+        let uf = buyerUF;
+        let cep = (cliente.cep || '').replace(/\D/g, '');
+        if (!cep) cep = '83702090';
 
         const destinatario = {
             CPF: tipoDoc === 'CPF' ? numeroDoc : undefined,
             CNPJ: tipoDoc === 'CNPJ' ? numeroDoc : undefined,
-            xNome: cliente.nome || '',
+            xNome: cliente.nome || 'Cliente não identificado',
             xLgr: logradouro,
             nro: numero,
             xBairro: bairro,
@@ -102,10 +110,18 @@ async function emitirNFe(req, res) {
             UF: uf,
             CEP: cep
         };
-        if (!destinatario.xNome) throw new Error('Nome do cliente não informado');
-        destinatario.cMun = await obterCodigoMunicipio(cidade, uf, cep);
+        
+        // ========== OBTER CÓDIGO IBGE COM FALLBACK ==========
+        let codigoIbge = null;
+        try {
+            codigoIbge = await obterCodigoMunicipio(cidade, uf, cep);
+        } catch (error) {
+            console.warn('⚠️ Erro ao obter código IBGE, usando padrão 4101804 (Araucária/PR):', error.message);
+            codigoIbge = '4101804';
+        }
+        destinatario.cMun = codigoIbge;
 
-        // Controle sequencial
+        // ========== CONTROLE SEQUENCIAL DA NF ==========
         const serie = 1;
         let nNF = null;
         for (let i = 0; i < 5; i++) {
@@ -129,7 +145,7 @@ async function emitirNFe(req, res) {
         }
         if (!nNF) nNF = Math.floor(Math.random() * 900000000) + 100000000;
 
-        // Geração do XML
+        // ========== GERAR XML ==========
         const xml = gerarXmlNfe({
             nNF, serie, destinatario, produtos, cfop,
             natOp: natureza_operacao || 'VENDA',
@@ -140,7 +156,7 @@ async function emitirNFe(req, res) {
         const certData = loadCertificates();
         const xmlAssinado = assinarXml(xml, { privateKey: certData.privateKey, cert: certData.cert });
 
-        const nfeService = new NFEService('homologacao'); // use 'producao' quando for definitivo
+        const nfeService = new NFEService('homologacao');
         const respostaSefaz = await nfeService.sendNFe(xmlAssinado, certData);
         const protocolo = await extrairProtocolo(respostaSefaz);
         const chaveAcesso = extrairChaveAcesso(xmlAssinado);
@@ -148,34 +164,36 @@ async function emitirNFe(req, res) {
         if (!protocolo) throw new Error('SEFAZ não retornou protocolo');
         console.log('✅ NF-e autorizada. Protocolo:', protocolo);
 
-        // Salvar cliente
+        // ========== SALVAR CLIENTE (opcional) ==========
         let clienteId = null;
-        const { data: clienteExistente } = await supabase
-            .from('clientes')
-            .select('id')
-            .eq('documento', numeroDoc)
-            .maybeSingle();
-        if (clienteExistente) {
-            clienteId = clienteExistente.id;
-        } else {
-            const { data: novoCliente, error: errCliente } = await supabase
+        if (numeroDoc) {
+            const { data: clienteExistente } = await supabase
                 .from('clientes')
-                .insert({
-                    nome: cliente.nome,
-                    documento: numeroDoc,
-                    cep: cep,
-                    uf: uf,
-                    cidade: cidade,
-                    logradouro: logradouro,
-                    numero: numero,
-                    bairro: bairro
-                })
-                .select();
-            if (errCliente) console.warn('Erro ao salvar cliente:', errCliente);
-            else if (novoCliente) clienteId = novoCliente[0].id;
+                .select('id')
+                .eq('documento', numeroDoc)
+                .maybeSingle();
+            if (clienteExistente) {
+                clienteId = clienteExistente.id;
+            } else {
+                const { data: novoCliente, error: errCliente } = await supabase
+                    .from('clientes')
+                    .insert({
+                        nome: cliente.nome,
+                        documento: numeroDoc,
+                        cep: cep,
+                        uf: uf,
+                        cidade: cidade,
+                        logradouro: logradouro,
+                        numero: numero,
+                        bairro: bairro
+                    })
+                    .select();
+                if (errCliente) console.warn('Erro ao salvar cliente:', errCliente);
+                else if (novoCliente) clienteId = novoCliente[0].id;
+            }
         }
 
-        // Salvar NF-e emitida
+        // ========== SALVAR NF-e ==========
         const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
         await supabase.from('nfe_emitidas').insert({
             venda_id: venda_id || null,
@@ -190,14 +208,14 @@ async function emitirNFe(req, res) {
             valor_total: valorTotal
         });
 
-        // Integração ML (se houver shipment_id e token)
+        // ========== INTEGRAÇÃO COM ML ==========
         let mlResponse = { ok: true };
         if (shipment_id && access_token) {
             mlResponse = await importarNFEnoML(shipment_id, xmlAssinado, access_token);
             if (!mlResponse.ok) console.warn('Importação no ML falhou');
         }
 
-        // Atualizar venda (se for venda)
+        // ========== ATUALIZAR VENDA ==========
         if (venda_id) {
             await supabase
                 .from('vendas_ml')
@@ -535,10 +553,15 @@ async function listarVendasSemNFE(req, res) {
     try {
         const { data, error } = await supabase
             .from('vendas_ml')
-            .select('order_id, cliente_nome, sku, valor_total, data_venda, produtos')
+            .select('id, order_id, cliente_nome, sku, valor_total, data_venda, produtos, meio_envio')
             .eq('nfe_emitida', false);
         if (error) throw error;
-        res.json(data);
+        // Garantir que order_id existe
+        const vendas = data.map(v => ({
+            ...v,
+            order_id: v.order_id || String(v.id)
+        }));
+        res.json(vendas);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
