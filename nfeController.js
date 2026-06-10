@@ -8,37 +8,51 @@ const { extrairProtocolo, extrairChaveAcesso } = require('./nfeUtils');
 
 // ===================== Obter código IBGE =====================
 async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
-    const { data: municipioData, error: dbError } = await supabase
-        .from('municipios')
-        .select('codigo_ibge')
-        .ilike('nome', nomeCidade.trim())
-        .eq('uf', uf)
-        .maybeSingle();
+    // Fallback padrão para Araucária/PR (caso tudo falhe)
+    const FALLBACK_IBGE = '4101804';
+    
+    try {
+        // Tenta buscar no Supabase
+        const { data: municipioData, error: dbError } = await supabase
+            .from('municipios')
+            .select('codigo_ibge')
+            .ilike('nome', nomeCidade.trim())
+            .eq('uf', uf)
+            .maybeSingle();
 
-    if (municipioData && !dbError) {
-        return String(municipioData.codigo_ibge);
-    }
+        if (municipioData && !dbError) {
+            return String(municipioData.codigo_ibge);
+        }
 
-    if (cep) {
-        try {
+        // Tenta consultar via BrasilAPI (CEP)
+        if (cep) {
             const cepLimpo = cep.replace(/\D/g, '');
-            const fetch = require('node-fetch');
-            const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cepLimpo}`);
-            if (response.ok) {
-                const data = await response.json();
-                if (data && data.ibge_code) {
-                    const ibge = String(data.ibge_code);
-                    await supabase.from('municipios').upsert({
-                        codigo_ibge: parseInt(ibge),
-                        nome: data.city,
-                        uf: data.state
-                    }, { onConflict: 'codigo_ibge' });
-                    return ibge;
+            if (cepLimpo.length === 8) {
+                const fetch = require('node-fetch');
+                const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cepLimpo}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && data.ibge_code) {
+                        const ibge = String(data.ibge_code);
+                        // Salva no Supabase para próximas consultas
+                        await supabase.from('municipios').upsert({
+                            codigo_ibge: parseInt(ibge),
+                            nome: data.city,
+                            uf: data.state
+                        }, { onConflict: 'codigo_ibge' });
+                        return ibge;
+                    }
                 }
             }
-        } catch (err) { console.warn('Erro na consulta de CEP:', err.message); }
+        }
+
+        // Fallback final
+        console.warn(`⚠️ IBGE não encontrado para ${nomeCidade}/${uf}, usando fallback ${FALLBACK_IBGE}`);
+        return FALLBACK_IBGE;
+    } catch (error) {
+        console.error(`❌ Erro ao buscar IBGE para ${nomeCidade}/${uf}:`, error.message);
+        return FALLBACK_IBGE;
     }
-    throw new Error(`IBGE não encontrado para ${nomeCidade}/${uf}`);
 }
 
 // ===================== Importar NF-e no ML =====================
