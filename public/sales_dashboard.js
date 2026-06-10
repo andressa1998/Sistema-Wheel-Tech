@@ -191,7 +191,7 @@ async function carregarVendasDoBanco() {
 // ============================================
 // SINCRONIZAR VENDAS DO ML
 // ============================================
-async function sincronizarVendasML() {
+async function sincronizarVendasMLDashboard() {
     try {
         const btn = document.getElementById('btnSincronizar');
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Sincronizando...';
