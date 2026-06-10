@@ -1,3 +1,4 @@
+// nfe_manager.js - Versão completa e corrigida
 window.showToast = window.showToast || showToast;
 
 // URL do back-end online (Render)
@@ -5,18 +6,16 @@ const API_BASE_URL = 'https://backend-nfe.onrender.com'; // <-- ALTERAR PARA SUA
 
 let vendasPendentes = [];
 
+// ===================== ABAS =====================
 async function mostrarAbaNFE(aba) {
-    // Esconde todas as abas
     document.getElementById('abaVendas').classList.add('hidden');
     document.getElementById('abaEmitidas').classList.add('hidden');
     document.getElementById('abaAvulsa').classList.add('hidden');
     document.getElementById('abaTransportadoras').classList.add('hidden');
     document.getElementById('abaClientes').classList.add('hidden');
     
-    // Mostra a aba selecionada
     document.getElementById(`aba${aba.charAt(0).toUpperCase() + aba.slice(1)}`).classList.remove('hidden');
     
-    // Atualiza estilo dos botões
     const botoes = ['Vendas', 'Emitidas', 'Avulsa', 'Transportadoras', 'Clientes'];
     botoes.forEach(btn => {
         const el = document.getElementById(`tab${btn}Btn`);
@@ -31,39 +30,42 @@ async function mostrarAbaNFE(aba) {
         }
     });
     
-    // Carrega dados conforme a aba
     if (aba === 'vendas') await carregarVendasPendentes();
     if (aba === 'emitidas') await carregarNFesEmitidas();
     if (aba === 'transportadoras') await carregarTransportadoras();
     if (aba === 'clientes') await carregarClientes();
 }
 
+// ===================== VENDAS SEM NF-e =====================
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
     try {
         const response = await fetch(`${API_BASE_URL}/nfe/vendas-sem-nfe`);
         if (!response.ok) throw new Error('Erro ao carregar vendas');
         const vendas = await response.json();
         vendasPendentes = vendas;
         if (vendas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda pendente de NF-e</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda pendente de NF-e<\/td><\/tr>';
             return;
         }
-        tbody.innerHTML = vendas.map(v => `
+        tbody.innerHTML = vendas.map(v => {
+            const vendaId = v.order_id || v.id;
+            return `
             <tr>
-                <td>${v.order_id || v.id || '-'}</td>
-                <td>${new Date(v.data_venda).toLocaleDateString('pt-BR')}</td>
-                <td>${v.cliente_nome || '-'}</td>
-                <td>${v.sku || '-'}</td>
-                <td>R$ ${parseFloat(v.valor_total).toFixed(2)}</td>
+                <td>${vendaId}<\/td>
+                <td>${new Date(v.data_venda).toLocaleDateString('pt-BR')}<\/td>
+                <td>${v.cliente_nome || '-'}<\/td>
+                <td>${v.sku || '-'}<\/td>
+                <td>R$ ${parseFloat(v.valor_total).toFixed(2)}<\/td>
                 <td>
-                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${v.order_id || v.id}')">Emitir NF-e</button>
-                </td>
+                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${vendaId}')">Emitir NF-e<\/button>
+                 <\/td>
             </tr>
-        `).join('');
+            `;
+        }).join('');
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar vendas</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar vendas<\/td><\/tr>';
         console.error(error);
     }
 }
@@ -90,6 +92,7 @@ async function sincronizarVendasML() {
     }
 }
 
+// ===================== EMISSÃO DE NF-e =====================
 async function emitirNFEParaVenda(orderId) {
     console.log('🔵 emitirNFEParaVenda chamada com orderId:', orderId);
 
@@ -99,14 +102,13 @@ async function emitirNFEParaVenda(orderId) {
         return;
     }
 
-    // 1. Verificar se a lista de vendas está carregada
     if (!vendasPendentes || vendasPendentes.length === 0) {
         console.error('❌ vendasPendentes vazio ou não carregado');
         showToast('Lista de vendas não carregada. Atualize a página.', 'error');
         return;
     }
 
-    // 2. Encontrar a venda correspondente (convertendo para string)
+    // Buscar venda pelo order_id ou pelo id
     const venda = vendasPendentes.find(v => String(v.order_id || v.id) === String(orderId));
     if (!venda) {
         console.error('❌ Venda não encontrada para orderId:', orderId);
@@ -115,36 +117,70 @@ async function emitirNFEParaVenda(orderId) {
     }
     console.log('✅ Venda encontrada:', venda);
 
-    // 3. Encontrar o botão que foi clicado (para desabilitar e mostrar spinner)
     const btn = document.querySelector(`button[onclick*="emitirNFEParaVenda('${orderId}')"]`);
     let originalText = '';
     if (btn) {
         originalText = btn.innerHTML;
         btn.innerHTML = '<span class="spinner"></span> Emitindo...';
         btn.disabled = true;
-        console.log('🔄 Botão desabilitado e spinner ativado');
-    } else {
-        console.warn('⚠️ Botão não encontrado via seletor, continuando sem feedback visual.');
     }
 
-    // 4. Obter transportadora selecionada (se houver)
     const transportadoraId = document.getElementById('avulsaTransportadoraId')?.value || null;
 
-    // 5. Montar dados para o backend
+    // Montar produtos a partir dos dados disponíveis (com fallbacks)
+    let produtos = [];
+    try {
+        let rawProdutos = venda.produtos;
+        if (!rawProdutos && venda.order_data) rawProdutos = venda.order_data;
+        
+        if (rawProdutos && typeof rawProdutos === 'string') {
+            rawProdutos = JSON.parse(rawProdutos);
+        }
+        
+        if (rawProdutos && rawProdutos.order_items && rawProdutos.order_items.length > 0) {
+            produtos = rawProdutos.order_items.map(item => ({
+                nome: item.item.title,
+                quantidade: item.quantity,
+                valor_unitario: item.unit_price,
+                sku: item.item.seller_sku || 'SEM_SKU',
+                ncm: '87149990'
+            }));
+        } else if (venda.sku) {
+            produtos = [{
+                nome: venda.produto_titulo || 'Produto Mercado Livre',
+                quantidade: 1,
+                valor_unitario: venda.valor_total || 0,
+                sku: venda.sku,
+                ncm: '87149990'
+            }];
+        } else {
+            throw new Error('Não foi possível extrair produtos da venda');
+        }
+        console.log(`✅ ${produtos.length} produto(s) extraído(s):`, produtos);
+    } catch (e) {
+        console.error('❌ Erro ao interpretar produtos da venda:', e);
+        showToast('Erro ao interpretar produtos da venda. Verifique os dados.', 'error');
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+        return;
+    }
+
     const dados = {
-        venda_id: orderId,
+        venda_id: String(venda.order_id || venda.id),
         cliente: {
-            nome: venda.cliente_nome,
-            documento: venda.cpf_cnpj || '',
-            endereco: venda.endereco || '',
+            nome: venda.cliente_nome || 'Cliente ML',
+            documento: '',
+            endereco: '',
             numero: '',
             bairro: '',
             cidade: '',
             uf: '',
             cep: ''
         },
-        produtos: [],
-        cfop: venda.meio_envio === 'FULL' ? '6108' : '5102',
+        produtos: produtos,
+        cfop: (venda.meio_envio === 'FULL') ? '6108' : '5102',
         natureza_operacao: 'VENDA',
         modalidade_frete: '0',
         transportadora_id: transportadoraId,
@@ -153,32 +189,6 @@ async function emitirNFEParaVenda(orderId) {
         pack_id: null
     };
 
-    // 6. Extrair produtos do JSON armazenado na venda
-    try {
-        const produtosML = JSON.parse(venda.produtos);
-        if (produtosML.order_items) {
-            dados.produtos = produtosML.order_items.map(item => ({
-                nome: item.item.title,
-                quantidade: item.quantity,
-                valor_unitario: item.unit_price,
-                sku: item.item.seller_sku || 'SEM_SKU',
-                ncm: '87149990'
-            }));
-            console.log(`✅ ${dados.produtos.length} produto(s) extraído(s):`, dados.produtos);
-        } else {
-            throw new Error('Formato de produtos inválido');
-        }
-    } catch (e) {
-        console.error('❌ Erro ao interpretar produtos da venda:', e);
-        showToast('Erro ao interpretar produtos da venda', 'error');
-        if (btn) {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }
-        return;
-    }
-
-    // 7. Enviar requisição para o backend
     try {
         console.log('📡 Enviando requisição POST para:', `${API_BASE_URL}/nfe/emitir`);
         const response = await fetch(`${API_BASE_URL}/nfe/emitir`, {
@@ -186,13 +196,9 @@ async function emitirNFEParaVenda(orderId) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(dados)
         });
-        console.log('📥 Resposta recebida. Status:', response.status);
         const result = await response.json();
-        console.log('📦 Resultado:', result);
-
         if (result.success) {
             showToast(`✅ NF-e emitida com sucesso! Protocolo: ${result.protocolo}`, 'success');
-            // Recarregar listas
             await carregarVendasPendentes();
             await carregarNFesEmitidas();
         } else {
@@ -202,43 +208,42 @@ async function emitirNFEParaVenda(orderId) {
         console.error('❌ Erro na requisição:', error);
         showToast(`Erro de comunicação: ${error.message}`, 'error');
     } finally {
-        // Reativar botão
         if (btn) {
             btn.innerHTML = originalText;
             btn.disabled = false;
-            console.log('🔄 Botão reativado');
         }
     }
 }
 
+// ===================== NF-es EMITIDAS =====================
 async function carregarNFesEmitidas() {
     const tbody = document.getElementById('nfesEmitidasBody');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    tbody.innerHTML = '<td><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
     try {
         const response = await fetch(`${API_BASE_URL}/nfe/listar-nfes`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
         const nfes = data.notas || [];
         if (nfes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma NF-e emitida</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma NF-e emitida<\/td><\/tr>';
             return;
         }
         tbody.innerHTML = nfes.map(nfe => `
             <tr>
-                <td><small>${nfe.chave}</small></td>
-                <td>${nfe.protocolo || '-'}</td>
-                <td>${nfe.clientes?.nome || '-'}</td>
-                <td>R$ ${parseFloat(nfe.valor_total).toFixed(2)}</td>
-                <td>${new Date(nfe.data_emissao).toLocaleDateString('pt-BR')}</td>
+                <td><small>${nfe.chave}</small><\/td>
+                <td>${nfe.protocolo || '-'}<\/td>
+                <td>${nfe.clientes?.nome || '-'}<\/td>
+                <td>R$ ${parseFloat(nfe.valor_total).toFixed(2)}<\/td>
+                <td>${new Date(nfe.data_emissao).toLocaleDateString('pt-BR')}<\/td>
                 <td>
-                    <button class="btn btn-sm btn-info" onclick="visualizarNFE('${nfe.chave}')">Visualizar</button>
-                    <button class="btn btn-sm btn-secondary" onclick="baixarXMLNFE('${nfe.chave}')">XML</button>
-                    ${!nfe.cancelada ? `<button class="btn btn-sm btn-danger" onclick="cancelarNFE('${nfe.chave}')">Cancelar</button>` : '<span class="badge badge-danger">Cancelada</span>'}
-                 </td>
+                    <button class="btn btn-sm btn-info" onclick="visualizarNFE('${nfe.chave}')">Visualizar<\/button>
+                    <button class="btn btn-sm btn-secondary" onclick="baixarXMLNFE('${nfe.chave}')">XML<\/button>
+                    ${!nfe.cancelada ? `<button class="btn btn-sm btn-danger" onclick="cancelarNFE('${nfe.chave}')">Cancelar<\/button>` : '<span class="badge badge-danger">Cancelada<\/span>'}
+                 <\/td>
             </tr>
         `).join('');
     } catch (error) {
-        tbody.innerHTML = '<td><td colspan="6" class="text-center text-danger">Erro ao carregar NF-es</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar NF-es<\/td><\/tr>';
         console.error(error);
     }
 }
@@ -356,24 +361,25 @@ async function cancelarNFE(chaveAcesso) {
     }
 }
 
+// ===================== TRANSPORTADORAS =====================
 async function carregarTransportadoras() {
     const tbody = document.getElementById('transportadorasBody');
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
     try {
         const response = await fetch(`${API_BASE_URL}/nfe/transportadoras`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
         const transportadoras = data.transportadoras || [];
         if (transportadoras.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhuma transportadora cadastrada</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhuma transportadora cadastrada<\/td><\/tr>';
             return;
         }
         tbody.innerHTML = transportadoras.map(t => `
             <tr>
-                <td>${t.nome}</td>
-                <td>${t.cnpj}</td>
-                <td>${t.ie || '-'}</td>
-                <td><button class="btn btn-sm btn-danger" onclick="excluirTransportadora(${t.id})">Excluir</button></td>
+                <td>${t.nome}<\/td>
+                <td>${t.cnpj}<\/td>
+                <td>${t.ie || '-'}<\/td>
+                <td><button class="btn btn-sm btn-danger" onclick="excluirTransportadora(${t.id})">Excluir<\/button><\/td>
             </tr>
         `).join('');
         const select = document.getElementById('avulsaTransportadoraId');
@@ -381,28 +387,44 @@ async function carregarTransportadoras() {
             select.innerHTML = '<option value="">Selecione</option>' + transportadoras.map(t => `<option value="${t.id}">${t.nome}</option>`).join('');
         }
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar</td></tr>';
+        tbody.innerHTML = '<td><td colspan="4" class="text-center text-danger">Erro ao carregar<\/td><\/tr>';
     }
 }
 
+async function excluirTransportadora(id) {
+    if (!confirm('Excluir esta transportadora?')) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/nfe/transportadoras/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            showToast('Transportadora excluída', 'success');
+            await carregarTransportadoras();
+        } else {
+            showToast('Erro ao excluir', 'error');
+        }
+    } catch (error) {
+        showToast('Erro de comunicação', 'error');
+    }
+}
+
+// ===================== CLIENTES =====================
 async function carregarClientes() {
     const tbody = document.getElementById('clientesBody');
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
     try {
         const response = await fetch(`${API_BASE_URL}/nfe/clientes`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
         const clientes = data.clientes || [];
         if (clientes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhum cliente cadastrado</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhum cliente cadastrado<\/td><\/tr>';
             return;
         }
         tbody.innerHTML = clientes.map(c => `
             <tr>
-                <td>${c.nome}</td>
-                <td>${c.documento || '-'}</td>
-                <td>${c.logradouro || ''}, ${c.numero || ''} - ${c.cidade || ''}</td>
-                <td><button class="btn btn-sm btn-danger" onclick="excluirCliente(${c.id})">Excluir</button></td>
+                <td>${c.nome}<\/td>
+                <td>${c.documento || '-'}<\/td>
+                <td>${c.logradouro || ''}, ${c.numero || ''} - ${c.cidade || ''}<\/td>
+                <td><button class="btn btn-sm btn-danger" onclick="excluirCliente(${c.id})">Excluir<\/button><\/td>
             </tr>
         `).join('');
         const select = document.getElementById('avulsaClienteId');
@@ -410,10 +432,26 @@ async function carregarClientes() {
             select.innerHTML = '<option value="">Selecione</option>' + clientes.map(c => `<option value="${c.id}">${c.nome} (${c.documento})</option>`).join('');
         }
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar<\/td><\/tr>';
     }
 }
 
+async function excluirCliente(id) {
+    if (!confirm('Excluir este cliente?')) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/nfe/clientes/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            showToast('Cliente excluído', 'success');
+            await carregarClientes();
+        } else {
+            showToast('Erro ao excluir', 'error');
+        }
+    } catch (error) {
+        showToast('Erro de comunicação', 'error');
+    }
+}
+
+// ===================== EMISSÃO AVULSA =====================
 async function emitirNFEAvulsa() {
     const clienteId = document.getElementById('avulsaClienteId').value;
     if (!clienteId) {
@@ -477,11 +515,12 @@ function limparFormAvulsa() {
     document.getElementById('avulsaProdutos').value = '';
 }
 
+// ===================== INICIALIZAÇÃO =====================
 function inicializarAbaNFE() {
     mostrarAbaNFE('vendas');
 }
 
-// Expor funções globalmente
+// ===================== EXPOSIÇÃO GLOBAL =====================
 window.mostrarAbaNFE = mostrarAbaNFE;
 window.emitirNFEParaVenda = emitirNFEParaVenda;
 window.sincronizarVendasML = sincronizarVendasML;
