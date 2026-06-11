@@ -38,33 +38,48 @@ async function mostrarAbaNFE(aba) {
 // ===================== VENDAS SEM NF-e =====================
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
-    tbody.innerHTML = '<td><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
+    tbody.innerHTML = '<table><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
     try {
-        const response = await fetch(`${API_BASE_URL}/nfe/vendas-sem-nfe`);
-        if (!response.ok) throw new Error('Erro ao carregar vendas');
-        const vendas = await response.json();
-        vendasPendentes = vendas;
-        if (!vendas.length) {
+        // Usa o cliente Supabase já existente no window (criado em script.js)
+        const { data, error } = await window.supabaseClient
+            .from('vendas_ml')
+            .select('id, cliente, sku, valor_total, data_venda, dados_completos, meio_envio')
+            .eq('nfe_emitida', false);
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda pendente de NF-e<\/td><\/tr>';
             return;
         }
-        tbody.innerHTML = vendas.map(v => {
-            const vendaId = v.order_id;
-            return `
+
+        // Mapeia os campos (ajuste o nome da coluna do JSON: pode ser 'dados_completos' ou 'order_data')
+        const vendas = data.map(v => ({
+            id: v.id,
+            order_id: String(v.id),
+            cliente_nome: v.cliente || 'Cliente',
+            sku: v.sku,
+            valor_total: v.valor_total,
+            data_venda: v.data_venda,
+            produtos: v.dados_completos, // usa a coluna que tem o JSON da venda
+            meio_envio: v.meio_envio
+        }));
+        vendasPendentes = vendas;
+
+        tbody.innerHTML = vendas.map(v => `
             <tr>
-                <td>${vendaId}<\/td>
+                <td>${v.order_id}<\/td>
                 <td>${new Date(v.data_venda).toLocaleDateString('pt-BR')}<\/td>
-                <td>${v.cliente_nome || '-'}<\/td>
-                <td>${v.sku || '-'}<\/td>
-                <td>R$ ${parseFloat(v.valor_total).toFixed(2)}<\/td>
+                <td>${v.cliente_nome}<\/td>
+                <td>${v.sku}<\/td>
+                <td>R$ ${v.valor_total.toFixed(2)}<\/td>
                 <td>
-                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${vendaId}')">Emitir NF-e<\/button>
+                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${v.order_id}')">Emitir NF-e<\/button>
                  <\/td>
-            </tr>`;
-        }).join('');
+            </tr>`).join('');
     } catch (error) {
-        console.error('Erro carregarVendasPendentes:', error);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar vendas<\/td><\/tr>';
+        console.error('Erro carregarVendasPendentes do Supabase:', error);
+        tbody.innerHTML = '<td><td colspan="6" class="text-center text-danger">Erro ao carregar vendas. Verifique o console.<\/td><\/tr>';
     }
 }
 
