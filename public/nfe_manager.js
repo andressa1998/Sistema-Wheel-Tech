@@ -100,102 +100,109 @@
 
     // ===================== EMISSÃO DE NF-e =====================
     async function emitirNFEParaVenda(orderId) {
-        console.log('🔵 Emitir NF-e para venda:', orderId);
-        const btn = document.querySelector(`button[onclick*="emitirNFEParaVenda('${orderId}')"]`);
-        let originalText = '';
-        if (btn) {
-            originalText = btn.innerHTML;
-            btn.innerHTML = '<span class="spinner"></span> Buscando dados...';
-            btn.disabled = true;
+    console.log('🔵 Emitir NF-e para venda:', orderId);
+    const btn = document.querySelector(`button[onclick*="emitirNFEParaVenda('${orderId}')"]`);
+    let originalText = '';
+    if (btn) {
+        originalText = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner"></span> Buscando dados da venda...';
+        btn.disabled = true;
+    }
+
+    try {
+        let token = localStorage.getItem('ml_access_token');
+        if (!token && typeof window.getValidToken === 'function') {
+            const tokenData = await window.getValidToken();
+            token = tokenData?.access_token;
         }
+        if (!token) throw new Error('Token ML não disponível');
 
-        try {
-            let token = localStorage.getItem('ml_access_token');
-            if (!token && typeof window.getValidToken === 'function') {
-                const tokenData = await window.getValidToken();
-                token = tokenData?.access_token;
+        const url = `https://api.mercadolibre.com/orders/${orderId}`;
+        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error(`Erro ao buscar venda: ${response.status}`);
+        const venda = await response.json();
+
+        // DEBUG: Verifique se o billing_info existe
+        console.log('🔍 billing_info:', venda.buyer?.billing_info);
+
+        const buyer = venda.buyer || {};
+        const billing = buyer.billing_info || {};
+        const address = venda.shipping?.receiver_address || {};
+
+        let documento = billing.doc_number || billing.id || '';
+        if (documento) documento = documento.replace(/\D/g, '');
+
+        const cliente_nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || 'Cliente';
+        const cliente_endereco = address.address_line || address.street_name || '';
+        const cliente_numero = address.street_number || 'S/N';
+        const cliente_bairro = address.neighborhood || 'Centro';
+        const cliente_cidade = address.city || 'ARAUCARIA';
+        const cliente_uf = address.state || 'PR';
+        const cliente_cep = address.zip_code?.replace(/\D/g, '') || '83702090';
+
+        console.log('📋 Dados para NF-e:', { documento, cliente_nome, cliente_endereco });
+
+        const produtos = (venda.order_items || []).map(item => ({
+            nome: item.item.title,
+            quantidade: item.quantity,
+            valor_unitario: item.unit_price,
+            sku: item.item.seller_sku || 'SEM_SKU',
+            ncm: '87149990'
+        }));
+        if (produtos.length === 0) throw new Error('Nenhum produto encontrado');
+
+        const cfop = (venda.shipping?.logistic_type === 'fulfillment') ? '6108' : '5102';
+
+        const payload = {
+            venda_id: String(orderId),
+            cliente: {
+                nome: cliente_nome,
+                documento: documento,
+                endereco: cliente_endereco,
+                numero: cliente_numero,
+                bairro: cliente_bairro,
+                cidade: cliente_cidade,
+                uf: cliente_uf,
+                cep: cliente_cep
+            },
+            produtos: produtos,
+            cfop: cfop,
+            natureza_operacao: 'VENDA',
+            modalidade_frete: '9',
+            transportadora_id: null
+        };
+
+        if (btn) btn.innerHTML = '<span class="spinner"></span> Emitindo NF-e...';
+        const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await emitResponse.json();
+
+        if (result.success) {
+            window.showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
+            const emitidas = JSON.parse(localStorage.getItem('nfe_emitidas_ids') || '[]');
+            if (!emitidas.includes(String(orderId))) {
+                emitidas.push(String(orderId));
+                localStorage.setItem('nfe_emitidas_ids', JSON.stringify(emitidas));
             }
-            if (!token) throw new Error('Token ML não disponível');
-
-            const url = `https://api.mercadolibre.com/orders/${orderId}`;
-            const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
-            const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error(`Erro ao buscar venda: ${response.status}`);
-            const venda = await response.json();
-
-            const buyer = venda.buyer || {};
-            const billing = buyer.billing_info || {};
-            const address = venda.shipping?.receiver_address || {};
-
-            const cliente_nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || 'Cliente';
-            const cliente_documento = billing.doc_number || '';
-            const cliente_endereco = address.address_line || '';
-            const cliente_numero = address.street_number || '';
-            const cliente_bairro = address.neighborhood || '';
-            const cliente_cidade = address.city || 'ARAUCARIA';
-            const cliente_uf = address.state || 'PR';
-            const cliente_cep = address.zip_code?.replace(/\D/g, '') || '83702090';
-
-            const produtos = (venda.order_items || []).map(item => ({
-                nome: item.item.title,
-                quantidade: item.quantity,
-                valor_unitario: item.unit_price,
-                sku: item.item.seller_sku || 'SEM_SKU',
-                ncm: '87149990'
-            }));
-            if (produtos.length === 0) throw new Error('Nenhum produto encontrado');
-
-            const cfop = (venda.shipping?.logistic_type === 'fulfillment') ? '6108' : '5102';
-
-            const payload = {
-                venda_id: String(orderId),
-                cliente: {
-                    nome: cliente_nome,
-                    documento: cliente_documento,
-                    endereco: cliente_endereco,
-                    numero: cliente_numero,
-                    bairro: cliente_bairro,
-                    cidade: cliente_cidade,
-                    uf: cliente_uf,
-                    cep: cliente_cep
-                },
-                produtos: produtos,
-                cfop: cfop,
-                natureza_operacao: 'VENDA',
-                modalidade_frete: '9',
-                transportadora_id: null
-            };
-
-            if (btn) btn.innerHTML = '<span class="spinner"></span> Emitindo NF-e...';
-            const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const result = await emitResponse.json();
-
-            if (result.success) {
-                window.showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
-                const emitidas = JSON.parse(localStorage.getItem('nfe_emitidas_ids') || '[]');
-                if (!emitidas.includes(String(orderId))) {
-                    emitidas.push(String(orderId));
-                    localStorage.setItem('nfe_emitidas_ids', JSON.stringify(emitidas));
-                }
-                await carregarVendasPendentes();
-                await carregarNFesEmitidas();
-            } else {
-                window.showToast(`❌ Erro: ${result.error}`, 'error');
-            }
-        } catch (error) {
-            console.error(error);
-            window.showToast(`Erro: ${error.message}`, 'error');
-        } finally {
-            if (btn) {
-                btn.innerHTML = originalText;
-                btn.disabled = false;
-            }
+            await carregarVendasPendentes();
+            await carregarNFesEmitidas();
+        } else {
+            window.showToast(`❌ Erro: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        console.error('Erro emitirNFEParaVenda:', error);
+        window.showToast(`Erro: ${error.message}`, 'error');
+    } finally {
+        if (btn) {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
         }
     }
+}
 
     // ===================== NF-ES EMITIDAS =====================
     async function carregarNFesEmitidas() {
