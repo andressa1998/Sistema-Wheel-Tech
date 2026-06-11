@@ -1,8 +1,7 @@
-// nfe_manager.js - Versão completa e corrigida
 window.showToast = window.showToast || showToast;
 
-// URL do back-end online (Render)
-const API_BASE_URL = 'https://backend-nfe.onrender.com'; // <-- ALTERAR PARA SUA URL
+// URL do back-end (Render)
+const API_BASE_URL = 'https://backend-nfe.onrender.com';
 
 let vendasPendentes = [];
 
@@ -39,76 +38,49 @@ async function mostrarAbaNFE(aba) {
 // ===================== VENDAS SEM NF-e =====================
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    tbody.innerHTML = '<td><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
     try {
-        // Busca direto no Supabase (usando o cliente já inicializado no script.js)
-        const { data, error } = await window.supabaseClient
-            .from('vendas_ml')
-            .select('id, order_id, cliente_nome, sku, valor_total, data_venda, produtos, meio_envio')
-            .eq('nfe_emitida', false);
-
-        if (error) throw error;
-
-        if (!data || data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda pendente de NF-e</td></tr>';
+        const response = await fetch(`${API_BASE_URL}/nfe/vendas-sem-nfe`);
+        if (!response.ok) throw new Error('Erro ao carregar vendas');
+        const vendas = await response.json();
+        vendasPendentes = vendas;
+        if (!vendas.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda pendente de NF-e<\/td><\/tr>';
             return;
         }
-
-        // Garantir order_id
-        const vendas = data.map(v => ({
-            ...v,
-            order_id: v.order_id || String(v.id)
-        }));
-        vendasPendentes = vendas;
-
         tbody.innerHTML = vendas.map(v => {
             const vendaId = v.order_id;
             return `
             <tr>
-                <td>${vendaId}</td>
-                <td>${new Date(v.data_venda).toLocaleDateString('pt-BR')}</td>
-                <td>${v.cliente_nome || '-'}</td>
-                <td>${v.sku || '-'}</td>
-                <td>R$ ${parseFloat(v.valor_total).toFixed(2)}</td>
+                <td>${vendaId}<\/td>
+                <td>${new Date(v.data_venda).toLocaleDateString('pt-BR')}<\/td>
+                <td>${v.cliente_nome || '-'}<\/td>
+                <td>${v.sku || '-'}<\/td>
+                <td>R$ ${parseFloat(v.valor_total).toFixed(2)}<\/td>
                 <td>
-                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${vendaId}')">Emitir NF-e</button>
-                </td>
+                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${vendaId}')">Emitir NF-e<\/button>
+                 <\/td>
             </tr>`;
         }).join('');
     } catch (error) {
-        console.error('❌ Erro ao carregar vendas do Supabase:', error);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar vendas. Verifique o console.</td></tr>';
+        console.error('Erro carregarVendasPendentes:', error);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar vendas<\/td><\/tr>';
     }
 }
 
-async function sincronizarVendasML() {
-    alert('A sincronização de vendas é feita automaticamente pelo sistema de Vendas ML. Use o botão "Sincronizar Agora" no módulo de vendas.');
-}
-
-// ===================== EMISSÃO DE NF-e =====================
+// ===================== EMISSÃO =====================
 async function emitirNFEParaVenda(orderId) {
     console.log('🔵 emitirNFEParaVenda chamada com orderId:', orderId);
-
     if (!orderId || orderId === 'null' || orderId === 'undefined') {
-        console.error('❌ orderId inválido:', orderId);
         showToast('Identificador da venda inválido', 'error');
         return;
     }
 
-    if (!vendasPendentes || vendasPendentes.length === 0) {
-        console.error('❌ vendasPendentes vazio ou não carregado');
-        showToast('Lista de vendas não carregada. Atualize a página.', 'error');
-        return;
-    }
-
-    // Buscar venda pelo order_id ou pelo id
-    const venda = vendasPendentes.find(v => String(v.order_id || v.id) === String(orderId));
+    const venda = vendasPendentes.find(v => String(v.order_id) === String(orderId));
     if (!venda) {
-        console.error('❌ Venda não encontrada para orderId:', orderId);
         showToast('Venda não encontrada', 'error');
         return;
     }
-    console.log('✅ Venda encontrada:', venda);
 
     const btn = document.querySelector(`button[onclick*="emitirNFEParaVenda('${orderId}')"]`);
     let originalText = '';
@@ -118,19 +90,14 @@ async function emitirNFEParaVenda(orderId) {
         btn.disabled = true;
     }
 
-    const transportadoraId = document.getElementById('avulsaTransportadoraId')?.value || null;
-
-    // Montar produtos a partir dos dados disponíveis (com fallbacks)
+    // Montar produtos (fallback se não houver detalhes)
     let produtos = [];
     try {
         let rawProdutos = venda.produtos;
-        if (!rawProdutos && venda.order_data) rawProdutos = venda.order_data;
-        
         if (rawProdutos && typeof rawProdutos === 'string') {
             rawProdutos = JSON.parse(rawProdutos);
         }
-        
-        if (rawProdutos && rawProdutos.order_items && rawProdutos.order_items.length > 0) {
+        if (rawProdutos && rawProdutos.order_items && rawProdutos.order_items.length) {
             produtos = rawProdutos.order_items.map(item => ({
                 nome: item.item.title,
                 quantidade: item.quantity,
@@ -138,52 +105,46 @@ async function emitirNFEParaVenda(orderId) {
                 sku: item.item.seller_sku || 'SEM_SKU',
                 ncm: '87149990'
             }));
-        } else if (venda.sku) {
+        } else {
             produtos = [{
-                nome: venda.produto_titulo || 'Produto Mercado Livre',
+                nome: 'Produto ML',
                 quantidade: 1,
                 valor_unitario: venda.valor_total || 0,
-                sku: venda.sku,
+                sku: venda.sku || 'SEM_SKU',
                 ncm: '87149990'
             }];
-        } else {
-            throw new Error('Não foi possível extrair produtos da venda');
         }
-        console.log(`✅ ${produtos.length} produto(s) extraído(s):`, produtos);
     } catch (e) {
-        console.error('❌ Erro ao interpretar produtos da venda:', e);
-        showToast('Erro ao interpretar produtos da venda. Verifique os dados.', 'error');
-        if (btn) {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-        }
-        return;
+        console.warn('Erro ao parsear produtos, usando fallback', e);
+        produtos = [{
+            nome: 'Produto ML',
+            quantidade: 1,
+            valor_unitario: venda.valor_total || 0,
+            sku: venda.sku || 'SEM_SKU',
+            ncm: '87149990'
+        }];
     }
 
     const dados = {
-        venda_id: String(venda.order_id || venda.id),
+        venda_id: orderId,
         cliente: {
-        nome: venda.cliente_nome || 'Cliente ML',
-        documento: '',
-        endereco: venda.endereco || '',
-        numero: '',
-        bairro: '',
-        cidade: venda.cidade || 'ARAUCARIA',
-        uf: venda.uf || 'PR',
-        cep: venda.cep || '83702090'
-    },
+            nome: venda.cliente_nome || 'Cliente ML',
+            documento: '',
+            endereco: '',
+            numero: '',
+            bairro: '',
+            cidade: '',
+            uf: 'PR',
+            cep: '83702090'
+        },
         produtos: produtos,
-        cfop: (venda.meio_envio === 'FULL') ? '6108' : '5102',
+        cfop: '5102', // padrão para vendas dentro do PR (ajuste se necessário)
         natureza_operacao: 'VENDA',
-        modalidade_frete: '0',
-        transportadora_id: transportadoraId,
-        access_token: null,
-        shipment_id: null,
-        pack_id: null
+        modalidade_frete: '9',
+        transportadora_id: null
     };
 
     try {
-        console.log('📡 Enviando requisição POST para:', `${API_BASE_URL}/nfe/emitir`);
         const response = await fetch(`${API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -192,13 +153,13 @@ async function emitirNFEParaVenda(orderId) {
         const result = await response.json();
         if (result.success) {
             showToast(`✅ NF-e emitida com sucesso! Protocolo: ${result.protocolo}`, 'success');
-            await carregarVendasPendentes();
+            await carregarVendasPendentes();  // atualiza lista
             await carregarNFesEmitidas();
         } else {
             showToast(`❌ Erro na emissão: ${result.error}`, 'error');
         }
     } catch (error) {
-        console.error('❌ Erro na requisição:', error);
+        console.error('Erro ao emitir:', error);
         showToast(`Erro de comunicação: ${error.message}`, 'error');
     } finally {
         if (btn) {
@@ -208,17 +169,17 @@ async function emitirNFEParaVenda(orderId) {
     }
 }
 
-// ===================== NF-es EMITIDAS =====================
+// ===================== NF-ES EMITIDAS =====================
 async function carregarNFesEmitidas() {
     const tbody = document.getElementById('nfesEmitidasBody');
-    tbody.innerHTML = '<td><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
     try {
         const response = await fetch(`${API_BASE_URL}/nfe/listar-nfes`);
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
         const nfes = data.notas || [];
-        if (nfes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma NF-e emitida<\/td><\/tr>';
+        if (!nfes.length) {
+            tbody.innerHTML = '<td><td colspan="6" class="text-center">Nenhuma NF-e emitida<\/td><\/tr>';
             return;
         }
         tbody.innerHTML = nfes.map(nfe => `
@@ -231,13 +192,12 @@ async function carregarNFesEmitidas() {
                 <td>
                     <button class="btn btn-sm btn-info" onclick="visualizarNFE('${nfe.chave}')">Visualizar<\/button>
                     <button class="btn btn-sm btn-secondary" onclick="baixarXMLNFE('${nfe.chave}')">XML<\/button>
-                    ${!nfe.cancelada ? `<button class="btn btn-sm btn-danger" onclick="cancelarNFE('${nfe.chave}')">Cancelar<\/button>` : '<span class="badge badge-danger">Cancelada<\/span>'}
+                    ${!nfe.cancelada ? `<button class="btn btn-sm btn-danger" onclick="cancelarNFE('${nfe.chave}')">Cancelar<\/button>` : '<span class="badge badge-danger">Cancelada</span>'}
                  <\/td>
-            </tr>
-        `).join('');
+            </tr>`).join('');
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar NF-es<\/td><\/tr>';
         console.error(error);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar NF-es<\/td><\/tr>';
     }
 }
 
@@ -258,51 +218,49 @@ async function visualizarNFE(chaveAcesso) {
         const vNF = infNFe.querySelector('ICMSTot vNF')?.textContent || '0';
         const protocolo = infNFe.querySelector('nProt')?.textContent || 'Não informado';
         
-        const html = `
-            <!DOCTYPE html>
-            <html>
-            <head><title>DANFE - ${chave}</title>
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                .header { text-align: center; margin-bottom: 20px; }
-                .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
-                .row { display: flex; margin-bottom: 5px; }
-                .label { width: 130px; font-weight: bold; }
-                @media print { body { margin: 0; } .no-print { display: none; } }
-            </style>
-            </head>
-            <body>
-                <div class="no-print" style="text-align:center; margin-bottom:20px;">
-                    <button onclick="window.print()">Imprimir</button>
-                    <button onclick="window.close()">Fechar</button>
-                </div>
-                <div class="header">
-                    <h2>Nota Fiscal Eletrônica</h2>
-                    <p>Chave de Acesso: ${chave}</p>
-                    <p>Protocolo: ${protocolo}</p>
-                </div>
-                <div class="card">
-                    <h3>Emitente</h3>
-                    <div class="row"><div class="label">Nome:</div><div>${emitNome}</div></div>
-                </div>
-                <div class="card">
-                    <h3>Destinatário</h3>
-                    <div class="row"><div class="label">Nome:</div><div>${destNome}</div></div>
-                </div>
-                <div class="card">
-                    <h3>Valor Total</h3>
-                    <div class="row"><div class="label">R$:</div><div>${vNF}</div></div>
-                </div>
-                <div class="card">
-                    <h3>Produtos</h3>
-                    ${Array.from(xmlDoc.querySelectorAll('det')).map(det => {
-                        const prod = det.querySelector('prod');
-                        return `<div>${prod.querySelector('xProd')?.textContent} - Quant: ${prod.querySelector('qCom')?.textContent} - Valor: R$ ${prod.querySelector('vProd')?.textContent}</div>`;
-                    }).join('')}
-                </div>
-            </body>
-            </html>
-        `;
+        const html = `<!DOCTYPE html>
+        <html>
+        <head><title>DANFE - ${chave}</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .header { text-align: center; margin-bottom: 20px; }
+            .card { border: 1px solid #ccc; padding: 15px; margin-bottom: 15px; border-radius: 5px; }
+            .row { display: flex; margin-bottom: 5px; }
+            .label { width: 130px; font-weight: bold; }
+            @media print { body { margin: 0; } .no-print { display: none; } }
+        </style>
+        </head>
+        <body>
+            <div class="no-print" style="text-align:center; margin-bottom:20px;">
+                <button onclick="window.print()">Imprimir</button>
+                <button onclick="window.close()">Fechar</button>
+            </div>
+            <div class="header">
+                <h2>Nota Fiscal Eletrônica</h2>
+                <p>Chave de Acesso: ${chave}</p>
+                <p>Protocolo: ${protocolo}</p>
+            </div>
+            <div class="card">
+                <h3>Emitente</h3>
+                <div class="row"><div class="label">Nome:</div><div>${emitNome}</div></div>
+            </div>
+            <div class="card">
+                <h3>Destinatário</h3>
+                <div class="row"><div class="label">Nome:</div><div>${destNome}</div></div>
+            </div>
+            <div class="card">
+                <h3>Valor Total</h3>
+                <div class="row"><div class="label">R$:</div><div>${vNF}</div></div>
+            </div>
+            <div class="card">
+                <h3>Produtos</h3>
+                ${Array.from(xmlDoc.querySelectorAll('det')).map(det => {
+                    const prod = det.querySelector('prod');
+                    return `<div>${prod.querySelector('xProd')?.textContent} - Quant: ${prod.querySelector('qCom')?.textContent} - Valor: R$ ${prod.querySelector('vProd')?.textContent}</div>`;
+                }).join('')}
+            </div>
+        </body>
+        </html>`;
         const win = window.open();
         win.document.write(html);
         win.document.close();
@@ -363,7 +321,7 @@ async function carregarTransportadoras() {
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
         const transportadoras = data.transportadoras || [];
-        if (transportadoras.length === 0) {
+        if (!transportadoras.length) {
             tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhuma transportadora cadastrada<\/td><\/tr>';
             return;
         }
@@ -373,14 +331,11 @@ async function carregarTransportadoras() {
                 <td>${t.cnpj}<\/td>
                 <td>${t.ie || '-'}<\/td>
                 <td><button class="btn btn-sm btn-danger" onclick="excluirTransportadora(${t.id})">Excluir<\/button><\/td>
-            </tr>
-        `).join('');
+            </tr>`).join('');
         const select = document.getElementById('avulsaTransportadoraId');
-        if (select) {
-            select.innerHTML = '<option value="">Selecione</option>' + transportadoras.map(t => `<option value="${t.id}">${t.nome}</option>`).join('');
-        }
+        if (select) select.innerHTML = '<option value="">Selecione</option>' + transportadoras.map(t => `<option value="${t.id}">${t.nome}</option>`).join('');
     } catch (error) {
-        tbody.innerHTML = '<td><td colspan="4" class="text-center text-danger">Erro ao carregar<\/td><\/tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar<\/td><\/tr>';
     }
 }
 
@@ -408,7 +363,7 @@ async function carregarClientes() {
         const data = await response.json();
         if (!data.success) throw new Error(data.error);
         const clientes = data.clientes || [];
-        if (clientes.length === 0) {
+        if (!clientes.length) {
             tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhum cliente cadastrado<\/td><\/tr>';
             return;
         }
@@ -418,14 +373,11 @@ async function carregarClientes() {
                 <td>${c.documento || '-'}<\/td>
                 <td>${c.logradouro || ''}, ${c.numero || ''} - ${c.cidade || ''}<\/td>
                 <td><button class="btn btn-sm btn-danger" onclick="excluirCliente(${c.id})">Excluir<\/button><\/td>
-            </tr>
-        `).join('');
+            </tr>`).join('');
         const select = document.getElementById('avulsaClienteId');
-        if (select) {
-            select.innerHTML = '<option value="">Selecione</option>' + clientes.map(c => `<option value="${c.id}">${c.nome} (${c.documento})</option>`).join('');
-        }
+        if (select) select.innerHTML = '<option value="">Selecione</option>' + clientes.map(c => `<option value="${c.id}">${c.nome} (${c.documento})</option>`).join('');
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar<\/td><\/tr>';
+        tbody.innerHTML = '<td><td colspan="4" class="text-center text-danger">Erro ao carregar<\/td><\/tr>';
     }
 }
 
@@ -458,21 +410,12 @@ async function emitirNFEAvulsa() {
     let produtos;
     try {
         produtos = JSON.parse(document.getElementById('avulsaProdutos').value);
-        if (!Array.isArray(produtos) || produtos.length === 0) throw new Error();
+        if (!Array.isArray(produtos) || !produtos.length) throw new Error();
     } catch (e) {
         showToast('Produtos inválidos. Use um array JSON válido.', 'error');
         return;
     }
-    
-    const dados = {
-        cliente: { id: clienteId },
-        produtos: produtos,
-        cfop,
-        natureza_operacao: natOp,
-        modalidade_frete: modFrete,
-        transportadora_id: transportadoraId
-    };
-    
+    const dados = { cliente: { id: clienteId }, produtos, cfop, natureza_operacao: natOp, modalidade_frete: modFrete, transportadora_id: transportadoraId };
     const btn = event.target;
     const original = btn.innerHTML;
     btn.innerHTML = '<span class="spinner"></span> Emitindo...';
@@ -508,12 +451,17 @@ function limparFormAvulsa() {
     document.getElementById('avulsaProdutos').value = '';
 }
 
+// ===================== SINCRONIZAÇÃO DESABILITADA =====================
+async function sincronizarVendasML() {
+    showToast('A sincronização de vendas é feita automaticamente pelo módulo de Vendas ML. Utilize o botão "Sincronizar Agora" na aba de Vendas.', 'info');
+}
+
 // ===================== INICIALIZAÇÃO =====================
 function inicializarAbaNFE() {
     mostrarAbaNFE('vendas');
 }
 
-// ===================== EXPOSIÇÃO GLOBAL =====================
+// Expor funções globalmente
 window.mostrarAbaNFE = mostrarAbaNFE;
 window.emitirNFEParaVenda = emitirNFEParaVenda;
 window.sincronizarVendasML = sincronizarVendasML;
