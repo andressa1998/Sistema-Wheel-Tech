@@ -1,7 +1,9 @@
+// nfe_manager.js - Versão independente (busca vendas direto do ML via Worker)
 window.showToast = window.showToast || showToast;
 
-// URL do back-end (Render)
+// URL do back-end (Render) e do Worker (proxy ML)
 const API_BASE_URL = 'https://backend-nfe.onrender.com';
+const WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
 
 let vendasPendentes = [];
 
@@ -35,62 +37,68 @@ async function mostrarAbaNFE(aba) {
     if (aba === 'clientes') await carregarClientes();
 }
 
-// ===================== VENDAS SEM NF-e =====================
+// ===================== LISTAR VENDAS PENDENTES (via API ML + Worker) =====================
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
-    tbody.innerHTML = '<table><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando vendas do ML...<\/td><\/tr>';
+    
     try {
-        // Usa o cliente Supabase já existente no window (criado em script.js)
-        const { data, error } = await window.supabaseClient
-            .from('vendas_ml')
-            .select('id, cliente, sku, valor_total, data_venda, dados_completos, meio_envio')
-            .eq('nfe_emitida', false);
+        // Obter token ML (gerenciado pelo sistema)
+        let token = localStorage.getItem('ml_access_token');
+        if (!token && typeof window.getValidToken === 'function') {
+            const tokenData = await window.getValidToken();
+            token = tokenData?.access_token;
+        }
+        if (!token) {
+            throw new Error('Token do Mercado Livre não disponível. Faça login novamente.');
+        }
 
-        if (error) throw error;
+        // Buscar vendas pagas dos últimos 30 dias (limite 50)
+        const url = `https://api.mercadolibre.com/orders/search?seller=415176739&sort=date_desc&order.status=paid&limit=50`;
+        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+        
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+        const results = data.results || [];
 
-        if (!data || data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda pendente de NF-e<\/td><\/tr>';
+        if (results.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda encontrada nos últimos 30 dias<\/td><\/tr>';
             return;
         }
 
-        // Mapeia os campos (ajuste o nome da coluna do JSON: pode ser 'dados_completos' ou 'order_data')
-        const vendas = data.map(v => ({
-            id: v.id,
-            order_id: String(v.id),
-            cliente_nome: v.cliente || 'Cliente',
-            sku: v.sku,
-            valor_total: v.valor_total,
-            data_venda: v.data_venda,
-            produtos: v.dados_completos, // usa a coluna que tem o JSON da venda
-            meio_envio: v.meio_envio
-        }));
-        vendasPendentes = vendas;
+        // Controlar quais vendas já tiveram NF-e emitida (armazenado localmente)
+        const emitidas = JSON.parse(localStorage.getItem('nfe_emitidas_ids') || '[]');
+        const pendentes = results.filter(v => !emitidas.includes(String(v.id)));
 
-        tbody.innerHTML = vendas.map(v => `
-            <tr>
-                <td>${v.order_id}<\/td>
-                <td>${new Date(v.data_venda).toLocaleDateString('pt-BR')}<\/td>
-                <td>${v.cliente_nome}<\/td>
-                <td>${v.sku}<\/td>
-                <td>R$ ${v.valor_total.toFixed(2)}<\/td>
+        if (pendentes.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Todas as vendas já possuem NF-e emitida<\/td><\/tr>';
+            return;
+        }
+
+        // Armazenar vendas pendentes em memória global
+        vendasPendentes = pendentes;
+
+        tbody.innerHTML = pendentes.map(v => `
+            <table>
+                <td>${v.id}<\/td>
+                <td>${new Date(v.date_created).toLocaleDateString('pt-BR')}<\/td>
+                <td>${v.buyer?.nickname || 'N/I'}<\/td>
+                <td>${v.order_items?.[0]?.item?.seller_sku || 'N/A'}<\/td>
+                <td>R$ ${v.total_amount?.toFixed(2)}<\/td>
                 <td>
-                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${v.order_id}')">Emitir NF-e<\/button>
+                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${v.id}')">Emitir NF-e<\/button>
                  <\/td>
             </tr>`).join('');
     } catch (error) {
-        console.error('Erro carregarVendasPendentes do Supabase:', error);
-        tbody.innerHTML = '<td><td colspan="6" class="text-center text-danger">Erro ao carregar vendas. Verifique o console.<\/td><\/tr>';
+        console.error('Erro ao carregar vendas pendentes:', error);
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Erro ao carregar vendas: ${error.message}<\/td><\/tr>`;
     }
 }
 
-// ===================== EMISSÃO =====================
+// ===================== EMISSÃO DE NF-e (busca dados detalhados da venda via API ML) =====================
 async function emitirNFEParaVenda(orderId) {
-    console.log('🔵 emitirNFEParaVenda chamada com orderId:', orderId);
-    if (!orderId || orderId === 'null' || orderId === 'undefined') {
-        showToast('Identificador da venda inválido', 'error');
-        return;
-    }
-
+    console.log('🔵 Emitir NF-e para venda:', orderId);
+    
     const btn = document.querySelector(`button[onclick*="emitirNFEParaVenda('${orderId}')"]`);
     let originalText = '';
     if (btn) {
@@ -100,28 +108,20 @@ async function emitirNFEParaVenda(orderId) {
     }
 
     try {
-        // 1. Obter token ML (já gerenciado pelo sistema)
+        // 1. Obter token ML
         let token = localStorage.getItem('ml_access_token');
-        if (!token) {
-            // Tenta renovar ou obter token
-            if (typeof window.getValidToken === 'function') {
-                const tokenData = await window.getValidToken();
-                token = tokenData?.access_token;
-            }
+        if (!token && typeof window.getValidToken === 'function') {
+            const tokenData = await window.getValidToken();
+            token = tokenData?.access_token;
         }
-        if (!token) {
-            throw new Error('Token do Mercado Livre não disponível. Faça login novamente.');
-        }
+        if (!token) throw new Error('Token do Mercado Livre não disponível.');
 
-        // 2. Buscar dados completos da venda na API do ML
-        const response = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!response.ok) {
-            throw new Error(`Erro ao buscar venda: ${response.status}`);
-        }
+        // 2. Buscar detalhes completos da venda (via Worker)
+        const url = `https://api.mercadolibre.com/orders/${orderId}`;
+        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error(`Erro ao buscar venda: ${response.status}`);
         const venda = await response.json();
-        console.log('✅ Dados da venda obtidos do ML:', venda);
 
         // 3. Extrair dados do comprador e endereço
         const buyer = venda.buyer || {};
@@ -133,11 +133,11 @@ async function emitirNFEParaVenda(orderId) {
         const cliente_endereco = address.address_line || '';
         const cliente_numero = address.street_number || '';
         const cliente_bairro = address.neighborhood || '';
-        const cliente_cidade = address.city || '';
-        const cliente_uf = address.state || '';
-        const cliente_cep = address.zip_code?.replace(/\D/g, '') || '';
+        const cliente_cidade = address.city || 'ARAUCARIA';
+        const cliente_uf = address.state || 'PR';
+        const cliente_cep = address.zip_code?.replace(/\D/g, '') || '83702090';
 
-        // 4. Extrair produtos
+        // 4. Produtos
         const produtos = (venda.order_items || []).map(item => ({
             nome: item.item.title,
             quantidade: item.quantity,
@@ -145,13 +145,13 @@ async function emitirNFEParaVenda(orderId) {
             sku: item.item.seller_sku || 'SEM_SKU',
             ncm: '87149990'
         }));
+        if (produtos.length === 0) throw new Error('Nenhum produto encontrado na venda');
 
-        if (produtos.length === 0) {
-            throw new Error('Nenhum produto encontrado na venda');
-        }
+        // 5. Determinar CFOP (FULL = 6108, outros = 5102)
+        const cfop = (venda.shipping?.logistic_type === 'fulfillment') ? '6108' : '5102';
 
-        // 5. Montar payload para o backend NF-e
-        const dadosEmissao = {
+        // 6. Montar payload para o backend NF-e
+        const payload = {
             venda_id: String(orderId),
             cliente: {
                 nome: cliente_nome,
@@ -164,26 +164,32 @@ async function emitirNFEParaVenda(orderId) {
                 cep: cliente_cep
             },
             produtos: produtos,
-            cfop: (venda.shipping?.logistic_type === 'fulfillment') ? '6108' : '5102',
+            cfop: cfop,
             natureza_operacao: 'VENDA',
             modalidade_frete: '9',
             transportadora_id: null
         };
 
-        // 6. Chamar o backend para emitir a NF-e
-        btn.innerHTML = '<span class="spinner"></span> Emitindo NF-e...';
+        // 7. Chamar backend para emitir NF-e
+        if (btn) btn.innerHTML = '<span class="spinner"></span> Emitindo NF-e...';
         const emitResponse = await fetch(`${API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dadosEmissao)
+            body: JSON.stringify(payload)
         });
         const result = await emitResponse.json();
+
         if (result.success) {
             showToast(`✅ NF-e emitida com sucesso! Protocolo: ${result.protocolo}`, 'success');
-            // Recarregar a lista de vendas pendentes (se você ainda tiver essa lista)
-            if (typeof carregarVendasPendentes === 'function') {
-                await carregarVendasPendentes();
+            // Registrar venda como emitida no localStorage
+            const emitidas = JSON.parse(localStorage.getItem('nfe_emitidas_ids') || '[]');
+            if (!emitidas.includes(String(orderId))) {
+                emitidas.push(String(orderId));
+                localStorage.setItem('nfe_emitidas_ids', JSON.stringify(emitidas));
             }
+            // Recarregar lista de vendas pendentes
+            await carregarVendasPendentes();
+            await carregarNFesEmitidas();
         } else {
             showToast(`❌ Erro na emissão: ${result.error}`, 'error');
         }
@@ -198,18 +204,7 @@ async function emitirNFEParaVenda(orderId) {
     }
 }
 
-async function carregarVendasPendentes() {
-    // Buscar vendas do ML com status 'paid' (últimos 30 dias)
-    const token = localStorage.getItem('ml_access_token');
-    if (!token) return;
-    const url = 'https://api.mercadolibre.com/orders/search?seller=415176739&sort=date_desc&order.status=paid&limit=50';
-    const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-    const data = await response.json();
-    const vendas = data.results || [];
-    // Exibir na tabela...
-}
-
-// ===================== NF-ES EMITIDAS =====================
+// ===================== NF-ES EMITIDAS (busca do backend) =====================
 async function carregarNFesEmitidas() {
     const tbody = document.getElementById('nfesEmitidasBody');
     tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
@@ -219,7 +214,7 @@ async function carregarNFesEmitidas() {
         if (!data.success) throw new Error(data.error);
         const nfes = data.notas || [];
         if (!nfes.length) {
-            tbody.innerHTML = '<td><td colspan="6" class="text-center">Nenhuma NF-e emitida<\/td><\/tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma NF-e emitida<\/td><\/tr>';
             return;
         }
         tbody.innerHTML = nfes.map(nfe => `
@@ -237,7 +232,7 @@ async function carregarNFesEmitidas() {
             </tr>`).join('');
     } catch (error) {
         console.error(error);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar NF-es<\/td><\/tr>';
+        tbody.innerHTML = '<td><td colspan="6" class="text-center text-danger">Erro ao carregar NF-es<\/td><\/tr>';
     }
 }
 
@@ -375,7 +370,8 @@ async function carregarTransportadoras() {
         const select = document.getElementById('avulsaTransportadoraId');
         if (select) select.innerHTML = '<option value="">Selecione</option>' + transportadoras.map(t => `<option value="${t.id}">${t.nome}</option>`).join('');
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar<\/td><\/tr>';
+        console.error(error);
+        tbody.innerHTML = '<td><td colspan="4" class="text-center text-danger">Erro ao carregar transportadoras<\/td><\/tr>';
     }
 }
 
@@ -417,7 +413,8 @@ async function carregarClientes() {
         const select = document.getElementById('avulsaClienteId');
         if (select) select.innerHTML = '<option value="">Selecione</option>' + clientes.map(c => `<option value="${c.id}">${c.nome} (${c.documento})</option>`).join('');
     } catch (error) {
-        tbody.innerHTML = '<td><td colspan="4" class="text-center text-danger">Erro ao carregar<\/td><\/tr>';
+        console.error(error);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar clientes<\/td><\/tr>';
     }
 }
 
@@ -491,9 +488,9 @@ function limparFormAvulsa() {
     document.getElementById('avulsaProdutos').value = '';
 }
 
-// ===================== SINCRONIZAÇÃO DESABILITADA =====================
+// ===================== SINCRONIZAÇÃO (desabilitada) =====================
 async function sincronizarVendasML() {
-    showToast('A sincronização de vendas é feita automaticamente pelo módulo de Vendas ML. Utilize o botão "Sincronizar Agora" na aba de Vendas.', 'info');
+    showToast('A sincronização de vendas é feita automaticamente ao acessar a aba. Use o botão "Emitir NF-e" para cada venda.', 'info');
 }
 
 // ===================== INICIALIZAÇÃO =====================
