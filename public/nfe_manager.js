@@ -569,4 +569,6 @@ async function confirmarEmissaoNFE() {
     window.emitirNFEAvulsa = emitirNFEAvulsa;
     window.limparFormAvulsa = limparFormAvulsa;
     window.inicializarAbaNFE = inicializarAbaNFE;
+    window.confirmarEmissaoNFE = confirmarEmissaoNFE;
+    window.fecharModalDadosClienteNFE = fecharModalDadosClienteNFE;
 })();
