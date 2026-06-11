@@ -99,61 +99,109 @@
     }
 
     // ===================== EMISSÃO DE NF-e =====================
-    async function emitirNFEParaVenda(orderId) {
-    console.log('🔵 Emitir NF-e para venda:', orderId);
-    const btn = document.querySelector(`button[onclick*="emitirNFEParaVenda('${orderId}')"]`);
-    let originalText = '';
-    if (btn) {
-        originalText = btn.innerHTML;
-        btn.innerHTML = '<span class="spinner"></span> Buscando dados da venda...';
-        btn.disabled = true;
-    }
+    let pendingEmitOrderId = null; // armazena o ID da venda enquanto aguarda preenchimento
 
+async function emitirNFEParaVenda(orderId) {
+    console.log('🔵 Preparar emissão NF-e para venda:', orderId);
+    pendingEmitOrderId = orderId;
+    
+    // Buscar dados disponíveis da venda via Worker para pré-preencher o modal
     try {
-        // 1. Obter token do ML (gerenciado pelo sistema)
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
             const tokenData = await window.getValidToken();
             token = tokenData?.access_token;
         }
-        if (!token) throw new Error('Token do Mercado Livre não disponível. Faça login novamente.');
-
-        // 2. Buscar detalhes completos da venda via Worker (evita CORS)
+        if (!token) throw new Error('Token ML não disponível');
+        
         const url = `https://api.mercadolibre.com/orders/${orderId}`;
         const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
         const response = await fetch(proxyUrl);
         if (!response.ok) throw new Error(`Erro ao buscar venda: ${response.status}`);
         const venda = await response.json();
-
-        // 3. Extrair dados do comprador e endereço
+        
         const buyer = venda.buyer || {};
-        const billing = buyer.billing_info || {};
         const address = venda.shipping?.receiver_address || {};
+        
+        // Pré-preencher com dados disponíveis
+        document.getElementById('clienteNome').value = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || '';
+        document.getElementById('clienteEndereco').value = address.address_line || address.street_name || '';
+        document.getElementById('clienteNumero').value = address.street_number || 'S/N';
+        document.getElementById('clienteBairro').value = address.neighborhood || '';
+        document.getElementById('clienteCidade').value = address.city || '';
+        document.getElementById('clienteUF').value = address.state || '';
+        document.getElementById('clienteCEP').value = address.zip_code?.replace(/\D/g, '') || '';
+        document.getElementById('clienteDocumento').value = ''; // CPF não vem, deixa vazio para preencher manualmente
+    } catch (error) {
+        console.warn('Não foi possível pré-carregar dados da venda:', error);
+        // Limpa o formulário
+        document.getElementById('clienteNome').value = '';
+        document.getElementById('clienteDocumento').value = '';
+        document.getElementById('clienteEndereco').value = '';
+        document.getElementById('clienteNumero').value = 'S/N';
+        document.getElementById('clienteBairro').value = '';
+        document.getElementById('clienteCidade').value = '';
+        document.getElementById('clienteUF').value = '';
+        document.getElementById('clienteCEP').value = '';
+    }
+    
+    // Exibe o modal
+    document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+}
 
-        // CPF/CNPJ correto: usar doc_number (campo específico)
-        let documento = '';
-        if (billing.doc_number) {
-            documento = billing.doc_number.replace(/\D/g, '');
-        } else if (billing.id) {
-            // Fallback: alguns casos o número pode estar em id, mas não é o ideal
-            documento = billing.id.replace(/\D/g, '');
+function fecharModalDadosClienteNFE() {
+    document.getElementById('modalDadosClienteNFE').classList.add('hidden');
+    pendingEmitOrderId = null;
+}
+
+async function confirmarEmissaoNFE() {
+    const orderId = pendingEmitOrderId;
+    if (!orderId) {
+        window.showToast('Erro: Nenhuma venda selecionada', 'error');
+        fecharModalDadosClienteNFE();
+        return;
+    }
+    
+    // Validar campos obrigatórios
+    const nome = document.getElementById('clienteNome').value.trim();
+    const documento = document.getElementById('clienteDocumento').value.trim().replace(/\D/g, '');
+    const endereco = document.getElementById('clienteEndereco').value.trim();
+    const cidade = document.getElementById('clienteCidade').value.trim();
+    const uf = document.getElementById('clienteUF').value.trim().toUpperCase();
+    
+    if (!nome) { window.showToast('Nome é obrigatório', 'warning'); return; }
+    if (!documento || (documento.length !== 11 && documento.length !== 14)) { window.showToast('CPF/CNPJ inválido (11 ou 14 dígitos)', 'warning'); return; }
+    if (!endereco) { window.showToast('Endereço é obrigatório', 'warning'); return; }
+    if (!cidade) { window.showToast('Cidade é obrigatória', 'warning'); return; }
+    if (!uf || uf.length !== 2) { window.showToast('UF é obrigatória (2 letras)', 'warning'); return; }
+    
+    // Fechar modal
+    fecharModalDadosClienteNFE();
+    
+    // Mostrar loading no botão original (se existir)
+    const btn = document.querySelector(`button[onclick*="emitirNFEParaVenda('${orderId}')"]`);
+    let originalText = '';
+    if (btn) {
+        originalText = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner"></span> Emitindo NF-e...';
+        btn.disabled = true;
+    }
+    
+    try {
+        // Obter produtos (como antes)
+        let token = localStorage.getItem('ml_access_token');
+        if (!token && typeof window.getValidToken === 'function') {
+            const tokenData = await window.getValidToken();
+            token = tokenData?.access_token;
         }
-        console.log('🔍 Documento extraído:', documento, 'comprimento:', documento.length);
-
-        // Nome completo
-        const cliente_nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || 'Cliente';
-
-        // Endereço
-        const cliente_endereco = address.address_line || address.street_name || '';
-        const cliente_numero = address.street_number || 'S/N';
-        const cliente_bairro = address.neighborhood || 'Centro';
-        const cliente_cidade = address.city || 'ARAUCARIA';
-        const cliente_uf = address.state || 'PR';
-        const cliente_cep = address.zip_code?.replace(/\D/g, '') || '83702090';
-
-        console.log('📋 Dados para NF-e:', { documento, cliente_nome, cliente_endereco });
-
-        // 4. Produtos
+        if (!token) throw new Error('Token ML não disponível');
+        
+        const url = `https://api.mercadolibre.com/orders/${orderId}`;
+        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error(`Erro ao buscar venda: ${response.status}`);
+        const venda = await response.json();
+        
         const produtos = (venda.order_items || []).map(item => ({
             nome: item.item.title,
             quantidade: item.quantity,
@@ -162,22 +210,20 @@
             ncm: '87149990'
         }));
         if (produtos.length === 0) throw new Error('Nenhum produto encontrado');
-
-        // 5. CFOP (FULL ou normal)
+        
         const cfop = (venda.shipping?.logistic_type === 'fulfillment') ? '6108' : '5102';
-
-        // 6. Montar payload para o backend NF-e
+        
         const payload = {
             venda_id: String(orderId),
             cliente: {
-                nome: cliente_nome,
+                nome: nome,
                 documento: documento,
-                endereco: cliente_endereco,
-                numero: cliente_numero,
-                bairro: cliente_bairro,
-                cidade: cliente_cidade,
-                uf: cliente_uf,
-                cep: cliente_cep
+                endereco: endereco,
+                numero: document.getElementById('clienteNumero').value.trim() || 'S/N',
+                bairro: document.getElementById('clienteBairro').value.trim() || '',
+                cidade: cidade,
+                uf: uf,
+                cep: document.getElementById('clienteCEP').value.trim().replace(/\D/g, '') || ''
             },
             produtos: produtos,
             cfop: cfop,
@@ -185,32 +231,27 @@
             modalidade_frete: '9',
             transportadora_id: null
         };
-
-        // 7. Chamar backend para emitir NF-e
-        if (btn) btn.innerHTML = '<span class="spinner"></span> Emitindo NF-e...';
+        
         const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
         const result = await emitResponse.json();
-
         if (result.success) {
             window.showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
-            // Registrar venda como emitida no localStorage
             const emitidas = JSON.parse(localStorage.getItem('nfe_emitidas_ids') || '[]');
             if (!emitidas.includes(String(orderId))) {
                 emitidas.push(String(orderId));
                 localStorage.setItem('nfe_emitidas_ids', JSON.stringify(emitidas));
             }
-            // Recarregar listas
             if (typeof carregarVendasPendentes === 'function') await carregarVendasPendentes();
             if (typeof carregarNFesEmitidas === 'function') await carregarNFesEmitidas();
         } else {
-            window.showToast(`❌ Erro na emissão: ${result.error}`, 'error');
+            window.showToast(`❌ Erro: ${result.error}`, 'error');
         }
     } catch (error) {
-        console.error('Erro emitirNFEParaVenda:', error);
+        console.error(error);
         window.showToast(`Erro: ${error.message}`, 'error');
     } finally {
         if (btn) {
