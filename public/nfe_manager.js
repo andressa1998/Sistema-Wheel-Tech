@@ -39,57 +39,50 @@ async function mostrarAbaNFE(aba) {
 // ===================== VENDAS SEM NF-e =====================
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...<\/td><\/tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
     try {
-        const response = await fetch(`${API_BASE_URL}/nfe/vendas-sem-nfe`);
-        if (!response.ok) throw new Error('Erro ao carregar vendas');
-        const vendas = await response.json();
-        vendasPendentes = vendas;
-        if (vendas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda pendente de NF-e<\/td><\/tr>';
+        // Busca direto no Supabase (usando o cliente já inicializado no script.js)
+        const { data, error } = await window.supabaseClient
+            .from('vendas_ml')
+            .select('id, order_id, cliente_nome, sku, valor_total, data_venda, produtos, meio_envio')
+            .eq('nfe_emitida', false);
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda pendente de NF-e</td></tr>';
             return;
         }
+
+        // Garantir order_id
+        const vendas = data.map(v => ({
+            ...v,
+            order_id: v.order_id || String(v.id)
+        }));
+        vendasPendentes = vendas;
+
         tbody.innerHTML = vendas.map(v => {
-            const vendaId = v.order_id || v.id;
+            const vendaId = v.order_id;
             return `
             <tr>
-                <td>${vendaId}<\/td>
-                <td>${new Date(v.data_venda).toLocaleDateString('pt-BR')}<\/td>
-                <td>${v.cliente_nome || '-'}<\/td>
-                <td>${v.sku || '-'}<\/td>
-                <td>R$ ${parseFloat(v.valor_total).toFixed(2)}<\/td>
+                <td>${vendaId}</td>
+                <td>${new Date(v.data_venda).toLocaleDateString('pt-BR')}</td>
+                <td>${v.cliente_nome || '-'}</td>
+                <td>${v.sku || '-'}</td>
+                <td>R$ ${parseFloat(v.valor_total).toFixed(2)}</td>
                 <td>
-                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${vendaId}')">Emitir NF-e<\/button>
-                 <\/td>
-            </tr>
-            `;
+                    <button class="btn btn-sm btn-success" onclick="emitirNFEParaVenda('${vendaId}')">Emitir NF-e</button>
+                </td>
+            </tr>`;
         }).join('');
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar vendas<\/td><\/tr>';
-        console.error(error);
+        console.error('❌ Erro ao carregar vendas do Supabase:', error);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar vendas. Verifique o console.</td></tr>';
     }
 }
 
 async function sincronizarVendasML() {
-    const btn = event.target;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
-    btn.disabled = true;
-    try {
-        const response = await fetch(`${API_BASE_URL}/nfe/sync-vendas`, { method: 'POST' });
-        const data = await response.json();
-        if (data.success) {
-            showToast(`${data.novas} novas vendas sincronizadas a partir de 01/06/2026`, 'success');
-            await carregarVendasPendentes();
-        } else {
-            showToast('Erro na sincronização: ' + data.error, 'error');
-        }
-    } catch (error) {
-        showToast('Erro de rede', 'error');
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-    }
+    alert('A sincronização de vendas é feita automaticamente pelo sistema de Vendas ML. Use o botão "Sincronizar Agora" no módulo de vendas.');
 }
 
 // ===================== EMISSÃO DE NF-e =====================

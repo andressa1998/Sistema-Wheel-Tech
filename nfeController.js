@@ -7,9 +7,10 @@ const supabase = require('./supabaseClient');
 const { extrairProtocolo, extrairChaveAcesso } = require('./nfeUtils');
 
 // ===================== Obter código IBGE =====================
+// ===================== FUNÇÃO IBGE COM FALLBACK DIRETO =====================
 async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
-    // Fallback padrão para Araucária/PR (caso tudo falhe)
-    const FALLBACK_IBGE = '4101804';
+    // Fallback padrão: Araucária/PR
+    const DEFAULT_IBGE = '4101804';
     
     try {
         // Tenta buscar no Supabase
@@ -20,21 +21,21 @@ async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
             .eq('uf', uf)
             .maybeSingle();
 
-        if (municipioData && !dbError) {
+        if (municipioData && !dbError && municipioData.codigo_ibge) {
             return String(municipioData.codigo_ibge);
         }
 
-        // Tenta consultar via BrasilAPI (CEP)
+        // Tenta consultar via API de CEP (se tiver)
         if (cep) {
-            const cepLimpo = cep.replace(/\D/g, '');
-            if (cepLimpo.length === 8) {
+            try {
                 const fetch = require('node-fetch');
+                const cepLimpo = cep.replace(/\D/g, '');
                 const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cepLimpo}`);
                 if (response.ok) {
                     const data = await response.json();
                     if (data && data.ibge_code) {
                         const ibge = String(data.ibge_code);
-                        // Salva no Supabase para próximas consultas
+                        // Salva no banco para próximas vezes
                         await supabase.from('municipios').upsert({
                             codigo_ibge: parseInt(ibge),
                             nome: data.city,
@@ -43,15 +44,16 @@ async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
                         return ibge;
                     }
                 }
-            }
+            } catch (err) { console.warn('Erro na consulta de CEP:', err.message); }
         }
 
         // Fallback final
-        console.warn(`⚠️ IBGE não encontrado para ${nomeCidade}/${uf}, usando fallback ${FALLBACK_IBGE}`);
-        return FALLBACK_IBGE;
+        console.warn(`⚠️ IBGE não encontrado para ${nomeCidade}/${uf}, usando padrão ${DEFAULT_IBGE}`);
+        return DEFAULT_IBGE;
+        
     } catch (error) {
-        console.error(`❌ Erro ao buscar IBGE para ${nomeCidade}/${uf}:`, error.message);
-        return FALLBACK_IBGE;
+        console.error('❌ Erro inesperado ao buscar IBGE:', error);
+        return DEFAULT_IBGE;
     }
 }
 
@@ -126,12 +128,11 @@ async function emitirNFe(req, res) {
         };
         
         // ========== OBTER CÓDIGO IBGE COM FALLBACK ==========
-        let codigoIbge = null;
+        let codigoIbge = DEFAULT_IBGE; // 4101804
         try {
             codigoIbge = await obterCodigoMunicipio(cidade, uf, cep);
         } catch (error) {
-            console.warn('⚠️ Erro ao obter código IBGE, usando padrão 4101804 (Araucária/PR):', error.message);
-            codigoIbge = '4101804';
+            console.warn('⚠️ Erro ao obter código IBGE, usando padrão:', error.message);
         }
         destinatario.cMun = codigoIbge;
 
