@@ -223,7 +223,7 @@ async function confirmarEmissaoNFE() {
         }));
         if (produtos.length === 0) throw new Error('Nenhum produto encontrado');
         
-        const cfop = (venda.shipping?.logistic_type === 'fulfillment') ? '6108' : '5102';
+        const cfop = (uf === 'PR') ? '5102' : '6108';
         
         const payload = {
             venda_id: String(orderId),
