@@ -91,97 +91,122 @@ async function emitirNFEParaVenda(orderId) {
         return;
     }
 
-    const venda = vendasPendentes.find(v => String(v.order_id) === String(orderId));
-    if (!venda) {
-        showToast('Venda não encontrada', 'error');
-        return;
-    }
-
     const btn = document.querySelector(`button[onclick*="emitirNFEParaVenda('${orderId}')"]`);
     let originalText = '';
     if (btn) {
         originalText = btn.innerHTML;
-        btn.innerHTML = '<span class="spinner"></span> Emitindo...';
+        btn.innerHTML = '<span class="spinner"></span> Buscando dados da venda...';
         btn.disabled = true;
     }
 
-    // Montar produtos (fallback se não houver detalhes)
-    let produtos = [];
     try {
-        let rawProdutos = venda.produtos;
-        if (rawProdutos && typeof rawProdutos === 'string') {
-            rawProdutos = JSON.parse(rawProdutos);
+        // 1. Obter token ML (já gerenciado pelo sistema)
+        let token = localStorage.getItem('ml_access_token');
+        if (!token) {
+            // Tenta renovar ou obter token
+            if (typeof window.getValidToken === 'function') {
+                const tokenData = await window.getValidToken();
+                token = tokenData?.access_token;
+            }
         }
-        if (rawProdutos && rawProdutos.order_items && rawProdutos.order_items.length) {
-            produtos = rawProdutos.order_items.map(item => ({
-                nome: item.item.title,
-                quantidade: item.quantity,
-                valor_unitario: item.unit_price,
-                sku: item.item.seller_sku || 'SEM_SKU',
-                ncm: '87149990'
-            }));
-        } else {
-            produtos = [{
-                nome: 'Produto ML',
-                quantidade: 1,
-                valor_unitario: venda.valor_total || 0,
-                sku: venda.sku || 'SEM_SKU',
-                ncm: '87149990'
-            }];
+        if (!token) {
+            throw new Error('Token do Mercado Livre não disponível. Faça login novamente.');
         }
-    } catch (e) {
-        console.warn('Erro ao parsear produtos, usando fallback', e);
-        produtos = [{
-            nome: 'Produto ML',
-            quantidade: 1,
-            valor_unitario: venda.valor_total || 0,
-            sku: venda.sku || 'SEM_SKU',
+
+        // 2. Buscar dados completos da venda na API do ML
+        const response = await fetch(`https://api.mercadolibre.com/orders/${orderId}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+            throw new Error(`Erro ao buscar venda: ${response.status}`);
+        }
+        const venda = await response.json();
+        console.log('✅ Dados da venda obtidos do ML:', venda);
+
+        // 3. Extrair dados do comprador e endereço
+        const buyer = venda.buyer || {};
+        const billing = buyer.billing_info || {};
+        const address = venda.shipping?.receiver_address || {};
+
+        const cliente_nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || 'Cliente';
+        const cliente_documento = billing.doc_number || '';
+        const cliente_endereco = address.address_line || '';
+        const cliente_numero = address.street_number || '';
+        const cliente_bairro = address.neighborhood || '';
+        const cliente_cidade = address.city || '';
+        const cliente_uf = address.state || '';
+        const cliente_cep = address.zip_code?.replace(/\D/g, '') || '';
+
+        // 4. Extrair produtos
+        const produtos = (venda.order_items || []).map(item => ({
+            nome: item.item.title,
+            quantidade: item.quantity,
+            valor_unitario: item.unit_price,
+            sku: item.item.seller_sku || 'SEM_SKU',
             ncm: '87149990'
-        }];
-    }
+        }));
 
-    const dados = {
-        venda_id: orderId,
-        cliente: {
-            nome: venda.cliente_nome || 'Cliente ML',
-            documento: '',
-            endereco: '',
-            numero: '',
-            bairro: '',
-            cidade: '',
-            uf: 'PR',
-            cep: '83702090'
-        },
-        produtos: produtos,
-        cfop: '5102', // padrão para vendas dentro do PR (ajuste se necessário)
-        natureza_operacao: 'VENDA',
-        modalidade_frete: '9',
-        transportadora_id: null
-    };
+        if (produtos.length === 0) {
+            throw new Error('Nenhum produto encontrado na venda');
+        }
 
-    try {
-        const response = await fetch(`${API_BASE_URL}/nfe/emitir`, {
+        // 5. Montar payload para o backend NF-e
+        const dadosEmissao = {
+            venda_id: String(orderId),
+            cliente: {
+                nome: cliente_nome,
+                documento: cliente_documento,
+                endereco: cliente_endereco,
+                numero: cliente_numero,
+                bairro: cliente_bairro,
+                cidade: cliente_cidade,
+                uf: cliente_uf,
+                cep: cliente_cep
+            },
+            produtos: produtos,
+            cfop: (venda.shipping?.logistic_type === 'fulfillment') ? '6108' : '5102',
+            natureza_operacao: 'VENDA',
+            modalidade_frete: '9',
+            transportadora_id: null
+        };
+
+        // 6. Chamar o backend para emitir a NF-e
+        btn.innerHTML = '<span class="spinner"></span> Emitindo NF-e...';
+        const emitResponse = await fetch(`${API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dados)
+            body: JSON.stringify(dadosEmissao)
         });
-        const result = await response.json();
+        const result = await emitResponse.json();
         if (result.success) {
             showToast(`✅ NF-e emitida com sucesso! Protocolo: ${result.protocolo}`, 'success');
-            await carregarVendasPendentes();  // atualiza lista
-            await carregarNFesEmitidas();
+            // Recarregar a lista de vendas pendentes (se você ainda tiver essa lista)
+            if (typeof carregarVendasPendentes === 'function') {
+                await carregarVendasPendentes();
+            }
         } else {
             showToast(`❌ Erro na emissão: ${result.error}`, 'error');
         }
     } catch (error) {
-        console.error('Erro ao emitir:', error);
-        showToast(`Erro de comunicação: ${error.message}`, 'error');
+        console.error('Erro ao emitir NF-e:', error);
+        showToast(`Erro: ${error.message}`, 'error');
     } finally {
         if (btn) {
             btn.innerHTML = originalText;
             btn.disabled = false;
         }
     }
+}
+
+async function carregarVendasPendentes() {
+    // Buscar vendas do ML com status 'paid' (últimos 30 dias)
+    const token = localStorage.getItem('ml_access_token');
+    if (!token) return;
+    const url = 'https://api.mercadolibre.com/orders/search?seller=415176739&sort=date_desc&order.status=paid&limit=50';
+    const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+    const data = await response.json();
+    const vendas = data.results || [];
+    // Exibir na tabela...
 }
 
 // ===================== NF-ES EMITIDAS =====================
