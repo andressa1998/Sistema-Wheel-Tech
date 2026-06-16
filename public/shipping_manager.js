@@ -2,6 +2,8 @@
 // SHIPPING MANAGER - GESTÃO DE FRETES (CORRIGIDO COM BUSCA FUNCIONAL)
 // ============================================
 
+console.log('🚀 shipping_manager.js: início');
+
 // Tabela de custos esperados (baseada em https://www.mercadolivre.com.br/ajuda/40538)
 const SHIPPING_COST_TABLE = [
     { priceMin: 0,    priceMax: 18.99,   weightMin: 0,    weightMax: 0.3,   cost: 5.65 },
@@ -1085,6 +1087,8 @@ document.addEventListener('DOMContentLoaded', () => {
     carregarAnalises();
 });
 
+console.log('✅ shipping_manager.js: fim, definindo window.shippingManager');
+
 // ==================== EXPOSIÇÃO GLOBAL ====================
 window.shippingManager = {
     sincronizarVendas,
@@ -1109,8 +1113,8 @@ window.shippingManager = {
     fecharModalGerenciarPesos,
     carregarListaDimensoesSku,
     renderizarTabelaDimensoes,
-    salvarDimensoesSku,
-    excluirDimensoesSku,
+    salvarDimensoesSkuPorSku,
+    excluirDimensoesSkuPorSku,
     adicionarNovoSkuModal,
     aplicarDimensoesPadraoGlobal,
     uploadFotoSku,
@@ -1134,6 +1138,7 @@ window.uploadFotoSku = uploadFotoSku;
 window.visualizarFotosSku = visualizarFotosSku;
 window.removerFotoSkuConfirm = removerFotoSkuConfirm;
 window.filtrarTabelaSku = filtrarTabelaSku;
+
 
 // Forçar a vinculação do campo de busca assim que o DOM estiver pronto
 document.addEventListener('DOMContentLoaded', function() {
