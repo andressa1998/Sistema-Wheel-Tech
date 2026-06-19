@@ -6,7 +6,6 @@ const crypto = require('crypto');
 class SignedXmlNFe extends SignedXml {
     constructor(options) {
         super(options);
-        // Algoritmos aceitos pelo schema da NF-e 4.00
         this.signatureAlgorithm = "http://www.w3.org/2000/09/xmldsig#rsa-sha1";
         this.digestAlgorithm = "http://www.w3.org/2000/09/xmldsig#sha1";
     }
@@ -60,22 +59,23 @@ function assinarXml(xml, certData) {
         uri: `#${id}`
     });
 
-    // Extrai apenas o corpo do certificado público em Base64
-    const certClean = certData.cert
-        .toString()
-        .replace(/-----BEGIN CERTIFICATE-----/g, "")
-        .replace(/-----END CERTIFICATE-----/g, "")
-        .replace(/\r?\n/g, "")
-        .trim();
+    // Certificado público em Base64 puro
+    let certPem = certData.cert.toString();
+    certPem = certPem.replace(/-----BEGIN CERTIFICATE-----/g, "")
+                     .replace(/-----END CERTIFICATE-----/g, "")
+                     .replace(/\r?\n/g, "")
+                     .trim();
 
-    sig.getKeyInfoContent = () => `<X509Data><X509Certificate>${certClean}</X509Certificate></X509Data>`;
+    // Remove qualquer caractere fora do padrão Base64
+    const certBase64 = certPem.replace(/[^A-Za-z0-9+/=]/g, "");
+
+    sig.getKeyInfoContent = () => `<X509Data><X509Certificate>${certBase64}</X509Certificate></X509Data>`;
 
     sig.computeSignature(xml, {
         location: { reference: `//*[local-name(.)='infNFe' and @Id='${id}']`, action: "after" }
     });
 
     let signedXml = sig.getSignedXml();
-    // Limpeza extra
     signedXml = signedXml.replace(/xmlns=""/g, "");
     signedXml = signedXml.replace(/[\x00-\x1F\x7F]/g, "");
 
