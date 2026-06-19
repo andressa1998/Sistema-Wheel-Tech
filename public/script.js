@@ -3930,19 +3930,13 @@ function updateCounters() {
     
     const userOrders = filterOrdersByUser(orders);
     
-    // Pendentes (sem motivo de rejeição)
     const pending = userOrders.filter(o => o.status === 'pendente' && (!o.motivo_rejeicao || o.motivo_rejeicao === '')).length;
-    // Andamento
     const progress = userOrders.filter(o => o.status === 'andamento').length;
-    // Não conferidas (concluídas mas não conferidas)
     const notChecked = userOrders.filter(o => o.status === 'concluida' && !o.conferido).length;
-    // Revisão (pendentes com motivo de rejeição)
     const revision = userOrders.filter(o => o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== '').length;
-    // Concluídas (conferidas)
     const completed = userOrders.filter(o => o.status === 'concluida' && o.conferido === true).length;
     const total = userOrders.length;
 
-    // Atualizar elementos HTML
     const setText = (id, value) => {
         const el = document.getElementById(id);
         if (el) el.textContent = value;
@@ -4001,31 +3995,58 @@ function renderOrdersTable() {
     
     let userOrders = filterOrdersByUser(orders);
     let filteredOrders = [];
-
-    // Aplica o filtro selecionado
+    
+    // Aplicação dos filtros conforme o valor de currentFilter
     switch (currentFilter) {
         case 'todos':
             filteredOrders = userOrders;
             break;
         case 'pendente':
-            filteredOrders = userOrders.filter(o => o.status === 'pendente' && (!o.motivo_rejeicao || o.motivo_rejeicao === ''));
+            filteredOrders = userOrders.filter(o => 
+                o.status === 'pendente' && (!o.motivo_rejeicao || o.motivo_rejeicao === '')
+            );
             break;
         case 'andamento':
             filteredOrders = userOrders.filter(o => o.status === 'andamento');
             break;
         case 'nao_conferidas':
-            filteredOrders = userOrders.filter(o => o.status === 'concluida' && !o.conferido);
+            filteredOrders = userOrders.filter(o => 
+                o.status === 'concluida' && !o.conferido
+            );
             break;
         case 'revisao':
-            filteredOrders = userOrders.filter(o => o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== '');
+            filteredOrders = userOrders.filter(o => 
+                o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== ''
+            );
             break;
         case 'concluida':
-            filteredOrders = userOrders.filter(o => o.status === 'concluida' && o.conferido === true);
+            filteredOrders = userOrders.filter(o => 
+                o.status === 'concluida' && o.conferido === true
+            );
             break;
         default:
             filteredOrders = userOrders;
     }
     
+    // Ordenação: prioriza não conferidas, depois revisão, depois data
+    filteredOrders.sort((a, b) => {
+        // Não conferidas primeiro
+        const aIsNotChecked = (a.status === 'concluida' && !a.conferido);
+        const bIsNotChecked = (b.status === 'concluida' && !b.conferido);
+        if (aIsNotChecked && !bIsNotChecked) return -1;
+        if (!aIsNotChecked && bIsNotChecked) return 1;
+        
+        // Revisão (pendentes com motivo) depois
+        const aIsRevision = (a.status === 'pendente' && a.motivo_rejeicao);
+        const bIsRevision = (b.status === 'pendente' && b.motivo_rejeicao);
+        if (aIsRevision && !bIsRevision) return -1;
+        if (!aIsRevision && bIsRevision) return 1;
+        
+        // Depois ordena por data de atualização (mais recente primeiro)
+        return new Date(b.updatedAt) - new Date(a.updatedAt);
+    });
+    
+    // Se não houver ordens filtradas, exibe mensagem
     if (filteredOrders.length === 0) {
         osTableBody.innerHTML = `
             <tr>
@@ -4041,41 +4062,17 @@ function renderOrdersTable() {
         return;
     }
     
-    // Ordenação: priorizar não conferidas, revisão, pendentes, etc.
-    filteredOrders.sort((a, b) => {
-        // Prioridade 1: Não conferidas (concluídas sem conferência)
-        const aNotChecked = a.status === 'concluida' && !a.conferido;
-        const bNotChecked = b.status === 'concluida' && !b.conferido;
-        if (aNotChecked && !bNotChecked) return -1;
-        if (!aNotChecked && bNotChecked) return 1;
-        
-        // Prioridade 2: Revisão (pendentes com motivo)
-        const aRevision = a.status === 'pendente' && a.motivo_rejeicao;
-        const bRevision = b.status === 'pendente' && b.motivo_rejeicao;
-        if (aRevision && !bRevision) return -1;
-        if (!aRevision && bRevision) return 1;
-        
-        // Prioridade 3: Pendentes (sem motivo)
-        const aPending = a.status === 'pendente' && !a.motivo_rejeicao;
-        const bPending = b.status === 'pendente' && !b.motivo_rejeicao;
-        if (aPending && !bPending) return -1;
-        if (!aPending && bPending) return 1;
-        
-        // Ordenar por data de atualização (mais recentes primeiro)
-        return new Date(b.updatedAt) - new Date(a.updatedAt);
-    });
-    
+    // Renderiza cada ordem
     const now = new Date();
-    
     filteredOrders.forEach(order => {
         const row = document.createElement('tr');
         const hasPermission = checkOrderPermission(order);
         const isAdmin = currentUser.role === 'Administrador';
         
-        // Verifica se é uma OS em revisão (pendente com motivo)
         const isRejectedPending = (order.status === 'pendente' && order.motivo_rejeicao && order.motivo_rejeicao.trim() !== '');
+        const isNotChecked = (order.status === 'concluida' && !order.conferido);
         
-        // Verifica atraso (se prazo existe e OS não concluída)
+        // Verifica atraso
         let atrasado = false;
         if (order.status !== 'concluida' && order.prazo_esperado) {
             const prazo = new Date(order.prazo_esperado);
@@ -4086,81 +4083,45 @@ function renderOrdersTable() {
         if (isRejectedPending) {
             row.style.backgroundColor = '#fff3cd';
             row.style.borderLeft = '4px solid #ffc107';
-            row.title = `Motivo: ${order.motivo_rejeicao} | Rejeitado por: ${order.rejeitado_por || '-'} em ${order.data_rejeicao ? new Date(order.data_rejeicao).toLocaleString('pt-BR') : '-'}`;
-        } else if (order.status === 'concluida' && !order.conferido) {
+            row.title = `Motivo: ${order.motivo_rejeicao} | Rejeitado por: ${order.rejeitado_por || '-'}`;
+        } else if (isNotChecked) {
             row.style.backgroundColor = '#fff5f5';
             row.style.borderLeft = '4px solid #dc3545';
-            row.style.animation = 'pulseReturn 2s infinite';
-        } else if (order.osType === 'devolucao') {
-            row.style.backgroundColor = '#f0f0ff';
-            row.style.borderLeft = '4px solid #6f42c1';
         } else if (order.urgency === 'alta') {
             row.style.backgroundColor = '#ffe5e5';
-            row.style.borderLeft = '4px solid #dc3545';
-        } else if (order.urgency === 'normal') {
-            row.style.backgroundColor = '#fff8e1';
-            row.style.borderLeft = '4px solid #ffc107';
-        } else {
-            row.style.backgroundColor = '#f8f9fa';
-            row.style.borderLeft = '4px solid #28a745';
         }
         
         // Badges
         let conferenciaBadge = '';
         if (order.status === 'concluida') {
             if (order.conferido) {
-                conferenciaBadge = `
-                    <span class="badge badge-success" style="margin-left: 5px;">
-                        <i class="fas fa-check-double"></i> Conferido
-                    </span>
-                    ${order.conferidoPor ? `<small style="display: block; color: #28a745; margin-top: 2px;">
-                        <i class="fas fa-user-check"></i> ${order.conferidoPor}
-                    </small>` : ''}
-                `;
+                conferenciaBadge = `<span class="badge badge-success"><i class="fas fa-check-double"></i> Conferido</span>`;
             } else {
-                conferenciaBadge = `
-                    <span class="badge badge-warning" style="margin-left: 5px; animation: pulse 1.5s infinite;">
-                        <i class="fas fa-exclamation-circle"></i> Aguardando conferência
-                    </span>
-                `;
+                conferenciaBadge = `<span class="badge badge-warning" style="animation: pulse 1.5s infinite;"><i class="fas fa-exclamation-circle"></i> Aguardando conferência</span>`;
             }
         }
         
         let ajusteBadge = '';
         if (isRejectedPending) {
             ajusteBadge = `
-                <span class="badge badge-warning" style="background: #ffc107; color: #856404; margin-left: 5px; cursor: help;" 
-                      title="${order.motivo_rejeicao.replace(/"/g, '&quot;')}">
+                <span class="badge badge-warning" style="background:#ffc107;color:#856404;" title="${order.motivo_rejeicao.replace(/"/g, '&quot;')}">
                     <i class="fas fa-exclamation-triangle"></i> Ajustes necessários
                 </span>
-                <span class="badge badge-danger" style="margin-left: 5px; cursor: help;" 
-                      title="Rejeitado por: ${order.rejeitado_por || '?'} em ${order.data_rejeicao ? new Date(order.data_rejeicao).toLocaleString('pt-BR') : '-'}">
+                <span class="badge badge-danger" title="Rejeitado por: ${order.rejeitado_por || '?'}">
                     <i class="fas fa-ban"></i> Não autorizado
                 </span>
             `;
         }
         
-        let atrasoBadge = '';
-        if (atrasado) {
-            atrasoBadge = `
-                <span class="badge badge-danger" style="margin-left: 5px; cursor: help;" 
-                      title="Prazo estourado! Limite era ${new Date(order.prazo_esperado).toLocaleString('pt-BR')}">
-                    <i class="fas fa-clock"></i> Atrasada
-                </span>
-            `;
-        }
+        let atrasoBadge = atrasado ? `<span class="badge badge-danger"><i class="fas fa-clock"></i> Atrasada</span>` : '';
         
         let anuncioBadge = '';
         const isAnuncio = (order.photoType === 'criar_anuncio' || order.photoType === 'replicar_anuncio');
         if (isAnuncio && !order.anuncio_criado) {
-            anuncioBadge = `
-                <span class="badge badge-warning" style="background: #ff9800; color: white; margin-left: 5px;">
-                    <i class="fas fa-ad"></i> Aguardando criação do anúncio
-                </span>
-            `;
+            anuncioBadge = `<span class="badge badge-warning" style="background:#ff9800;color:white;"><i class="fas fa-ad"></i> Aguardando anúncio</span>`;
         }
         
-        let typeBadge = order.osType === 'devolucao' ? '<span class="badge badge-danger" style="margin-left: 5px;"><i class="fas fa-exchange-alt"></i> Devolução</span>' : '';
+        let permissionBadge = isAdmin ? `<span class="badge badge-danger"><i class="fas fa-crown"></i> Admin</span>` : '';
         
         let urgencyBadge = '';
         if (order.urgency === 'alta') urgencyBadge = '<span class="badge badge-danger">Alta (2h)</span>';
@@ -4168,13 +4129,9 @@ function renderOrdersTable() {
         else urgencyBadge = '<span class="badge badge-success">Baixa (36h)</span>';
         
         let statusBadge = '';
-        if (order.status === 'pendente') {
-            statusBadge = isRejectedPending ? '<span class="status-pending" style="background: #ffc107; color: #856404;">Revisão</span>' : '<span class="status-pending">Pendente</span>';
-        } else if (order.status === 'andamento') {
-            statusBadge = '<span class="status-progress">Em Andamento</span>';
-        } else if (order.status === 'concluida') {
-            statusBadge = order.conferido ? '<span class="status-completed">Concluída</span>' : '<span class="status-completed" style="background: #dc3545; color: white;">Concluída (não conferida)</span>';
-        }
+        if (order.status === 'pendente') statusBadge = '<span class="status-pending">Pendente</span>';
+        else if (order.status === 'andamento') statusBadge = '<span class="status-progress">Em Andamento</span>';
+        else statusBadge = '<span class="status-completed">Concluída</span>';
         
         const createdDate = order.createdAt ? new Date(order.createdAt) : new Date();
         const formattedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
@@ -4182,51 +4139,34 @@ function renderOrdersTable() {
         
         // Botões de ação
         let actionButtons = '';
-        
-        // Visualizar
         if (hasPermission || isAdmin) {
             actionButtons += `<button class="btn btn-primary btn-sm" onclick="viewOrderDetails('${order.id}')" title="Visualizar OS"><i class="fas fa-eye"></i></button>`;
         }
-        
-        // Ver fotos
         if (order.photos && order.photos.length > 0 && (hasPermission || isAdmin)) {
             actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos"><i class="fas fa-images"></i> ${order.photos.length}</button>`;
         }
-        
-        // Conferir (apenas para OS concluídas não conferidas)
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Marcar como Conferido"><i class="fas fa-check-double"></i></button>`;
+            actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Conferir"><i class="fas fa-check-double"></i></button>`;
         }
-        
-        // Não Autorizado (apenas para OS concluídas não conferidas)
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado - Voltar para Revisão"><i class="fas fa-ban"></i></button>`;
+            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado"><i class="fas fa-ban"></i> Não Autorizado</button>`;
         }
-        
-        // Iniciar / Finalizar
         if (hasPermission || isAdmin) {
-            if (order.status === 'pendente' && !isRejectedPending) {
+            if (order.status === 'pendente' && !order.motivo_rejeicao) {
                 actionButtons += `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS"><i class="fas fa-play"></i></button>`;
             } else if (order.status === 'andamento') {
                 actionButtons += `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS"><i class="fas fa-flag-checkered"></i></button>`;
             }
         }
-        
-        // Editar (agora abre modal)
-        const podeEditar = (hasPermission || isAdmin || order.createdBy === currentUser.name);
-        if (podeEditar) {
+        // Botão Editar (agora abre modal)
+        if (hasPermission || isAdmin) {
             actionButtons += `<button class="btn btn-warning btn-sm" onclick="abrirModalEdicaoOS('${order.id}')" title="Editar OS"><i class="fas fa-edit"></i></button>`;
         }
-        
-        // Imprimir
         actionButtons += `<button class="btn btn-primary btn-sm" onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})" title="Imprimir OS"><i class="fas fa-print"></i></button>`;
-        
-        // Excluir (apenas admin ou criador)
         if (isAdmin || order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
             actionButtons += `<button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')" title="Excluir OS"><i class="fas fa-trash"></i></button>`;
         }
         
-        // Montar linha
         row.innerHTML = `
             <td>
                 <strong>${order.code}</strong>
@@ -4234,27 +4174,24 @@ function renderOrdersTable() {
                 ${ajusteBadge}
                 ${atrasoBadge}
                 ${anuncioBadge}
-                ${typeBadge}
-                ${order.linkAnuncio ? `<div style="margin-top: 8px;"><a href="${order.linkAnuncio}" target="_blank" style="font-size: 11px; color: #0066cc;"><i class="fas fa-link"></i> Link</a></div>` : ''}
-                ${order.linkNovoAnuncio ? `<div style="margin-top: 4px;"><a href="${order.linkNovoAnuncio}" target="_blank" style="font-size: 11px; color: #28a745;"><i class="fas fa-link"></i> Novo anúncio</a></div>` : ''}
+                ${permissionBadge}
             </td>
             <td>${order.productName}</td>
             <td>
                 <div>${order.responsibleName}</div>
                 <small><i class="fas fa-user-plus"></i> Criado por: ${order.createdBy || 'Sistema'}</small>
-                ${order.status === 'concluida' && order.conferidoPor ? `<small style="display: block; color: #28a745;">Conferido por: ${order.conferidoPor}</small>` : ''}
-                ${isRejectedPending ? `<small style="display: block; color: #856404;">Rejeitado por: ${order.rejeitado_por || '-'}</small>` : ''}
             </td>
             <td>${urgencyBadge}</td>
             <td>${statusBadge}</td>
             <td>${formattedDate}</td>
-            <td><div class="d-flex flex-wrap gap-1">${actionButtons}</div></td>
+            <td><div class="d-flex gap-2">${actionButtons}</div></td>
         `;
         
         osTableBody.appendChild(row);
     });
-
-    updateOSNotificationBell();
+    
+    // Atualiza contadores (já feito em updateCounters, mas garantimos)
+    updateCounters();
 }
 
 // ============================================

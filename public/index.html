@@ -808,12 +808,26 @@ h4 {
                     
                     <div class="d-flex flex-wrap gap-2" style="align-items: center;">
                         <div class="filter-group" style="display: flex; gap: 5px;">
-                            <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">Pendentes (<span id="countPending">0</span>)</button>
-                            <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">Andamento (<span id="countProgress">0</span>)</button>
-                            <button class="btn btn-secondary btn-sm" onclick="filterOS('nao_conferidas')">Não Conferidas (<span id="countNotChecked">0</span>)</button>
-                            <button class="btn btn-danger btn-sm" onclick="filterOS('revisao')">Revisão (<span id="countRevision">0</span>)</button>
-                            <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">Concluídas (<span id="countCompleted">0</span>)</button>
-                            <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">Todas (<span id="countTotal">0</span>)</button>
+                            <div class="filter-group">
+    <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">
+        Pendentes <span class="badge" id="countPending">0</span>
+    </button>
+    <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">
+        Andamento <span class="badge" id="countProgress">0</span>
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="filterOS('nao_conferidas')">
+        Não Conferidas <span class="badge" id="countNotChecked">0</span>
+    </button>
+    <button class="btn btn-danger btn-sm" onclick="filterOS('revisao')">
+        Revisão <span class="badge" id="countRevision">0</span>
+    </button>
+    <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
+        Concluídas <span class="badge" id="countCompleted">0</span>
+    </button>
+    <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
+        Todas <span class="badge" id="countTotal">0</span>
+    </button>
+</div>
                         </div>
                         <button class="btn btn-success" id="selectOSBtn" onclick="ativarModoSelecaoOS()">
                             <i class="fas fa-check-double"></i> Selecionar OS
