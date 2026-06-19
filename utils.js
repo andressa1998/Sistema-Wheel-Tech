@@ -33,7 +33,7 @@ function loadCertificates() {
 
     const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, pfxPassword);
 
-    // ----- EXTRAIR CHAVE PRIVADA (tenta todos os formatos) -----
+    // ----- EXTRAIR CHAVE PRIVADA -----
     let privateKeyPem = null;
     let keyType = '';
 
@@ -66,34 +66,6 @@ function loadCertificates() {
         }
     }
 
-    // ----- CONVERTER PARA PKCS#8 (se necessário) -----
-    let privateKeyForSign = privateKeyPem;
-    if (privateKeyPem.includes('RSA PRIVATE KEY')) {
-        try {
-            // Converte de PKCS#1 (RSA) para PKCS#8
-            const rsaPrivateKey = forge.pki.privateKeyFromPem(privateKeyPem);
-            const asn1 = forge.pki.privateKeyToAsn1(rsaPrivateKey);
-            const pkcs8Pem = forge.pki.privateKeyToPem(asn1);
-            // Verifica se a conversão foi bem-sucedida
-            if (pkcs8Pem.includes('PRIVATE KEY') && !pkcs8Pem.includes('RSA PRIVATE KEY')) {
-                privateKeyForSign = pkcs8Pem;
-                console.log('🔄 Chave convertida para PKCS#8 (xml-crypto)');
-            } else {
-                console.warn('⚠️ Conversão para PKCS#8 falhou, usando chave original');
-                privateKeyForSign = privateKeyPem;
-            }
-        } catch (err) {
-            console.warn('⚠️ Falha ao converter para PKCS#8, usando original:', err.message);
-            privateKeyForSign = privateKeyPem;
-        }
-    } else if (privateKeyPem.includes('PRIVATE KEY')) {
-        console.log('✅ Chave já está em PKCS#8');
-        privateKeyForSign = privateKeyPem;
-    } else {
-        console.warn('⚠️ Formato de chave desconhecido, mantendo original');
-        privateKeyForSign = privateKeyPem;
-    }
-
     // ----- Certificado (primeiro) -----
     const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
     if (!certBags[forge.pki.oids.certBag] || certBags[forge.pki.oids.certBag].length === 0) {
@@ -112,10 +84,12 @@ function loadCertificates() {
     }
 
     // Log das primeiras linhas da chave (para diagnóstico)
-    console.log('🔑 Chave privada (primeiros 60 caracteres):', privateKeyForSign.substring(0, 60));
-    console.log('📌 Formato da chave:', privateKeyForSign.includes('RSA PRIVATE KEY') ? 'PKCS#1' : privateKeyForSign.includes('PRIVATE KEY') ? 'PKCS#8' : 'Desconhecido');
+    console.log('🔑 Chave privada (primeiros 60 caracteres):', privateKeyPem.substring(0, 60));
+    console.log('📌 Formato da chave:', keyType);
 
-    return { privateKey: privateKeyForSign, cert, ca };
+    // Retorna a chave no formato original (PKCS#1 ou PKCS#8)
+    // A conversão para PKCS#8 será feita no xmlSigner se necessário
+    return { privateKey: privateKeyPem, cert, ca };
 }
 
 module.exports = { loadCertificates };

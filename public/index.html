@@ -810,8 +810,9 @@ h4 {
                         <div class="filter-group" style="display: flex; gap: 5px;">
                             <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">Pendentes (<span id="countPending">0</span>)</button>
                             <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">Andamento (<span id="countProgress">0</span>)</button>
+                            <button class="btn btn-secondary btn-sm" onclick="filterOS('nao_conferidas')">Não Conferidas (<span id="countNotChecked">0</span>)</button>
+                            <button class="btn btn-danger btn-sm" onclick="filterOS('revisao')">Revisão (<span id="countRevision">0</span>)</button>
                             <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">Concluídas (<span id="countCompleted">0</span>)</button>
-                            <button class="btn btn-danger btn-sm" onclick="filterOS('nao_conferidas')">Não Conferidas (<span id="countNotChecked">0</span>)</button>
                             <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">Todas (<span id="countTotal">0</span>)</button>
                         </div>
                         <button class="btn btn-success" id="selectOSBtn" onclick="ativarModoSelecaoOS()">
@@ -849,6 +850,128 @@ h4 {
                 <div id="emptyMessage" class="text-center py-5 hidden">...</div>
             </div>
         </div>
+
+        <!-- MODAL DE EDIÇÃO DA OS -->
+<div id="editOSModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; padding: 0;">
+        <div style="background: linear-gradient(135deg, #8A2BE2, #6a0dad); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin:0;"><i class="fas fa-edit"></i> Editar Ordem de Serviço</h3>
+            <button onclick="fecharModalEdicaoOS()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
+        </div>
+        <div style="padding: 20px; max-height: 70vh; overflow-y: auto;">
+            <input type="hidden" id="editOSId">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>Produto *</label>
+                        <input type="text" id="editProductName" class="form-control" maxlength="200">
+                        <small id="editContadorProduto" style="float:right; font-size:11px; color:#6c757d;">0/200</small>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label>Responsável *</label>
+                        <select id="editResponsibleName" class="form-control">
+                            <option value="">Selecione</option>
+                            <option value="Elaine">Elaine</option>
+                            <option value="Arthur">Arthur</option>
+                            <option value="Laura">Laura</option>
+                            <option value="Ronald">Ronald</option>
+                            <option value="Bruna">Bruna</option>
+                            <option value="Andressa">Andressa</option>
+                            <option value="Thalyta">Thalyta</option>
+                            <option value="Leticia">Leticia</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>Urgência</label>
+                        <select id="editUrgency" class="form-control">
+                            <option value="baixa">Baixa</option>
+                            <option value="normal" selected>Normal</option>
+                            <option value="alta">Alta</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>Tipo de OS</label>
+                        <select id="editOsType" class="form-control">
+                            <option value="normal">Normal</option>
+                            <option value="devolucao">Devolução</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>Serviço(s)</label>
+                        <select id="editPhotoType" class="form-control">
+                            <option value="estudio">Foto Estúdio</option>
+                            <option value="bike">Foto Bike</option>
+                            <option value="ambos">Ambos</option>
+                            <option value="edicao">Apenas edição</option>
+                            <option value="criar_anuncio">Criar anúncio</option>
+                            <option value="replicar_anuncio">Replicar anúncio</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Link do Anúncio</label>
+                <input type="url" id="editLinkAnuncio" class="form-control" placeholder="https://...">
+            </div>
+            <div class="form-group">
+                <label>SKUs (separados por vírgula)</label>
+                <input type="text" id="editSkus" class="form-control" placeholder="SKU001, SKU002">
+            </div>
+            <div class="form-group">
+                <label>Observações</label>
+                <textarea id="editObservations" class="form-control" rows="2"></textarea>
+            </div>
+            <!-- Campos específicos para anúncio -->
+            <div id="editCamposAnuncio" class="hidden">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>Valor do Anúncio</label>
+                            <input type="number" id="editValorAnuncio" class="form-control" step="0.01" min="0">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>Precisa de foto?</label>
+                            <select id="editPrecisaFoto" class="form-control">
+                                <option value="nao">Não</option>
+                                <option value="sim">Sim</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Descrição do Anúncio</label>
+                    <textarea id="editDescricaoAnuncio" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Link do Novo Anúncio</label>
+                    <input type="url" id="editLinkNovoAnuncio" class="form-control" placeholder="https://...">
+                </div>
+            </div>
+            <!-- Campo Motivo da não autorização (visível apenas para admin e se houver motivo) -->
+            <div id="editMotivoRejeicaoGroup" class="form-group hidden">
+                <label><i class="fas fa-exclamation-triangle"></i> Motivo da não autorização</label>
+                <textarea id="editMotivoRejeicao" class="form-control" rows="2" placeholder="Descreva o que precisa ser ajustado..."></textarea>
+                <small class="text-muted">Este campo aparece apenas para administradores quando a OS está em revisão.</small>
+            </div>
+        </div>
+        <div style="background: #f8f9fa; padding: 15px 25px; border-top: 1px solid #dee2e6; display: flex; justify-content: flex-end; gap: 10px;">
+            <button class="btn btn-secondary" onclick="fecharModalEdicaoOS()">Cancelar</button>
+            <button class="btn btn-success" id="saveEditOSBtn" onclick="salvarEdicaoOS()"><i class="fas fa-save"></i> Salvar Alterações</button>
+        </div>
+    </div>
+</div>
         
         <!-- Modal para Finalizar OS -->
         <div id="completeModal" class="modal hidden">

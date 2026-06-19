@@ -268,6 +268,19 @@ function setupHeaderButtons() {
     }
 }
 
+function highlightActiveFilterButton() {
+    const buttons = document.querySelectorAll('.filter-group .btn');
+    buttons.forEach(btn => {
+        btn.classList.remove('btn-primary', 'active');
+        btn.classList.add('btn-outline-secondary');
+    });
+    const activeBtn = document.querySelector(`.filter-group .btn[onclick*="'${currentFilter}'"]`);
+    if (activeBtn) {
+        activeBtn.classList.remove('btn-outline-secondary');
+        activeBtn.classList.add('btn-primary', 'active');
+    }
+}
+
 // ===== INICIALIZAÇÃO =====
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Sistema OS Fotografia iniciado!');
@@ -982,8 +995,8 @@ function setupEventListeners() {
             const urgency = this.value;
             let horas = 48;
             switch (urgency) {
-                case 'baixa': horas = 36; break;
-                case 'normal': horas = 48; break;
+                case 'baixa': horas = 48; break;
+                case 'normal': horas = 36; break;
                 case 'alta': horas = 2; break;
             }
             if (prazoHorasInput) prazoHorasInput.value = horas;
@@ -3916,61 +3929,59 @@ function updateCounters() {
     if (!currentUser) return;
     
     const userOrders = filterOrdersByUser(orders);
-    const myPending = userOrders.filter(o => o.status === 'pendente').length;
-    const myProgress = userOrders.filter(o => o.status === 'andamento').length;
-    const myCompleted = userOrders.filter(o => o.status === 'concluida').length;
-    const myTotal = userOrders.length;
-
-    // Contar OS concluídas não conferidas (para destaque)
-    const completedNotChecked = userOrders.filter(o => o.status === 'concluida' && !o.conferido).length;
     
-    if (countPending) countPending.textContent = myPending;
-    if (countProgress) countProgress.textContent = myProgress;
-    if (countCompleted) {
-        countCompleted.textContent = `${myCompleted}`;
-        // Adicionar badge se houver OS não conferidas
-        if (completedNotChecked > 0) {
-            countCompleted.innerHTML = `${myCompleted} <span class="badge badge-warning" style="margin-left: 5px;">${completedNotChecked} não conferidas</span>`;
-        }
-    }
-    if (countTotal) countTotal.textContent = myTotal;
+    // Pendentes (sem motivo de rejeição)
+    const pending = userOrders.filter(o => o.status === 'pendente' && (!o.motivo_rejeicao || o.motivo_rejeicao === '')).length;
+    // Andamento
+    const progress = userOrders.filter(o => o.status === 'andamento').length;
+    // Não conferidas (concluídas mas não conferidas)
+    const notChecked = userOrders.filter(o => o.status === 'concluida' && !o.conferido).length;
+    // Revisão (pendentes com motivo de rejeição)
+    const revision = userOrders.filter(o => o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== '').length;
+    // Concluídas (conferidas)
+    const completed = userOrders.filter(o => o.status === 'concluida' && o.conferido === true).length;
+    const total = userOrders.length;
+
+    // Atualizar elementos HTML
+    const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    };
+    setText('countPending', pending);
+    setText('countProgress', progress);
+    setText('countNotChecked', notChecked);
+    setText('countRevision', revision);
+    setText('countCompleted', completed);
+    setText('countTotal', total);
     
     if (myOrdersCount) {
-        // Se for administrador, mostrar "todas as ordens" em vez de "minhas ordens"
         if (currentUser.role === 'Administrador') {
-            myOrdersCount.textContent = `${myTotal} (todas)`;
+            myOrdersCount.textContent = `${total} (todas)`;
         } else {
-            myOrdersCount.textContent = myTotal;
+            myOrdersCount.textContent = total;
         }
     }
-    
     if (totalOrdersCount) totalOrdersCount.textContent = orders.length;
     
+    // Mensagem de vazio (se não houver ordens)
     if (emptyMessage) {
-        if (myTotal === 0) {
+        const tableResponsive = document.querySelector('.table-responsive');
+        if (total === 0) {
             emptyMessage.classList.remove('hidden');
-            const tableResponsive = document.querySelector('.table-responsive');
             if (tableResponsive) tableResponsive.classList.add('hidden');
-            
-            if (currentUser.role === 'Administrador') {
-                emptyMessage.innerHTML = `
-                    <i class="fas fa-user-lock fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                    <h4 style="color: #6c757d;">Nenhuma ordem no sistema</h4>
-                    <p style="color: #6c757d;">Não há ordens de serviço cadastradas no momento.</p>
-                    <p style="color: #6c757d; font-size: 12px; margin-top: 10px;">
-                        <i class="fas fa-info-circle"></i>
-                        Como administrador, você vê todas as ordens do sistema.
-                    </p>
-                `;
-            }
+            emptyMessage.innerHTML = `
+                <i class="fas fa-user-lock fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                <h4 style="color: #6c757d;">Nenhuma ordem no sistema</h4>
+                <p style="color: #6c757d;">Não há ordens de serviço cadastradas no momento.</p>
+                ${currentUser.role === 'Administrador' ? '<p style="color: #6c757d; font-size: 12px; margin-top: 10px;"><i class="fas fa-info-circle"></i> Como administrador, você vê todas as ordens do sistema.</p>' : ''}
+            `;
         } else {
             emptyMessage.classList.add('hidden');
-            const tableResponsive = document.querySelector('.table-responsive');
             if (tableResponsive) tableResponsive.classList.remove('hidden');
         }
     }
 
-    updateOSNotificationBell();   // <-- COLE AQUI
+    updateOSNotificationBell();
 }
 
 // ============================================
@@ -3989,13 +4000,30 @@ function renderOrdersTable() {
     }
     
     let userOrders = filterOrdersByUser(orders);
-    let filteredOrders = currentFilter === 'todos' ? userOrders : 
-                         userOrders.filter(order => order.status === currentFilter);
+    let filteredOrders = [];
 
-    if (currentFilter === 'nao_conferidas') {
-        filteredOrders = userOrders.filter(order => 
-            order.status === 'concluida' && !order.conferido
-        );
+    // Aplica o filtro selecionado
+    switch (currentFilter) {
+        case 'todos':
+            filteredOrders = userOrders;
+            break;
+        case 'pendente':
+            filteredOrders = userOrders.filter(o => o.status === 'pendente' && (!o.motivo_rejeicao || o.motivo_rejeicao === ''));
+            break;
+        case 'andamento':
+            filteredOrders = userOrders.filter(o => o.status === 'andamento');
+            break;
+        case 'nao_conferidas':
+            filteredOrders = userOrders.filter(o => o.status === 'concluida' && !o.conferido);
+            break;
+        case 'revisao':
+            filteredOrders = userOrders.filter(o => o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== '');
+            break;
+        case 'concluida':
+            filteredOrders = userOrders.filter(o => o.status === 'concluida' && o.conferido === true);
+            break;
+        default:
+            filteredOrders = userOrders;
     }
     
     if (filteredOrders.length === 0) {
@@ -4013,18 +4041,27 @@ function renderOrdersTable() {
         return;
     }
     
-    // Ordenação
+    // Ordenação: priorizar não conferidas, revisão, pendentes, etc.
     filteredOrders.sort((a, b) => {
-        const aIsCompletedNotChecked = a.status === 'concluida' && !a.conferido;
-        const bIsCompletedNotChecked = b.status === 'concluida' && !b.conferido;
-        if (aIsCompletedNotChecked && !bIsCompletedNotChecked) return -1;
-        if (!aIsCompletedNotChecked && bIsCompletedNotChecked) return 1;
+        // Prioridade 1: Não conferidas (concluídas sem conferência)
+        const aNotChecked = a.status === 'concluida' && !a.conferido;
+        const bNotChecked = b.status === 'concluida' && !b.conferido;
+        if (aNotChecked && !bNotChecked) return -1;
+        if (!aNotChecked && bNotChecked) return 1;
         
-        const aIsRejected = (a.status === 'pendente' && a.motivo_rejeicao);
-        const bIsRejected = (b.status === 'pendente' && b.motivo_rejeicao);
-        if (aIsRejected && !bIsRejected) return -1;
-        if (!aIsRejected && bIsRejected) return 1;
+        // Prioridade 2: Revisão (pendentes com motivo)
+        const aRevision = a.status === 'pendente' && a.motivo_rejeicao;
+        const bRevision = b.status === 'pendente' && b.motivo_rejeicao;
+        if (aRevision && !bRevision) return -1;
+        if (!aRevision && bRevision) return 1;
         
+        // Prioridade 3: Pendentes (sem motivo)
+        const aPending = a.status === 'pendente' && !a.motivo_rejeicao;
+        const bPending = b.status === 'pendente' && !b.motivo_rejeicao;
+        if (aPending && !bPending) return -1;
+        if (!aPending && bPending) return 1;
+        
+        // Ordenar por data de atualização (mais recentes primeiro)
         return new Date(b.updatedAt) - new Date(a.updatedAt);
     });
     
@@ -4035,35 +4072,40 @@ function renderOrdersTable() {
         const hasPermission = checkOrderPermission(order);
         const isAdmin = currentUser.role === 'Administrador';
         
+        // Verifica se é uma OS em revisão (pendente com motivo)
         const isRejectedPending = (order.status === 'pendente' && order.motivo_rejeicao && order.motivo_rejeicao.trim() !== '');
         
-        // Verificar atraso (se prazo existe e OS não concluída)
+        // Verifica atraso (se prazo existe e OS não concluída)
         let atrasado = false;
         if (order.status !== 'concluida' && order.prazo_esperado) {
             const prazo = new Date(order.prazo_esperado);
             if (prazo < now) atrasado = true;
         }
         
-        // Estilos
+        // Estilos de linha
         if (isRejectedPending) {
             row.style.backgroundColor = '#fff3cd';
             row.style.borderLeft = '4px solid #ffc107';
             row.title = `Motivo: ${order.motivo_rejeicao} | Rejeitado por: ${order.rejeitado_por || '-'} em ${order.data_rejeicao ? new Date(order.data_rejeicao).toLocaleString('pt-BR') : '-'}`;
         } else if (order.status === 'concluida' && !order.conferido) {
-            row.className = 'urgent-high';
-            row.style.animation = 'pulseReturn 2s infinite';
             row.style.backgroundColor = '#fff5f5';
+            row.style.borderLeft = '4px solid #dc3545';
+            row.style.animation = 'pulseReturn 2s infinite';
         } else if (order.osType === 'devolucao') {
-            row.className = 'return-highlight';
+            row.style.backgroundColor = '#f0f0ff';
+            row.style.borderLeft = '4px solid #6f42c1';
         } else if (order.urgency === 'alta') {
-            row.className = 'urgent-high';
+            row.style.backgroundColor = '#ffe5e5';
+            row.style.borderLeft = '4px solid #dc3545';
         } else if (order.urgency === 'normal') {
-            row.className = 'urgent-medium';
+            row.style.backgroundColor = '#fff8e1';
+            row.style.borderLeft = '4px solid #ffc107';
         } else {
-            row.className = 'urgent-low';
+            row.style.backgroundColor = '#f8f9fa';
+            row.style.borderLeft = '4px solid #28a745';
         }
         
-        // Badge de Conferência
+        // Badges
         let conferenciaBadge = '';
         if (order.status === 'concluida') {
             if (order.conferido) {
@@ -4084,7 +4126,6 @@ function renderOrdersTable() {
             }
         }
         
-        // Badge para OS pendente rejeitada
         let ajusteBadge = '';
         if (isRejectedPending) {
             ajusteBadge = `
@@ -4099,7 +4140,6 @@ function renderOrdersTable() {
             `;
         }
         
-        // Badge de atraso
         let atrasoBadge = '';
         if (atrasado) {
             atrasoBadge = `
@@ -4110,8 +4150,6 @@ function renderOrdersTable() {
             `;
         }
         
-        // Badge "Aguardando criação do anúncio" (para OS de anúncio onde o link ainda não foi adicionado)
-        // Exibe mesmo que a OS esteja concluída – o badge só some quando anuncio_criado = true
         let anuncioBadge = '';
         const isAnuncio = (order.photoType === 'criar_anuncio' || order.photoType === 'replicar_anuncio');
         if (isAnuncio && !order.anuncio_criado) {
@@ -4122,59 +4160,6 @@ function renderOrdersTable() {
             `;
         }
         
-        // Links dos anúncios (somente para OS concluídas)
-        let linkAnuncioDisplay = '';
-        if (order.status === 'concluida') {
-            const temLinkOriginal = order.linkAnuncio && order.linkAnuncio.trim() !== '';
-            const temLinkNovo = order.linkNovoAnuncio && order.linkNovoAnuncio.trim() !== '';
-            if (temLinkOriginal || temLinkNovo) {
-                linkAnuncioDisplay = '<div style="margin-top: 12px;">';
-                if (temLinkOriginal) {
-                    linkAnuncioDisplay += `
-                        <div style="margin-bottom: 8px; padding: 10px; background: #f0f7ff; border-radius: 6px; border-left: 4px solid #0066cc;">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
-                                <i class="fas fa-link" style="color: #0066cc;"></i>
-                                <span style="font-weight: 600; color: #0066cc;">LINK ORIGINAL</span>
-                            </div>
-                            <a href="${order.linkAnuncio}" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: none; font-size: 13px; word-break: break-all;">
-                                ${order.linkAnuncio.length > 50 ? order.linkAnuncio.substring(0, 50) + '...' : order.linkAnuncio}
-                            </a>
-                        </div>
-                    `;
-                }
-                if (temLinkNovo) {
-                    linkAnuncioDisplay += `
-                        <div style="margin-bottom: 8px; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 4px solid #28a745;">
-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
-                                <i class="fas fa-link" style="color: #28a745;"></i>
-                                <span style="font-weight: 600; color: #28a745;">NOVO ANÚNCIO</span>
-                            </div>
-                            <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" style="color: #28a745; text-decoration: none; font-size: 13px; word-break: break-all;">
-                                ${order.linkNovoAnuncio.length > 50 ? order.linkNovoAnuncio.substring(0, 50) + '...' : order.linkNovoAnuncio}
-                            </a>
-                            ${order.valorAnuncio ? `<div style="margin-top: 6px; font-size: 12px; font-weight: 600;">R$ ${parseFloat(order.valorAnuncio).toFixed(2)}</div>` : ''}
-                        </div>
-                    `;
-                }
-                linkAnuncioDisplay += '</div>';
-            }
-        }
-        
-        // Badges de permissão
-        let permissionBadge = '';
-        if (isAdmin) {
-            permissionBadge = '<span class="badge badge-danger" style="margin-left: 5px;"><i class="fas fa-crown"></i> Admin</span>';
-        } else if (order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase())) {
-            permissionBadge = '<span class="badge badge-primary" style="margin-left: 5px;"><i class="fas fa-user-check"></i> Responsável</span>';
-        } else if (order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
-            permissionBadge = '<span class="badge badge-info" style="margin-left: 5px;"><i class="fas fa-user-edit"></i> Criador</span>';
-        }
-        
-        let accessBadge = '';
-        if (isAdmin && !order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase()) && !order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
-            accessBadge = '<span class="badge badge-secondary" style="margin-left: 5px;"><i class="fas fa-user-shield"></i> Acesso Admin</span>';
-        }
-        
         let typeBadge = order.osType === 'devolucao' ? '<span class="badge badge-danger" style="margin-left: 5px;"><i class="fas fa-exchange-alt"></i> Devolução</span>' : '';
         
         let urgencyBadge = '';
@@ -4183,9 +4168,13 @@ function renderOrdersTable() {
         else urgencyBadge = '<span class="badge badge-success">Baixa (36h)</span>';
         
         let statusBadge = '';
-        if (order.status === 'pendente') statusBadge = '<span class="status-pending">Pendente</span>';
-        else if (order.status === 'andamento') statusBadge = '<span class="status-progress">Em Andamento</span>';
-        else statusBadge = '<span class="status-completed">Concluída</span>';
+        if (order.status === 'pendente') {
+            statusBadge = isRejectedPending ? '<span class="status-pending" style="background: #ffc107; color: #856404;">Revisão</span>' : '<span class="status-pending">Pendente</span>';
+        } else if (order.status === 'andamento') {
+            statusBadge = '<span class="status-progress">Em Andamento</span>';
+        } else if (order.status === 'concluida') {
+            statusBadge = order.conferido ? '<span class="status-completed">Concluída</span>' : '<span class="status-completed" style="background: #dc3545; color: white;">Concluída (não conferida)</span>';
+        }
         
         const createdDate = order.createdAt ? new Date(order.createdAt) : new Date();
         const formattedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
@@ -4194,46 +4183,50 @@ function renderOrdersTable() {
         // Botões de ação
         let actionButtons = '';
         
+        // Visualizar
         if (hasPermission || isAdmin) {
             actionButtons += `<button class="btn btn-primary btn-sm" onclick="viewOrderDetails('${order.id}')" title="Visualizar OS"><i class="fas fa-eye"></i></button>`;
         }
         
+        // Ver fotos
         if (order.photos && order.photos.length > 0 && (hasPermission || isAdmin)) {
             actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos"><i class="fas fa-images"></i> ${order.photos.length}</button>`;
         }
         
-        // Botão CONFERIR
+        // Conferir (apenas para OS concluídas não conferidas)
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
             actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Marcar como Conferido"><i class="fas fa-check-double"></i></button>`;
         }
         
-        // Botão NÃO AUTORIZADO
+        // Não Autorizado (apenas para OS concluídas não conferidas)
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado - Voltar para Pendentes"><i class="fas fa-ban"></i> Não Autorizado</button>`;
+            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado - Voltar para Revisão"><i class="fas fa-ban"></i></button>`;
         }
         
-        // Botões INICIAR / FINALIZAR (Finalizar sempre habilitado para OS em andamento)
+        // Iniciar / Finalizar
         if (hasPermission || isAdmin) {
-            if (order.status === 'pendente') {
+            if (order.status === 'pendente' && !isRejectedPending) {
                 actionButtons += `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS"><i class="fas fa-play"></i></button>`;
             } else if (order.status === 'andamento') {
-                // 🔥 FINALIZAR SEMPRE HABILITADO (nunca bloqueado)
                 actionButtons += `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS"><i class="fas fa-flag-checkered"></i></button>`;
             }
         }
         
-        // Botão EDITAR
+        // Editar (agora abre modal)
         const podeEditar = (hasPermission || isAdmin || order.createdBy === currentUser.name);
         if (podeEditar) {
-            actionButtons += `<button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')" title="Editar OS"><i class="fas fa-edit"></i></button>`;
+            actionButtons += `<button class="btn btn-warning btn-sm" onclick="abrirModalEdicaoOS('${order.id}')" title="Editar OS"><i class="fas fa-edit"></i></button>`;
         }
         
+        // Imprimir
         actionButtons += `<button class="btn btn-primary btn-sm" onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})" title="Imprimir OS"><i class="fas fa-print"></i></button>`;
         
+        // Excluir (apenas admin ou criador)
         if (isAdmin || order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
             actionButtons += `<button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')" title="Excluir OS"><i class="fas fa-trash"></i></button>`;
         }
         
+        // Montar linha
         row.innerHTML = `
             <td>
                 <strong>${order.code}</strong>
@@ -4241,21 +4234,21 @@ function renderOrdersTable() {
                 ${ajusteBadge}
                 ${atrasoBadge}
                 ${anuncioBadge}
-                ${permissionBadge}
-                ${accessBadge}
                 ${typeBadge}
-                ${linkAnuncioDisplay}
+                ${order.linkAnuncio ? `<div style="margin-top: 8px;"><a href="${order.linkAnuncio}" target="_blank" style="font-size: 11px; color: #0066cc;"><i class="fas fa-link"></i> Link</a></div>` : ''}
+                ${order.linkNovoAnuncio ? `<div style="margin-top: 4px;"><a href="${order.linkNovoAnuncio}" target="_blank" style="font-size: 11px; color: #28a745;"><i class="fas fa-link"></i> Novo anúncio</a></div>` : ''}
             </td>
-             <td>${order.productName}</td>
-             <td>
+            <td>${order.productName}</td>
+            <td>
                 <div>${order.responsibleName}</div>
                 <small><i class="fas fa-user-plus"></i> Criado por: ${order.createdBy || 'Sistema'}</small>
                 ${order.status === 'concluida' && order.conferidoPor ? `<small style="display: block; color: #28a745;">Conferido por: ${order.conferidoPor}</small>` : ''}
-             </td>
-             <td>${urgencyBadge}</td>
-             <td>${statusBadge}</td>
-             <td>${formattedDate}</td>
-             <td><div class="d-flex gap-2">${actionButtons}</div></td>
+                ${isRejectedPending ? `<small style="display: block; color: #856404;">Rejeitado por: ${order.rejeitado_por || '-'}</small>` : ''}
+            </td>
+            <td>${urgencyBadge}</td>
+            <td>${statusBadge}</td>
+            <td>${formattedDate}</td>
+            <td><div class="d-flex flex-wrap gap-1">${actionButtons}</div></td>
         `;
         
         osTableBody.appendChild(row);
@@ -4290,79 +4283,7 @@ window.viewOrder = function(orderId) {
 };
 
 window.editOrder = function(orderId) {
-    const order = orders.find(o => o.id == orderId);
-    if (order && checkOrderPermission(order)) {
-        editingOrderId = orderId;
-        
-        const productNameInput = document.getElementById('productName');
-        const responsibleNameInput = document.getElementById('responsibleName');
-        const linkAnuncioInput = document.getElementById('linkAnuncio');
-        const urgencySelect = document.getElementById('urgency');
-        const osTypeSelect = document.getElementById('osType');
-        const photoTypeSelect = document.getElementById('photoType');
-        const skusInput = document.getElementById('skus');
-        const observationsInput = document.getElementById('observations');
-        const valorAnuncioInput = document.getElementById('valorAnuncio');
-        const descricaoAnuncioInput = document.getElementById('descricaoAnuncio');
-        const linkNovoAnuncioInput = document.getElementById('linkNovoAnuncio');
-        const precisaFotoSelect = document.getElementById('precisaFoto');
-        const prazoHorasInput = document.getElementById('prazoHoras');
-        
-        updateProductCounter(productNameInput, 'productCounter');
-
-        // Lógica para extrair o responsável correto
-        let responsibleToShow = order.responsibleName;
-        if (order.responsibleName && order.responsibleName.includes(' e Elaine')) {
-            responsibleToShow = order.responsibleName.replace(' e Elaine', '').trim();
-        } else if (order.responsibleName === 'Elaine' && order.precisaFoto === 'sim') {
-            responsibleToShow = order.createdBy !== 'Elaine' ? order.createdBy : 'Elaine';
-        }
-        
-        if (productNameInput) {
-            productNameInput.value = order.productName;
-            setTimeout(() => contarCaracteres(), 100);
-        }
-        if (responsibleNameInput) responsibleNameInput.value = order.responsibleName;
-        if (linkAnuncioInput) linkAnuncioInput.value = order.linkAnuncio || '';
-        if (urgencySelect) urgencySelect.value = order.urgency;
-        if (osTypeSelect) osTypeSelect.value = order.osType;
-        if (photoTypeSelect) photoTypeSelect.value = order.photoType;
-        if (skusInput) skusInput.value = Array.isArray(order.skus) ? order.skus.join(', ') : order.skus;
-        if (observationsInput) observationsInput.value = order.observations;
-        if (valorAnuncioInput) valorAnuncioInput.value = order.valorAnuncio || '';
-        if (descricaoAnuncioInput) descricaoAnuncioInput.value = order.descricaoAnuncio || '';
-        if (linkNovoAnuncioInput) linkNovoAnuncioInput.value = order.linkNovoAnuncio || '';
-        if (precisaFotoSelect) precisaFotoSelect.value = order.precisaFoto || 'nao';
-        
-        // 🔥 Carregar prazo_horas salvo (ou calcular da urgência)
-        if (prazoHorasInput) {
-            if (order.prazo_horas) {
-                prazoHorasInput.value = order.prazo_horas;
-            } else {
-                // Fallback baseado na urgência
-                let horas = 48;
-                if (order.urgency === 'baixa') horas = 36;
-                else if (order.urgency === 'alta') horas = 2;
-                prazoHorasInput.value = horas;
-            }
-        }
-        
-        // Mostrar/ocultar campos de anúncio
-        toggleCamposAnuncio();
-        
-        // Carregar fotos existentes
-        selectedPhotos = order.photos || [];
-        updatePhotoPreviews();
-        
-        if (formTitle) formTitle.textContent = `Editando: ${order.code}`;
-        if (submitBtnText) submitBtnText.textContent = 'Atualizar OS';
-        if (cancelEditBtn) cancelEditBtn.classList.remove('hidden');
-        if (osCodeDisplay) osCodeDisplay.textContent = `Código: ${order.code}`;
-        
-        showToast(`✏️ Editando OS: ${order.code}`, 'info');
-    } else {
-        showToast('⚠️ Sem permissão para editar', 'warning');
-    }
+    abrirModalEdicaoOS(orderId);
 };
 
 window.viewOrderPhotos = function(orderId) {
@@ -9816,6 +9737,168 @@ function exportarRelatorioOSExcel() {
     XLSX.writeFile(wb, `relatorio_os_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`);
     showToast('Relatório exportado com sucesso!', 'success');
 }
+
+// ===== MODAL DE EDIÇÃO =====
+let editingOSId = null;
+
+window.abrirModalEdicaoOS = function(orderId) {
+    const order = orders.find(o => o.id == orderId);
+    if (!order) {
+        showToast('Ordem não encontrada', 'error');
+        return;
+    }
+    // Verifica permissão
+    if (!checkOrderPermission(order) && currentUser.role !== 'Administrador') {
+        showToast('Sem permissão para editar', 'warning');
+        return;
+    }
+
+    editingOSId = orderId;
+    const modal = document.getElementById('editOSModal');
+    
+    // Preencher campos
+    document.getElementById('editOSId').value = orderId;
+    document.getElementById('editProductName').value = order.productName || '';
+    document.getElementById('editResponsibleName').value = order.responsibleName || '';
+    document.getElementById('editUrgency').value = order.urgency || 'normal';
+    document.getElementById('editOsType').value = order.osType || 'normal';
+    document.getElementById('editPhotoType').value = order.photoType || 'estudio';
+    document.getElementById('editLinkAnuncio').value = order.linkAnuncio || '';
+    document.getElementById('editSkus').value = Array.isArray(order.skus) ? order.skus.join(', ') : (order.skus || '');
+    document.getElementById('editObservations').value = order.observations || '';
+    document.getElementById('editValorAnuncio').value = order.valorAnuncio || '';
+    document.getElementById('editDescricaoAnuncio').value = order.descricaoAnuncio || '';
+    document.getElementById('editLinkNovoAnuncio').value = order.linkNovoAnuncio || '';
+    document.getElementById('editPrecisaFoto').value = order.precisaFoto || 'nao';
+    
+    // Campos de anúncio – mostrar se for tipo de anúncio ou edição
+    const photoType = order.photoType;
+    const isAnuncio = (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio' || photoType === 'edicao');
+    document.getElementById('editCamposAnuncio').classList.toggle('hidden', !isAnuncio);
+    
+    // Motivo de rejeição – visível apenas para admin e se houver motivo
+    const motivoGroup = document.getElementById('editMotivoRejeicaoGroup');
+    if (currentUser.role === 'Administrador' && order.motivo_rejeicao) {
+        motivoGroup.classList.remove('hidden');
+        document.getElementById('editMotivoRejeicao').value = order.motivo_rejeicao || '';
+    } else {
+        motivoGroup.classList.add('hidden');
+        document.getElementById('editMotivoRejeicao').value = '';
+    }
+    
+    // Atualizar contador do produto
+    const campoProduto = document.getElementById('editProductName');
+    const contador = document.getElementById('editContadorProduto');
+    function atualizarContadorEdit() {
+        const len = campoProduto.value.length;
+        const max = 200;
+        contador.textContent = `${len}/${max}`;
+        contador.style.color = len >= max ? '#dc3545' : (len >= 180 ? '#ffc107' : '#6c757d');
+        contador.style.fontWeight = len >= 180 ? 'bold' : 'normal';
+    }
+    campoProduto.addEventListener('input', atualizarContadorEdit);
+    atualizarContadorEdit();
+    
+    modal.classList.remove('hidden');
+};
+
+window.fecharModalEdicaoOS = function() {
+    document.getElementById('editOSModal').classList.add('hidden');
+    editingOSId = null;
+};
+
+window.salvarEdicaoOS = async function() {
+    const orderId = document.getElementById('editOSId').value;
+    if (!orderId) {
+        showToast('ID inválido', 'error');
+        return;
+    }
+    
+    // Coletar dados
+    const productName = document.getElementById('editProductName').value.trim();
+    const responsibleName = document.getElementById('editResponsibleName').value;
+    const urgency = document.getElementById('editUrgency').value;
+    const osType = document.getElementById('editOsType').value;
+    const photoType = document.getElementById('editPhotoType').value;
+    const linkAnuncio = document.getElementById('editLinkAnuncio').value.trim();
+    const skus = document.getElementById('editSkus').value.split(',').map(s => s.trim()).filter(s => s);
+    const observations = document.getElementById('editObservations').value.trim();
+    const valorAnuncio = parseFloat(document.getElementById('editValorAnuncio').value) || 0;
+    const descricaoAnuncio = document.getElementById('editDescricaoAnuncio').value.trim();
+    const linkNovoAnuncio = document.getElementById('editLinkNovoAnuncio').value.trim();
+    const precisaFoto = document.getElementById('editPrecisaFoto').value;
+    const motivoRejeicao = document.getElementById('editMotivoRejeicao').value.trim();
+    
+    // Validação
+    if (!productName || !responsibleName) {
+        showToast('Preencha produto e responsável', 'warning');
+        return;
+    }
+    
+    // Montar objeto de atualização
+    const updateData = {
+        produto_nome: productName,
+        responsavel: responsibleName,
+        urgencia: urgency,
+        tipo_os: osType,
+        tipo_foto: photoType,
+        link_anuncio: linkAnuncio,
+        skus: skus,
+        observacoes: observations,
+        valor_anuncio: valorAnuncio,
+        descricao_anuncio: descricaoAnuncio,
+        link_novo_anuncio: linkNovoAnuncio,
+        precisa_foto: precisaFoto,
+        ultima_atualizacao: new Date().toISOString()
+    };
+    
+    // Se admin e motivo foi alterado, atualizar também
+    if (currentUser.role === 'Administrador' && motivoRejeicao !== undefined) {
+        updateData.motivo_rejeicao = motivoRejeicao || null;
+        // Se o motivo foi removido (vazio), e a OS está pendente com motivo, podemos limpar?
+        // Vamos manter, mas se o admin quiser remover, ele pode.
+    }
+    
+    try {
+        if (!supabaseClient) throw new Error('Supabase não conectado');
+        const { error } = await supabaseClient
+            .from('ordens_service')
+            .update(updateData)
+            .eq('id', orderId);
+        if (error) throw error;
+        
+        // Atualizar a lista local
+        const idx = orders.findIndex(o => o.id == orderId);
+        if (idx !== -1) {
+            const old = orders[idx];
+            orders[idx] = {
+                ...old,
+                productName: updateData.produto_nome,
+                responsibleName: updateData.responsavel,
+                urgency: updateData.urgencia,
+                osType: updateData.tipo_os,
+                photoType: updateData.tipo_foto,
+                linkAnuncio: updateData.link_anuncio,
+                skus: updateData.skus,
+                observations: updateData.observacoes,
+                valorAnuncio: updateData.valor_anuncio,
+                descricaoAnuncio: updateData.descricao_anuncio,
+                linkNovoAnuncio: updateData.link_novo_anuncio,
+                precisaFoto: updateData.precisa_foto,
+                updatedAt: updateData.ultima_atualizacao,
+                motivo_rejeicao: updateData.motivo_rejeicao !== undefined ? updateData.motivo_rejeicao : old.motivo_rejeicao
+            };
+        }
+        
+        showToast('✅ OS atualizada com sucesso!', 'success');
+        fecharModalEdicaoOS();
+        renderOrdersTable();
+        updateCounters();
+    } catch (error) {
+        console.error('Erro ao salvar edição:', error);
+        showToast('❌ Erro ao salvar: ' + error.message, 'error');
+    }
+};
 
 // ============================================
 // FUNÇÃO PARA APROVAR REEMBOLSO (Marcar como Reembolsado)
