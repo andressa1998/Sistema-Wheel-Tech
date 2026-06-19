@@ -2666,16 +2666,16 @@ h4 {
     </div>
 </div>
 
-<!-- ===== SISTEMA DE GERENCIAMENTO DE FRETE ===== -->
+<!-- ===== SISTEMA DE GERENCIAMENTO DE FRETE (VERSÃO SIMPLES) ===== -->
+<!-- ===== SISTEMA DE GERENCIAMENTO DE FRETE (VERSÃO SIMPLES) ===== -->
 <div id="shippingSystem" class="hidden">
     <header class="main-header">
         <div class="container">
             <div class="header-content">
                 <h1 style="display: flex; align-items: center; gap: 10px;">
                     <i class="fas fa-truck" style="color: #fd7e14;"></i>
-                    Gerenciamento de Custos de Frete
+                    Custos de Frete – Mercado Livre
                 </h1>
-
                 <div class="user-info">
                     <div class="user-avatar" id="shippingUserAvatar">F</div>
                     <div>
@@ -2692,109 +2692,44 @@ h4 {
     </header>
 
     <div class="container">
-        <!-- Cards de resumo (5 cards) -->
         <div class="card mb-4">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h3 style="margin:0;"><i class="fas fa-chart-line"></i> Resumo de Divergências</h3>
+                    <h3 style="margin:0;"><i class="fas fa-boxes"></i> Fretes Cobrados</h3>
+                    <p style="margin:5px 0 0 0; color:#6c757d; font-size:14px;">
+                        Exibe título, MLB, valor do produto e frete cobrado das vendas pagas (últimos 90 dias)
+                    </p>
                 </div>
-                <div class="d-flex gap-2">
-                    <button class="btn btn-primary" onclick="shippingManager.abrirRelatorio()">
-                        <i class="fas fa-file-alt"></i> Relatório Completo
+                <div>
+                    <button class="btn btn-primary" id="btnBuscarFretes">
+                    <i class="fas fa-sync-alt"></i> Buscar Fretes
                     </button>
-                    <button class="btn btn-success" onclick="shippingManager.exportarDivergencias()">
-                        <i class="fas fa-file-excel"></i> Exportar Divergências
-                    </button>
-                    <button class="btn btn-info" onclick="shippingManager.sincronizarVendas()" id="btnSincronizarFrete">
-                        <i class="fas fa-sync-alt"></i> Sincronizar Vendas
-                    </button>
-                    <button class="btn btn-secondary" onclick="abrirModalGerenciarPesos()">
-                    <i class="fas fa-weight-hanging"></i> Gerenciar Pesos
-                    </button>
-                </div>
-            </div>
-            <div class="row mt-3">
-                <div class="col-md-2">
-                    <div class="info-card text-center p-3">
-                        <div class="h5">Pendentes</div>
-                        <div class="h3" id="shippingPendentes">0</div>
-                    </div>
-                </div>
-                <div class="col-md-2">
-                    <div class="info-card text-center p-3">
-                        <div class="h5">Divergentes</div>
-                        <div class="h3 text-danger" id="shippingDivergentes">0</div>
-                    </div>
-                </div>
-                <div class="col-md-2">
-                    <div class="info-card text-center p-3">
-                        <div class="h5">Em Reembolso</div>
-                        <div class="h3 text-warning" id="shippingEmReembolso">0</div>
-                    </div>
-                </div>
-                <div class="col-md-2">
-                    <div class="info-card text-center p-3">
-                        <div class="h5">Reembolsados</div>
-                        <div class="h3 text-success" id="shippingReembolsados">0</div>
-                    </div>
-                </div>
-                <div class="col-md-2">
-                    <div class="info-card text-center p-3">
-                        <div class="h5">Atrasados</div>
-                        <div class="h3 text-danger" id="shippingAtrasados">0</div>
-                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Filtros de status -->
-        <div class="card mb-4">
-            <div class="d-flex flex-wrap gap-2 align-items-center">
-                <span class="fw-bold me-2"><i class="fas fa-filter"></i> Filtrar por:</span>
-                <button class="btn btn-sm btn-outline-secondary filtro-botao" data-status="todos" onclick="shippingManager.filtrarPorStatus('todos')">Todos</button>
-                <button class="btn btn-sm btn-outline-warning filtro-botao" data-status="pendente" onclick="shippingManager.filtrarPorStatus('pendente')">A verificar</button>
-                <button class="btn btn-sm btn-outline-info filtro-botao" data-status="contatado" onclick="shippingManager.filtrarPorStatus('contatado')">Reembolso solicitado</button>
-                <button class="btn btn-sm btn-outline-success filtro-botao" data-status="reembolsado" onclick="shippingManager.filtrarPorStatus('reembolsado')">Reembolso conseguido</button>
-                <button class="btn btn-sm btn-outline-danger filtro-botao" data-status="divergente" onclick="shippingManager.filtrarPorStatus('divergente')">Divergentes</button>
-                <button class="btn btn-sm btn-outline-danger filtro-botao" data-status="atrasado" onclick="shippingManager.filtrarPorStatus('atrasado')">Atrasados</button>
-                <button class="btn btn-sm btn-outline-primary ms-auto" onclick="shippingManager.carregarAnalises()">
-                    <i class="fas fa-sync-alt"></i> Atualizar Lista
-                </button>
-            </div>
-        </div>
-
-        <!-- Tabela de fretes -->
         <div class="card">
             <div class="card-header">
-                <h2 class="card-title"><i class="fas fa-list"></i> Análise de Custos de Frete</h2>
-                <div>
-                    <button class="btn btn-sm btn-primary" onclick="shippingManager.verificarVendasPendentes()">
-                        <i class="fas fa-check-double"></i> Verificar Pendentes
-                    </button>
-                </div>
+                <h2 class="card-title"><i class="fas fa-list"></i> Lista de Fretes</h2>
+                <span id="contagemFretes" class="badge badge-info">0 registros</span>
             </div>
             <div class="table-responsive">
-                <table class="table" id="shippingTable">
+                <table class="table" id="shippingSimpleTable">
                     <thead>
                         <tr>
-                            <th>Venda / Data</th>
-                            <th>Título do Anúncio</th>
-                            <th>Valor Unitário</th>
-                            <th>Quant. Vendida</th>
-                            <th>Peso</th>
-                            <th>Custo Real</th>
-                            <th>Custo Esperado</th>
-                            <th>Diferença</th>
-                            <th>Status</th>
-                            <th>Ações</th>
+                            <th style="min-width:250px;">Título do Anúncio</th>
+                            <th>MLB</th>
+                            <th>Valor Produto</th>
+                            <th>Frete Cobrado</th>
+                            <th>Venda ID</th>
                         </tr>
                     </thead>
-                    <tbody id="shippingTableBody">
+                    <tbody id="shippingSimpleBody">
                         <tr>
-                            <td colspan="8" class="text-center py-5">
+                            <td colspan="5" class="text-center py-5">
                                 <i class="fas fa-truck fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
                                 <h4>Nenhum dado carregado</h4>
-                                <p>Clique em "Sincronizar Vendas" para buscar vendas FULL e Mercado Envios.</p>
+                                <p>Clique em "Buscar Fretes" para carregar as vendas do Mercado Livre.</p>
                             </td>
                         </tr>
                     </tbody>
@@ -2886,8 +2821,6 @@ h4 {
                 </div>
             </div>
             <div class="d-flex justify-content-end mb-3">
-                <button class="btn btn-primary" onclick="shippingManager.gerarRelatorio()">Gerar</button>
-                <button class="btn btn-success" onclick="shippingManager.exportarRelatorio()">Exportar Excel</button>
             </div>
             <div class="table-responsive">
                 <table class="table table-striped" id="relatorioTable">
@@ -3496,7 +3429,7 @@ h4 {
     <script src="script.js"></script>
     <script src="folgas.js"></script>
     <script src="ml_token_manager.js"></script>
-    <script src="shipping_manager.js"></script>
+    <script src="shipping_simple.js"></script>
     <script src="caixa-conferencia.js"></script>
     <script src="sales_dashboard.js"></script>
     <script src="estoque.js"></script>

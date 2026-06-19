@@ -7505,9 +7505,9 @@ window.atualizarVendas = async function() {
 };
 
 // Adicionar script de conferência de vendas
-    const script = document.createElement('script');
-    script.src = 'vendas_conferencia.js';
-    document.body.appendChild(script);
+    //const script = document.createElement('script');
+    //script.src = 'vendas_conferencia.js';
+    //document.body.appendChild(script);
 
     // ============================================
 // FUNÇÕES DE SELEÇÃO MÚLTIPLA DE OS PARA IMPRESSÃO
@@ -8175,11 +8175,10 @@ window.abrirSistemaFrete = function() {
     const menuSystem = document.getElementById('menuSystem');
     if (menuSystem) menuSystem.classList.add('hidden');
 
-    // Esconder outras abas
     const sistemasIds = [
         'mainSystem', 'salesSystem', 'reembolsosSystem', 'perguntasSystem', 
         'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem', 
-        'estoqueGestaoSystem'
+        'estoqueGestaoSystem', 'nfeSystem'
     ];
     sistemasIds.forEach(id => {
         const el = document.getElementById(id);
@@ -8188,27 +8187,33 @@ window.abrirSistemaFrete = function() {
 
     const shippingSystem = document.getElementById('shippingSystem');
     if (shippingSystem) shippingSystem.classList.remove('hidden');
-    
-    // Atualizar cabeçalho
-    const shippingUserName = document.getElementById('shippingUserName');
-    const shippingUserAvatar = document.getElementById('shippingUserAvatar');
-    const shippingUserRole = document.getElementById('shippingUserRole');
-    
-    if (shippingUserName) shippingUserName.textContent = currentUser.name;
-    if (shippingUserAvatar) shippingUserAvatar.textContent = currentUser.avatar;
-    if (shippingUserRole) shippingUserRole.textContent = currentUser.role;
-    
-    // Verificar se o shippingManager já está disponível
-    if (typeof window.shippingManager !== 'undefined' && window.shippingManager !== null) {
-        if (typeof window.shippingManager.carregarAnalises === 'function') {
-            window.shippingManager.carregarAnalises();
-        } else {
-            showToast('Módulo de fretes incompleto. Recarregue a página.', 'error');
-        }
+
+    document.getElementById('shippingUserName').textContent = currentUser.name;
+    document.getElementById('shippingUserAvatar').textContent = currentUser.avatar;
+    document.getElementById('shippingUserRole').textContent = currentUser.role;
+
+    // Carregar dados salvos imediatamente
+    if (typeof window.carregarFretesSalvos === 'function') {
+        window.carregarFretesSalvos();
     } else {
-        showToast('Módulo de fretes não carregado. Recarregue a página.', 'error');
-        console.error('shippingManager não está definido. Verifique a ordem dos scripts.');
+        const script = document.createElement('script');
+        script.src = 'shipping_simple.js?v=' + Date.now();
+        script.onload = function() {
+            if (typeof window.carregarFretesSalvos === 'function') {
+                window.carregarFretesSalvos();
+            }
+            const btn = document.getElementById('btnBuscarFretes');
+            if (btn) btn.onclick = window.buscarFretes;
+        };
+        document.head.appendChild(script);
     }
+
+    const btn = document.getElementById('btnBuscarFretes');
+    if (btn) {
+        btn.onclick = window.buscarFretes;
+    }
+
+    showToast('📦 Sistema de Frete carregado', 'info');
 };
 
 // ============================================
