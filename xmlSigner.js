@@ -1,42 +1,105 @@
 // xmlSigner.js
 const { SignedXml } = require('xml-crypto');
+const { DOMParser } = require('@xmldom/xmldom');
+const crypto = require('crypto');
+
+class SignedXmlNFe extends SignedXml {
+    constructor(options) {
+        super(options);
+        // Algoritmos aceitos pelo schema da NF-e 4.00
+        this.signatureAlgorithm = "http://www.w3.org/2000/09/xmldsig#rsa-sha1";
+        this.digestAlgorithm = "http://www.w3.org/2000/09/xmldsig#sha1";
+    }
+
+    findSignatureAlgorithm(name) {
+        if (name === this.signatureAlgorithm) {
+            return {
+                getAlgorithmName: () => this.signatureAlgorithm,
+                getSignature: (xml, signingKey) => {
+                    const signer = crypto.createSign("RSA-SHA1");
+                    signer.update(xml);
+                    return signer.sign(signingKey);
+                }
+            };
+        }
+        return super.findSignatureAlgorithm(name);
+    }
+
+    findHashAlgorithm(name) {
+        if (name === this.digestAlgorithm) {
+            return {
+                getAlgorithmName: () => this.digestAlgorithm,
+                getHash: (xml) => {
+                    const hash = crypto.createHash("sha1");
+                    hash.update(xml);
+                    return hash.digest();
+                }
+            };
+        }
+        return super.findHashAlgorithm(name);
+    }
+}
 
 function assinarXml(xml, certData) {
-    const sig = new SignedXml();
-    sig.privateKey = certData.privateKey; // Agora é PKCS#1
-    sig.signatureAlgorithm = 'http://www.w3.org/2001/04/xmldsig-more#rsa-sha256';
-    sig.canonicalizationAlgorithm = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315';
+    const idMatch = xml.match(/Id="([^"]+)"/);
+    if (!idMatch) throw new Error("Id do infNFe não encontrado");
+    const id = idMatch[1];
 
-    sig.addReference({
-        xpath: "//*[local-name(.)='infNFe']",
-        transforms: [
-            'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
-            'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
-        ],
-        digestAlgorithm: 'http://www.w3.org/2001/04/xmlenc#sha256',
-        uri: ''
+    const sig = new SignedXmlNFe({
+        privateKey: certData.privateKey,
+        canonicalizationAlgorithm: "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
     });
 
-    const certClean = certData.cert
-        .replace(/-----BEGIN CERTIFICATE-----/g, '')
-        .replace(/-----END CERTIFICATE-----/g, '')
-        .replace(/\r?\n/g, '');
+    sig.addReference({
+        xpath: `//*[local-name(.)='infNFe' and @Id='${id}']`,
+        transforms: [
+            "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
+            "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+        ],
+        digestAlgorithm: "http://www.w3.org/2000/09/xmldsig#sha1",
+        uri: `#${id}`
+    });
 
-    sig.getKeyInfoContent = function () {
-        return `<X509Data><X509Certificate>${certClean}</X509Certificate></X509Data>`;
-    };
+    // Extrai apenas o corpo do certificado público em Base64
+    const certClean = certData.cert
+        .toString()
+        .replace(/-----BEGIN CERTIFICATE-----/g, "")
+        .replace(/-----END CERTIFICATE-----/g, "")
+        .replace(/\r?\n/g, "")
+        .trim();
+
+    sig.getKeyInfoContent = () => `<X509Data><X509Certificate>${certClean}</X509Certificate></X509Data>`;
 
     sig.computeSignature(xml, {
-        location: { reference: "//*[local-name(.)='infNFe']", action: 'after' }
+        location: { reference: `//*[local-name(.)='infNFe' and @Id='${id}']`, action: "after" }
     });
 
     let signedXml = sig.getSignedXml();
+    // Limpeza extra
+    signedXml = signedXml.replace(/xmlns=""/g, "");
+    signedXml = signedXml.replace(/[\x00-\x1F\x7F]/g, "");
 
-    // Garante namespace e remove xmlns vazios
-    signedXml = signedXml.replace(/<Signature(?=\s|>)/, '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"');
-    signedXml = signedXml.replace(/xmlns=""/g, '');
+    if (!signedXml.includes('<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"')) {
+        signedXml = signedXml.replace("<Signature", '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"');
+    }
 
+    console.log("✅ Assinatura gerada com RSA-SHA1 + SHA1 (compatível com NF-e 4.00)");
     return signedXml;
 }
 
-module.exports = { assinarXml };
+function validarAssinatura(xml, certData) {
+    const doc = new DOMParser().parseFromString(xml);
+    const signatureNode = doc.getElementsByTagName("Signature")[0];
+    if (!signatureNode) throw new Error("Nó <Signature> não encontrado");
+
+    const sig = new SignedXmlNFe();
+    sig.keyInfoProvider = { getKeyInfo: () => null, getKey: () => certData.cert };
+    sig.loadSignature(signatureNode);
+
+    const isValid = sig.checkSignature(xml);
+    if (!isValid) console.error("❌ Assinatura inválida:", sig.validationErrors);
+    else console.log("✅ Assinatura válida conforme certificado");
+    return isValid;
+}
+
+module.exports = { assinarXml, validarAssinatura };

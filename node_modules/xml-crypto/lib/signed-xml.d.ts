@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import type { CanonicalizationAlgorithmType, CanonicalizationOrTransformAlgorithmType, CanonicalizationOrTransformationAlgorithm, CanonicalizationOrTransformationAlgorithmProcessOptions, ComputeSignatureOptions, ErrorFirstCallback, GetKeyInfoContentArgs, HashAlgorithm, HashAlgorithmType, Reference, SignatureAlgorithm, SignatureAlgorithmType, SignedXmlOptions } from "./types";
+import type { CanonicalizationAlgorithmType, CanonicalizationOrTransformAlgorithmType, CanonicalizationOrTransformationAlgorithm, CanonicalizationOrTransformationAlgorithmProcessOptions, ComputeSignatureOptions, ErrorFirstCallback, GetKeyInfoContentArgs, HashAlgorithm, HashAlgorithmType, ObjectAttributes, Reference, SignatureAlgorithm, SignatureAlgorithmType, SignedXmlOptions } from "./types";
 import * as crypto from "crypto";
 export declare class SignedXml {
     idMode?: "wssecurity";
@@ -29,6 +29,10 @@ export declare class SignedXml {
     };
     getKeyInfoContent: typeof SignedXml.getKeyInfoContent;
     getCertFromKeyInfo: typeof SignedXml.getCertFromKeyInfo;
+    objects?: Array<{
+        content: string;
+        attributes?: ObjectAttributes;
+    }>;
     private id;
     private signedXml;
     private signatureXml;
@@ -138,8 +142,10 @@ export declare class SignedXml {
      * @param digestValue The expected digest value for the reference.
      * @param inclusiveNamespacesPrefixList The prefix list for inclusive namespace canonicalization.
      * @param isEmptyUri Indicates whether the URI is empty. Defaults to `false`.
+     * @param id An optional `Id` attribute for the reference.
+     * @param type An optional `Type` attribute for the reference.
      */
-    addReference({ xpath, transforms, digestAlgorithm, uri, digestValue, inclusiveNamespacesPrefixList, isEmptyUri, }: Partial<Reference> & Pick<Reference, "xpath">): void;
+    addReference({ xpath, transforms, digestAlgorithm, uri, digestValue, inclusiveNamespacesPrefixList, isEmptyUri, id, type, }: Partial<Reference> & Pick<Reference, "xpath">): void;
     /**
      * Returns the list of references.
      */
@@ -182,12 +188,18 @@ export declare class SignedXml {
      * @throws TypeError If the xml can not be parsed, or Error if there were invalid options passed.
      */
     computeSignature(xml: string, options: ComputeSignatureOptions, callback: ErrorFirstCallback<SignedXml>): void;
+    /**
+     * Adds all references to the SignedInfo after the signature placeholder is inserted.
+     */
+    private addAllReferences;
     private getKeyInfo;
     /**
-     * Generate the Reference nodes (as part of the signature process)
+     * Creates XML for Object elements to be included in the signature
      *
+     * @param prefix Optional namespace prefix
+     * @returns XML string with Object elements or empty string if none
      */
-    private createReferences;
+    private getObjects;
     getCanonXml(transforms: Reference["transforms"], node: Node, options?: CanonicalizationOrTransformationAlgorithmProcessOptions): string;
     /**
      * Ensure an element has Id attribute. If not create it with unique value.

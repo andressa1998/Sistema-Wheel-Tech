@@ -63,3 +63,4 @@ export declare function derToPem(der: string | Buffer, pemLabel?: "CERTIFICATE" 
  */
 export declare function findAncestorNs(doc: Document, docSubsetXpath?: string, namespaceResolver?: XPathNSResolver): NamespacePrefix[];
 export declare function validateDigestValue(digest: any, expectedDigest: any): boolean;
+export declare function isDescendantOf(node: Node, parent: Node): boolean;

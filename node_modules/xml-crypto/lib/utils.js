@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.validateDigestValue = exports.findAncestorNs = exports.derToPem = exports.pemToDer = exports.normalizePem = exports.BASE64_REGEX = exports.EXTRACT_X509_CERTS = exports.PEM_FORMAT_REGEX = exports.encodeSpecialCharactersInText = exports.encodeSpecialCharactersInAttribute = exports.findChilds = exports.findChildren = exports.findAttr = exports.isArrayHasLength = void 0;
+exports.isDescendantOf = exports.validateDigestValue = exports.findAncestorNs = exports.derToPem = exports.pemToDer = exports.normalizePem = exports.BASE64_REGEX = exports.EXTRACT_X509_CERTS = exports.PEM_FORMAT_REGEX = exports.encodeSpecialCharactersInText = exports.encodeSpecialCharactersInAttribute = exports.findChilds = exports.findChildren = exports.findAttr = exports.isArrayHasLength = void 0;
 const xpath = require("xpath");
 const isDomNode = require("@xmldom/is-dom-node");
 function isArrayHasLength(array) {
@@ -253,4 +253,19 @@ function validateDigestValue(digest, expectedDigest) {
     return true;
 }
 exports.validateDigestValue = validateDigestValue;
+// Check if the given node is descendant of the given parent node
+function isDescendantOf(node, parent) {
+    if (!node || !parent) {
+        return false;
+    }
+    let currentNode = node.parentNode;
+    while (currentNode) {
+        if (currentNode === parent) {
+            return true;
+        }
+        currentNode = currentNode.parentNode;
+    }
+    return false;
+}
+exports.isDescendantOf = isDescendantOf;
 //# sourceMappingURL=utils.js.map
