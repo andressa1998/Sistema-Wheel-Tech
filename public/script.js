@@ -1890,14 +1890,15 @@ function renderReembolsosTable() {
     // Lógica de filtro conforme o valor de currentReembolsoFilter
     switch (currentReembolsoFilter) {
         case 'a_verificar':
-            filteredReembolsos = reembolsos.filter(r => 
-                // Com reembolso em andamento
-                (r.tipo_reclamacao === 'com_reembolso' && 
-                 (r.status === 'a_verificar' || r.status_reembolso === 'em_andamento')) ||
-                // Sem reembolso não resolvidas
-                (r.tipo_reclamacao === 'sem_reembolso' && !r.resolvida)
-            );
-            break;
+    filteredReembolsos = reembolsos.filter(r => 
+        // Com reembolso: apenas se estiver a_verificar OU em_andamento, mas NÃO pendente
+        (r.tipo_reclamacao === 'com_reembolso' && 
+         (r.status === 'a_verificar' || r.status_reembolso === 'em_andamento') &&
+         r.status !== 'pendente') ||
+        // Sem reembolso: não resolvidas
+        (r.tipo_reclamacao === 'sem_reembolso' && !r.resolvida)
+    );
+    break;
         case 'reembolsados':
             filteredReembolsos = reembolsos.filter(r => 
                 r.tipo_reclamacao === 'com_reembolso' && 
@@ -2429,11 +2430,20 @@ window.rejeitarReembolso = async function(id) {
             })
             .eq('id', id);
 
+        // Atualiza localmente para garantir consistência
+        const idx = reembolsos.findIndex(r => r.id === id);
+        if (idx !== -1) {
+            reembolsos[idx].status = 'pendente';
+            reembolsos[idx].status_reembolso = null;
+            reembolsos[idx].verificado_por = currentUser.name;
+        }
+
+        // Recarrega a lista e re-renderiza
         await loadReembolsos();
         showToast('⚠️ Reembolso marcado como pendente', 'warning');
     } catch (error) {
         console.error(error);
-        showToast('Erro ao rejeitar', 'error');
+        showToast('Erro ao rejeitar: ' + error.message, 'error');
     }
 };
 
@@ -2876,35 +2886,31 @@ window.gerarRelatorioReembolsos = async function() {
     const dataFim = document.getElementById('dataFim').value;
     const filtroMes = document.getElementById('filtroMes').value;
 
-    console.log('📅 Relatório Reembolsos - Datas:', { dataInicio, dataFim, filtroMes });
-
     if (dataInicio && dataFim && new Date(dataInicio) > new Date(dataFim)) {
         showToast('Data início não pode ser maior que data fim', 'warning');
         return;
     }
 
     try {
-        // Buscar todos os registros
+        // Buscar todos os registros (sem filtro de status)
         const { data, error } = await supabaseClient
             .from('reembolsos_ml')
             .select('*');
 
         if (error) throw error;
-        console.log(`📊 Total de registros no Supabase: ${data?.length || 0}`);
-
         if (!data || data.length === 0) {
+            showToast('Nenhum registro encontrado', 'info');
             document.getElementById('totalPeriodo').textContent = '0,00';
             document.getElementById('quantidadePeriodo').textContent = '0';
             document.getElementById('mediaPeriodo').textContent = '0,00';
-            document.getElementById('relatorioTableBody').innerHTML = '<tr><td colspan="5" class="text-center">Nenhum dado encontrado</td</tr>';
+            document.getElementById('relatorioTableBody').innerHTML = '<tr><td colspan="5" class="text-center">Nenhum dado encontrado</td></tr>';
             return;
         }
 
-        // Função auxiliar para converter string YYYY-MM-DD para Date
+        // Função auxiliar para filtrar por data
         const parseDate = (dateStr) => new Date(dateStr + 'T00:00:00');
-
-        // Filtrar por data (em memória)
         let filteredData = data;
+
         if (dataInicio && dataFim) {
             const inicioDate = parseDate(dataInicio);
             const fimDate = parseDate(dataFim);
@@ -2913,10 +2919,8 @@ window.gerarRelatorioReembolsos = async function() {
                 const itemDate = parseDate(item.data_operacao);
                 return itemDate >= inicioDate && itemDate <= fimDate;
             });
-            console.log(`📆 Após filtro de data: ${filteredData.length} registros`);
         }
 
-        // Filtrar por mês
         if (filtroMes && filtroMes !== '') {
             const mes = parseInt(filtroMes);
             filteredData = filteredData.filter(item => {
@@ -2924,37 +2928,47 @@ window.gerarRelatorioReembolsos = async function() {
                 const itemDate = parseDate(item.data_operacao);
                 return itemDate.getMonth() + 1 === mes;
             });
-            console.log(`📆 Após filtro de mês (${mes}): ${filteredData.length} registros`);
         }
 
-        // Calcular reembolsados
-        const reembolsados = filteredData.filter(item => 
+        // ===== CÁLCULOS =====
+        const totalRegistros = filteredData.length;
+        const totalReembolsados = filteredData.filter(item => 
             item.status === 'reembolsado' || item.status_reembolso === 'finalizado'
-        );
-        const total = reembolsados.reduce((sum, item) => sum + parseFloat(item.valor || 0), 0);
-        const quantidade = filteredData.length;
-        const media = quantidade > 0 ? total / quantidade : 0;
+        ).length;
 
-        console.log(`💰 Total reembolsado: R$ ${total.toFixed(2)}, Quantidade: ${quantidade}`);
+        // Soma dos valores de todos os registros (independente do status)
+        const somaTotal = filteredData.reduce((sum, item) => sum + parseFloat(item.valor || 0), 0);
+        const mediaGeral = totalRegistros > 0 ? somaTotal / totalRegistros : 0;
+
+        const totalPendentes = filteredData.filter(item => item.status === 'pendente').length;
 
         // Atualizar resumo
-        document.getElementById('totalPeriodo').textContent = total.toFixed(2);
-        document.getElementById('quantidadePeriodo').textContent = quantidade;
-        document.getElementById('mediaPeriodo').textContent = media.toFixed(2);
+        document.getElementById('totalPeriodo').textContent = somaTotal.toFixed(2);
+        document.getElementById('quantidadePeriodo').textContent = totalRegistros;
+        document.getElementById('mediaPeriodo').textContent = mediaGeral.toFixed(2);
 
-        // Preencher tabela
+        // Preencher tabela com todos os registros (incluindo status)
         const tbody = document.getElementById('relatorioTableBody');
         tbody.innerHTML = '';
 
         if (filteredData.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="text-center">Nenhum dado encontrado no período</td</tr>`;
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">Nenhum dado no período</td></tr>';
         } else {
             filteredData.forEach(item => {
                 const dataOp = item.data_operacao ? new Date(item.data_operacao).toLocaleDateString('pt-BR') : '-';
-                const isReembolsado = (item.status === 'reembolsado' || item.status_reembolso === 'finalizado');
-                const statusBadge = isReembolsado 
-                    ? '<span class="badge badge-success">Reembolsado</span>' 
-                    : (item.tipo_reclamacao === 'sem_reembolso' ? '<span class="badge badge-secondary">Acompanhamento</span>' : '<span class="badge badge-warning">Pendente</span>');
+                let statusBadge = '';
+                if (item.status === 'reembolsado' || item.status_reembolso === 'finalizado') {
+                    statusBadge = '<span class="badge badge-success">Reembolsado</span>';
+                } else if (item.status === 'pendente') {
+                    statusBadge = '<span class="badge badge-danger">Pendente</span>';
+                } else if (item.status === 'a_verificar' || item.status_reembolso === 'em_andamento') {
+                    statusBadge = '<span class="badge badge-warning">Em andamento</span>';
+                } else if (item.tipo_reclamacao === 'sem_reembolso') {
+                    statusBadge = item.resolvida ? '<span class="badge badge-info">Resolvida (sem reembolso)</span>' : '<span class="badge badge-secondary">Acompanhamento</span>';
+                } else {
+                    statusBadge = '<span class="badge badge-secondary">' + (item.status || 'Desconhecido') + '</span>';
+                }
+
                 const row = tbody.insertRow();
                 row.innerHTML = `
                     <td>${item.numero_venda || '-'}</td>
@@ -2966,15 +2980,15 @@ window.gerarRelatorioReembolsos = async function() {
             });
         }
 
-        // Gráfico (se existir)
+        // Se tiver gráfico, chama a função para atualizar
         if (typeof gerarGraficoReembolsos === 'function') {
             gerarGraficoReembolsos(filteredData);
         }
 
-        showToast(`✅ Relatório gerado: ${filteredData.length} registros, total reembolsado R$ ${total.toFixed(2)}`, 'success');
+        showToast(`✅ Relatório gerado: ${filteredData.length} registros, total R$ ${somaTotal.toFixed(2)}`, 'success');
 
     } catch (error) {
-        console.error('❌ Erro ao gerar relatório de reembolsos:', error);
+        console.error('❌ Erro ao gerar relatório:', error);
         showToast('Erro ao gerar relatório: ' + error.message, 'error');
     }
 };
