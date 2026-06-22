@@ -37,7 +37,7 @@ function loadCertificates() {
     let privateKeyPem = null;
     let keyType = '';
 
-    // 1. Tentar keyBag (PKCS#1)
+    // Tentar keyBag (PKCS#1)
     let bags = p12.getBags({ bagType: forge.pki.oids.keyBag });
     if (bags[forge.pki.oids.keyBag] && bags[forge.pki.oids.keyBag].length > 0) {
         const key = bags[forge.pki.oids.keyBag][0].key;
@@ -45,7 +45,7 @@ function loadCertificates() {
         keyType = 'PKCS#1/RSA';
         console.log('✅ Chave privada extraída (PKCS#1/RSA)');
     } else {
-        // 2. Tentar pkcs8ShroudedKeyBag (PKCS#8 criptografado)
+        // Tentar pkcs8ShroudedKeyBag (PKCS#8 criptografado)
         bags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShroudedKeyBag });
         if (bags[forge.pki.oids.pkcs8ShroudedKeyBag] && bags[forge.pki.oids.pkcs8ShroudedKeyBag].length > 0) {
             const key = bags[forge.pki.oids.pkcs8ShroudedKeyBag][0].key;
@@ -53,7 +53,7 @@ function loadCertificates() {
             keyType = 'PKCS#8 Shrouded';
             console.log('✅ Chave privada extraída (PKCS#8 Shrouded)');
         } else {
-            // 3. Tentar pkcs8KeyBag (PKCS#8 sem criptografia)
+            // Tentar pkcs8KeyBag (PKCS#8 sem criptografia)
             bags = p12.getBags({ bagType: forge.pki.oids.pkcs8KeyBag });
             if (bags[forge.pki.oids.pkcs8KeyBag] && bags[forge.pki.oids.pkcs8KeyBag].length > 0) {
                 const key = bags[forge.pki.oids.pkcs8KeyBag][0].key;
@@ -65,6 +65,8 @@ function loadCertificates() {
             }
         }
     }
+
+    console.log('📌 Formato da chave:', keyType);
 
     // ----- Certificado (primeiro) -----
     const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
@@ -83,12 +85,8 @@ function loadCertificates() {
         console.warn('⚠️ Nenhum certificado da cadeia encontrado.');
     }
 
-    // Log das primeiras linhas da chave (para diagnóstico)
     console.log('🔑 Chave privada (primeiros 60 caracteres):', privateKeyPem.substring(0, 60));
-    console.log('📌 Formato da chave:', keyType);
 
-    // Retorna a chave no formato original (PKCS#1 ou PKCS#8)
-    // A conversão para PKCS#8 será feita no xmlSigner se necessário
     return { privateKey: privateKeyPem, cert, ca };
 }
 

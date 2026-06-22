@@ -5,13 +5,21 @@ const NFEService = require('./nfeService');
 const { loadCertificates } = require('./utils');
 const supabase = require('./supabaseClient');
 const { extrairProtocolo, extrairChaveAcesso } = require('./nfeUtils');
+const fs = require('fs');
+const path = require('path');
 
 const DEFAULT_IBGE = '4101804'; // Araucária/PR (fallback)
+
+// ===== TOKENS CSRT DO AMBIENTE =====
+// Homologação: idCSRT=02, token=XYRVN1YSRXG0429BCZRIT9MMZM9X7QZRUBQP
+// Produção: idCSRT=01, token=6I13X8ABJ336C6C97E4KCG5N7ZH0H5O0DWII
+const CSRT_TOKEN_HOMOLOGACAO = process.env.CSRT_TOKEN_HOMOLOGACAO || 'XYRVN1YSRXG0429BCZRIT9MMZM9X7QZRUBQP';
+const CSRT_TOKEN_PRODUCAO = process.env.CSRT_TOKEN_PRODUCAO || '6I13X8ABJ336C6C97E4KCG5N7ZH0H5O0DWII';
+const AMBIENTE = process.env.NFE_AMBIENTE || 'homologacao';
 
 // ===================== OBTER CÓDIGO IBGE =====================
 async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
     try {
-        // 1. Busca no Supabase (case-insensitive)
         const { data, error } = await supabase
             .from('municipios')
             .select('codigo_ibge')
@@ -22,7 +30,6 @@ async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
             return String(data.codigo_ibge);
         }
 
-        // 2. Fallback via BrasilAPI (se tiver CEP)
         if (cep) {
             const fetch = require('node-fetch');
             const cepLimpo = cep.replace(/\D/g, '');
@@ -31,7 +38,6 @@ async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
                 const json = await response.json();
                 if (json.ibge_code) {
                     const ibge = String(json.ibge_code);
-                    // Salva para futuras consultas
                     await supabase.from('municipios').upsert({
                         codigo_ibge: parseInt(ibge),
                         nome: json.city,
@@ -42,7 +48,6 @@ async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
             }
         }
 
-        // 3. Fallback final
         console.warn(`⚠️ IBGE não encontrado para ${nomeCidade}/${uf}, usando padrão ${DEFAULT_IBGE}`);
         return DEFAULT_IBGE;
     } catch (error) {
@@ -108,7 +113,6 @@ async function emitirNFe(req, res) {
         let cep = (cliente.cep || '83702090').replace(/\D/g, '');
         if (cep.length !== 8) cep = '83702090';
 
-        // Obter código IBGE (com fallback)
         let codigoIbge = DEFAULT_IBGE;
         try {
             codigoIbge = await obterCodigoMunicipio(cidade, uf, cep);
@@ -130,6 +134,12 @@ async function emitirNFe(req, res) {
             destinatario.CPF = documento;
         } else {
             destinatario.CNPJ = documento;
+        }
+
+        // ===== CORREÇÃO: FORÇAR NOME DO DESTINATÁRIO EM HOMOLOGAÇÃO =====
+        if (AMBIENTE === 'homologacao') {
+            destinatario.xNome = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
+            console.log('🔁 Nome do destinatário ajustado para homologação.');
         }
 
         // ========== CONTROLE SEQUENCIAL DA NF ==========
@@ -156,27 +166,29 @@ async function emitirNFe(req, res) {
         }
         if (!nNF) nNF = Math.floor(Math.random() * 900000000) + 100000000;
 
-        // ========== GERAR XML ==========
-        // Você pode passar 'transportadora' se houver, caso contrário fica null
+        // ========== GERAR XML (com CSRT dinâmico) ==========
+        const tokenCSRT = AMBIENTE === 'producao' ? CSRT_TOKEN_PRODUCAO : CSRT_TOKEN_HOMOLOGACAO;
+        const idCSRT = AMBIENTE === 'producao' ? '04' : '03'; // conforme os novos tokens   
+
         const xml = gerarXmlNfe({
             nNF,
             serie,
+            tpAmb: AMBIENTE === 'producao' ? '1' : '2',
             destinatario,
             produtos,
             cfop,
             natOp: natureza_operacao || 'Venda',
-            modFrete: modalidade_frete || '9',  // '9' = sem frete
-            transportadora: null, // ou preencher com dados da transportadora, se disponível
+            modFrete: modalidade_frete || '9',
+            transportadora: null,
             volumes: { qVol: 0, pesoL: 0, pesoB: 0 },
             fatura: null,
             infAdic: null,
             respTec: {
-                CNPJ: '64555626000147',
-                xContato: 'MARIA ANTONIA MELO COSTA',
-                email: 'privacidade@iob.com.br',
-                fone: '1930043303',
-                idCSRT: '01',
-                hashCSRT: 'z9ywwhAy7fsb/3QyV5mYiSRZnuA='
+                CNPJ: '32830261000125',
+                xContato: 'WHEEL TECH BICYCLING LTDA',
+                email: 'wheeltechbicycling@gmail.com.br',
+                fone: '4131501230',
+                tokenCSRT: tokenCSRT
             }
         });
 
@@ -185,12 +197,17 @@ async function emitirNFe(req, res) {
         console.log('🔑 Certificado carregado?', !!certData.privateKey, !!certData.cert);
         const xmlAssinado = assinarXml(xml, { privateKey: certData.privateKey, cert: certData.cert });
 
-        // Após gerar o xmlAssinado, antes de enviar:
+        // ===== SALVAR XML PARA INSPEÇÃO =====
+        const xmlPath = path.join(__dirname, 'xml_gerado', `nfe_${nNF}_${Date.now()}.xml`);
+        const dir = path.dirname(xmlPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(xmlPath, xmlAssinado, 'utf8');
+        console.log(`📁 XML salvo em: ${xmlPath}`);
+
         console.log('📄 XML ASSINADO (últimos 200 caracteres):', xmlAssinado.slice(-200));
-        // Isso ajuda a ver se a assinatura está completa.
 
         // ========== ENVIAR PARA SEFAZ ==========
-        const nfeService = new NFEService('homologacao'); // altere para 'producao' quando for produção
+        const nfeService = new NFEService(AMBIENTE);
         const respostaSefaz = await nfeService.sendNFe(xmlAssinado, certData);
         console.log('📨 RESPOSTA SEFAZ (COMPLETA):', respostaSefaz);
 
@@ -214,7 +231,6 @@ async function emitirNFe(req, res) {
             valor_total: valorTotal
         });
 
-        // ========== ATUALIZAR VENDA ==========
         if (venda_id) {
             await supabase
                 .from('vendas_ml')
@@ -249,14 +265,13 @@ async function cancelarNFe(req, res) {
         const chaveNumerica = chave.replace(/\D/g, '');
         if (chaveNumerica.length !== 44) throw new Error('Chave inválida');
 
-        // Buscar último seq de evento
         const { data: nfeData } = await supabase.from('nfe_emitidas').select('ultimo_evento_seq, protocolo').eq('chave', chaveNumerica).maybeSingle();
         let nSeqEvento = (nfeData?.ultimo_evento_seq || 0) + 1;
 
         const xmlEvento = montarXmlCancelamento(chaveNumerica, nfeData?.protocolo || '', justificativa || 'Cancelamento solicitado', nSeqEvento);
         const certData = loadCertificates();
         const xmlAssinado = assinarXmlEvento(xmlEvento, certData);
-        const nfeService = new NFEService('homologacao');
+        const nfeService = new NFEService(AMBIENTE);
         const resposta = await nfeService.sendEvento(xmlAssinado, certData);
         const resultado = extrairResultadoCancelamento(resposta);
 
@@ -374,7 +389,7 @@ async function consultarStatusNFE(req, res) {
         const { chaveAcesso } = req.body;
         if (!chaveAcesso) throw new Error('Chave obrigatória');
         const certData = loadCertificates();
-        const nfeService = new NFEService('homologacao');
+        const nfeService = new NFEService(AMBIENTE);
         const resposta = await nfeService.consultarStatus(chaveAcesso.replace(/\D/g, ''), certData);
         const cStat = resposta.match(/<cStat>(\d+)<\/cStat>/)?.[1] || '999';
         const xMotivo = resposta.match(/<xMotivo>([^<]+)<\/xMotivo>/)?.[1] || 'Desconhecido';
@@ -455,7 +470,7 @@ function montarXmlCancelamento(chaveAcesso, protocolo, justificativa, nSeqEvento
     <evento versao="1.00">
         <infEvento Id="${id}">
             <cOrgao>41</cOrgao>
-            <tpAmb>2</tpAmb>
+            <tpAmb>${AMBIENTE === 'producao' ? '1' : '2'}</tpAmb>
             <CNPJ>32830261000125</CNPJ>
             <chNFe>${chaveAcesso}</chNFe>
             <dhEvento>${dhEvento}</dhEvento>
@@ -508,12 +523,10 @@ function extrairResultadoCancelamento(respostaXml) {
 async function testarXmlRaw(req, res) {
     console.log('📨 [TESTE RAW] Recebendo XML para enviar à SEFAZ');
     try {
-        // Aceita tanto JSON com campo "xml" quanto texto puro
         let xml = req.body;
         if (typeof xml === 'object' && xml.xml) {
             xml = xml.xml;
         }
-        // Se for objeto vazio ou array, pode ser que o body veio como texto puro
         if (typeof xml === 'object' && !xml.xml) {
             xml = req.body.toString();
         }
@@ -521,20 +534,14 @@ async function testarXmlRaw(req, res) {
             return res.status(400).json({ error: 'XML não informado. Envie {"xml": "SEU_XML_AQUI"}' });
         }
 
-        // Carrega o certificado
         const certData = loadCertificates();
-
-        // Verifica se o XML já contém <enviNFe>
         const hasEnviNFe = /<enviNFe\s/.test(xml);
 
         let resposta;
         if (hasEnviNFe) {
-            // Se já tem <enviNFe>, usa diretamente no envelope SOAP (sem adicionar outro)
             console.log('📄 XML já contém <enviNFe> – enviando diretamente.');
-            // Monta o envelope SOAP com o XML recebido
             const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"><soap:Body><nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4">${xml}</nfeDadosMsg></soap:Body></soap:Envelope>`;
-            
-            // Envia diretamente via axios (sem passar pelo NFEService)
+
             const axios = require('axios');
             const https = require('https');
             const httpsAgent = new https.Agent({
@@ -545,7 +552,7 @@ async function testarXmlRaw(req, res) {
                 minVersion: 'TLSv1.2',
                 maxVersion: 'TLSv1.2'
             });
-            const url = 'https://homologacao.nfe.sefa.pr.gov.br/nfe/NFeAutorizacao4';
+            const url = AMBIENTE === 'producao' ? 'https://nfe.sefa.pr.gov.br/nfe/NFeAutorizacao4' : 'https://homologacao.nfe.sefa.pr.gov.br/nfe/NFeAutorizacao4';
             const response = await axios.post(url, soapEnvelope, {
                 httpsAgent,
                 headers: {
@@ -557,13 +564,11 @@ async function testarXmlRaw(req, res) {
             });
             resposta = response.data;
         } else {
-            // Se não tem <enviNFe>, usa o método normal (que adiciona)
             console.log('📄 XML sem <enviNFe> – utilizando NFEService padrão.');
-            const nfeService = new NFEService('homologacao');
+            const nfeService = new NFEService(AMBIENTE);
             resposta = await nfeService.sendNFe(xml, certData);
         }
 
-        // Extrai informações da resposta
         const protocolo = extrairProtocolo(resposta);
         const cStat = resposta.match(/<cStat>(\d+)<\/cStat>/)?.[1] || 'N/A';
         const xMotivo = resposta.match(/<xMotivo>([^<]+)<\/xMotivo>/)?.[1] || 'N/A';
@@ -585,7 +590,6 @@ async function testarXmlRaw(req, res) {
 async function testarEnvioXMLFixo(req, res) {
     console.log('📨 [TESTE] Enviando XML conhecido (que já funcionou)');
     try {
-        // XML fixo ATUALIZADO com dados do emitente (CNPJ, IE, etc.)
         const xmlFixo = `<?xml version="1.0" encoding="UTF-8"?>
 <enviNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
     <idLote>1</idLote>
@@ -731,15 +735,14 @@ async function testarEnvioXMLFixo(req, res) {
     </NFe>
 </enviNFe>`;
 
-        // ASSINAR O XML FIXO (pois ele está sem assinatura)
         const certData = loadCertificates();
-        const { assinarXml } = require('./xmlSigner');
-        const xmlAssinado = assinarXml(xmlFixo, certData);
+        const { assinarXml: assinar } = require('./xmlSigner');
+        const xmlAssinado = assinar(xmlFixo, certData);
 
-        const nfeService = new NFEService('homologacao');
+        const nfeService = new NFEService(AMBIENTE);
         const resposta = await nfeService.sendNFe(xmlAssinado, certData);
         const protocolo = extrairProtocolo(resposta);
-        
+
         res.json({
             success: !!protocolo,
             protocolo: protocolo || null,

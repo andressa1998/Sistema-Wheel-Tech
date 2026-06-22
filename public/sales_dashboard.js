@@ -236,9 +236,6 @@ setTimeout(() => {
 // ============================================
 // PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA - SEM KIT)
 // ============================================
-// ============================================
-// PROCESSAR E SALVAR VENDAS (VERSÃO CORRIGIDA - MANTÉM STATUS)
-// ============================================
 async function processarESalvarVendas(vendasML) {
     try {
         console.log(`🔄 Processando ${vendasML.length} vendas para salvar...`);
@@ -270,7 +267,7 @@ async function processarESalvarVendas(vendasML) {
                     variacao_atributos: venda.variacao_atributos || [],
                     estoque_anuncio: venda.estoque_anuncio || 0,
                     
-                    // 🟢 MANTER ESTOQUE FÍSICO EXISTENTE SE HOUVER
+                    // Manter estoque físico existente
                     estoque_fisico: vendaExistente?.estoque_fisico || venda.estoque_fisico || 0,
                     
                     ultima_verificacao_estoque: venda.ultima_verificacao_estoque || agora,
@@ -284,7 +281,7 @@ async function processarESalvarVendas(vendasML) {
                     
                     status_ml: venda.status_ml || venda.status || 'paid',
                     
-                    // 🟢 MANTER STATUS DO SISTEMA EXISTENTE
+                    // Manter status do sistema existente
                     status_sistema: vendaExistente?.status_sistema || venda.status_sistema || 'nova',
                     
                     tipo_envio: venda.tipo_envio || 'N/I',
@@ -298,28 +295,25 @@ async function processarESalvarVendas(vendasML) {
                     
                     link: venda.link || venda.permalink || null,
                     
-                    // ===== 🟢🟢🟢 CORREÇÃO CRÍTICA: MANTER STATUS DE CONFERÊNCIA =====
+                    // Manter status de conferência existente
                     status_conferencia: vendaExistente?.status_conferencia || venda.status_conferencia || 'pendente',
                     divergente: vendaExistente?.divergente || venda.divergente || false,
                     
-                    // Manter dados de conferência existentes
                     conferido_por_estoque: vendaExistente?.conferido_por_estoque || venda.conferido_por_estoque || null,
                     conferido_por_anuncio: vendaExistente?.conferido_por_anuncio || venda.conferido_por_anuncio || null,
                     data_conferencia_estoque: vendaExistente?.data_conferencia_estoque || venda.data_conferencia_estoque || null,
                     data_conferencia_anuncio: vendaExistente?.data_conferencia_anuncio || venda.data_conferencia_anuncio || null,
                     
-                    // Manter configurações de kit existentes
                     eh_kit: vendaExistente?.eh_kit || venda.eh_kit || false,
                     skus_kit: vendaExistente?.skus_kit || venda.skus_kit || [],
                     
                     observacao: vendaExistente?.observacao || venda.observacao || null,
                     observacoes_gerais: vendaExistente?.observacoes_gerais || venda.observacoes_gerais || '',
                     
-                    // Manter fotos existentes + novas (se houver)
                     fotos: vendaExistente?.fotos || venda.fotos || [],
                     qtd_fotos: (vendaExistente?.fotos || venda.fotos || []).length,
                     
-                    // 🆕 CAMPOS DE LIBERAÇÃO
+                    // Campos de liberação
                     data_liberacao: venda.data_liberacao || vendaExistente?.data_liberacao || null,
                     status_liberacao: venda.status_liberacao || vendaExistente?.status_liberacao || 'liberado',
                     mensagem_liberacao: venda.mensagem_liberacao || vendaExistente?.mensagem_liberacao || null,
@@ -330,11 +324,10 @@ async function processarESalvarVendas(vendasML) {
                 };
                 
                 if (vendaExistente) {
-                    // 🟢 UPDATE: Atualizar apenas dados do ML, manter status de conferência
+                    // UPDATE: Atualizar dados do ML, manter status de conferência
                     const { error } = await supabaseClient
                         .from('vendas_ml')
                         .update({
-                            // Dados do ML que podem mudar
                             titulo: vendaProcessada.titulo,
                             cliente: vendaProcessada.cliente,
                             sku: vendaProcessada.sku,
@@ -351,8 +344,6 @@ async function processarESalvarVendas(vendasML) {
                             precisa_aguardar: vendaProcessada.precisa_aguardar,
                             updated_at: agora,
                             dados_completos: vendaProcessada.dados_completos
-                            
-                            // ⚠️ NÃO ATUALIZAR CAMPOS DE CONFERÊNCIA!
                         })
                         .eq('id_venda_ml', idVendaML);
                     
@@ -1032,89 +1023,71 @@ function atualizarTabelaVendas() {
         const sku = venda.sku || venda.item_sku || venda.codigo || 'SEM_SKU';
         const mlbId = venda.mlb_id || venda.item_id || null;
         
-        // ===== VERIFICAR SE É KIT (pelo campo eh_kit) =====
+        // ===== VERIFICAR SE É KIT =====
         const ehKit = venda.eh_kit || false;
-        const skusKit = venda.skus_kit || [];
         
-        // ===== CORREÇÃO DO TIPO DE ENVIO (FLEX) =====
-        let tipoEnvioOriginal = venda.tipo_envio || venda.meio_envio || 'N/I';
-        let tipoEnvioCorrigido = tipoEnvioOriginal;
-        
-        // Se veio como 'MERCADO ENVIOS' mas logistic_type indica FLEX
-        if (tipoEnvioOriginal.toLowerCase().includes('drop_off') || 
-            tipoEnvioOriginal.toLowerCase().includes('self_service') ||
-            tipoEnvioOriginal.toLowerCase().includes('xd_drop') ||
-            tipoEnvioOriginal === 'FLEX') {
-            tipoEnvioCorrigido = 'FLEX';
-        }
-        
-        // Também verificar se no título tem indicação de FLEX
-        if (tipoEnvioCorrigido === 'MERCADO ENVIOS' || tipoEnvioCorrigido === 'ME') {
-            const tituloLower = (venda.titulo || '').toLowerCase();
-            if (tituloLower.includes('flex') || 
-                tituloLower.includes('entrega rápida') ||
-                tituloLower.includes('self service')) {
-                tipoEnvioCorrigido = 'FLEX';
-            }
-        }
-        
-        // ===== TIPO DE ENVIO - APENAS EXIBIÇÃO =====
+        // ===== TIPO DE ENVIO =====
         let tipoEnvio = venda.tipo_envio || venda.meio_envio || 'N/I';
         let envioBadge = '';
-
-        // CORREÇÃO VISUAL: Se o tipo contém palavras-chave de FLEX, mostrar como FLEX
         if (tipoEnvio.includes('FULL') || tipoEnvio.includes('fulfillment')) {
             envioBadge = '<span class="badge badge-full"><i class="fas fa-warehouse"></i> FULL</span>';
-        } 
-        else if (tipoEnvio.includes('FLEX') || 
-                tipoEnvio.includes('drop_off') || 
-                tipoEnvio.includes('self_service') || 
-                tipoEnvio.includes('xd_drop')) {
+        } else if (tipoEnvio.includes('FLEX') || tipoEnvio.includes('drop_off') || tipoEnvio.includes('self_service')) {
             envioBadge = '<span class="badge badge-flex"><i class="fas fa-motorcycle"></i> FLEX</span>';
-        } 
-        else if (tipoEnvio.includes('MERCADO') || tipoEnvio.includes('cross_docking')) {
+        } else if (tipoEnvio.includes('MERCADO') || tipoEnvio.includes('cross_docking')) {
             envioBadge = '<span class="badge badge-mercado"><i class="fas fa-truck"></i> ME</span>';
-        } 
-        else if (tipoEnvio !== 'N/I' && tipoEnvio !== 'Não especificado') {
+        } else if (tipoEnvio !== 'N/I' && tipoEnvio !== 'Não especificado') {
             envioBadge = `<span class="badge badge-info">${tipoEnvio}</span>`;
-        } 
-        else {
+        } else {
             envioBadge = '<span class="badge badge-secondary"><i class="fas fa-question"></i> N/I</span>';
         }
-
-        // ===== NOVO: Badge de Liberação =====
-// ===== NOVO: Badge de Liberação =====
-let liberacaoBadge = '';
-if (venda.precisa_aguardar) {
-    let cor = '#ffc107'; // amarelo
-    let icone = 'fa-clock';
-    let texto = venda.mensagem_liberacao || 'Aguardar liberação';
-    
-    if (venda.status_liberacao === 'agendado') {
-        cor = '#17a2b8'; // azul
-        icone = 'fa-calendar-check';
-    }
-    
-    if (venda.data_liberacao) {
-        const dataLib = new Date(venda.data_liberacao);
-        texto += ` - ${dataLib.toLocaleDateString('pt-BR')}`;
-    }
-    
-    liberacaoBadge = `
-        <div style="margin-top: 8px; padding-top: 5px; border-top: 1px dashed #dee2e6;">
-            <span class="badge" style="background: ${cor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px;">
-                <i class="fas ${icone}"></i> ${texto}
-            </span>
-        </div>
-    `;
-}
+        
+        // ===== BADGE DE LIBERAÇÃO =====
+        let liberacaoBadge = '';
+        if (venda.precisa_aguardar) {
+            let cor = '#ffc107';
+            let icone = 'fa-clock';
+            let texto = venda.mensagem_liberacao || 'Aguardar liberação';
+            if (venda.status_liberacao === 'agendado') {
+                cor = '#17a2b8';
+                icone = 'fa-calendar-check';
+            }
+            if (venda.data_liberacao) {
+                const dataLib = new Date(venda.data_liberacao);
+                texto += ` - ${dataLib.toLocaleDateString('pt-BR')}`;
+            }
+            liberacaoBadge = `
+                <div style="margin-top: 8px; padding-top: 5px; border-top: 1px dashed #dee2e6;">
+                    <span class="badge" style="background: ${cor}; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; display: inline-flex; align-items: center; gap: 5px;">
+                        <i class="fas ${icone}"></i> ${texto}
+                    </span>
+                </div>
+            `;
+        }
+        
+        // ===== PRAZO (SLA) a partir do JSON informacoes_envio =====
+        let prazoHtml = '';
+        try {
+            const envioInfo = venda.informacoes_envio ? JSON.parse(venda.informacoes_envio) : {};
+            const sla = envioInfo.sla || {};
+            
+            if (sla.expected_date) {
+                const prazoDate = new Date(sla.expected_date);
+                const prazoStr = prazoDate.toLocaleDateString('pt-BR') + ' ' + prazoDate.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+                let linha = `<div><i class="fas fa-clock"></i> Despachar até: <strong>${prazoStr}</strong></div>`;
+                if (sla.status) {
+                    const statusSla = sla.status;
+                    const slaColor = statusSla === 'on_time' ? 'success' : (statusSla === 'delayed' ? 'danger' : 'warning');
+                    linha += `<div><span class="badge badge-${slaColor}">${statusSla.replace('_', ' ').toUpperCase()}</span></div>`;
+                }
+                prazoHtml = `<div style="font-size: 11px; color: #495057; margin-top: 5px; border-top: 1px dashed #dee2e6; padding-top: 5px;">${linha}</div>`;
+            }
+        } catch (e) {
+            console.warn('Erro ao parsear informacoes_envio:', e);
+        }
         
         // ===== ESTOQUE DO ANÚNCIO =====
         let estoqueBadge = '';
-        const estoqueAnuncio = venda.estoque_anuncio !== undefined && venda.estoque_anuncio !== null 
-            ? venda.estoque_anuncio 
-            : null;
-        
+        const estoqueAnuncio = venda.estoque_anuncio !== undefined && venda.estoque_anuncio !== null ? venda.estoque_anuncio : null;
         if (estoqueAnuncio !== null) {
             if (estoqueAnuncio <= 5) {
                 estoqueBadge = `<span class="badge badge-danger">${estoqueAnuncio} un</span>`;
@@ -1144,47 +1117,42 @@ if (venda.precisa_aguardar) {
         } else if (venda.status_conferencia === 'conferido_anuncio') {
             badgeConferencia = '<span class="badge badge-success"><i class="fas fa-check-double"></i> Finalizado</span>';
         }
-        // ===== ESTOQUE FÍSICO (COM SUPORTE A KIT) =====
-let estoqueFisicoDisplay = '';
-if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
-    // Criar tooltip com os SKUs do kit
-    const tooltipSkus = venda.skus_kit.map(item => `${item.sku}: ${item.estoque} un`).join('\n');
-    
-    estoqueFisicoDisplay = `
-        <div style="margin-bottom: 5px;">
-            <span class="badge badge-warning" style="background: #ffc107; color: #212529;">
-                <i class="fas fa-cubes"></i> KIT
-            </span>
-            <span style="font-size: 11px; color: #666; margin-left: 5px; cursor: help;" 
-                  title="${tooltipSkus}">
-                ${venda.skus_kit.length} SKU(s)
-            </span>
-        </div>
-        <div>
-            <span style="font-weight: bold; color: #28a745;">Total: ${venda.estoque_fisico || 0} un</span>
-        </div>
-    `;
-} else {
-    estoqueFisicoDisplay = podeEditarEstoque
-        ? `<input type="number" 
-                class="estoque-fisico-input" 
-                value="${venda.estoque_fisico || 0}" 
-                min="0"
-                data-id="${venda.id_venda_ml || venda.id}"
-                onchange="window.atualizarEstoqueFisico('${venda.id_venda_ml || venda.id}', this.value)"
-                style="width: 70px; padding: 4px; border-radius: 4px; border: 1px solid #ddd;">`
-        : `<span style="font-weight: bold; color: ${venda.estoque_fisico > 0 ? '#28a745' : '#6c757d'};">${venda.estoque_fisico || 0} un</span>`;
-}
+        
+        // ===== ESTOQUE FÍSICO =====
+        let estoqueFisicoDisplay = '';
+        if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
+            const tooltipSkus = venda.skus_kit.map(item => `${item.sku}: ${item.estoque} un`).join('\n');
+            estoqueFisicoDisplay = `
+                <div style="margin-bottom: 5px;">
+                    <span class="badge badge-warning" style="background: #ffc107; color: #212529;">
+                        <i class="fas fa-cubes"></i> KIT
+                    </span>
+                    <span style="font-size: 11px; color: #666; margin-left: 5px; cursor: help;" 
+                          title="${tooltipSkus}">
+                        ${venda.skus_kit.length} SKU(s)
+                    </span>
+                </div>
+                <div>
+                    <span style="font-weight: bold; color: #28a745;">Total: ${venda.estoque_fisico || 0} un</span>
+                </div>
+            `;
+        } else {
+            estoqueFisicoDisplay = podeEditarEstoque
+                ? `<input type="number" 
+                        class="estoque-fisico-input" 
+                        value="${venda.estoque_fisico || 0}" 
+                        min="0"
+                        data-id="${venda.id_venda_ml || venda.id}"
+                        onchange="window.atualizarEstoqueFisico('${venda.id_venda_ml || venda.id}', this.value)"
+                        style="width: 70px; padding: 4px; border-radius: 4px; border: 1px solid #ddd;">`
+                : `<span style="font-weight: bold; color: ${venda.estoque_fisico > 0 ? '#28a745' : '#6c757d'};">${venda.estoque_fisico || 0} un</span>`;
+        }
         
         // ===== BOTÕES DE AÇÃO =====
         let acoesHtml = '<div style="display: flex; gap: 4px; flex-wrap: wrap;">';
-        
-        // Botão ver detalhes
         acoesHtml += `<button onclick="verDetalhesVenda('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-info" title="Ver detalhes">
                         <i class="fas fa-eye"></i>
                       </button>`;
-
-        // ===== BOTÃO PARA REENVIAR DIVERGENTE (QUALQUER USUÁRIO) =====
         if (venda.divergente) {
             acoesHtml += `<button onclick="reenviarDivergente('${venda.id_venda_ml || venda.id}')" 
                             class="btn btn-sm btn-warning" 
@@ -1192,10 +1160,8 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
                             <i class="fas fa-undo-alt"></i> Reenviar
                         </button>`;
         }
-        
-        // Botões de conferência - se for kit, mostrar botão específico
         if (podeConferirEstoque) {
-            if (ehKit) {
+            if (venda.eh_kit) {
                 acoesHtml += `<button onclick="configurarKit('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-warning" title="Configurar Kit">
                                 <i class="fas fa-cubes"></i> Kit
                               </button>`;
@@ -1205,38 +1171,32 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
                               </button>`;
             }
         }
-        
         if (podeConferirAnuncio) {
             acoesHtml += `<button onclick="conferirAnuncio('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-success" title="2ª Conferência: Comparar Anúncio">
                             <i class="fas fa-check-double"></i> 2
                           </button>`;
         }
-        
         if (podeReabrir) {
             acoesHtml += `<button onclick="reabrirConferencia('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-warning" title="Reabrir Conferência">
                             <i class="fas fa-unlock"></i> ↺
                           </button>`;
         }
-        
-        // Botão mover para pendentes (admin)
         if (isAdmin() && venda.status_conferencia && venda.status_conferencia !== 'pendente') {
             acoesHtml += `<button onclick="moverParaPendentes('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-secondary" title="Mover para Pendentes">
                             <i class="fas fa-undo-alt"></i> Mover
                           </button>`;
         }
-        
-        // Botões verificar/fraude
-        if (venda.status_sistema === 'nova') {
-            acoesHtml += `
-                          <button onclick="marcarComoFraude('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-danger" title="Fraude">
-                            <i class="fas fa-ban"></i>
-                          </button>`;
-        }
-        
+        // Botão "Incorreto" - apenas se já foi conferida (não está pendente)
+if (venda.status_conferencia && venda.status_conferencia !== 'pendente') {
+    acoesHtml += `
+        <button onclick="marcarComoIncorreto('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-danger" title="Marcar como incorreto (reabrir)">
+            <i class="fas fa-undo-alt"></i> Incorreto
+        </button>`;
+}
         acoesHtml += '</div>';
         acoesHtml += `<div style="margin-top: 6px;">${badgeConferencia}</div>`;
         
-        // ===== FOTOS DO ANÚNCIO (BUSCADAS AUTOMATICAMENTE) =====
+        // ===== FOTOS DO ANÚNCIO =====
         let fotoThumbnail = '';
         if (venda.fotos_anuncio && venda.fotos_anuncio.length > 0) {
             const primeiraFoto = venda.fotos_anuncio[0];
@@ -1255,7 +1215,6 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
                 </div>
             `;
         } else if (venda.fotos && venda.fotos.length > 0) {
-            // Fallback para fotos manuais (se existirem)
             fotoThumbnail = `
                 <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #dee2e6;">
                     <img src="${venda.fotos[0].data}" 
@@ -1272,7 +1231,7 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
             `;
         }
         
-        // ===== SKU DISPLAY ORGANIZADO =====
+        // ===== SKU DISPLAY =====
         let skuDisplay = '';
         if (ehKit) {
             skuDisplay = `
@@ -1287,7 +1246,6 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
             skuDisplay = `<span class="badge badge-info" style="display: inline-block; margin-bottom: 4px;">${sku}</span>`;
         }
         
-        // ===== MLB DISPLAY =====
         let mlbDisplay = '';
         if (mlbId) {
             mlbDisplay = `
@@ -1303,7 +1261,7 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
             `;
         }
         
-        // ===== MONTAR LINHA DA TABELA (ORGANIZADA) =====
+        // ===== MONTAR LINHA DA TABELA =====
         row.innerHTML = `
             <td style="min-width: 150px;">
                 <div><strong>${(venda.id_venda_ml || '').substring(0, 15)}...</strong></div>
@@ -1337,6 +1295,9 @@ if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
                     ${estoqueFisicoDisplay}
                 </div>
             </td>
+            <td style="min-width: 150px;">
+                ${prazoHtml || '<span style="color: #999;">-</span>'}
+            </td>
             <td>
                 ${statusBadge}
             </td>
@@ -1368,6 +1329,64 @@ async function verFotosAnuncio(idVenda) {
     
     if (window.openPhotoViewer) {
         window.openPhotoViewer(fotosParaViewer, `Anúncio - ${venda.sku}`);
+    }
+}
+
+async function marcarComoIncorreto(idVenda) {
+    try {
+        // Buscar dados atuais para exibir confirmação
+        const { data: venda, error } = await supabaseClient
+            .from('vendas_ml')
+            .select('*')
+            .eq('id_venda_ml', idVenda)
+            .single();
+
+        if (error) throw error;
+
+        if (!venda.status_conferencia || venda.status_conferencia === 'pendente') {
+            mostrarToast('Esta venda já está pendente!', 'warning');
+            return;
+        }
+
+        const nomeUsuario = getNomeUsuario();
+
+        if (!confirm(
+            `⚠️ MARCAR COMO INCORRETO\n\n` +
+            `ID: ${venda.id_venda_ml}\n` +
+            `SKU: ${venda.sku}\n` +
+            `Status atual: ${venda.status_conferencia}\n` +
+            `Conferido por: ${venda.conferido_por_estoque || venda.conferido_por_anuncio || 'N/A'}\n\n` +
+            `Esta venda será movida para PENDENTES para correção.\n` +
+            `Deseja continuar?`
+        )) return;
+
+        // Atualizar para pendente e registrar reabertura
+        const updateData = {
+            status_conferencia: 'pendente',
+            divergente: false, // remove divergência, pois vai ser reavaliada
+            reaberta: true,    // se o campo existir
+            observacao: `Reaberta por incorreção por ${nomeUsuario} em ${new Date().toLocaleString('pt-BR')}`,
+            // Limpar campos de conferência (opcional, mas mantemos histórico)
+            // conferido_por_estoque: null,
+            // conferido_por_anuncio: null,
+            // data_conferencia_estoque: null,
+            // data_conferencia_anuncio: null
+            updated_at: new Date().toISOString()
+        };
+
+        const { error: updateError } = await supabaseClient
+            .from('vendas_ml')
+            .update(updateData)
+            .eq('id_venda_ml', idVenda);
+
+        if (updateError) throw updateError;
+
+        mostrarToast(`🔄 Venda reaberta por ${nomeUsuario} para correção!`, 'success');
+        await carregarVendasDoBanco();
+
+    } catch (error) {
+        console.error('❌ Erro ao marcar como incorreto:', error);
+        mostrarToast('Erro ao reabrir venda', 'error');
     }
 }
 
@@ -2018,26 +2037,6 @@ async function verificarVenda(idVenda) {
     } catch (error) {
         console.error('❌ Erro ao verificar venda:', error);
         mostrarToast('Erro ao verificar venda', 'error');
-    }
-}
-
-async function marcarComoFraude(idVenda) {
-    try {
-        const { error } = await supabaseClient
-            .from('vendas_ml')
-            .update({ 
-                status_sistema: 'fraude',
-                updated_at: new Date().toISOString()
-            })
-            .eq('id_venda_ml', idVenda);
-        
-        if (error) throw error;
-        
-        mostrarToast('Venda marcada como fraude!', 'warning');
-        await carregarVendasDoBanco();
-    } catch (error) {
-        console.error('❌ Erro ao marcar venda como fraude:', error);
-        mostrarToast('Erro ao marcar venda como fraude', 'error');
     }
 }
 

@@ -1,4 +1,6 @@
 // xmlBuilder.js
+const crypto = require('crypto');
+
 function escapeXml(unsafe) {
     if (!unsafe) return '';
     return unsafe
@@ -23,12 +25,25 @@ function calcularDV(chaveSemDV) {
     return (resto === 0 || resto === 1) ? 0 : 11 - resto;
 }
 
+/**
+ * Calcula o hashCSRT (ordem padrão: token + chave)
+ * @param {string} tokenCSRT - Token CSRT
+ * @param {string} chaveAcesso - Chave de acesso de 44 dígitos
+ * @param {boolean} invert - se true, usa chaveAcesso + tokenCSRT (não usar)
+ * @returns {string} hash em base64
+ */
+function calcularHashCSRT(tokenCSRT, chaveAcesso, invert = false) {
+    // A ordem correta é tokenCSRT + chaveAcesso (invert = false)
+    const stringParaHash = invert ? chaveAcesso + tokenCSRT : tokenCSRT + chaveAcesso;
+    return crypto.createHash('sha1').update(stringParaHash, 'utf8').digest('base64');
+}
+
 function gerarXmlNfe(dados) {
     const {
         nNF,
         serie = 1,
         cNF = String(Math.floor(Math.random() * 100000000)).padStart(8, '0'),
-        tpAmb = '2', // '1' para produção
+        tpAmb = '2',
         emitente = {
             CNPJ: '32830261000125',
             xNome: 'Wheel Tech Bicycling Ltda',
@@ -54,18 +69,18 @@ function gerarXmlNfe(dados) {
         produtos,
         cfop,
         natOp = 'Venda',
-        modFrete = '9', // 9 = sem frete (a menos que transportadora seja informada)
-        transportadora = null, // { CNPJ, xNome, IE, xEnder, xMun, UF }
+        modFrete = '9',
+        transportadora = null,
         volumes = { qVol: 0, pesoL: 0, pesoB: 0 },
-        fatura = null, // { nFat, vOrig, vDesc, vLiq }
-        infAdic = null, // string com observações
+        fatura = null,
+        infAdic = null,
         respTec = {
             CNPJ: '64555626000147',
             xContato: 'MARIA ANTONIA MELO COSTA',
             email: 'privacidade@iob.com.br',
             fone: '1930043303',
-            idCSRT: '01',
-            hashCSRT: 'z9ywwhAy7fsb/3QyV5mYiSRZnuA='
+            tokenCSRT: null,
+            idCSRT: null // Agora passamos o idCSRT explicitamente
         }
     } = dados;
 
@@ -80,24 +95,46 @@ function gerarXmlNfe(dados) {
     const mes = (agora.getMonth() + 1).toString().padStart(2, '0');
     const cUF = '41';
 
+    // ===== CONSTRUIR CHAVE DE ACESSO =====
     const chaveSemDV = cUF + ano + mes + emitente.CNPJ + '55' +
         serie.toString().padStart(3, '0') +
         nNF.toString().padStart(9, '0') +
         '1' + cNF;
 
     const cDV = calcularDV(chaveSemDV);
-    const idNFe = `NFe${chaveSemDV}${cDV}`;
+    const chaveAcesso = chaveSemDV + cDV;
+    const idNFe = `NFe${chaveAcesso}`;
 
+    // ===== CALCULAR HASHCSRT =====
+    let idCSRT = '03'; // padrão (homologação novo)
+    let hashCSRT = null;
+
+    if (respTec.tokenCSRT) {
+        // Usa o idCSRT passado, ou fallback baseado no ambiente
+        idCSRT = respTec.idCSRT || (tpAmb === '2' ? '03' : '04');
+        // Sempre usa ordem token+chave (invert = false)
+        hashCSRT = calcularHashCSRT(respTec.tokenCSRT, chaveAcesso, false);
+
+        console.log(`🔐 idCSRT=${idCSRT}, hashCSRT=${hashCSRT}`);
+        console.log(`🔑 Token: ${respTec.tokenCSRT}`);
+        console.log(`🔑 Chave: ${chaveAcesso}`);
+    } else {
+        console.warn('⚠️ tokenCSRT não fornecido, usando fallback');
+        hashCSRT = 'z9ywwhAy7fsb/3QyV5mYiSRZnuA=';
+    }
+
+    // ========== DADOS DO DESTINATÁRIO ==========
     let documento = (destinatario.CPF || destinatario.CNPJ || '').replace(/\D/g, '');
     const tipoDoc = documento.length === 14 ? 'CNPJ' : 'CPF';
 
+    // ========== MONTAGEM DO XML ==========
     let totalProd = 0;
     let totalTrib = 0;
     let produtosXml = '';
     produtos.forEach((prod, idx) => {
         const vProd = prod.quantidade * prod.valor_unitario;
         totalProd += vProd;
-        const vTotTrib = vProd * 0.0402; // exemplo, ajuste conforme necessidade
+        const vTotTrib = vProd * 0.0402;
         totalTrib += vTotTrib;
 
         const nomeProd = escapeXml(prod.nome || '');
@@ -215,19 +252,19 @@ function gerarXmlNfe(dados) {
         </infAdic>`;
     }
 
+    // ===== INFORMAÇÕES DO RESPONSÁVEL TÉCNICO =====
     const respTecXml = `
         <infRespTec>
             <CNPJ>${respTec.CNPJ}</CNPJ>
             <xContato>${escapeXml(respTec.xContato)}</xContato>
             <email>${escapeXml(respTec.email)}</email>
             <fone>${respTec.fone}</fone>
-            <idCSRT>${respTec.idCSRT}</idCSRT>
-            <hashCSRT>${respTec.hashCSRT}</hashCSRT>
+            <idCSRT>${idCSRT}</idCSRT>
+            <hashCSRT>${hashCSRT}</hashCSRT>
         </infRespTec>`;
 
     const idDest = (destinatario.UF === emitente.enderEmit.UF) ? '1' : '2';
 
-    // Monta o bloco de transporte condicional
     let transpXml = `<modFrete>${modFrete}</modFrete>`;
     if (transportadora) {
         transpXml += transportaXml;
