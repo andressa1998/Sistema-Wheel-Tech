@@ -75,10 +75,10 @@ function gerarXmlNfe(dados) {
         fatura = null,
         infAdic = null,
         respTec = {
-            CNPJ: '64555626000147',
-            xContato: 'MARIA ANTONIA MELO COSTA',
-            email: 'privacidade@iob.com.br',
-            fone: '1930043303',
+            CNPJ: '32830261000125',
+            xContato: 'WHEEL TECH BICYCLING LTDA',
+            email: 'wheeltechbicycling@gmail.com.br',
+            fone: '4131501230',
             tokenCSRT: null,
             idCSRT: null // Agora passamos o idCSRT explicitamente
         }
@@ -106,18 +106,17 @@ function gerarXmlNfe(dados) {
     const idNFe = `NFe${chaveAcesso}`;
 
     // ===== CALCULAR HASHCSRT =====
-    let idCSRT = '03'; // padrão (homologação novo)
+    // Garante dois dígitos preenchendo com zero à esquerda ('03' ou '04')
+    let idCSRT = respTec.idCSRT ? String(respTec.idCSRT).padStart(2, '0') : (tpAmb === '2' ? '03' : '04');
     let hashCSRT = null;
 
     if (respTec.tokenCSRT) {
-        // Usa o idCSRT passado, ou fallback baseado no ambiente
-        idCSRT = respTec.idCSRT || (tpAmb === '2' ? '03' : '04');
-        // Sempre usa ordem token+chave (invert = false)
-        hashCSRT = calcularHashCSRT(respTec.tokenCSRT, chaveAcesso, false);
+        // Mantém a ordem CORRETA de criptografia exigida (Chave + Token)
+        hashCSRT = calcularHashCSRT(respTec.tokenCSRT, chaveAcesso);
 
         console.log(`🔐 idCSRT=${idCSRT}, hashCSRT=${hashCSRT}`);
-        console.log(`🔑 Token: ${respTec.tokenCSRT}`);
-        console.log(`🔑 Chave: ${chaveAcesso}`);
+        console.log(`🔑 Token utilizado: ${respTec.tokenCSRT}`);
+        console.log(`🔑 Chave gerada: ${chaveAcesso}`);
     } else {
         console.warn('⚠️ tokenCSRT não fornecido, usando fallback');
         hashCSRT = 'z9ywwhAy7fsb/3QyV5mYiSRZnuA=';
