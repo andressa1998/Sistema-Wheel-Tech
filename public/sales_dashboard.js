@@ -1003,6 +1003,13 @@ function atualizarTabelaVendas() {
         row.className = 'venda-item';
         row.dataset.id = venda.id_venda_ml || venda.id;
         
+        // ===== DESTAQUE PARA REABERTAS =====
+        const isReaberta = venda.reaberta === true || (venda.observacao && venda.observacao.includes('Reaberta por incorreção'));
+        if (isReaberta) {
+            row.style.background = '#fff3cd'; // amarelo claro
+            row.style.borderLeft = '4px solid #dc3545';
+        }
+        
         // ===== DATA DA VENDA =====
         const dataVenda = venda.created_at || venda.data_venda || venda.date_created || new Date().toISOString();
         const dataObj = new Date(dataVenda);
@@ -1064,22 +1071,25 @@ function atualizarTabelaVendas() {
             `;
         }
         
-        // ===== PRAZO (SLA) a partir do JSON informacoes_envio =====
+        // ===== PRAZO (SLA E ENTREGA) - SOMENTE "Despachar até" =====
         let prazoHtml = '';
         try {
             const envioInfo = venda.informacoes_envio ? JSON.parse(venda.informacoes_envio) : {};
             const sla = envioInfo.sla || {};
             
             if (sla.expected_date) {
+                let linhas = [];
                 const prazoDate = new Date(sla.expected_date);
                 const prazoStr = prazoDate.toLocaleDateString('pt-BR') + ' ' + prazoDate.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
-                let linha = `<div><i class="fas fa-clock"></i> Despachar até: <strong>${prazoStr}</strong></div>`;
+                linhas.push(`<div><i class="fas fa-clock"></i> Despachar até: <strong>${prazoStr}</strong></div>`);
                 if (sla.status) {
                     const statusSla = sla.status;
                     const slaColor = statusSla === 'on_time' ? 'success' : (statusSla === 'delayed' ? 'danger' : 'warning');
-                    linha += `<div><span class="badge badge-${slaColor}">${statusSla.replace('_', ' ').toUpperCase()}</span></div>`;
+                    linhas.push(`<div><span class="badge badge-${slaColor}">${statusSla.replace('_', ' ').toUpperCase()}</span></div>`);
                 }
-                prazoHtml = `<div style="font-size: 11px; color: #495057; margin-top: 5px; border-top: 1px dashed #dee2e6; padding-top: 5px;">${linha}</div>`;
+                if (linhas.length > 0) {
+                    prazoHtml = `<div style="font-size: 11px; color: #495057; margin-top: 5px; border-top: 1px dashed #dee2e6; padding-top: 5px;">${linhas.join('')}</div>`;
+                }
             }
         } catch (e) {
             console.warn('Erro ao parsear informacoes_envio:', e);
@@ -1118,6 +1128,14 @@ function atualizarTabelaVendas() {
             badgeConferencia = '<span class="badge badge-success"><i class="fas fa-check-double"></i> Finalizado</span>';
         }
         
+        // ===== BADGE DE REABERTA =====
+        let reabertaBadge = '';
+        if (isReaberta) {
+            reabertaBadge = `<span class="badge badge-danger" style="background: #dc3545; color: white; margin-left: 5px;">
+                                <i class="fas fa-exclamation-triangle"></i> REABERTA
+                            </span>`;
+        }
+        
         // ===== ESTOQUE FÍSICO =====
         let estoqueFisicoDisplay = '';
         if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
@@ -1153,6 +1171,7 @@ function atualizarTabelaVendas() {
         acoesHtml += `<button onclick="verDetalhesVenda('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-info" title="Ver detalhes">
                         <i class="fas fa-eye"></i>
                       </button>`;
+        
         if (venda.divergente) {
             acoesHtml += `<button onclick="reenviarDivergente('${venda.id_venda_ml || venda.id}')" 
                             class="btn btn-sm btn-warning" 
@@ -1160,6 +1179,7 @@ function atualizarTabelaVendas() {
                             <i class="fas fa-undo-alt"></i> Reenviar
                         </button>`;
         }
+        
         if (podeConferirEstoque) {
             if (venda.eh_kit) {
                 acoesHtml += `<button onclick="configurarKit('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-warning" title="Configurar Kit">
@@ -1171,30 +1191,35 @@ function atualizarTabelaVendas() {
                               </button>`;
             }
         }
+        
         if (podeConferirAnuncio) {
             acoesHtml += `<button onclick="conferirAnuncio('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-success" title="2ª Conferência: Comparar Anúncio">
                             <i class="fas fa-check-double"></i> 2
                           </button>`;
         }
+        
         if (podeReabrir) {
             acoesHtml += `<button onclick="reabrirConferencia('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-warning" title="Reabrir Conferência">
                             <i class="fas fa-unlock"></i> ↺
                           </button>`;
         }
+        
         if (isAdmin() && venda.status_conferencia && venda.status_conferencia !== 'pendente') {
             acoesHtml += `<button onclick="moverParaPendentes('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-secondary" title="Mover para Pendentes">
                             <i class="fas fa-undo-alt"></i> Mover
                           </button>`;
         }
-        // Botão "Incorreto" - apenas se já foi conferida (não está pendente)
-if (venda.status_conferencia && venda.status_conferencia !== 'pendente') {
-    acoesHtml += `
-        <button onclick="marcarComoIncorreto('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-danger" title="Marcar como incorreto (reabrir)">
-            <i class="fas fa-undo-alt"></i> Incorreto
-        </button>`;
-}
+        
+        // ===== NOVO BOTÃO INCORRETO (substitui o antigo "Fraude") =====
+        if (venda.status_conferencia && venda.status_conferencia !== 'pendente') {
+            acoesHtml += `
+                <button onclick="marcarComoIncorreto('${venda.id_venda_ml || venda.id}')" class="btn btn-sm btn-warning" title="Marcar como incorreto (reabrir para correção)">
+                    <i class="fas fa-undo-alt"></i> Incorreto
+                </button>`;
+        }
+        
         acoesHtml += '</div>';
-        acoesHtml += `<div style="margin-top: 6px;">${badgeConferencia}</div>`;
+        acoesHtml += `<div style="margin-top: 6px;">${badgeConferencia} ${reabertaBadge}</div>`;
         
         // ===== FOTOS DO ANÚNCIO =====
         let fotoThumbnail = '';
