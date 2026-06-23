@@ -1,4 +1,4 @@
-// nfe_manager.js - Versão com preenchimento manual de dados do cliente
+// nfe_manager.js - Versão completa com edição de produtos, fallback de APIs e integração ML
 window.showToast = window.showToast || showToast;
 
 // Configurações globais
@@ -7,11 +7,159 @@ if (!window.API_BASE_URL) window.API_BASE_URL = 'http://localhost:3000';
 
 let vendasPendentes = [];
 let pendingEmitOrderId = null;
+let produtosEditados = [];
+let vendaIdParaEdicao = null;
 
 // ===== VERIFICAR SE É FULL (mesma lógica do shipping_simple.js) =====
 function isFullByAnyField(item) {
     const text = `${item.titulo || ''} ${item.mlb || ''} ${item.id || ''} ${item.shipping?.logistic_type || ''} ${item.tags?.join(' ') || ''}`.toLowerCase();
     return /full|fulfillment/.test(text);
+}
+window.isFullByAnyField = isFullByAnyField;
+
+// ===================== EDITAR PRODUTOS ANTES DA EMISSÃO =====================
+async function abrirModalEdicaoProdutos(orderId) {
+    console.log('🔧 Abrindo edição de produtos para venda:', orderId);
+    vendaIdParaEdicao = orderId;
+
+    let token = localStorage.getItem('ml_access_token');
+    if (!token && typeof window.getValidToken === 'function') {
+        const tokenData = await window.getValidToken();
+        token = tokenData?.access_token;
+    }
+    if (!token) {
+        showToast('Token ML não disponível', 'error');
+        return;
+    }
+
+    try {
+        const url = `https://api.mercadolibre.com/orders/${orderId}`;
+        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error('Erro ao buscar venda');
+        const venda = await response.json();
+
+        const items = venda.order_items || [];
+        if (items.length === 0) {
+            showToast('Nenhum produto encontrado', 'warning');
+            return;
+        }
+
+        produtosEditados = items.map(item => ({
+            nome: item.item.title,
+            quantidade: item.quantity || 1,
+            valor_unitario: item.unit_price || 0,
+            sku: item.item.seller_sku || 'SEM_SKU',
+            ncm: '87149990'
+        }));
+
+        // Criar modal
+        const modalHTML = `
+        <div id="modalEdicaoProdutos" class="modal" style="display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:9999;">
+            <div class="modal-content" style="max-width:800px; width:90%; max-height:90vh; overflow-y:auto; background:white; padding:25px; border-radius:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h3 style="margin:0;"><i class="fas fa-edit"></i> Editar Produtos</h3>
+                    <button onclick="fecharModalEdicaoProdutos()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+                </div>
+                <p style="color:#6c757d; margin-bottom:15px;">Ajuste a quantidade e o valor unitário de cada produto. O total será recalculado.</p>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Produto</th>
+                                <th style="width:100px;">Quantidade</th>
+                                <th style="width:150px;">Valor Unitário (R$)</th>
+                                <th style="width:120px;">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody id="produtosEditaveisBody">
+                            ${produtosEditados.map((p, index) => `
+                                <tr>
+                                    <td><span title="${p.nome}">${p.nome.length > 40 ? p.nome.substring(0,40)+'...' : p.nome}</span></td>
+                                    <td>
+                                        <input type="number" class="form-control form-control-sm qtd-produto" 
+                                               data-index="${index}" value="${p.quantidade}" min="0.01" step="0.01">
+                                    </td>
+                                    <td>
+                                        <input type="number" class="form-control form-control-sm valor-produto" 
+                                               data-index="${index}" value="${p.valor_unitario}" min="0" step="0.01">
+                                    </td>
+                                    <td class="subtotal-produto">R$ ${(p.quantidade * p.valor_unitario).toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                        <tfoot>
+                            <tr style="font-weight:bold; background:#f8f9fa;">
+                                <td colspan="3" style="text-align:right;">Total da Nota:</td>
+                                <td id="totalGeralProdutos">R$ ${produtosEditados.reduce((acc, p) => acc + (p.quantidade * p.valor_unitario), 0).toFixed(2)}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <button class="btn btn-secondary" onclick="fecharModalEdicaoProdutos()">Cancelar</button>
+                    <button class="btn btn-success" onclick="confirmarProdutosEditados()"><i class="fas fa-check"></i> Confirmar Valores</button>
+                </div>
+            </div>
+        </div>`;
+
+        const modalContainer = document.createElement('div');
+        modalContainer.innerHTML = modalHTML;
+        document.body.appendChild(modalContainer.firstElementChild);
+
+        // Event listeners para recalcular subtotal
+        document.querySelectorAll('.qtd-produto, .valor-produto').forEach(input => {
+            input.addEventListener('input', function() {
+                const idx = parseInt(this.dataset.index);
+                const row = this.closest('tr');
+                const qtdInput = row.querySelector('.qtd-produto');
+                const valorInput = row.querySelector('.valor-produto');
+                const subtotalCell = row.querySelector('.subtotal-produto');
+                const qtd = parseFloat(qtdInput.value) || 0;
+                const valor = parseFloat(valorInput.value) || 0;
+                const subtotal = qtd * valor;
+                subtotalCell.textContent = `R$ ${subtotal.toFixed(2)}`;
+                produtosEditados[idx].quantidade = qtd;
+                produtosEditados[idx].valor_unitario = valor;
+                recalcularTotalGeral();
+            });
+        });
+
+        function recalcularTotalGeral() {
+            let total = 0;
+            produtosEditados.forEach(p => total += p.quantidade * p.valor_unitario);
+            document.getElementById('totalGeralProdutos').textContent = `R$ ${total.toFixed(2)}`;
+        }
+
+    } catch (error) {
+        console.error('Erro ao carregar produtos:', error);
+        showToast('Erro ao carregar produtos: ' + error.message, 'error');
+    }
+}
+
+function fecharModalEdicaoProdutos() {
+    const modal = document.getElementById('modalEdicaoProdutos');
+    if (modal) modal.remove();
+    // Não reseta vendaIdParaEdicao aqui
+}
+
+function confirmarProdutosEditados() {
+    const vendaId = vendaIdParaEdicao;
+    if (!vendaId) {
+        showToast('❌ ID da venda não encontrado', 'error');
+        return;
+    }
+    window.produtosParaEmissao = produtosEditados.map(p => ({
+        nome: p.nome,
+        quantidade: p.quantidade,
+        valor_unitario: p.valor_unitario,
+        sku: p.sku,
+        ncm: p.ncm
+    }));
+    fecharModalEdicaoProdutos();
+    emitirNFEParaVenda(vendaId);
+    // Reset após uso (opcional, pois emitirNFEParaVenda também valida)
+    vendaIdParaEdicao = null;
 }
 
 // ===================== ABAS =====================
@@ -51,7 +199,7 @@ async function mostrarAbaNFE(aba) {
     if (aba === 'clientes') await carregarClientes();
 }
 
-// ===================== LISTAR VENDAS PENDENTES (API ML + Worker) =====================
+// ===================== LISTAR VENDAS PENDENTES =====================
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
@@ -66,7 +214,7 @@ async function carregarVendasPendentes() {
         if (!token) throw new Error('Token ML não disponível');
 
         const url = `https://api.mercadolibre.com/orders/search?seller=415176739&sort=date_desc&order.status=paid&limit=50`;
-        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
         const response = await fetch(proxyUrl);
         const data = await response.json();
         const results = data.results || [];
@@ -76,23 +224,28 @@ async function carregarVendasPendentes() {
             return;
         }
 
-        // Buscar IDs das vendas já emitidas
-        const emitidas = JSON.parse(localStorage.getItem('nfe_emitidas_ids') || '[]');
+        // Buscar IDs com NF-e no Supabase (tabela nfe_emitidas)
+        let idsComNFE = new Set();
+        try {
+            const { data: nfes, error } = await window.supabaseClient
+                .from('nfe_emitidas')
+                .select('venda_id');
+            if (!error && nfes) {
+                idsComNFE = new Set(nfes.map(n => String(n.venda_id)).filter(id => id !== 'null' && id !== null));
+                console.log(`📋 ${idsComNFE.size} vendas com NF-e (tabela nfe_emitidas)`);
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao consultar nfe_emitidas:', e);
+        }
 
-        // Filtrar:
-        // 1. Remover as já emitidas
-        // 2. Remover as que são FULL (usando a mesma lógica)
+        // Filtrar pendentes: não têm NF-e e não são FULL
         const pendentes = results.filter(v => {
-            // Já emitida?
-            if (emitidas.includes(String(v.id))) return false;
-
-            // Verifica se é FULL
-            const isFull = isFullByAnyField(v);
-            if (isFull) {
-                console.log(`🚫 Venda FULL ignorada: ${v.id}`);
+            const idVenda = String(v.id);
+            if (idsComNFE.has(idVenda)) return false;
+            if (typeof isFullByAnyField === 'function' && isFullByAnyField(v)) {
+                console.log(`🚫 Venda FULL ignorada: ${idVenda}`);
                 return false;
             }
-
             return true;
         });
 
@@ -102,52 +255,65 @@ async function carregarVendasPendentes() {
         }
 
         vendasPendentes = pendentes;
+
         tbody.innerHTML = pendentes.map(v => `
             <tr>
-                <td>${v.id}<\/td>
-                <td>${new Date(v.date_created).toLocaleDateString('pt-BR')}<\/td>
-                <td>${v.buyer?.nickname || 'N/I'}<\/td>
-                <td>${v.order_items?.[0]?.item?.seller_sku || 'N/A'}<\/td>
-                <td>R$ ${v.total_amount?.toFixed(2)}<\/td>
+                <td>${v.id}</td>
+                <td>${new Date(v.date_created).toLocaleDateString('pt-BR')}</td>
+                <td>${v.buyer?.nickname || 'N/I'}</td>
+                <td>${v.order_items?.[0]?.item?.seller_sku || 'N/A'}</td>
+                <td>R$ ${v.total_amount?.toFixed(2)}</td>
                 <td>
-                    <button class="btn btn-sm btn-success" data-venda-id="${v.id}">Emitir NF-e<\/button>
-                 <\/td>
+                    <button class="btn btn-sm btn-success btn-emitir-nfe" data-venda-id="${v.id}">
+                        <i class="fas fa-file-invoice"></i> Emitir NF-e
+                    </button>
+                </td>
             </tr>`).join('');
 
-        // Event listeners
-        document.querySelectorAll('#vendasPendentesBody button[data-venda-id]').forEach(btn => {
-            btn.removeEventListener('click', emitirNFEParaVendaHandler);
-            btn.addEventListener('click', emitirNFEParaVendaHandler);
+        document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
+            btn.removeEventListener('click', handleEmitirNFEClick);
+            btn.addEventListener('click', handleEmitirNFEClick);
         });
 
     } catch (error) {
-        console.error(error);
+        console.error('❌ Erro ao carregar vendas pendentes:', error);
         tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Erro: ${error.message}<\/td><\/tr>`;
     }
 }
 
-function emitirNFEParaVendaHandler(event) {
-    const orderId = event.currentTarget.getAttribute('data-venda-id');
-    emitirNFEParaVenda(orderId);
+function handleEmitirNFEClick(event) {
+    const vendaId = event.currentTarget.dataset.vendaId;
+    if (!vendaId) {
+        showToast('❌ ID da venda não encontrado', 'error');
+        return;
+    }
+    abrirModalEdicaoProdutos(vendaId);
 }
 
 // ===================== EMITIR NF-e PARA UMA VENDA =====================
-// ===================== EMITIR NF-e PARA UMA VENDA =====================
 async function emitirNFEParaVenda(orderId) {
-    console.log('🔵 Preparar emissão NF-e para venda:', orderId);
+    console.log('🔵 Iniciando emitirNFEParaVenda para:', orderId);
+    
+    // VALIDAÇÃO MAIS ROBUSTA
+    if (!orderId || orderId === 'null' || orderId === 'undefined' || orderId === '') {
+        showToast('❌ ID da venda inválido', 'error');
+        return;
+    }
+    
     pendingEmitOrderId = orderId;
 
     // Limpa o formulário do modal
-    document.getElementById('clienteNome').value = '';
-    document.getElementById('clienteDocumento').value = '';
-    document.getElementById('clienteEndereco').value = '';
-    document.getElementById('clienteNumero').value = 'S/N';
-    document.getElementById('clienteBairro').value = '';
-    document.getElementById('clienteCidade').value = '';
-    document.getElementById('clienteUF').value = '';
-    document.getElementById('clienteCEP').value = '';
+    const campos = ['clienteNome', 'clienteDocumento', 'clienteEndereco', 'clienteNumero', 'clienteBairro', 'clienteCidade', 'clienteUF', 'clienteCEP'];
+    campos.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            if (id === 'clienteNumero') el.value = 'S/N';
+            else el.value = '';
+        } else {
+            console.warn(`⚠️ Elemento ${id} não encontrado no DOM`);
+        }
+    });
 
-    // Função auxiliar para extrair valor de campo (string ou objeto com name)
     function getValue(field) {
         if (!field) return '';
         if (typeof field === 'string') return field;
@@ -156,7 +322,6 @@ async function emitirNFEParaVenda(orderId) {
     }
 
     try {
-        // 1. Obter token válido do ML
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
             const tokenData = await window.getValidToken();
@@ -164,138 +329,154 @@ async function emitirNFEParaVenda(orderId) {
         }
         if (!token) {
             showToast('⚠️ Token ML não disponível. Preencha manualmente.', 'warning');
-            document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+            abrirModalCliente();
             return;
         }
 
-        // 2. Buscar dados da ordem
+        // Buscar dados da ordem
         const url = `https://api.mercadolibre.com/orders/${orderId}`;
         let venda = null;
+        let ultimoErro = null;
 
+        // Tentativa 1: via Worker
         try {
-            const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+            const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+            console.log('📤 Chamando Worker:', proxyUrl.substring(0, 100) + '...');
             const response = await fetch(proxyUrl);
             if (response.ok) {
                 venda = await response.json();
                 console.log('✅ Venda obtida via Worker');
             } else {
-                throw new Error(`Worker falhou: ${response.status}`);
+                const errorText = await response.text();
+                ultimoErro = `Worker falhou: ${response.status} - ${errorText}`;
+                console.warn('⚠️', ultimoErro);
             }
         } catch (workerError) {
-            console.warn('⚠️ Worker falhou, tentando chamada direta...', workerError);
-            const directResponse = await fetch(url, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (directResponse.ok) {
-                venda = await directResponse.json();
-                console.log('✅ Venda obtida via chamada direta');
-            } else {
-                throw new Error(`Falha na chamada direta: ${directResponse.status}`);
+            ultimoErro = workerError.message;
+            console.warn('⚠️ Worker falhou:', workerError);
+        }
+
+        // Tentativa 2: fallback via proxy CORS
+        if (!venda) {
+            try {
+                console.log('📤 Tentando fallback via CORS proxy...');
+                const fallbackUrl = `https://cors-anywhere.herokuapp.com/${url}`;
+                const response = await fetch(fallbackUrl, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    venda = await response.json();
+                    console.log('✅ Venda obtida via CORS proxy');
+                } else {
+                    ultimoErro = `CORS proxy falhou: ${response.status}`;
+                    console.warn('⚠️', ultimoErro);
+                }
+            } catch (fallbackError) {
+                ultimoErro = fallbackError.message;
+                console.warn('⚠️ Fallback falhou:', fallbackError);
+            }
+        }
+
+        // Tentativa 3: chamada direta
+        if (!venda) {
+            try {
+                console.log('📤 Tentando chamada direta...');
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (response.ok) {
+                    venda = await response.json();
+                    console.log('✅ Venda obtida via chamada direta');
+                } else {
+                    ultimoErro = `Chamada direta falhou: ${response.status}`;
+                    console.warn('⚠️', ultimoErro);
+                }
+            } catch (directError) {
+                ultimoErro = directError.message;
+                console.warn('⚠️ Chamada direta falhou:', directError);
             }
         }
 
         if (!venda) {
-            showToast('❌ Não foi possível obter os dados da venda.', 'error');
-            document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+            showToast(`❌ Não foi possível obter os dados da venda. ${ultimoErro || ''}`, 'error');
+            abrirModalCliente();
             return;
         }
 
-        // ===== VERIFICAÇÃO DE VENDA FULL =====
-        if (typeof isFullByAnyField === 'function') {
-            const isFull = isFullByAnyField(venda);
-            if (isFull) {
-                console.log('🚫 Venda FULL – NF-e não permitida.');
-                showToast('🚫 Esta venda é FULL e não permite emissão manual de NF-e.', 'warning');
-                // Abre o modal mesmo assim? Melhor não abrir, apenas avisa e retorna.
-                // Mas se quiser permitir edição manual, pode abrir com campos desabilitados.
-                // Vamos abrir e desabilitar os campos? Melhor não abrir.
-                document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
-                // Desabilita o botão de emitir? Não, mas o backend também bloqueará.
-                return;
-            }
-        } else {
-            console.warn('⚠️ Função isFullByAnyField não definida. Verifique se nfe_manager.js a inclui.');
+        // Verificar FULL
+        if (typeof isFullByAnyField === 'function' && isFullByAnyField(venda)) {
+            console.log('🚫 Venda FULL – NF-e não permitida.');
+            showToast('🚫 Esta venda é FULL e não permite emissão manual de NF-e.', 'warning');
+            abrirModalCliente();
+            return;
         }
 
-        // 3. Buscar dados do envio (shipment) para obter o endereço completo
+        // Buscar shipment para endereço
         let address = {};
         if (venda.shipping && venda.shipping.id) {
             try {
                 const shipUrl = `https://api.mercadolibre.com/shipments/${venda.shipping.id}`;
-                const shipProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${token}`;
+                const shipProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${encodeURIComponent(token)}`;
                 const shipResponse = await fetch(shipProxyUrl);
                 if (shipResponse.ok) {
                     const shipment = await shipResponse.json();
-                    console.log('📦 Dados do shipment obtidos:', shipment);
-                    // O endereço está em receiver_address
                     if (shipment.receiver_address) {
                         address = shipment.receiver_address;
                     } else if (shipment.shipping_option && shipment.shipping_option.receiver_address) {
                         address = shipment.shipping_option.receiver_address;
                     }
-                } else {
-                    console.warn('⚠️ Não foi possível obter os dados do shipment');
                 }
             } catch (shipError) {
                 console.warn('⚠️ Erro ao buscar shipment:', shipError);
             }
         }
 
-        // Fallback: se não conseguir pelo shipment, tenta buyer.address (raro)
+        // Fallback para endereço do comprador
         if (!address.address_line && !address.street_name && venda.buyer && venda.buyer.address) {
             address = venda.buyer.address;
-            console.log('📦 Usando endereço do comprador (buyer.address)');
         }
 
-        // 4. Extrair nome do comprador
+        // Preencher nome
         const buyer = venda.buyer || {};
         const nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || '';
         document.getElementById('clienteNome').value = nome;
 
-        // 5. Preencher endereço
-        const logradouro = address.address_line || address.street_name || '';
-        document.getElementById('clienteEndereco').value = logradouro;
+        // Preencher endereço
+        document.getElementById('clienteEndereco').value = address.address_line || address.street_name || '';
+        document.getElementById('clienteNumero').value = address.street_number || 'S/N';
+        document.getElementById('clienteBairro').value = getValue(address.neighborhood);
+        document.getElementById('clienteCidade').value = getValue(address.city);
+        document.getElementById('clienteUF').value = getValue(address.state);
+        document.getElementById('clienteCEP').value = address.zip_code ? address.zip_code.replace(/\D/g, '') : '';
 
-        const numero = address.street_number || 'S/N';
-        document.getElementById('clienteNumero').value = numero;
-
-        const bairro = getValue(address.neighborhood);
-        document.getElementById('clienteBairro').value = bairro;
-
-        const cidade = getValue(address.city);
-        document.getElementById('clienteCidade').value = cidade;
-
-        const uf = getValue(address.state);
-        document.getElementById('clienteUF').value = uf;
-
-        const cep = address.zip_code ? address.zip_code.replace(/\D/g, '') : '';
-        document.getElementById('clienteCEP').value = cep;
-
-        // 6. CPF/CNPJ – o ML NÃO fornece, fica em branco para preenchimento manual
+        // CPF/CNPJ em branco
         document.getElementById('clienteDocumento').value = '';
 
-        // 7. Log dos dados preenchidos (para depuração)
-        console.log('📋 Dados preenchidos no modal:', {
+        console.log('📋 Dados preenchidos:', {
             nome,
-            logradouro,
-            numero,
-            bairro,
-            cidade,
-            uf,
-            cep,
-            documento: '(em branco - preencher manualmente)'
+            endereco: document.getElementById('clienteEndereco').value,
+            cidade: document.getElementById('clienteCidade').value,
+            uf: document.getElementById('clienteUF').value
         });
 
-        // 8. Salvar token para uso na emissão
         window._mlAccessToken = token;
-
-        // 9. Exibir modal
-        document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+        abrirModalCliente();
 
     } catch (error) {
         console.error('❌ Erro ao buscar dados da venda:', error);
         showToast('❌ Erro ao carregar dados. Preencha manualmente.', 'error');
-        document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+        abrirModalCliente();
+    }
+}
+
+function abrirModalCliente() {
+    const modal = document.getElementById('modalDadosClienteNFE');
+    if (modal) {
+        modal.classList.remove('hidden');
+        console.log('✅ Modal de dados do cliente aberto');
+    } else {
+        console.error('❌ Modal modalDadosClienteNFE não encontrado');
+        showToast('Erro: modal não encontrado', 'error');
     }
 }
 
@@ -314,7 +495,7 @@ async function confirmarEmissaoNFE() {
         return;
     }
 
-    // Capturar dados do formulário
+    // Capturar dados do cliente
     const nome = document.getElementById('clienteNome').value.trim();
     const documento = document.getElementById('clienteDocumento').value.trim().replace(/\D/g, '');
     const endereco = document.getElementById('clienteEndereco').value.trim();
@@ -324,7 +505,6 @@ async function confirmarEmissaoNFE() {
     const uf = document.getElementById('clienteUF').value.trim().toUpperCase();
     const cep = document.getElementById('clienteCEP').value.trim().replace(/\D/g, '');
 
-    // Validações
     if (!nome) { showToast('Nome é obrigatório', 'warning'); return; }
     if (!documento || (documento.length !== 11 && documento.length !== 14)) {
         showToast('CPF/CNPJ inválido (11 ou 14 dígitos)', 'warning');
@@ -337,7 +517,7 @@ async function confirmarEmissaoNFE() {
     fecharModalDadosClienteNFE();
 
     // Mostrar loading no botão
-    const btn = document.querySelector(`button[data-venda-id="${orderId}"]`);
+    const btn = document.querySelector(`#vendasPendentesBody .btn-emitir-nfe[data-venda-id="${orderId}"]`);
     let originalText = '';
     if (btn) {
         originalText = btn.innerHTML;
@@ -346,33 +526,32 @@ async function confirmarEmissaoNFE() {
     }
 
     try {
-        // Obter token ML atual (do contexto)
-        const mlToken = window._mlAccessToken || null;
-
-        // Buscar produtos da venda (já temos a venda, mas podemos usar os dados salvos)
-        let produtos = [];
-        let token = localStorage.getItem('ml_access_token');
-        if (!token && typeof window.getValidToken === 'function') {
-            const tokenData = await window.getValidToken();
-            token = tokenData?.access_token;
-        }
-        if (token) {
-            const url = `https://api.mercadolibre.com/orders/${orderId}`;
-            const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
-            const response = await fetch(proxyUrl);
-            if (response.ok) {
-                const venda = await response.json();
-                produtos = (venda.order_items || []).map(item => ({
-                    nome: item.item.title,
-                    quantidade: item.quantity,
-                    valor_unitario: item.unit_price,
-                    sku: item.item.seller_sku || 'SEM_SKU',
-                    ncm: '87149990'
-                }));
+        // 1. Produtos: usar os editados (window.produtosParaEmissao) ou buscar da API
+        let produtos = window.produtosParaEmissao;
+        if (!produtos || produtos.length === 0) {
+            // Fallback: buscar da venda
+            let token = localStorage.getItem('ml_access_token');
+            if (!token && typeof window.getValidToken === 'function') {
+                const tokenData = await window.getValidToken();
+                token = tokenData?.access_token;
+            }
+            if (token) {
+                const url = `https://api.mercadolibre.com/orders/${orderId}`;
+                const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+                const response = await fetch(proxyUrl);
+                if (response.ok) {
+                    const venda = await response.json();
+                    produtos = (venda.order_items || []).map(item => ({
+                        nome: item.item.title,
+                        quantidade: item.quantity || 1,
+                        valor_unitario: item.unit_price || 0,
+                        sku: item.item.seller_sku || 'SEM_SKU',
+                        ncm: '87149990'
+                    }));
+                }
             }
         }
-        if (produtos.length === 0) {
-            // Fallback: produtos genéricos (caso a API falhe)
+        if (!produtos || produtos.length === 0) {
             produtos = [{
                 nome: 'Produto não identificado',
                 quantidade: 1,
@@ -383,25 +562,19 @@ async function confirmarEmissaoNFE() {
         }
 
         const cfop = (uf === 'PR') ? '5102' : '6108';
+        const mlToken = window._mlAccessToken || null;
 
         const payload = {
             venda_id: String(orderId),
             cliente: {
-                nome: nome,
-                documento: documento,
-                endereco: endereco,
-                numero: numero,
-                bairro: bairro,
-                cidade: cidade,
-                uf: uf,
-                cep: cep
+                nome, documento, endereco, numero, bairro, cidade, uf, cep
             },
             produtos: produtos,
             cfop: cfop,
             natureza_operacao: 'VENDA',
             modalidade_frete: '9',
             transportadora_id: null,
-            ml_access_token: mlToken  // <-- ENVIA O TOKEN PARA O BACKEND
+            ml_access_token: mlToken
         };
 
         const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
@@ -413,12 +586,8 @@ async function confirmarEmissaoNFE() {
 
         if (result.success) {
             showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
-            // Marcar venda como emitida no localStorage
-            const emitidas = JSON.parse(localStorage.getItem('nfe_emitidas_ids') || '[]');
-            if (!emitidas.includes(String(orderId))) {
-                emitidas.push(String(orderId));
-                localStorage.setItem('nfe_emitidas_ids', JSON.stringify(emitidas));
-            }
+            // Limpar cache local
+            window.produtosParaEmissao = null;
             // Recarregar listas
             await carregarVendasPendentes();
             await carregarNFesEmitidas();
@@ -433,11 +602,12 @@ async function confirmarEmissaoNFE() {
             btn.innerHTML = originalText;
             btn.disabled = false;
         }
-        window._mlAccessToken = null; // limpa
+        window._mlAccessToken = null;
+        window.produtosParaEmissao = null;
     }
 }
 
-// ===================== DEMais FUNÇÕES (já existentes) =====================
+// ===================== NF-ES EMITIDAS =====================
 async function carregarNFesEmitidas() {
     const tbody = document.getElementById('nfesEmitidasBody');
     if (!tbody) return;
@@ -451,25 +621,34 @@ async function carregarNFesEmitidas() {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma NF-e emitida<\/td><\/tr>';
             return;
         }
-        tbody.innerHTML = nfes.map(nfe => `
+        tbody.innerHTML = nfes.map(nfe => {
+            const chave = nfe.chave_acesso || nfe.chave || 'N/A';
+            const protocolo = nfe.protocolo || '-';
+            const dataEmissao = nfe.data_emissao ? new Date(nfe.data_emissao).toLocaleDateString('pt-BR') : '-';
+            const valorTotal = nfe.valor_total ? parseFloat(nfe.valor_total).toFixed(2) : '—';
+            const clienteNome = nfe.cliente_nome || nfe.cliente?.nome || '-';
+
+            return `
             <tr>
-                <td><small>${nfe.chave}</small><\/td>
-                <td>${nfe.protocolo || '-'}<\/td>
-                <td>${nfe.clientes?.nome || '-'}<\/td>
-                <td>R$ ${parseFloat(nfe.valor_total).toFixed(2)}<\/td>
-                <td>${new Date(nfe.data_emissao).toLocaleDateString('pt-BR')}<\/td>
+                <td><small>${chave}</small></td>
+                <td>${protocolo}</td>
+                <td>${clienteNome}</td>
+                <td>R$ ${valorTotal}</td>
+                <td>${dataEmissao}</td>
                 <td>
-                    <button class="btn btn-sm btn-info" onclick="visualizarNFE('${nfe.chave}')">Visualizar<\/button>
-                    <button class="btn btn-sm btn-secondary" onclick="baixarXMLNFE('${nfe.chave}')">XML<\/button>
-                    ${!nfe.cancelada ? `<button class="btn btn-sm btn-danger" onclick="cancelarNFE('${nfe.chave}')">Cancelar<\/button>` : '<span class="badge badge-danger">Cancelada</span>'}
-                 <\/td>
-            </tr>`).join('');
+                    <button class="btn btn-sm btn-info" onclick="visualizarNFE('${chave}')">Visualizar</button>
+                    <button class="btn btn-sm btn-secondary" onclick="baixarXMLNFE('${chave}')">XML</button>
+                    ${!nfe.cancelada ? `<button class="btn btn-sm btn-danger" onclick="cancelarNFE('${chave}')">Cancelar</button>` : '<span class="badge badge-danger">Cancelada</span>'}
+                </td>
+            </tr>`;
+        }).join('');
     } catch (error) {
         console.error(error);
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar NF-es<\/td><\/tr>';
     }
 }
 
+// ===== VISUALIZAR, BAIXAR, CANCELAR =====
 async function visualizarNFE(chaveAcesso) {
     try {
         const response = await fetch(`${window.API_BASE_URL}/nfe/buscar-xml?chave=${chaveAcesso}`);
@@ -558,6 +737,7 @@ async function cancelarNFE(chaveAcesso) {
     }
 }
 
+// ===================== TRANSPORTADORAS =====================
 async function carregarTransportadoras() {
     const tbody = document.getElementById('transportadorasBody');
     if (!tbody) return;
@@ -600,6 +780,7 @@ async function excluirTransportadora(id) {
     }
 }
 
+// ===================== CLIENTES =====================
 async function carregarClientes() {
     const tbody = document.getElementById('clientesBody');
     if (!tbody) return;
@@ -642,6 +823,7 @@ async function excluirCliente(id) {
     }
 }
 
+// ===================== EMISSÃO AVULSA =====================
 async function emitirNFEAvulsa() {
     const clienteId = document.getElementById('avulsaClienteId').value;
     if (!clienteId) {
@@ -704,7 +886,7 @@ function inicializarAbaNFE() {
     mostrarAbaNFE('vendas');
 }
 
-// ===================== EXPOR FUNÇÕES GLOBAIS (necessário para os eventos inline do HTML) =====================
+// ===================== EXPORTAÇÕES GLOBAIS =====================
 window.mostrarAbaNFE = mostrarAbaNFE;
 window.emitirNFEParaVenda = emitirNFEParaVenda;
 window.sincronizarVendasML = sincronizarVendasML;
@@ -718,6 +900,9 @@ window.inicializarAbaNFE = inicializarAbaNFE;
 window.confirmarEmissaoNFE = confirmarEmissaoNFE;
 window.fecharModalDadosClienteNFE = fecharModalDadosClienteNFE;
 window.isFullByAnyField = isFullByAnyField;
+window.abrirModalEdicaoProdutos = abrirModalEdicaoProdutos;
+window.fecharModalEdicaoProdutos = fecharModalEdicaoProdutos;
+window.confirmarProdutosEditados = confirmarProdutosEditados;
 
 // ===================== INICIALIZAR EVENT LISTENERS DO MODAL =====================
 document.addEventListener('DOMContentLoaded', function() {
@@ -726,3 +911,5 @@ document.addEventListener('DOMContentLoaded', function() {
     if (confirmarBtn) confirmarBtn.addEventListener('click', confirmarEmissaoNFE);
     if (cancelarBtn) cancelarBtn.addEventListener('click', fecharModalDadosClienteNFE);
 });
+
+console.log('✅ nfe_manager.js carregado (versão completa com fallback)');

@@ -77,7 +77,6 @@ async function importarNFEnoML(shipment_id, xml, token) {
     }
 }
 
-// ===================== EMISSÃO DE NF-e (COM INTEGRAÇÃO ML) =====================
 // ===================== EMISSÃO DE NF-e =====================
 async function emitirNFe(req, res) {
     console.log('📨 Requisição de emissão recebida');
@@ -137,10 +136,10 @@ async function emitirNFe(req, res) {
         }
 
         // ===== CORREÇÃO: FORÇAR NOME DO DESTINATÁRIO EM HOMOLOGAÇÃO (opcional) =====
-        // if (AMBIENTE === 'homologacao') {
-        //     destinatario.xNome = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
-        //     console.log('🔁 Nome do destinatário ajustado para homologação.');
-        // }
+         //if (AMBIENTE === 'homologacao') {
+          //   destinatario.xNome = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
+           //  console.log('🔁 Nome do destinatário ajustado para homologação.');
+        //}
 
         // ========== CONTROLE SEQUENCIAL DA NF ==========
         const serie = 3;
@@ -280,7 +279,7 @@ ${protNFe}
         if (venda_id) {
             try {
                 // Atualiza a venda com os dados da NF-e
-                await supabase
+                const { error: updateError } = await supabase
                     .from('vendas_ml')
                     .update({
                         nfe_emitida: true,
@@ -290,6 +289,12 @@ ${protNFe}
                     })
                     .eq('id', venda_id);
 
+                if (updateError) {
+                    console.error('⚠️ Erro ao atualizar venda:', updateError);
+                } else {
+                    console.log('✅ Venda atualizada com a NF-e (nfe_emitida = true).');
+                }
+
                 // Busca dados da venda (shipment_id e ml_access_token)
                 const { data: venda } = await supabase
                     .from('vendas_ml')
@@ -298,10 +303,8 @@ ${protNFe}
                     .single();
 
                 // ===== ENVIAR PARA MERCADO LIVRE =====
-                // Usa o token passado no body ou o que estiver na venda (se houver)
                 let tokenML = ml_access_token;
                 if (!tokenML) {
-                    // Se não veio no body, tenta buscar da tabela (pode estar desatualizado)
                     const { data: tokenData } = await supabase
                         .from('vendas_ml')
                         .select('ml_access_token')
@@ -319,8 +322,6 @@ ${protNFe}
                     );
                     if (resultado.ok) {
                         console.log('✅ NF-e enviada ao ML com sucesso!');
-                        // Opcional: salvar o ID do documento retornado pelo ML
-                        // await supabase.from('vendas_ml').update({ ml_document_id: resultado.xml_url }).eq('id', venda_id);
                     } else {
                         console.warn('⚠️ Falha ao enviar NF-e ao ML (não crítico)');
                     }
@@ -587,15 +588,32 @@ async function listarVendasComNFE(req, res) {
 async function buscarXMLPorChave(req, res) {
     const { chave } = req.query;
     if (!chave) return res.status(400).json({ error: 'Chave não informada' });
+    
+    // Remove espaços e caracteres especiais (garante apenas números)
+    const chaveLimpa = chave.replace(/\D/g, '');
+    if (chaveLimpa.length !== 44) {
+        return res.status(400).json({ error: 'Chave inválida (deve ter 44 dígitos)' });
+    }
+
     try {
         const { data, error } = await supabase
             .from('nfe_emitidas')
-            .select('xml')
-            .eq('chave', chave)
-            .single();
-        if (error || !data) return res.status(404).json({ error: 'NF-e não encontrada' });
-        res.json({ xml: data.xml });
+            .select('xml_assinado')   // ← nome correto da coluna
+            .eq('chave_acesso', chaveLimpa)   // ← nome correto da coluna
+            .maybeSingle();  // ← em vez de .single() para evitar erro se não achar
+
+        if (error) {
+            console.error('Erro no Supabase:', error);
+            return res.status(500).json({ error: 'Erro ao buscar XML' });
+        }
+
+        if (!data || !data.xml_assinado) {
+            return res.status(404).json({ error: 'XML não encontrado para esta chave' });
+        }
+
+        res.json({ xml: data.xml_assinado });
     } catch (error) {
+        console.error('Erro em buscarXMLPorChave:', error);
         res.status(500).json({ error: error.message });
     }
 }

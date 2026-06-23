@@ -79,7 +79,7 @@ class NFEService {
                     'Content-Type': 'text/xml; charset=utf-8',
                     'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeAutorizacao4/nfeDadosMsg'
                 },
-                timeout: 60000,
+                timeout: 120000,
                 responseType: 'text',
                 validateStatus: () => true
             });
