@@ -8,6 +8,12 @@ if (!window.API_BASE_URL) window.API_BASE_URL = 'http://localhost:3000';
 let vendasPendentes = [];
 let pendingEmitOrderId = null;
 
+// ===== VERIFICAR SE É FULL (mesma lógica do shipping_simple.js) =====
+function isFullByAnyField(item) {
+    const text = `${item.titulo || ''} ${item.mlb || ''} ${item.id || ''} ${item.shipping?.logistic_type || ''} ${item.tags?.join(' ') || ''}`.toLowerCase();
+    return /full|fulfillment/.test(text);
+}
+
 // ===================== ABAS =====================
 async function mostrarAbaNFE(aba) {
     const abaVendas = document.getElementById('abaVendas');
@@ -50,7 +56,7 @@ async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando vendas do ML...<\/td><\/tr>';
-    
+
     try {
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
@@ -70,11 +76,28 @@ async function carregarVendasPendentes() {
             return;
         }
 
+        // Buscar IDs das vendas já emitidas
         const emitidas = JSON.parse(localStorage.getItem('nfe_emitidas_ids') || '[]');
-        const pendentes = results.filter(v => !emitidas.includes(String(v.id)));
+
+        // Filtrar:
+        // 1. Remover as já emitidas
+        // 2. Remover as que são FULL (usando a mesma lógica)
+        const pendentes = results.filter(v => {
+            // Já emitida?
+            if (emitidas.includes(String(v.id))) return false;
+
+            // Verifica se é FULL
+            const isFull = isFullByAnyField(v);
+            if (isFull) {
+                console.log(`🚫 Venda FULL ignorada: ${v.id}`);
+                return false;
+            }
+
+            return true;
+        });
 
         if (pendentes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Todas as vendas já possuem NF-e emitida<\/td><\/tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Todas as vendas já possuem NF-e ou são FULL<\/td><\/tr>';
             return;
         }
 
@@ -90,12 +113,13 @@ async function carregarVendasPendentes() {
                     <button class="btn btn-sm btn-success" data-venda-id="${v.id}">Emitir NF-e<\/button>
                  <\/td>
             </tr>`).join('');
-        
-        // Adiciona event listeners para os botões (evita onclick)
+
+        // Event listeners
         document.querySelectorAll('#vendasPendentesBody button[data-venda-id]').forEach(btn => {
             btn.removeEventListener('click', emitirNFEParaVendaHandler);
             btn.addEventListener('click', emitirNFEParaVendaHandler);
         });
+
     } catch (error) {
         console.error(error);
         tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Erro: ${error.message}<\/td><\/tr>`;
@@ -107,6 +131,7 @@ function emitirNFEParaVendaHandler(event) {
     emitirNFEParaVenda(orderId);
 }
 
+// ===================== EMITIR NF-e PARA UMA VENDA =====================
 // ===================== EMITIR NF-e PARA UMA VENDA =====================
 async function emitirNFEParaVenda(orderId) {
     console.log('🔵 Preparar emissão NF-e para venda:', orderId);
@@ -122,6 +147,7 @@ async function emitirNFEParaVenda(orderId) {
     document.getElementById('clienteUF').value = '';
     document.getElementById('clienteCEP').value = '';
 
+    // Função auxiliar para extrair valor de campo (string ou objeto com name)
     function getValue(field) {
         if (!field) return '';
         if (typeof field === 'string') return field;
@@ -130,6 +156,7 @@ async function emitirNFEParaVenda(orderId) {
     }
 
     try {
+        // 1. Obter token válido do ML
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
             const tokenData = await window.getValidToken();
@@ -141,7 +168,7 @@ async function emitirNFEParaVenda(orderId) {
             return;
         }
 
-        // 1. Buscar dados da ordem
+        // 2. Buscar dados da ordem
         const url = `https://api.mercadolibre.com/orders/${orderId}`;
         let venda = null;
 
@@ -150,6 +177,7 @@ async function emitirNFEParaVenda(orderId) {
             const response = await fetch(proxyUrl);
             if (response.ok) {
                 venda = await response.json();
+                console.log('✅ Venda obtida via Worker');
             } else {
                 throw new Error(`Worker falhou: ${response.status}`);
             }
@@ -160,6 +188,7 @@ async function emitirNFEParaVenda(orderId) {
             });
             if (directResponse.ok) {
                 venda = await directResponse.json();
+                console.log('✅ Venda obtida via chamada direta');
             } else {
                 throw new Error(`Falha na chamada direta: ${directResponse.status}`);
             }
@@ -171,7 +200,24 @@ async function emitirNFEParaVenda(orderId) {
             return;
         }
 
-        // 2. Buscar dados do envio (shipment) para obter o endereço
+        // ===== VERIFICAÇÃO DE VENDA FULL =====
+        if (typeof isFullByAnyField === 'function') {
+            const isFull = isFullByAnyField(venda);
+            if (isFull) {
+                console.log('🚫 Venda FULL – NF-e não permitida.');
+                showToast('🚫 Esta venda é FULL e não permite emissão manual de NF-e.', 'warning');
+                // Abre o modal mesmo assim? Melhor não abrir, apenas avisa e retorna.
+                // Mas se quiser permitir edição manual, pode abrir com campos desabilitados.
+                // Vamos abrir e desabilitar os campos? Melhor não abrir.
+                document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+                // Desabilita o botão de emitir? Não, mas o backend também bloqueará.
+                return;
+            }
+        } else {
+            console.warn('⚠️ Função isFullByAnyField não definida. Verifique se nfe_manager.js a inclui.');
+        }
+
+        // 3. Buscar dados do envio (shipment) para obter o endereço completo
         let address = {};
         if (venda.shipping && venda.shipping.id) {
             try {
@@ -180,7 +226,7 @@ async function emitirNFEParaVenda(orderId) {
                 const shipResponse = await fetch(shipProxyUrl);
                 if (shipResponse.ok) {
                     const shipment = await shipResponse.json();
-                    console.log('📦 Dados do shipment:', shipment);
+                    console.log('📦 Dados do shipment obtidos:', shipment);
                     // O endereço está em receiver_address
                     if (shipment.receiver_address) {
                         address = shipment.receiver_address;
@@ -195,17 +241,18 @@ async function emitirNFEParaVenda(orderId) {
             }
         }
 
-        // Fallback: se não conseguir pelo shipment, tenta buyer.address
+        // Fallback: se não conseguir pelo shipment, tenta buyer.address (raro)
         if (!address.address_line && !address.street_name && venda.buyer && venda.buyer.address) {
             address = venda.buyer.address;
+            console.log('📦 Usando endereço do comprador (buyer.address)');
         }
 
-        // Nome
+        // 4. Extrair nome do comprador
         const buyer = venda.buyer || {};
         const nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || '';
         document.getElementById('clienteNome').value = nome;
 
-        // Preencher endereço
+        // 5. Preencher endereço
         const logradouro = address.address_line || address.street_name || '';
         document.getElementById('clienteEndereco').value = logradouro;
 
@@ -224,19 +271,25 @@ async function emitirNFEParaVenda(orderId) {
         const cep = address.zip_code ? address.zip_code.replace(/\D/g, '') : '';
         document.getElementById('clienteCEP').value = cep;
 
+        // 6. CPF/CNPJ – o ML NÃO fornece, fica em branco para preenchimento manual
         document.getElementById('clienteDocumento').value = '';
 
-        console.log('📋 Dados preenchidos:', {
+        // 7. Log dos dados preenchidos (para depuração)
+        console.log('📋 Dados preenchidos no modal:', {
             nome,
             logradouro,
             numero,
             bairro,
             cidade,
             uf,
-            cep
+            cep,
+            documento: '(em branco - preencher manualmente)'
         });
 
+        // 8. Salvar token para uso na emissão
         window._mlAccessToken = token;
+
+        // 9. Exibir modal
         document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
 
     } catch (error) {
@@ -664,6 +717,7 @@ window.limparFormAvulsa = limparFormAvulsa;
 window.inicializarAbaNFE = inicializarAbaNFE;
 window.confirmarEmissaoNFE = confirmarEmissaoNFE;
 window.fecharModalDadosClienteNFE = fecharModalDadosClienteNFE;
+window.isFullByAnyField = isFullByAnyField;
 
 // ===================== INICIALIZAR EVENT LISTENERS DO MODAL =====================
 document.addEventListener('DOMContentLoaded', function() {

@@ -9888,6 +9888,307 @@ window.aprovarReembolso = async function(id) {
     }
 };
 
+// ============================================
+// SISTEMA DE PRECIFICAÇÃO DE NOVOS ANÚNCIOS
+// ============================================
+
+// Variáveis
+let precificacoes = [];
+
+// Abrir sistema de precificação
+window.abrirSistemaPrecificacao = function() {
+    if (!currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
+    }
+
+    // Esconder menu e outros sistemas
+    const menuSystem = document.getElementById('menuSystem');
+    if (menuSystem) menuSystem.classList.add('hidden');
+
+    const sistemasIds = [
+        'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem',
+        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem',
+        'estoqueGestaoSystem', 'nfeSystem'
+    ];
+    sistemasIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+
+    const precSystem = document.getElementById('precificacaoSystem');
+    if (precSystem) precSystem.classList.remove('hidden');
+
+    // Atualizar dados do usuário
+    document.getElementById('precUserName').textContent = currentUser.name;
+    document.getElementById('precUserAvatar').textContent = currentUser.avatar;
+    document.getElementById('precUserRole').textContent = currentUser.role;
+
+    // Carregar dados
+    carregarPrecificacao();
+    showToast('📋 Sistema de Precificação carregado', 'info');
+};
+
+// Carregar solicitações do Supabase
+async function carregarPrecificacao(filtro = '') {
+    if (!supabaseClient) {
+        showToast('Erro: Supabase não conectado', 'error');
+        return;
+    }
+
+    try {
+        let query = supabaseClient
+            .from('precificacao_anuncios')
+            .select('*')
+            .order('criado_em', { ascending: false });
+
+        // Aplica filtro de busca se houver
+        if (filtro.trim() !== '') {
+            const termo = filtro.trim().toLowerCase();
+            query = query.or(
+                `nome_produto.ilike.%${termo}%,` +
+                `fornecedor.ilike.%${termo}%,` +
+                `sugestao_titulo.ilike.%${termo}%`
+            );
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        precificacoes = data || [];
+        renderizarPrecificacao();
+
+    } catch (error) {
+        console.error('❌ Erro ao carregar precificações:', error);
+        showToast('Erro ao carregar dados: ' + error.message, 'error');
+    }
+}
+
+// Renderizar cards
+function renderizarPrecificacao() {
+    const pendentesContainer = document.getElementById('precListaPendentes');
+    const finalizadosContainer = document.getElementById('precListaFinalizados');
+
+    // Limpar
+    pendentesContainer.innerHTML = '';
+    finalizadosContainer.innerHTML = '';
+
+    // Separar por status
+    const pendentes = precificacoes.filter(p => p.status === 'pendente');
+    const finalizados = precificacoes.filter(p => p.status === 'finalizado');
+
+    // Ordenar pendentes por urgência (alta > normal > baixa) e depois por data
+    const ordemUrgencia = { alta: 0, normal: 1, baixa: 2 };
+    pendentes.sort((a, b) => {
+        const diff = ordemUrgencia[a.urgencia] - ordemUrgencia[b.urgencia];
+        if (diff !== 0) return diff;
+        return new Date(b.criado_em) - new Date(a.criado_em);
+    });
+
+    // Renderizar pendentes
+    if (pendentes.length === 0) {
+        pendentesContainer.innerHTML = `<div class="col-12 text-center py-4 text-muted">Nenhuma solicitação pendente.</div>`;
+    } else {
+        pendentes.forEach(item => {
+            pendentesContainer.appendChild(criarCard(item));
+        });
+    }
+
+    // Finalizados (mais recentes primeiro)
+    finalizados.sort((a, b) => new Date(b.finalizado_em) - new Date(a.finalizado_em));
+    if (finalizados.length === 0) {
+        finalizadosContainer.innerHTML = `<div class="col-12 text-center py-4 text-muted">Nenhuma solicitação finalizada.</div>`;
+    } else {
+        finalizados.forEach(item => {
+            finalizadosContainer.appendChild(criarCard(item));
+        });
+    }
+}
+
+// Criar um card individual
+function criarCard(item) {
+    const col = document.createElement('div');
+    col.className = 'col-md-6 col-lg-4 mb-3';
+
+    const isPendente = item.status === 'pendente';
+    const isAdmin = currentUser && currentUser.role === 'Administrador';
+
+    let botoesAcao = '';
+
+    if (isPendente) {
+        botoesAcao += `
+            <button class="btn btn-success btn-sm" onclick="finalizarPrecificacao('${item.id}')">
+                <i class="fas fa-check"></i> OK (Peguei os dados)
+            </button>
+        `;
+    } else {
+        botoesAcao += `
+            <span class="badge badge-success">Finalizado por ${escapeHtml(item.finalizado_por)} em ${new Date(item.finalizado_em).toLocaleString('pt-BR')}</span>
+        `;
+    }
+
+    // Botão de excluir - apenas para admin
+    if (isAdmin) {
+        botoesAcao += `
+            <button class="btn btn-danger btn-sm ml-2" onclick="excluirPrecificacao('${item.id}')" title="Excluir permanentemente">
+                <i class="fas fa-trash"></i>
+            </button>
+        `;
+    }
+
+    col.innerHTML = `
+        <div class="card h-100 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title mb-0">${escapeHtml(item.nome_produto)}</h5>
+                    <span class="badge ${item.urgencia === 'alta' ? 'badge-danger' : item.urgencia === 'normal' ? 'badge-warning' : 'badge-success'}">
+                        ${item.urgencia.charAt(0).toUpperCase() + item.urgencia.slice(1)}
+                    </span>
+                </div>
+                <div class="small text-muted mb-2">
+                    <i class="fas fa-building"></i> ${escapeHtml(item.fornecedor)} &nbsp;|&nbsp;
+                    <i class="fas fa-clock"></i> ${new Date(item.criado_em).toLocaleString('pt-BR')}
+                </div>
+                <p class="card-text">
+                    <strong>Sugestão de título:</strong> ${escapeHtml(item.sugestao_titulo || 'Não informado')}<br>
+                    <strong>Custo:</strong> R$ ${parseFloat(item.valor_custo).toFixed(2)} &nbsp;|&nbsp;
+                    <strong>Venda:</strong> R$ ${parseFloat(item.valor_venda).toFixed(2)}
+                </p>
+                ${item.link_referencia ? `<p class="card-text"><a href="${escapeHtml(item.link_referencia)}" target="_blank" rel="noopener"><i class="fas fa-link"></i> Link de referência</a></p>` : ''}
+                ${item.observacao ? `<p class="card-text small"><i class="fas fa-comment"></i> ${escapeHtml(item.observacao)}</p>` : ''}
+                <p class="card-text small text-muted">
+                    <i class="fas fa-user"></i> Criado por: ${escapeHtml(item.criado_por)}
+                </p>
+                <div class="d-flex flex-wrap gap-1">
+                    ${botoesAcao}
+                </div>
+            </div>
+        </div>
+    `;
+
+    return col;
+}
+
+// Criar nova solicitação
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('formPrecificacao');
+    if (form) {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const fornecedor = document.getElementById('precFornecedor').value;
+            const urgencia = document.getElementById('precUrgencia').value;
+            const nomeProduto = document.getElementById('precNomeProduto').value.trim();
+            const sugestaoTitulo = document.getElementById('precSugestaoTitulo').value.trim();
+            const valorCusto = parseFloat(document.getElementById('precValorCusto').value);
+            const valorVenda = parseFloat(document.getElementById('precValorVenda').value);
+            const linkReferencia = document.getElementById('precLinkReferencia').value.trim();
+            const observacao = document.getElementById('precObservacao').value.trim();
+
+            if (!fornecedor || !nomeProduto || isNaN(valorCusto) || isNaN(valorVenda)) {
+                showToast('Preencha todos os campos obrigatórios (*)', 'warning');
+                return;
+            }
+
+            const dados = {
+                fornecedor,
+                urgencia,
+                nome_produto: nomeProduto,
+                sugestao_titulo: sugestaoTitulo || null,
+                valor_custo: valorCusto,
+                valor_venda: valorVenda,
+                link_referencia: linkReferencia || null,
+                observacao: observacao || null,
+                status: 'pendente',
+                criado_por: currentUser.name,
+                criado_em: new Date().toISOString()
+            };
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from('precificacao_anuncios')
+                    .insert([dados]);
+
+                if (error) throw error;
+
+                showToast('✅ Solicitação criada com sucesso!', 'success');
+                form.reset();
+                carregarPrecificacao(document.getElementById('buscaPrecificacao').value);
+            } catch (error) {
+                console.error('❌ Erro ao criar solicitação:', error);
+                showToast('Erro ao salvar: ' + error.message, 'error');
+            }
+        });
+    }
+
+    // Busca em tempo real
+    const buscaInput = document.getElementById('buscaPrecificacao');
+    if (buscaInput) {
+        buscaInput.addEventListener('input', function() {
+            carregarPrecificacao(this.value);
+        });
+    }
+});
+
+// Finalizar solicitação (marcar como OK)
+window.finalizarPrecificacao = async function(id) {
+    if (!confirm('Confirmar que você pegou os dados e já utilizou?')) return;
+
+    try {
+        const { error } = await supabaseClient
+            .from('precificacao_anuncios')
+            .update({
+                status: 'finalizado',
+                finalizado_por: currentUser.name,
+                finalizado_em: new Date().toISOString()
+            })
+            .eq('id', id);
+
+        if (error) throw error;
+
+        showToast('✅ Solicitação finalizada!', 'success');
+        carregarPrecificacao(document.getElementById('buscaPrecificacao').value);
+    } catch (error) {
+        console.error('❌ Erro ao finalizar:', error);
+        showToast('Erro ao finalizar: ' + error.message, 'error');
+    }
+};
+
+// ============================================
+// EXCLUIR SOLICITAÇÃO DE PRECIFICAÇÃO (APENAS ADMIN)
+// ============================================
+window.excluirPrecificacao = async function(id) {
+    // Verifica se o usuário é administrador
+    if (!currentUser || currentUser.role !== 'Administrador') {
+        showToast('⛔ Apenas administradores podem excluir solicitações.', 'error');
+        return;
+    }
+
+    if (!confirm('Tem certeza que deseja excluir esta solicitação permanentemente?')) {
+        return;
+    }
+
+    try {
+        if (!supabaseClient) throw new Error('Supabase não conectado');
+
+        const { error } = await supabaseClient
+            .from('precificacao_anuncios')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
+        showToast('🗑️ Solicitação excluída com sucesso!', 'success');
+        // Recarregar a lista com o filtro atual
+        const busca = document.getElementById('buscaPrecificacao')?.value || '';
+        carregarPrecificacao(busca);
+
+    } catch (error) {
+        console.error('❌ Erro ao excluir:', error);
+        showToast('Erro ao excluir: ' + error.message, 'error');
+    }
+};
+
 // Exportar funções
 window.emitirNFEVenda = emitirNFEVenda;
 
