@@ -13,7 +13,7 @@ const DEFAULT_IBGE = '4101804'; // Araucária/PR (fallback)
 // ===== TOKENS CSRT DO AMBIENTE =====
 const CSRT_TOKEN_HOMOLOGACAO = process.env.CSRT_TOKEN_HOMOLOGACAO || '16UBATD6FDRUDYK2NV5P21NVB1I08UOYC220';
 const CSRT_TOKEN_PRODUCAO = process.env.CSRT_TOKEN_PRODUCAO || 'DM3JSLGIU2Z957T83B2P85CB8YG0C8D3JZUG';
-const AMBIENTE = process.env.NFE_AMBIENTE || 'homologacao';
+const AMBIENTE = process.env.NFE_AMBIENTE || 'producao';
 
 // ===================== OBTER CÓDIGO IBGE =====================
 async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
@@ -77,13 +77,15 @@ async function importarNFEnoML(shipment_id, xml, token) {
     }
 }
 
+// ===================== EMISSÃO DE NF-e (COM INTEGRAÇÃO ML) =====================
 // ===================== EMISSÃO DE NF-e =====================
 async function emitirNFe(req, res) {
     console.log('📨 Requisição de emissão recebida');
     try {
         const dados = req.body;
-        const { venda_id, cliente, produtos, cfop, natureza_operacao, modalidade_frete, transportadora_id } = dados;
+        const { venda_id, cliente, produtos, cfop, natureza_operacao, modalidade_frete, transportadora_id, ml_access_token } = dados;
 
+        // Validações iniciais
         if (!cliente) throw new Error('Cliente não informado');
         if (!produtos || produtos.length === 0) throw new Error('Nenhum produto informado');
 
@@ -134,11 +136,11 @@ async function emitirNFe(req, res) {
             destinatario.CNPJ = documento;
         }
 
-        // ===== CORREÇÃO: FORÇAR NOME DO DESTINATÁRIO EM HOMOLOGAÇÃO =====
-        if (AMBIENTE === 'homologacao') {
-            destinatario.xNome = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
-            console.log('🔁 Nome do destinatário ajustado para homologação.');
-        }
+        // ===== CORREÇÃO: FORÇAR NOME DO DESTINATÁRIO EM HOMOLOGAÇÃO (opcional) =====
+        // if (AMBIENTE === 'homologacao') {
+        //     destinatario.xNome = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
+        //     console.log('🔁 Nome do destinatário ajustado para homologação.');
+        // }
 
         // ========== CONTROLE SEQUENCIAL DA NF ==========
         const serie = 3;
@@ -195,14 +197,12 @@ async function emitirNFe(req, res) {
         console.log('🔑 Certificado carregado?', !!certData.privateKey, !!certData.cert);
         const xmlAssinado = assinarXml(xml, { privateKey: certData.privateKey, cert: certData.cert });
 
-        // ===== SALVAR XML PARA INSPEÇÃO =====
+        // ===== SALVAR XML ASSINADO PARA INSPEÇÃO =====
         const xmlPath = path.join(__dirname, 'xml_gerado', `nfe_${nNF}_${Date.now()}.xml`);
         const dir = path.dirname(xmlPath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(xmlPath, xmlAssinado, 'utf8');
-        console.log(`📁 XML salvo em: ${xmlPath}`);
-
-        console.log('📄 XML ASSINADO (últimos 200 caracteres):', xmlAssinado.slice(-200));
+        console.log(`📁 XML assinado salvo em: ${xmlPath}`);
 
         // ========== ENVIAR PARA SEFAZ ==========
         const nfeService = new NFEService(AMBIENTE);
@@ -211,20 +211,48 @@ async function emitirNFe(req, res) {
 
         // ========== EXTRAIR PROTOCOLO E CHAVE ==========
         const protocolo = extrairProtocolo(respostaSefaz);
-        // Extrai a chave da resposta da SEFAZ (campo <chNFe>)
         const chaveMatch = respostaSefaz.match(/<chNFe>(\d+)<\/chNFe>/);
         let chaveAcesso;
         if (chaveMatch) {
             chaveAcesso = chaveMatch[1];
             console.log(`✅ Chave extraída da resposta SEFAZ: ${chaveAcesso}`);
         } else {
-            // Fallback: extrair do XML assinado
             chaveAcesso = extrairChaveAcesso(xmlAssinado);
             console.log(`⚠️ Chave extraída do XML: ${chaveAcesso}`);
         }
 
         if (!protocolo) throw new Error('SEFAZ não retornou protocolo');
         console.log('✅ NF-e autorizada. Protocolo:', protocolo);
+
+        // ========== GERAR XML NO FORMATO <nfeProc> PARA MERCADO LIVRE ==========
+        let xmlParaML = null;
+        let mlXmlPath = null;
+        try {
+            // Extrai o <protNFe> da resposta
+            const protNFeMatch = respostaSefaz.match(/<protNFe[^>]*>([\s\S]*?)<\/protNFe>/);
+            let protNFe = '';
+            if (protNFeMatch) {
+                protNFe = protNFeMatch[0];
+            }
+
+            // Remove a declaração XML do xmlAssinado (se houver)
+            let xmlAssinadoSemDeclaracao = xmlAssinado.replace(/^<\?xml[^?]*\?>/, '').trim();
+
+            // Monta o XML final com nfeProc (apenas UMA declaração no início)
+            const nfeProcXML = `<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+${xmlAssinadoSemDeclaracao}
+${protNFe}
+</nfeProc>`;
+
+            // Salva o XML para ML
+            mlXmlPath = path.join(__dirname, 'xml_gerado', `nfe_${nNF}_ml.xml`);
+            fs.writeFileSync(mlXmlPath, nfeProcXML, 'utf8');
+            xmlParaML = nfeProcXML;
+            console.log(`📁 XML para ML salvo em: ${mlXmlPath}`);
+        } catch (err) {
+            console.warn('⚠️ Erro ao gerar XML para ML (não crítico):', err.message);
+        }
 
         // ========== SALVAR NF-e NO SUPABASE ==========
         const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
@@ -248,26 +276,70 @@ async function emitirNFe(req, res) {
             console.log('✅ NF-e salva no Supabase com sucesso.');
         }
 
-        // ========== ATUALIZAR VENDA (se houver) ==========
+        // ========== ATUALIZAR VENDA E ENVIAR PARA ML ==========
         if (venda_id) {
-            const { error: updateError } = await supabase
-                .from('vendas_ml')
-                .update({
-                    nfe_emitida: true,
-                    nfe_chave: chaveAcesso,
-                    nfe_protocolo: protocolo,
-                    data_emissao: new Date().toISOString()
-                })
-                .eq('id', venda_id);
+            try {
+                // Atualiza a venda com os dados da NF-e
+                await supabase
+                    .from('vendas_ml')
+                    .update({
+                        nfe_emitida: true,
+                        nfe_chave: chaveAcesso,
+                        nfe_protocolo: protocolo,
+                        data_emissao: new Date().toISOString()
+                    })
+                    .eq('id', venda_id);
 
-            if (updateError) {
-                console.error('⚠️ Erro ao atualizar venda:', updateError);
-            } else {
-                console.log('✅ Venda atualizada com a NF-e.');
+                // Busca dados da venda (shipment_id e ml_access_token)
+                const { data: venda } = await supabase
+                    .from('vendas_ml')
+                    .select('shipment_id')
+                    .eq('id', venda_id)
+                    .single();
+
+                // ===== ENVIAR PARA MERCADO LIVRE =====
+                // Usa o token passado no body ou o que estiver na venda (se houver)
+                let tokenML = ml_access_token;
+                if (!tokenML) {
+                    // Se não veio no body, tenta buscar da tabela (pode estar desatualizado)
+                    const { data: tokenData } = await supabase
+                        .from('vendas_ml')
+                        .select('ml_access_token')
+                        .eq('id', venda_id)
+                        .single();
+                    tokenML = tokenData?.ml_access_token;
+                }
+
+                if (venda?.shipment_id && tokenML && xmlParaML) {
+                    console.log(`📤 Enviando NF-e para ML - Shipment: ${venda.shipment_id}`);
+                    const resultado = await importarNFEnoML(
+                        venda.shipment_id,
+                        xmlParaML,
+                        tokenML
+                    );
+                    if (resultado.ok) {
+                        console.log('✅ NF-e enviada ao ML com sucesso!');
+                        // Opcional: salvar o ID do documento retornado pelo ML
+                        // await supabase.from('vendas_ml').update({ ml_document_id: resultado.xml_url }).eq('id', venda_id);
+                    } else {
+                        console.warn('⚠️ Falha ao enviar NF-e ao ML (não crítico)');
+                    }
+                } else {
+                    console.warn('⚠️ Venda sem shipment_id ou token ML, ou XML não gerado. Envio manual necessário.');
+                }
+            } catch (err) {
+                console.error('❌ Erro ao processar integração com ML:', err.message);
+                // Não interrompe o fluxo principal
             }
         }
 
-        res.json({ success: true, protocolo, chaveAcesso });
+        // ========== RETORNO PARA O CLIENTE ==========
+        res.json({
+            success: true,
+            protocolo,
+            chaveAcesso,
+            xml_ml: mlXmlPath ? true : false
+        });
 
     } catch (error) {
         console.error('❌ Erro na emissão:', error);

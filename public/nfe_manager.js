@@ -3,7 +3,7 @@ window.showToast = window.showToast || showToast;
 
 // Configurações globais
 if (!window.WORKER_URL) window.WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
-if (!window.API_BASE_URL) window.API_BASE_URL = 'https://backend-nfe.onrender.com';
+if (!window.API_BASE_URL) window.API_BASE_URL = 'http://localhost:3000';
 
 let vendasPendentes = [];
 let pendingEmitOrderId = null;
@@ -107,12 +107,12 @@ function emitirNFEParaVendaHandler(event) {
     emitirNFEParaVenda(orderId);
 }
 
-// ===================== ABRIR MODAL PARA PREENCHER DADOS DO CLIENTE =====================
+// ===================== EMITIR NF-e PARA UMA VENDA =====================
 async function emitirNFEParaVenda(orderId) {
     console.log('🔵 Preparar emissão NF-e para venda:', orderId);
     pendingEmitOrderId = orderId;
-    
-    // Limpar formulário
+
+    // Limpa o formulário do modal
     document.getElementById('clienteNome').value = '';
     document.getElementById('clienteDocumento').value = '';
     document.getElementById('clienteEndereco').value = '';
@@ -121,36 +121,129 @@ async function emitirNFEParaVenda(orderId) {
     document.getElementById('clienteCidade').value = '';
     document.getElementById('clienteUF').value = '';
     document.getElementById('clienteCEP').value = '';
-    
-    // Tenta pré‑preencher com dados da venda (opcional)
+
+    function getValue(field) {
+        if (!field) return '';
+        if (typeof field === 'string') return field;
+        if (typeof field === 'object' && field.name) return field.name;
+        return '';
+    }
+
     try {
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
             const tokenData = await window.getValidToken();
             token = tokenData?.access_token;
         }
-        if (token) {
-            const url = `https://api.mercadolibre.com/orders/${orderId}`;
+        if (!token) {
+            showToast('⚠️ Token ML não disponível. Preencha manualmente.', 'warning');
+            document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+            return;
+        }
+
+        // 1. Buscar dados da ordem
+        const url = `https://api.mercadolibre.com/orders/${orderId}`;
+        let venda = null;
+
+        try {
             const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
             const response = await fetch(proxyUrl);
             if (response.ok) {
-                const venda = await response.json();
-                const buyer = venda.buyer || {};
-                const address = venda.shipping?.receiver_address || {};
-                document.getElementById('clienteNome').value = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || '';
-                document.getElementById('clienteEndereco').value = address.address_line || address.street_name || '';
-                document.getElementById('clienteNumero').value = address.street_number || 'S/N';
-                document.getElementById('clienteBairro').value = address.neighborhood || '';
-                document.getElementById('clienteCidade').value = address.city || '';
-                document.getElementById('clienteUF').value = address.state || '';
-                document.getElementById('clienteCEP').value = address.zip_code?.replace(/\D/g, '') || '';
+                venda = await response.json();
+            } else {
+                throw new Error(`Worker falhou: ${response.status}`);
+            }
+        } catch (workerError) {
+            console.warn('⚠️ Worker falhou, tentando chamada direta...', workerError);
+            const directResponse = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (directResponse.ok) {
+                venda = await directResponse.json();
+            } else {
+                throw new Error(`Falha na chamada direta: ${directResponse.status}`);
             }
         }
-    } catch (e) { console.warn('Não foi possível pré‑carregar dados:', e); }
-    
-    // Exibe modal
-    const modal = document.getElementById('modalDadosClienteNFE');
-    if (modal) modal.classList.remove('hidden');
+
+        if (!venda) {
+            showToast('❌ Não foi possível obter os dados da venda.', 'error');
+            document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+            return;
+        }
+
+        // 2. Buscar dados do envio (shipment) para obter o endereço
+        let address = {};
+        if (venda.shipping && venda.shipping.id) {
+            try {
+                const shipUrl = `https://api.mercadolibre.com/shipments/${venda.shipping.id}`;
+                const shipProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${token}`;
+                const shipResponse = await fetch(shipProxyUrl);
+                if (shipResponse.ok) {
+                    const shipment = await shipResponse.json();
+                    console.log('📦 Dados do shipment:', shipment);
+                    // O endereço está em receiver_address
+                    if (shipment.receiver_address) {
+                        address = shipment.receiver_address;
+                    } else if (shipment.shipping_option && shipment.shipping_option.receiver_address) {
+                        address = shipment.shipping_option.receiver_address;
+                    }
+                } else {
+                    console.warn('⚠️ Não foi possível obter os dados do shipment');
+                }
+            } catch (shipError) {
+                console.warn('⚠️ Erro ao buscar shipment:', shipError);
+            }
+        }
+
+        // Fallback: se não conseguir pelo shipment, tenta buyer.address
+        if (!address.address_line && !address.street_name && venda.buyer && venda.buyer.address) {
+            address = venda.buyer.address;
+        }
+
+        // Nome
+        const buyer = venda.buyer || {};
+        const nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || '';
+        document.getElementById('clienteNome').value = nome;
+
+        // Preencher endereço
+        const logradouro = address.address_line || address.street_name || '';
+        document.getElementById('clienteEndereco').value = logradouro;
+
+        const numero = address.street_number || 'S/N';
+        document.getElementById('clienteNumero').value = numero;
+
+        const bairro = getValue(address.neighborhood);
+        document.getElementById('clienteBairro').value = bairro;
+
+        const cidade = getValue(address.city);
+        document.getElementById('clienteCidade').value = cidade;
+
+        const uf = getValue(address.state);
+        document.getElementById('clienteUF').value = uf;
+
+        const cep = address.zip_code ? address.zip_code.replace(/\D/g, '') : '';
+        document.getElementById('clienteCEP').value = cep;
+
+        document.getElementById('clienteDocumento').value = '';
+
+        console.log('📋 Dados preenchidos:', {
+            nome,
+            logradouro,
+            numero,
+            bairro,
+            cidade,
+            uf,
+            cep
+        });
+
+        window._mlAccessToken = token;
+        document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+
+    } catch (error) {
+        console.error('❌ Erro ao buscar dados da venda:', error);
+        showToast('❌ Erro ao carregar dados. Preencha manualmente.', 'error');
+        document.getElementById('modalDadosClienteNFE').classList.remove('hidden');
+    }
 }
 
 function fecharModalDadosClienteNFE() {
@@ -163,34 +256,34 @@ function fecharModalDadosClienteNFE() {
 async function confirmarEmissaoNFE() {
     const orderId = pendingEmitOrderId;
     if (!orderId) {
-        window.showToast('Nenhuma venda selecionada', 'error');
+        showToast('Nenhuma venda selecionada', 'error');
         fecharModalDadosClienteNFE();
         return;
     }
-    
+
     // Capturar dados do formulário
     const nome = document.getElementById('clienteNome').value.trim();
-    let documento = document.getElementById('clienteDocumento').value.trim().replace(/\D/g, '');
+    const documento = document.getElementById('clienteDocumento').value.trim().replace(/\D/g, '');
     const endereco = document.getElementById('clienteEndereco').value.trim();
     const numero = document.getElementById('clienteNumero').value.trim() || 'S/N';
     const bairro = document.getElementById('clienteBairro').value.trim() || '';
     const cidade = document.getElementById('clienteCidade').value.trim();
     const uf = document.getElementById('clienteUF').value.trim().toUpperCase();
     const cep = document.getElementById('clienteCEP').value.trim().replace(/\D/g, '');
-    
+
     // Validações
-    if (!nome) { window.showToast('Nome é obrigatório', 'warning'); return; }
+    if (!nome) { showToast('Nome é obrigatório', 'warning'); return; }
     if (!documento || (documento.length !== 11 && documento.length !== 14)) {
-        window.showToast('CPF/CNPJ inválido (11 ou 14 dígitos)', 'warning');
+        showToast('CPF/CNPJ inválido (11 ou 14 dígitos)', 'warning');
         return;
     }
-    if (!endereco) { window.showToast('Endereço é obrigatório', 'warning'); return; }
-    if (!cidade) { window.showToast('Cidade é obrigatória', 'warning'); return; }
-    if (uf.length !== 2) { window.showToast('UF deve ter 2 letras', 'warning'); return; }
-    
+    if (!endereco) { showToast('Endereço é obrigatório', 'warning'); return; }
+    if (!cidade) { showToast('Cidade é obrigatória', 'warning'); return; }
+    if (uf.length !== 2) { showToast('UF deve ter 2 letras', 'warning'); return; }
+
     fecharModalDadosClienteNFE();
-    
-    // Mostrar loading no botão que chamou (opcional)
+
+    // Mostrar loading no botão
     const btn = document.querySelector(`button[data-venda-id="${orderId}"]`);
     let originalText = '';
     if (btn) {
@@ -198,33 +291,46 @@ async function confirmarEmissaoNFE() {
         btn.innerHTML = '<span class="spinner"></span> Emitindo...';
         btn.disabled = true;
     }
-    
+
     try {
-        // Obter produtos da venda via API ML
+        // Obter token ML atual (do contexto)
+        const mlToken = window._mlAccessToken || null;
+
+        // Buscar produtos da venda (já temos a venda, mas podemos usar os dados salvos)
+        let produtos = [];
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
             const tokenData = await window.getValidToken();
             token = tokenData?.access_token;
         }
-        if (!token) throw new Error('Token ML não disponível');
-        
-        const url = `https://api.mercadolibre.com/orders/${orderId}`;
-        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error(`Erro ao buscar venda: ${response.status}`);
-        const venda = await response.json();
-        
-        const produtos = (venda.order_items || []).map(item => ({
-            nome: item.item.title,
-            quantidade: item.quantity,
-            valor_unitario: item.unit_price,
-            sku: item.item.seller_sku || 'SEM_SKU',
-            ncm: '87149990'
-        }));
-        if (produtos.length === 0) throw new Error('Nenhum produto encontrado');
-        
+        if (token) {
+            const url = `https://api.mercadolibre.com/orders/${orderId}`;
+            const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+            const response = await fetch(proxyUrl);
+            if (response.ok) {
+                const venda = await response.json();
+                produtos = (venda.order_items || []).map(item => ({
+                    nome: item.item.title,
+                    quantidade: item.quantity,
+                    valor_unitario: item.unit_price,
+                    sku: item.item.seller_sku || 'SEM_SKU',
+                    ncm: '87149990'
+                }));
+            }
+        }
+        if (produtos.length === 0) {
+            // Fallback: produtos genéricos (caso a API falhe)
+            produtos = [{
+                nome: 'Produto não identificado',
+                quantidade: 1,
+                valor_unitario: 0,
+                sku: 'SEM_SKU',
+                ncm: '87149990'
+            }];
+        }
+
         const cfop = (uf === 'PR') ? '5102' : '6108';
-        
+
         const payload = {
             venda_id: String(orderId),
             cliente: {
@@ -241,36 +347,40 @@ async function confirmarEmissaoNFE() {
             cfop: cfop,
             natureza_operacao: 'VENDA',
             modalidade_frete: '9',
-            transportadora_id: null
+            transportadora_id: null,
+            ml_access_token: mlToken  // <-- ENVIA O TOKEN PARA O BACKEND
         };
-        
+
         const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
         const result = await emitResponse.json();
-        
+
         if (result.success) {
-            window.showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
+            showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
+            // Marcar venda como emitida no localStorage
             const emitidas = JSON.parse(localStorage.getItem('nfe_emitidas_ids') || '[]');
             if (!emitidas.includes(String(orderId))) {
                 emitidas.push(String(orderId));
                 localStorage.setItem('nfe_emitidas_ids', JSON.stringify(emitidas));
             }
+            // Recarregar listas
             await carregarVendasPendentes();
             await carregarNFesEmitidas();
         } else {
-            window.showToast(`❌ Erro: ${result.error}`, 'error');
+            showToast(`❌ Erro: ${result.error}`, 'error');
         }
     } catch (error) {
-        console.error(error);
-        window.showToast(`Erro: ${error.message}`, 'error');
+        console.error('❌ Erro na emissão:', error);
+        showToast(`Erro: ${error.message}`, 'error');
     } finally {
         if (btn) {
             btn.innerHTML = originalText;
             btn.disabled = false;
         }
+        window._mlAccessToken = null; // limpa
     }
 }
 
