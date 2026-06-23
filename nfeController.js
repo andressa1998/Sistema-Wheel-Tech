@@ -166,7 +166,7 @@ async function emitirNFe(req, res) {
 
         // ========== GERAR XML (com CSRT dinâmico) ==========
         const tokenCSRT = AMBIENTE === 'producao' ? CSRT_TOKEN_PRODUCAO : CSRT_TOKEN_HOMOLOGACAO;
-        const idCSRT = AMBIENTE === 'producao' ? '04' : '03'; // conforme os novos tokens   
+        const idCSRT = AMBIENTE === 'producao' ? '04' : '03';
 
         const xml = gerarXmlNfe({
             nNF,
@@ -209,28 +209,48 @@ async function emitirNFe(req, res) {
         const respostaSefaz = await nfeService.sendNFe(xmlAssinado, certData);
         console.log('📨 RESPOSTA SEFAZ (COMPLETA):', respostaSefaz);
 
+        // ========== EXTRAIR PROTOCOLO E CHAVE ==========
         const protocolo = extrairProtocolo(respostaSefaz);
-        const chaveAcesso = extrairChaveAcesso(xmlAssinado);
+        // Extrai a chave da resposta da SEFAZ (campo <chNFe>)
+        const chaveMatch = respostaSefaz.match(/<chNFe>(\d+)<\/chNFe>/);
+        let chaveAcesso;
+        if (chaveMatch) {
+            chaveAcesso = chaveMatch[1];
+            console.log(`✅ Chave extraída da resposta SEFAZ: ${chaveAcesso}`);
+        } else {
+            // Fallback: extrair do XML assinado
+            chaveAcesso = extrairChaveAcesso(xmlAssinado);
+            console.log(`⚠️ Chave extraída do XML: ${chaveAcesso}`);
+        }
 
         if (!protocolo) throw new Error('SEFAZ não retornou protocolo');
         console.log('✅ NF-e autorizada. Protocolo:', protocolo);
 
         // ========== SALVAR NF-e NO SUPABASE ==========
         const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
-        await supabase.from('nfe_emitidas').insert({
-            venda_id: venda_id || null,
-            chave: chaveAcesso,
-            protocolo: protocolo,
-            xml: xmlAssinado,
-            status: 'autorizada',
-            cancelada: false,
-            data_emissao: new Date().toISOString(),
-            transportadora_id: transportadora_id || null,
-            valor_total: valorTotal
-        });
 
+        const dadosInsert = {
+            data_emissao: new Date().toISOString(),
+            numero_nf: String(nNF),
+            protocolo: protocolo,
+            xml_assinado: xmlAssinado,
+            chave_acesso: chaveAcesso,
+            venda_id: venda_id || null
+        };
+
+        const { error: insertError } = await supabase
+            .from('nfe_emitidas')
+            .insert(dadosInsert);
+
+        if (insertError) {
+            console.error('❌ Erro ao salvar NF-e no Supabase:', insertError);
+        } else {
+            console.log('✅ NF-e salva no Supabase com sucesso.');
+        }
+
+        // ========== ATUALIZAR VENDA (se houver) ==========
         if (venda_id) {
-            await supabase
+            const { error: updateError } = await supabase
                 .from('vendas_ml')
                 .update({
                     nfe_emitida: true,
@@ -239,9 +259,16 @@ async function emitirNFe(req, res) {
                     data_emissao: new Date().toISOString()
                 })
                 .eq('id', venda_id);
+
+            if (updateError) {
+                console.error('⚠️ Erro ao atualizar venda:', updateError);
+            } else {
+                console.log('✅ Venda atualizada com a NF-e.');
+            }
         }
 
         res.json({ success: true, protocolo, chaveAcesso });
+
     } catch (error) {
         console.error('❌ Erro na emissão:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -263,42 +290,91 @@ async function cancelarNFe(req, res) {
         const chaveNumerica = chave.replace(/\D/g, '');
         if (chaveNumerica.length !== 44) throw new Error('Chave inválida');
 
-        const { data: nfeData } = await supabase.from('nfe_emitidas').select('ultimo_evento_seq, protocolo').eq('chave', chaveNumerica).maybeSingle();
-        let nSeqEvento = (nfeData?.ultimo_evento_seq || 0) + 1;
+        // Busca o protocolo e último sequencial da NF-e – usando chave_acesso
+        const { data: nfeData, error } = await supabase
+            .from('nfe_emitidas')
+            .select('ultimo_evento_seq, protocolo')
+            .eq('chave_acesso', chaveNumerica)   // <-- corrigido
+            .maybeSingle();
 
-        const xmlEvento = montarXmlCancelamento(chaveNumerica, nfeData?.protocolo || '', justificativa || 'Cancelamento solicitado', nSeqEvento);
+        if (error) {
+            console.error('Erro ao buscar NF-e:', error);
+            throw new Error('Erro ao consultar banco de dados');
+        }
+
+        if (!nfeData) throw new Error('NF-e não encontrada no banco');
+        if (!nfeData.protocolo) throw new Error('NF-e sem protocolo de autorização');
+        
+        const tpEvento = "110111";
+        const chNFe = chaveNumerica.length === 43 ? `${chaveNumerica}1` : chaveNumerica;
+        const nSeqEvento = "01";
+        const idEvento = `ID${tpEvento}${chNFe}${nSeqEvento}`;
+
+        const xmlEvento = montarXmlCancelamento(
+            chaveNumerica,
+            nfeData.protocolo,
+            justificativa || 'Cancelamento solicitado',
+            nSeqEvento
+        );
+
         const certData = loadCertificates();
         const xmlAssinado = assinarXmlEvento(xmlEvento, certData);
         const nfeService = new NFEService(AMBIENTE);
+        console.log('📄 XML do evento ASSINADO (COMPLETO):\n', xmlAssinado);
         const resposta = await nfeService.sendEvento(xmlAssinado, certData);
         const resultado = extrairResultadoCancelamento(resposta);
+        console.log(`📊 Resultado do cancelamento: cStat=${resultado.cStat}, motivo=${resultado.motivo}, protocolo=${resultado.protocolo}`);
 
         if (!resultado.cancelado && resultado.cStat !== '135' && resultado.cStat !== '136') {
-            throw new Error(`SEFAZ rejeitou cancelamento: ${resultado.motivo} (cStat=${resultado.cStat})`);
+        throw new Error(`SEFAZ rejeitou cancelamento: ${resultado.motivo} (cStat=${resultado.cStat})`);
         }
 
-        await supabase.from('nfe_emitidas').update({
-            cancelada: true,
-            cancelamento_protocolo: resultado.protocolo,
-            cancelamento_justificativa: justificativa,
-            data_cancelamento: new Date().toISOString(),
-            ultimo_evento_seq: nSeqEvento
-        }).eq('chave', chaveNumerica);
+        // Atualiza NF-e – usando chave_acesso
+        await supabase
+            .from('nfe_emitidas')
+            .update({
+                cancelada: true,
+                cancelamento_protocolo: resultado.protocolo,
+                cancelamento_justificativa: justificativa,
+                data_cancelamento: new Date().toISOString(),
+                ultimo_evento_seq: nSeqEvento
+            })
+            .eq('chave_acesso', chaveNumerica);   // <-- corrigido
 
         if (venda_id) {
-            await supabase.from('vendas_ml').update({
-                nfe_cancelada: true,
-                nfe_cancelamento_protocolo: resultado.protocolo,
-                nfe_cancelamento_justificativa: justificativa,
-                nfe_cancelamento_data: new Date().toISOString(),
-                nfe_ultimo_evento_seq: nSeqEvento
-            }).eq('id', venda_id);
+            await supabase
+                .from('vendas_ml')
+                .update({
+                    nfe_cancelada: true,
+                    nfe_cancelamento_protocolo: resultado.protocolo,
+                    nfe_cancelamento_justificativa: justificativa,
+                    nfe_cancelamento_data: new Date().toISOString(),
+                    nfe_ultimo_evento_seq: nSeqEvento
+                })
+                .eq('id', venda_id);
         }
 
         res.json({ success: true, protocoloCancelamento: resultado.protocolo });
     } catch (error) {
         console.error('❌ Erro no cancelamento:', error);
         res.status(500).json({ success: false, error: error.message });
+    }
+}
+
+async function testarEventoRaw(req, res) {
+    console.log('📨 [TESTE EVENTO] Enviando evento diretamente');
+    try {
+        let xml = req.body.xml || req.body;
+        if (typeof xml === 'object') xml = xml.xml;
+        if (!xml || typeof xml !== 'string') throw new Error('XML inválido');
+
+        const certData = loadCertificates();
+        const nfeService = new NFEService(AMBIENTE);
+        const resposta = await nfeService.sendEvento(xml, certData);
+        const resultado = extrairResultadoCancelamento(resposta);
+        res.json({ success: resultado.cancelado, ...resultado, resposta });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 }
 
@@ -459,9 +535,28 @@ async function sincronizarVendasML(req, res) {
 
 // ===================== FUNÇÕES AUXILIARES (cancelamento) =====================
 function montarXmlCancelamento(chaveAcesso, protocolo, justificativa, nSeqEvento) {
-    const now = new Date();
-    const dhEvento = now.toISOString().replace(/\.\d{3}Z$/, '-03:00');
-    const id = `ID${chaveAcesso}110111${nSeqEvento}`;
+    // 1. Obtém o momento atual da máquina e subtrai 5 minutos de segurança
+    const dataAlvo = new Date();
+    dataAlvo.setMinutes(dataAlvo.getMinutes() - 5);
+
+    // 2. Força a formatação exata no padrão da SEFAZ usando o fuso de Brasília (America/Sao_Paulo)
+    const formatter = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false
+    });
+
+    const partes = formatter.formatToParts(dataAlvo);
+    const mapa = Object.fromEntries(partes.map(p => [p.type, p.value]));
+
+    // Resultado esperado: YYYY-MM-DDTHH:mm:ss-03:00
+    const dhEvento = `${mapa.year}-${mapa.month}-${mapa.day}T${mapa.hour}:${mapa.minute}:${mapa.second}-03:00`;
+
+    const nSeqEventoFormatado = String(nSeqEvento).padStart(2, '0');
+    const id = `ID110111${chaveAcesso}${nSeqEventoFormatado}`;
+    const nSeqEventoTag = String(parseInt(nSeqEvento, 10));
+
     return `<?xml version="1.0" encoding="UTF-8"?>
 <envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
     <idLote>${Math.floor(Math.random() * 999999999999999)}</idLote>
@@ -473,7 +568,7 @@ function montarXmlCancelamento(chaveAcesso, protocolo, justificativa, nSeqEvento
             <chNFe>${chaveAcesso}</chNFe>
             <dhEvento>${dhEvento}</dhEvento>
             <tpEvento>110111</tpEvento>
-            <nSeqEvento>${nSeqEvento}</nSeqEvento>
+            <nSeqEvento>${nSeqEventoTag}</nSeqEvento>
             <verEvento>1.00</verEvento>
             <detEvento versao="1.00">
                 <descEvento>Cancelamento</descEvento>
@@ -487,32 +582,97 @@ function montarXmlCancelamento(chaveAcesso, protocolo, justificativa, nSeqEvento
 
 function assinarXmlEvento(xml, certData) {
     const { SignedXml } = require('xml-crypto');
+
+    // 1. Extrair o Id do infEvento
+    const idMatch = xml.match(/<infEvento[^>]*Id="([^"]+)"/);
+    if (!idMatch) throw new Error('❌ Id do infEvento não encontrado para assinatura');
+    const id = idMatch[1];
+    console.log(`🔑 Assinando evento com Id: ${id}`);
+
+    // 2. Limpar o XML (remove quebras e espaços extras)
+    let xmlLimpo = xml
+        .replace(/\r?\n/g, '')
+        .replace(/>\s+</g, '><')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+    // 3. Usar a chave privada diretamente (já é PKCS#8)
+    const privateKeyPem = certData.privateKey;
+
     const sig = new SignedXml();
-    sig.privateKey = certData.privateKey;
+    sig.privateKey = privateKeyPem;
     sig.signatureAlgorithm = 'http://www.w3.org/2000/09/xmldsig#rsa-sha1';
     sig.canonicalizationAlgorithm = 'http://www.w3.org/TR/2001/REC-xml-c14n-20010315';
+
+    // 4. Adicionar referência ao infEvento
     sig.addReference({
-        xpath: "//*[local-name(.)='infEvento']",
+        xpath: `//*[local-name(.)='infEvento' and @Id='${id}']`,
         transforms: [
             'http://www.w3.org/2000/09/xmldsig#enveloped-signature',
             'http://www.w3.org/TR/2001/REC-xml-c14n-20010315'
         ],
         digestAlgorithm: 'http://www.w3.org/2000/09/xmldsig#sha1',
-        uri: ''
+        uri: `#${id}`
     });
-    const cert = certData.cert.replace(/-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\r|\n/g, '');
-    sig.getKeyInfoContent = () => `<X509Data><X509Certificate>${cert}</X509Certificate></X509Data>`;
-    sig.computeSignature(xml, { location: { reference: "//*[local-name(.)='infEvento']", action: 'after' } });
+
+    // 5. Inserir certificado na KeyInfo
+    let certBase64 = certData.cert
+        .replace(/-----BEGIN CERTIFICATE-----/g, '')
+        .replace(/-----END CERTIFICATE-----/g, '')
+        .replace(/\r?\n/g, '')
+        .trim();
+    sig.getKeyInfoContent = () =>
+        `<X509Data><X509Certificate>${certBase64}</X509Certificate></X509Data>`;
+
+    // 6. Calcular assinatura
+    sig.computeSignature(xmlLimpo, {
+        location: {
+            reference: `//*[local-name(.)='infEvento' and @Id='${id}']`,
+            action: 'after'
+        }
+    });
+
     let signedXml = sig.getSignedXml();
-    signedXml = signedXml.replace('<Signature>', '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">');
-    signedXml = signedXml.replace(/xmlns=""/g, '');
+
+    // 7. Limpeza final
+    signedXml = signedXml
+        .replace(/xmlns=""/g, '')
+        .replace(/[\x00-\x1F\x7F]/g, '');
+
+    if (!signedXml.includes('<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"')) {
+        signedXml = signedXml.replace('<Signature', '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"');
+    }
+
+    if (!signedXml.startsWith('<?xml')) {
+        signedXml = '<?xml version="1.0" encoding="UTF-8"?>' + signedXml;
+    }
+
+    // Salvar o XML do evento assinado para inspeção (opcional)
+    const eventPath = path.join(__dirname, 'xml_gerado', `evento_cancelamento_${Date.now()}.xml`);
+    fs.writeFileSync(eventPath, signedXml, 'utf8');
+    console.log(`📁 Evento assinado salvo em: ${eventPath}`);
+
+    console.log('✅ Evento assinado com sucesso.');
     return signedXml;
 }
 
 function extrairResultadoCancelamento(respostaXml) {
-    const cStat = respostaXml.match(/<cStat[^>]*>(\d+)<\/cStat>/)?.[1] || '999';
-    const motivo = respostaXml.match(/<xMotivo[^>]*>([^<]+)<\/xMotivo>/)?.[1] || 'Erro desconhecido';
-    const protocolo = respostaXml.match(/<nProt[^>]*>(\d+)<\/nProt>/)?.[1] || null;
+    // Busca o retEvento (dentro do env:Body > nfeResultMsg > retEvento)
+    const retEventoMatch = respostaXml.match(/<retEvento[^>]*>([\s\S]*?)<\/retEvento>/);
+    if (!retEventoMatch) {
+        // Se não encontrar retEvento, tenta buscar no envelope genérico (fallback)
+        const cStat = respostaXml.match(/<cStat[^>]*>(\d+)<\/cStat>/)?.[1] || '999';
+        const motivo = respostaXml.match(/<xMotivo[^>]*>([^<]+)<\/xMotivo>/)?.[1] || 'Erro desconhecido';
+        const protocolo = respostaXml.match(/<nProt[^>]*>(\d+)<\/nProt>/)?.[1] || null;
+        return { cancelado: (cStat === '135' || cStat === '136'), cStat, motivo, protocolo };
+    }
+
+    const retEvento = retEventoMatch[1];
+    const cStat = retEvento.match(/<cStat[^>]*>(\d+)<\/cStat>/)?.[1] || '999';
+    const motivo = retEvento.match(/<xMotivo[^>]*>([^<]+)<\/xMotivo>/)?.[1] || 'Erro desconhecido';
+    const protocolo = retEvento.match(/<nProt[^>]*>(\d+)<\/nProt>/)?.[1] || null;
+
+    // cStat 135 ou 136 indicam sucesso no cancelamento
     const cancelado = (cStat === '135' || cStat === '136');
     return { cancelado, cStat, motivo, protocolo };
 }
@@ -769,5 +929,6 @@ module.exports = {
     listarVendasComNFE,
     buscarXMLPorChave,
     testarEnvioXMLFixo,
-    testarXmlRaw
+    testarXmlRaw,
+    testarEventoRaw
 };

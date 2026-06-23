@@ -13,7 +13,8 @@ const {
     listarVendasComNFE,
     buscarXMLPorChave,
     testarEnvioXMLFixo,   // rota de teste com XML fixo (opcional)
-    testarXmlRaw          // NOVA: recebe XML via body e envia para SEFAZ
+    testarXmlRaw,
+    testarEventoRaw      // NOVA: recebe XML via body e envia para SEFAZ
 } = require('./nfeController');
 
 const router = express.Router();
@@ -32,8 +33,10 @@ router.get('/vendas-sem-nfe', listarVendasSemNFE);
 router.get('/vendas-com-nfe', listarVendasComNFE);
 router.get('/buscar-xml', buscarXMLPorChave);
 
+
 // ===================== ROTAS DE TESTE =====================
 router.post('/testar-xml-fixo', testarEnvioXMLFixo);   // envia um XML pré-definido que já funcionou
-router.post('/testar-xml-raw', testarXmlRaw);          // recebe qualquer XML via body e envia para SEFAZ
+router.post('/testar-xml-raw', testarXmlRaw); 
+router.post('/testar-evento-raw', testarEventoRaw);         // recebe qualquer XML via body e envia para SEFAZ
 
 module.exports = router;
