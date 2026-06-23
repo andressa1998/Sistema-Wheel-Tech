@@ -38,6 +38,11 @@ function calcularHashCSRT(tokenCSRT, chaveAcesso, invert = false) {
     return crypto.createHash('sha1').update(stringParaHash, 'utf8').digest('base64');
 }
 
+function truncarTexto(texto, limite = 60) {
+    if (!texto) return '';
+    return texto.length > limite ? texto.substring(0, limite) : texto;
+}
+
 function gerarXmlNfe(dados) {
     const {
         nNF,
@@ -192,7 +197,13 @@ function gerarXmlNfe(dados) {
     const xBairroEmit = escapeXml(emitente.enderEmit.xBairro);
     const xMunEmit = escapeXml(emitente.enderEmit.xMun);
 
-    const xNomeDest = escapeXml(destinatario.xNome);
+    let xNomeDest = destinatario.xNome || '';
+        if (xNomeDest.length > 60) {
+            xNomeDest = xNomeDest.substring(0, 60);
+            console.warn(`✂️ Nome do destinatário truncado para 60 caracteres: ${xNomeDest}...`);
+        }
+        xNomeDest = escapeXml(xNomeDest);
+
     const xLgrDest = escapeXml(destinatario.xLgr || '');
     const nroDest = escapeXml(destinatario.nro || 'S/N');
     const xCplDest = escapeXml(destinatario.xCpl || '');

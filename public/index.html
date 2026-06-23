@@ -3481,6 +3481,18 @@ h4 {
                     </div>
                 </div>
             </div>
+            <div class="form-group">
+    <label for="nfeTransportadora"><i class="fas fa-truck"></i> Transportadora</label>
+    <div class="d-flex gap-2">
+        <select id="nfeTransportadora" class="form-control" style="flex:1;">
+            <option value="">Selecione uma transportadora</option>
+        </select>
+        <button type="button" class="btn btn-primary btn-sm" onclick="abrirModalTransportadora()">
+            <i class="fas fa-plus"></i> Nova
+        </button>
+    </div>
+    <small class="text-muted">Opcional – caso não selecione, será usada a modalidade "Sem frete"</small>
+</div>
             <div class="d-flex justify-content-end gap-2 mt-3">
                 <button type="button" class="btn btn-secondary" id="cancelarModalNFEBtn">Cancelar</button>
                 <button type="button" class="btn btn-success" id="confirmarModalNFEBtn">Confirmar e Emitir NF-e</button>

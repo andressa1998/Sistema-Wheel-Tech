@@ -294,8 +294,7 @@ function handleEmitirNFEClick(event) {
 async function emitirNFEParaVenda(orderId) {
     console.log('🔵 Iniciando emitirNFEParaVenda para:', orderId);
     
-    // VALIDAÇÃO MAIS ROBUSTA
-    if (!orderId || orderId === 'null' || orderId === 'undefined' || orderId === '') {
+    if (!orderId || orderId === 'null' || orderId === 'undefined') {
         showToast('❌ ID da venda inválido', 'error');
         return;
     }
@@ -460,6 +459,10 @@ async function emitirNFEParaVenda(orderId) {
         });
 
         window._mlAccessToken = token;
+
+        // 🔥 Carregar lista de transportadoras no select
+        await carregarTransportadorasSelect();
+
         abrirModalCliente();
 
     } catch (error) {
@@ -486,6 +489,54 @@ function fecharModalDadosClienteNFE() {
     pendingEmitOrderId = null;
 }
 
+// ===================== SALVAR CLIENTE NO BANCO =====================
+// ===================== SALVAR CLIENTE NO BANCO =====================
+async function salvarClienteNoBanco(dadosCliente) {
+    // dadosCliente = { nome, documento, endereco, numero, bairro, cidade, uf, cep }
+    try {
+        // 1. Verificar se o cliente já existe pelo documento
+        const responseBusca = await fetch(`${window.API_BASE_URL}/nfe/clientes?documento=${dadosCliente.documento}`);
+        if (responseBusca.ok) {
+            const data = await responseBusca.json();
+            if (data.clientes && data.clientes.length > 0) {
+                // Cliente já existe – não faz nada (ou atualiza? vamos pular)
+                console.log('ℹ️ Cliente já cadastrado:', dadosCliente.documento);
+                return;
+            }
+        }
+
+        // 2. Se não existir, cadastra
+        const payload = {
+            nome: dadosCliente.nome,
+            documento: dadosCliente.documento,
+            logradouro: dadosCliente.endereco,
+            numero: dadosCliente.numero,
+            bairro: dadosCliente.bairro,
+            cidade: dadosCliente.cidade,
+            uf: dadosCliente.uf,
+            cep: dadosCliente.cep
+        };
+
+        const response = await fetch(`${window.API_BASE_URL}/nfe/clientes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (response.ok) {
+            console.log('✅ Cliente salvo com sucesso:', dadosCliente.nome);
+            // Recarregar a lista de clientes (se a aba estiver aberta)
+            if (document.getElementById('abaClientes') && !document.getElementById('abaClientes').classList.contains('hidden')) {
+                await carregarClientes();
+            }
+        } else {
+            console.warn('⚠️ Erro ao salvar cliente:', await response.text());
+        }
+    } catch (error) {
+        console.error('❌ Erro ao salvar cliente:', error);
+    }
+}
+
 // ===================== CONFIRMAR E EMITIR NF-e =====================
 async function confirmarEmissaoNFE() {
     const orderId = pendingEmitOrderId;
@@ -504,7 +555,9 @@ async function confirmarEmissaoNFE() {
     const cidade = document.getElementById('clienteCidade').value.trim();
     const uf = document.getElementById('clienteUF').value.trim().toUpperCase();
     const cep = document.getElementById('clienteCEP').value.trim().replace(/\D/g, '');
+    const transportadoraId = document.getElementById('nfeTransportadora')?.value || null;
 
+    // Validações
     if (!nome) { showToast('Nome é obrigatório', 'warning'); return; }
     if (!documento || (documento.length !== 11 && documento.length !== 14)) {
         showToast('CPF/CNPJ inválido (11 ou 14 dígitos)', 'warning');
@@ -572,8 +625,8 @@ async function confirmarEmissaoNFE() {
             produtos: produtos,
             cfop: cfop,
             natureza_operacao: 'VENDA',
-            modalidade_frete: '9',
-            transportadora_id: null,
+            modalidade_frete: transportadoraId ? '0' : '9', // 0 = transportadora contratada, 9 = sem frete
+            transportadora_id: transportadoraId,
             ml_access_token: mlToken
         };
 
@@ -586,8 +639,22 @@ async function confirmarEmissaoNFE() {
 
         if (result.success) {
             showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
+
+            // 🔥 SALVAR CLIENTE NO BANCO (ASSÍNCRONO)
+            await salvarClienteNoBanco({
+                nome,
+                documento,
+                endereco,
+                numero,
+                bairro,
+                cidade,
+                uf,
+                cep
+            });
+
             // Limpar cache local
             window.produtosParaEmissao = null;
+
             // Recarregar listas
             await carregarVendasPendentes();
             await carregarNFesEmitidas();
@@ -780,6 +847,130 @@ async function excluirTransportadora(id) {
     }
 }
 
+// ===================== MODAL NOVA TRANSPORTADORA =====================
+function abrirModalTransportadora() {
+    // Verifica se o modal já existe
+    let modal = document.getElementById('modalNovaTransportadora');
+    if (modal) {
+        modal.classList.remove('hidden');
+        return;
+    }
+
+    // Cria o modal
+    const modalHTML = `
+    <div id="modalNovaTransportadora" class="modal" style="display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:9999;">
+        <div class="modal-content" style="max-width:500px; width:90%; background:white; padding:25px; border-radius:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h3 style="margin:0;"><i class="fas fa-truck"></i> Nova Transportadora</h3>
+                <button onclick="fecharModalTransportadora()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+            </div>
+            <form id="formNovaTransportadora">
+                <div class="form-group">
+                    <label>Nome *</label>
+                    <input type="text" id="novaTransportadoraNome" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label>CNPJ * (apenas números)</label>
+                    <input type="text" id="novaTransportadoraCnpj" class="form-control" placeholder="00000000000000" required>
+                </div>
+                <div class="form-group">
+                    <label>Inscrição Estadual</label>
+                    <input type="text" id="novaTransportadoraIe" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Endereço</label>
+                    <input type="text" id="novaTransportadoraEndereco" class="form-control">
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>Cidade</label>
+                            <input type="text" id="novaTransportadoraCidade" class="form-control">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>UF</label>
+                            <input type="text" id="novaTransportadoraUf" class="form-control" maxlength="2">
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <button type="button" class="btn btn-secondary" onclick="fecharModalTransportadora()">Cancelar</button>
+                    <button type="button" class="btn btn-success" onclick="salvarNovaTransportadora()"><i class="fas fa-save"></i> Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>`;
+
+    const container = document.createElement('div');
+    container.innerHTML = modalHTML;
+    document.body.appendChild(container.firstElementChild);
+}
+
+function fecharModalTransportadora() {
+    const modal = document.getElementById('modalNovaTransportadora');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function salvarNovaTransportadora() {
+    const nome = document.getElementById('novaTransportadoraNome').value.trim();
+    const cnpj = document.getElementById('novaTransportadoraCnpj').value.trim().replace(/\D/g, '');
+    const ie = document.getElementById('novaTransportadoraIe').value.trim();
+    const endereco = document.getElementById('novaTransportadoraEndereco').value.trim();
+    const cidade = document.getElementById('novaTransportadoraCidade').value.trim();
+    const uf = document.getElementById('novaTransportadoraUf').value.trim().toUpperCase();
+
+    if (!nome || !cnpj) {
+        showToast('Nome e CNPJ são obrigatórios', 'warning');
+        return;
+    }
+    if (cnpj.length !== 14) {
+        showToast('CNPJ deve ter 14 dígitos', 'warning');
+        return;
+    }
+
+    const payload = { nome, cnpj, ie, endereco, cidade, uf };
+
+    try {
+        const response = await fetch(`${window.API_BASE_URL}/nfe/transportadoras`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await response.json();
+        if (result.success) {
+            showToast('Transportadora cadastrada com sucesso!', 'success');
+            fecharModalTransportadora();
+            // Recarregar lista de transportadoras (na aba atual)
+            await carregarTransportadoras();
+            // Atualizar também o select do modal de emissão se estiver aberto
+            await carregarTransportadorasSelect();
+        } else {
+            showToast('Erro: ' + result.error, 'error');
+        }
+    } catch (error) {
+        console.error(error);
+        showToast('Erro ao salvar transportadora', 'error');
+    }
+}
+
+// Função auxiliar para carregar apenas o select de transportadoras (usado no modal de emissão)
+async function carregarTransportadorasSelect() {
+    const select = document.getElementById('nfeTransportadora');
+    if (!select) return;
+    try {
+        const response = await fetch(`${window.API_BASE_URL}/nfe/transportadoras`);
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error);
+        const transportadoras = data.transportadoras || [];
+        select.innerHTML = '<option value="">Selecione uma transportadora</option>' +
+            transportadoras.map(t => `<option value="${t.id}">${t.nome} (${t.cnpj})</option>`).join('');
+    } catch (error) {
+        console.error('Erro ao carregar transportadoras:', error);
+    }
+}
+
 // ===================== CLIENTES =====================
 async function carregarClientes() {
     const tbody = document.getElementById('clientesBody');
@@ -903,6 +1094,9 @@ window.isFullByAnyField = isFullByAnyField;
 window.abrirModalEdicaoProdutos = abrirModalEdicaoProdutos;
 window.fecharModalEdicaoProdutos = fecharModalEdicaoProdutos;
 window.confirmarProdutosEditados = confirmarProdutosEditados;
+window.abrirModalTransportadora = abrirModalTransportadora;
+window.fecharModalTransportadora = fecharModalTransportadora;
+window.salvarNovaTransportadora = salvarNovaTransportadora;
 
 // ===================== INICIALIZAR EVENT LISTENERS DO MODAL =====================
 document.addEventListener('DOMContentLoaded', function() {
