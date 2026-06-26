@@ -15,7 +15,6 @@ const COLABORADORES_FIXOS = [
     'Bruna',
     'Thalyta',
     'Leticia',
-    'Jessica',
     'Mirella'
 ];
 let escalaMensal = {};          // { "2025-06-07": ["Elaine", "Arthur"], ... }

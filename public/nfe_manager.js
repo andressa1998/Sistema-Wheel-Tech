@@ -724,39 +724,371 @@ async function visualizarNFE(chaveAcesso) {
             window.showToast('XML não encontrado', 'error');
             return;
         }
+
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(data.xml, 'application/xml');
         const infNFe = xmlDoc.querySelector('infNFe');
+        if (!infNFe) {
+            window.showToast('XML inválido', 'error');
+            return;
+        }
+
+        // Extrai dados
         const chave = infNFe.getAttribute('Id').replace('NFe', '');
-        const emitNome = infNFe.querySelector('emit xNome')?.textContent || '';
-        const destNome = infNFe.querySelector('dest xNome')?.textContent || '';
-        const vNF = infNFe.querySelector('ICMSTot vNF')?.textContent || '0';
+        const nNF = infNFe.querySelector('nNF')?.textContent || '';
+        const serie = infNFe.querySelector('serie')?.textContent || '';
+        const natOp = infNFe.querySelector('natOp')?.textContent || '';
+        const dhEmi = infNFe.querySelector('dhEmi')?.textContent || '';
+        const dhSaiEnt = infNFe.querySelector('dhSaiEnt')?.textContent || '';
+        const modFrete = infNFe.querySelector('modFrete')?.textContent || '9';
         const protocolo = infNFe.querySelector('nProt')?.textContent || 'Não informado';
-        
-        const html = `<!DOCTYPE html>
-        <html>
-        <head><title>DANFE - ${chave}</title>
-        <style>body { font-family: Arial; margin: 20px; } .card { border:1px solid #ccc; padding:15px; margin-bottom:15px; } .row{display:flex;} .label{width:130px;font-weight:bold;} @media print{ .no-print{display:none;} }</style>
-        </head>
-        <body>
-            <div class="no-print" style="text-align:center; margin-bottom:20px;">
-                <button onclick="window.print()">Imprimir</button>
-                <button onclick="window.close()">Fechar</button>
+
+        // Emitente
+        const emit = infNFe.querySelector('emit');
+        const emitNome = emit.querySelector('xNome')?.textContent || '';
+        const emitCNPJ = emit.querySelector('CNPJ')?.textContent || '';
+        const emitIE = emit.querySelector('IE')?.textContent || '';
+        const emitEnd = emit.querySelector('enderEmit');
+        const emitLogr = emitEnd?.querySelector('xLgr')?.textContent || '';
+        const emitNro = emitEnd?.querySelector('nro')?.textContent || '';
+        const emitBairro = emitEnd?.querySelector('xBairro')?.textContent || '';
+        const emitMun = emitEnd?.querySelector('xMun')?.textContent || '';
+        const emitUF = emitEnd?.querySelector('UF')?.textContent || '';
+        const emitCEP = emitEnd?.querySelector('CEP')?.textContent || '';
+        const emitFone = emitEnd?.querySelector('fone')?.textContent || '';
+
+        // Destinatário
+        const dest = infNFe.querySelector('dest');
+        const destNome = dest.querySelector('xNome')?.textContent || '';
+        const destDoc = dest.querySelector('CPF')?.textContent || dest.querySelector('CNPJ')?.textContent || '';
+        const destEnd = dest.querySelector('enderDest');
+        const destLogr = destEnd?.querySelector('xLgr')?.textContent || '';
+        const destNro = destEnd?.querySelector('nro')?.textContent || '';
+        const destBairro = destEnd?.querySelector('xBairro')?.textContent || '';
+        const destMun = destEnd?.querySelector('xMun')?.textContent || '';
+        const destUF = destEnd?.querySelector('UF')?.textContent || '';
+        const destCEP = destEnd?.querySelector('CEP')?.textContent || '';
+
+        // Produtos
+        const dets = xmlDoc.querySelectorAll('det');
+        let produtosHTML = '';
+        let totalProd = 0;
+        dets.forEach((det, idx) => {
+            const prod = det.querySelector('prod');
+            const nome = prod.querySelector('xProd')?.textContent || '';
+            const ncm = prod.querySelector('NCM')?.textContent || '';
+            const cfop = prod.querySelector('CFOP')?.textContent || '';
+            const qtd = prod.querySelector('qCom')?.textContent || '0';
+            const vUn = prod.querySelector('vUnCom')?.textContent || '0';
+            const vProd = prod.querySelector('vProd')?.textContent || '0';
+            totalProd += parseFloat(vProd) || 0;
+            produtosHTML += `
+                <tr>
+                    <td>${idx+1}</td>
+                    <td style="text-align:left;">${nome}</td>
+                    <td>${ncm}</td>
+                    <td>${cfop}</td>
+                    <td>${qtd}</td>
+                    <td style="text-align:right;">${parseFloat(vUn).toFixed(2)}</td>
+                    <td style="text-align:right;">${parseFloat(vProd).toFixed(2)}</td>
+                </tr>
+            `;
+        });
+
+        // Totais
+        const ICMSTot = infNFe.querySelector('ICMSTot');
+        const vNF = ICMSTot?.querySelector('vNF')?.textContent || totalProd.toFixed(2);
+        const vProdTotal = ICMSTot?.querySelector('vProd')?.textContent || totalProd.toFixed(2);
+        const vFrete = ICMSTot?.querySelector('vFrete')?.textContent || '0';
+        const vSeg = ICMSTot?.querySelector('vSeg')?.textContent || '0';
+        const vDesc = ICMSTot?.querySelector('vDesc')?.textContent || '0';
+        const vTotTrib = ICMSTot?.querySelector('vTotTrib')?.textContent || '0';
+
+        // Transportadora
+        const transp = infNFe.querySelector('transp');
+        const transporta = transp?.querySelector('transporta');
+        let transpHTML = '';
+        if (transporta) {
+            const tpCNPJ = transporta.querySelector('CNPJ')?.textContent || '';
+            const tpNome = transporta.querySelector('xNome')?.textContent || '';
+            const tpIE = transporta.querySelector('IE')?.textContent || '';
+            const tpEnd = transporta.querySelector('xEnder')?.textContent || '';
+            const tpMun = transporta.querySelector('xMun')?.textContent || '';
+            const tpUF = transporta.querySelector('UF')?.textContent || '';
+            const freteLabel = modFrete === '0' ? 'Emitente' : modFrete === '1' ? 'Destinatário' : modFrete === '2' ? 'Terceiros' : 'Sem frete';
+            transpHTML = `
+                <div class="transp-section">
+                    <table class="transp-table">
+                        <tr><th colspan="4">TRANSPORTADOR / VOLUMES TRANSPORTADOS</th></tr>
+                        <tr>
+                            <td><strong>RAZÃO SOCIAL</strong><br>${tpNome}</td>
+                            <td><strong>FRETE POR CONTA</strong><br>${freteLabel}</td>
+                            <td><strong>CNPJ/CPF</strong><br>${tpCNPJ}</td>
+                            <td><strong>INSCRIÇÃO ESTADUAL</strong><br>${tpIE}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="2"><strong>ENDEREÇO</strong><br>${tpEnd}</td>
+                            <td><strong>MUNICÍPIO</strong><br>${tpMun}</td>
+                            <td><strong>UF</strong><br>${tpUF}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>QUANTIDADE</strong><br>0</td>
+                            <td><strong>ESPÉCIE</strong><br></td>
+                            <td><strong>MARCA</strong><br></td>
+                            <td><strong>NUMERAÇÃO</strong><br></td>
+                        </tr>
+                        <tr>
+                            <td><strong>PESO BRUTO</strong><br>0,000</td>
+                            <td><strong>PESO LÍQUIDO</strong><br>0,000</td>
+                            <td colspan="2"></td>
+                        </tr>
+                    </table>
+                </div>
+            `;
+        } else {
+            transpHTML = `<p><strong>Frete:</strong> ${modFrete === '9' ? 'Sem frete' : 'Não informado'}</p>`;
+        }
+
+        // ===== INFORMAÇÕES COMPLEMENTARES (infAdic) =====
+        const infAdic = infNFe.querySelector('infAdic infCpl')?.textContent || '';
+
+        // Monta HTML completo com CSS DANFE
+        const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DANFE - ${chave}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background: #fff;
+            padding: 20px;
+            color: #000;
+            font-size: 11px;
+            line-height: 1.3;
+        }
+        .danfe {
+            max-width: 1000px;
+            margin: 0 auto;
+            border: 2px solid #000;
+            padding: 15px;
+            background: #fff;
+        }
+        .header {
+            border-bottom: 2px solid #000;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .header .emitente-nome {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .header .emitente-end {
+            font-size: 10px;
+        }
+        .header .titulo {
+            font-size: 20px;
+            font-weight: bold;
+            letter-spacing: 2px;
+        }
+        .header .subtitulo {
+            font-size: 12px;
+        }
+        .chave {
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            background: #eee;
+            padding: 4px 8px;
+            margin: 5px 0;
+            border: 1px solid #000;
+        }
+        .dados-gerais {
+            display: flex;
+            justify-content: space-between;
+            border-top: 1px solid #000;
+            border-bottom: 1px solid #000;
+            padding: 6px 0;
+            margin: 6px 0;
+        }
+        .dados-gerais > div {
+            width: 48%;
+        }
+        .dados-gerais p {
+            margin: 2px 0;
+        }
+        .dados-gerais .label {
+            font-weight: bold;
+        }
+        .table-produtos {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 10px 0;
+            font-size: 10px;
+        }
+        .table-produtos th, .table-produtos td {
+            border: 1px solid #000;
+            padding: 3px 4px;
+            text-align: center;
+        }
+        .table-produtos th {
+            background: #ddd;
+            font-weight: bold;
+        }
+        .table-produtos td:first-child { width: 30px; }
+        .table-produtos td:nth-child(2) { text-align: left; min-width: 200px; }
+        .table-produtos td:nth-child(6), .table-produtos td:nth-child(7) { text-align: right; padding-right: 6px; }
+
+        .totais {
+            display: flex;
+            justify-content: flex-end;
+            border-top: 1px solid #000;
+            border-bottom: 1px solid #000;
+            padding: 6px 0;
+            margin: 6px 0;
+        }
+        .totais > div {
+            margin-left: 30px;
+            text-align: right;
+        }
+        .totais .valor-grande {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .transp-section {
+            margin: 10px 0;
+            border-top: 1px solid #000;
+            padding-top: 6px;
+        }
+        .transp-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .transp-table th, .transp-table td {
+            border: 1px solid #000;
+            padding: 3px 5px;
+            text-align: left;
+            vertical-align: top;
+        }
+        .transp-table th {
+            background: #ddd;
+            text-align: center;
+        }
+
+        .footer {
+            text-align: center;
+            font-size: 9px;
+            border-top: 1px solid #000;
+            padding-top: 6px;
+            margin-top: 10px;
+        }
+
+        .no-print { text-align: center; margin-bottom: 15px; }
+        .no-print button { padding: 8px 20px; margin: 0 5px; cursor: pointer; }
+        @media print {
+            .no-print { display: none; }
+            body { padding: 0; }
+            .danfe { border: none; padding: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print">
+        <button onclick="window.print()">🖨️ Imprimir DANFE</button>
+        <button onclick="window.close()">❌ Fechar</button>
+    </div>
+    <div class="danfe">
+        <!-- Cabeçalho -->
+        <div class="header">
+            <div class="emitente-nome">${emitNome}</div>
+            <div class="emitente-end">${emitLogr}, ${emitNro} - ${emitBairro} - ${emitMun}/${emitUF} - CEP: ${emitCEP} - Fone: ${emitFone}</div>
+            <div style="margin-top:6px;">
+                <span class="titulo">DANFE</span>
+                <span class="subtitulo">Documento Auxiliar da Nota Fiscal Eletrônica</span>
             </div>
-            <div class="header"><h2>Nota Fiscal Eletrônica</h2><p>Chave: ${chave}</p><p>Protocolo: ${protocolo}</p></div>
-            <div class="card"><h3>Emitente</h3><div class="row"><div class="label">Nome:</div><div>${emitNome}</div></div></div>
-            <div class="card"><h3>Destinatário</h3><div class="row"><div class="label">Nome:</div><div>${destNome}</div></div></div>
-            <div class="card"><h3>Valor Total</h3><div class="row"><div class="label">R$:</div><div>${vNF}</div></div></div>
-            <div class="card"><h3>Produtos</h3>${Array.from(xmlDoc.querySelectorAll('det')).map(det => {
-                const prod = det.querySelector('prod');
-                return `<div>${prod.querySelector('xProd')?.textContent} - Quant: ${prod.querySelector('qCom')?.textContent} - Valor: R$ ${prod.querySelector('vProd')?.textContent}</div>`;
-            }).join('')}</div>
-        </body>
-        </html>`;
-        const win = window.open();
+            <div style="display:flex; justify-content:space-between; margin-top:4px;">
+                <span><strong>1 - SAÍDA</strong></span>
+                <span><strong>Nº ${nNF.padStart(6, '0')}</strong> | SÉRIE ${serie} | FOLHA 1/1</span>
+            </div>
+            <div class="chave">CHAVE DE ACESSO: ${chave.replace(/(.{4})/g, '$1 ')}</div>
+            <div style="font-size:9px;">Consulta: www.nfe.fazenda.gov.br/portal ou site da Sefaz Autorizadora</div>
+            <div style="margin-top:2px;"><strong>Protocolo:</strong> ${protocolo}</div>
+        </div>
+
+        <!-- Dados Gerais -->
+        <div class="dados-gerais">
+            <div>
+                <p><span class="label">NATUREZA DA OPERAÇÃO</span><br>${natOp}</p>
+                <p><span class="label">INSCRIÇÃO ESTADUAL</span><br>${emitIE}</p>
+                <p><span class="label">CNPJ/CPF</span><br>${emitCNPJ}</p>
+            </div>
+            <div>
+                <p><span class="label">DESTINATÁRIO / REMETENTE</span><br>${destNome}</p>
+                <p><span class="label">ENDEREÇO</span><br>${destLogr}, ${destNro} - ${destBairro} - ${destMun}/${destUF}</p>
+                <p><span class="label">CNPJ/CPF</span><br>${destDoc}</p>
+                <p><span class="label">DATA DA EMISSÃO</span><br>${dhEmi.split('T')[0].replace(/-/g, '/')}</p>
+                <p><span class="label">DATA DA SAÍDA/ENTRADA</span><br>${dhSaiEnt.split('T')[0].replace(/-/g, '/')}</p>
+                <p><span class="label">HORA DE SAÍDA</span><br>${dhSaiEnt.split('T')[1]?.substring(0,5) || ''}</p>
+            </div>
+        </div>
+
+        <!-- Cálculo do imposto (resumo) -->
+        <div style="display:flex; justify-content:space-between; border:1px solid #000; padding:4px 8px; margin:6px 0;">
+            <div><strong>BASE DE CÁLCULO DO ICMS</strong><br>0,00</div>
+            <div><strong>VALOR DO ICMS</strong><br>0,00</div>
+            <div><strong>BASE DE CÁLCULO DO ICMS ST</strong><br>0,00</div>
+            <div><strong>VALOR DO ICMS ST</strong><br>0,00</div>
+            <div><strong>VALOR TOTAL DOS PRODUTOS</strong><br>${parseFloat(vProdTotal).toFixed(2)}</div>
+        </div>
+        <div style="display:flex; justify-content:space-between; border:1px solid #000; padding:4px 8px; margin-bottom:6px;">
+            <div><strong>VALOR DO FRETE</strong><br>${parseFloat(vFrete).toFixed(2)}</div>
+            <div><strong>VALOR DO SEGURO</strong><br>${parseFloat(vSeg).toFixed(2)}</div>
+            <div><strong>DESCONTO</strong><br>${parseFloat(vDesc).toFixed(2)}</div>
+            <div><strong>OUTRAS DESPESAS</strong><br>0,00</div>
+            <div><strong>VALOR DO IPI</strong><br>0,00</div>
+            <div><strong>VALOR TOTAL DA NOTA</strong><br>${parseFloat(vNF).toFixed(2)}</div>
+        </div>
+
+        <!-- Produtos -->
+        <table class="table-produtos">
+            <thead>
+                <tr>
+                    <th>CÓDIGO</th>
+                    <th>DESCRIÇÃO DOS PRODUTOS / SERVIÇOS</th>
+                    <th>NCM/SH</th>
+                    <th>CFOP</th>
+                    <th>UNID.</th>
+                    <th>QTD.</th>
+                    <th>VLR UNIT.</th>
+                    <th>VALOR TOTAL</th>
+                </tr>
+            </thead>
+            <tbody>${produtosHTML}</tbody>
+        </table>
+
+        <!-- Transportadora -->
+        ${transpHTML}
+
+        <!-- ===== INFORMAÇÕES COMPLEMENTARES ===== -->
+        ${infAdic ? `<div style="margin-top:10px; border-top:1px solid #000; padding-top:6px; font-size:9px; white-space:pre-wrap;">${infAdic}</div>` : ''}
+        <!-- Rodapé -->
+        <div class="footer">
+            <p>Documento gerado eletronicamente - Sistema Wheel Tech</p>
+            <p>Chave: ${chave}</p>
+        </div>
+    </div>
+</body>
+</html>`;
+
+        const win = window.open('', '_blank', 'width=1000,height=800');
         win.document.write(html);
         win.document.close();
+
     } catch (error) {
+        console.error('Erro ao visualizar NF-e:', error);
         window.showToast('Erro ao visualizar NF-e', 'error');
     }
 }

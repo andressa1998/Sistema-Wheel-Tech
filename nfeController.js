@@ -77,6 +77,23 @@ async function importarNFEnoML(shipment_id, xml, token) {
     }
 }
 
+// ===================== BUSCAR TRANSPORTADORA POR ID =====================
+async function buscarTransportadoraPorId(id) {
+    if (!id) return null;
+    try {
+        const { data, error } = await supabase
+            .from('transportadoras')
+            .select('*')
+            .eq('id', id)
+            .single();
+        if (error) throw error;
+        return data;
+    } catch (error) {
+        console.error('❌ Erro ao buscar transportadora:', error);
+        return null;
+    }
+}
+
 // ===================== EMISSÃO DE NF-e =====================
 async function emitirNFe(req, res) {
     console.log('📨 Requisição de emissão recebida');
@@ -168,6 +185,30 @@ async function emitirNFe(req, res) {
         // ========== GERAR XML (com CSRT dinâmico) ==========
         const tokenCSRT = AMBIENTE === 'producao' ? CSRT_TOKEN_PRODUCAO : CSRT_TOKEN_HOMOLOGACAO;
         const idCSRT = AMBIENTE === 'producao' ? '04' : '03';
+        // 🔥 BUSCAR DADOS DA TRANSPORTADORA (se fornecida)
+let transportadoraDados = null;
+if (transportadora_id) {
+    try {
+        const { data: transp, error } = await supabase
+            .from('transportadoras')
+            .select('*')
+            .eq('id', transportadora_id)
+            .maybeSingle();
+        if (!error && transp) {
+            transportadoraDados = {
+                CNPJ: transp.cnpj,
+                xNome: transp.nome,
+                IE: transp.ie || 'ISENTO',
+                xEnder: transp.endereco || '',
+                xMun: transp.cidade || '',
+                UF: transp.uf || '',
+            };
+            console.log(`✅ Transportadora carregada: ${transp.nome}`);
+        }
+    } catch (err) {
+        console.warn('⚠️ Erro ao buscar transportadora:', err.message);
+    }
+}
 
         const xml = gerarXmlNfe({
             nNF,
@@ -178,10 +219,10 @@ async function emitirNFe(req, res) {
             cfop,
             natOp: natureza_operacao || 'Venda',
             modFrete: modalidade_frete || '9',
-            transportadora: null,
+            transportadora: await buscarTransportadoraPorId(transportadora_id),
             volumes: { qVol: 0, pesoL: 0, pesoB: 0 },
             fatura: null,
-            infAdic: null,
+            infAdic: infAdic,
             respTec: {
                 CNPJ: '32830261000125',
                 xContato: 'WHEEL TECH BICYCLING LTDA',
@@ -255,6 +296,19 @@ ${protNFe}
 
         // ========== SALVAR NF-e NO SUPABASE ==========
         const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
+
+        // ========== INFORMAÇÕES ADICIONAIS ==========
+        const percentualTributos = 0.15; // 15% aproximado – ajuste conforme necessidade
+        const totalTributos = valorTotal * percentualTributos;
+        const federais = totalTributos * 0.4; // 40% federais
+        const estaduais = totalTributos * 0.6; // 60% estaduais
+
+        const infAdic = `INFORMAÇÕES COMPLEMENTARES
+        I - "DOCUMENTO EMITIDO POR ME OU EPP OPTANTE PELO SIMPLES NACIONAL";II - "NAO GERA DIREITO A CREDITO FISCAL DE ICMS, DE ISS E DE IPI".
+        Valor aproximado dos tributos:
+        R$ ${federais.toFixed(2)} federais
+        R$ ${estaduais.toFixed(2)} estaduais
+        Fonte: IBPT/empresometro.com.br 92589A`;
 
         const dadosInsert = {
             data_emissao: new Date().toISOString(),

@@ -213,16 +213,16 @@ function gerarXmlNfe(dados) {
 
     let transportaXml = '';
     if (transportadora) {
-        transportaXml = `
-        <transporta>
-            <CNPJ>${transportadora.CNPJ}</CNPJ>
-            <xNome>${escapeXml(transportadora.xNome)}</xNome>
-            <IE>${escapeXml(transportadora.IE || 'ISENTO')}</IE>
-            <xEnder>${escapeXml(transportadora.xEnder || '')}</xEnder>
-            <xMun>${escapeXml(transportadora.xMun || '')}</xMun>
-            <UF>${transportadora.UF || ''}</UF>
-        </transporta>`;
-    }
+    transportaXml = `
+    <transporta>
+        <CNPJ>${transportadora.cnpj}</CNPJ>
+        <xNome>${escapeXml(transportadora.nome)}</xNome>
+        <IE>${escapeXml(transportadora.ie || 'ISENTO')}</IE>
+        <xEnder>${escapeXml(transportadora.endereco || '')}</xEnder>
+        <xMun>${escapeXml(transportadora.cidade || '')}</xMun>
+        <UF>${transportadora.uf || ''}</UF>
+    </transporta>`;
+}
 
     const volumesXml = `
         <vol>
