@@ -585,6 +585,41 @@ body:has(#loginScreen:not(.hidden)) {
     border-radius: 15px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
 }
+/* ===== ABAS ===== */
+.tab-content {
+    display: block;
+}
+.tab-content.hidden {
+    display: none !important;
+}
+
+/* ===== ALERTAS PISCANTES ===== */
+@keyframes blink-red {
+    0% { background-color: #ffcccc; }
+    50% { background-color: #ff0000; color: white; }
+    100% { background-color: #ffcccc; }
+}
+@keyframes blink-yellow {
+    0% { background-color: #ffffcc; }
+    50% { background-color: #ffcc00; }
+    100% { background-color: #ffffcc; }
+}
+.alerta-extraviado {
+    animation: blink-red 1s infinite;
+}
+.alerta-nao-enviado {
+    animation: blink-yellow 1s infinite;
+}
+
+/* Para badges dentro das linhas */
+.badge.alerta-extraviado,
+.badge.alerta-nao-enviado {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: normal;
+    font-size: 0.75rem;
+}
     </style>
 </head>
 <body>
@@ -1517,32 +1552,47 @@ body:has(#loginScreen:not(.hidden)) {
         <span id="mlTokenText">Token ML: Carregando...</span>
     </div>
 
-    <!-- ===== SISTEMA DE REEMBOLSOS ===== -->
-    <div id="reembolsosSystem" class="hidden">
-        <header class="main-header">
-            <div class="container">
-                <div class="header-content">
-                    <h1 style="display: flex; align-items: center; gap: 10px;">
-                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
-                        <span id="caixaDateTitle">Reclamações ML</span>
-                    </h1>
-
-                    <div class="user-info">
-                        <div class="user-avatar" id="reembolsoUserAvatar">U</div>
-                        <div>
-                            <div id="reembolsoUserName">Usuário</div>
-                            <div id="reembolsoUserRole"></div>
-                            <div class="d-flex gap-2 mt-2">
-                                <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                            </div>
+    <!-- ===== SISTEMA DE RECLAMAÇÕES + ACOMPANHAMENTO DE DEVOLUÇÕES ===== -->
+<div id="reembolsosSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                    <span id="caixaDateTitle">Reclamações e Devoluções</span>
+                </h1>
+                <div class="user-info">
+                    <div class="user-avatar" id="reembolsoUserAvatar">U</div>
+                    <div>
+                        <div id="reembolsoUserName">Usuário</div>
+                        <div id="reembolsoUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
                         </div>
                     </div>
                 </div>
             </div>
-        </header>
-        
-        <div class="container">
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- ===== ABAS ===== -->
+        <div class="card mb-4">
+            <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-primary" id="tabReclamacoesBtn" onclick="switchReembolsoTab('reclamacoes')">
+                        <i class="fas fa-exclamation-circle"></i> Reclamações
+                    </button>
+                    <button class="btn btn-outline-primary" id="tabDevolucoesBtn" onclick="switchReembolsoTab('devolucoes')">
+                        <i class="fas fa-undo-alt"></i> Acompanhamento de Devoluções
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== CONTEÚDO: RECLAMAÇÕES ===== -->
+        <div id="reclamacoesContent" class="tab-content">
             <!-- Status do Sistema de Reembolsos -->
             <div class="card mb-4">
                 <div class="d-flex justify-content-between align-items-center">
@@ -1558,7 +1608,6 @@ body:has(#loginScreen:not(.hidden)) {
                             Total: R$ <span id="totalReembolsos">0,00</span>
                         </p>
                     </div>
-                    
                     <div class="d-flex gap-2">
                         <button onclick="openRelatorioReembolsos()" class="btn btn-info" id="btnRelatorio">
                             <i class="fas fa-chart-line"></i> Relatório
@@ -1573,77 +1622,24 @@ body:has(#loginScreen:not(.hidden)) {
                 </div>
             </div>
 
-            <!-- Botão para abrir relatório por colaborador (visível apenas para admin) -->
-<div id="btnRelatorioColaborador" class="hidden" style="margin-top: 20px;">
-    <button class="btn btn-info" onclick="abrirRelatorioColaborador()">
-        <i class="fas fa-chart-line"></i> Relatório por Colaborador
-    </button>
-</div>
-
-<!-- Modal do relatório por colaborador -->
-<div id="relatorioColaboradorModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 1000px;">
-        <div style="background: linear-gradient(135deg, #00ADEE 0%, #80D6F7 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between;">
-            <h3><i class="fas fa-users"></i> Relatório por Colaborador</h3>
-            <button onclick="closeRelatorioColaborador()">&times;</button>
-        </div>
-        <div style="padding: 20px;">
-            <div class="card mb-4">
-                <div class="d-flex gap-2">
-                    <input type="date" id="relColabDataInicio" class="form-control" style="width: 150px;">
-                    <input type="date" id="relColabDataFim" class="form-control" style="width: 150px;">
-                    <button class="btn btn-primary" onclick="carregarRelatorioColaborador()">Filtrar</button>
-                    <button class="btn btn-success" onclick="exportarRelatorioColaboradorExcel()">Exportar Excel</button>
-                </div>
+            <!-- Botão relatório por colaborador -->
+            <div id="btnRelatorioColaborador" class="hidden" style="margin-top: 20px;">
+                <button class="btn btn-info" onclick="abrirRelatorioColaborador()">
+                    <i class="fas fa-chart-line"></i> Relatório por Colaborador
+                </button>
             </div>
-            <canvas id="graficoColaborador" style="height: 300px; margin-bottom: 30px;"></canvas>
-            <div class="table-responsive">
-                <table class="table" id="relatorioColaboradorTable">
-                    <thead>
-                        <tr>
-                            <th>Colaborador</th>
-                            <th>Total Reclamações</th>
-                            <th>Reembolsadas</th>
-                            <th>Valor Reembolsado</th>
-                            <th>Taxa Sucesso</th>
-                        </tr>
-                    </thead>
-                    <tbody id="relatorioColaboradorBody"></tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Modal para visualizar detalhes do reembolso -->
-<div id="detalhesReembolsoModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 600px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h3 style="margin: 0;">
-                <i class="fas fa-file-alt"></i> Detalhes da Reclamação
-            </h3>
-            <button onclick="closeDetalhesReembolso()" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
-        </div>
-        <div id="detalhesReembolsoContent">
-            <!-- Conteúdo será preenchido dinamicamente -->
-        </div>
-        <div class="d-flex justify-content-end mt-3">
-            <button class="btn btn-secondary" onclick="closeDetalhesReembolso()">Fechar</button>
-        </div>
-    </div>
-</div>
-            
-            <!-- Abas de Navegação -->
+            <!-- Abas de navegação das reclamações -->
             <div class="card mb-4">
                 <div class="d-flex flex-wrap gap-2" style="border-bottom: 2px solid #f1f3f5; padding-bottom: 15px;">
                     <button class="btn btn-warning btn-sm" onclick="filtrarReembolsos('a_verificar')">
                         <i class="fas fa-clock"></i> A Verificar (<span id="tabVerificar">0</span>)
                         <span id="badgeNovos" class="badge badge-danger ml-1" style="display: none;">!</span>
                     </button>
-                    <button class="btn btn-success btn-sm" onclick="filtrarReembolsos('reembolsado')">
+                    <button class="btn btn-success btn-sm" onclick="filtrarReembolsos('reembolsados')">
                         <i class="fas fa-check-circle"></i> Reembolsados (<span id="tabReembolsados">0</span>)
                     </button>
-                    <button class="btn btn-danger btn-sm" onclick="filtrarReembolsos('pendente')">
+                    <button class="btn btn-danger btn-sm" onclick="filtrarReembolsos('pendentes')">
                         <i class="fas fa-exclamation-circle"></i> Pendentes (<span id="tabPendentes">0</span>)
                         <span id="badgePendentes" class="badge badge-warning ml-1" style="display: none;">!</span>
                     </button>
@@ -1651,8 +1647,7 @@ body:has(#loginScreen:not(.hidden)) {
                         <i class="fas fa-list"></i> Todos (<span id="tabTodos">0</span>)
                     </button>
                 </div>
-                
-                <!-- Lista de Reembolsos -->
+
                 <div class="table-responsive mt-3">
                     <table class="table" id="reembolsosTable">
                         <thead>
@@ -1673,7 +1668,6 @@ body:has(#loginScreen:not(.hidden)) {
                         </tbody>
                     </table>
                 </div>
-                
                 <div id="reembolsosEmpty" class="text-center py-5 hidden">
                     <i class="fas fa-exchange-alt fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
                     <h4 style="color: #6c757d;">Nenhum reembolso encontrado</h4>
@@ -1681,7 +1675,315 @@ body:has(#loginScreen:not(.hidden)) {
                 </div>
             </div>
         </div>
+
+        <!-- ===== CONTEÚDO: ACOMPANHAMENTO DE DEVOLUÇÕES ===== -->
+        <div id="devolucoesContent" class="tab-content hidden">
+            <!-- Status -->
+            <div class="card mb-4">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                            <i class="fas fa-undo-alt" style="color: #ff9800;"></i>
+                            Acompanhamento de Devoluções
+                        </h3>
+                        <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
+                            <span id="countDevAguardando">0</span> aguardando recebimento •
+                            <span id="countDevRecebidos">0</span> recebidos •
+                            <span id="countDevCancelados">0</span> cancelados
+                        </p>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button onclick="abrirModalNovaDevolucao()" class="btn btn-success">
+                            <i class="fas fa-plus-circle"></i> Nova Devolução
+                        </button>
+                        <button onclick="carregarDevolucoes()" class="btn btn-primary">
+                            <i class="fas fa-sync-alt"></i> Atualizar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Filtros e busca -->
+            <div class="card mb-4">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <button class="btn btn-sm btn-outline-secondary active" data-filtro="aguardando" onclick="filtrarDevolucoes('aguardando')">
+                        Aguardando Recebimento (<span id="filtroDevAguardando">0</span>)
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" data-filtro="recebidos" onclick="filtrarDevolucoes('recebidos')">
+                        Recebidos (<span id="filtroDevRecebidos">0</span>)
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" data-filtro="cancelados" onclick="filtrarDevolucoes('cancelados')">
+                        Cancelados (<span id="filtroDevCancelados">0</span>)
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" data-filtro="todos" onclick="filtrarDevolucoes('todos')">
+                        Todos (<span id="filtroDevTodos">0</span>)
+                    </button>
+                    <div style="flex:1; min-width:200px; margin-left:auto;">
+                        <input type="text" id="buscaDevolucao" class="form-control form-control-sm" placeholder="🔍 Buscar por produto, venda..." oninput="filtrarDevolucoes()">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabela -->
+            <div class="card">
+                <div class="table-responsive">
+                    <table class="table table-striped" id="devolucoesTable">
+                        <thead>
+                            <tr>
+                                <th>Venda</th>
+                                <th>Produto</th>
+                                <th>Data Abertura</th>
+                                <th>Data Postagem</th>
+                                <th>Status</th>
+                                <th style="min-width:150px;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="devolucoesTableBody">
+                            <tr><td colspan="6" class="text-center py-5">Carregando devoluções...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
+
+    <!-- ===== MODAIS (globais) ===== -->
+
+    <!-- Modal para detalhes do reembolso (já existente) -->
+    <div id="detalhesReembolsoModal" class="modal hidden">...</div>
+
+    <!-- Modal relatório colaborador (já existente) -->
+    <div id="relatorioColaboradorModal" class="modal hidden">...</div>
+
+    <!-- Modal para nova devolução (primeira parte + edição) -->
+    <div id="modalNovaDevolucao" class="modal hidden">
+        <div class="modal-content" style="max-width:700px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h3><i class="fas fa-undo-alt"></i> <span id="modalDevolucaoTitle">Nova Devolução</span></h3>
+                <button onclick="fecharModalNovaDevolucao()" style="background:none; border:none; font-size:24px;">&times;</button>
+            </div>
+            <form id="formNovaDevolucao">
+                <input type="hidden" id="editDevolucaoId">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label><i class="fas fa-link"></i> Venda (link) *</label>
+                            <input type="url" id="devVendaLink" class="form-control" placeholder="https://..." required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label><i class="fas fa-box"></i> Nome do Produto *</label>
+                            <input type="text" id="devNomeProduto" class="form-control" placeholder="Ex: Bicicleta Aro 29" required>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label><i class="fas fa-calendar"></i> Data Abertura *</label>
+                            <input type="date" id="devDataAbertura" class="form-control" required>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label><i class="fas fa-calendar"></i> Data Postagem</label>
+                            <input type="date" id="devDataPostagem" class="form-control">
+                            <small class="text-muted">Não obrigatória</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label><i class="fas fa-thumbs-up"></i> Afeta a Reputação?</label>
+                            <select id="devAfetaReputacao" class="form-control">
+                                <option value="nao">Não</option>
+                                <option value="sim">Sim</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label><i class="fas fa-truck"></i> Local ou Full</label>
+                            <select id="devLocalFull" class="form-control">
+                                <option value="local">Local</option>
+                                <option value="full">Full</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Campos da segunda parte (aparecem se já houver recebimento) -->
+                <div id="devCamposRecebimento" style="border-top:2px solid #e9ecef; margin-top:20px; padding-top:20px; display:none;">
+                    <h5><i class="fas fa-clipboard-check"></i> Dados do Recebimento</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label><i class="fas fa-calendar"></i> Data Recebimento</label>
+                                <input type="date" id="devDataRecebimento" class="form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label><i class="fas fa-user"></i> Quem revisou</label>
+                                <select id="devQuemRevisou" class="form-control">
+                                    <option value="">Selecione</option>
+                                    <option value="Bruna">Bruna</option>
+                                    <option value="Arthur">Arthur</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Apta para venda?</label>
+                                <select id="devAptaVenda" class="form-control">
+                                    <option value="nao">Não</option>
+                                    <option value="sim">Sim</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Bloqueado?</label>
+                                <select id="devBloqueado" class="form-control">
+                                    <option value="nao">Não</option>
+                                    <option value="sim">Sim</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="form-group">
+                                <label>Responsabilidade</label>
+                                <select id="devResponsabilidade" class="form-control">
+                                    <option value="">Selecione</option>
+                                    <option value="interna">Interna</option>
+                                    <option value="externa">Externa</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label>Cancelou a devolução?</label>
+                                <select id="devCancelouDevolucao" class="form-control">
+                                    <option value="nao">Não</option>
+                                    <option value="sim">Sim</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label><i class="fas fa-comment"></i> Observação</label>
+                                <input type="text" id="devObservacao" class="form-control" placeholder="Observações adicionais">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-4">
+                    <button type="button" class="btn btn-secondary" onclick="fecharModalNovaDevolucao()">Cancelar</button>
+                    <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal para registrar recebimento (segunda parte) -->
+    <div id="modalRecebimentoDevolucao" class="modal hidden">
+        <div class="modal-content" style="max-width:600px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h3><i class="fas fa-box-open"></i> Registrar Recebimento</h3>
+                <button onclick="fecharModalRecebimento()" style="background:none; border:none; font-size:24px;">&times;</button>
+            </div>
+            <input type="hidden" id="recebimentoDevolucaoId">
+            <div class="form-group">
+                <label><i class="fas fa-calendar"></i> Data Recebimento *</label>
+                <input type="date" id="recebDataRecebimento" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label><i class="fas fa-user"></i> Quem revisou *</label>
+                <select id="recebQuemRevisou" class="form-control" required>
+                    <option value="">Selecione</option>
+                    <option value="Bruna">Bruna</option>
+                    <option value="Arthur">Arthur</option>
+                </select>
+            </div>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>Apta para venda?</label>
+                        <select id="recebAptaVenda" class="form-control">
+                            <option value="nao">Não</option>
+                            <option value="sim">Sim</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>Bloqueado?</label>
+                        <select id="recebBloqueado" class="form-control">
+                            <option value="nao">Não</option>
+                            <option value="sim">Sim</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-group">
+                        <label>Responsabilidade</label>
+                        <select id="recebResponsabilidade" class="form-control">
+                            <option value="">Selecione</option>
+                            <option value="interna">Interna</option>
+                            <option value="externa">Externa</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Cancelou a devolução?</label>
+                <select id="recebCancelouDevolucao" class="form-control">
+                    <option value="nao">Não</option>
+                    <option value="sim">Sim</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label><i class="fas fa-comment"></i> Observação</label>
+                <input type="text" id="recebObservacao" class="form-control" placeholder="Observações...">
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-3">
+                <button class="btn btn-secondary" onclick="fecharModalRecebimento()">Cancelar</button>
+                <button class="btn btn-success" id="btnSalvarRecebimento" onclick="salvarRecebimento()">
+                    <i class="fas fa-save"></i> Salvar Recebimento
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para observação da OS (criada a partir da devolução) -->
+    <div id="modalObservacaoOS" class="modal hidden">
+        <div class="modal-content" style="max-width:500px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h3><i class="fas fa-pen"></i> Observação para a OS</h3>
+                <button onclick="fecharModalObservacaoOS()" style="background:none; border:none; font-size:24px;">&times;</button>
+            </div>
+            <input type="hidden" id="osDevolucaoId">
+            <div class="form-group">
+                <label><i class="fas fa-comment"></i> Observação da OS</label>
+                <textarea id="obsOSDevolucao" class="form-control" rows="3" placeholder="Descreva o que precisa ser feito..."></textarea>
+            </div>
+            <div class="d-flex justify-content-end gap-2 mt-3">
+                <button class="btn btn-secondary" onclick="fecharModalObservacaoOS()">Cancelar</button>
+                <button class="btn btn-success" onclick="confirmarCriarOSDevolucao()">
+                    <i class="fas fa-check"></i> Criar OS
+                </button>
+            </div>
+        </div>
+    </div>
+
+</div>
 
     <!-- Modal para Impressão da OS -->
     <div id="printModal" class="modal hidden">

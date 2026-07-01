@@ -10148,6 +10148,560 @@ function initCarousel() {
     resetInterval();
 }
 
+// ============================================
+// MÓDULO: ACOMPANHAMENTO DE DEVOLUÇÕES
+// ============================================
+
+let devolucoes = [];
+let filtroDevolucaoAtual = 'aguardando';
+let editingDevolucaoId = null;
+let devolucaoParaOS = null; // guarda a devolução que gerará OS
+
+// ===== ALTERNAR ABAS =====
+function switchReembolsoTab(tab) {
+    // Atualizar botões
+    const btnRec = document.getElementById('tabReclamacoesBtn');
+    const btnDev = document.getElementById('tabDevolucoesBtn');
+    const contentRec = document.getElementById('reclamacoesContent');
+    const contentDev = document.getElementById('devolucoesContent');
+
+    if (tab === 'reclamacoes') {
+        btnRec.className = 'btn btn-primary';
+        btnDev.className = 'btn btn-outline-primary';
+        contentRec.classList.remove('hidden');
+        contentDev.classList.add('hidden');
+        // Recarregar reembolsos se necessário
+        if (typeof loadReembolsos === 'function') loadReembolsos();
+    } else {
+        btnDev.className = 'btn btn-primary';
+        btnRec.className = 'btn btn-outline-primary';
+        contentDev.classList.remove('hidden');
+        contentRec.classList.add('hidden');
+        carregarDevolucoes();
+    }
+}
+
+// ===== CARREGAR DEVOLUÇÕES =====
+async function carregarDevolucoes() {
+    if (!supabaseClient) {
+        showToast('Erro: Supabase não conectado', 'error');
+        return;
+    }
+
+    try {
+        const { data, error } = await supabaseClient
+            .from('devolucoes_acompanhamento')
+            .select('*')
+            .order('data_abertura', { ascending: false });
+
+        if (error) throw error;
+        devolucoes = data || [];
+        atualizarContadoresDevolucoes();
+        renderizarDevolucoes();
+    } catch (error) {
+        console.error('❌ Erro ao carregar devoluções:', error);
+        showToast('Erro ao carregar devoluções', 'error');
+    }
+}
+
+// ===== ATUALIZAR CONTADORES =====
+function atualizarContadoresDevolucoes() {
+    const aguardando = devolucoes.filter(d => d.status === 'aguardando_recebimento').length;
+    const recebidos = devolucoes.filter(d => d.status === 'recebido').length;
+    const cancelados = devolucoes.filter(d => d.status === 'cancelado').length;
+    const total = devolucoes.length;
+
+    document.getElementById('countDevAguardando').textContent = aguardando;
+    document.getElementById('countDevRecebidos').textContent = recebidos;
+    document.getElementById('countDevCancelados').textContent = cancelados;
+
+    // Atualizar filtros
+    document.getElementById('filtroDevAguardando').textContent = aguardando;
+    document.getElementById('filtroDevRecebidos').textContent = recebidos;
+    document.getElementById('filtroDevCancelados').textContent = cancelados;
+    document.getElementById('filtroDevTodos').textContent = total;
+}
+
+// ===== RENDERIZAR DEVOLUÇÕES =====
+function renderizarDevolucoes() {
+    const tbody = document.getElementById('devolucoesTableBody');
+    if (!tbody) return;
+
+    // Aplicar filtro
+    let lista = [...devolucoes];
+    if (filtroDevolucaoAtual !== 'todos') {
+        lista = lista.filter(d => d.status === filtroDevolucaoAtual);
+    }
+
+    // Busca
+    const busca = document.getElementById('buscaDevolucao').value.trim().toLowerCase();
+    if (busca) {
+        lista = lista.filter(d =>
+            (d.nome_produto && d.nome_produto.toLowerCase().includes(busca)) ||
+            (d.venda_link && d.venda_link.toLowerCase().includes(busca))
+        );
+    }
+
+    if (lista.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center py-5">Nenhuma devolução encontrada.</td></tr>`;
+        return;
+    }
+
+    const hoje = new Date();
+    hoje.setHours(0,0,0,0);
+
+    let html = '';
+    lista.forEach(d => {
+        // Verificar alertas
+        let alertaClass = '';
+        let alertaMsg = '';
+        let statusText = '';
+        let statusClass = '';
+
+        switch (d.status) {
+            case 'aguardando_recebimento':
+                statusText = 'Aguardando Recebimento';
+                statusClass = 'badge-warning';
+                // Verificar 7 dias sem postagem
+                if (d.data_abertura) {
+                    const abertura = new Date(d.data_abertura);
+                    const diffDias = Math.floor((hoje - abertura) / (1000*60*60*24));
+                    if (diffDias >= 7 && !d.data_postagem) {
+                        alertaClass = 'alerta-nao-enviado';
+                        alertaMsg = '⚠️ Cliente não enviou (7 dias)';
+                    }
+                }
+                // Verificar 30 dias após postagem
+                if (d.data_postagem) {
+                    const postagem = new Date(d.data_postagem);
+                    const diffDias = Math.floor((hoje - postagem) / (1000*60*60*24));
+                    if (diffDias >= 30) {
+                        alertaClass = 'alerta-extraviado';
+                        alertaMsg = '🚨 Pedir reembolso de extravio (30 dias)';
+                    }
+                }
+                break;
+            case 'recebido':
+                statusText = 'Recebido';
+                statusClass = 'badge-success';
+                break;
+            case 'cancelado':
+                statusText = 'Cancelado';
+                statusClass = 'badge-secondary';
+                break;
+            default:
+                statusText = d.status;
+                statusClass = 'badge-secondary';
+        }
+
+        // Botões de ação
+        let botoes = '';
+        if (d.status === 'aguardando_recebimento') {
+            botoes += `<button class="btn btn-sm btn-primary" onclick="abrirModalRecebimento('${d.id}')" title="Registrar chegada"><i class="fas fa-box-open"></i> Chegou</button>`;
+        }
+        botoes += `<button class="btn btn-sm btn-warning" onclick="editarDevolucao('${d.id}')" title="Editar"><i class="fas fa-edit"></i></button>`;
+        if (currentUser && currentUser.role === 'Administrador') {
+            botoes += `<button class="btn btn-sm btn-danger" onclick="excluirDevolucao('${d.id}')" title="Excluir"><i class="fas fa-trash"></i></button>`;
+        }
+
+        const linhaAlerta = alertaClass ? `<span class="badge ${alertaClass}" style="display:inline-block; padding:3px 8px;">${alertaMsg}</span>` : '';
+
+        html += `
+            <tr class="${alertaClass}">
+                <td><a href="${d.venda_link || '#'}" target="_blank" class="text-primary">${d.venda_link ? 'Ver venda' : '-'}</a></td>
+                <td><strong>${d.nome_produto || '-'}</strong></td>
+                <td>${d.data_abertura ? new Date(d.data_abertura).toLocaleDateString('pt-BR') : '-'}</td>
+                <td>${d.data_postagem ? new Date(d.data_postagem).toLocaleDateString('pt-BR') : '-'}</td>
+                <td>
+                    <span class="badge ${statusClass}">${statusText}</span>
+                    ${linhaAlerta}
+                </td>
+                <td>
+                    <div class="d-flex flex-wrap gap-1">
+                        ${botoes}
+                    </div>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+// ===== FILTRAR DEVOLUÇÕES =====
+function filtrarDevolucoes(filtro) {
+    if (filtro) {
+        filtroDevolucaoAtual = filtro;
+        // Atualizar estilo dos botões
+        document.querySelectorAll('#devolucoesContent .btn[data-filtro]').forEach(btn => {
+            btn.classList.remove('active', 'btn-primary');
+            btn.classList.add('btn-outline-secondary');
+        });
+        const btnAtivo = document.querySelector(`#devolucoesContent .btn[data-filtro="${filtro}"]`);
+        if (btnAtivo) {
+            btnAtivo.classList.remove('btn-outline-secondary');
+            btnAtivo.classList.add('active', 'btn-primary');
+        }
+    }
+    renderizarDevolucoes();
+}
+
+// ===== ABRIR MODAL NOVA DEVOLUÇÃO =====
+function abrirModalNovaDevolucao() {
+    editingDevolucaoId = null;
+    document.getElementById('modalDevolucaoTitle').textContent = 'Nova Devolução';
+    document.getElementById('editDevolucaoId').value = '';
+    document.getElementById('devCamposRecebimento').style.display = 'none';
+    // Limpar campos
+    document.getElementById('devVendaLink').value = '';
+    document.getElementById('devNomeProduto').value = '';
+    document.getElementById('devDataAbertura').value = new Date().toISOString().split('T')[0];
+    document.getElementById('devDataPostagem').value = '';
+    document.getElementById('devAfetaReputacao').value = 'nao';
+    document.getElementById('devLocalFull').value = 'local';
+    document.getElementById('devDataRecebimento').value = '';
+    document.getElementById('devQuemRevisou').value = '';
+    document.getElementById('devAptaVenda').value = 'nao';
+    document.getElementById('devBloqueado').value = 'nao';
+    document.getElementById('devResponsabilidade').value = '';
+    document.getElementById('devCancelouDevolucao').value = 'nao';
+    document.getElementById('devObservacao').value = '';
+
+    document.getElementById('modalNovaDevolucao').classList.remove('hidden');
+}
+
+// ===== FECHAR MODAL NOVA DEVOLUÇÃO =====
+function fecharModalNovaDevolucao() {
+    document.getElementById('modalNovaDevolucao').classList.add('hidden');
+}
+
+// ===== SALVAR DEVOLUÇÃO (CRIAR/EDITAR) =====
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('formNovaDevolucao');
+    if (form) {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const id = document.getElementById('editDevolucaoId').value;
+            const vendaLink = document.getElementById('devVendaLink').value.trim();
+            const nomeProduto = document.getElementById('devNomeProduto').value.trim();
+            const dataAbertura = document.getElementById('devDataAbertura').value;
+            const dataPostagem = document.getElementById('devDataPostagem').value || null;
+            const afetaReputacao = document.getElementById('devAfetaReputacao').value === 'sim';
+            const localFull = document.getElementById('devLocalFull').value;
+
+            if (!vendaLink || !nomeProduto || !dataAbertura) {
+                showToast('Preencha todos os campos obrigatórios (*)', 'warning');
+                return;
+            }
+
+            // Dados da segunda parte (se estiverem visíveis)
+            const dataRecebimento = document.getElementById('devDataRecebimento').value || null;
+            const quemRevisou = document.getElementById('devQuemRevisou').value || null;
+            const aptaVenda = document.getElementById('devAptaVenda').value === 'sim';
+            const bloqueado = document.getElementById('devBloqueado').value === 'sim';
+            const responsabilidade = document.getElementById('devResponsabilidade').value || null;
+            const cancelouDevolucao = document.getElementById('devCancelouDevolucao').value === 'sim';
+            const observacao = document.getElementById('devObservacao').value || null;
+
+            const dados = {
+                venda_link: vendaLink,
+                nome_produto: nomeProduto,
+                data_abertura: dataAbertura,
+                data_postagem: dataPostagem,
+                afeta_reputacao: afetaReputacao,
+                local_ou_full: localFull,
+                data_recebimento: dataRecebimento,
+                quem_revisou: quemRevisou,
+                apta_venda: aptaVenda,
+                bloqueado: bloqueado,
+                responsabilidade: responsabilidade,
+                cancelou_devolucao: cancelouDevolucao,
+                observacao: observacao,
+                atualizado_em: new Date().toISOString()
+            };
+
+            // Se for edição e já tiver status, manter; senão, definir como aguardando
+            if (!id) {
+                dados.status = 'aguardando_recebimento';
+                dados.criado_por = currentUser.name;
+                dados.criado_em = new Date().toISOString();
+            } else {
+                // Se já existir, não alterar status (a menos que venha do recebimento)
+                // Mas manter o status atual, a menos que seja forçado
+            }
+
+            try {
+                let result;
+                if (id) {
+                    const { data, error } = await supabaseClient
+                        .from('devolucoes_acompanhamento')
+                        .update(dados)
+                        .eq('id', id)
+                        .select();
+                    if (error) throw error;
+                    result = data;
+                    showToast('✅ Devolução atualizada!', 'success');
+                } else {
+                    const { data, error } = await supabaseClient
+                        .from('devolucoes_acompanhamento')
+                        .insert([dados])
+                        .select();
+                    if (error) throw error;
+                    result = data;
+                    showToast('✅ Devolução criada!', 'success');
+                }
+                fecharModalNovaDevolucao();
+                carregarDevolucoes();
+            } catch (error) {
+                console.error('❌ Erro ao salvar devolução:', error);
+                showToast('Erro ao salvar: ' + error.message, 'error');
+            }
+        });
+    }
+});
+
+// ===== EDITAR DEVOLUÇÃO =====
+function editarDevolucao(id) {
+    const dev = devolucoes.find(d => d.id === id);
+    if (!dev) {
+        showToast('Devolução não encontrada', 'error');
+        return;
+    }
+
+    editingDevolucaoId = id;
+    document.getElementById('modalDevolucaoTitle').textContent = 'Editar Devolução';
+    document.getElementById('editDevolucaoId').value = id;
+    document.getElementById('devVendaLink').value = dev.venda_link || '';
+    document.getElementById('devNomeProduto').value = dev.nome_produto || '';
+    document.getElementById('devDataAbertura').value = dev.data_abertura || '';
+    document.getElementById('devDataPostagem').value = dev.data_postagem || '';
+    document.getElementById('devAfetaReputacao').value = dev.afeta_reputacao ? 'sim' : 'nao';
+    document.getElementById('devLocalFull').value = dev.local_ou_full || 'local';
+
+    // Segunda parte
+    const temRecebimento = dev.data_recebimento || dev.quem_revisou;
+    document.getElementById('devCamposRecebimento').style.display = temRecebimento ? 'block' : 'none';
+    document.getElementById('devDataRecebimento').value = dev.data_recebimento || '';
+    document.getElementById('devQuemRevisou').value = dev.quem_revisou || '';
+    document.getElementById('devAptaVenda').value = dev.apta_venda ? 'sim' : 'nao';
+    document.getElementById('devBloqueado').value = dev.bloqueado ? 'sim' : 'nao';
+    document.getElementById('devResponsabilidade').value = dev.responsabilidade || '';
+    document.getElementById('devCancelouDevolucao').value = dev.cancelou_devolucao ? 'sim' : 'nao';
+    document.getElementById('devObservacao').value = dev.observacao || '';
+
+    document.getElementById('modalNovaDevolucao').classList.remove('hidden');
+}
+
+// ===== EXCLUIR DEVOLUÇÃO =====
+async function excluirDevolucao(id) {
+    if (!confirm('Tem certeza que deseja excluir esta devolução?')) return;
+    try {
+        const { error } = await supabaseClient
+            .from('devolucoes_acompanhamento')
+            .delete()
+            .eq('id', id);
+        if (error) throw error;
+        showToast('🗑️ Devolução excluída', 'success');
+        carregarDevolucoes();
+    } catch (error) {
+        console.error('Erro ao excluir:', error);
+        showToast('Erro ao excluir', 'error');
+    }
+}
+
+// ===== ABRIR MODAL RECEBIMENTO =====
+function abrirModalRecebimento(id) {
+    document.getElementById('recebimentoDevolucaoId').value = id;
+    // Preencher com dados atuais se houver
+    const dev = devolucoes.find(d => d.id === id);
+    if (dev) {
+        document.getElementById('recebDataRecebimento').value = dev.data_recebimento || new Date().toISOString().split('T')[0];
+        document.getElementById('recebQuemRevisou').value = dev.quem_revisou || '';
+        document.getElementById('recebAptaVenda').value = dev.apta_venda ? 'sim' : 'nao';
+        document.getElementById('recebBloqueado').value = dev.bloqueado ? 'sim' : 'nao';
+        document.getElementById('recebResponsabilidade').value = dev.responsabilidade || '';
+        document.getElementById('recebCancelouDevolucao').value = dev.cancelou_devolucao ? 'sim' : 'nao';
+        document.getElementById('recebObservacao').value = dev.observacao || '';
+    } else {
+        // Valores padrão
+        document.getElementById('recebDataRecebimento').value = new Date().toISOString().split('T')[0];
+        document.getElementById('recebQuemRevisou').value = '';
+        document.getElementById('recebAptaVenda').value = 'nao';
+        document.getElementById('recebBloqueado').value = 'nao';
+        document.getElementById('recebResponsabilidade').value = '';
+        document.getElementById('recebCancelouDevolucao').value = 'nao';
+        document.getElementById('recebObservacao').value = '';
+    }
+    document.getElementById('modalRecebimentoDevolucao').classList.remove('hidden');
+}
+
+// ===== FECHAR MODAL RECEBIMENTO =====
+function fecharModalRecebimento() {
+    document.getElementById('modalRecebimentoDevolucao').classList.add('hidden');
+}
+
+// ===== SALVAR RECEBIMENTO =====
+async function salvarRecebimento() {
+    const id = document.getElementById('recebimentoDevolucaoId').value;
+    if (!id) {
+        showToast('ID inválido', 'error');
+        return;
+    }
+
+    const dataRecebimento = document.getElementById('recebDataRecebimento').value;
+    const quemRevisou = document.getElementById('recebQuemRevisou').value;
+    const aptaVenda = document.getElementById('recebAptaVenda').value === 'sim';
+    const bloqueado = document.getElementById('recebBloqueado').value === 'sim';
+    const responsabilidade = document.getElementById('recebResponsabilidade').value || null;
+    const cancelouDevolucao = document.getElementById('recebCancelouDevolucao').value === 'sim';
+    const observacao = document.getElementById('recebObservacao').value || null;
+
+    if (!dataRecebimento || !quemRevisou) {
+        showToast('Preencha data de recebimento e quem revisou', 'warning');
+        return;
+    }
+
+    try {
+        // Atualizar devolução
+        const updateData = {
+            data_recebimento: dataRecebimento,
+            quem_revisou: quemRevisou,
+            apta_venda: aptaVenda,
+            bloqueado: bloqueado,
+            responsabilidade: responsabilidade,
+            cancelou_devolucao: cancelouDevolucao,
+            observacao: observacao,
+            atualizado_em: new Date().toISOString()
+        };
+
+        // Se cancelou a devolução, status = cancelado
+        if (cancelouDevolucao) {
+            updateData.status = 'cancelado';
+        } else {
+            updateData.status = 'recebido';
+        }
+
+        const { error } = await supabaseClient
+            .from('devolucoes_acompanhamento')
+            .update(updateData)
+            .eq('id', id);
+
+        if (error) throw error;
+
+        showToast('✅ Recebimento registrado!', 'success');
+        fecharModalRecebimento();
+
+        // Se NÃO cancelou a devolução, perguntar se quer criar OS
+        if (!cancelouDevolucao) {
+            // Buscar devolução atualizada
+            const { data: devAtualizada } = await supabaseClient
+                .from('devolucoes_acompanhamento')
+                .select('*')
+                .eq('id', id)
+                .single();
+
+            if (devAtualizada) {
+                // Salvar referência para criar OS
+                devolucaoParaOS = devAtualizada;
+                // Abrir modal para observação da OS
+                document.getElementById('osDevolucaoId').value = id;
+                document.getElementById('obsOSDevolucao').value = '';
+                document.getElementById('modalObservacaoOS').classList.remove('hidden');
+            }
+        }
+
+        carregarDevolucoes();
+
+    } catch (error) {
+        console.error('❌ Erro ao salvar recebimento:', error);
+        showToast('Erro ao salvar recebimento', 'error');
+    }
+}
+
+// ===== CONFIRMAR CRIAÇÃO DE OS =====
+async function confirmarCriarOSDevolucao() {
+    const id = document.getElementById('osDevolucaoId').value;
+    const observacao = document.getElementById('obsOSDevolucao').value.trim();
+
+    if (!devolucaoParaOS || devolucaoParaOS.id !== id) {
+        showToast('Erro: dados da devolução não encontrados', 'error');
+        return;
+    }
+
+    const dev = devolucaoParaOS;
+
+    try {
+        // Construir dados da OS
+        const osData = {
+            code: generateOSCode(),
+            productName: dev.nome_produto,
+            responsibleName: 'Elaine',
+            urgency: 'alta',
+            osType: 'devolucao',
+            photoType: 'estudio', // padrão
+            skus: [],
+            observations: observacao || `Devolução: ${dev.nome_produto} - ${dev.venda_link || ''}`,
+            createdBy: currentUser.name,
+            status: 'pendente',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            photos: [],
+            photosTaken: 0,
+            editsMade: 0,
+            conferido: false,
+            user_notified: false,
+            precisaFoto: 'nao',
+            valorAnuncio: 0,
+            descricaoAnuncio: '',
+            linkNovoAnuncio: '',
+            linkAnuncio: dev.venda_link || '',
+            prazo_horas: 2, // urgência alta
+            prazo_esperado: calcularPrazoPorPrioridade(new Date(), null, 2)
+        };
+
+        // Salvar OS no Supabase
+        const result = await saveOrderToSupabase(osData);
+        if (result.success) {
+            // Atualizar devolução com o ID da OS
+            const osId = result.data && result.data[0] ? result.data[0].id : null;
+            if (osId) {
+                await supabaseClient
+                    .from('devolucoes_acompanhamento')
+                    .update({ os_id: osId })
+                    .eq('id', id);
+            }
+
+            // Adicionar à lista local de ordens
+            orders.unshift({ ...osData, id: osId });
+            updateCounters();
+            renderOrdersTable();
+
+            showToast('✅ OS criada com sucesso para Elaine!', 'success');
+            fecharModalObservacaoOS();
+            carregarDevolucoes();
+        } else {
+            showToast('❌ Erro ao criar OS: ' + result.error, 'error');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao criar OS:', error);
+        showToast('Erro ao criar OS', 'error');
+    }
+}
+
+// ===== FECHAR MODAL OBSERVAÇÃO OS =====
+function fecharModalObservacaoOS() {
+    document.getElementById('modalObservacaoOS').classList.add('hidden');
+    devolucaoParaOS = null;
+}
+
+// ===== INICIALIZAR =====
+// Chamar ao carregar a página
+document.addEventListener('DOMContentLoaded', function() {
+    // Se já estiver logado e a aba de devoluções estiver ativa, carregar
+    // O carregamento será feito via switchReembolsoTab
+});
+
 // Chamar quando o DOM estiver pronto
 document.addEventListener('DOMContentLoaded', initCarousel);
 
