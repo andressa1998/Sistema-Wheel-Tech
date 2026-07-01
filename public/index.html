@@ -18,14 +18,14 @@
     <style>
         /* ===== ESTILOS GERAIS (mantidos originais) ===== */
         :root {
-            --primary: #8A2BE2;
-            --secondary: #FF6B8B;
+            --primary: #00ADEE;
+            --secondary: #76B843;
             --success: #28a745;
-            --warning: #ffc107;
+            --warning: #ecdd3d;
             --danger: #dc3545;
-            --info: #17a2b8;
+            --info: #80D6F7;
             --light: #f8f9fa;
-            --dark: #343a40;
+            --dark: #58595B;
         }
         
         * {
@@ -83,7 +83,7 @@
             width: 45px;
             height: 45px;
             border-radius: 50%;
-            background: linear-gradient(135deg, var(--primary), #9d4edd);
+            background: linear-gradient(135deg, var(--primary), #80D6F7);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -196,7 +196,7 @@
             gap: 8px;
         }
         
-        .btn-primary { background: linear-gradient(135deg, var(--primary), #9d4edd); color: white; }
+        .btn-primary { background: linear-gradient(135deg, var(--primary), #80D6F7); color: white; }
         .btn-success { background: var(--success); color: white; }
         .btn-warning { background: var(--warning); color: #212529; }
         .btn-danger { background: var(--danger); color: white; }
@@ -266,7 +266,7 @@
         }
         .badge-success { background: rgba(40,167,69,0.1); color: var(--success); }
         .badge-danger { background: rgba(220,53,69,0.1); color: var(--danger); }
-        .badge-warning { background: rgba(255,193,7,0.1); color: #b58900; }
+        .badge-warning { background: rgba(255,193,7,0.1); color: #76B843; }
         .badge-info { background: rgba(23,162,184,0.1); color: var(--info); }
         
         /* ===== MODAIS ===== */
@@ -433,33 +433,162 @@ h4 {
 .menu-card .menu-icon i {
     font-size: 36px !important;
 }
+/* ===== CARROSSEL ===== */
+.carousel-container {
+    max-width: 800px;
+    margin: 40px auto 20px;
+    position: relative;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+    overflow: hidden;
+    border: 1px solid #e9ecef;
+    padding: 0;
+}
+
+.carousel-slides {
+    display: flex;
+    transition: transform 0.5s ease-in-out;
+    will-change: transform;
+}
+
+.carousel-slide {
+    min-width: 100%;
+    padding: 30px 40px; /* menos padding vertical */
+    box-sizing: border-box;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 200px; /* altura menor */
+}
+
+.carousel-slide h2 {
+    font-size: 22px;
+    color: #00ADEE;
+    margin-top: 0;
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.carousel-slide p {
+    font-size: 16px;
+    line-height: 1.5;
+    color: #58595B;
+    margin: 0 auto;
+    max-width: 700px;
+}
+
+/* Botões de navegação */
+.carousel-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(138, 43, 226, 0.15);
+    border: none;
+    border-radius: 50%;
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+    color: #00ADEE;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s;
+    z-index: 10;
+    backdrop-filter: blur(4px);
+}
+
+.carousel-btn:hover {
+    background: #00ADEE;
+    color: white;
+}
+
+.carousel-btn.prev {
+    left: 15px;
+}
+
+.carousel-btn.next {
+    right: 15px;
+}
+
+/* Indicadores (bolinhas) */
+.carousel-indicators {
+    position: absolute;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+}
+
+.carousel-indicators span {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ced4da;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.carousel-indicators span.active {
+    background: #00ADEE;
+    transform: scale(1.2);
+}
+
+/* Responsivo */
+@media (max-width: 600px) {
+    .carousel-slide {
+        padding: 20px 25px;
+        min-height: 180px;
+    }
+    .carousel-slide h2 {
+        font-size: 18px;
+    }
+    .carousel-slide p {
+        font-size: 14px;
+    }
+    .carousel-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+    }
+}
     </style>
 </head>
 <body>
-    <!-- TELA DE LOGIN -->
     <div id="loginScreen" class="login-container">
-        <div class="login-header">
-            <h1><i class="fas fa-camera"></i> Sistema Wheel Tech</h1>
-        </div>
-        <form id="loginForm">
-            <div class="form-group">
-                <label><i class="fas fa-user"></i> Usuário</label>
-                <input type="text" id="username" class="form-control" placeholder="Digite seu usuário" required>
-            </div>
-            <div class="form-group">
-                <label><i class="fas fa-lock"></i> Senha</label>
-                <input type="password" id="password" class="form-control" placeholder="Digite sua senha" required>
-            </div>
-            <button type="submit" class="btn btn-primary" style="width: 100%;">Entrar no Sistema</button>
-        </form>
+    <div class="login-header" style="text-align: center; margin-bottom: 35px;">
+        <img src="logo.png" alt="Wheel Tech" style="height: 60px; width: auto; display: block; margin: 0 auto 10px;">
+        <h1 style="margin: 0; font-size: 26px; font-weight: 600; color: #343a40;">
+            Sistema Wheel Tech
+        </h1>
     </div>
+    <form id="loginForm">
+        <div class="form-group">
+            <label><i class="fas fa-user"></i> Usuário</label>
+            <input type="text" id="username" class="form-control" placeholder="Digite seu usuário" required>
+        </div>
+        <div class="form-group">
+            <label><i class="fas fa-lock"></i> Senha</label>
+            <input type="password" id="password" class="form-control" placeholder="Digite sua senha" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%;">Entrar no Sistema</button>
+    </form>
+</div>
 
     <!-- MENU INICIAL -->
     <div id="menuSystem" class="hidden">
         <header class="main-header">
             <div class="header-content">
                 <div class="header-title">
-                    <i class="fas fa-camera"></i>
+                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto; vertical-align: middle;">
                     <span>Wheel Tech - Menu Principal</span>
                 </div>
                 <div class="user-info">
@@ -472,7 +601,79 @@ h4 {
                     </div>
                 </div>
             </div>
+            
         </header>
+        <!-- ===== CARROSSEL (agora no topo) ===== -->
+    <div class="carousel-container">
+        <div class="carousel-slides">
+            <!-- Missão (3 slides) -->
+            <div class="carousel-slide">
+                <h2><i class="fas fa-bullseye"></i> Missão</h2>
+                <p>A Wheel Tech é comprometida em gerar qualidade de vida e lazer às pessoas do mundo do ciclismo</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-bullseye"></i> Missão</h2>
+                <p>nos esforçamos em fazer isso de forma diferenciada, inovadora e sustentável</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-bullseye"></i> Missão</h2>
+                <p>Tornando a bike e a vida leve e alegre.</p>
+            </div>
+
+            <!-- Visão (2 slides) -->
+            <div class="carousel-slide">
+                <h2><i class="fas fa-eye"></i> Visão</h2>
+                <p>Continuar sendo referência em soluções e produtos inovadores para o ciclismo</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-eye"></i> Visão</h2>
+                <p>expandindo os canais de atendimento e aumentando a conexão com os clientes e fornecedores.</p>
+            </div>
+
+            <!-- Valores (9 slides) -->
+            <div class="carousel-slide">
+                <h2><i class="fas fa-heart"></i> Valores</h2>
+                <p>🌱 Ser sustentável em relações sociais, econômicas e ambientais</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-heart"></i> Valores</h2>
+                <p>⭐ Superar necessidades e expectativas</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-heart"></i> Valores</h2>
+                <p>🔒 Integridade e transparência</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-heart"></i> Valores</h2>
+                <p>🚀 Auto desafio constante</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-heart"></i> Valores</h2>
+                <p>💬 Comunicação</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-heart"></i> Valores</h2>
+                <p>🤝 Trabalho em equipe</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-heart"></i> Valores</h2>
+                <p>🎯 Assumir responsabilidades</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-heart"></i> Valores</h2>
+                <p>🔮 Atenção no presente para construção do futuro</p>
+            </div>
+            <div class="carousel-slide">
+                <h2><i class="fas fa-heart"></i> Valores</h2>
+                <p>😄 Ambiente descontraído com integração</p>
+            </div>
+        </div>
+
+        <button class="carousel-btn prev">&#10094;</button>
+        <button class="carousel-btn next">&#10095;</button>
+        <div class="carousel-indicators"></div>
+        </div>
+
         <div class="menu-grid">
             <div class="menu-card" onclick="abrirSistemaOS()">
                 <div class="menu-icon"><i class="fas fa-tools"></i></div>
@@ -544,6 +745,11 @@ h4 {
             <h3>Precificação Novos Anúncios</h3>
             <p>Cadastrar produtos para precificação</p>
             </div>
+            <div class="menu-card" onclick="abrirSistemaFeedback()">
+            <div class="menu-icon"><i class="fas fa-smile"></i></div>
+            <h3>Feedback</h3>
+            <p>Avaliações, respostas e sugestões</p>
+            </div>
         </div>
     </div>
 
@@ -553,7 +759,7 @@ h4 {
             <div class="header-content">
                 <div class="header-left">
                     <div class="header-title">
-                        <i class="fas fa-camera"></i>
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto; vertical-align: middle;">
                         <span>Sistema de Ordem de Serviço</span>
                     </div>
                 </div>
@@ -844,9 +1050,9 @@ h4 {
                 </div>
                 
                 <div id="selectedOSBar" class="selected-os-bar hidden">
-                    <div style="background: #f0f0f0; padding: 10px 20px; margin: 10px 0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; border-left: 4px solid #8A2BE2;">
+                    <div style="background: #f0f0f0; padding: 10px 20px; margin: 10px 0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; border-left: 4px solid #00ADEE;">
                         <div>
-                            <i class="fas fa-check-circle" style="color: #8A2BE2;"></i>
+                            <i class="fas fa-check-circle" style="color: #00ADEE;"></i>
                             <strong id="selectedOSCount">0</strong> OS selecionada(s)
                         </div>
                         <div style="display: flex; gap: 10px;">
@@ -873,7 +1079,7 @@ h4 {
         <!-- MODAL DE EDIÇÃO DA OS -->
 <div id="editOSModal" class="modal hidden">
     <div class="modal-content" style="max-width: 700px; max-height: 90vh; padding: 0;">
-        <div style="background: linear-gradient(135deg, #8A2BE2, #6a0dad); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="background: linear-gradient(135deg, #00ADEE, #80D6F7); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
             <h3 style="margin:0;"><i class="fas fa-edit"></i> Editar Ordem de Serviço</h3>
             <button onclick="fecharModalEdicaoOS()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
         </div>
@@ -1023,7 +1229,11 @@ h4 {
         <header class="main-header">
             <div class="container">
                 <div class="header-content">
-                    <h1><i class="fas fa-store" style="color:#28a745;"></i> Sistema de Vendas ML</h1>
+                    <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                        <span id="caixaDateTitle">Sistema de Vendas ML</span>
+                    </h1>
+
                     <div class="user-info">
                         <div class="user-avatar" id="salesUserAvatar">V</div>
                         <div>
@@ -1287,7 +1497,11 @@ h4 {
         <header class="main-header">
             <div class="container">
                 <div class="header-content">
-                    <h1><i class="fas fa-exchange-alt" style="color:var(--primary);"></i> Reclamações ML</h1>
+                    <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                        <span id="caixaDateTitle">Reclamações ML</span>
+                    </h1>
+
                     <div class="user-info">
                         <div class="user-avatar" id="reembolsoUserAvatar">U</div>
                         <div>
@@ -1344,7 +1558,7 @@ h4 {
 <!-- Modal do relatório por colaborador -->
 <div id="relatorioColaboradorModal" class="modal hidden">
     <div class="modal-content" style="max-width: 1000px;">
-        <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between;">
+        <div style="background: linear-gradient(135deg, #00ADEE 0%, #80D6F7 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between;">
             <h3><i class="fas fa-users"></i> Relatório por Colaborador</h3>
             <button onclick="closeRelatorioColaborador()">&times;</button>
         </div>
@@ -1448,7 +1662,7 @@ h4 {
     <div id="printModal" class="modal hidden">
         <div class="modal-content" style="max-width: 1000px; max-height: 95vh; padding: 0; overflow: hidden;">
             <!-- Cabeçalho do Modal -->
-            <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="background: linear-gradient(135deg, #00ADEE 0%, #80D6F7 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h3 style="margin: 0; font-weight: 600;">
                         <i class="fas fa-print"></i> Pré-visualização da OS
@@ -1520,7 +1734,7 @@ h4 {
     <!-- Modal para Visualização de Fotos -->
     <div id="photoViewerModal" class="modal hidden">
         <div class="modal-content" style="max-width: 90%; max-height: 90vh; width: auto; padding: 0;">
-            <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="background: linear-gradient(135deg, #00ADEE 0%, #80D6F7 100%); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
                 <h4 style="margin: 0;">
                     <i class="fas fa-images"></i> <span id="photoViewerTitle">Fotos da OS</span>
                 </h4>
@@ -1545,7 +1759,7 @@ h4 {
     <div id="viewOSModal" class="modal hidden">
         <div class="modal-content" style="max-width: 90%; max-height: 90vh; width: 1200px; padding: 0;">
             <!-- Cabeçalho do Modal -->
-            <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="background: linear-gradient(135deg, #00ADEE 0%, #80D6F7 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h3 style="margin: 0; font-weight: 600;">
                         <i class="fas fa-eye"></i> Visualizar Ordem de Serviço
@@ -1567,7 +1781,7 @@ h4 {
             <!-- Navegação por Abas -->
             <div style="background: #f8f9fa; padding: 0 30px; border-bottom: 1px solid #dee2e6;">
                 <div class="d-flex" id="viewOSTabs">
-                    <button class="tab-button active" onclick="switchViewOSTab('details')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid #8A2BE2; font-weight: 600; color: #8A2BE2; cursor: pointer;">
+                    <button class="tab-button active" onclick="switchViewOSTab('details')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid #00ADEE; font-weight: 600; color: #00ADEE; cursor: pointer;">
                         <i class="fas fa-info-circle"></i> Detalhes
                     </button>
                     <button class="tab-button" onclick="switchViewOSTab('photos')" style="padding: 15px 20px; background: none; border: none; border-bottom: 3px solid transparent; font-weight: 600; color: #6c757d; cursor: pointer;">
@@ -1768,7 +1982,7 @@ h4 {
     <!-- Modal para Relatório de Reembolsos -->
     <div id="relatorioModal" class="modal hidden">
         <div class="modal-content" style="max-width: 800px; max-height: 90vh; padding: 0;">
-            <div style="background: linear-gradient(135deg, #8A2BE2 0%, #6a0dad 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+            <div style="background: linear-gradient(135deg, #00ADEE 0%, #80D6F7 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <h3 style="margin: 0; font-weight: 600;">
                         <i class="fas fa-chart-line"></i> Relatório de Reclamações
@@ -1916,7 +2130,7 @@ h4 {
             <div class="container">
                 <div class="header-content">
                     <h1 style="display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-cash-register" style="color: #28a745;"></i>
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                         <span id="caixaDateTitle">Caixa Wheel Tech</span>
                     </h1>
                     
@@ -1997,7 +2211,7 @@ h4 {
                 <!-- CADEADO 2 - Admin -->
                 <div class="info-card" id="cadeado2" style="background: #f5e6ff; padding: 10px; border-radius: 8px; text-align: center; cursor: pointer;" onclick="if(caixaData?.fechado_operador && !caixaData?.conferido_admin) conferirCaixaAdmin()">
                     <div style="font-size: 24px;" id="cadeado2Icon"><i class="fas fa-lock" style="color: #6c757d;"></i></div>
-                    <div style="font-size: 11px; font-weight: bold; color: #8A2BE2;">Conferência Admin</div>
+                    <div style="font-size: 11px; font-weight: bold; color: #00ADEE;">Conferência Admin</div>
                     <div style="font-size: 10px; margin-top: 5px;" id="cadeado2Status">
                         <small>Aguardando fechamento</small>
                     </div>
@@ -2335,7 +2549,7 @@ h4 {
                                 <div style="font-size: 12px; color: #6c757d;">Total Saídas</div>
                             </div>
                             <div class="col-md-3">
-                                <div style="font-size: 24px; font-weight: 700; color: #8A2BE2;">R$ <span id="relSaldoFinal">0,00</span></div>
+                                <div style="font-size: 24px; font-weight: 700; color: #00ADEE;">R$ <span id="relSaldoFinal">0,00</span></div>
                                 <div style="font-size: 12px; color: #6c757d;">Saldo Final</div>
                             </div>
                             <div class="col-md-3">
@@ -2429,7 +2643,7 @@ h4 {
 <div id="relatorioOSModal" class="modal hidden">
     <div class="modal-content" style="max-width: 1100px; max-height: 90vh; padding: 0;">
         <!-- Cabeçalho -->
-        <div style="background: linear-gradient(135deg, #8A2BE2, #6a0dad); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="background: linear-gradient(135deg, #00ADEE, #80D6F7); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
             <h3 style="margin:0;"><i class="fas fa-chart-bar"></i> Relatório de Ordens de Serviço</h3>
             <button onclick="fecharModalRelatorioOS()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
         </div>
@@ -2559,7 +2773,7 @@ h4 {
         <div class="container">
             <div class="header-content">
                 <h1 style="display: flex; align-items: center; gap: 10px;">
-                    <i class="fas fa-tags" style="color: #ff7f50;"></i>
+                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     Precificação Novos Anúncios
                 </h1>
                 <div class="user-info">
@@ -2693,13 +2907,235 @@ h4 {
     </div>
 </div>
 
+<!-- ============================================ -->
+<!-- SISTEMA DE FEEDBACK                          -->
+<!-- ============================================ -->
+<div id="feedbackSystem" class="hidden">
+  <header class="main-header">
+    <div class="container">
+      <div class="header-content">
+        <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                        <span id="caixaDateTitle">Feedback</span>
+                    </h1>
+        <div class="user-info">
+          <div class="user-avatar" id="feedbackUserAvatar">U</div>
+          <div>
+            <div style="font-weight: 600;" id="feedbackUserName">Usuário</div>
+            <div style="font-size: 12px; color: #6c757d;" id="feedbackUserRole"></div>
+            <div class="d-flex gap-2 mt-2">
+              <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+              <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Status / Resumo -->
+    <div class="card mb-4">
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+            <i class="fas fa-chart-line" style="color: #00ADEE;"></i>
+            <span id="feedbackResumo">Carregando...</span>
+          </h3>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary" id="btnNovoFeedback" onclick="abrirModalNovoFeedback()">
+            <i class="fas fa-plus"></i> Novo Feedback
+          </button>
+          <button class="btn btn-success" onclick="carregarFeedbacks()">
+            <i class="fas fa-sync-alt"></i> Atualizar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="card mb-4">
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <span><i class="fas fa-filter"></i> Filtrar:</span>
+        <select id="filtroFeedbackUsuario" class="form-control form-control-sm" style="width: 150px;">
+          <option value="">Todos os usuários</option>
+        </select>
+        <select id="filtroFeedbackTipo" class="form-control form-control-sm" style="width: 150px;">
+          <option value="">Todos os tipos</option>
+          <option value="pontual">Pontual</option>
+          <option value="mensal">Mensal</option>
+        </select>
+        <select id="filtroFeedbackEstrela" class="form-control form-control-sm" style="width: 150px;">
+          <option value="">Todas as estrelas</option>
+          <option value="ruim">⭐ Ruim</option>
+          <option value="bom">⭐ Bom</option>
+          <option value="excelente">⭐ Excelente</option>
+        </select>
+        <button class="btn btn-sm btn-secondary" onclick="aplicarFiltrosFeedback()">Aplicar</button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="limparFiltrosFeedback()">Limpar</button>
+      </div>
+    </div>
+
+    <!-- Feedbacks -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-list"></i> Feedbacks</h2>
+        <span class="badge badge-primary" id="contadorFeedbacks">0</span>
+      </div>
+      <div id="feedbacksContainer" class="p-3">
+        <div class="text-center py-5 text-muted">Carregando feedbacks...</div>
+      </div>
+    </div>
+
+    <!-- Sugestões de Melhoria -->
+    <div class="card mt-4">
+      <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-lightbulb"></i> Sugestões de Melhoria</h2>
+        <div>
+          <button class="btn btn-success btn-sm" id="btnNovaSugestao" onclick="abrirModalSugestao()">
+            <i class="fas fa-plus"></i> Nova Sugestão
+          </button>
+          <button class="btn btn-info btn-sm" onclick="carregarSugestoes()">
+            <i class="fas fa-sync-alt"></i>
+          </button>
+        </div>
+      </div>
+      <div id="sugestoesContainer" class="p-3">
+        <div class="text-center py-5 text-muted">Carregando sugestões...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Novo Feedback -->
+<div id="modalNovoFeedback" class="modal hidden">
+  <div class="modal-content" style="max-width: 700px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h3><i class="fas fa-plus-circle"></i> <span id="modalFeedbackTitle">Novo Feedback</span></h3>
+      <button onclick="fecharModalNovoFeedback()" style="background:none; border:none; font-size:24px;">&times;</button>
+    </div>
+    <form id="formNovoFeedback">
+      <input type="hidden" id="editFeedbackId">
+      <div class="form-group">
+        <label><i class="fas fa-user"></i> Usuário *</label>
+        <select id="feedbackUsuario" class="form-control" required>
+          <option value="">Selecione</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label><i class="fas fa-tag"></i> Tipo *</label>
+        <select id="feedbackTipo" class="form-control" required>
+          <option value="pontual">Pontual</option>
+          <option value="mensal">Mensal</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Texto do Feedback</label>
+        <textarea id="feedbackTexto" class="form-control" rows="2" placeholder="Descrição geral..."></textarea>
+      </div>
+      <div class="row">
+        <div class="col-md-4">
+          <div class="form-group">
+            <label>Pontos Positivos</label>
+            <textarea id="feedbackPositivos" class="form-control" rows="2" placeholder="O que foi bem..."></textarea>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="form-group">
+            <label>Pontos Negativos</label>
+            <textarea id="feedbackNegativos" class="form-control" rows="2" placeholder="O que pode melhorar..."></textarea>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="form-group">
+            <label>Pontos a Melhorar</label>
+            <textarea id="feedbackMelhorar" class="form-control" rows="2" placeholder="Sugestões específicas..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Campos para feedback mensal -->
+      <div id="camposMensal" class="hidden">
+        <!-- Estrela Geral (calculada automaticamente) -->
+        <div class="form-group">
+          <label><i class="fas fa-star"></i> Estrela Geral (calculada automaticamente)</label>
+          <div class="d-flex gap-3" style="font-size: 2.5rem;">
+            <span class="estrela-opcao" data-valor="ruim" style="color:#ccc; transition:0.3s; cursor:default;">★</span>
+            <span class="estrela-opcao" data-valor="bom" style="color:#ccc; transition:0.3s; cursor:default;">★</span>
+            <span class="estrela-opcao" data-valor="excelente" style="color:#ccc; transition:0.3s; cursor:default;">★</span>
+          </div>
+          <small>A estrela geral será definida automaticamente com base na moda (cor mais escolhida) dos tópicos abaixo.</small>
+        </div>
+
+        <!-- Tópicos com 3 estrelas coloridas -->
+        <div class="form-group">
+          <label>Tópicos e Avaliação (★ ruim · ★ bom · ★ excelente) – <span class="text-muted">clique em uma estrela para avaliar</span></label>
+          <div id="containerTopicos" style="max-height:400px; overflow-y:auto; border:1px solid #e9ecef; padding:10px; border-radius:5px; background:#fafafa;">
+            <!-- Os tópicos serão injetados pelo JavaScript -->
+          </div>
+        </div>
+
+        <!-- Nota Média (numérica) -->
+        <div class="form-group">
+          <label>Nota Média Geral (calculada)</label>
+          <input type="text" id="feedbackNotaMedia" class="form-control" readonly placeholder="--" style="background:#e9ecef;">
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end gap-2 mt-3">
+        <button type="button" class="btn btn-secondary" onclick="fecharModalNovoFeedback()">Cancelar</button>
+        <button type="submit" class="btn btn-success"><i class="fas fa-save"></i> Salvar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: Responder Feedback -->
+<div id="modalResponderFeedback" class="modal hidden">
+  <div class="modal-content" style="max-width: 600px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h3><i class="fas fa-reply"></i> Responder Feedback</h3>
+      <button onclick="fecharModalResponderFeedback()" style="background:none; border:none; font-size:24px;">&times;</button>
+    </div>
+    <input type="hidden" id="respostaFeedbackId">
+    <div id="respostaFeedbackTexto" style="background:#f8f9fa; padding:15px; border-radius:8px; margin-bottom:15px;"></div>
+    <div class="form-group">
+      <label>Sua resposta *</label>
+      <textarea id="respostaTexto" class="form-control" rows="3" placeholder="Digite sua resposta..."></textarea>
+    </div>
+    <div class="d-flex justify-content-end gap-2 mt-3">
+      <button class="btn btn-secondary" onclick="fecharModalResponderFeedback()">Cancelar</button>
+      <button class="btn btn-success" onclick="enviarRespostaFeedback()">Enviar Resposta</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Nova Sugestão -->
+<div id="modalNovaSugestao" class="modal hidden">
+  <div class="modal-content" style="max-width: 600px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h3><i class="fas fa-lightbulb"></i> Nova Sugestão de Melhoria</h3>
+      <button onclick="fecharModalNovaSugestao()" style="background:none; border:none; font-size:24px;">&times;</button>
+    </div>
+    <div class="form-group">
+      <label>Sua sugestão *</label>
+      <textarea id="sugestaoTexto" class="form-control" rows="4" placeholder="Descreva sua sugestão de melhoria..."></textarea>
+    </div>
+    <div class="d-flex justify-content-end gap-2 mt-3">
+      <button class="btn btn-secondary" onclick="fecharModalNovaSugestao()">Cancelar</button>
+      <button class="btn btn-success" onclick="enviarSugestao()">Enviar Sugestão</button>
+    </div>
+  </div>
+</div>
+
     <!-- ===== SISTEMA DE AVALIAÇÕES ML ===== -->
 <div id="reviewsSystem" class="hidden">
     <header class="main-header">
         <div class="container">
             <div class="header-content">
                 <h1 style="display: flex; align-items: center; gap: 10px;">
-                    <i class="fas fa-star" style="color: #FFD700;"></i>
+                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     Verificar Avaliações Mercado Livre
                 </h1>
                 
@@ -2787,8 +3223,10 @@ h4 {
             <div class="header-left">
                 <!-- Botão de menu removido -->
                 <div class="header-title">
-                    <i class="fas fa-calendar-alt" style="color: #FF9800;"></i>
-                    <span>Calendário de Folgas</span>
+                    <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                        <span id="caixaDateTitle">Calendário de Folgas</span>
+                    </h1>
                 </div>
             </div>
             <div class="user-info">
@@ -2950,7 +3388,7 @@ h4 {
         <div class="container">
             <div class="header-content">
                 <h1 style="display: flex; align-items: center; gap: 10px;">
-                    <i class="fas fa-truck" style="color: #fd7e14;"></i>
+                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     Custos de Frete – Mercado Livre
                 </h1>
                 <div class="user-info">
@@ -3138,7 +3576,10 @@ h4 {
     <header class="main-header">
         <div class="container">
             <div class="header-content">
-                <h1><i class="fas fa-comments" style="color: #17a2b8;"></i> Perguntas do Mercado Livre</h1>
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                        <span id="caixaDateTitle">Perguntas do Mercado Livre</span>
+                    </h1>
                 <div class="user-info">
                     <div class="user-avatar" id="perguntasUserAvatar">U</div>
                     <div>
@@ -3228,7 +3669,7 @@ h4 {
 <!-- Modal para Histórico de Perguntas do Comprador -->
 <div id="modalHistoricoPerguntas" class="modal hidden">
     <div class="modal-content" style="max-width: 700px; max-height: 80vh; padding: 0;">
-        <div style="background: linear-gradient(135deg, #8A2BE2, #6a0dad); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="background: linear-gradient(135deg, #00ADEE, #80D6F7); color: white; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;">
             <h3 style="margin: 0;"><i class="fas fa-history"></i> Histórico de Perguntas</h3>
             <button onclick="fecharModalHistorico()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
         </div>
@@ -3247,7 +3688,7 @@ h4 {
         <div class="container">
             <div class="header-content">
                 <h1 style="display: flex; align-items: center; gap: 10px;">
-                    <i class="fas fa-file-invoice" style="color: #007bff;"></i>
+                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
                     Emissão de NF-e para Vendas ML
                 </h1>
                 <div class="user-info">
@@ -3525,7 +3966,10 @@ h4 {
     <header class="main-header">
         <div class="container">
             <div class="header-content">
-                <h1><i class="fas fa-box" style="color: var(--success);"></i> Gestão de Estoque</h1>
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                        <span id="caixaDateTitle">Gestão de Estoque</span>
+                    </h1>
                 <div class="user-info">
                     <div class="user-avatar" id="estoqueGestaoUserAvatar">E</div>
                     <div>
@@ -3733,6 +4177,7 @@ h4 {
     <script src="nfe_manager.js"></script>
     <script src="estoque_gestao.js"></script>
     <script src="perguntas_manager.js"></script>
+    <script src="feedback_manager.js"></script>
 
     <script>
         // Funções para controle da sidebar

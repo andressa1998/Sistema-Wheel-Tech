@@ -4256,7 +4256,7 @@ window.abrirSistemaOS = function() {
     if (menuSystem) menuSystem.classList.add('hidden');
     
     // Esconder outros sistemas
-    const sistemas = ['salesSystem', 'reembolsosSystem', 'caixaSystem', 'precificacaoSystem', 'reviewsSystem', 'perguntasSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'estoqueGestaoSystem'];
+    const sistemas = ['salesSystem', 'reembolsosSystem', 'caixaSystem', 'precificacaoSystem', 'reviewsSystem', 'feedbackSystem', 'perguntasSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'estoqueGestaoSystem'];
     sistemas.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
@@ -6116,8 +6116,8 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================================
 window.voltarParaMenu = function() {
     // Lista de todos os sistemas que podem estar abertos
-    const sistemas = ['mainSystem', 'salesSystem', 'precificacaoSystem', 'reembolsosSystem', 'caixaSystem', 
-                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 
+    const sistemas = ['mainSystem', 'salesSystem', 'precificacaoSystem', 'reembolsosSystem', 'caixaSystem', 'perguntasSystem',
+                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'feedbackSystem','estoqueSystem', 
                       'estoqueGestaoSystem'];
     sistemas.forEach(id => {
         const el = document.getElementById(id);
@@ -6807,7 +6807,7 @@ window.abrirSistemaReembolsos = function() {
     // Esconder outros sistemas - usando getElementById com verificação
     const sistemasIds = [
         'mainSystem', 'caixaSystem', 'salesSystem', 'precificacaoSystem', 'reviewsSystem', 
-        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'perguntasSystem', 
+        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'perguntasSystem', 'feedbackSystem',
         'estoqueGestaoSystem'
     ];
     sistemasIds.forEach(id => {
@@ -6863,6 +6863,7 @@ window.abrirSistemaCaixa = function() {
     if (estoqueSystem) estoqueSystem.classList.add('hidden');
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
+    if (feedbackSystem) feedbackSystem.classList.add('hidden');
     
     // Mostrar sistema de caixa
     const caixaSystem = document.getElementById('caixaSystem');
@@ -6894,7 +6895,7 @@ window.abrirSistemaCaixa = function() {
 window.voltarParaMenu = function() {
     // Lista de todos os sistemas que podem estar abertos
     const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem', 
-                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 
+                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem', 'perguntasSystem',
                       'estoqueGestaoSystem'];
     sistemas.forEach(id => {
         const el = document.getElementById(id);
@@ -8049,7 +8050,7 @@ window.abrirSistemaFrete = function() {
 
     const sistemasIds = [
         'mainSystem', 'salesSystem', 'reembolsosSystem', 'perguntasSystem', 'precificacaoSystem',
-        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem', 
+        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem', 'feedbackSystem',
         'estoqueGestaoSystem', 'nfeSystem'
     ];
     sistemasIds.forEach(id => {
@@ -8103,7 +8104,7 @@ window.abrirSistemaNFE = async function() {
 
     const sistemasIds = [
         'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem',
-        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem',
+        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem',
         'perguntasSystem', 'estoqueGestaoSystem'
     ];
     sistemasIds.forEach(id => {
@@ -8127,7 +8128,10 @@ window.abrirSistemaNFE = async function() {
             <header class="main-header">
                 <div class="container">
                     <div class="header-content">
-                        <h1><i class="fas fa-file-invoice-dollar" style="color: var(--primary);"></i> Emissão de NF-e</h1>
+                        <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                        <span id="caixaDateTitle">Emissão de NF-e</span>
+                    </h1>
                         <div class="user-info">
                             <div class="user-avatar" id="nfeUserAvatar">U</div>
                             <div>
@@ -8887,7 +8891,7 @@ window.abrirSistemaEstoque = function() {
     // 1. Esconder outros sistemas principais
     const sistemas = [
         'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem',
-        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem',
+        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem', 'feedbackSystem', 'perguntasSystem',
         'estoqueGestaoSystem'
     ];
     sistemas.forEach(id => {
@@ -9908,8 +9912,8 @@ window.abrirSistemaPrecificacao = function() {
 
     const sistemasIds = [
         'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'precificacaoSystem',
-        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem',
-        'estoqueGestaoSystem', 'nfeSystem'
+        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem',
+        'estoqueGestaoSystem', 'nfeSystem', 'perguntasSystem'
     ];
     sistemasIds.forEach(id => {
         const el = document.getElementById(id);
@@ -10068,6 +10072,74 @@ function criarCard(item) {
 
     return col;
 }
+
+// ===== INICIALIZAÇÃO DO CARROSSEL =====
+function initCarousel() {
+    const container = document.querySelector('.carousel-container');
+    if (!container) return;
+
+    const slides = container.querySelector('.carousel-slides');
+    const slideItems = container.querySelectorAll('.carousel-slide');
+    const prevBtn = container.querySelector('.carousel-btn.prev');
+    const nextBtn = container.querySelector('.carousel-btn.next');
+    const indicators = container.querySelector('.carousel-indicators');
+
+    let currentIndex = 0;
+    const totalSlides = slideItems.length;
+    let intervalId = null;
+    let isTransitioning = false;
+
+    // Criar indicadores
+    for (let i = 0; i < totalSlides; i++) {
+        const dot = document.createElement('span');
+        dot.dataset.index = i;
+        if (i === 0) dot.classList.add('active');
+        dot.addEventListener('click', () => goToSlide(i));
+        indicators.appendChild(dot);
+    }
+
+    function goToSlide(index) {
+        if (isTransitioning || index === currentIndex) return;
+        isTransitioning = true;
+        currentIndex = index;
+        slides.style.transform = `translateX(-${currentIndex * 100}%)`;
+        // Atualizar indicadores
+        indicators.querySelectorAll('span').forEach((dot, i) => {
+            dot.classList.toggle('active', i === currentIndex);
+        });
+        setTimeout(() => { isTransitioning = false; }, 500);
+        resetInterval();
+    }
+
+    function nextSlide() {
+        goToSlide((currentIndex + 1) % totalSlides);
+    }
+
+    function prevSlide() {
+        goToSlide((currentIndex - 1 + totalSlides) % totalSlides);
+    }
+
+    function resetInterval() {
+        if (intervalId) clearInterval(intervalId);
+        intervalId = setInterval(nextSlide, 6000);
+    }
+
+    // Eventos dos botões
+    prevBtn.addEventListener('click', (e) => { e.stopPropagation(); prevSlide(); });
+    nextBtn.addEventListener('click', (e) => { e.stopPropagation(); nextSlide(); });
+
+    // Pausar ao passar o mouse
+    container.addEventListener('mouseenter', () => {
+        if (intervalId) clearInterval(intervalId);
+    });
+    container.addEventListener('mouseleave', resetInterval);
+
+    // Iniciar
+    resetInterval();
+}
+
+// Chamar quando o DOM estiver pronto
+document.addEventListener('DOMContentLoaded', initCarousel);
 
 // Criar nova solicitação
 document.addEventListener('DOMContentLoaded', function() {

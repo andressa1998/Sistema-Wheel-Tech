@@ -79,7 +79,7 @@
 }
 
 #mlAccessTokenInput:focus {
-    border-color: #8A2BE2;
+    border-color: #00ADEE;
     background: white;
 }
 
@@ -95,7 +95,7 @@
 
 .token-valid {
     background: #d4edda;
-    color: #155724;
+    color: #76B843;
 }
 
 .token-expiring {
@@ -120,7 +120,7 @@
     font-size: 11px;
     padding: 2px 8px;
     border-radius: 10px;
-    background: #28a745;
+    background: #76B843;
     color: white;
     animation: pulseAuto 3s infinite;
 }
@@ -137,7 +137,7 @@
     width: 16px;
     height: 16px;
     border: 2px solid #f3f3f3;
-    border-top: 2px solid #8A2BE2;
+    border-top: 2px solid #00ADEE;
     border-radius: 50%;
     animation: spinAuto 1s linear infinite;
 }
@@ -155,11 +155,11 @@
 
 .item-conferencia:hover {
     background: #f8f9fa !important;
-    border-left-color: #8A2BE2;
+    border-left-color: #00ADEE;
 }
 
 .item-conferencia.completo {
-    border-left-color: #28a745;
+    border-left-color: #76B843;
     background: rgba(40, 167, 69, 0.05) !important;
 }
 
@@ -184,7 +184,7 @@
 .badge-conferencia-completa {
     background: rgba(40, 167, 69, 0.1);
     color: #155724;
-    border: 1px solid #28a745;
+    border: 1px solid #76B843;
 }
 
 .badge-conferencia-parcial {
@@ -232,7 +232,7 @@
 
 .historico-data {
     font-size: 12px;
-    color: #6c757d;
+    color: #58595B;
     display: flex;
     align-items: center;
     gap: 5px;
@@ -240,7 +240,7 @@
 
 .historico-usuario {
     font-weight: 600;
-    color: #495057;
+    color: #58595B;
     display: flex;
     align-items: center;
     gap: 5px;
@@ -261,7 +261,7 @@
 
 .historico-ajuste {
     background: #d4edda;
-    color: #155724;
+    color: #76B843;
 }
 
 /* Botões de ação na conferência */
@@ -281,7 +281,7 @@
 
 /* Campo de quantidade com validação */
 .input-quantidade-valido {
-    border-color: #28a745 !important;
+    border-color: #76B843 !important;
     background-color: rgba(40, 167, 69, 0.05) !important;
 }
 
@@ -300,7 +300,7 @@
 .conferencia-tooltip .tooltiptext {
     visibility: hidden;
     width: 200px;
-    background-color: #495057;
+    background-color: #58595B;
     color: #fff;
     text-align: center;
     border-radius: 6px;
@@ -442,7 +442,7 @@ table {
 
 /* Cabeçalho Verde - Centralizando os textos */
 #salesTable thead th {
-    background-color: #28a745 !important;
+    background-color: #76B843 !important;
     color: white !important;
     font-size: 0.75rem;
     font-weight: 700;
@@ -512,7 +512,7 @@ table {
 
 /* Adicione no seu arquivo CSS */
 .badge-full {
-    background-color: #6f42c1;
+    background-color: #00ADEE;
     color: white;
     padding: 4px 8px;
     border-radius: 12px;
@@ -548,7 +548,7 @@ table {
 }
 
 .badge-info {
-    background-color: #17a2b8;
+    background-color: #80D6F7;
     color: white;
     padding: 4px 8px;
     border-radius: 12px;
@@ -557,7 +557,7 @@ table {
 }
 
 .badge-secondary {
-    background-color: #6c757d;
+    background-color: #58595B;
     color: white;
     padding: 4px 8px;
     border-radius: 12px;
@@ -584,7 +584,7 @@ table {
 }
 
 .badge-success {
-    background-color: #28a745;
+    background-color: #76B843;
     color: white;
     padding: 4px 8px;
     border-radius: 12px;
@@ -593,7 +593,7 @@ table {
 }
 
 .badge-nova {
-    background-color: #007bff;
+    background-color: #00ADEE;
     color: white;
     padding: 4px 8px;
     border-radius: 12px;
@@ -602,7 +602,7 @@ table {
 }
 
 .badge-verificada {
-    background-color: #28a745;
+    background-color: #76B843;
     color: white;
     padding: 4px 8px;
     border-radius: 12px;
@@ -628,7 +628,7 @@ table {
 }
 
 .estoque-fisico-input:focus {
-    border-color: #80bdff;
+    border-color: #80D6F7;
     outline: 0;
     box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
 }
@@ -693,7 +693,7 @@ table {
 }
 
 .badge-success {
-    background: #28a745;
+    background: #76B843;
     color: white;
     font-weight: 600;
     padding: 2px 8px;
@@ -709,7 +709,7 @@ table {
 }
 
 .estoque-fisico-input:focus {
-    border-color: #3483FA !important;
+    border-color: #00ADEE !important;
     box-shadow: 0 0 0 2px rgba(52, 131, 250, 0.2);
     outline: none;
 }
@@ -721,8 +721,8 @@ table {
 /* Adicione no seu arquivo CSS ou no final do script */
 .btn-outline-primary {
     background: transparent;
-    border: 2px solid #8A2BE2;
-    color: #8A2BE2;
+    border: 2px solid #00ADEE;
+    color: #00ADEE;
     padding: 8px 16px;
     border-radius: 30px;
     transition: all 0.3s;
@@ -730,7 +730,7 @@ table {
 }
 
 .btn-outline-primary:hover {
-    background: #8A2BE2;
+    background: #00ADEE;
     color: white;
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(138, 43, 226, 0.2);
@@ -1131,4 +1131,26 @@ h4 {
 #precListaPendentes .card:hover, #precListaFinalizados .card:hover {
     transform: translateY(-3px);
     box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+}
+.estrela-opcao.selected {
+  transform: scale(1.3);
+  filter: drop-shadow(0 0 8px currentColor);
+}
+.estrela-opcao[data-valor="ruim"].selected { color: #dc3545; }
+.estrela-opcao[data-valor="bom"].selected { color: #28a745; }
+.estrela-opcao[data-valor="excelente"].selected { color: #007bff; }
+.estrela-opcao.selected {
+  transform: scale(1.4);
+  filter: drop-shadow(0 0 10px currentColor);
+}
+.estrela-opcao[data-valor="ruim"].selected { color: #dc3545; }
+.estrela-opcao[data-valor="bom"].selected { color: #28a745; }
+.estrela-opcao[data-valor="excelente"].selected { color: #007bff; }
+
+.star-topico {
+  transition: 0.2s;
+  display: inline-block;
+}
+.star-topico:hover {
+  transform: scale(1.3);
 }
