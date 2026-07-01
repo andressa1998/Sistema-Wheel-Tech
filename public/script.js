@@ -8,7 +8,7 @@ const SUPABASE_KEY = 'sb_publishable_7AaXEKbS9roL57PO5lQkuQ_fkVWnGoL';
 let supabaseClient = null;
 
 // ===== VARIÁVEIS PARA CONTROLE DE SESSÃO =====
-const SESSION_TIMEOUT = 2 * 60 * 60 * 1000; // 24 horas em milissegundos
+const SESSION_TIMEOUT = 3600000; // 1 horas em milissegundos
 let sessionTimer = null;
 let refreshTokenInterval = null;
 let reembolsoNotificationCount = null;
@@ -145,6 +145,7 @@ let salesSyncStatus = {
 let currentUser = null;
 window.currentUser = currentUser;
 let orders = [];
+let sessionWarningTimer = null;
 let orderCounter = 1;
 let currentFilter = 'pendente';
 let editingOrderId = null;
@@ -3272,34 +3273,44 @@ function handleLogout() {
         
         // Limpar variáveis globais
         currentUser = null;
+        window.currentUser = null;
         orders = [];
         selectedPhotos = [];
-
-        atualizarVisibilidadeMenu();
-
-        // Limpar tokens do Mercado Livre
-        clearMLTokenStorage();
-
+        
         // Limpar tokens do Mercado Livre
         localStorage.removeItem('ml_access_token');
         localStorage.removeItem('ml_refresh_token');
         localStorage.removeItem('ml_token_expiry');
+        localStorage.removeItem('ml_token_data');
         localStorage.removeItem('ml_vendas');
         
-        // Esconder sistemas
-        if (mainSystem) mainSystem.classList.add('hidden');
-        if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
+        // --- CORREÇÃO AQUI ---
+        // 1. Esconder TODOS os sistemas, inclusive o menu
+        const sistemas = [
+            'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
+            'caixaSystem', 'precificacaoSystem', 'reviewsSystem',
+            'folgasSystem', 'shippingSystem', 'estoqueSystem',
+            'estoqueGestaoSystem', 'perguntasSystem', 'feedbackSystem',
+            'nfeSystem', 'historicoAcessosScreen'
+        ];
+        sistemas.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+        
+        // 2. Mostrar a tela de login
+        const loginScreen = document.getElementById('loginScreen');
         if (loginScreen) loginScreen.classList.remove('hidden');
-        if (folgasSystem) folgasSystem.classList.add('hidden');
-        if (shippingSystem) shippingSystem.classList.add('hidden');
-        if (estoqueSystem) estoqueSystem.classList.add('hidden');
-        if (perguntasSystem) perguntasSystem.classList.add('hidden');
-        if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
+        
+        // 3. Ativar o fundo de login
+        document.body.classList.add('login-active');
+        // -------------------------------------------------
         
         // Fechar modais abertos
         closeAllModals();
         
         // Limpar formulário de login
+        const loginForm = document.getElementById('loginForm');
         if (loginForm) loginForm.reset();
         
         // Foco no usuário
@@ -10247,6 +10258,41 @@ function getStatusFromFilter(filtro) {
         'todos': null
     };
     return map[filtro] || filtro;
+}
+
+// ===== FUNÇÕES FALTANTES =====
+function atualizarVisibilidadeMenu() {
+    // Controla a exibição de itens do menu conforme o usuário logado
+    // Se não houver usuário, esconde itens que exigem permissão
+    if (!currentUser) {
+        document.querySelectorAll('.menu-card[data-restricted]').forEach(el => el.style.display = 'none');
+        return;
+    }
+    // Se quiser lógica específica, implemente aqui
+    // Exemplo: mostrar/ocultar card de histórico
+    const historicoCard = document.getElementById('historicoMenuCard');
+    if (historicoCard) {
+        const permitidos = ['ronald', 'andressamiotto'];
+        historicoCard.style.display = (permitidos.includes(currentUser.username)) ? '' : 'none';
+    }
+}
+
+function clearMLTokenStorage() {
+    // Limpa tokens do Mercado Livre
+    localStorage.removeItem('ml_access_token');
+    localStorage.removeItem('ml_refresh_token');
+    localStorage.removeItem('ml_token_expiry');
+    localStorage.removeItem('ml_token_data');
+    console.log('🧹 Tokens ML limpos');
+}
+
+// Caso exista também essa função, defina-a:
+function atualizarVisibilidadeRelatorioColaborador() {
+    // Exibe botão de relatório por colaborador apenas para admin
+    const btnDiv = document.getElementById('btnRelatorioColaborador');
+    if (btnDiv) {
+        btnDiv.style.display = (currentUser && currentUser.role === 'Administrador') ? '' : 'none';
+    }
 }
 
 // ===== RENDERIZAR DEVOLUÇÕES =====
