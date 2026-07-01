@@ -4288,6 +4288,91 @@ body:has(#loginScreen:not(.hidden)) {
     </div>
 </div>
 
+<!-- ===== SISTEMA DE ENTRADAS (ADICIONAR AO FINAL DO BODY, ANTES DOS SCRIPTS) ===== -->
+<div id="entradasSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                    <span id="entradasDateTitle">Entradas de Produtos</span>
+                </h1>
+                <div class="user-info">
+                    <div class="user-avatar" id="entradasUserAvatar">E</div>
+                    <div>
+                        <div style="font-weight: 600;" id="entradasUserName">Usuário</div>
+                        <div style="font-size: 12px; color: #6c757d;" id="entradasUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Card: Área de Colagem -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-paste"></i>
+                    Nova Entrada
+                </h2>
+                <div>
+                    <button class="btn btn-info" onclick="mostrarExemploEntrada()" title="Ver exemplo de formato">
+                        <i class="fas fa-question-circle"></i> Exemplo
+                    </button>
+                </div>
+            </div>
+            <div class="form-group mb-3">
+                <label for="entradaPasteArea">
+                    <i class="fas fa-table"></i> Cole os dados do Excel (cabeçalho: Rastreio, Quant, Produto, SKU)
+                </label>
+                <textarea id="entradaPasteArea" class="form-control" rows="6" placeholder="Cole aqui os dados copiados do Excel...&#10;Exemplo:&#10;NN264716981BR	72	Sapim Race SP 28pcs 276mm, 28pcs 300mm and 16pcs 304mm	raios&#10;NN266540386BR	28	Sapim Cx-Ray J-Bend 12pcs 238mm and 16pcs 256mm / Nipples Alumínio	raios"></textarea>
+                <small class="text-muted">
+                    <i class="fas fa-info-circle"></i> Separe os campos por TAB ou vírgula. A primeira linha com cabeçalho será ignorada.
+                </small>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-success" onclick="processarEntrada()">
+                    <i class="fas fa-plus-circle"></i> Processar Entrada
+                </button>
+                <button class="btn btn-warning" onclick="limparAreaEntrada()">
+                    <i class="fas fa-broom"></i> Limpar
+                </button>
+            </div>
+        </div>
+
+        <!-- Filtros e Busca -->
+        <div class="card mb-4">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span><i class="fas fa-filter"></i> Filtrar:</span>
+                <button class="btn btn-sm btn-primary active" data-filtro="todos" onclick="filtrarEntradas('todos')">Todos</button>
+                <button class="btn btn-sm btn-outline-secondary" data-filtro="pendente" onclick="filtrarEntradas('pendente')">Pendentes</button>
+                <button class="btn btn-sm btn-outline-secondary" data-filtro="finalizado" onclick="filtrarEntradas('finalizado')">Finalizados</button>
+                <div style="flex:1; min-width:200px; margin-left:auto;">
+                    <input type="text" id="buscaEntradas" class="form-control form-control-sm" placeholder="🔍 Buscar por rastreio, produto, SKU..." oninput="buscarEntradas()">
+                </div>
+                <button class="btn btn-sm btn-info" onclick="carregarEntradas()">
+                    <i class="fas fa-sync-alt"></i> Atualizar
+                </button>
+            </div>
+        </div>
+
+        <!-- Lista de Cards -->
+        <div id="entradasCardsContainer">
+            <!-- Cards serão renderizados aqui via JavaScript -->
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-box-open fa-3x mb-3" style="opacity:0.3;"></i>
+                <h4>Nenhuma entrada cadastrada</h4>
+                <p>Cole os dados acima e clique em "Processar Entrada" para começar.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ===== SISTEMA DE GESTÃO DE ESTOQUE ===== -->
 <div id="estoqueGestaoSystem" class="hidden">
     <header class="main-header">
@@ -4505,6 +4590,7 @@ body:has(#loginScreen:not(.hidden)) {
     <script src="estoque_gestao.js"></script>
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
+    <script src="entradas.js"></script>
 
     <script>
         // Funções para controle da sidebar
