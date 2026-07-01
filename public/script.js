@@ -10196,7 +10196,25 @@ async function carregarDevolucoes() {
 
         if (error) throw error;
         devolucoes = data || [];
+        console.log(`✅ ${devolucoes.length} devoluções carregadas. Status:`, devolucoes.map(d => d.status));
         atualizarContadoresDevolucoes();
+
+        // Se não houver filtro definido, ou for 'todos', usar 'aguardando' como padrão
+        if (!filtroDevolucaoAtual || filtroDevolucaoAtual === 'todos') {
+            filtroDevolucaoAtual = 'aguardando';
+        }
+
+        // Atualizar estilo dos botões para refletir o filtro atual
+        document.querySelectorAll('#devolucoesContent .btn[data-filtro]').forEach(btn => {
+            btn.classList.remove('active', 'btn-primary');
+            btn.classList.add('btn-outline-secondary');
+        });
+        const btnAtivo = document.querySelector(`#devolucoesContent .btn[data-filtro="${filtroDevolucaoAtual}"]`);
+        if (btnAtivo) {
+            btnAtivo.classList.remove('btn-outline-secondary');
+            btnAtivo.classList.add('active', 'btn-primary');
+        }
+
         renderizarDevolucoes();
     } catch (error) {
         console.error('❌ Erro ao carregar devoluções:', error);
@@ -10221,25 +10239,58 @@ function atualizarContadoresDevolucoes() {
     document.getElementById('filtroDevCancelados').textContent = cancelados;
     document.getElementById('filtroDevTodos').textContent = total;
 }
+function getStatusFromFilter(filtro) {
+    const map = {
+        'aguardando': 'aguardando_recebimento',
+        'recebidos': 'recebido',
+        'cancelados': 'cancelado',
+        'todos': null
+    };
+    return map[filtro] || filtro;
+}
 
 // ===== RENDERIZAR DEVOLUÇÕES =====
 function renderizarDevolucoes() {
+    devolucoes.forEach(d => {
+        let status = (d.status || '').toLowerCase().trim();
+        if (status === 'aguardando' || status === 'aguardando_recebimento') d.status = 'aguardando_recebimento';
+        else if (status === 'recebido' || status === 'recebido') d.status = 'recebido';
+        else if (status === 'cancelado' || status === 'cancelado') d.status = 'cancelado';
+        else d.status = status; // mantém original se não mapeado
+    });
     const tbody = document.getElementById('devolucoesTableBody');
-    if (!tbody) return;
+    if (!tbody) {
+        console.warn('⚠️ Tabela devolucoesTableBody não encontrada');
+        return;
+    }
+
+    console.log('📊 Renderizando devoluções. Total:', devolucoes.length, 'Filtro atual:', filtroDevolucaoAtual);
 
     // Aplicar filtro
     let lista = [...devolucoes];
     if (filtroDevolucaoAtual !== 'todos') {
-        lista = lista.filter(d => d.status === filtroDevolucaoAtual);
+        // Mapear os valores do filtro para os status reais
+        let statusMap = {
+            'aguardando': 'aguardando_recebimento',
+            'recebidos': 'recebido',
+            'cancelados': 'cancelado'
+        };
+        let statusFiltro = statusMap[filtroDevolucaoAtual] || filtroDevolucaoAtual;
+        lista = lista.filter(d => d.status === statusFiltro);
+        console.log(`📌 Filtrado por status "${statusFiltro}": ${lista.length} itens`);
+    } else {
+        console.log(`📌 Sem filtro de status: ${lista.length} itens`);
     }
 
     // Busca
     const busca = document.getElementById('buscaDevolucao').value.trim().toLowerCase();
     if (busca) {
+        const antes = lista.length;
         lista = lista.filter(d =>
             (d.nome_produto && d.nome_produto.toLowerCase().includes(busca)) ||
             (d.venda_link && d.venda_link.toLowerCase().includes(busca))
         );
+        console.log(`🔍 Busca "${busca}": ${antes} -> ${lista.length} itens`);
     }
 
     if (lista.length === 0) {
@@ -10330,6 +10381,8 @@ function renderizarDevolucoes() {
 
 // ===== FILTRAR DEVOLUÇÕES =====
 function filtrarDevolucoes(filtro) {
+    console.log('🔄 Aplicando filtro:', filtro);
+    
     if (filtro) {
         filtroDevolucaoAtual = filtro;
         // Atualizar estilo dos botões
