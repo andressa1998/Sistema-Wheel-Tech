@@ -560,6 +560,31 @@ h4 {
         font-size: 18px;
     }
 }
+/* Fundo para tela de login */
+body.login-active {
+    background-image: url('BICICLETA.PNG');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+/* Fundo para navegadores que suportam :has() (opcional) */
+body:has(#loginScreen:not(.hidden)) {
+    background-image: url('BICICLETA.png');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}
+
+/* Deixa o container de login com fundo semi-transparente para legibilidade */
+.login-container {
+    background: rgba(255, 255, 255, 0.92) !important;
+    backdrop-filter: blur(4px);
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
     </style>
 </head>
 <body>

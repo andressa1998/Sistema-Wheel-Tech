@@ -75,6 +75,8 @@ async function handleLogin(e) {
         currentUser = foundUser;
         window.currentUser = currentUser;
 
+        document.body.classList.remove('login-active');
+
         atualizarVisibilidadeMenu();
         
         // Registrar histórico de login (agora await funciona)
@@ -348,7 +350,15 @@ document.addEventListener('DOMContentLoaded', function() {
         // Usuário não logado - mostrar tela de login
         console.log('👤 Nenhuma sessão ativa');
         if (loginScreen) loginScreen.classList.remove('hidden');
+        // 👇 ATIVA o fundo de login
+        document.body.classList.add('login-active');
         if (mainSystem) mainSystem.classList.add('hidden');
+    }
+
+    // 👇 COLOQUE AQUI
+    // Se a tela de login estiver visível, ativa o fundo
+    if (loginScreen && !loginScreen.classList.contains('hidden')) {
+        document.body.classList.add('login-active');
     }
     
     generateOSCode();
