@@ -3289,7 +3289,7 @@ function handleLogout() {
         const sistemas = [
             'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
             'caixaSystem', 'precificacaoSystem', 'reviewsSystem',
-            'folgasSystem', 'shippingSystem', 'estoqueSystem',
+            'folgasSystem', 'shippingSystem', 'estoqueSystem', 'entradasSystem',
             'estoqueGestaoSystem', 'perguntasSystem', 'feedbackSystem',
             'nfeSystem', 'historicoAcessosScreen'
         ];
@@ -4277,7 +4277,7 @@ window.abrirSistemaOS = function() {
     if (menuSystem) menuSystem.classList.add('hidden');
     
     // Esconder outros sistemas
-    const sistemas = ['salesSystem', 'reembolsosSystem', 'caixaSystem', 'precificacaoSystem', 'reviewsSystem', 'feedbackSystem', 'perguntasSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'estoqueGestaoSystem'];
+    const sistemas = ['salesSystem', 'reembolsosSystem', 'caixaSystem', 'entradasSystem', 'precificacaoSystem', 'reviewsSystem', 'feedbackSystem', 'perguntasSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'estoqueGestaoSystem'];
     sistemas.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
@@ -6138,7 +6138,7 @@ document.addEventListener('DOMContentLoaded', function() {
 window.voltarParaMenu = function() {
     // Lista de todos os sistemas que podem estar abertos
     const sistemas = ['mainSystem', 'salesSystem', 'precificacaoSystem', 'reembolsosSystem', 'caixaSystem', 'perguntasSystem',
-                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'feedbackSystem','estoqueSystem', 
+                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'entradasSystem','feedbackSystem','estoqueSystem', 
                       'estoqueGestaoSystem'];
     sistemas.forEach(id => {
         const el = document.getElementById(id);
@@ -6630,6 +6630,7 @@ window.abrirSistemaVendas = async function() {
     if (estoqueSystem) estoqueSystem.classList.add('hidden');
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
+    if (entradasSystem) entradasSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -6828,7 +6829,7 @@ window.abrirSistemaReembolsos = function() {
     // Esconder outros sistemas - usando getElementById com verificação
     const sistemasIds = [
         'mainSystem', 'caixaSystem', 'salesSystem', 'precificacaoSystem', 'reviewsSystem', 
-        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'perguntasSystem', 'feedbackSystem',
+        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'entradasSystem', 'perguntasSystem', 'feedbackSystem',
         'estoqueGestaoSystem'
     ];
     sistemasIds.forEach(id => {
@@ -6915,7 +6916,7 @@ window.abrirSistemaCaixa = function() {
 // Função para voltar ao sistema principal (OS)
 window.voltarParaMenu = function() {
     // Lista de todos os sistemas que podem estar abertos
-    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem', 
+    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem', 'entradasSystem',
                       'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem', 'perguntasSystem',
                       'estoqueGestaoSystem'];
     sistemas.forEach(id => {
@@ -6952,7 +6953,7 @@ window.abrirSistemaReviews = function() {
     
     // Esconder outros sistemas
     const sistemasIds = [
-        'mainSystem', 'reembolsosSystem', 'salesSystem', 'precificacaoSystem', 'caixaSystem', 
+        'mainSystem', 'reembolsosSystem', 'salesSystem', 'precificacaoSystem', 'caixaSystem', 'entradasSystem',
         'folgasSystem', 'shippingSystem', 'estoqueSystem', 'perguntasSystem', 
         'estoqueGestaoSystem'
     ];
@@ -7188,6 +7189,7 @@ window.abrirSistemaVendas = async function() {
     if (caixaSystem) caixaSystem.classList.add('hidden');
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
+    if (entradasSystem) entradasSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -8071,7 +8073,7 @@ window.abrirSistemaFrete = function() {
 
     const sistemasIds = [
         'mainSystem', 'salesSystem', 'reembolsosSystem', 'perguntasSystem', 'precificacaoSystem',
-        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem', 'feedbackSystem',
+        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem', 'feedbackSystem', 'entradasSystem',
         'estoqueGestaoSystem', 'nfeSystem'
     ];
     sistemasIds.forEach(id => {
@@ -8125,7 +8127,7 @@ window.abrirSistemaNFE = async function() {
 
     const sistemasIds = [
         'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem',
-        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem',
+        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem', 'entradasSystem',
         'perguntasSystem', 'estoqueGestaoSystem'
     ];
     sistemasIds.forEach(id => {
@@ -8911,8 +8913,8 @@ window.abrirSistemaEstoque = function() {
 
     // 1. Esconder outros sistemas principais
     const sistemas = [
-        'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem',
-        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem', 'feedbackSystem', 'perguntasSystem',
+        'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'entradasSystem',
+        'caixaSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem', 'feedbackSystem', 'perguntasSystem', 
         'estoqueGestaoSystem'
     ];
     sistemas.forEach(id => {
@@ -9934,7 +9936,7 @@ window.abrirSistemaPrecificacao = function() {
     const sistemasIds = [
         'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'precificacaoSystem',
         'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem',
-        'estoqueGestaoSystem', 'nfeSystem', 'perguntasSystem'
+        'estoqueGestaoSystem', 'nfeSystem', 'perguntasSystem', 'entradasSystem'
     ];
     sistemasIds.forEach(id => {
         const el = document.getElementById(id);
