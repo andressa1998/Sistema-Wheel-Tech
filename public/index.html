@@ -620,6 +620,47 @@ body:has(#loginScreen:not(.hidden)) {
     font-weight: normal;
     font-size: 0.75rem;
 }
+/* Define altura total para o body */
+html, body {
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+}
+
+/* Fundo com a imagem para todo o site */
+body {
+    background-image: url('BICICLETA.PNG');
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    position: relative;
+}
+
+/* Overlay branco (película) – aparece APENAS quando NÃO estiver na tela de login */
+body:not(.login-active)::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.85); /* ajuste a opacidade (0.8 a 0.95) */
+    z-index: 0;
+    pointer-events: none; /* não atrapalha cliques */
+}
+
+/* Garante que todo o conteúdo fique acima do overlay */
+body > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Container de login – mantém o fundo branco semi-transparente para legibilidade */
+.login-container {
+    background: rgba(255, 255, 255, 0.92) !important;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+}
     </style>
 </head>
 <body>
