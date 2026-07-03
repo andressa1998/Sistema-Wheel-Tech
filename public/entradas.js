@@ -1,11 +1,35 @@
 // ============================================
-// SISTEMA DE ENTRADAS - VERSÃO OTIMIZADA (CARREGAMENTO RÁPIDO)
+// SISTEMA DE ENTRADAS - VERSÃO COMPLETA CORRIGIDA
 // ============================================
 
 let entradasCards = [];
 let filtroEntradasAtual = 'todos';
 let entradaEmProcessamento = null;
 let fornecedoresMap = {};
+
+// ===== FUNÇÃO PARA AGUARDAR O CARREGAMENTO DO ESTOQUE =====
+function aguardarEstoqueCarregado(timeout = 30000) {
+    return new Promise((resolve) => {
+        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
+            console.log('✅ Estoque já carregado.');
+            resolve();
+            return;
+        }
+        console.log('⏳ Aguardando carregamento do estoque...');
+        const start = Date.now();
+        const interval = setInterval(() => {
+            if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
+                clearInterval(interval);
+                console.log('✅ Estoque carregado após', Date.now() - start, 'ms.');
+                resolve();
+            } else if (Date.now() - start > timeout) {
+                clearInterval(interval);
+                console.warn('⚠️ Timeout: estoque não carregado após', timeout, 'ms.');
+                resolve();
+            }
+        }, 300);
+    });
+}
 
 // ===== ABRIR SISTEMA =====
 window.abrirSistemaEntradas = function() {
@@ -35,19 +59,8 @@ window.abrirSistemaEntradas = function() {
     document.getElementById('entradasUserAvatar').textContent = currentUser.avatar;
     document.getElementById('entradasUserRole').textContent = currentUser.role;
 
-    // Carregar fornecedores e entradas em paralelo
     carregarFornecedores();
     carregarEntradas();
-    
-    // Garantir que o estoque seja carregado em segundo plano
-    if (typeof carregarProdutosEstoque === 'function' && 
-        (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0)) {
-        carregarProdutosEstoque().then(() => {
-            // Após carregar o estoque, re-renderiza para atualizar os botões
-            renderizarEntradas();
-        }).catch(err => console.warn('Erro ao carregar estoque:', err));
-    }
-    
     showToast('📦 Sistema de Entradas carregado', 'info');
 };
 
@@ -98,28 +111,54 @@ function buscarFornecedor(chave) {
     return null;
 }
 
-// ===== VERIFICAR SKU NO ESTOQUE (SÍNCRONA) =====
+// ===== VERIFICAR SKU NO ESTOQUE (COM BUSCA EM FORNECEDORES) =====
 function verificarSKUExistente(sku) {
     if (!sku) return null;
     const skuNormalizado = sku.trim().toLowerCase();
 
-    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
+    // 1. Busca direta no estoque
+    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
         const encontrado = produtosEstoque.find(p => {
             const pSku = (p.sku || '').trim().toLowerCase();
             return pSku === skuNormalizado;
         });
         if (encontrado) {
-            console.log(`✅ SKU encontrado: ${encontrado.sku} → ${encontrado.nome}`);
+            console.log(`✅ SKU encontrado diretamente: ${encontrado.sku}`);
             return encontrado;
-        } else {
-            console.log(`❌ SKU não encontrado: ${skuNormalizado}`);
-            return null;
         }
-    } else {
-        console.warn('⚠️ produtosEstoque ainda não carregado.');
-        return null;
     }
+
+    // 2. Busca via fornecedores (mapeamento)
+    const fornecedor = buscarFornecedor(skuNormalizado);
+    if (fornecedor && fornecedor.sku_sistema) {
+        const skuSistema = fornecedor.sku_sistema.trim().toLowerCase();
+        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+            const encontrado = produtosEstoque.find(p => {
+                const pSku = (p.sku || '').trim().toLowerCase();
+                return pSku === skuSistema;
+            });
+            if (encontrado) {
+                console.log(`✅ SKU mapeado via fornecedor: ${encontrado.sku}`);
+                return encontrado;
+            }
+        }
+    }
+
+    console.log(`❌ SKU não encontrado: ${skuNormalizado}`);
+    return null;
 }
+
+// ===== TESTAR BUSCA =====
+window.testarBuscaSKU = function() {
+    const sku = prompt('Digite o SKU que deseja buscar:');
+    if (!sku) return;
+    const resultado = verificarSKUExistente(sku);
+    if (resultado) {
+        alert(`✅ Produto encontrado:\nSKU: ${resultado.sku}\nNome: ${resultado.nome}\nID: ${resultado.id}`);
+    } else {
+        alert('❌ Produto não encontrado. Verifique se o SKU está correto.');
+    }
+};
 
 // ===== ADICIONAR MENU =====
 function adicionarMenuEntradas() {
@@ -193,8 +232,13 @@ async function carregarEntradas() {
     }
 }
 
-// ===== RENDERIZAR ENTRADAS (SEM AWAIT, RÁPIDO) =====
-function renderizarEntradas() {
+// ============================================
+// RENDERIZAR ENTRADAS
+// ============================================
+async function renderizarEntradas() {
+    // Aguarda o estoque carregar (sem bloquear a UI)
+    await aguardarEstoqueCarregado();
+
     const container = document.getElementById('entradasCardsContainer');
     if (!container) return;
 
@@ -233,9 +277,6 @@ function renderizarEntradas() {
         `;
         return;
     }
-
-    // Verifica se o estoque está carregado para decidir se mostra "Dar Entrada" ou "Cadastrar"
-    const estoqueDisponivel = typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0;
 
     let html = '';
     cardsFiltrados.forEach(card => {
@@ -291,7 +332,7 @@ function renderizarEntradas() {
                                 <th>Fornecedor</th>
                                 <th>Observação</th>
                                 <th style="width:70px;">Status</th>
-                                <th style="width:200px;">Ação</th>
+                                <th style="width:220px;">Ação</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -304,25 +345,23 @@ function renderizarEntradas() {
             const statusClass = item.status === 'entrada_realizada' ? 'badge-success' :
                                item.status === 'cadastrado' ? 'badge-info' : 'badge-warning';
 
-            // Só verifica SKU se o estoque estiver disponível
-            let produtoExistente = null;
+            // BUSCA DO SKU NO ESTOQUE (SÍNCRONA)
+            const skuParaVerificar = item.sku_match || item.sku_original;
+            const produtoExistente = verificarSKUExistente(skuParaVerificar);
             let tituloProduto = '';
-            if (estoqueDisponivel) {
-                const skuParaVerificar = item.sku_match || item.sku_original;
-                produtoExistente = verificarSKUExistente(skuParaVerificar);
-                if (produtoExistente) {
-                    tituloProduto = produtoExistente.nome || '';
-                }
+            if (produtoExistente) {
+                tituloProduto = produtoExistente.nome || '';
             }
 
             let acaoHtml = '';
+
             if (isConcluido) {
                 acaoHtml = `
                     <span class="badge ${statusClass}">${itemStatus}</span>
                     <small class="text-muted d-block">${item.responsavel || ''}</small>
                 `;
             } else {
-                if (estoqueDisponivel && produtoExistente) {
+                if (produtoExistente) {
                     acaoHtml = `
                         <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
                             <i class="fas fa-arrow-right-to-bracket"></i> Dar Entrada
@@ -331,10 +370,15 @@ function renderizarEntradas() {
                     `;
                 } else {
                     acaoHtml = `
-                        <button class="btn btn-sm btn-primary" onclick="abrirCadastroRapido('${card.id}', ${item.id})" title="Cadastrar novo produto">
-                            <i class="fas fa-plus-circle"></i> Cadastrar
-                        </button>
-                        ${!estoqueDisponivel ? '<small class="d-block text-muted">⏳ Carregando estoque...</small>' : '<small class="d-block text-muted">⛔ Produto não encontrado</small>'}
+                        <div class="d-flex flex-wrap gap-1">
+                            <button class="btn btn-sm btn-primary" onclick="abrirCadastroRapido('${card.id}', ${item.id})" title="Cadastrar novo produto">
+                                <i class="fas fa-plus-circle"></i> Cadastrar
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="vincularProdutoExistente('${card.id}', ${item.id})" title="Vincular a um produto já existente">
+                                <i class="fas fa-link"></i> Já existe
+                            </button>
+                        </div>
+                        <small class="d-block text-muted">⛔ Produto não encontrado</small>
                     `;
                 }
             }
@@ -379,9 +423,11 @@ function renderizarEntradas() {
     container.innerHTML = html;
 }
 
-// ===== PROCESSAR ENTRADA =====
+// ============================================
+// PROCESSAR ENTRADA
+// ============================================
 window.processarEntrada = async function() {
-    // Garantir que o estoque está carregado antes de processar
+    // Garantir que o estoque está carregado
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
         showToast('🔄 Carregando estoque...', 'info');
         if (typeof carregarProdutosEstoque === 'function') {
@@ -391,6 +437,9 @@ window.processarEntrada = async function() {
         }
     }
     console.log('✅ Estoque carregado:', produtosEstoque?.length || 0, 'produtos');
+
+    // Aguarda o estoque estar carregado
+    await aguardarEstoqueCarregado();
 
     const pasteArea = document.getElementById('entradaPasteArea');
     if (!pasteArea) return;
@@ -613,6 +662,10 @@ async function gerarNumeroEntrada() {
     }
 }
 
+// ============================================
+// AÇÕES DOS ITENS
+// ============================================
+
 // ===== DAR ENTRADA EM UM ITEM =====
 window.darEntradaItem = async function(cardId, itemId, produtoId) {
     if (!cardId || !itemId || !produtoId) {
@@ -725,6 +778,126 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
     } catch (error) {
         console.error('❌ Erro ao dar entrada:', error);
         showToast('❌ Erro ao dar entrada: ' + error.message, 'error');
+    }
+};
+
+// ===== VINCULAR PRODUTO EXISTENTE (BOTÃO "JÁ EXISTE") =====
+window.vincularProdutoExistente = async function(cardId, itemId) {
+    if (!cardId || !itemId) {
+        showToast('Erro: dados incompletos', 'error');
+        return;
+    }
+
+    const card = entradasCards.find(c => c.id == cardId);
+    if (!card) {
+        showToast('Card não encontrado', 'error');
+        return;
+    }
+    const item = card.itens.find(i => i.id == itemId);
+    if (!item) {
+        showToast('Item não encontrado', 'error');
+        return;
+    }
+
+    if (item.status !== 'pendente') {
+        showToast('Este item já foi processado', 'warning');
+        return;
+    }
+
+    // Solicitar o SKU do produto já existente
+    const skuExistente = prompt('Digite o SKU do produto já cadastrado no sistema:');
+    if (!skuExistente) {
+        showToast('Operação cancelada', 'info');
+        return;
+    }
+
+    // Buscar o produto pelo SKU informado
+    const produtoExistente = verificarSKUExistente(skuExistente);
+    if (!produtoExistente) {
+        showToast(`❌ Produto com SKU "${skuExistente}" não encontrado no estoque.`, 'error');
+        return;
+    }
+
+    // Confirmar com o usuário
+    if (!confirm(`Deseja vincular o item "${item.produto}" ao produto existente:\nSKU: ${produtoExistente.sku}\nNome: ${produtoExistente.nome}\nID: ${produtoExistente.id}?`)) {
+        return;
+    }
+
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        // 1. Atualizar o item da entrada
+        const { error: errItem } = await window.supabaseClient
+            .from('entrada_items')
+            .update({
+                produto_id: produtoExistente.id,
+                sku_match: produtoExistente.sku,
+                status: 'cadastrado',
+                acao: 'vinculo',
+                responsavel: currentUser.name,
+                data_acao: new Date().toISOString()
+            })
+            .eq('id', itemId);
+
+        if (errItem) throw errItem;
+
+        // 2. Salvar o novo mapeamento de fornecedor (se não existir)
+        const cdFornecedor = item.cd_fornecedor || '';
+        const skuFornecedor = item.sku_original || '';
+        const fornecedorNome = item.fornecedor_nome || '';
+
+        // Verificar se já existe um registro com esse cd_fornecedor + sku_fornecedor
+        const { data: existing, error: errExists } = await window.supabaseClient
+            .from('fornecedores')
+            .select('id')
+            .eq('cd_fornecedor', cdFornecedor)
+            .eq('sku_fornecedor', skuFornecedor)
+            .maybeSingle();
+
+        if (errExists) throw errExists;
+
+        if (!existing) {
+            // Inserir novo mapeamento
+            const fornecedorData = {
+                cd_fornecedor: cdFornecedor || '',
+                nome_fornecedor: fornecedorNome || '',
+                sku_fornecedor: skuFornecedor || '',
+                sku_sistema: produtoExistente.sku,
+                descricao_produto: produtoExistente.nome
+            };
+            const { error: errFornecedor } = await window.supabaseClient
+                .from('fornecedores')
+                .insert([fornecedorData]);
+            if (errFornecedor) throw errFornecedor;
+            console.log(`✅ Mapeamento criado: ${cdFornecedor} → ${produtoExistente.sku}`);
+        }
+
+        // 3. Atualizar o card (contador)
+        const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
+        const total = card.itens.length;
+        const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
+
+        const { error: errCard } = await window.supabaseClient
+            .from('entradas_cards')
+            .update({
+                items_concluidos: concluidos,
+                status: novoStatus,
+                finalizado_em: novoStatus === 'finalizado' ? new Date().toISOString() : null,
+                finalizado_por: novoStatus === 'finalizado' ? currentUser.name : null
+            })
+            .eq('id', cardId);
+
+        if (errCard) throw errCard;
+
+        // Recarregar fornecedores e entradas
+        await carregarFornecedores();
+        await carregarEntradas();
+
+        showToast(`✅ Item vinculado ao produto "${produtoExistente.nome}" com sucesso!`, 'success');
+
+    } catch (error) {
+        console.error('❌ Erro ao vincular produto:', error);
+        showToast('❌ Erro ao vincular: ' + error.message, 'error');
     }
 };
 
@@ -901,6 +1074,10 @@ window.cancelarEntrada = async function(cardId) {
     }
 };
 
+// ============================================
+// FUNÇÕES AUXILIARES
+// ============================================
+
 // ===== FILTRAR ENTRADAS =====
 window.filtrarEntradas = function(filtro) {
     filtroEntradasAtual = filtro;
@@ -929,7 +1106,9 @@ window.limparAreaEntrada = function() {
     showToast('Área limpa', 'info');
 };
 
-// ===== REGISTRAR MOVIMENTAÇÃO (fallback) =====
+// ============================================
+// REGISTRAR MOVIMENTAÇÃO (fallback)
+// ============================================
 if (typeof registrarMovimentacao !== 'function') {
     window.registrarMovimentacao = async function(produtoId, tipo, quantidade, numeroDocumento, tipoEntrada) {
         try {
@@ -953,7 +1132,9 @@ if (typeof registrarMovimentacao !== 'function') {
     };
 }
 
-// ===== SOBRESCREVER SALVAR PRODUTO =====
+// ============================================
+// SOBRESCREVER SALVAR PRODUTO
+// ============================================
 const _salvarProdutoEstoqueOriginal = window.salvarProdutoEstoque;
 
 window.salvarProdutoEstoque = async function() {
@@ -1011,11 +1192,14 @@ window.salvarProdutoEstoque = async function() {
     }
 };
 
-// ===== EXPORTAR =====
+// ============================================
+// EXPORTAR FUNÇÕES PARA USO GLOBAL
+// ============================================
 window.abrirSistemaEntradas = window.abrirSistemaEntradas;
 window.carregarEntradas = carregarEntradas;
 window.processarEntrada = window.processarEntrada;
 window.darEntradaItem = window.darEntradaItem;
+window.vincularProdutoExistente = window.vincularProdutoExistente;
 window.abrirCadastroRapido = window.abrirCadastroRapido;
 window.finalizarEntrada = window.finalizarEntrada;
 window.cancelarEntrada = window.cancelarEntrada;
