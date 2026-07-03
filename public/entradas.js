@@ -1,5 +1,5 @@
 // ============================================
-// SISTEMA DE ENTRADAS - VERSÃO COMPLETA CORRIGIDA
+// SISTEMA DE ENTRADAS - VERSÃO COMPLETA COM XML
 // ============================================
 
 let entradasCards = [];
@@ -64,7 +64,7 @@ window.abrirSistemaEntradas = function() {
     showToast('📦 Sistema de Entradas carregado', 'info');
 };
 
-// ===== CARREGAR FORNECEDORES =====
+// ===== CARREGAR FORNECEDORES (com indexação por sku_fornecedor) =====
 async function carregarFornecedores() {
     if (!window.supabaseClient) return;
     try {
@@ -75,15 +75,26 @@ async function carregarFornecedores() {
         if (data) {
             fornecedoresMap = {};
             data.forEach(f => {
+                // Indexar por cd_fornecedor
                 if (!fornecedoresMap[f.cd_fornecedor]) {
                     fornecedoresMap[f.cd_fornecedor] = [];
                 }
                 fornecedoresMap[f.cd_fornecedor].push(f);
+                
+                // Indexar por sku_sistema
                 if (f.sku_sistema) {
                     if (!fornecedoresMap[f.sku_sistema]) {
                         fornecedoresMap[f.sku_sistema] = [];
                     }
                     fornecedoresMap[f.sku_sistema].push(f);
+                }
+                
+                // Indexar por sku_fornecedor (cProd da nota)
+                if (f.sku_fornecedor) {
+                    if (!fornecedoresMap[f.sku_fornecedor]) {
+                        fornecedoresMap[f.sku_fornecedor] = [];
+                    }
+                    fornecedoresMap[f.sku_fornecedor].push(f);
                 }
             });
             console.log('✅ Fornecedores carregados:', Object.keys(fornecedoresMap).length);
@@ -172,7 +183,7 @@ function adicionarMenuEntradas() {
     card.innerHTML = `
         <div class="menu-icon"><i class="fas fa-arrow-right-to-bracket"></i></div>
         <h3>Entradas</h3>
-        <p>Processar entradas de estoque via Excel</p>
+        <p>Processar entradas de estoque via Excel ou XML</p>
     `;
     card.onclick = () => window.abrirSistemaEntradas();
 
@@ -236,7 +247,6 @@ async function carregarEntradas() {
 // RENDERIZAR ENTRADAS
 // ============================================
 async function renderizarEntradas() {
-    // Aguarda o estoque carregar (sem bloquear a UI)
     await aguardarEstoqueCarregado();
 
     const container = document.getElementById('entradasCardsContainer');
@@ -272,7 +282,7 @@ async function renderizarEntradas() {
                 <h4>Nenhuma entrada encontrada</h4>
                 <p>${filtroEntradasAtual === 'pendente' ? 'Todas as entradas foram finalizadas!' : 
                       filtroEntradasAtual === 'finalizado' ? 'Nenhuma entrada finalizada ainda.' : 
-                      'Cole os dados acima e clique em "Processar Entrada" para começar.'}</p>
+                      'Cole os dados acima ou envie um XML e clique em "Processar Entrada" para começar.'}</p>
             </div>
         `;
         return;
@@ -286,6 +296,11 @@ async function renderizarEntradas() {
         const isFinalizado = card.status === 'finalizado';
         const criadoEm = new Date(card.criado_em).toLocaleString('pt-BR');
 
+        // Badge para indicar origem (XML ou Excel)
+        const origemBadge = card.tipo_entrada === 'xml' 
+            ? '<span class="badge badge-info ml-2">📄 XML</span>' 
+            : '';
+
         html += `
             <div class="card mb-4 entrada-card" data-id="${card.id}">
                 <div class="card-header" style="flex-wrap:wrap; gap:10px;">
@@ -293,6 +308,7 @@ async function renderizarEntradas() {
                         <h3 class="card-title" style="margin:0;">
                             <i class="fas fa-receipt"></i>
                             ${card.numero_entrada}
+                            ${origemBadge}
                             <span class="badge ${isFinalizado ? 'badge-success' : 'badge-warning'} ml-2">
                                 ${isFinalizado ? '✅ Finalizado' : '⏳ Pendente'}
                             </span>
@@ -300,6 +316,8 @@ async function renderizarEntradas() {
                         <small class="text-muted">
                             Criado por: ${card.criado_por || 'Sistema'} em ${criadoEm}
                             ${isFinalizado && card.finalizado_por ? ` • Finalizado por: ${card.finalizado_por}` : ''}
+                            ${card.fornecedor ? ` • Fornecedor: ${card.fornecedor}` : ''}
+                            ${card.nf_numero ? ` • NF: ${card.nf_numero}` : ''}
                         </small>
                     </div>
                     <div class="d-flex gap-2 align-items-center">
@@ -345,7 +363,6 @@ async function renderizarEntradas() {
             const statusClass = item.status === 'entrada_realizada' ? 'badge-success' :
                                item.status === 'cadastrado' ? 'badge-info' : 'badge-warning';
 
-            // BUSCA DO SKU NO ESTOQUE (SÍNCRONA)
             const skuParaVerificar = item.sku_match || item.sku_original;
             const produtoExistente = verificarSKUExistente(skuParaVerificar);
             let tituloProduto = '';
@@ -362,28 +379,28 @@ async function renderizarEntradas() {
                 `;
             } else {
                 if (produtoExistente) {
-    acaoHtml = `
-        <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
-            <i class="fas fa-arrow-right-to-bracket"></i> Dar Entrada
-        </button>
-        ${tituloProduto ? `<small class="d-block text-success">🔍 ${tituloProduto}</small>` : ''}
-    `;
-} else {
-    acaoHtml = `
-        <div class="d-flex flex-wrap gap-1">
-            <button class="btn btn-sm btn-primary" onclick="abrirCadastroRapido('${card.id}', ${item.id})" title="Cadastrar novo produto">
-                <i class="fas fa-plus-circle"></i> Cadastrar
-            </button>
-            <button class="btn btn-sm btn-info" onclick="vincularProdutoExistente('${card.id}', ${item.id})" title="Vincular a um produto já existente">
-                <i class="fas fa-link"></i> Já existe
-            </button>
-            <button class="btn btn-sm btn-warning" onclick="abrirCadastroNovoComOS('${card.id}', ${item.id})" title="Cadastrar novo produto e criar OS para Elaine">
-                <i class="fas fa-plus"></i> Produto Novo
-            </button>
-        </div>
-        <small class="d-block text-muted">⛔ Produto não encontrado</small>
-    `;
-}
+                    acaoHtml = `
+                        <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
+                            <i class="fas fa-arrow-right-to-bracket"></i> Dar Entrada
+                        </button>
+                        ${tituloProduto ? `<small class="d-block text-success">🔍 ${tituloProduto}</small>` : ''}
+                    `;
+                } else {
+                    acaoHtml = `
+                        <div class="d-flex flex-wrap gap-1">
+                            <button class="btn btn-sm btn-primary" onclick="abrirCadastroRapido('${card.id}', ${item.id})" title="Cadastrar novo produto">
+                                <i class="fas fa-plus-circle"></i> Cadastrar
+                            </button>
+                            <button class="btn btn-sm btn-info" onclick="vincularProdutoExistente('${card.id}', ${item.id})" title="Vincular a um produto já existente">
+                                <i class="fas fa-link"></i> Já existe
+                            </button>
+                            <button class="btn btn-sm btn-warning" onclick="abrirCadastroNovoComOS('${card.id}', ${item.id})" title="Cadastrar novo produto e criar OS para Elaine">
+                                <i class="fas fa-plus"></i> Produto Novo
+                            </button>
+                        </div>
+                        <small class="d-block text-muted">⛔ Produto não encontrado</small>
+                    `;
+                }
             }
 
             const skuDisplay = item.sku_match || item.sku_original || '-';
@@ -427,7 +444,7 @@ async function renderizarEntradas() {
 }
 
 // ============================================
-// PROCESSAR ENTRADA
+// PROCESSAR ENTRADA (Excel)
 // ============================================
 window.processarEntrada = async function() {
     // Garantir que o estoque está carregado
@@ -441,7 +458,6 @@ window.processarEntrada = async function() {
     }
     console.log('✅ Estoque carregado:', produtosEstoque?.length || 0, 'produtos');
 
-    // Aguarda o estoque estar carregado
     await aguardarEstoqueCarregado();
 
     const pasteArea = document.getElementById('entradaPasteArea');
@@ -528,10 +544,8 @@ window.processarEntrada = async function() {
         console.warn('Erros no parsing:', erros);
     }
 
-    // Ordenar por rastreio
     itensRaw.sort((a, b) => (a.rastreio || '').localeCompare(b.rastreio || ''));
 
-    // Buscar fornecedor e descrição
     for (const item of itensRaw) {
         let fornecedor = null;
 
@@ -557,7 +571,6 @@ window.processarEntrada = async function() {
             }
         }
 
-        // Verificar se SKU existe no estoque (prioriza sku_match)
         const skuParaBuscar = item.sku_match || item.sku_original;
         if (skuParaBuscar) {
             const produtoEstoque = verificarSKUExistente(skuParaBuscar);
@@ -583,7 +596,8 @@ window.processarEntrada = async function() {
             criado_por: currentUser.name,
             criado_em: new Date().toISOString(),
             total_items: itensRaw.length,
-            items_concluidos: 0
+            items_concluidos: 0,
+            tipo_entrada: 'excel'
         };
 
         const { data: cardResult, error: cardError } = await window.supabaseClient
@@ -608,7 +622,8 @@ window.processarEntrada = async function() {
             status: 'pendente',
             acao: null,
             responsavel: null,
-            data_acao: null
+            data_acao: null,
+            tipo_entrada: 'excel'
         }));
 
         const { error: itemsError } = await window.supabaseClient
@@ -625,6 +640,190 @@ window.processarEntrada = async function() {
         console.error('❌ Erro ao salvar entrada:', error);
         showToast('❌ Erro ao processar entrada: ' + error.message, 'error');
     }
+};
+
+// ============================================
+// PROCESSAR XML DA NOTA FISCAL
+// ============================================
+window.processarXML = async function() {
+    const fileInput = document.getElementById('xmlFileInput');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showToast('⚠️ Selecione um arquivo XML primeiro.', 'warning');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file.name.toLowerCase().endsWith('.xml')) {
+        showToast('⚠️ O arquivo deve ser um XML (.xml)', 'warning');
+        return;
+    }
+
+    // Garantir que o estoque está carregado
+    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
+        showToast('🔄 Carregando estoque...', 'info');
+        if (typeof carregarProdutosEstoque === 'function') {
+            await carregarProdutosEstoque();
+        } else {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
+    await aguardarEstoqueCarregado();
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const xmlString = e.target.result;
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+
+            // Verificar se é uma NF-e
+            const nfeNode = xmlDoc.querySelector('NFe') || xmlDoc.querySelector('nfeProc');
+            if (!nfeNode) {
+                showToast('❌ Arquivo XML não é uma NF-e válida.', 'error');
+                return;
+            }
+
+            // Extrair dados do emitente
+            const emitNode = nfeNode.querySelector('emit');
+            const fornecedorNome = emitNode ? emitNode.querySelector('xNome')?.textContent || '' : '';
+            const fornecedorCNPJ = emitNode ? emitNode.querySelector('CNPJ')?.textContent || '' : '';
+
+            // Extrair número da nota e data
+            const ideNode = nfeNode.querySelector('ide');
+            const nNF = ideNode ? ideNode.querySelector('nNF')?.textContent || '' : '';
+            const dhEmi = ideNode ? ideNode.querySelector('dhEmi')?.textContent || '' : '';
+            const dataEmissao = dhEmi ? new Date(dhEmi).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
+            // Buscar os itens (det)
+            const detNodes = xmlDoc.querySelectorAll('det');
+            if (detNodes.length === 0) {
+                showToast('⚠️ Nenhum item encontrado na nota fiscal.', 'warning');
+                return;
+            }
+
+            const itens = [];
+            for (const det of detNodes) {
+                const prod = det.querySelector('prod');
+                if (!prod) continue;
+
+                const cProd = prod.querySelector('cProd')?.textContent || '';
+                const xProd = prod.querySelector('xProd')?.textContent || '';
+                const NCM = prod.querySelector('NCM')?.textContent || '';
+                const qCom = parseFloat(prod.querySelector('qCom')?.textContent || '0');
+                const vUnCom = parseFloat(prod.querySelector('vUnCom')?.textContent || '0');
+                const uCom = prod.querySelector('uCom')?.textContent || '';
+
+                // Tentar encontrar fornecedor pelo cProd (que pode ser o SKU do fornecedor)
+                const fornecedor = buscarFornecedor(cProd);
+                let skuSistema = fornecedor ? fornecedor.sku_sistema : null;
+                let nomeFornecedor = fornecedor ? fornecedor.nome_fornecedor : fornecedorNome || '';
+                let cdFornecedor = fornecedor ? fornecedor.cd_fornecedor : cProd;
+
+                // Verificar se o SKU existe no estoque
+                let produtoEstoque = null;
+                if (skuSistema) {
+                    produtoEstoque = verificarSKUExistente(skuSistema);
+                }
+                if (!produtoEstoque && cProd) {
+                    produtoEstoque = verificarSKUExistente(cProd);
+                }
+
+                // Se ainda não encontrou, tenta buscar por nome parcial (menos preciso)
+                if (!produtoEstoque && xProd) {
+                    // Busca no estoque por similaridade no nome (opcional)
+                    // Pode ser implementado, mas por enquanto deixamos assim
+                }
+
+                itens.push({
+                    cd_fornecedor: cdFornecedor || '',
+                    fornecedor_nome: nomeFornecedor || '',
+                    rastreio: `NF-${nNF}-${cProd}`,
+                    quantidade: qCom || 0,
+                    produto: xProd || '',
+                    sku_original: cProd || '',
+                    sku_match: skuSistema || (produtoEstoque ? produtoEstoque.sku : null),
+                    produto_id: produtoEstoque ? produtoEstoque.id : null,
+                    observacao: `NF-e ${nNF} | ${fornecedorNome}`,
+                    ncm: NCM || '',
+                    valor_unitario: vUnCom || 0,
+                    cprod_fornecedor: cProd || '',
+                    tipo_entrada: 'xml',
+                    status: 'pendente',
+                    acao: null,
+                    responsavel: null,
+                    data_acao: null
+                });
+            }
+
+            if (itens.length === 0) {
+                showToast('⚠️ Nenhum item válido extraído da nota.', 'warning');
+                return;
+            }
+
+            // Gerar número de entrada
+            const numeroEntrada = await gerarNumeroEntrada();
+
+            if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+            const cardData = {
+                numero_entrada: numeroEntrada,
+                dados_brutos: xmlString.substring(0, 500) + '...',
+                status: 'pendente',
+                criado_por: currentUser.name,
+                criado_em: new Date().toISOString(),
+                total_items: itens.length,
+                items_concluidos: 0,
+                tipo_entrada: 'xml',
+                fornecedor: fornecedorNome,
+                nf_numero: nNF,
+                nf_data: dataEmissao
+            };
+
+            const { data: cardResult, error: cardError } = await window.supabaseClient
+                .from('entradas_cards')
+                .insert([cardData])
+                .select();
+
+            if (cardError) throw cardError;
+            const card = cardResult[0];
+
+            const itemsToInsert = itens.map(item => ({
+                entrada_id: card.id,
+                cd_fornecedor: item.cd_fornecedor || '',
+                rastreio: item.rastreio || '',
+                fornecedor_nome: item.fornecedor_nome || '',
+                quantidade: item.quantidade,
+                produto: item.produto || '',
+                sku_original: item.sku_original || '',
+                sku_match: item.sku_match || '',
+                produto_id: item.produto_id || null,
+                observacao: item.observacao || '',
+                ncm: item.ncm || '',
+                valor_unitario: item.valor_unitario || 0,
+                cprod_fornecedor: item.cprod_fornecedor || '',
+                tipo_entrada: 'xml',
+                status: 'pendente',
+                acao: null,
+                responsavel: null,
+                data_acao: null
+            }));
+
+            const { error: itemsError } = await window.supabaseClient
+                .from('entrada_items')
+                .insert(itemsToInsert);
+
+            if (itemsError) throw itemsError;
+
+            showToast(`✅ Entrada ${numeroEntrada} criada com ${itens.length} item(s) a partir do XML!`, 'success');
+            fileInput.value = '';
+            await carregarEntradas();
+
+        } catch (error) {
+            console.error('❌ Erro ao processar XML:', error);
+            showToast('❌ Erro ao processar XML: ' + error.message, 'error');
+        }
+    };
+    reader.readAsText(file);
 };
 
 // ===== GERAR NÚMERO DE ENTRADA =====
@@ -705,7 +904,6 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // Atualizar estoque
         const { data: produto, error: errProd } = await window.supabaseClient
             .from('produtos_estoque')
             .select('quantidade')
@@ -723,7 +921,6 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errUpdate) throw errUpdate;
 
-        // Registrar movimentação
         await registrarMovimentacao(
             produtoId,
             'entrada',
@@ -732,7 +929,6 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
             'nova'
         );
 
-        // Atualizar item
         const { error: errItem } = await window.supabaseClient
             .from('entrada_items')
             .update({
@@ -745,7 +941,6 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errItem) throw errItem;
 
-        // Atualizar card
         const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
         const total = card.itens.length;
         const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
@@ -763,10 +958,8 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
         if (errCard) throw errCard;
 
         showToast(`✅ Entrada de ${quantidade} unidade(s) realizada!`, 'success');
-
         await carregarEntradas();
 
-        // Sincronizar ML
         if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
             const produtoAtualizado = produtosEstoque.find(p => p.id == produtoId);
             if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes) {
@@ -807,21 +1000,18 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
         return;
     }
 
-    // Solicitar o SKU do produto já existente
     const skuExistente = prompt('Digite o SKU do produto já cadastrado no sistema:');
     if (!skuExistente) {
         showToast('Operação cancelada', 'info');
         return;
     }
 
-    // Buscar o produto pelo SKU informado
     const produtoExistente = verificarSKUExistente(skuExistente);
     if (!produtoExistente) {
         showToast(`❌ Produto com SKU "${skuExistente}" não encontrado no estoque.`, 'error');
         return;
     }
 
-    // Confirmar com o usuário
     if (!confirm(`Deseja vincular o item "${item.produto}" ao produto existente:\nSKU: ${produtoExistente.sku}\nNome: ${produtoExistente.nome}\nID: ${produtoExistente.id}?`)) {
         return;
     }
@@ -829,7 +1019,6 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // 1. Atualizar o item da entrada
         const { error: errItem } = await window.supabaseClient
             .from('entrada_items')
             .update({
@@ -844,12 +1033,10 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
 
         if (errItem) throw errItem;
 
-        // 2. Salvar o novo mapeamento de fornecedor (se não existir)
         const cdFornecedor = item.cd_fornecedor || '';
         const skuFornecedor = item.sku_original || '';
         const fornecedorNome = item.fornecedor_nome || '';
 
-        // Verificar se já existe um registro com esse cd_fornecedor + sku_fornecedor
         const { data: existing, error: errExists } = await window.supabaseClient
             .from('fornecedores')
             .select('id')
@@ -860,7 +1047,6 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
         if (errExists) throw errExists;
 
         if (!existing) {
-            // Inserir novo mapeamento
             const fornecedorData = {
                 cd_fornecedor: cdFornecedor || '',
                 nome_fornecedor: fornecedorNome || '',
@@ -875,7 +1061,6 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
             console.log(`✅ Mapeamento criado: ${cdFornecedor} → ${produtoExistente.sku}`);
         }
 
-        // 3. Atualizar o card (contador)
         const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
         const total = card.itens.length;
         const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
@@ -892,7 +1077,6 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
 
         if (errCard) throw errCard;
 
-        // Recarregar fornecedores e entradas
         await carregarFornecedores();
         await carregarEntradas();
 
@@ -1050,7 +1234,6 @@ window.abrirCadastroNovoComOS = function(cardId, itemId) {
         return;
     }
 
-    // Guardar referência para uso após cadastro do produto
     entradaEmProcessamento = {
         cardId: cardId,
         itemId: itemId,
@@ -1070,7 +1253,6 @@ window.abrirCadastroNovoComOS = function(cardId, itemId) {
 
         const modal = document.getElementById('modalProdutoEstoque');
         if (modal) {
-            // Substituir o evento do botão Salvar
             const salvarBtn = document.getElementById('salvarProdutoEstoqueBtn') ||
                              document.querySelector('#modalProdutoEstoque .btn-success');
             if (salvarBtn) {
@@ -1078,11 +1260,10 @@ window.abrirCadastroNovoComOS = function(cardId, itemId) {
                 salvarBtn.parentNode.replaceChild(novoBtn, salvarBtn);
                 novoBtn.onclick = function() {
                     if (typeof salvarProdutoEstoque === 'function') {
-                        // Salvar produto e depois criar OS
                         salvarProdutoEstoque();
                         setTimeout(() => {
                             processarNovoProdutoComOS(cardId, itemId);
-                        }, 1500); // aguarda o cadastro ser concluído
+                        }, 1500);
                     }
                 };
             }
@@ -1099,7 +1280,6 @@ async function processarNovoProdutoComOS(cardId, itemId) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // 1. Buscar o item atualizado
         const { data: item, error: errItem } = await window.supabaseClient
             .from('entrada_items')
             .select('*')
@@ -1108,14 +1288,12 @@ async function processarNovoProdutoComOS(cardId, itemId) {
 
         if (errItem) throw errItem;
 
-        // 2. Verificar se o SKU agora existe no estoque
         const produto = verificarSKUExistente(item.sku_original);
         if (!produto) {
             showToast('⚠️ Produto não encontrado após cadastro. Tente novamente.', 'warning');
             return;
         }
 
-        // 3. Atualizar o item da entrada (vincular ao produto)
         const { error: errUpdate } = await window.supabaseClient
             .from('entrada_items')
             .update({
@@ -1130,14 +1308,12 @@ async function processarNovoProdutoComOS(cardId, itemId) {
 
         if (errUpdate) throw errUpdate;
 
-        // 4. Perguntar quantas OS deseja criar
         const quantidadeOS = parseInt(prompt('Quantas OS deseja criar para este produto?', '1'));
         if (!quantidadeOS || quantidadeOS < 1) {
             showToast('Operação cancelada ou quantidade inválida.', 'info');
             return;
         }
 
-        // 5. Para cada OS, perguntar observações e criar
         for (let i = 1; i <= quantidadeOS; i++) {
             const observacao = prompt(`Observações para a OS #${i} (opcional):`, '');
             const osCriada = await criarOSCompleta({
@@ -1158,7 +1334,6 @@ async function processarNovoProdutoComOS(cardId, itemId) {
             }
         }
 
-        // 6. Atualizar o card (contador)
         const card = entradasCards.find(c => c.id == cardId);
         if (card) {
             const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
@@ -1190,19 +1365,15 @@ async function criarOSCompleta(dados) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // Gerar código da OS
         const codigo = window.generateOSCode ? window.generateOSCode() : `OS-${Date.now().toString().slice(-6)}`;
 
-        // Mapear urgência para prazo (horas)
         const prazoHoras = dados.urgência === 'alta' ? 2 : dados.urgência === 'normal' ? 48 : 36;
 
-        // Calcular prazo esperado (se houver função)
         let prazoEsperado = null;
         if (typeof window.calcularPrazoPorPrioridade === 'function') {
             prazoEsperado = window.calcularPrazoPorPrioridade(new Date(), dados.urgência);
         }
 
-        // Dados da OS
         const osData = {
             codigo: codigo,
             produto_nome: dados.nomeProduto,
@@ -1301,7 +1472,6 @@ window.cancelarEntrada = async function(cardId) {
 // FUNÇÕES AUXILIARES
 // ============================================
 
-// ===== FILTRAR ENTRADAS =====
 window.filtrarEntradas = function(filtro) {
     filtroEntradasAtual = filtro;
 
@@ -1318,12 +1488,10 @@ window.filtrarEntradas = function(filtro) {
     renderizarEntradas();
 };
 
-// ===== BUSCAR ENTRADAS =====
 window.buscarEntradas = function() {
     renderizarEntradas();
 };
 
-// ===== LIMPAR ÁREA =====
 window.limparAreaEntrada = function() {
     document.getElementById('entradaPasteArea').value = '';
     showToast('Área limpa', 'info');
@@ -1372,7 +1540,6 @@ window.salvarProdutoEstoque = async function() {
             try {
                 if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-                // Atualizar item da entrada
                 const { error } = await window.supabaseClient
                     .from('entrada_items')
                     .update({
@@ -1387,7 +1554,6 @@ window.salvarProdutoEstoque = async function() {
 
                 if (error) throw error;
 
-                // Atualizar card (contador)
                 const card = entradasCards.find(c => c.id == cardId);
                 if (card) {
                     const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
@@ -1405,7 +1571,6 @@ window.salvarProdutoEstoque = async function() {
                         .eq('id', cardId);
                 }
 
-                // Se a ação for 'novo_com_os', chamar a função de criação de OS
                 if (acao === 'novo_com_os') {
                     await processarNovoProdutoComOS(cardId, itemId);
                 } else {
@@ -1428,9 +1593,11 @@ window.salvarProdutoEstoque = async function() {
 window.abrirSistemaEntradas = window.abrirSistemaEntradas;
 window.carregarEntradas = carregarEntradas;
 window.processarEntrada = window.processarEntrada;
+window.processarXML = window.processarXML;
 window.darEntradaItem = window.darEntradaItem;
 window.vincularProdutoExistente = window.vincularProdutoExistente;
 window.abrirCadastroRapido = window.abrirCadastroRapido;
+window.abrirCadastroNovoComOS = window.abrirCadastroNovoComOS;
 window.finalizarEntrada = window.finalizarEntrada;
 window.cancelarEntrada = window.cancelarEntrada;
 window.filtrarEntradas = window.filtrarEntradas;

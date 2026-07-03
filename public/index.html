@@ -4411,6 +4411,22 @@ body > * {
             </div>
         </div>
 
+        <!-- Área de Upload XML -->
+<div class="row mt-3">
+    <div class="col-md-12">
+        <div class="form-group">
+            <label for="xmlFileInput"><i class="fas fa-file-code"></i> Ou envie o XML da nota fiscal do fornecedor</label>
+            <div class="d-flex gap-2 align-items-center">
+                <input type="file" id="xmlFileInput" class="form-control" accept=".xml" style="width: auto; flex: 1;">
+                <button class="btn btn-primary" onclick="processarXML()">
+                    <i class="fas fa-upload"></i> Processar XML
+                </button>
+            </div>
+            <small class="text-muted">Aceita arquivos .xml de NF-e (modelo 55). O sistema lerá os produtos e criará uma entrada.</small>
+        </div>
+    </div>
+</div>
+
         <!-- Filtros e Busca -->
         <div class="card mb-4">
             <div class="d-flex flex-wrap gap-2 align-items-center">
