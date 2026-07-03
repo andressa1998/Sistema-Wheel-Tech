@@ -14,6 +14,7 @@
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
     
     <style>
         /* ===== ESTILOS GERAIS (mantidos originais) ===== */
@@ -4290,6 +4291,27 @@ body > * {
                     </div>
                 </div>
             </div>
+            <div class="row">
+    <div class="col-md-6">
+        <div class="form-group">
+            <label for="nfeNcm"><i class="fas fa-hashtag"></i> NCM</label>
+            <input type="text" id="nfeNcm" class="form-control" value="87149990" placeholder="Ex: 87149990">
+            <small class="text-muted">Será salvo automaticamente por SKU</small>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="form-group">
+            <label for="nfeCfop"><i class="fas fa-code-branch"></i> CFOP</label>
+            <select id="nfeCfop" class="form-control">
+                <option value="5102">5102 - Venda dentro do estado</option>
+                <option value="6108">6108 - Venda interestadual</option>
+                <option value="5405">5405 - Venda de produção</option>
+                <option value="5901">5901 - Venda fora do estado (contribuinte)</option>
+            </select>
+            <small class="text-muted">Escolha o CFOP adequado para a operação</small>
+        </div>
+    </div>
+</div>
             <div class="form-group">
     <label for="nfeTransportadora"><i class="fas fa-truck"></i> Transportadora</label>
     <div class="d-flex gap-2">
@@ -4330,6 +4352,7 @@ body > * {
 </div>
 
 <!-- ===== SISTEMA DE ENTRADAS (ADICIONAR AO FINAL DO BODY, ANTES DOS SCRIPTS) ===== -->
+<!-- ===== SISTEMA DE ENTRADAS ===== -->
 <div id="entradasSystem" class="hidden">
     <header class="main-header">
         <div class="container">
@@ -4362,18 +4385,20 @@ body > * {
                     Nova Entrada
                 </h2>
                 <div>
-                    <button class="btn btn-info" onclick="mostrarExemploEntrada()" title="Ver exemplo de formato">
-                        <i class="fas fa-question-circle"></i> Exemplo
-                    </button>
+                    <span class="text-muted" style="font-size: 12px;">
+                        <i class="fas fa-info-circle"></i> 
+                        Colar do Excel com cabeçalho: cd fornecedor, Rastreio, FORNECEDOR, Quant, Produto, SKU, Observações
+                    </span>
                 </div>
             </div>
             <div class="form-group mb-3">
                 <label for="entradaPasteArea">
-                    <i class="fas fa-table"></i> Cole os dados do Excel (cabeçalho: Rastreio, Quant, Produto, SKU)
+                    <i class="fas fa-table"></i> Cole os dados (separados por TAB ou vírgula)
                 </label>
-                <textarea id="entradaPasteArea" class="form-control" rows="6" placeholder="Cole aqui os dados copiados do Excel...&#10;Exemplo:&#10;NN264716981BR	72	Sapim Race SP 28pcs 276mm, 28pcs 300mm and 16pcs 304mm	raios&#10;NN266540386BR	28	Sapim Cx-Ray J-Bend 12pcs 238mm and 16pcs 256mm / Nipples Alumínio	raios"></textarea>
+                <textarea id="entradaPasteArea" class="form-control" rows="6" placeholder="Cole aqui os dados copiados do Excel...&#10;Exemplo:&#10;1234	NN264716981BR	ISAPA	72	Sapim Race SP...	raios	TESTE"></textarea>
                 <small class="text-muted">
-                    <i class="fas fa-info-circle"></i> Separe os campos por TAB ou vírgula. A primeira linha com cabeçalho será ignorada.
+                    <i class="fas fa-info-circle"></i> 
+                    Colunas esperadas: cd fornecedor, Rastreio, FORNECEDOR, Quant, Produto, SKU, Observações (opcional)
                 </small>
             </div>
             <div class="d-flex gap-2">

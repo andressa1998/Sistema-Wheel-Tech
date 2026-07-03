@@ -1,19 +1,19 @@
 // ============================================
-// SISTEMA DE ENTRADAS - VERSÃO COMPLETA
+// SISTEMA DE ENTRADAS - VERSÃO COMPLETA COM FORNECEDORES E AGRUPAMENTO
 // ============================================
 
 let entradasCards = [];
 let filtroEntradasAtual = 'todos';
-let entradaEmProcessamento = null; // guarda o ID do card sendo processado
+let entradaEmProcessamento = null;
+let fornecedoresMap = {}; // cache de fornecedores
 
-// ===== ABRIR SISTEMA DE ENTRADAS =====
+// ===== ABRIR SISTEMA =====
 window.abrirSistemaEntradas = function() {
     if (!currentUser) {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
 
-    // Esconder menu e outros sistemas
     const menuSystem = document.getElementById('menuSystem');
     if (menuSystem) menuSystem.classList.add('hidden');
 
@@ -31,22 +31,74 @@ window.abrirSistemaEntradas = function() {
     const entradasSystem = document.getElementById('entradasSystem');
     if (entradasSystem) entradasSystem.classList.remove('hidden');
 
-    // Atualizar dados do usuário
     document.getElementById('entradasUserName').textContent = currentUser.name;
     document.getElementById('entradasUserAvatar').textContent = currentUser.avatar;
     document.getElementById('entradasUserRole').textContent = currentUser.role;
 
-    // Carregar cards
+    carregarFornecedores(); // carrega cache
     carregarEntradas();
     showToast('📦 Sistema de Entradas carregado', 'info');
 };
 
-// ===== ADICIONAR MENU CARD =====
+// ===== CARREGAR FORNECEDORES =====
+async function carregarFornecedores() {
+    if (!window.supabaseClient) return;
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('fornecedores')
+            .select('*');
+        if (error) throw error;
+        if (data) {
+            fornecedoresMap = {};
+            data.forEach(f => {
+                // Indexar por cd_fornecedor
+                if (!fornecedoresMap[f.cd_fornecedor]) {
+                    fornecedoresMap[f.cd_fornecedor] = [];
+                }
+                fornecedoresMap[f.cd_fornecedor].push(f);
+                
+                // Também indexar por sku_sistema (para busca direta)
+                if (f.sku_sistema) {
+                    if (!fornecedoresMap[f.sku_sistema]) {
+                        fornecedoresMap[f.sku_sistema] = [];
+                    }
+                    fornecedoresMap[f.sku_sistema].push(f);
+                }
+            });
+            console.log('✅ Fornecedores carregados:', Object.keys(fornecedoresMap).length);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao carregar fornecedores:', error);
+    }
+}
+
+// ===== BUSCAR DADOS DO FORNECEDOR =====
+function buscarFornecedor(chave) {
+    if (!chave) return null;
+    const chaveNormalizada = chave.trim();
+    
+    // Buscar por cd_fornecedor
+    if (fornecedoresMap[chaveNormalizada]) {
+        // Pode ter mais de um com mesmo cd, pega o primeiro
+        return fornecedoresMap[chaveNormalizada][0];
+    }
+    
+    // Buscar por sku_sistema (percorrendo todos)
+    for (const key in fornecedoresMap) {
+        const lista = fornecedoresMap[key];
+        for (const f of lista) {
+            if (f.sku_sistema && f.sku_sistema.trim() === chaveNormalizada) {
+                return f;
+            }
+        }
+    }
+    return null;
+}
+
+// ===== ADICIONAR MENU =====
 function adicionarMenuEntradas() {
     const menuGrid = document.querySelector('.menu-grid');
     if (!menuGrid) return;
-
-    // Verifica se já existe
     if (document.querySelector('.menu-card[data-menu="entradas"]')) return;
 
     const card = document.createElement('div');
@@ -59,7 +111,6 @@ function adicionarMenuEntradas() {
     `;
     card.onclick = () => window.abrirSistemaEntradas();
 
-    // Inserir antes do card de "Entradas e Saídas" ou no final
     const referencia = menuGrid.querySelector('.menu-card:last-child');
     if (referencia) {
         menuGrid.insertBefore(card, referencia.nextSibling);
@@ -68,16 +119,13 @@ function adicionarMenuEntradas() {
     }
 }
 
-// ===== INICIALIZAR MENU =====
 document.addEventListener('DOMContentLoaded', function() {
     setTimeout(adicionarMenuEntradas, 500);
 });
 
 // ============================================
-// FUNÇÕES PRINCIPAIS
+// CARREGAR ENTRADAS
 // ============================================
-
-// ===== CARREGAR ENTRADAS DO SUPABASE =====
 async function carregarEntradas() {
     if (!window.supabaseClient) {
         showToast('Erro: Supabase não conectado', 'error');
@@ -98,7 +146,6 @@ async function carregarEntradas() {
             return;
         }
 
-        // Buscar itens de cada card
         const cardIds = cards.map(c => c.id);
         const { data: items, error: errItems } = await window.supabaseClient
             .from('entrada_items')
@@ -107,7 +154,6 @@ async function carregarEntradas() {
 
         if (errItems) throw errItems;
 
-        // Montar estrutura
         entradasCards = cards.map(card => ({
             ...card,
             itens: items.filter(item => item.entrada_id === card.id) || []
@@ -126,7 +172,6 @@ function renderizarEntradas() {
     const container = document.getElementById('entradasCardsContainer');
     if (!container) return;
 
-    // Aplicar filtro
     let cardsFiltrados = [...entradasCards];
     if (filtroEntradasAtual === 'pendente') {
         cardsFiltrados = cardsFiltrados.filter(c => c.status === 'pendente');
@@ -134,21 +179,18 @@ function renderizarEntradas() {
         cardsFiltrados = cardsFiltrados.filter(c => c.status === 'finalizado');
     }
 
-    // Aplicar busca
     const busca = document.getElementById('buscaEntradas')?.value?.trim().toLowerCase() || '';
     if (busca) {
         cardsFiltrados = cardsFiltrados.filter(card => {
-            // Busca no card
-            const cardMatch = card.numero_entrada.toLowerCase().includes(busca) ||
-                (card.dados_brutos || '').toLowerCase().includes(busca);
+            const cardMatch = card.numero_entrada.toLowerCase().includes(busca);
             if (cardMatch) return true;
-
-            // Busca nos itens
             return card.itens.some(item =>
                 (item.rastreio || '').toLowerCase().includes(busca) ||
                 (item.produto || '').toLowerCase().includes(busca) ||
                 (item.sku_original || '').toLowerCase().includes(busca) ||
-                (item.sku_match || '').toLowerCase().includes(busca)
+                (item.sku_match || '').toLowerCase().includes(busca) ||
+                (item.fornecedor_nome || '').toLowerCase().includes(busca) ||
+                (item.cd_fornecedor || '').toLowerCase().includes(busca)
             );
         });
     }
@@ -212,10 +254,13 @@ function renderizarEntradas() {
                         <thead>
                             <tr>
                                 <th style="width:40px;">#</th>
-                                <th>Rastreio</th>
+                                <th>Cd. Fornecedor</th>
+                                <th>Referência de entrada</th>
                                 <th style="width:80px;">Quant</th>
                                 <th>Produto</th>
                                 <th>SKU</th>
+                                <th>Fornecedor</th>
+                                <th>Observação</th>
                                 <th style="width:70px;">Status</th>
                                 <th style="width:200px;">Ação</th>
                             </tr>
@@ -230,8 +275,12 @@ function renderizarEntradas() {
             const statusClass = item.status === 'entrada_realizada' ? 'badge-success' :
                                item.status === 'cadastrado' ? 'badge-info' : 'badge-warning';
 
-            // Verificar se o SKU existe no estoque
+            // Verificar se SKU existe no estoque
             const produtoExistente = verificarSKUExistente(item.sku_original);
+            let tituloProduto = '';
+            if (produtoExistente) {
+                tituloProduto = produtoExistente.nome || '';
+            }
 
             let acaoHtml = '';
             if (isConcluido) {
@@ -245,26 +294,31 @@ function renderizarEntradas() {
                         <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
                             <i class="fas fa-arrow-right-to-bracket"></i> Dar Entrada
                         </button>
+                        ${tituloProduto ? `<small class="d-block text-success">🔍 ${tituloProduto}</small>` : ''}
                     `;
                 } else {
                     acaoHtml = `
                         <button class="btn btn-sm btn-primary" onclick="abrirCadastroRapido('${card.id}', ${item.id})" title="Cadastrar novo produto">
                             <i class="fas fa-plus-circle"></i> Cadastrar
                         </button>
+                        <small class="d-block text-muted">⛔ Produto não encontrado</small>
                     `;
                 }
             }
 
-            // Mostrar SKU match se existir
             const skuDisplay = item.sku_match || item.sku_original || '-';
+            const fornecedorDisplay = item.fornecedor_nome || item.cd_fornecedor || '-';
 
             html += `
                 <tr class="${isConcluido ? 'table-light' : ''}">
                     <td>${idx + 1}</td>
+                    <td>${item.cd_fornecedor || '-'}</td>
                     <td>${item.rastreio || '-'}</td>
                     <td><strong>${item.quantidade || 0}</strong></td>
                     <td>${item.produto || '-'}</td>
                     <td><code>${skuDisplay}</code></td>
+                    <td>${fornecedorDisplay}</td>
+                    <td>${item.observacao || '-'}</td>
                     <td><span class="badge ${statusClass}">${itemStatus}</span></td>
                     <td>${acaoHtml}</td>
                 </tr>
@@ -278,9 +332,6 @@ function renderizarEntradas() {
 
                 ${!isFinalizado ? `
                     <div class="card-footer bg-transparent d-flex justify-content-end gap-2">
-                        <button class="btn btn-sm btn-outline-secondary" onclick="expandirDadosBrutos('${card.id}')">
-                            <i class="fas fa-eye"></i> Ver dados brutos
-                        </button>
                         ${concluidos === total && total > 0 ? `
                             <button class="btn btn-sm btn-success" onclick="finalizarEntrada('${card.id}')">
                                 <i class="fas fa-check-double"></i> Finalizar Entrada
@@ -288,11 +339,6 @@ function renderizarEntradas() {
                         ` : ''}
                     </div>
                 ` : ''}
-
-                <!-- Dados brutos (oculto) -->
-                <div id="dadosBrutos_${card.id}" style="display:none; padding:15px; background:#f8f9fa; border-top:1px solid #dee2e6;">
-                    <pre style="white-space:pre-wrap; font-size:12px; margin:0;">${card.dados_brutos || 'N/A'}</pre>
-                </div>
             </div>
         `;
     });
@@ -300,9 +346,7 @@ function renderizarEntradas() {
     container.innerHTML = html;
 }
 
-// ============================================
-// PROCESSAR ENTRADA (PARSING DO EXCEL)
-// ============================================
+// ===== PROCESSAR ENTRADA (VERSÃO FINAL CORRIGIDA) =====
 window.processarEntrada = async function() {
     const pasteArea = document.getElementById('entradaPasteArea');
     if (!pasteArea) return;
@@ -313,23 +357,20 @@ window.processarEntrada = async function() {
         return;
     }
 
-    // Tentar detectar separador: TAB ou vírgula
     let linhas = texto.split('\n').filter(l => l.trim() !== '');
     if (linhas.length === 0) {
         showToast('⚠️ Nenhuma linha encontrada', 'warning');
         return;
     }
 
-    // Detecta separador pela primeira linha
     let separador = '\t';
     const primeiraLinha = linhas[0];
     if (primeiraLinha.includes('\t')) separador = '\t';
     else if (primeiraLinha.includes(';')) separador = ';';
     else if (primeiraLinha.includes(',')) separador = ',';
 
-    // Verifica se a primeira linha é cabeçalho
     const cabecalho = linhas[0].split(separador).map(c => c.trim().toLowerCase());
-    const colunasEsperadas = ['rastreio', 'quant', 'produto', 'sku'];
+    const colunasEsperadas = ['cd fornecedor', 'rastreio', 'fornecedor', 'quant', 'produto', 'sku', 'observações'];
     const isCabecalho = colunasEsperadas.every(c => cabecalho.some(h => h.includes(c)));
 
     let dadosLinhas = linhas;
@@ -341,32 +382,37 @@ window.processarEntrada = async function() {
         }
     }
 
-    // Parsear cada linha
-    const itens = [];
+    const itensRaw = [];
     let erros = [];
 
     dadosLinhas.forEach((linha, idx) => {
         const partes = linha.split(separador).map(c => c.trim());
-        if (partes.length < 4) {
+        if (partes.length < 6) {
             erros.push(`Linha ${idx + 1}: poucas colunas (${partes.length})`);
             return;
         }
 
-        const rastreio = partes[0] || '';
-        const quantidade = parseInt(partes[1]) || 0;
-        const produto = partes[2] || '';
-        const sku = partes[3] || '';
+        const cdFornecedor = partes[0] || '';
+        const rastreio = partes[1] || '';
+        const fornecedorNome = partes[2] || '';
+        const quantidade = parseInt(partes[3]) || 0;
+        const produto = partes[4] || '';
+        const sku = partes[5] || '';
+        const observacao = partes[6] || '';
 
-        if (!sku) {
-            erros.push(`Linha ${idx + 1}: SKU vazio`);
+        if (!sku && !cdFornecedor) {
+            erros.push(`Linha ${idx + 1}: SKU e cd fornecedor vazios`);
             return;
         }
 
-        itens.push({
-            rastreio,
-            quantidade,
-            produto,
+        itensRaw.push({
+            cd_fornecedor: cdFornecedor,
+            rastreio: rastreio,
+            fornecedor_nome: fornecedorNome,
+            quantidade: quantidade,
+            produto: produto,
             sku_original: sku,
+            observacao: observacao,
             sku_match: null,
             produto_id: null,
             status: 'pendente',
@@ -376,40 +422,76 @@ window.processarEntrada = async function() {
         });
     });
 
-    if (itens.length === 0) {
+    if (itensRaw.length === 0) {
         showToast(`⚠️ Nenhum item válido encontrado. ${erros.length} erro(s).`, 'error');
         return;
     }
 
     if (erros.length > 0) {
-        showToast(`⚠️ ${erros.length} erro(s) encontrado(s). ${itens.length} item(s) processados.`, 'warning');
+        showToast(`⚠️ ${erros.length} erro(s) encontrado(s). ${itensRaw.length} item(s) processados.`, 'warning');
         console.warn('Erros no parsing:', erros);
     }
 
-    // Para cada item, verificar se SKU existe no estoque
-    for (const item of itens) {
-        const produto = verificarSKUExistente(item.sku_original);
-        if (produto) {
-            item.sku_match = produto.sku;
-            item.produto_id = produto.id;
+    // Ordenar por rastreio para agrupar visualmente
+    itensRaw.sort((a, b) => (a.rastreio || '').localeCompare(b.rastreio || ''));
+
+    // Para cada item, buscar fornecedor e descrição
+    for (const item of itensRaw) {
+        let fornecedor = null;
+
+        // Buscar pelo cd_fornecedor
+        if (item.cd_fornecedor) {
+            fornecedor = buscarFornecedor(item.cd_fornecedor);
+        }
+
+        // Se não encontrou, buscar pelo sku_original
+        if (!fornecedor && item.sku_original) {
+            fornecedor = buscarFornecedor(item.sku_original);
+        }
+
+        if (fornecedor) {
+            // Preencher o nome do produto com a descrição se estiver vazio ou for igual ao SKU
+            if (!item.produto || item.produto.trim() === '' || item.produto === item.sku_original) {
+                item.produto = fornecedor.descricao_produto || item.produto;
+            }
+            // Atualizar nome do fornecedor se não tiver
+            if (!item.fornecedor_nome) {
+                item.fornecedor_nome = fornecedor.nome_fornecedor;
+            }
+            // Atualizar cd_fornecedor se não tiver
+            if (!item.cd_fornecedor) {
+                item.cd_fornecedor = fornecedor.cd_fornecedor;
+            }
+            // Guardar o sku_sistema como sku_match (para buscar no estoque)
+            if (fornecedor.sku_sistema) {
+                item.sku_match = fornecedor.sku_sistema;
+            }
+        }
+
+        // Verificar se o SKU (original ou match) existe no estoque
+        const skuParaBuscar = item.sku_match || item.sku_original;
+        if (skuParaBuscar) {
+            const produtoEstoque = verificarSKUExistente(skuParaBuscar);
+            if (produtoEstoque) {
+                item.produto_id = produtoEstoque.id;
+                // Atualiza sku_match para o SKU exato do estoque
+                item.sku_match = produtoEstoque.sku;
+            }
         }
     }
 
-    // Gerar número de entrada único
     const numeroEntrada = await gerarNumeroEntrada();
 
-    // Salvar no Supabase
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // 1. Criar card
         const cardData = {
             numero_entrada: numeroEntrada,
             dados_brutos: texto,
             status: 'pendente',
             criado_por: currentUser.name,
             criado_em: new Date().toISOString(),
-            total_items: itens.length,
+            total_items: itensRaw.length,
             items_concluidos: 0
         };
 
@@ -421,15 +503,17 @@ window.processarEntrada = async function() {
         if (cardError) throw cardError;
         const card = cardResult[0];
 
-        // 2. Inserir itens
-        const itemsToInsert = itens.map(item => ({
+        const itemsToInsert = itensRaw.map(item => ({
             entrada_id: card.id,
+            cd_fornecedor: item.cd_fornecedor,
             rastreio: item.rastreio,
+            fornecedor_nome: item.fornecedor_nome,
             quantidade: item.quantidade,
             produto: item.produto,
             sku_original: item.sku_original,
             sku_match: item.sku_match,
             produto_id: item.produto_id,
+            observacao: item.observacao,
             status: 'pendente',
             acao: null,
             responsavel: null,
@@ -442,7 +526,7 @@ window.processarEntrada = async function() {
 
         if (itemsError) throw itemsError;
 
-        showToast(`✅ Entrada ${numeroEntrada} criada com ${itens.length} item(s)!`, 'success');
+        showToast(`✅ Entrada ${numeroEntrada} criada com ${itensRaw.length} item(s)!`, 'success');
         pasteArea.value = '';
         await carregarEntradas();
 
@@ -452,16 +536,25 @@ window.processarEntrada = async function() {
     }
 };
 
-// ===== VERIFICAR SE SKU EXISTE NO ESTOQUE =====
+// ===== VERIFICAR SKU NO ESTOQUE =====
 function verificarSKUExistente(sku) {
     if (!sku) return null;
     const skuNormalizado = sku.trim().toLowerCase();
-    // Buscar no array global produtosEstoque (definido em estoque_gestao.js)
+    console.log('🔍 Verificando SKU no estoque:', skuNormalizado);
+    
     if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-        const encontrado = produtosEstoque.find(p =>
-            p.sku && p.sku.trim().toLowerCase() === skuNormalizado
-        );
-        if (encontrado) return encontrado;
+        const encontrado = produtosEstoque.find(p => {
+            const pSku = (p.sku || '').trim().toLowerCase();
+            return pSku === skuNormalizado;
+        });
+        if (encontrado) {
+            console.log('✅ Produto encontrado no estoque:', encontrado);
+            return encontrado;
+        } else {
+            console.log('❌ SKU não encontrado no estoque.');
+        }
+    } else {
+        console.warn('⚠️ produtosEstoque não está definido ou não é um array.');
     }
     return null;
 }
@@ -475,7 +568,6 @@ async function gerarNumeroEntrada() {
     const prefixo = `${ano}${mes}${dia}`;
 
     if (!window.supabaseClient) {
-        // Fallback: gerar número sequencial local
         const existentes = entradasCards.filter(c => c.numero_entrada.startsWith(`ENT-${prefixo}`));
         const seq = existentes.length + 1;
         return `ENT-${prefixo}-${String(seq).padStart(4, '0')}`;
@@ -505,10 +597,6 @@ async function gerarNumeroEntrada() {
     }
 }
 
-// ============================================
-// AÇÕES DOS ITENS
-// ============================================
-
 // ===== DAR ENTRADA EM UM ITEM =====
 window.darEntradaItem = async function(cardId, itemId, produtoId) {
     if (!cardId || !itemId || !produtoId) {
@@ -516,7 +604,6 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
         return;
     }
 
-    // Buscar o item e o card
     const card = entradasCards.find(c => c.id == cardId);
     if (!card) {
         showToast('Card não encontrado', 'error');
@@ -546,7 +633,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // 1. Atualizar estoque do produto
+        // Atualizar estoque
         const { data: produto, error: errProd } = await window.supabaseClient
             .from('produtos_estoque')
             .select('quantidade')
@@ -564,7 +651,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errUpdate) throw errUpdate;
 
-        // 2. Registrar movimentação
+        // Registrar movimentação
         await registrarMovimentacao(
             produtoId,
             'entrada',
@@ -573,7 +660,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
             'nova'
         );
 
-        // 3. Atualizar item
+        // Atualizar item
         const { error: errItem } = await window.supabaseClient
             .from('entrada_items')
             .update({
@@ -586,7 +673,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errItem) throw errItem;
 
-        // 4. Atualizar card (contador)
+        // Atualizar card
         const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
         const total = card.itens.length;
         const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
@@ -605,10 +692,9 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         showToast(`✅ Entrada de ${quantidade} unidade(s) realizada!`, 'success');
 
-        // Atualizar lista local e re-renderizar
         await carregarEntradas();
 
-        // Sincronizar com ML (se o produto tiver MLB)
+        // Sincronizar ML
         if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
             const produtoAtualizado = produtosEstoque.find(p => p.id == produtoId);
             if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes) {
@@ -649,43 +735,32 @@ window.abrirCadastroRapido = function(cardId, itemId) {
         return;
     }
 
-    // Guardar referência para uso após cadastro
     entradaEmProcessamento = {
         cardId: cardId,
         itemId: itemId,
         item: item
     };
 
-    // Abrir o modal de cadastro de produto (reutilizando o existente)
     if (typeof abrirModalProdutoEstoque === 'function') {
-        // Pré-preencher campos com os dados do item
-        const produtoNome = item.produto || '';
-        const sku = item.sku_original || '';
-
-        // Chamar a função com um objeto produto parcial
         const produtoParcial = {
-            nome: produtoNome,
-            sku: sku,
+            nome: item.produto || '',
+            sku: item.sku_original || '',
             categoria: '',
             dados_extra: {}
         };
 
         abrirModalProdutoEstoque(produtoParcial);
 
-        // Adicionar evento personalizado no modal para quando salvar
         const modal = document.getElementById('modalProdutoEstoque');
         if (modal) {
-            // Remover listener antigo para evitar duplicação
             const salvarBtn = document.getElementById('salvarProdutoEstoqueBtn') ||
                              document.querySelector('#modalProdutoEstoque .btn-success');
             if (salvarBtn) {
                 const novoBtn = salvarBtn.cloneNode(true);
                 salvarBtn.parentNode.replaceChild(novoBtn, salvarBtn);
                 novoBtn.onclick = function() {
-                    // Chamar a função original de salvar
                     if (typeof salvarProdutoEstoque === 'function') {
                         salvarProdutoEstoque();
-                        // Após salvar, processar o item
                         setTimeout(() => {
                             processarItemAposCadastro(cardId, itemId);
                         }, 1000);
@@ -705,7 +780,6 @@ async function processarItemAposCadastro(cardId, itemId) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // Buscar o item atualizado
         const { data: item, error: errItem } = await window.supabaseClient
             .from('entrada_items')
             .select('*')
@@ -714,14 +788,12 @@ async function processarItemAposCadastro(cardId, itemId) {
 
         if (errItem) throw errItem;
 
-        // Verificar se o SKU agora existe no estoque
         const produto = verificarSKUExistente(item.sku_original);
         if (!produto) {
             showToast('⚠️ Produto não encontrado após cadastro. Tente novamente.', 'warning');
             return;
         }
 
-        // Atualizar o item com o produto_id e sku_match
         const { error: errUpdate } = await window.supabaseClient
             .from('entrada_items')
             .update({
@@ -736,7 +808,6 @@ async function processarItemAposCadastro(cardId, itemId) {
 
         if (errUpdate) throw errUpdate;
 
-        // Atualizar card
         const card = entradasCards.find(c => c.id == cardId);
         if (card) {
             const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
@@ -798,7 +869,6 @@ window.cancelarEntrada = async function(cardId) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // Os itens serão excluídos em cascata (ON DELETE CASCADE)
         const { error } = await window.supabaseClient
             .from('entradas_cards')
             .delete()
@@ -815,15 +885,10 @@ window.cancelarEntrada = async function(cardId) {
     }
 };
 
-// ============================================
-// FUNÇÕES AUXILIARES
-// ============================================
-
 // ===== FILTRAR ENTRADAS =====
 window.filtrarEntradas = function(filtro) {
     filtroEntradasAtual = filtro;
 
-    // Atualizar estilo dos botões
     document.querySelectorAll('#entradasSystem .btn[data-filtro]').forEach(btn => {
         btn.classList.remove('btn-primary', 'active');
         btn.classList.add('btn-outline-secondary');
@@ -842,68 +907,13 @@ window.buscarEntradas = function() {
     renderizarEntradas();
 };
 
-// ===== EXPANDIR DADOS BRUTOS =====
-window.expandirDadosBrutos = function(cardId) {
-    const div = document.getElementById(`dadosBrutos_${cardId}`);
-    if (div) {
-        if (div.style.display === 'none') {
-            div.style.display = 'block';
-        } else {
-            div.style.display = 'none';
-        }
-    }
-};
-
-// ===== LIMPAR ÁREA DE ENTRADA =====
+// ===== LIMPAR ÁREA =====
 window.limparAreaEntrada = function() {
     document.getElementById('entradaPasteArea').value = '';
     showToast('Área limpa', 'info');
 };
 
-// ===== MOSTRAR EXEMPLO =====
-window.mostrarExemploEntrada = function() {
-    const exemplo = `Rastreio	Quant	Produto	SKU
-NN264716981BR	72	Sapim Race SP 28pcs 276mm, 28pcs 300mm and 16pcs 304mm	raios
-NN266540386BR	28	Sapim Cx-Ray J-Bend 12pcs 238mm and 16pcs 256mm / Nipples Alumínio	raios
-NN263670492BR	32	Pilar Nipple interno Latão	raios
-NN275710171BR	3	Rolamentos de Direção para Bicicleta ACB3544 ACB3344	2239ROL44-35-5.5
-NN277588212BR	2	Cage 6800	4044CAGEOVER-0086
-NN277588213BR	4	Capa bike para transporte	4041CAPBIK-PTO`;
-
-    document.getElementById('entradaPasteArea').value = exemplo;
-    showToast('📋 Exemplo carregado! Clique em "Processar Entrada" para testar.', 'info');
-};
-
-// ============================================
-// INICIALIZAÇÃO (MONITORAR CARREGAMENTO DO ESTOQUE)
-// ============================================
-
-// Aguardar o carregamento do estoque para ter acesso a produtosEstoque
-let estoqueCarregado = false;
-
-// Verificar periodicamente se produtosEstoque foi carregado
-const intervalEstoque = setInterval(() => {
-    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
-        estoqueCarregado = true;
-        clearInterval(intervalEstoque);
-        console.log('✅ produtosEstoque carregado para o sistema de Entradas');
-        // Se houver cards pendentes, re-renderizar para atualizar os botões
-        if (entradasCards.some(c => c.status === 'pendente')) {
-            renderizarEntradas();
-        }
-    }
-}, 2000);
-
-// Limpar intervalo após 30 segundos para não ficar eternamente
-setTimeout(() => {
-    clearInterval(intervalEstoque);
-}, 30000);
-
-// ============================================
-// FUNÇÃO DE REGISTRO DE MOVIMENTAÇÃO (REUTILIZADA DO ESTOQUE)
-// ============================================
-
-// Se a função registrarMovimentacao não existir, definir uma versão local
+// ===== REGISTRAR MOVIMENTAÇÃO (fallback) =====
 if (typeof registrarMovimentacao !== 'function') {
     window.registrarMovimentacao = async function(produtoId, tipo, quantidade, numeroDocumento, tipoEntrada) {
         try {
@@ -927,26 +937,18 @@ if (typeof registrarMovimentacao !== 'function') {
     };
 }
 
-// ============================================
-// SOBRESCREVER SALVAR PRODUTO DO ESTOQUE PARA CAPTURAR O CADASTRO
-// ============================================
-
-// Armazenar a função original
+// ===== SOBRESCREVER SALVAR PRODUTO =====
 const _salvarProdutoEstoqueOriginal = window.salvarProdutoEstoque;
 
-// Sobrescrever para capturar quando um produto é cadastrado via modal
 window.salvarProdutoEstoque = async function() {
-    // Chamar a função original
     if (typeof _salvarProdutoEstoqueOriginal === 'function') {
         await _salvarProdutoEstoqueOriginal();
     }
 
-    // Se houver um item em processamento, verificar se o SKU agora existe
     if (entradaEmProcessamento) {
         const { cardId, itemId, item } = entradaEmProcessamento;
         const produto = verificarSKUExistente(item.sku_original);
         if (produto) {
-            // Atualizar o item com o produto_id
             try {
                 if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
@@ -964,7 +966,6 @@ window.salvarProdutoEstoque = async function() {
 
                 if (error) throw error;
 
-                // Atualizar card
                 const card = entradasCards.find(c => c.id == cardId);
                 if (card) {
                     const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
@@ -994,10 +995,24 @@ window.salvarProdutoEstoque = async function() {
     }
 };
 
-// ============================================
-// EXPORTAR FUNÇÕES PARA USO GLOBAL
-// ============================================
+// ===== INICIALIZAR (cache de fornecedores) =====
+let estoqueCarregado = false;
+const intervalEstoque = setInterval(() => {
+    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
+        estoqueCarregado = true;
+        clearInterval(intervalEstoque);
+        console.log('✅ produtosEstoque carregado para o sistema de Entradas');
+        if (entradasCards.some(c => c.status === 'pendente')) {
+            renderizarEntradas();
+        }
+    }
+}, 2000);
 
+setTimeout(() => {
+    clearInterval(intervalEstoque);
+}, 30000);
+
+// ===== EXPORTAR =====
 window.abrirSistemaEntradas = window.abrirSistemaEntradas;
 window.carregarEntradas = carregarEntradas;
 window.processarEntrada = window.processarEntrada;
@@ -1007,8 +1022,6 @@ window.finalizarEntrada = window.finalizarEntrada;
 window.cancelarEntrada = window.cancelarEntrada;
 window.filtrarEntradas = window.filtrarEntradas;
 window.buscarEntradas = window.buscarEntradas;
-window.expandirDadosBrutos = window.expandirDadosBrutos;
 window.limparAreaEntrada = window.limparAreaEntrada;
-window.mostrarExemploEntrada = window.mostrarExemploEntrada;
 
-console.log('📦 Sistema de Entradas carregado com sucesso!');
+console.log('📦 Sistema de Entradas atualizado com sucesso!');

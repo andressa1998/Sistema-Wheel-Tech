@@ -95,6 +95,7 @@ async function buscarTransportadoraPorId(id) {
 }
 
 // ===================== EMISSÃO DE NF-e =====================
+// ===================== EMISSÃO DE NF-e =====================
 async function emitirNFe(req, res) {
     console.log('📨 Requisição de emissão recebida');
     try {
@@ -153,10 +154,10 @@ async function emitirNFe(req, res) {
         }
 
         // ===== CORREÇÃO: FORÇAR NOME DO DESTINATÁRIO EM HOMOLOGAÇÃO (opcional) =====
-         //if (AMBIENTE === 'homologacao') {
-          //   destinatario.xNome = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
-           //  console.log('🔁 Nome do destinatário ajustado para homologação.');
-        //}
+        // if (AMBIENTE === 'homologacao') {
+        //   destinatario.xNome = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
+        //   console.log('🔁 Nome do destinatário ajustado para homologação.');
+        // }
 
         // ========== CONTROLE SEQUENCIAL DA NF ==========
         const serie = 3;
@@ -185,6 +186,7 @@ async function emitirNFe(req, res) {
         // ========== GERAR XML (com CSRT dinâmico) ==========
         const tokenCSRT = AMBIENTE === 'producao' ? CSRT_TOKEN_PRODUCAO : CSRT_TOKEN_HOMOLOGACAO;
         const idCSRT = AMBIENTE === 'producao' ? '04' : '03';
+
         // 🔥 BUSCAR DADOS DA TRANSPORTADORA (se fornecida)
 let transportadoraDados = null;
 if (transportadora_id) {
@@ -195,21 +197,43 @@ if (transportadora_id) {
             .eq('id', transportadora_id)
             .maybeSingle();
         if (!error && transp) {
-            transportadoraDados = {
-                CNPJ: transp.cnpj,
-                xNome: transp.nome,
-                IE: transp.ie || 'ISENTO',
-                xEnder: transp.endereco || '',
-                xMun: transp.cidade || '',
-                UF: transp.uf || '',
-            };
-            console.log(`✅ Transportadora carregada: ${transp.nome}`);
+            const cnpjLimpo = (transp.cnpj || '').replace(/\D/g, '');
+            // Verifica se tem 14 dígitos e não é undefined
+            if (cnpjLimpo && cnpjLimpo.length === 14) {
+                transportadoraDados = {
+                    CNPJ: cnpjLimpo,
+                    xNome: transp.nome || 'Transportadora não informada',
+                    IE: transp.ie || 'ISENTO',
+                    xEnder: transp.endereco || '',
+                    xMun: transp.cidade || '',
+                    UF: transp.uf || '',
+                };
+                console.log(`✅ Transportadora carregada: ${transp.nome}`);
+            } else {
+                console.warn(`⚠️ CNPJ da transportadora inválido: ${transp.cnpj || 'vazio'} - Ignorando transportadora.`);
+                // Não define transportadoraDados
+            }
         }
     } catch (err) {
         console.warn('⚠️ Erro ao buscar transportadora:', err.message);
     }
 }
 
+        // ========== CÁLCULO DO VALOR TOTAL E INFORMAÇÕES ADICIONAIS ==========
+        const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
+        const percentualTributos = 0.15;
+        const totalTributos = valorTotal * percentualTributos;
+        const federais = totalTributos * 0.4;
+        const estaduais = totalTributos * 0.6;
+
+        const infAdic = `INFORMAÇÕES COMPLEMENTARES
+I - "DOCUMENTO EMITIDO POR ME OU EPP OPTANTE PELO SIMPLES NACIONAL";II - "NAO GERA DIREITO A CREDITO FISCAL DE ICMS, DE ISS E DE IPI".
+Valor aproximado dos tributos:
+R$ ${federais.toFixed(2)} federais
+R$ ${estaduais.toFixed(2)} estaduais
+Fonte: IBPT/empresometro.com.br 92589A`;
+
+        // ========== GERAR XML ==========
         const xml = gerarXmlNfe({
             nNF,
             serie,
@@ -218,8 +242,8 @@ if (transportadora_id) {
             produtos,
             cfop,
             natOp: natureza_operacao || 'Venda',
-            modFrete: modalidade_frete || '9',
-            transportadora: await buscarTransportadoraPorId(transportadora_id),
+            modFrete: transportadora_id ? '0' : '9',
+            transportadora: transportadoraDados, // usa a variável já buscada
             volumes: { qVol: 0, pesoL: 0, pesoB: 0 },
             fatura: null,
             infAdic: infAdic,
@@ -268,24 +292,17 @@ if (transportadora_id) {
         let xmlParaML = null;
         let mlXmlPath = null;
         try {
-            // Extrai o <protNFe> da resposta
             const protNFeMatch = respostaSefaz.match(/<protNFe[^>]*>([\s\S]*?)<\/protNFe>/);
             let protNFe = '';
             if (protNFeMatch) {
                 protNFe = protNFeMatch[0];
             }
-
-            // Remove a declaração XML do xmlAssinado (se houver)
             let xmlAssinadoSemDeclaracao = xmlAssinado.replace(/^<\?xml[^?]*\?>/, '').trim();
-
-            // Monta o XML final com nfeProc (apenas UMA declaração no início)
             const nfeProcXML = `<?xml version="1.0" encoding="UTF-8"?>
 <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
 ${xmlAssinadoSemDeclaracao}
 ${protNFe}
 </nfeProc>`;
-
-            // Salva o XML para ML
             mlXmlPath = path.join(__dirname, 'xml_gerado', `nfe_${nNF}_ml.xml`);
             fs.writeFileSync(mlXmlPath, nfeProcXML, 'utf8');
             xmlParaML = nfeProcXML;
@@ -295,21 +312,7 @@ ${protNFe}
         }
 
         // ========== SALVAR NF-e NO SUPABASE ==========
-        const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
-
-        // ========== INFORMAÇÕES ADICIONAIS ==========
-        const percentualTributos = 0.15; // 15% aproximado – ajuste conforme necessidade
-        const totalTributos = valorTotal * percentualTributos;
-        const federais = totalTributos * 0.4; // 40% federais
-        const estaduais = totalTributos * 0.6; // 60% estaduais
-
-        const infAdic = `INFORMAÇÕES COMPLEMENTARES
-        I - "DOCUMENTO EMITIDO POR ME OU EPP OPTANTE PELO SIMPLES NACIONAL";II - "NAO GERA DIREITO A CREDITO FISCAL DE ICMS, DE ISS E DE IPI".
-        Valor aproximado dos tributos:
-        R$ ${federais.toFixed(2)} federais
-        R$ ${estaduais.toFixed(2)} estaduais
-        Fonte: IBPT/empresometro.com.br 92589A`;
-
+        // (valorTotal já foi calculado, use-o)
         const dadosInsert = {
             data_emissao: new Date().toISOString(),
             numero_nf: String(nNF),
@@ -332,7 +335,6 @@ ${protNFe}
         // ========== ATUALIZAR VENDA E ENVIAR PARA ML ==========
         if (venda_id) {
             try {
-                // Atualiza a venda com os dados da NF-e
                 const { error: updateError } = await supabase
                     .from('vendas_ml')
                     .update({
@@ -349,14 +351,12 @@ ${protNFe}
                     console.log('✅ Venda atualizada com a NF-e (nfe_emitida = true).');
                 }
 
-                // Busca dados da venda (shipment_id e ml_access_token)
                 const { data: venda } = await supabase
                     .from('vendas_ml')
                     .select('shipment_id')
                     .eq('id', venda_id)
                     .single();
 
-                // ===== ENVIAR PARA MERCADO LIVRE =====
                 let tokenML = ml_access_token;
                 if (!tokenML) {
                     const { data: tokenData } = await supabase
@@ -384,7 +384,6 @@ ${protNFe}
                 }
             } catch (err) {
                 console.error('❌ Erro ao processar integração com ML:', err.message);
-                // Não interrompe o fluxo principal
             }
         }
 

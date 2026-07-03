@@ -213,15 +213,20 @@ function gerarXmlNfe(dados) {
 
     let transportaXml = '';
     if (transportadora) {
-    transportaXml = `
-    <transporta>
-        <CNPJ>${transportadora.cnpj}</CNPJ>
-        <xNome>${escapeXml(transportadora.nome)}</xNome>
-        <IE>${escapeXml(transportadora.ie || 'ISENTO')}</IE>
-        <xEnder>${escapeXml(transportadora.endereco || '')}</xEnder>
-        <xMun>${escapeXml(transportadora.cidade || '')}</xMun>
-        <UF>${transportadora.uf || ''}</UF>
-    </transporta>`;
+    const cnpj = transportadora.CNPJ ? transportadora.CNPJ.replace(/\D/g, '') : '';
+    if (cnpj && cnpj.length === 14) {
+        transportaXml = `
+        <transporta>
+            <CNPJ>${cnpj}</CNPJ>
+            <xNome>${escapeXml(transportadora.xNome || '')}</xNome>
+            <IE>${escapeXml(transportadora.IE || 'ISENTO')}</IE>
+            <xEnder>${escapeXml(transportadora.xEnder || '')}</xEnder>
+            <xMun>${escapeXml(transportadora.xMun || '')}</xMun>
+            <UF>${transportadora.UF || ''}</UF>
+        </transporta>`;
+    } else {
+        console.warn('⚠️ Transportadora com CNPJ inválido, ignorando.');
+    }
 }
 
     const volumesXml = `

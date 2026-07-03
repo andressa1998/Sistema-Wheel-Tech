@@ -10,12 +10,45 @@ let pendingEmitOrderId = null;
 let produtosEditados = [];
 let vendaIdParaEdicao = null;
 
-// ===== VERIFICAR SE É FULL (mesma lógica do shipping_simple.js) =====
+// ===== VERIFICAR SE É FULL (versão robusta) =====
 function isFullByAnyField(item) {
+    // 1. Verifica logistic_type (campo mais direto)
+    if (item.shipping && item.shipping.logistic_type) {
+        const logisticType = item.shipping.logistic_type.toLowerCase();
+        if (logisticType === 'fulfillment' || logisticType.includes('full')) {
+            return true;
+        }
+    }
+
+    // 2. Verifica tags (algumas vendas FULL têm a tag "fulfillment")
+    if (item.tags && Array.isArray(item.tags)) {
+        const hasFulfillmentTag = item.tags.some(tag => 
+            tag.toLowerCase() === 'fulfillment' || tag.toLowerCase().includes('full')
+        );
+        if (hasFulfillmentTag) return true;
+    }
+
+    // 3. Fallback: busca nos campos de texto (título, MLB, etc.)
     const text = `${item.titulo || ''} ${item.mlb || ''} ${item.id || ''} ${item.shipping?.logistic_type || ''} ${item.tags?.join(' ') || ''}`.toLowerCase();
     return /full|fulfillment/.test(text);
 }
+
 window.isFullByAnyField = isFullByAnyField;
+
+function mapearUF(nomeEstado) {
+    const mapa = {
+        'acre': 'AC', 'alagoas': 'AL', 'amapá': 'AP', 'amazonas': 'AM',
+        'bahia': 'BA', 'ceará': 'CE', 'distrito federal': 'DF', 'espírito santo': 'ES',
+        'goiás': 'GO', 'maranhão': 'MA', 'mato grosso': 'MT', 'mato grosso do sul': 'MS',
+        'minas gerais': 'MG', 'pará': 'PA', 'paraíba': 'PB', 'paraná': 'PR',
+        'pernambuco': 'PE', 'piauí': 'PI', 'rio de janeiro': 'RJ', 'rio grande do norte': 'RN',
+        'rio grande do sul': 'RS', 'rondônia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC',
+        'são paulo': 'SP', 'sergipe': 'SE', 'tocantins': 'TO'
+    };
+    if (!nomeEstado) return '';
+    const chave = nomeEstado.toLowerCase().trim();
+    return mapa[chave] || nomeEstado.toUpperCase().substring(0, 2);
+}
 
 // ===================== EDITAR PRODUTOS ANTES DA EMISSÃO =====================
 async function abrirModalEdicaoProdutos(orderId) {
@@ -45,31 +78,50 @@ async function abrirModalEdicaoProdutos(orderId) {
             return;
         }
 
-        produtosEditados = items.map(item => ({
-            nome: item.item.title,
-            quantidade: item.quantity || 1,
-            valor_unitario: item.unit_price || 0,
-            sku: item.item.seller_sku || 'SEM_SKU',
-            ncm: '87149990'
-        }));
+        // Buscar NCM salvos por SKU
+        let ncmPorSku = {};
+        try {
+            const { data, error } = await window.supabaseClient
+                .from('produto_ncm')
+                .select('sku, ncm')
+                .in('sku', items.map(item => item.item.seller_sku || 'SEM_SKU'));
+            if (!error && data) {
+                data.forEach(row => ncmPorSku[row.sku] = row.ncm);
+            }
+        } catch (e) {
+            console.warn('Erro ao buscar NCM:', e);
+        }
 
-        // Criar modal
+        produtosEditados = items.map(item => {
+            const sku = item.item.seller_sku || 'SEM_SKU';
+            const ncmSalvo = ncmPorSku[sku] || '87149990';
+            return {
+                nome: item.item.title,
+                quantidade: item.quantity || 1,
+                valor_unitario: item.unit_price || 0,
+                sku: sku,
+                ncm: ncmSalvo
+            };
+        });
+
+        // Criar modal (sem CFOP)
         const modalHTML = `
         <div id="modalEdicaoProdutos" class="modal" style="display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:9999;">
-            <div class="modal-content" style="max-width:800px; width:90%; max-height:90vh; overflow-y:auto; background:white; padding:25px; border-radius:8px;">
+            <div class="modal-content" style="max-width:900px; width:95%; max-height:90vh; overflow-y:auto; background:white; padding:25px; border-radius:8px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                     <h3 style="margin:0;"><i class="fas fa-edit"></i> Editar Produtos</h3>
                     <button onclick="fecharModalEdicaoProdutos()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
                 </div>
-                <p style="color:#6c757d; margin-bottom:15px;">Ajuste a quantidade e o valor unitário de cada produto. O total será recalculado.</p>
+                <p style="color:#6c757d; margin-bottom:15px;">Ajuste a quantidade, valor unitário e NCM de cada produto. O total será recalculado.</p>
                 <div class="table-responsive">
                     <table class="table table-striped">
                         <thead>
                             <tr>
                                 <th>Produto</th>
-                                <th style="width:100px;">Quantidade</th>
-                                <th style="width:150px;">Valor Unitário (R$)</th>
-                                <th style="width:120px;">Subtotal</th>
+                                <th style="width:100px;">Qtd</th>
+                                <th style="width:130px;">Valor Unit.</th>
+                                <th style="width:130px;">NCM</th>
+                                <th style="width:110px;">Subtotal</th>
                             </tr>
                         </thead>
                         <tbody id="produtosEditaveisBody">
@@ -84,6 +136,10 @@ async function abrirModalEdicaoProdutos(orderId) {
                                         <input type="number" class="form-control form-control-sm valor-produto" 
                                                data-index="${index}" value="${p.valor_unitario}" min="0" step="0.01">
                                     </td>
+                                    <td>
+                                        <input type="text" class="form-control form-control-sm ncm-produto" 
+                                               data-index="${index}" value="${p.ncm}" placeholder="NCM" maxlength="8">
+                                    </td>
                                     <td class="subtotal-produto">R$ ${(p.quantidade * p.valor_unitario).toFixed(2)}</td>
                                 </tr>
                             `).join('')}
@@ -91,14 +147,15 @@ async function abrirModalEdicaoProdutos(orderId) {
                         <tfoot>
                             <tr style="font-weight:bold; background:#f8f9fa;">
                                 <td colspan="3" style="text-align:right;">Total da Nota:</td>
-                                <td id="totalGeralProdutos">R$ ${produtosEditados.reduce((acc, p) => acc + (p.quantidade * p.valor_unitario), 0).toFixed(2)}</td>
+                                <td id="totalGeralProdutos" style="text-align:right;" colspan="2">R$ ${produtosEditados.reduce((acc, p) => acc + (p.quantidade * p.valor_unitario), 0).toFixed(2)}</td>
                             </tr>
                         </tfoot>
                     </table>
                 </div>
+
                 <div class="d-flex justify-content-end gap-2 mt-3">
                     <button class="btn btn-secondary" onclick="fecharModalEdicaoProdutos()">Cancelar</button>
-                    <button class="btn btn-success" onclick="confirmarProdutosEditados()"><i class="fas fa-check"></i> Confirmar Valores</button>
+                    <button class="btn btn-success" id="confirmarProdutosFinalBtn"><i class="fas fa-check"></i> Confirmar e Emitir NF-e</button>
                 </div>
             </div>
         </div>`;
@@ -107,20 +164,22 @@ async function abrirModalEdicaoProdutos(orderId) {
         modalContainer.innerHTML = modalHTML;
         document.body.appendChild(modalContainer.firstElementChild);
 
-        // Event listeners para recalcular subtotal
-        document.querySelectorAll('.qtd-produto, .valor-produto').forEach(input => {
+        // Event listeners para recalcular subtotal e atualizar NCM
+        document.querySelectorAll('.qtd-produto, .valor-produto, .ncm-produto').forEach(input => {
             input.addEventListener('input', function() {
                 const idx = parseInt(this.dataset.index);
                 const row = this.closest('tr');
                 const qtdInput = row.querySelector('.qtd-produto');
                 const valorInput = row.querySelector('.valor-produto');
                 const subtotalCell = row.querySelector('.subtotal-produto');
+                const ncmInput = row.querySelector('.ncm-produto');
                 const qtd = parseFloat(qtdInput.value) || 0;
                 const valor = parseFloat(valorInput.value) || 0;
                 const subtotal = qtd * valor;
                 subtotalCell.textContent = `R$ ${subtotal.toFixed(2)}`;
                 produtosEditados[idx].quantidade = qtd;
                 produtosEditados[idx].valor_unitario = valor;
+                produtosEditados[idx].ncm = ncmInput.value.trim() || '87149990';
                 recalcularTotalGeral();
             });
         });
@@ -128,8 +187,14 @@ async function abrirModalEdicaoProdutos(orderId) {
         function recalcularTotalGeral() {
             let total = 0;
             produtosEditados.forEach(p => total += p.quantidade * p.valor_unitario);
-            document.getElementById('totalGeralProdutos').textContent = `R$ ${total.toFixed(2)}`;
+            const totalCell = document.getElementById('totalGeralProdutos');
+            if (totalCell) totalCell.textContent = `R$ ${total.toFixed(2)}`;
         }
+
+        // Botão confirmar
+        document.getElementById('confirmarProdutosFinalBtn').addEventListener('click', function() {
+            confirmarProdutosEditados();
+        });
 
     } catch (error) {
         console.error('Erro ao carregar produtos:', error);
@@ -143,23 +208,66 @@ function fecharModalEdicaoProdutos() {
     // Não reseta vendaIdParaEdicao aqui
 }
 
-function confirmarProdutosEditados() {
+async function confirmarProdutosEditados() {
     const vendaId = vendaIdParaEdicao;
     if (!vendaId) {
         showToast('❌ ID da venda não encontrado', 'error');
         return;
     }
+
+    // Salvar NCMs no banco
+    const ncmPromises = produtosEditados.map(p => {
+        if (p.sku && p.sku !== 'SEM_SKU' && p.ncm) {
+            return window.supabaseClient
+                .from('produto_ncm')
+                .upsert({ sku: p.sku, ncm: p.ncm }, { onConflict: 'sku' });
+        }
+        return Promise.resolve();
+    });
+    await Promise.all(ncmPromises);
+
+    // Preparar produtos para emissão
     window.produtosParaEmissao = produtosEditados.map(p => ({
         nome: p.nome,
         quantidade: p.quantidade,
         valor_unitario: p.valor_unitario,
         sku: p.sku,
-        ncm: p.ncm
+        ncm: p.ncm || '87149990'
     }));
+
     fecharModalEdicaoProdutos();
     emitirNFEParaVenda(vendaId);
-    // Reset após uso (opcional, pois emitirNFEParaVenda também valida)
     vendaIdParaEdicao = null;
+}
+
+// ===================== NCM POR SKU =====================
+async function buscarNCMporSKU(sku) {
+    if (!sku || sku === 'SEM_SKU' || sku === 'N/A') return null;
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('produto_ncm')
+            .select('ncm')
+            .eq('sku', sku)
+            .maybeSingle();
+        if (error) throw error;
+        return data?.ncm || null;
+    } catch (error) {
+        console.warn(`⚠️ Erro ao buscar NCM para SKU ${sku}:`, error.message);
+        return null;
+    }
+}
+
+async function salvarNCMporSKU(sku, ncm) {
+    if (!sku || sku === 'SEM_SKU' || sku === 'N/A' || !ncm) return;
+    try {
+        const { error } = await window.supabaseClient
+            .from('produto_ncm')
+            .upsert({ sku, ncm }, { onConflict: 'sku' });
+        if (error) throw error;
+        console.log(`✅ NCM ${ncm} salvo para SKU ${sku}`);
+    } catch (error) {
+        console.warn(`⚠️ Erro ao salvar NCM para SKU ${sku}:`, error.message);
+    }
 }
 
 // ===================== ABAS =====================
@@ -200,12 +308,14 @@ async function mostrarAbaNFE(aba) {
 }
 
 // ===================== LISTAR VENDAS PENDENTES =====================
+// ===================== LISTAR VENDAS PENDENTES =====================
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando vendas do ML...<\/td><\/tr>';
 
     try {
+        // 1. Obter token ML
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
             const tokenData = await window.getValidToken();
@@ -213,6 +323,7 @@ async function carregarVendasPendentes() {
         }
         if (!token) throw new Error('Token ML não disponível');
 
+        // 2. Buscar vendas do ML (últimas 50 pagas)
         const url = `https://api.mercadolibre.com/orders/search?seller=415176739&sort=date_desc&order.status=paid&limit=50`;
         const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
         const response = await fetch(proxyUrl);
@@ -224,7 +335,7 @@ async function carregarVendasPendentes() {
             return;
         }
 
-        // Buscar IDs com NF-e no Supabase (tabela nfe_emitidas)
+        // 3. Buscar IDs com NF-e no Supabase (tabela nfe_emitidas)
         let idsComNFE = new Set();
         try {
             const { data: nfes, error } = await window.supabaseClient
@@ -238,12 +349,15 @@ async function carregarVendasPendentes() {
             console.warn('⚠️ Erro ao consultar nfe_emitidas:', e);
         }
 
-        // Filtrar pendentes: não têm NF-e e não são FULL
+        // 4. Filtrar pendentes: não têm NF-e e não são FULL
         const pendentes = results.filter(v => {
             const idVenda = String(v.id);
+            // Já possui NF-e?
             if (idsComNFE.has(idVenda)) return false;
+
+            // Verifica se é FULL (usa a função robusta)
             if (typeof isFullByAnyField === 'function' && isFullByAnyField(v)) {
-                console.log(`🚫 Venda FULL ignorada: ${idVenda}`);
+                console.log(`🚫 Venda FULL ignorada: ${idVenda} (logistic_type: ${v.shipping?.logistic_type || 'não informado'})`);
                 return false;
             }
             return true;
@@ -254,8 +368,10 @@ async function carregarVendasPendentes() {
             return;
         }
 
+        // 5. Guardar para uso posterior
         vendasPendentes = pendentes;
 
+        // 6. Renderizar tabela
         tbody.innerHTML = pendentes.map(v => `
             <tr>
                 <td>${v.id}</td>
@@ -270,6 +386,7 @@ async function carregarVendasPendentes() {
                 </td>
             </tr>`).join('');
 
+        // Event listeners
         document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
             btn.removeEventListener('click', handleEmitirNFEClick);
             btn.addEventListener('click', handleEmitirNFEClick);
@@ -290,6 +407,7 @@ function handleEmitirNFEClick(event) {
     abrirModalEdicaoProdutos(vendaId);
 }
 
+// ===================== EMITIR NF-e PARA UMA VENDA =====================
 // ===================== EMITIR NF-e PARA UMA VENDA =====================
 async function emitirNFEParaVenda(orderId) {
     console.log('🔵 Iniciando emitirNFEParaVenda para:', orderId);
@@ -318,6 +436,21 @@ async function emitirNFEParaVenda(orderId) {
         if (typeof field === 'string') return field;
         if (typeof field === 'object' && field.name) return field.name;
         return '';
+    }
+
+    function mapearUF(nomeEstado) {
+        if (!nomeEstado) return '';
+        const mapa = {
+            'acre': 'AC', 'alagoas': 'AL', 'amapá': 'AP', 'amazonas': 'AM',
+            'bahia': 'BA', 'ceará': 'CE', 'distrito federal': 'DF', 'espírito santo': 'ES',
+            'goiás': 'GO', 'maranhão': 'MA', 'mato grosso': 'MT', 'mato grosso do sul': 'MS',
+            'minas gerais': 'MG', 'pará': 'PA', 'paraíba': 'PB', 'paraná': 'PR',
+            'pernambuco': 'PE', 'piauí': 'PI', 'rio de janeiro': 'RJ', 'rio grande do norte': 'RN',
+            'rio grande do sul': 'RS', 'rondônia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC',
+            'são paulo': 'SP', 'sergipe': 'SE', 'tocantins': 'TO'
+        };
+        const chave = nomeEstado.toLowerCase().trim();
+        return mapa[chave] || nomeEstado.toUpperCase().substring(0, 2);
     }
 
     try {
@@ -440,12 +573,17 @@ async function emitirNFEParaVenda(orderId) {
         const nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || '';
         document.getElementById('clienteNome').value = nome;
 
-        // Preencher endereço
+        // Preencher endereço com conversão de UF
         document.getElementById('clienteEndereco').value = address.address_line || address.street_name || '';
         document.getElementById('clienteNumero').value = address.street_number || 'S/N';
         document.getElementById('clienteBairro').value = getValue(address.neighborhood);
         document.getElementById('clienteCidade').value = getValue(address.city);
-        document.getElementById('clienteUF').value = getValue(address.state);
+
+        // 🔥 CONVERTER UF PARA SIGLA
+        const ufOriginal = getValue(address.state);
+        const ufSigla = mapearUF(ufOriginal);
+        document.getElementById('clienteUF').value = ufSigla;
+
         document.getElementById('clienteCEP').value = address.zip_code ? address.zip_code.replace(/\D/g, '') : '';
 
         // CPF/CNPJ em branco
@@ -455,12 +593,20 @@ async function emitirNFEParaVenda(orderId) {
             nome,
             endereco: document.getElementById('clienteEndereco').value,
             cidade: document.getElementById('clienteCidade').value,
-            uf: document.getElementById('clienteUF').value
+            uf: ufSigla
         });
+
+        // 🔥 Definir CFOP automaticamente no dropdown
+        const cfopSelect = document.getElementById('nfeCfop');
+        if (cfopSelect) {
+            const cfopSugerido = (ufSigla === 'PR') ? '5102' : '6108';
+            cfopSelect.value = cfopSugerido;
+            console.log(`🔧 CFOP definido automaticamente: ${cfopSugerido} (UF: ${ufSigla})`);
+        }
 
         window._mlAccessToken = token;
 
-        // 🔥 Carregar lista de transportadoras no select
+        // Carregar lista de transportadoras no select
         await carregarTransportadorasSelect();
 
         abrirModalCliente();
@@ -557,6 +703,21 @@ async function confirmarEmissaoNFE() {
     const cep = document.getElementById('clienteCEP').value.trim().replace(/\D/g, '');
     const transportadoraId = document.getElementById('nfeTransportadora')?.value || null;
 
+    // 🔥 CAPTURAR CFOP – com fallback e log
+    const cfopSelect = document.getElementById('nfeCfop');
+    let cfop = '';
+    if (cfopSelect) {
+        cfop = cfopSelect.value;
+        console.log(`📊 CFOP do dropdown: "${cfop}"`);
+    } else {
+        console.warn('⚠️ Elemento #nfeCfop não encontrado');
+    }
+    // Se estiver vazio, define fallback
+    if (!cfop) {
+        cfop = (uf === 'PR') ? '5102' : '6108';
+        console.warn(`⚠️ CFOP vazio, usando fallback: ${cfop}`);
+    }
+
     // Validações
     if (!nome) { showToast('Nome é obrigatório', 'warning'); return; }
     if (!documento || (documento.length !== 11 && documento.length !== 14)) {
@@ -579,10 +740,9 @@ async function confirmarEmissaoNFE() {
     }
 
     try {
-        // 1. Produtos: usar os editados (window.produtosParaEmissao) ou buscar da API
+        // Produtos
         let produtos = window.produtosParaEmissao;
         if (!produtos || produtos.length === 0) {
-            // Fallback: buscar da venda
             let token = localStorage.getItem('ml_access_token');
             if (!token && typeof window.getValidToken === 'function') {
                 const tokenData = await window.getValidToken();
@@ -614,21 +774,32 @@ async function confirmarEmissaoNFE() {
             }];
         }
 
-        const cfop = (uf === 'PR') ? '5102' : '6108';
+        // NCM
+        const produtosFinal = await Promise.all(produtos.map(async (prod) => {
+            let ncmFinal = prod.ncm || '87149990';
+            if (prod.sku && prod.sku !== 'SEM_SKU' && prod.sku !== 'N/A') {
+                const ncmSalvo = await buscarNCMporSKU(prod.sku);
+                if (ncmSalvo) ncmFinal = ncmSalvo;
+                else await salvarNCMporSKU(prod.sku, ncmFinal);
+            }
+            return { ...prod, ncm: ncmFinal };
+        }));
+
         const mlToken = window._mlAccessToken || null;
 
         const payload = {
             venda_id: String(orderId),
-            cliente: {
-                nome, documento, endereco, numero, bairro, cidade, uf, cep
-            },
-            produtos: produtos,
+            cliente: { nome, documento, endereco, numero, bairro, cidade, uf, cep },
+            produtos: produtosFinal,
             cfop: cfop,
             natureza_operacao: 'VENDA',
-            modalidade_frete: transportadoraId ? '0' : '9', // 0 = transportadora contratada, 9 = sem frete
+            modalidade_frete: transportadoraId ? '0' : '9',
             transportadora_id: transportadoraId,
             ml_access_token: mlToken
         };
+
+        console.log('📤 Payload CFOP:', cfop, 'UF:', uf);
+        console.log('📤 Payload completo:', JSON.stringify(payload, null, 2));
 
         const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
@@ -639,23 +810,8 @@ async function confirmarEmissaoNFE() {
 
         if (result.success) {
             showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
-
-            // 🔥 SALVAR CLIENTE NO BANCO (ASSÍNCRONO)
-            await salvarClienteNoBanco({
-                nome,
-                documento,
-                endereco,
-                numero,
-                bairro,
-                cidade,
-                uf,
-                cep
-            });
-
-            // Limpar cache local
+            await salvarClienteNoBanco({ nome, documento, endereco, numero, bairro, cidade, uf, cep });
             window.produtosParaEmissao = null;
-
-            // Recarregar listas
             await carregarVendasPendentes();
             await carregarNFesEmitidas();
         } else {
@@ -733,7 +889,7 @@ async function visualizarNFE(chaveAcesso) {
             return;
         }
 
-        // Extrai dados
+        // Extrai dados (mantido igual)
         const chave = infNFe.getAttribute('Id').replace('NFe', '');
         const nNF = infNFe.querySelector('nNF')?.textContent || '';
         const serie = infNFe.querySelector('serie')?.textContent || '';
@@ -769,7 +925,7 @@ async function visualizarNFE(chaveAcesso) {
         const destUF = destEnd?.querySelector('UF')?.textContent || '';
         const destCEP = destEnd?.querySelector('CEP')?.textContent || '';
 
-        // Produtos
+        // Produtos – forçar UNID = PC
         const dets = xmlDoc.querySelectorAll('det');
         let produtosHTML = '';
         let totalProd = 0;
@@ -781,6 +937,7 @@ async function visualizarNFE(chaveAcesso) {
             const qtd = prod.querySelector('qCom')?.textContent || '0';
             const vUn = prod.querySelector('vUnCom')?.textContent || '0';
             const vProd = prod.querySelector('vProd')?.textContent || '0';
+            const unidade = 'PC'; // forçar sempre PC
             totalProd += parseFloat(vProd) || 0;
             produtosHTML += `
                 <tr>
@@ -788,7 +945,8 @@ async function visualizarNFE(chaveAcesso) {
                     <td style="text-align:left;">${nome}</td>
                     <td>${ncm}</td>
                     <td>${cfop}</td>
-                    <td>${qtd}</td>
+                    <td>${unidade}</td>
+                    <td style="text-align:right;">${qtd}</td>
                     <td style="text-align:right;">${parseFloat(vUn).toFixed(2)}</td>
                     <td style="text-align:right;">${parseFloat(vProd).toFixed(2)}</td>
                 </tr>
@@ -858,6 +1016,7 @@ async function visualizarNFE(chaveAcesso) {
 <html>
 <head>
     <title>DANFE - ${chave}</title>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -874,28 +1033,31 @@ async function visualizarNFE(chaveAcesso) {
             border: 2px solid #000;
             padding: 15px;
             background: #fff;
+            position: relative;
         }
         .header {
             border-bottom: 2px solid #000;
             padding-bottom: 8px;
             margin-bottom: 10px;
             text-align: center;
+            position: relative;
         }
-        .header .emitente-nome {
-            font-size: 16px;
-            font-weight: bold;
+        .logo-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 60px;
+            height: 60px;
         }
-        .header .emitente-end {
-            font-size: 10px;
+        .logo-container img {
+            max-width: 100%;
+            max-height: 60px;
+            object-fit: contain;
         }
-        .header .titulo {
-            font-size: 20px;
-            font-weight: bold;
-            letter-spacing: 2px;
-        }
-        .header .subtitulo {
-            font-size: 12px;
-        }
+        .header .emitente-nome { font-size: 16px; font-weight: bold; }
+        .header .emitente-end { font-size: 10px; }
+        .header .titulo { font-size: 20px; font-weight: bold; letter-spacing: 2px; }
+        .header .subtitulo { font-size: 12px; }
         .chave {
             font-size: 14px;
             font-weight: bold;
@@ -905,6 +1067,28 @@ async function visualizarNFE(chaveAcesso) {
             margin: 5px 0;
             border: 1px solid #000;
         }
+        .barcode-container {
+            text-align: center;
+            margin: 5px 0;
+        }
+        .barcode-container svg {
+            max-width: 100%;
+            height: auto;
+        }
+        .recibo {
+            border: 1px solid #000;
+            padding: 8px;
+            margin: 0 0 10px 0;
+            font-size: 10px;
+            text-align: center;
+        }
+        .recibo .assinatura {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #000;
+            display: flex;
+            justify-content: space-between;
+        }
         .dados-gerais {
             display: flex;
             justify-content: space-between;
@@ -913,15 +1097,9 @@ async function visualizarNFE(chaveAcesso) {
             padding: 6px 0;
             margin: 6px 0;
         }
-        .dados-gerais > div {
-            width: 48%;
-        }
-        .dados-gerais p {
-            margin: 2px 0;
-        }
-        .dados-gerais .label {
-            font-weight: bold;
-        }
+        .dados-gerais > div { width: 48%; }
+        .dados-gerais p { margin: 2px 0; }
+        .dados-gerais .label { font-weight: bold; }
         .table-produtos {
             width: 100%;
             border-collapse: collapse;
@@ -933,13 +1111,10 @@ async function visualizarNFE(chaveAcesso) {
             padding: 3px 4px;
             text-align: center;
         }
-        .table-produtos th {
-            background: #ddd;
-            font-weight: bold;
-        }
+        .table-produtos th { background: #ddd; font-weight: bold; }
         .table-produtos td:first-child { width: 30px; }
         .table-produtos td:nth-child(2) { text-align: left; min-width: 200px; }
-        .table-produtos td:nth-child(6), .table-produtos td:nth-child(7) { text-align: right; padding-right: 6px; }
+        .table-produtos td:nth-child(6), .table-produtos td:nth-child(7), .table-produtos td:nth-child(8) { text-align: right; padding-right: 6px; }
 
         .totais {
             display: flex;
@@ -949,32 +1124,37 @@ async function visualizarNFE(chaveAcesso) {
             padding: 6px 0;
             margin: 6px 0;
         }
-        .totais > div {
-            margin-left: 30px;
-            text-align: right;
-        }
-        .totais .valor-grande {
-            font-size: 14px;
-            font-weight: bold;
-        }
+        .totais > div { margin-left: 30px; text-align: right; }
+        .totais .valor-grande { font-size: 14px; font-weight: bold; }
 
-        .transp-section {
+        .transp-section { margin: 10px 0; border-top: 1px solid #000; padding-top: 6px; }
+        .transp-table { width: 100%; border-collapse: collapse; }
+        .transp-table th, .transp-table td { border: 1px solid #000; padding: 3px 5px; text-align: left; vertical-align: top; }
+        .transp-table th { background: #ddd; text-align: center; }
+
+        .dados-adicionais {
+            border: 2px solid #000;
+            padding: 10px;
             margin: 10px 0;
-            border-top: 1px solid #000;
-            padding-top: 6px;
+            font-size: 9px;
+            white-space: pre-wrap;
+            position: relative;
+            background: #fcfcfc;
         }
-        .transp-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        .transp-table th, .transp-table td {
+        .dados-adicionais .titulo {
+            font-weight: bold;
+            font-size: 10px;
+            background: #fff;
+            padding: 0 6px;
+            position: absolute;
+            top: -8px;
+            left: 10px;
             border: 1px solid #000;
-            padding: 3px 5px;
-            text-align: left;
-            vertical-align: top;
+            background: #fff;
+            border-radius: 2px;
         }
-        .transp-table th {
-            background: #ddd;
+        .dados-adicionais .conteudo {
+            margin-top: 6px;
             text-align: center;
         }
 
@@ -1001,8 +1181,21 @@ async function visualizarNFE(chaveAcesso) {
         <button onclick="window.close()">❌ Fechar</button>
     </div>
     <div class="danfe">
-        <!-- Cabeçalho -->
+        <!-- Recibo (acima do cabeçalho) -->
+        <div class="recibo">
+            <div><strong>RECEBEMOS DE ${emitNome} OS PRODUTOS CONSTANTES DA NOTA FISCAL INDICADA ABAIXO</strong></div>
+            <div style="margin-top:5px;">NF-e Nº ${nNF.padStart(6, '0')} - SÉRIE ${serie}</div>
+            <div style="margin-top:8px;">DATA DE RECEBIMENTO: ____________________</div>
+            <div class="assinatura">
+                <span>IDENTIFICAÇÃO E ASSINATURA DO RECEBEDOR ______________________</span>
+            </div>
+        </div>
+
+        <!-- Cabeçalho com logo -->
         <div class="header">
+            <div class="logo-container">
+                <img src="logo.png" alt="Logo Wheel Tech">
+            </div>
             <div class="emitente-nome">${emitNome}</div>
             <div class="emitente-end">${emitLogr}, ${emitNro} - ${emitBairro} - ${emitMun}/${emitUF} - CEP: ${emitCEP} - Fone: ${emitFone}</div>
             <div style="margin-top:6px;">
@@ -1016,6 +1209,9 @@ async function visualizarNFE(chaveAcesso) {
             <div class="chave">CHAVE DE ACESSO: ${chave.replace(/(.{4})/g, '$1 ')}</div>
             <div style="font-size:9px;">Consulta: www.nfe.fazenda.gov.br/portal ou site da Sefaz Autorizadora</div>
             <div style="margin-top:2px;"><strong>Protocolo:</strong> ${protocolo}</div>
+            <div class="barcode-container">
+                <svg id="barcode"></svg>
+            </div>
         </div>
 
         <!-- Dados Gerais -->
@@ -1072,14 +1268,31 @@ async function visualizarNFE(chaveAcesso) {
         <!-- Transportadora -->
         ${transpHTML}
 
-        <!-- ===== INFORMAÇÕES COMPLEMENTARES ===== -->
-        ${infAdic ? `<div style="margin-top:10px; border-top:1px solid #000; padding-top:6px; font-size:9px; white-space:pre-wrap;">${infAdic}</div>` : ''}
+        <!-- Dados Adicionais -->
+        <div class="dados-adicionais">
+            <div class="titulo">DADOS ADICIONAIS</div>
+            <div class="conteudo">${infAdic || 'Nenhuma informação complementar.'}</div>
+        </div>
+
         <!-- Rodapé -->
         <div class="footer">
             <p>Documento gerado eletronicamente - Sistema Wheel Tech</p>
             <p>Chave: ${chave}</p>
         </div>
     </div>
+
+    <script>
+        // Gerar código de barras
+        JsBarcode("#barcode", "${chave}", {
+            format: "CODE128",
+            width: 1.2,
+            height: 40,
+            displayValue: false,
+            fontSize: 12,
+            background: "#ffffff",
+            lineColor: "#000000"
+        });
+    </script>
 </body>
 </html>`;
 
