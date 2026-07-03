@@ -3,7 +3,7 @@ window.showToast = window.showToast || showToast;
 
 // Configurações globais
 if (!window.WORKER_URL) window.WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
-if (!window.API_BASE_URL) window.API_BASE_URL = 'http://localhost:3000';
+if (!window.API_BASE_URL) window.API_BASE_URL = 'https://sistema-wheel-tech.onrender.com';
 
 let vendasPendentes = [];
 let pendingEmitOrderId = null;
@@ -308,10 +308,6 @@ async function mostrarAbaNFE(aba) {
     if (aba === 'clientes') await carregarClientes();
 }
 
-/**
- * Carrega as vendas do Mercado Livre que estão pagas e sem NF-e,
- * excluindo automaticamente as vendas FULL.
- */
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
@@ -338,7 +334,7 @@ async function carregarVendasPendentes() {
             return;
         }
 
-        // 3. Buscar IDs com NF-e já emitidas (para não listar novamente)
+        // 3. Buscar IDs com NF-e no Supabase (tabela nfe_emitidas)
         let idsComNFE = new Set();
         try {
             const { data: nfes, error } = await window.supabaseClient
@@ -357,10 +353,10 @@ async function carregarVendasPendentes() {
             const idVenda = String(v.id);
             if (idsComNFE.has(idVenda)) return false;
 
-            // 🔥 VERIFICAÇÃO DE FULL – mesmo padrão do sales_dashboard
+            // 🔥 VERIFICAÇÃO DE FULL (AGORA COM includes)
             const tipoEnvio = (v.shipping?.logistic_type || '').toLowerCase();
             const tags = (v.tags || []).map(t => t.toLowerCase());
-            const isFull = tipoEnvio === 'fulfillment' ||
+            const isFull = tipoEnvio.includes('fulfillment') ||
                            tags.includes('fulfillment') ||
                            (v.order_items?.[0]?.item?.title || '').toLowerCase().includes('full');
 
@@ -415,7 +411,6 @@ function handleEmitirNFEClick(event) {
     abrirModalEdicaoProdutos(vendaId);
 }
 
-// ===================== EMITIR NF-e PARA UMA VENDA =====================
 // ===================== EMITIR NF-e PARA UMA VENDA =====================
 async function emitirNFEParaVenda(orderId) {
     console.log('🔵 Iniciando emitirNFEParaVenda para:', orderId);
@@ -998,49 +993,66 @@ async function visualizarNFE(chaveAcesso) {
         const vTotTrib = ICMSTot?.querySelector('vTotTrib')?.textContent || '0';
 
         // Transportadora
-        const transp = infNFe.querySelector('transp');
-        const transporta = transp?.querySelector('transporta');
-        let transpHTML = '';
-        if (transporta) {
-            const tpCNPJ = transporta.querySelector('CNPJ')?.textContent || '';
-            const tpNome = transporta.querySelector('xNome')?.textContent || '';
-            const tpIE = transporta.querySelector('IE')?.textContent || '';
-            const tpEnd = transporta.querySelector('xEnder')?.textContent || '';
-            const tpMun = transporta.querySelector('xMun')?.textContent || '';
-            const tpUF = transporta.querySelector('UF')?.textContent || '';
-            const freteLabel = modFrete === '0' ? 'Emitente' : modFrete === '1' ? 'Destinatário' : modFrete === '2' ? 'Terceiros' : 'Sem frete';
-            transpHTML = `
-                <div class="transp-section">
-                    <table class="transp-table">
-                        <tr><th colspan="4">TRANSPORTADOR / VOLUMES TRANSPORTADOS</th></tr>
-                        <tr>
-                            <td><strong>RAZÃO SOCIAL</strong><br>${tpNome}</td>
-                            <td><strong>FRETE POR CONTA</strong><br>${freteLabel}</td>
-                            <td><strong>CNPJ/CPF</strong><br>${tpCNPJ}</td>
-                            <td><strong>INSCRIÇÃO ESTADUAL</strong><br>${tpIE}</td>
-                        </tr>
-                        <tr>
-                            <td colspan="2"><strong>ENDEREÇO</strong><br>${tpEnd}</td>
-                            <td><strong>MUNICÍPIO</strong><br>${tpMun}</td>
-                            <td><strong>UF</strong><br>${tpUF}</td>
-                        </tr>
-                        <tr>
-                            <td><strong>QUANTIDADE</strong><br>0</td>
-                            <td><strong>ESPÉCIE</strong><br></td>
-                            <td><strong>MARCA</strong><br></td>
-                            <td><strong>NUMERAÇÃO</strong><br></td>
-                        </tr>
-                        <tr>
-                            <td><strong>PESO BRUTO</strong><br>0,000</td>
-                            <td><strong>PESO LÍQUIDO</strong><br>0,000</td>
-                            <td colspan="2"></td>
-                        </tr>
-                    </table>
-                </div>
-            `;
-        } else {
-            transpHTML = `<p><strong>Frete:</strong> ${modFrete === '9' ? 'Sem frete' : 'Não informado'}</p>`;
-        }
+        // ===== DENTRO DA FUNÇÃO visualizarNFE =====
+// Substitua o bloco que monta transpHTML por este:
+
+const transp = infNFe.querySelector('transp');
+const transporta = transp?.querySelector('transporta');
+const vol = transp?.querySelector('vol'); // <-- pega o primeiro volume
+
+let qVol = '0';
+let pesoL = '0,000';
+let pesoB = '0,000';
+if (vol) {
+    qVol = vol.querySelector('qVol')?.textContent || '0';
+    pesoL = vol.querySelector('pesoL')?.textContent || '0,000';
+    pesoB = vol.querySelector('pesoB')?.textContent || '0,000';
+    // Formata com 3 casas decimais, se necessário
+    if (!isNaN(parseFloat(pesoL))) pesoL = parseFloat(pesoL).toFixed(3);
+    if (!isNaN(parseFloat(pesoB))) pesoB = parseFloat(pesoB).toFixed(3);
+}
+
+let transpHTML = '';
+if (transporta) {
+    const tpCNPJ = transporta.querySelector('CNPJ')?.textContent || '';
+    const tpNome = transporta.querySelector('xNome')?.textContent || '';
+    const tpIE = transporta.querySelector('IE')?.textContent || '';
+    const tpEnd = transporta.querySelector('xEnder')?.textContent || '';
+    const tpMun = transporta.querySelector('xMun')?.textContent || '';
+    const tpUF = transporta.querySelector('UF')?.textContent || '';
+    const freteLabel = modFrete === '0' ? 'Emitente' : modFrete === '1' ? 'Destinatário' : modFrete === '2' ? 'Terceiros' : 'Sem frete';
+    transpHTML = `
+        <div class="transp-section">
+            <table class="transp-table">
+                <tr><th colspan="4">TRANSPORTADOR / VOLUMES TRANSPORTADOS</th></tr>
+                <tr>
+                    <td><strong>RAZÃO SOCIAL</strong><br>${tpNome}</td>
+                    <td><strong>FRETE POR CONTA</strong><br>${freteLabel}</td>
+                    <td><strong>CNPJ/CPF</strong><br>${tpCNPJ}</td>
+                    <td><strong>INSCRIÇÃO ESTADUAL</strong><br>${tpIE}</td>
+                </tr>
+                <tr>
+                    <td colspan="2"><strong>ENDEREÇO</strong><br>${tpEnd}</td>
+                    <td><strong>MUNICÍPIO</strong><br>${tpMun}</td>
+                    <td><strong>UF</strong><br>${tpUF}</td>
+                </tr>
+                <tr>
+                    <td><strong>QUANTIDADE</strong><br>${qVol}</td>
+                    <td><strong>ESPÉCIE</strong><br></td>
+                    <td><strong>MARCA</strong><br></td>
+                    <td><strong>NUMERAÇÃO</strong><br></td>
+                </tr>
+                <tr>
+                    <td><strong>PESO BRUTO</strong><br>${pesoB}</td>
+                    <td><strong>PESO LÍQUIDO</strong><br>${pesoL}</td>
+                    <td colspan="2"></td>
+                </tr>
+            </table>
+        </div>
+    `;
+} else {
+    transpHTML = `<p><strong>Frete:</strong> ${modFrete === '9' ? 'Sem frete' : 'Não informado'}</p>`;
+}
 
         // ===== INFORMAÇÕES COMPLEMENTARES (infAdic) =====
         const infAdic = infNFe.querySelector('infAdic infCpl')?.textContent || '';
