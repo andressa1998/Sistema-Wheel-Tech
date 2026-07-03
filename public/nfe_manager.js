@@ -308,7 +308,6 @@ async function mostrarAbaNFE(aba) {
 }
 
 // ===================== LISTAR VENDAS PENDENTES =====================
-// ===================== LISTAR VENDAS PENDENTES =====================
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
@@ -349,15 +348,19 @@ async function carregarVendasPendentes() {
             console.warn('⚠️ Erro ao consultar nfe_emitidas:', e);
         }
 
-        // 4. Filtrar pendentes: não têm NF-e e não são FULL
+        // 4. Filtrar pendentes: não têm NF-e e não são FULL (usando lógica do sales_dashboard)
         const pendentes = results.filter(v => {
             const idVenda = String(v.id);
-            // Já possui NF-e?
             if (idsComNFE.has(idVenda)) return false;
 
-            // Verifica se é FULL (usa a função robusta)
-            if (typeof isFullByAnyField === 'function' && isFullByAnyField(v)) {
-                console.log(`🚫 Venda FULL ignorada: ${idVenda} (logistic_type: ${v.shipping?.logistic_type || 'não informado'})`);
+            // 🔥 VERIFICAÇÃO DE FULL (mesma lógica do sales_dashboard)
+            const tipoEnvio = v.shipping?.logistic_type || '';
+            const tags = (v.tags || []).map(t => t.toLowerCase());
+            const isFull = tipoEnvio.toLowerCase() === 'fulfillment' ||
+                           tags.includes('fulfillment') ||
+                           (v.order_items?.[0]?.item?.title || '').toLowerCase().includes('full');
+            if (isFull) {
+                console.log(`🚫 Venda FULL ignorada: ${idVenda}`);
                 return false;
             }
             return true;
@@ -368,10 +371,8 @@ async function carregarVendasPendentes() {
             return;
         }
 
-        // 5. Guardar para uso posterior
         vendasPendentes = pendentes;
 
-        // 6. Renderizar tabela
         tbody.innerHTML = pendentes.map(v => `
             <tr>
                 <td>${v.id}</td>
@@ -386,7 +387,6 @@ async function carregarVendasPendentes() {
                 </td>
             </tr>`).join('');
 
-        // Event listeners
         document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
             btn.removeEventListener('click', handleEmitirNFEClick);
             btn.addEventListener('click', handleEmitirNFEClick);

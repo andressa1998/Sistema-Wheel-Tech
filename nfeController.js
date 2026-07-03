@@ -1,3 +1,5 @@
+const WORKER_URL = process.env.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+
 // nfeController.js - Emissão, Cancelamento, Listagem, Consulta, Avulsa, Sincronização ML
 const { gerarXmlNfe } = require('./xmlBuilder');
 const { assinarXml } = require('./xmlSigner');
@@ -56,24 +58,31 @@ async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
 
 // ===================== IMPORTAR NF-e NO ML =====================
 async function importarNFEnoML(shipment_id, xml, token) {
-    if (!shipment_id) return { ok: true };
+    if (!shipment_id) return { ok: true, message: 'Sem shipment_id' };
     const url = `https://api.mercadolibre.com/shipments/${shipment_id}/invoice_data?siteId=MLB`;
     const fetch = require('node-fetch');
     try {
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/xml' },
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/xml'
+            },
             body: xml
         });
         if (!response.ok) {
             const text = await response.text();
             console.warn(`❌ ML retornou erro ${response.status}: ${text.substring(0, 200)}`);
-            return { ok: false };
+            // Se o erro for 400 ou 409, pode ser que a NF-e já tenha sido importada ou o envio não precise
+            if (response.status === 400 || response.status === 409) {
+                return { ok: true, message: 'ML já possui NF-e ou não requer importação' };
+            }
+            return { ok: false, error: text };
         }
         return { ok: true, xml_url: response.headers.get('location') };
     } catch (error) {
         console.warn('Erro ao importar NF-e no ML (não crítico):', error.message);
-        return { ok: false };
+        return { ok: false, error: error.message };
     }
 }
 
@@ -102,7 +111,6 @@ async function emitirNFe(req, res) {
         const dados = req.body;
         const { venda_id, cliente, produtos, cfop, natureza_operacao, modalidade_frete, transportadora_id, ml_access_token } = dados;
 
-        // Validações iniciais
         if (!cliente) throw new Error('Cliente não informado');
         if (!produtos || produtos.length === 0) throw new Error('Nenhum produto informado');
 
@@ -113,7 +121,6 @@ async function emitirNFe(req, res) {
         if (buyerUF !== SELLER_UF && cfop !== '6108')
             throw new Error(`Venda fora do estado (${buyerUF}) exige CFOP 6108.`);
 
-        // ========== TRATAMENTO DO CPF/CNPJ ==========
         let documento = (cliente.documento || '').replace(/\D/g, '');
         if (!documento || (documento.length !== 11 && documento.length !== 14)) {
             console.warn('⚠️ Documento inválido, usando CPF genérico para homologação');
@@ -121,7 +128,6 @@ async function emitirNFe(req, res) {
         }
         let tipoDoc = (documento.length === 14) ? 'CNPJ' : 'CPF';
 
-        // ========== DADOS DO DESTINATÁRIO ==========
         const logradouro = cliente.endereco || cliente.logradouro || 'NÃO INFORMADO';
         const numero = cliente.numero || 'S/N';
         const bairro = cliente.bairro || 'CENTRO';
@@ -153,12 +159,6 @@ async function emitirNFe(req, res) {
             destinatario.CNPJ = documento;
         }
 
-        // ===== CORREÇÃO: FORÇAR NOME DO DESTINATÁRIO EM HOMOLOGAÇÃO (opcional) =====
-        // if (AMBIENTE === 'homologacao') {
-        //   destinatario.xNome = 'NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL';
-        //   console.log('🔁 Nome do destinatário ajustado para homologação.');
-        // }
-
         // ========== CONTROLE SEQUENCIAL DA NF ==========
         const serie = 3;
         let nNF = null;
@@ -183,43 +183,37 @@ async function emitirNFe(req, res) {
         }
         if (!nNF) nNF = Math.floor(Math.random() * 900000000) + 100000000;
 
-        // ========== GERAR XML (com CSRT dinâmico) ==========
-        const tokenCSRT = AMBIENTE === 'producao' ? CSRT_TOKEN_PRODUCAO : CSRT_TOKEN_HOMOLOGACAO;
-        const idCSRT = AMBIENTE === 'producao' ? '04' : '03';
-
-        // 🔥 BUSCAR DADOS DA TRANSPORTADORA (se fornecida)
-let transportadoraDados = null;
-if (transportadora_id) {
-    try {
-        const { data: transp, error } = await supabase
-            .from('transportadoras')
-            .select('*')
-            .eq('id', transportadora_id)
-            .maybeSingle();
-        if (!error && transp) {
-            const cnpjLimpo = (transp.cnpj || '').replace(/\D/g, '');
-            // Verifica se tem 14 dígitos e não é undefined
-            if (cnpjLimpo && cnpjLimpo.length === 14) {
-                transportadoraDados = {
-                    CNPJ: cnpjLimpo,
-                    xNome: transp.nome || 'Transportadora não informada',
-                    IE: transp.ie || 'ISENTO',
-                    xEnder: transp.endereco || '',
-                    xMun: transp.cidade || '',
-                    UF: transp.uf || '',
-                };
-                console.log(`✅ Transportadora carregada: ${transp.nome}`);
-            } else {
-                console.warn(`⚠️ CNPJ da transportadora inválido: ${transp.cnpj || 'vazio'} - Ignorando transportadora.`);
-                // Não define transportadoraDados
+        // ========== BUSCAR TRANSPORTADORA ==========
+        let transportadoraDados = null;
+        if (transportadora_id) {
+            try {
+                const { data: transp, error } = await supabase
+                    .from('transportadoras')
+                    .select('*')
+                    .eq('id', transportadora_id)
+                    .maybeSingle();
+                if (!error && transp) {
+                    const cnpjLimpo = (transp.cnpj || '').replace(/\D/g, '');
+                    if (cnpjLimpo.length === 14) {
+                        transportadoraDados = {
+                            CNPJ: cnpjLimpo,
+                            xNome: transp.nome || 'Transportadora não informada',
+                            IE: transp.ie || 'ISENTO',
+                            xEnder: transp.endereco || '',
+                            xMun: transp.cidade || '',
+                            UF: transp.uf || '',
+                        };
+                        console.log(`✅ Transportadora carregada: ${transp.nome}`);
+                    } else {
+                        console.warn(`⚠️ CNPJ da transportadora inválido: ${transp.cnpj} - Ignorando.`);
+                    }
+                }
+            } catch (err) {
+                console.warn('⚠️ Erro ao buscar transportadora:', err.message);
             }
         }
-    } catch (err) {
-        console.warn('⚠️ Erro ao buscar transportadora:', err.message);
-    }
-}
 
-        // ========== CÁLCULO DO VALOR TOTAL E INFORMAÇÕES ADICIONAIS ==========
+        // ========== VALOR TOTAL E INFORMAÇÕES ADICIONAIS ==========
         const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
         const percentualTributos = 0.15;
         const totalTributos = valorTotal * percentualTributos;
@@ -234,6 +228,9 @@ R$ ${estaduais.toFixed(2)} estaduais
 Fonte: IBPT/empresometro.com.br 92589A`;
 
         // ========== GERAR XML ==========
+        const tokenCSRT = AMBIENTE === 'producao' ? CSRT_TOKEN_PRODUCAO : CSRT_TOKEN_HOMOLOGACAO;
+        const idCSRT = AMBIENTE === 'producao' ? '04' : '03';
+
         const xml = gerarXmlNfe({
             nNF,
             serie,
@@ -243,7 +240,7 @@ Fonte: IBPT/empresometro.com.br 92589A`;
             cfop,
             natOp: natureza_operacao || 'Venda',
             modFrete: transportadora_id ? '0' : '9',
-            transportadora: transportadoraDados, // usa a variável já buscada
+            transportadora: transportadoraDados,
             volumes: { qVol: 0, pesoL: 0, pesoB: 0 },
             fatura: null,
             infAdic: infAdic,
@@ -288,7 +285,7 @@ Fonte: IBPT/empresometro.com.br 92589A`;
         if (!protocolo) throw new Error('SEFAZ não retornou protocolo');
         console.log('✅ NF-e autorizada. Protocolo:', protocolo);
 
-        // ========== GERAR XML NO FORMATO <nfeProc> PARA MERCADO LIVRE ==========
+        // ========== GERAR XML PARA ML ==========
         let xmlParaML = null;
         let mlXmlPath = null;
         try {
@@ -312,7 +309,6 @@ ${protNFe}
         }
 
         // ========== SALVAR NF-e NO SUPABASE ==========
-        // (valorTotal já foi calculado, use-o)
         const dadosInsert = {
             data_emissao: new Date().toISOString(),
             numero_nf: String(nNF),
@@ -333,61 +329,138 @@ ${protNFe}
         }
 
         // ========== ATUALIZAR VENDA E ENVIAR PARA ML ==========
-        if (venda_id) {
+        // ========== ATUALIZAR VENDA E ENVIAR PARA ML ==========
+if (venda_id) {
+    try {
+        // Atualiza venda com dados da NF-e
+        await supabase
+            .from('vendas_ml')
+            .update({
+                nfe_emitida: true,
+                nfe_chave: chaveAcesso,
+                nfe_protocolo: protocolo,
+                data_emissao: new Date().toISOString()
+            })
+            .eq('id', venda_id);
+
+        // 1. Obter shipment_id e token
+        let shipmentId = null;
+        let tokenML = ml_access_token;
+
+        // Buscar token se não veio no payload
+        if (!tokenML) {
+            const { data: tokenData } = await supabase
+                .from('vendas_ml')
+                .select('ml_access_token')
+                .eq('id', venda_id)
+                .single();
+            tokenML = tokenData?.ml_access_token;
+        }
+
+        // Se ainda não tem token, tenta obter do banco (campo separado)
+        if (!tokenML) {
+            // Buscar o token mais recente da tabela de tokens
+            const { data: tokenData } = await supabase
+                .from('mercadolivre_tokens')
+                .select('access_token')
+                .eq('user_id', '415176739')
+                .order('updated_at', { ascending: false })
+                .limit(1)
+                .single();
+            tokenML = tokenData?.access_token;
+        }
+
+        // Buscar shipment_id do banco
+        const { data: venda } = await supabase
+            .from('vendas_ml')
+            .select('shipment_id')
+            .eq('id', venda_id)
+            .single();
+
+        shipmentId = venda?.shipment_id;
+
+        // Se não tiver shipment_id no banco, buscar da API do ML
+        if (!shipmentId && tokenML) {
+            console.log(`🔍 Buscando shipment_id para venda ${venda_id}...`);
             try {
-                const { error: updateError } = await supabase
-                    .from('vendas_ml')
-                    .update({
-                        nfe_emitida: true,
-                        nfe_chave: chaveAcesso,
-                        nfe_protocolo: protocolo,
-                        data_emissao: new Date().toISOString()
-                    })
-                    .eq('id', venda_id);
-
-                if (updateError) {
-                    console.error('⚠️ Erro ao atualizar venda:', updateError);
+                const orderUrl = `https://api.mercadolibre.com/orders/${venda_id}`;
+                const response = await fetch(orderUrl, {
+                    headers: {
+                        'Authorization': `Bearer ${tokenML}`,
+                        'Accept': 'application/json'
+                    }
+                });
+                if (response.ok) {
+                    const order = await response.json();
+                    shipmentId = order.shipping?.id || null;
+                    if (shipmentId) {
+                        // Salvar shipment_id no banco para uso futuro
+                        await supabase
+                            .from('vendas_ml')
+                            .update({ shipment_id: shipmentId })
+                            .eq('id', venda_id);
+                        console.log(`✅ shipment_id ${shipmentId} obtido e salvo.`);
+                    } else {
+                        console.log(`ℹ️ Venda ${venda_id} não possui shipment_id.`);
+                    }
                 } else {
-                    console.log('✅ Venda atualizada com a NF-e (nfe_emitida = true).');
+                    console.warn(`⚠️ Erro ao buscar order: ${response.status}`);
+                }
+            } catch (e) {
+                console.warn('⚠️ Erro ao buscar shipment_id:', e.message);
+            }
+        }
+
+        // 2. Enviar XML para ML se tiver shipment_id e token
+        if (shipmentId && tokenML && xmlParaML) {
+            // Verificar se a venda é FULL (não precisa importar)
+            try {
+                const orderUrl = `https://api.mercadolibre.com/orders/${venda_id}`;
+                const orderRes = await fetch(orderUrl, {
+                    headers: {
+                        'Authorization': `Bearer ${tokenML}`,
+                        'Accept': 'application/json'
+                    }
+                });
+                let isFull = false;
+                if (orderRes.ok) {
+                    const order = await orderRes.json();
+                    const shipping = order.shipping || {};
+                    const logisticType = shipping.logistic_type || '';
+                    const tags = (order.tags || []).map(t => t.toLowerCase());
+                    isFull = logisticType === 'fulfillment' || tags.includes('fulfillment');
                 }
 
-                const { data: venda } = await supabase
-                    .from('vendas_ml')
-                    .select('shipment_id')
-                    .eq('id', venda_id)
-                    .single();
-
-                let tokenML = ml_access_token;
-                if (!tokenML) {
-                    const { data: tokenData } = await supabase
-                        .from('vendas_ml')
-                        .select('ml_access_token')
-                        .eq('id', venda_id)
-                        .single();
-                    tokenML = tokenData?.ml_access_token;
-                }
-
-                if (venda?.shipment_id && tokenML && xmlParaML) {
-                    console.log(`📤 Enviando NF-e para ML - Shipment: ${venda.shipment_id}`);
+                if (isFull) {
+                    console.log(`ℹ️ Venda FULL - não é necessário importar NF-e.`);
+                } else {
+                    console.log(`📤 Enviando NF-e para ML - Shipment: ${shipmentId}`);
                     const resultado = await importarNFEnoML(
-                        venda.shipment_id,
+                        shipmentId,
                         xmlParaML,
                         tokenML
                     );
                     if (resultado.ok) {
                         console.log('✅ NF-e enviada ao ML com sucesso!');
+                        await supabase
+                            .from('vendas_ml')
+                            .update({ nfe_importada_ml: true })
+                            .eq('id', venda_id);
                     } else {
-                        console.warn('⚠️ Falha ao enviar NF-e ao ML (não crítico)');
+                        console.warn('⚠️ Falha ao enviar NF-e ao ML:', resultado.error || '');
                     }
-                } else {
-                    console.warn('⚠️ Venda sem shipment_id ou token ML, ou XML não gerado. Envio manual necessário.');
                 }
-            } catch (err) {
-                console.error('❌ Erro ao processar integração com ML:', err.message);
+            } catch (e) {
+                console.warn('⚠️ Erro ao verificar FULL:', e.message);
             }
+        } else {
+            console.warn(`⚠️ Não foi possível enviar NF-e ao ML: shipmentId=${shipmentId}, token=${!!tokenML}, xml=${!!xmlParaML}`);
         }
+    } catch (err) {
+        console.error('❌ Erro ao processar integração com ML:', err.message);
+    }
+}
 
-        // ========== RETORNO PARA O CLIENTE ==========
         res.json({
             success: true,
             protocolo,
@@ -398,6 +471,23 @@ ${protNFe}
     } catch (error) {
         console.error('❌ Erro na emissão:', error);
         res.status(500).json({ success: false, error: error.message });
+    }
+}
+
+// ===== FUNÇÃO AUXILIAR: verificar se venda é FULL =====
+async function verificarSeVendaFull(vendaId, token) {
+    try {
+        const url = `https://api.mercadolibre.com/orders/${vendaId}`;
+        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+        const res = await fetch(proxyUrl);
+        if (!res.ok) return false;
+        const order = await res.json();
+        const shipping = order.shipping || {};
+        const logisticType = shipping.logistic_type || '';
+        const tags = (order.tags || []).map(t => t.toLowerCase());
+        return logisticType === 'fulfillment' || tags.includes('fulfillment');
+    } catch (e) {
+        return false;
     }
 }
 

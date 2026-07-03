@@ -1,11 +1,35 @@
 // ============================================
-// SISTEMA DE ENTRADAS - VERSÃO COMPLETA COM FORNECEDORES E AGRUPAMENTO
+// SISTEMA DE ENTRADAS - VERSÃO CORRIGIDA (COM SINCROMIA DE ESTOQUE)
 // ============================================
 
 let entradasCards = [];
 let filtroEntradasAtual = 'todos';
 let entradaEmProcessamento = null;
-let fornecedoresMap = {}; // cache de fornecedores
+let fornecedoresMap = {};
+
+// ===== FUNÇÃO PARA AGUARDAR O CARREGAMENTO DO ESTOQUE =====
+function aguardarEstoqueCarregado(timeout = 30000) {
+    return new Promise((resolve) => {
+        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
+            console.log('✅ Estoque já carregado.');
+            resolve();
+            return;
+        }
+        console.log('⏳ Aguardando carregamento do estoque...');
+        const start = Date.now();
+        const interval = setInterval(() => {
+            if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
+                clearInterval(interval);
+                console.log('✅ Estoque carregado após', Date.now() - start, 'ms.');
+                resolve();
+            } else if (Date.now() - start > timeout) {
+                clearInterval(interval);
+                console.warn('⚠️ Timeout: estoque não carregado após', timeout, 'ms.');
+                resolve();
+            }
+        }, 300);
+    });
+}
 
 // ===== ABRIR SISTEMA =====
 window.abrirSistemaEntradas = function() {
@@ -35,7 +59,7 @@ window.abrirSistemaEntradas = function() {
     document.getElementById('entradasUserAvatar').textContent = currentUser.avatar;
     document.getElementById('entradasUserRole').textContent = currentUser.role;
 
-    carregarFornecedores(); // carrega cache
+    carregarFornecedores();
     carregarEntradas();
     showToast('📦 Sistema de Entradas carregado', 'info');
 };
@@ -51,13 +75,10 @@ async function carregarFornecedores() {
         if (data) {
             fornecedoresMap = {};
             data.forEach(f => {
-                // Indexar por cd_fornecedor
                 if (!fornecedoresMap[f.cd_fornecedor]) {
                     fornecedoresMap[f.cd_fornecedor] = [];
                 }
                 fornecedoresMap[f.cd_fornecedor].push(f);
-                
-                // Também indexar por sku_sistema (para busca direta)
                 if (f.sku_sistema) {
                     if (!fornecedoresMap[f.sku_sistema]) {
                         fornecedoresMap[f.sku_sistema] = [];
@@ -72,18 +93,13 @@ async function carregarFornecedores() {
     }
 }
 
-// ===== BUSCAR DADOS DO FORNECEDOR =====
+// ===== BUSCAR FORNECEDOR =====
 function buscarFornecedor(chave) {
     if (!chave) return null;
     const chaveNormalizada = chave.trim();
-    
-    // Buscar por cd_fornecedor
     if (fornecedoresMap[chaveNormalizada]) {
-        // Pode ter mais de um com mesmo cd, pega o primeiro
         return fornecedoresMap[chaveNormalizada][0];
     }
-    
-    // Buscar por sku_sistema (percorrendo todos)
     for (const key in fornecedoresMap) {
         const lista = fornecedoresMap[key];
         for (const f of lista) {
@@ -94,6 +110,67 @@ function buscarFornecedor(chave) {
     }
     return null;
 }
+
+// ===== VERIFICAR SKU NO ESTOQUE (COM LOG) =====
+async function verificarSKUExistente(sku) {
+    if (!sku) return null;
+    const skuNormalizado = sku.toString()
+        .trim()
+        .toLowerCase()
+        .replace(/[\s\-\.\/_]/g, '');
+
+    console.log('🔍 Buscando SKU normalizado:', skuNormalizado);
+    
+    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
+        console.log(`📦 ${produtosEstoque.length} produtos no estoque.`);
+        
+        let encontrado = produtosEstoque.find(p => {
+            const pSku = (p.sku || '').toString()
+                .trim()
+                .toLowerCase()
+                .replace(/[\s\-\.\/_]/g, '');
+            return pSku === skuNormalizado;
+        });
+
+        if (!encontrado) {
+            console.warn('⚠️ Busca exata falhou, tentando busca parcial...');
+            encontrado = produtosEstoque.find(p => {
+                const pSku = (p.sku || '').toString()
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[\s\-\.\/_]/g, '');
+                return pSku.includes(skuNormalizado) || skuNormalizado.includes(pSku);
+            });
+        }
+
+        if (encontrado) {
+            console.log('✅ Produto encontrado:', encontrado.sku, '|', encontrado.nome);
+            return encontrado;
+        } else {
+            console.warn('❌ SKU não encontrado. Lista de SKUs (amostra):');
+            produtosEstoque.slice(0, 10).forEach(p => console.log('  -', p.sku));
+        }
+    } else {
+        console.warn('⚠️ produtosEstoque não está disponível ou vazio.');
+        if (typeof carregarProdutosEstoque === 'function') {
+            console.log('🔄 Tentando recarregar estoque...');
+            await carregarProdutosEstoque();
+            return verificarSKUExistente(sku);
+        }
+    }
+    return null;
+}
+
+window.testarBuscaSKU = function() {
+    const sku = prompt('Digite o SKU que deseja buscar:');
+    if (!sku) return;
+    const resultado = verificarSKUExistente(sku);
+    if (resultado) {
+        alert(`✅ Produto encontrado:\nSKU: ${resultado.sku}\nNome: ${resultado.nome}\nID: ${resultado.id}`);
+    } else {
+        alert('❌ Produto não encontrado. Verifique se o SKU está correto.');
+    }
+};
 
 // ===== ADICIONAR MENU =====
 function adicionarMenuEntradas() {
@@ -167,8 +244,11 @@ async function carregarEntradas() {
     }
 }
 
-// ===== RENDERIZAR CARDS =====
-function renderizarEntradas() {
+// ===== RENDERIZAR ENTRADAS (COM ESPERA DO ESTOQUE) =====
+async function renderizarEntradas() {
+    // Aguarda o estoque carregar antes de verificar SKUs
+    await aguardarEstoqueCarregado();
+
     const container = document.getElementById('entradasCardsContainer');
     if (!container) return;
 
@@ -275,8 +355,15 @@ function renderizarEntradas() {
             const statusClass = item.status === 'entrada_realizada' ? 'badge-success' :
                                item.status === 'cadastrado' ? 'badge-info' : 'badge-warning';
 
-            // Verificar se SKU existe no estoque
-            const produtoExistente = verificarSKUExistente(item.sku_original);
+                               console.log('🔍 Verificando estoque para itens:');
+        card.itens.forEach(item => {
+            const sku = item.sku_match || item.sku_original;
+            console.log(`  SKU: ${sku} → ${verificarSKUExistente(sku) ? '✅ Encontrado' : '❌ Não encontrado'}`);
+        });
+
+            // PRIORIDADE: usa sku_match (SKU do sistema) se existir, senão sku_original
+            const skuParaVerificar = item.sku_match || item.sku_original;
+            const produtoExistente = verificarSKUExistente(skuParaVerificar);
             let tituloProduto = '';
             if (produtoExistente) {
                 tituloProduto = produtoExistente.nome || '';
@@ -346,8 +433,29 @@ function renderizarEntradas() {
     container.innerHTML = html;
 }
 
-// ===== PROCESSAR ENTRADA (VERSÃO FINAL CORRIGIDA) =====
+// ===== PROCESSAR ENTRADA (COM ESPERA DO ESTOQUE) =====
 window.processarEntrada = async function() {
+
+    // Garantir que o estoque está carregado
+if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
+    showToast('🔄 Carregando estoque...', 'info');
+    if (typeof carregarProdutosEstoque === 'function') {
+        await carregarProdutosEstoque();
+    } else {
+        // Fallback: esperar alguns segundos
+        await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+}
+console.log('✅ Estoque carregado:', produtosEstoque?.length || 0, 'produtos');
+
+    // Recarrega o estoque antes de processar
+if (typeof carregarProdutosEstoque === 'function') {
+    await carregarProdutosEstoque();
+    console.log('🔄 Estoque recarregado.');
+}
+    // Aguarda o estoque estar carregado antes de verificar SKUs
+    await aguardarEstoqueCarregado();
+
     const pasteArea = document.getElementById('entradaPasteArea');
     if (!pasteArea) return;
 
@@ -397,7 +505,7 @@ window.processarEntrada = async function() {
         const fornecedorNome = partes[2] || '';
         const quantidade = parseInt(partes[3]) || 0;
         const produto = partes[4] || '';
-        const sku = partes[5] || '';
+        const sku = partes[5] ? partes[5].trim().replace(/[\s\-\.\/_]/g, '') : '';
         const observacao = partes[6] || '';
 
         if (!sku && !cdFornecedor) {
@@ -432,50 +540,46 @@ window.processarEntrada = async function() {
         console.warn('Erros no parsing:', erros);
     }
 
-    // Ordenar por rastreio para agrupar visualmente
+    // Ordenar por rastreio
     itensRaw.sort((a, b) => (a.rastreio || '').localeCompare(b.rastreio || ''));
 
-    // Para cada item, buscar fornecedor e descrição
+    // Buscar fornecedor e descrição
     for (const item of itensRaw) {
         let fornecedor = null;
 
-        // Buscar pelo cd_fornecedor
         if (item.cd_fornecedor) {
             fornecedor = buscarFornecedor(item.cd_fornecedor);
         }
-
-        // Se não encontrou, buscar pelo sku_original
         if (!fornecedor && item.sku_original) {
             fornecedor = buscarFornecedor(item.sku_original);
         }
 
         if (fornecedor) {
-            // Preencher o nome do produto com a descrição se estiver vazio ou for igual ao SKU
             if (!item.produto || item.produto.trim() === '' || item.produto === item.sku_original) {
                 item.produto = fornecedor.descricao_produto || item.produto;
             }
-            // Atualizar nome do fornecedor se não tiver
             if (!item.fornecedor_nome) {
                 item.fornecedor_nome = fornecedor.nome_fornecedor;
             }
-            // Atualizar cd_fornecedor se não tiver
             if (!item.cd_fornecedor) {
                 item.cd_fornecedor = fornecedor.cd_fornecedor;
             }
-            // Guardar o sku_sistema como sku_match (para buscar no estoque)
             if (fornecedor.sku_sistema) {
                 item.sku_match = fornecedor.sku_sistema;
             }
         }
 
-        // Verificar se o SKU (original ou match) existe no estoque
+        // Verificar se SKU existe no estoque (prioriza sku_match)
         const skuParaBuscar = item.sku_match || item.sku_original;
         if (skuParaBuscar) {
             const produtoEstoque = verificarSKUExistente(skuParaBuscar);
             if (produtoEstoque) {
                 item.produto_id = produtoEstoque.id;
-                // Atualiza sku_match para o SKU exato do estoque
-                item.sku_match = produtoEstoque.sku;
+                item.sku_match = produtoEstoque.sku; // garante o SKU exato do sistema
+                // Se o produto ainda não tinha nome, usa o do estoque
+                if (!item.produto || item.produto.trim() === '') {
+                    item.produto = produtoEstoque.nome;
+                }
             }
         }
     }
@@ -535,29 +639,6 @@ window.processarEntrada = async function() {
         showToast('❌ Erro ao processar entrada: ' + error.message, 'error');
     }
 };
-
-// ===== VERIFICAR SKU NO ESTOQUE =====
-function verificarSKUExistente(sku) {
-    if (!sku) return null;
-    const skuNormalizado = sku.trim().toLowerCase();
-    console.log('🔍 Verificando SKU no estoque:', skuNormalizado);
-    
-    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-        const encontrado = produtosEstoque.find(p => {
-            const pSku = (p.sku || '').trim().toLowerCase();
-            return pSku === skuNormalizado;
-        });
-        if (encontrado) {
-            console.log('✅ Produto encontrado no estoque:', encontrado);
-            return encontrado;
-        } else {
-            console.log('❌ SKU não encontrado no estoque.');
-        }
-    } else {
-        console.warn('⚠️ produtosEstoque não está definido ou não é um array.');
-    }
-    return null;
-}
 
 // ===== GERAR NÚMERO DE ENTRADA =====
 async function gerarNumeroEntrada() {
@@ -995,23 +1076,6 @@ window.salvarProdutoEstoque = async function() {
     }
 };
 
-// ===== INICIALIZAR (cache de fornecedores) =====
-let estoqueCarregado = false;
-const intervalEstoque = setInterval(() => {
-    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
-        estoqueCarregado = true;
-        clearInterval(intervalEstoque);
-        console.log('✅ produtosEstoque carregado para o sistema de Entradas');
-        if (entradasCards.some(c => c.status === 'pendente')) {
-            renderizarEntradas();
-        }
-    }
-}, 2000);
-
-setTimeout(() => {
-    clearInterval(intervalEstoque);
-}, 30000);
-
 // ===== EXPORTAR =====
 window.abrirSistemaEntradas = window.abrirSistemaEntradas;
 window.carregarEntradas = carregarEntradas;
@@ -1024,4 +1088,4 @@ window.filtrarEntradas = window.filtrarEntradas;
 window.buscarEntradas = window.buscarEntradas;
 window.limparAreaEntrada = window.limparAreaEntrada;
 
-console.log('📦 Sistema de Entradas atualizado com sucesso!');
+console.log('📦 Sistema de Entradas corrigido com sincronia de estoque!');
