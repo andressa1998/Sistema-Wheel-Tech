@@ -14,7 +14,9 @@ const {
     buscarXMLPorChave,
     testarEnvioXMLFixo,   // rota de teste com XML fixo (opcional)
     testarXmlRaw,
-    testarEventoRaw      // NOVA: recebe XML via body e envia para SEFAZ
+    testarEventoRaw,
+    cadastrarCliente,
+    buscarClientePorId       
 } = require('./nfeController');
 
 const router = express.Router();
@@ -26,6 +28,8 @@ router.get('/listar-nfes', listarNFesEmitidas);
 router.get('/transportadoras', listarTransportadoras);
 router.post('/transportadoras', cadastrarTransportadora);
 router.get('/clientes', listarClientes);
+router.post('/clientes', cadastrarCliente);
+router.get('/clientes/:id', buscarClientePorId);
 router.post('/emitir-avulsa', emitirNFEAvulsa);
 router.post('/consultar-status', consultarStatusNFE);
 router.post('/sync-vendas', sincronizarVendasML);

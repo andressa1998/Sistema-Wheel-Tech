@@ -11,6 +11,7 @@ let produtosEditados = [];
 let vendaIdParaEdicao = null;
 
 // ===== VERIFICAR SE É FULL (versão robusta) =====
+// ===== VERIFICAR SE É FULL (versão robusta) =====
 function isFullByAnyField(item) {
     // 1. Verifica logistic_type (campo mais direto)
     if (item.shipping && item.shipping.logistic_type) {
@@ -307,7 +308,10 @@ async function mostrarAbaNFE(aba) {
     if (aba === 'clientes') await carregarClientes();
 }
 
-// ===================== LISTAR VENDAS PENDENTES =====================
+/**
+ * Carrega as vendas do Mercado Livre que estão pagas e sem NF-e,
+ * excluindo automaticamente as vendas FULL.
+ */
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
@@ -334,7 +338,7 @@ async function carregarVendasPendentes() {
             return;
         }
 
-        // 3. Buscar IDs com NF-e no Supabase (tabela nfe_emitidas)
+        // 3. Buscar IDs com NF-e já emitidas (para não listar novamente)
         let idsComNFE = new Set();
         try {
             const { data: nfes, error } = await window.supabaseClient
@@ -348,19 +352,20 @@ async function carregarVendasPendentes() {
             console.warn('⚠️ Erro ao consultar nfe_emitidas:', e);
         }
 
-        // 4. Filtrar pendentes: não têm NF-e e não são FULL (usando lógica do sales_dashboard)
+        // 4. Filtrar pendentes: não têm NF-e e NÃO são FULL
         const pendentes = results.filter(v => {
             const idVenda = String(v.id);
             if (idsComNFE.has(idVenda)) return false;
 
-            // 🔥 VERIFICAÇÃO DE FULL (mesma lógica do sales_dashboard)
-            const tipoEnvio = v.shipping?.logistic_type || '';
+            // 🔥 VERIFICAÇÃO DE FULL – mesmo padrão do sales_dashboard
+            const tipoEnvio = (v.shipping?.logistic_type || '').toLowerCase();
             const tags = (v.tags || []).map(t => t.toLowerCase());
-            const isFull = tipoEnvio.toLowerCase() === 'fulfillment' ||
+            const isFull = tipoEnvio === 'fulfillment' ||
                            tags.includes('fulfillment') ||
                            (v.order_items?.[0]?.item?.title || '').toLowerCase().includes('full');
+
             if (isFull) {
-                console.log(`🚫 Venda FULL ignorada: ${idVenda}`);
+                console.log(`🚫 Venda FULL ignorada: ${idVenda} (logistic_type: ${tipoEnvio})`);
                 return false;
             }
             return true;
@@ -371,8 +376,10 @@ async function carregarVendasPendentes() {
             return;
         }
 
+        // Armazena globalmente para uso posterior
         vendasPendentes = pendentes;
 
+        // Renderiza a tabela
         tbody.innerHTML = pendentes.map(v => `
             <tr>
                 <td>${v.id}</td>
@@ -387,6 +394,7 @@ async function carregarVendasPendentes() {
                 </td>
             </tr>`).join('');
 
+        // Atrela evento de clique para emissão
         document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
             btn.removeEventListener('click', handleEmitirNFEClick);
             btn.addEventListener('click', handleEmitirNFEClick);
@@ -848,8 +856,35 @@ async function carregarNFesEmitidas() {
             const chave = nfe.chave_acesso || nfe.chave || 'N/A';
             const protocolo = nfe.protocolo || '-';
             const dataEmissao = nfe.data_emissao ? new Date(nfe.data_emissao).toLocaleDateString('pt-BR') : '-';
-            const valorTotal = nfe.valor_total ? parseFloat(nfe.valor_total).toFixed(2) : '—';
-            const clienteNome = nfe.cliente_nome || nfe.cliente?.nome || '-';
+            
+            // 🔥 CORREÇÃO: Buscar cliente e valor do XML ou de campos alternativos
+            let clienteNome = nfe.cliente_nome || nfe.cliente?.nome || '-';
+            let valorTotal = nfe.valor_total ? parseFloat(nfe.valor_total).toFixed(2) : '—';
+            
+            // Se não tiver cliente_nome ou valor_total, tentar extrair do XML
+            if (clienteNome === '-' || valorTotal === '—') {
+                try {
+                    if (nfe.xml_assinado) {
+                        const parser = new DOMParser();
+                        const xmlDoc = parser.parseFromString(nfe.xml_assinado, 'application/xml');
+                        const infNFe = xmlDoc.querySelector('infNFe');
+                        if (infNFe) {
+                            const dest = infNFe.querySelector('dest');
+                            if (dest) {
+                                const xNome = dest.querySelector('xNome');
+                                if (xNome) clienteNome = xNome.textContent || '-';
+                            }
+                            const ICMSTot = infNFe.querySelector('ICMSTot');
+                            if (ICMSTot) {
+                                const vNF = ICMSTot.querySelector('vNF');
+                                if (vNF) valorTotal = parseFloat(vNF.textContent || '0').toFixed(2);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Erro ao extrair dados do XML:', e);
+                }
+            }
 
             return `
             <tr>
@@ -1187,7 +1222,7 @@ async function visualizarNFE(chaveAcesso) {
             <div style="margin-top:5px;">NF-e Nº ${nNF.padStart(6, '0')} - SÉRIE ${serie}</div>
             <div style="margin-top:8px;">DATA DE RECEBIMENTO: ____________________</div>
             <div class="assinatura">
-                <span>IDENTIFICAÇÃO E ASSINATURA DO RECEBEDOR ______________________</span>
+                <span>IDENTIFICAÇÃO E ASSINATURA DO RECEBEDOR _____________________________________________________________________________________________________________</span>
             </div>
         </div>
 
@@ -1535,7 +1570,11 @@ async function carregarClientes() {
                 <td>${c.nome}<\/td>
                 <td>${c.documento || '-'}<\/td>
                 <td>${c.logradouro || ''}, ${c.numero || ''} - ${c.cidade || ''}<\/td>
-                <td><button class="btn btn-sm btn-danger" onclick="excluirCliente(${c.id})">Excluir<\/button><\/td>
+                <td>
+                <button class="btn btn-sm btn-info" onclick="visualizarCliente(${c.id})" title="Ver detalhes">
+                <i class="fas fa-eye"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="excluirCliente(${c.id})">Excluir<\/button><\/td>
             </tr>`).join('');
         const select = document.getElementById('avulsaClienteId');
         if (select) select.innerHTML = '<option value="">Selecione</option>' + clientes.map(c => `<option value="${c.id}">${c.nome} (${c.documento})</option>`).join('');
@@ -1558,6 +1597,31 @@ async function excluirCliente(id) {
         window.showToast('Erro de comunicação', 'error');
     }
 }
+
+window.visualizarCliente = async function(id) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/nfe/clientes/${id}`);
+    const data = await response.json();
+    if (!data.success) throw new Error(data.error);
+    const cliente = data.cliente;
+
+    const modalContent = `
+      <div style="padding: 10px;">
+        <h4>${cliente.nome}</h4>
+        <p><strong>Documento:</strong> ${cliente.documento || '-'}</p>
+        <p><strong>Endereço:</strong> ${cliente.logradouro || ''}, ${cliente.numero || 'S/N'} - ${cliente.bairro || ''}</p>
+        <p><strong>Cidade/UF:</strong> ${cliente.cidade || ''} / ${cliente.uf || ''}</p>
+        <p><strong>CEP:</strong> ${cliente.cep || ''}</p>
+      </div>
+    `;
+
+    // Exibe um modal genérico (você pode criar um modal específico)
+    showModalDialog('Detalhes do Cliente', modalContent);
+  } catch (error) {
+    console.error('Erro ao buscar cliente:', error);
+    showToast('Erro ao carregar dados do cliente', 'error');
+  }
+};
 
 // ===================== EMISSÃO AVULSA =====================
 async function emitirNFEAvulsa() {

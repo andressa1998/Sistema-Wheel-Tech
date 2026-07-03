@@ -8207,7 +8207,7 @@ window.abrirSistemaNFE = async function() {
                     </div>
                     <div class="table-responsive">
                         <table class="table" id="tabelaNFesEmitidas">
-                            <thead><tr><th>Chave</th><th>Protocolo</th><th>Cliente</th><th>Valor</th><th>Data</th><th>Ações</th></tr></thead>
+                            <thead><tr><th>Chave</th><th>Protocolo</th><th>Cliente</th><th>Produto</th><th>Valor</th><th>Data</th><th>Ações</th></tr></thead>
                             <tbody id="nfesEmitidasBody"><tr><td colspan="6" class="text-center">Carregando...</td></tr></tbody>
                         </table>
                     </div>

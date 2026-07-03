@@ -104,13 +104,13 @@ async function buscarTransportadoraPorId(id) {
 }
 
 // ===================== EMISSÃO DE NF-e =====================
-// ===================== EMISSÃO DE NF-e =====================
 async function emitirNFe(req, res) {
     console.log('📨 Requisição de emissão recebida');
     try {
         const dados = req.body;
         const { venda_id, cliente, produtos, cfop, natureza_operacao, modalidade_frete, transportadora_id, ml_access_token } = dados;
 
+        // Validações iniciais
         if (!cliente) throw new Error('Cliente não informado');
         if (!produtos || produtos.length === 0) throw new Error('Nenhum produto informado');
 
@@ -121,6 +121,7 @@ async function emitirNFe(req, res) {
         if (buyerUF !== SELLER_UF && cfop !== '6108')
             throw new Error(`Venda fora do estado (${buyerUF}) exige CFOP 6108.`);
 
+        // ========== TRATAMENTO DO CPF/CNPJ ==========
         let documento = (cliente.documento || '').replace(/\D/g, '');
         if (!documento || (documento.length !== 11 && documento.length !== 14)) {
             console.warn('⚠️ Documento inválido, usando CPF genérico para homologação');
@@ -128,6 +129,7 @@ async function emitirNFe(req, res) {
         }
         let tipoDoc = (documento.length === 14) ? 'CNPJ' : 'CPF';
 
+        // ========== DADOS DO DESTINATÁRIO ==========
         const logradouro = cliente.endereco || cliente.logradouro || 'NÃO INFORMADO';
         const numero = cliente.numero || 'S/N';
         const bairro = cliente.bairro || 'CENTRO';
@@ -213,7 +215,7 @@ async function emitirNFe(req, res) {
             }
         }
 
-        // ========== VALOR TOTAL E INFORMAÇÕES ADICIONAIS ==========
+        // ========== CÁLCULO DO VALOR TOTAL E INFORMAÇÕES ADICIONAIS ==========
         const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
         const percentualTributos = 0.15;
         const totalTributos = valorTotal * percentualTributos;
@@ -239,9 +241,9 @@ Fonte: IBPT/empresometro.com.br 92589A`;
             produtos,
             cfop,
             natOp: natureza_operacao || 'Venda',
-            modFrete: transportadora_id ? '0' : '9',
+            modFrete: '2', // sempre terceiros
             transportadora: transportadoraDados,
-            volumes: { qVol: 0, pesoL: 0, pesoB: 0 },
+            volumes: { qVol: 1, pesoL: 0, pesoB: 0 },
             fatura: null,
             infAdic: infAdic,
             respTec: {
@@ -285,7 +287,7 @@ Fonte: IBPT/empresometro.com.br 92589A`;
         if (!protocolo) throw new Error('SEFAZ não retornou protocolo');
         console.log('✅ NF-e autorizada. Protocolo:', protocolo);
 
-        // ========== GERAR XML PARA ML ==========
+        // ========== GERAR XML NO FORMATO <nfeProc> PARA MERCADO LIVRE ==========
         let xmlParaML = null;
         let mlXmlPath = null;
         try {
@@ -315,7 +317,13 @@ ${protNFe}
             protocolo: protocolo,
             xml_assinado: xmlAssinado,
             chave_acesso: chaveAcesso,
-            venda_id: venda_id || null
+            venda_id: venda_id || null,
+            // 🔥 NOVOS CAMPOS
+            cliente_nome: cliente?.nome || null,
+            produto_nome: produtos.map(p => p.nome).join(', '),
+            valor_total: valorTotal,
+            status: 'autorizada',
+            cancelada: false
         };
 
         const { error: insertError } = await supabase
@@ -329,138 +337,99 @@ ${protNFe}
         }
 
         // ========== ATUALIZAR VENDA E ENVIAR PARA ML ==========
-        // ========== ATUALIZAR VENDA E ENVIAR PARA ML ==========
-if (venda_id) {
-    try {
-        // Atualiza venda com dados da NF-e
-        await supabase
-            .from('vendas_ml')
-            .update({
-                nfe_emitida: true,
-                nfe_chave: chaveAcesso,
-                nfe_protocolo: protocolo,
-                data_emissao: new Date().toISOString()
-            })
-            .eq('id', venda_id);
-
-        // 1. Obter shipment_id e token
-        let shipmentId = null;
-        let tokenML = ml_access_token;
-
-        // Buscar token se não veio no payload
-        if (!tokenML) {
-            const { data: tokenData } = await supabase
-                .from('vendas_ml')
-                .select('ml_access_token')
-                .eq('id', venda_id)
-                .single();
-            tokenML = tokenData?.ml_access_token;
-        }
-
-        // Se ainda não tem token, tenta obter do banco (campo separado)
-        if (!tokenML) {
-            // Buscar o token mais recente da tabela de tokens
-            const { data: tokenData } = await supabase
-                .from('mercadolivre_tokens')
-                .select('access_token')
-                .eq('user_id', '415176739')
-                .order('updated_at', { ascending: false })
-                .limit(1)
-                .single();
-            tokenML = tokenData?.access_token;
-        }
-
-        // Buscar shipment_id do banco
-        const { data: venda } = await supabase
-            .from('vendas_ml')
-            .select('shipment_id')
-            .eq('id', venda_id)
-            .single();
-
-        shipmentId = venda?.shipment_id;
-
-        // Se não tiver shipment_id no banco, buscar da API do ML
-        if (!shipmentId && tokenML) {
-            console.log(`🔍 Buscando shipment_id para venda ${venda_id}...`);
+        if (venda_id) {
             try {
-                const orderUrl = `https://api.mercadolibre.com/orders/${venda_id}`;
-                const response = await fetch(orderUrl, {
-                    headers: {
-                        'Authorization': `Bearer ${tokenML}`,
-                        'Accept': 'application/json'
+                // Atualiza a venda com os dados da NF-e
+                await supabase
+                    .from('vendas_ml')
+                    .update({
+                        nfe_emitida: true,
+                        nfe_chave: chaveAcesso,
+                        nfe_protocolo: protocolo,
+                        data_emissao: new Date().toISOString()
+                    })
+                    .eq('id', venda_id);
+
+                // Busca shipment_id e token ML
+                let shipmentId = null;
+                let tokenML = ml_access_token;
+
+                if (!tokenML) {
+                    const { data: tokenData } = await supabase
+                        .from('vendas_ml')
+                        .select('ml_access_token')
+                        .eq('id', venda_id)
+                        .single();
+                    tokenML = tokenData?.ml_access_token;
+                }
+
+                if (!tokenML && typeof window?.getValidToken === 'function') {
+                    const tokenObj = await getValidToken();
+                    tokenML = tokenObj?.access_token;
+                }
+
+                const { data: venda } = await supabase
+                    .from('vendas_ml')
+                    .select('shipment_id')
+                    .eq('id', venda_id)
+                    .single();
+
+                shipmentId = venda?.shipment_id;
+
+                // Se não tiver shipment_id no banco, buscar da API do ML
+                if (!shipmentId && tokenML) {
+                    console.log(`🔍 Buscando shipment_id para venda ${venda_id}...`);
+                    try {
+                        const orderUrl = `https://api.mercadolibre.com/orders/${venda_id}`;
+                        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${encodeURIComponent(tokenML)}`;
+                        const orderRes = await fetch(proxyUrl);
+                        if (orderRes.ok) {
+                            const order = await orderRes.json();
+                            shipmentId = order.shipping?.id || null;
+                            if (shipmentId) {
+                                await supabase
+                                    .from('vendas_ml')
+                                    .update({ shipment_id: shipmentId })
+                                    .eq('id', venda_id);
+                                console.log(`✅ shipment_id ${shipmentId} obtido e salvo.`);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('⚠️ Erro ao buscar shipment_id:', e.message);
                     }
-                });
-                if (response.ok) {
-                    const order = await response.json();
-                    shipmentId = order.shipping?.id || null;
-                    if (shipmentId) {
-                        // Salvar shipment_id no banco para uso futuro
-                        await supabase
-                            .from('vendas_ml')
-                            .update({ shipment_id: shipmentId })
-                            .eq('id', venda_id);
-                        console.log(`✅ shipment_id ${shipmentId} obtido e salvo.`);
+                }
+
+                // Enviar XML para ML se tiver shipment_id e token
+                if (shipmentId && tokenML && xmlParaML) {
+                    const isFull = await verificarSeVendaFull(venda_id, tokenML);
+                    if (isFull) {
+                        console.log(`ℹ️ Venda FULL - não é necessário importar NF-e.`);
                     } else {
-                        console.log(`ℹ️ Venda ${venda_id} não possui shipment_id.`);
+                        console.log(`📤 Enviando NF-e para ML - Shipment: ${shipmentId}`);
+                        const resultado = await importarNFEnoML(
+                            shipmentId,
+                            xmlParaML,
+                            tokenML
+                        );
+                        if (resultado.ok) {
+                            console.log('✅ NF-e enviada ao ML com sucesso!');
+                            await supabase
+                                .from('vendas_ml')
+                                .update({ nfe_importada_ml: true })
+                                .eq('id', venda_id);
+                        } else {
+                            console.warn('⚠️ Falha ao enviar NF-e ao ML (não crítico)');
+                        }
                     }
                 } else {
-                    console.warn(`⚠️ Erro ao buscar order: ${response.status}`);
+                    console.warn(`⚠️ Não foi possível enviar NF-e ao ML: shipmentId=${shipmentId}, token=${!!tokenML}, xml=${!!xmlParaML}`);
                 }
-            } catch (e) {
-                console.warn('⚠️ Erro ao buscar shipment_id:', e.message);
+            } catch (err) {
+                console.error('❌ Erro ao processar integração com ML:', err.message);
             }
         }
 
-        // 2. Enviar XML para ML se tiver shipment_id e token
-        if (shipmentId && tokenML && xmlParaML) {
-            // Verificar se a venda é FULL (não precisa importar)
-            try {
-                const orderUrl = `https://api.mercadolibre.com/orders/${venda_id}`;
-                const orderRes = await fetch(orderUrl, {
-                    headers: {
-                        'Authorization': `Bearer ${tokenML}`,
-                        'Accept': 'application/json'
-                    }
-                });
-                let isFull = false;
-                if (orderRes.ok) {
-                    const order = await orderRes.json();
-                    const shipping = order.shipping || {};
-                    const logisticType = shipping.logistic_type || '';
-                    const tags = (order.tags || []).map(t => t.toLowerCase());
-                    isFull = logisticType === 'fulfillment' || tags.includes('fulfillment');
-                }
-
-                if (isFull) {
-                    console.log(`ℹ️ Venda FULL - não é necessário importar NF-e.`);
-                } else {
-                    console.log(`📤 Enviando NF-e para ML - Shipment: ${shipmentId}`);
-                    const resultado = await importarNFEnoML(
-                        shipmentId,
-                        xmlParaML,
-                        tokenML
-                    );
-                    if (resultado.ok) {
-                        console.log('✅ NF-e enviada ao ML com sucesso!');
-                        await supabase
-                            .from('vendas_ml')
-                            .update({ nfe_importada_ml: true })
-                            .eq('id', venda_id);
-                    } else {
-                        console.warn('⚠️ Falha ao enviar NF-e ao ML:', resultado.error || '');
-                    }
-                }
-            } catch (e) {
-                console.warn('⚠️ Erro ao verificar FULL:', e.message);
-            }
-        } else {
-            console.warn(`⚠️ Não foi possível enviar NF-e ao ML: shipmentId=${shipmentId}, token=${!!tokenML}, xml=${!!xmlParaML}`);
-        }
-    } catch (err) {
-        console.error('❌ Erro ao processar integração com ML:', err.message);
-    }
-}
-
+        // ========== RETORNO PARA O CLIENTE ==========
         res.json({
             success: true,
             protocolo,
@@ -977,6 +946,53 @@ async function testarXmlRaw(req, res) {
     }
 }
 
+async function cadastrarCliente(req, res) {
+  try {
+    const { nome, documento, logradouro, numero, bairro, cidade, uf, cep } = req.body;
+    if (!nome || !documento) {
+      return res.status(400).json({ success: false, error: 'Nome e documento são obrigatórios' });
+    }
+
+    // Verifica se já existe
+    const { data: existing, error: searchError } = await supabase
+      .from('clientes')
+      .select('id')
+      .eq('documento', documento)
+      .maybeSingle();
+
+    if (searchError) throw searchError;
+    if (existing) {
+      return res.json({ success: true, cliente: existing, message: 'Cliente já cadastrado' });
+    }
+
+    const { data, error } = await supabase
+      .from('clientes')
+      .insert([{ nome, documento, logradouro, numero, bairro, cidade, uf, cep }])
+      .select();
+
+    if (error) throw error;
+    res.json({ success: true, cliente: data[0] });
+  } catch (error) {
+    console.error('Erro ao cadastrar cliente:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
+async function buscarClientePorId(req, res) {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('clientes')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error) throw error;
+    res.json({ success: true, cliente: data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}
+
 // ===================== ROTA DE TESTE COM XML FIXO =====================
 async function testarEnvioXMLFixo(req, res) {
     console.log('📨 [TESTE] Enviando XML conhecido (que já funcionou)');
@@ -1163,5 +1179,7 @@ module.exports = {
     buscarXMLPorChave,
     testarEnvioXMLFixo,
     testarXmlRaw,
-    testarEventoRaw
+    testarEventoRaw,
+    cadastrarCliente,      // ADICIONE
+    buscarClientePorId     // ADICIONE
 };

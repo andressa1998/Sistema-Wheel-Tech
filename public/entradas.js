@@ -362,25 +362,28 @@ async function renderizarEntradas() {
                 `;
             } else {
                 if (produtoExistente) {
-                    acaoHtml = `
-                        <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
-                            <i class="fas fa-arrow-right-to-bracket"></i> Dar Entrada
-                        </button>
-                        ${tituloProduto ? `<small class="d-block text-success">🔍 ${tituloProduto}</small>` : ''}
-                    `;
-                } else {
-                    acaoHtml = `
-                        <div class="d-flex flex-wrap gap-1">
-                            <button class="btn btn-sm btn-primary" onclick="abrirCadastroRapido('${card.id}', ${item.id})" title="Cadastrar novo produto">
-                                <i class="fas fa-plus-circle"></i> Cadastrar
-                            </button>
-                            <button class="btn btn-sm btn-info" onclick="vincularProdutoExistente('${card.id}', ${item.id})" title="Vincular a um produto já existente">
-                                <i class="fas fa-link"></i> Já existe
-                            </button>
-                        </div>
-                        <small class="d-block text-muted">⛔ Produto não encontrado</small>
-                    `;
-                }
+    acaoHtml = `
+        <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
+            <i class="fas fa-arrow-right-to-bracket"></i> Dar Entrada
+        </button>
+        ${tituloProduto ? `<small class="d-block text-success">🔍 ${tituloProduto}</small>` : ''}
+    `;
+} else {
+    acaoHtml = `
+        <div class="d-flex flex-wrap gap-1">
+            <button class="btn btn-sm btn-primary" onclick="abrirCadastroRapido('${card.id}', ${item.id})" title="Cadastrar novo produto">
+                <i class="fas fa-plus-circle"></i> Cadastrar
+            </button>
+            <button class="btn btn-sm btn-info" onclick="vincularProdutoExistente('${card.id}', ${item.id})" title="Vincular a um produto já existente">
+                <i class="fas fa-link"></i> Já existe
+            </button>
+            <button class="btn btn-sm btn-warning" onclick="abrirCadastroNovoComOS('${card.id}', ${item.id})" title="Cadastrar novo produto e criar OS para Elaine">
+                <i class="fas fa-plus"></i> Produto Novo
+            </button>
+        </div>
+        <small class="d-block text-muted">⛔ Produto não encontrado</small>
+    `;
+}
             }
 
             const skuDisplay = item.sku_match || item.sku_original || '-';
@@ -1024,6 +1027,226 @@ async function processarItemAposCadastro(cardId, itemId) {
     }
 }
 
+// ===== ABRIR CADASTRO DE PRODUTO NOVO + CRIAR OS =====
+window.abrirCadastroNovoComOS = function(cardId, itemId) {
+    if (!cardId || !itemId) {
+        showToast('Erro: dados incompletos', 'error');
+        return;
+    }
+
+    const card = entradasCards.find(c => c.id == cardId);
+    if (!card) {
+        showToast('Card não encontrado', 'error');
+        return;
+    }
+    const item = card.itens.find(i => i.id == itemId);
+    if (!item) {
+        showToast('Item não encontrado', 'error');
+        return;
+    }
+
+    if (item.status !== 'pendente') {
+        showToast('Este item já foi processado', 'warning');
+        return;
+    }
+
+    // Guardar referência para uso após cadastro do produto
+    entradaEmProcessamento = {
+        cardId: cardId,
+        itemId: itemId,
+        item: item,
+        acao: 'novo_com_os'
+    };
+
+    if (typeof abrirModalProdutoEstoque === 'function') {
+        const produtoParcial = {
+            nome: item.produto || '',
+            sku: item.sku_original || '',
+            categoria: '',
+            dados_extra: {}
+        };
+
+        abrirModalProdutoEstoque(produtoParcial);
+
+        const modal = document.getElementById('modalProdutoEstoque');
+        if (modal) {
+            // Substituir o evento do botão Salvar
+            const salvarBtn = document.getElementById('salvarProdutoEstoqueBtn') ||
+                             document.querySelector('#modalProdutoEstoque .btn-success');
+            if (salvarBtn) {
+                const novoBtn = salvarBtn.cloneNode(true);
+                salvarBtn.parentNode.replaceChild(novoBtn, salvarBtn);
+                novoBtn.onclick = function() {
+                    if (typeof salvarProdutoEstoque === 'function') {
+                        // Salvar produto e depois criar OS
+                        salvarProdutoEstoque();
+                        setTimeout(() => {
+                            processarNovoProdutoComOS(cardId, itemId);
+                        }, 1500); // aguarda o cadastro ser concluído
+                    }
+                };
+            }
+        }
+
+        showToast('📝 Preencha os dados do produto e clique em Salvar. Depois criaremos a(s) OS.', 'info');
+    } else {
+        showToast('❌ Função de cadastro não disponível', 'error');
+    }
+};
+
+// ===== PROCESSAR NOVO PRODUTO + CRIAR OS =====
+async function processarNovoProdutoComOS(cardId, itemId) {
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        // 1. Buscar o item atualizado
+        const { data: item, error: errItem } = await window.supabaseClient
+            .from('entrada_items')
+            .select('*')
+            .eq('id', itemId)
+            .single();
+
+        if (errItem) throw errItem;
+
+        // 2. Verificar se o SKU agora existe no estoque
+        const produto = verificarSKUExistente(item.sku_original);
+        if (!produto) {
+            showToast('⚠️ Produto não encontrado após cadastro. Tente novamente.', 'warning');
+            return;
+        }
+
+        // 3. Atualizar o item da entrada (vincular ao produto)
+        const { error: errUpdate } = await window.supabaseClient
+            .from('entrada_items')
+            .update({
+                produto_id: produto.id,
+                sku_match: produto.sku,
+                status: 'cadastrado',
+                acao: 'cadastro',
+                responsavel: currentUser.name,
+                data_acao: new Date().toISOString()
+            })
+            .eq('id', itemId);
+
+        if (errUpdate) throw errUpdate;
+
+        // 4. Perguntar quantas OS deseja criar
+        const quantidadeOS = parseInt(prompt('Quantas OS deseja criar para este produto?', '1'));
+        if (!quantidadeOS || quantidadeOS < 1) {
+            showToast('Operação cancelada ou quantidade inválida.', 'info');
+            return;
+        }
+
+        // 5. Para cada OS, perguntar observações e criar
+        for (let i = 1; i <= quantidadeOS; i++) {
+            const observacao = prompt(`Observações para a OS #${i} (opcional):`, '');
+            const osCriada = await criarOSCompleta({
+                nomeProduto: produto.nome,
+                sku: produto.sku,
+                responsavel: 'Elaine',
+                urgência: 'normal',
+                tipoOS: 'normal',
+                servico: 'estudio',
+                observacoes: observacao || '',
+                criadoPor: currentUser.name
+            });
+
+            if (osCriada) {
+                showToast(`✅ OS #${i} criada com sucesso para Elaine!`, 'success');
+            } else {
+                showToast(`❌ Erro ao criar OS #${i}.`, 'error');
+            }
+        }
+
+        // 6. Atualizar o card (contador)
+        const card = entradasCards.find(c => c.id == cardId);
+        if (card) {
+            const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
+            const total = card.itens.length;
+            const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
+
+            await window.supabaseClient
+                .from('entradas_cards')
+                .update({
+                    items_concluidos: concluidos,
+                    status: novoStatus,
+                    finalizado_em: novoStatus === 'finalizado' ? new Date().toISOString() : null,
+                    finalizado_por: novoStatus === 'finalizado' ? currentUser.name : null
+                })
+                .eq('id', cardId);
+        }
+
+        entradaEmProcessamento = null;
+        await carregarEntradas();
+
+    } catch (error) {
+        console.error('❌ Erro ao processar novo produto com OS:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
+    }
+}
+
+// ===== CRIAR UMA ORDEM DE SERVIÇO COMPLETA =====
+async function criarOSCompleta(dados) {
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        // Gerar código da OS
+        const codigo = window.generateOSCode ? window.generateOSCode() : `OS-${Date.now().toString().slice(-6)}`;
+
+        // Mapear urgência para prazo (horas)
+        const prazoHoras = dados.urgência === 'alta' ? 2 : dados.urgência === 'normal' ? 48 : 36;
+
+        // Calcular prazo esperado (se houver função)
+        let prazoEsperado = null;
+        if (typeof window.calcularPrazoPorPrioridade === 'function') {
+            prazoEsperado = window.calcularPrazoPorPrioridade(new Date(), dados.urgência);
+        }
+
+        // Dados da OS
+        const osData = {
+            codigo: codigo,
+            produto_nome: dados.nomeProduto,
+            responsavel: dados.responsavel || 'Elaine',
+            link_anuncio: dados.linkAnuncio || '',
+            criado_por: dados.criadoPor || currentUser.name,
+            urgencia: dados.urgência || 'normal',
+            tipo_os: dados.tipoOS || 'normal',
+            status: 'pendente',
+            tipo_foto: dados.servico || 'estudio',
+            observacoes: dados.observacoes || '',
+            skus: dados.sku ? [dados.sku] : [],
+            fotos: [],
+            qtd_fotos: 0,
+            qtd_edicoes: 0,
+            conferido: false,
+            user_notified: false,
+            precisa_foto: 'nao',
+            valor_anuncio: 0,
+            descricao_anuncio: '',
+            link_novo_anuncio: '',
+            data_criacao: new Date().toISOString(),
+            ultima_atualizacao: new Date().toISOString(),
+            prazo_horas: prazoHoras,
+            prazo_esperado: prazoEsperado,
+            anuncio_criado: false
+        };
+
+        const { data, error } = await window.supabaseClient
+            .from('ordens_service')
+            .insert([osData])
+            .select();
+
+        if (error) throw error;
+
+        console.log('✅ OS criada:', data);
+        return data && data[0] ? data[0] : true;
+
+    } catch (error) {
+        console.error('❌ Erro ao criar OS:', error);
+        return false;
+    }
+}
+
 // ===== FINALIZAR ENTRADA =====
 window.finalizarEntrada = async function(cardId) {
     if (!confirm('Confirmar que todos os itens foram processados e finalizar esta entrada?')) return;
@@ -1143,19 +1366,20 @@ window.salvarProdutoEstoque = async function() {
     }
 
     if (entradaEmProcessamento) {
-        const { cardId, itemId, item } = entradaEmProcessamento;
+        const { cardId, itemId, item, acao } = entradaEmProcessamento;
         const produto = verificarSKUExistente(item.sku_original);
         if (produto) {
             try {
                 if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
+                // Atualizar item da entrada
                 const { error } = await window.supabaseClient
                     .from('entrada_items')
                     .update({
                         produto_id: produto.id,
                         sku_match: produto.sku,
                         status: 'cadastrado',
-                        acao: 'cadastro',
+                        acao: acao === 'novo_com_os' ? 'novo_com_os' : 'cadastro',
                         responsavel: currentUser.name,
                         data_acao: new Date().toISOString()
                     })
@@ -1163,6 +1387,7 @@ window.salvarProdutoEstoque = async function() {
 
                 if (error) throw error;
 
+                // Atualizar card (contador)
                 const card = entradasCards.find(c => c.id == cardId);
                 if (card) {
                     const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
@@ -1180,9 +1405,14 @@ window.salvarProdutoEstoque = async function() {
                         .eq('id', cardId);
                 }
 
-                showToast(`✅ Produto cadastrado e vinculado à entrada!`, 'success');
-                entradaEmProcessamento = null;
-                await carregarEntradas();
+                // Se a ação for 'novo_com_os', chamar a função de criação de OS
+                if (acao === 'novo_com_os') {
+                    await processarNovoProdutoComOS(cardId, itemId);
+                } else {
+                    showToast(`✅ Produto cadastrado e vinculado à entrada!`, 'success');
+                    entradaEmProcessamento = null;
+                    await carregarEntradas();
+                }
 
             } catch (error) {
                 console.error('❌ Erro ao vincular produto cadastrado:', error);
