@@ -1,5 +1,5 @@
 // ============================================
-// SISTEMA DE ENTRADAS - VERSÃO CORRIGIDA (COM SINCROMIA DE ESTOQUE)
+// SISTEMA DE ENTRADAS - VERSÃO FINAL CORRIGIDA
 // ============================================
 
 let entradasCards = [];
@@ -111,56 +111,30 @@ function buscarFornecedor(chave) {
     return null;
 }
 
-// ===== VERIFICAR SKU NO ESTOQUE (COM LOG) =====
-async function verificarSKUExistente(sku) {
+// ===== VERIFICAR SKU NO ESTOQUE (SÍNCRONA – SEM AWAIT) =====
+function verificarSKUExistente(sku) {
     if (!sku) return null;
-    const skuNormalizado = sku.toString()
-        .trim()
-        .toLowerCase()
-        .replace(/[\s\-\.\/_]/g, '');
+    const skuNormalizado = sku.trim().toLowerCase();
 
-    console.log('🔍 Buscando SKU normalizado:', skuNormalizado);
-    
-    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
-        console.log(`📦 ${produtosEstoque.length} produtos no estoque.`);
-        
-        let encontrado = produtosEstoque.find(p => {
-            const pSku = (p.sku || '').toString()
-                .trim()
-                .toLowerCase()
-                .replace(/[\s\-\.\/_]/g, '');
+    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+        const encontrado = produtosEstoque.find(p => {
+            const pSku = (p.sku || '').trim().toLowerCase();
             return pSku === skuNormalizado;
         });
-
-        if (!encontrado) {
-            console.warn('⚠️ Busca exata falhou, tentando busca parcial...');
-            encontrado = produtosEstoque.find(p => {
-                const pSku = (p.sku || '').toString()
-                    .trim()
-                    .toLowerCase()
-                    .replace(/[\s\-\.\/_]/g, '');
-                return pSku.includes(skuNormalizado) || skuNormalizado.includes(pSku);
-            });
-        }
-
         if (encontrado) {
-            console.log('✅ Produto encontrado:', encontrado.sku, '|', encontrado.nome);
+            console.log(`✅ SKU encontrado: ${encontrado.sku} → ${encontrado.nome}`);
             return encontrado;
         } else {
-            console.warn('❌ SKU não encontrado. Lista de SKUs (amostra):');
-            produtosEstoque.slice(0, 10).forEach(p => console.log('  -', p.sku));
+            console.log(`❌ SKU não encontrado: ${skuNormalizado}`);
+            return null;
         }
     } else {
-        console.warn('⚠️ produtosEstoque não está disponível ou vazio.');
-        if (typeof carregarProdutosEstoque === 'function') {
-            console.log('🔄 Tentando recarregar estoque...');
-            await carregarProdutosEstoque();
-            return verificarSKUExistente(sku);
-        }
+        console.warn('⚠️ produtosEstoque ainda não carregado.');
+        return null;
     }
-    return null;
 }
 
+// ===== TESTAR BUSCA (opcional) =====
 window.testarBuscaSKU = function() {
     const sku = prompt('Digite o SKU que deseja buscar:');
     if (!sku) return;
@@ -244,9 +218,9 @@ async function carregarEntradas() {
     }
 }
 
-// ===== RENDERIZAR ENTRADAS (COM ESPERA DO ESTOQUE) =====
+// ===== RENDERIZAR ENTRADAS =====
 async function renderizarEntradas() {
-    // Aguarda o estoque carregar antes de verificar SKUs
+    // Aguarda o estoque carregar (sem bloquear a UI)
     await aguardarEstoqueCarregado();
 
     const container = document.getElementById('entradasCardsContainer');
@@ -355,13 +329,7 @@ async function renderizarEntradas() {
             const statusClass = item.status === 'entrada_realizada' ? 'badge-success' :
                                item.status === 'cadastrado' ? 'badge-info' : 'badge-warning';
 
-                               console.log('🔍 Verificando estoque para itens:');
-        card.itens.forEach(item => {
-            const sku = item.sku_match || item.sku_original;
-            console.log(`  SKU: ${sku} → ${verificarSKUExistente(sku) ? '✅ Encontrado' : '❌ Não encontrado'}`);
-        });
-
-            // PRIORIDADE: usa sku_match (SKU do sistema) se existir, senão sku_original
+            // BUSCA DO SKU NO ESTOQUE (SÍNCRONA)
             const skuParaVerificar = item.sku_match || item.sku_original;
             const produtoExistente = verificarSKUExistente(skuParaVerificar);
             let tituloProduto = '';
@@ -433,27 +401,20 @@ async function renderizarEntradas() {
     container.innerHTML = html;
 }
 
-// ===== PROCESSAR ENTRADA (COM ESPERA DO ESTOQUE) =====
+// ===== PROCESSAR ENTRADA =====
 window.processarEntrada = async function() {
-
     // Garantir que o estoque está carregado
-if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
-    showToast('🔄 Carregando estoque...', 'info');
-    if (typeof carregarProdutosEstoque === 'function') {
-        await carregarProdutosEstoque();
-    } else {
-        // Fallback: esperar alguns segundos
-        await new Promise(resolve => setTimeout(resolve, 2000));
+    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
+        showToast('🔄 Carregando estoque...', 'info');
+        if (typeof carregarProdutosEstoque === 'function') {
+            await carregarProdutosEstoque();
+        } else {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
     }
-}
-console.log('✅ Estoque carregado:', produtosEstoque?.length || 0, 'produtos');
+    console.log('✅ Estoque carregado:', produtosEstoque?.length || 0, 'produtos');
 
-    // Recarrega o estoque antes de processar
-if (typeof carregarProdutosEstoque === 'function') {
-    await carregarProdutosEstoque();
-    console.log('🔄 Estoque recarregado.');
-}
-    // Aguarda o estoque estar carregado antes de verificar SKUs
+    // Aguarda o estoque estar carregado
     await aguardarEstoqueCarregado();
 
     const pasteArea = document.getElementById('entradaPasteArea');
@@ -505,7 +466,7 @@ if (typeof carregarProdutosEstoque === 'function') {
         const fornecedorNome = partes[2] || '';
         const quantidade = parseInt(partes[3]) || 0;
         const produto = partes[4] || '';
-        const sku = partes[5] ? partes[5].trim().replace(/[\s\-\.\/_]/g, '') : '';
+        const sku = partes[5] ? partes[5].trim() : '';
         const observacao = partes[6] || '';
 
         if (!sku && !cdFornecedor) {
@@ -575,8 +536,7 @@ if (typeof carregarProdutosEstoque === 'function') {
             const produtoEstoque = verificarSKUExistente(skuParaBuscar);
             if (produtoEstoque) {
                 item.produto_id = produtoEstoque.id;
-                item.sku_match = produtoEstoque.sku; // garante o SKU exato do sistema
-                // Se o produto ainda não tinha nome, usa o do estoque
+                item.sku_match = produtoEstoque.sku;
                 if (!item.produto || item.produto.trim() === '') {
                     item.produto = produtoEstoque.nome;
                 }
@@ -1088,4 +1048,4 @@ window.filtrarEntradas = window.filtrarEntradas;
 window.buscarEntradas = window.buscarEntradas;
 window.limparAreaEntrada = window.limparAreaEntrada;
 
-console.log('📦 Sistema de Entradas corrigido com sincronia de estoque!');
+console.log('📦 Sistema de Entradas carregado com sucesso!');
