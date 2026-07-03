@@ -1,35 +1,11 @@
 // ============================================
-// SISTEMA DE ENTRADAS - VERSÃO FINAL CORRIGIDA
+// SISTEMA DE ENTRADAS - VERSÃO OTIMIZADA (CARREGAMENTO RÁPIDO)
 // ============================================
 
 let entradasCards = [];
 let filtroEntradasAtual = 'todos';
 let entradaEmProcessamento = null;
 let fornecedoresMap = {};
-
-// ===== FUNÇÃO PARA AGUARDAR O CARREGAMENTO DO ESTOQUE =====
-function aguardarEstoqueCarregado(timeout = 30000) {
-    return new Promise((resolve) => {
-        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
-            console.log('✅ Estoque já carregado.');
-            resolve();
-            return;
-        }
-        console.log('⏳ Aguardando carregamento do estoque...');
-        const start = Date.now();
-        const interval = setInterval(() => {
-            if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
-                clearInterval(interval);
-                console.log('✅ Estoque carregado após', Date.now() - start, 'ms.');
-                resolve();
-            } else if (Date.now() - start > timeout) {
-                clearInterval(interval);
-                console.warn('⚠️ Timeout: estoque não carregado após', timeout, 'ms.');
-                resolve();
-            }
-        }, 300);
-    });
-}
 
 // ===== ABRIR SISTEMA =====
 window.abrirSistemaEntradas = function() {
@@ -59,8 +35,19 @@ window.abrirSistemaEntradas = function() {
     document.getElementById('entradasUserAvatar').textContent = currentUser.avatar;
     document.getElementById('entradasUserRole').textContent = currentUser.role;
 
+    // Carregar fornecedores e entradas em paralelo
     carregarFornecedores();
     carregarEntradas();
+    
+    // Garantir que o estoque seja carregado em segundo plano
+    if (typeof carregarProdutosEstoque === 'function' && 
+        (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0)) {
+        carregarProdutosEstoque().then(() => {
+            // Após carregar o estoque, re-renderiza para atualizar os botões
+            renderizarEntradas();
+        }).catch(err => console.warn('Erro ao carregar estoque:', err));
+    }
+    
     showToast('📦 Sistema de Entradas carregado', 'info');
 };
 
@@ -111,12 +98,12 @@ function buscarFornecedor(chave) {
     return null;
 }
 
-// ===== VERIFICAR SKU NO ESTOQUE (SÍNCRONA – SEM AWAIT) =====
+// ===== VERIFICAR SKU NO ESTOQUE (SÍNCRONA) =====
 function verificarSKUExistente(sku) {
     if (!sku) return null;
     const skuNormalizado = sku.trim().toLowerCase();
 
-    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
         const encontrado = produtosEstoque.find(p => {
             const pSku = (p.sku || '').trim().toLowerCase();
             return pSku === skuNormalizado;
@@ -133,18 +120,6 @@ function verificarSKUExistente(sku) {
         return null;
     }
 }
-
-// ===== TESTAR BUSCA (opcional) =====
-window.testarBuscaSKU = function() {
-    const sku = prompt('Digite o SKU que deseja buscar:');
-    if (!sku) return;
-    const resultado = verificarSKUExistente(sku);
-    if (resultado) {
-        alert(`✅ Produto encontrado:\nSKU: ${resultado.sku}\nNome: ${resultado.nome}\nID: ${resultado.id}`);
-    } else {
-        alert('❌ Produto não encontrado. Verifique se o SKU está correto.');
-    }
-};
 
 // ===== ADICIONAR MENU =====
 function adicionarMenuEntradas() {
@@ -218,11 +193,8 @@ async function carregarEntradas() {
     }
 }
 
-// ===== RENDERIZAR ENTRADAS =====
-async function renderizarEntradas() {
-    // Aguarda o estoque carregar (sem bloquear a UI)
-    await aguardarEstoqueCarregado();
-
+// ===== RENDERIZAR ENTRADAS (SEM AWAIT, RÁPIDO) =====
+function renderizarEntradas() {
     const container = document.getElementById('entradasCardsContainer');
     if (!container) return;
 
@@ -261,6 +233,9 @@ async function renderizarEntradas() {
         `;
         return;
     }
+
+    // Verifica se o estoque está carregado para decidir se mostra "Dar Entrada" ou "Cadastrar"
+    const estoqueDisponivel = typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0;
 
     let html = '';
     cardsFiltrados.forEach(card => {
@@ -329,12 +304,15 @@ async function renderizarEntradas() {
             const statusClass = item.status === 'entrada_realizada' ? 'badge-success' :
                                item.status === 'cadastrado' ? 'badge-info' : 'badge-warning';
 
-            // BUSCA DO SKU NO ESTOQUE (SÍNCRONA)
-            const skuParaVerificar = item.sku_match || item.sku_original;
-            const produtoExistente = verificarSKUExistente(skuParaVerificar);
+            // Só verifica SKU se o estoque estiver disponível
+            let produtoExistente = null;
             let tituloProduto = '';
-            if (produtoExistente) {
-                tituloProduto = produtoExistente.nome || '';
+            if (estoqueDisponivel) {
+                const skuParaVerificar = item.sku_match || item.sku_original;
+                produtoExistente = verificarSKUExistente(skuParaVerificar);
+                if (produtoExistente) {
+                    tituloProduto = produtoExistente.nome || '';
+                }
             }
 
             let acaoHtml = '';
@@ -344,7 +322,7 @@ async function renderizarEntradas() {
                     <small class="text-muted d-block">${item.responsavel || ''}</small>
                 `;
             } else {
-                if (produtoExistente) {
+                if (estoqueDisponivel && produtoExistente) {
                     acaoHtml = `
                         <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
                             <i class="fas fa-arrow-right-to-bracket"></i> Dar Entrada
@@ -356,7 +334,7 @@ async function renderizarEntradas() {
                         <button class="btn btn-sm btn-primary" onclick="abrirCadastroRapido('${card.id}', ${item.id})" title="Cadastrar novo produto">
                             <i class="fas fa-plus-circle"></i> Cadastrar
                         </button>
-                        <small class="d-block text-muted">⛔ Produto não encontrado</small>
+                        ${!estoqueDisponivel ? '<small class="d-block text-muted">⏳ Carregando estoque...</small>' : '<small class="d-block text-muted">⛔ Produto não encontrado</small>'}
                     `;
                 }
             }
@@ -403,7 +381,7 @@ async function renderizarEntradas() {
 
 // ===== PROCESSAR ENTRADA =====
 window.processarEntrada = async function() {
-    // Garantir que o estoque está carregado
+    // Garantir que o estoque está carregado antes de processar
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
         showToast('🔄 Carregando estoque...', 'info');
         if (typeof carregarProdutosEstoque === 'function') {
@@ -413,9 +391,6 @@ window.processarEntrada = async function() {
         }
     }
     console.log('✅ Estoque carregado:', produtosEstoque?.length || 0, 'produtos');
-
-    // Aguarda o estoque estar carregado
-    await aguardarEstoqueCarregado();
 
     const pasteArea = document.getElementById('entradaPasteArea');
     if (!pasteArea) return;
