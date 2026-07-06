@@ -8242,6 +8242,9 @@ window.abrirSistemaFrete = function() {
 // ============================================
 // FUNÇÃO PARA ABRIR SISTEMA DE EMISSÃO DE NF-e
 // ============================================
+// ============================================
+// FUNÇÃO PARA ABRIR SISTEMA DE EMISSÃO DE NF-e
+// ============================================
 window.abrirSistemaNFE = async function() {
     if (!currentUser) {
         showToast('⚠️ Faça login primeiro', 'warning');
@@ -8262,7 +8265,7 @@ window.abrirSistemaNFE = async function() {
         if (el) el.classList.add('hidden');
     });
 
-    // Garante que o container #estoqueSystem exista (se não, cria)
+    // Container da NF-e (usando o mesmo ID do original)
     let nfeContainer = document.getElementById('estoqueSystem');
     if (!nfeContainer) {
         nfeContainer = document.createElement('div');
@@ -8271,195 +8274,503 @@ window.abrirSistemaNFE = async function() {
         document.body.appendChild(nfeContainer);
     }
 
-    // Limpa o conteúdo anterior e recria a estrutura da aba NF-e (se necessário)
-    // Para evitar duplicação, verificamos se o cabeçalho já existe
-    if (!nfeContainer.querySelector('.main-header')) {
-        nfeContainer.innerHTML = `
-            <header class="main-header">
-                <div class="container">
-                    <div class="header-content">
-                        <h1 style="display: flex; align-items: center; gap: 10px;">
-                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
-                        <span id="caixaDateTitle">Emissão de NF-e</span>
-                    </h1>
-                        <div class="user-info">
-                            <div class="user-avatar" id="nfeUserAvatar">U</div>
-                            <div>
-                                <div id="nfeUserName">Usuário</div>
-                                <div id="nfeUserRole"></div>
-                                <div class="d-flex gap-2 mt-2">
-                                    <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                    <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
-            <div class="container">
-                <!-- Abas -->
-                <div class="card mb-4">
-                    <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
-                        <div class="d-flex flex-wrap gap-2">
-                            <button class="btn btn-primary" id="tabVendasBtn" onclick="mostrarAbaNFE('vendas')">Vendas sem NF-e</button>
-                            <button class="btn btn-outline-primary" id="tabEmitidasBtn" onclick="mostrarAbaNFE('emitidas')">NF-es Emitidas</button>
-                            <button class="btn btn-outline-primary" id="tabAvulsaBtn" onclick="mostrarAbaNFE('avulsa')">Emitir Avulsa</button>
-                            <button class="btn btn-outline-primary" id="tabTransportadorasBtn" onclick="mostrarAbaNFE('transportadoras')">Transportadoras</button>
-                            <button class="btn btn-outline-primary" id="tabClientesBtn" onclick="mostrarAbaNFE('clientes')">Clientes</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Aba: Vendas sem NF-e -->
-                <div id="abaVendas" class="card">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fas fa-store"></i> Vendas sem Nota Fiscal</h2>
-                        <button class="btn btn-success" onclick="sincronizarVendasML()">
-                            <i class="fas fa-sync-alt"></i> Sincronizar Vendas (ML)
-                        </button>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table" id="tabelaVendasPendentes">
-                            <thead><tr><th>Venda</th><th>Data</th><th>Cliente</th><th>SKU</th><th>Valor</th><th>Método de Envio</th><th>Ações</th></tr></thead>
-                            <tbody id="vendasPendentesBody"><tr><td colspan="6" class="text-center">Carregando...</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Aba: NF-es Emitidas -->
-                <div id="abaEmitidas" class="card hidden">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fas fa-list"></i> Notas Fiscais Emitidas</h2>
-                        <button class="btn btn-info" onclick="carregarNFesEmitidas()">Atualizar</button>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table" id="tabelaNFesEmitidas">
-                            <thead><tr><th>Chave</th><th>Protocolo</th><th>Cliente</th><th>Produto</th><th>Valor</th><th>Data</th><th>Ações</th></tr></thead>
-                            <tbody id="nfesEmitidasBody"><tr><td colspan="6" class="text-center">Carregando...</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Aba: Emissão Avulsa -->
-                <div id="abaAvulsa" class="card hidden">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fas fa-plus-circle"></i> Emitir NF-e Avulsa</h2>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label>Cliente *</label>
-                                <select id="avulsaClienteId" class="form-control"></select>
-                                <button type="button" class="btn btn-sm btn-link" onclick="abrirModalNovoCliente()">+ Novo Cliente</button>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-group">
-                                <label>Transportadora</label>
-                                <select id="avulsaTransportadoraId" class="form-control"></select>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label>CFOP</label>
-                                <input type="text" id="avulsaCfop" class="form-control" value="5102">
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label>Natureza da Operação</label>
-                                <input type="text" id="avulsaNatOp" class="form-control" value="VENDA">
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label>Modalidade Frete</label>
-                                <select id="avulsaModFrete" class="form-control">
-                                    <option value="0">Contratado pelo emitente</option>
-                                    <option value="1">Contratado pelo destinatário</option>
-                                    <option value="2">Contratado por terceiros</option>
-                                    <option value="9">Sem frete</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Produtos (JSON)</label>
-                        <textarea id="avulsaProdutos" rows="3" class="form-control" placeholder='[{"nome":"Produto A","quantidade":1,"valor_unitario":100,"sku":"SKU123","ncm":"87149990"}]'></textarea>
-                        <small>Use o formato JSON. Exemplo: [{"nome":"Bicicleta","quantidade":1,"valor_unitario":1500,"sku":"BIKE001","ncm":"87120000"}]</small>
-                    </div>
-                    <div class="d-flex gap-2 mt-3">
-                        <button class="btn btn-success" onclick="emitirNFEAvulsa()">Emitir NF-e</button>
-                        <button class="btn btn-secondary" onclick="limparFormAvulsa()">Limpar</button>
-                    </div>
-                </div>
-
-                <!-- Aba: Transportadoras -->
-                <div id="abaTransportadoras" class="card hidden">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fas fa-truck"></i> Transportadoras</h2>
-                        <button class="btn btn-primary" onclick="abrirModalTransportadora()">Nova Transportadora</button>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table" id="tabelaTransportadoras">
-                            <thead><tr><th>Nome</th><th>CNPJ</th><th>IE</th><th>Ações</th></tr></thead>
-                            <tbody id="transportadorasBody"><tr><td colspan="4" class="text-center">Carregando...</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- Aba: Clientes -->
-                <div id="abaClientes" class="card hidden">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fas fa-users"></i> Clientes</h2>
-                        <button class="btn btn-primary" onclick="abrirModalNovoCliente()">Novo Cliente</button>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table" id="tabelaClientes">
-                            <thead><tr><th>Nome</th><th>Documento</th><th>Endereço</th><th>Ações</th></tr></thead>
-                            <tbody id="clientesBody"><tr><td colspan="4" class="text-center">Carregando...</td></tr></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    // Atualiza informações do usuário no header
-    const nfeUserName = document.getElementById('nfeUserName');
-    const nfeUserAvatar = document.getElementById('nfeUserAvatar');
-    const nfeUserRole = document.getElementById('nfeUserRole');
-    if (nfeUserName) nfeUserName.textContent = currentUser.name;
-    if (nfeUserAvatar) nfeUserAvatar.textContent = currentUser.avatar;
-    if (nfeUserRole) nfeUserRole.textContent = currentUser.role;
-
-    // Garante que o script nfe_manager.js está carregado
-    if (typeof mostrarAbaNFE !== 'function') {
-        const script = document.createElement('script');
-        script.src = 'nfe_manager.js';
-        script.onload = () => {
-            console.log('✅ nfe_manager.js carregado');
-            inicializarAbaNFE();
-        };
-        document.head.appendChild(script);
-    } else {
-        inicializarAbaNFE();
-    }
-
-    function inicializarAbaNFE() {
-        // Mostra o container e a aba inicial
+    // Se o container já tiver conteúdo, apenas mostra e atualiza dados
+    if (nfeContainer.querySelector('.main-header')) {
         nfeContainer.classList.remove('hidden');
+        atualizarHeaderNFE();
+        // Carrega a aba padrão (Vendas)
         if (typeof mostrarAbaNFE === 'function') {
             mostrarAbaNFE('vendas');
         } else {
-            console.error('❌ mostrarAbaNFE não encontrada');
-            showToast('Erro ao carregar módulo NF-e', 'error');
+            carregarVendasPendentes();
+        }
+        return;
+    }
+
+    // ===== CONSTRUÇÃO DA ESTRUTURA HTML =====
+    nfeContainer.innerHTML = `
+        <header class="main-header">
+            <div class="container">
+                <div class="header-content">
+                    <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                        <span id="caixaDateTitle">Emissão de NF-e</span>
+                    </h1>
+                    <div class="user-info">
+                        <div class="user-avatar" id="nfeUserAvatar">U</div>
+                        <div>
+                            <div id="nfeUserName">Usuário</div>
+                            <div id="nfeUserRole"></div>
+                            <div class="d-flex gap-2 mt-2">
+                                <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="container">
+            <!-- Abas -->
+            <div class="card mb-4">
+                <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
+                    <div class="d-flex flex-wrap gap-2">
+                        <button class="btn btn-primary" id="tabVendasBtn" onclick="mostrarAbaNFE('vendas')">Vendas sem NF-e</button>
+                        <button class="btn btn-outline-primary" id="tabEmitidasBtn" onclick="mostrarAbaNFE('emitidas')">NF-es Emitidas</button>
+                        <button class="btn btn-outline-primary" id="tabAvulsaBtn" onclick="mostrarAbaNFE('avulsa')">Emitir Avulsa</button>
+                        <button class="btn btn-outline-primary" id="tabTransportadorasBtn" onclick="mostrarAbaNFE('transportadoras')">Transportadoras</button>
+                        <button class="btn btn-outline-primary" id="tabClientesBtn" onclick="mostrarAbaNFE('clientes')">Clientes</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Aba: Vendas sem NF-e -->
+            <div id="abaVendas" class="card">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-store"></i> Vendas sem Nota Fiscal</h2>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-success" id="btnAtualizarNFE" onclick="atualizarListaNFE()">
+                            <i class="fas fa-sync-alt"></i> Atualizar Lista
+                        </button>
+                        <button class="btn btn-info" onclick="sincronizarVendasML()">
+                            <i class="fas fa-database"></i> Sincronizar Vendas (ML)
+                        </button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table" id="tabelaVendasPendentes">
+                        <thead>
+                            <tr>
+                                <th>Venda</th>
+                                <th>Data</th>
+                                <th>Cliente</th>
+                                <th>SKU</th>
+                                <th>Valor</th>
+                                <th>Método de Envio</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vendasPendentesBody">
+                            <tr><td colspan="7" class="text-center">Carregando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Aba: NF-es Emitidas -->
+            <div id="abaEmitidas" class="card hidden">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-list"></i> Notas Fiscais Emitidas</h2>
+                    <button class="btn btn-info" onclick="carregarNFesEmitidas()">Atualizar</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table" id="tabelaNFesEmitidas">
+                        <thead>
+                            <tr><th>Chave</th><th>Protocolo</th><th>Cliente</th><th>Produto</th><th>Valor</th><th>Data</th><th>Ações</th></tr>
+                        </thead>
+                        <tbody id="nfesEmitidasBody"><tr><td colspan="7" class="text-center">Carregando...</td></tr>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Aba: Emissão Avulsa -->
+            <div id="abaAvulsa" class="card hidden">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-plus-circle"></i> Emitir NF-e Avulsa</h2>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>Cliente *</label>
+                            <select id="avulsaClienteId" class="form-control"></select>
+                            <button type="button" class="btn btn-sm btn-link" onclick="abrirModalNovoCliente()">+ Novo Cliente</button>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>Transportadora</label>
+                            <select id="avulsaTransportadoraId" class="form-control"></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label>CFOP</label>
+                            <input type="text" id="avulsaCfop" class="form-control" value="5102">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label>Natureza da Operação</label>
+                            <input type="text" id="avulsaNatOp" class="form-control" value="VENDA">
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label>Modalidade Frete</label>
+                            <select id="avulsaModFrete" class="form-control">
+                                <option value="0">Contratado pelo emitente</option>
+                                <option value="1">Contratado pelo destinatário</option>
+                                <option value="2">Contratado por terceiros</option>
+                                <option value="9">Sem frete</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Produtos (JSON)</label>
+                    <textarea id="avulsaProdutos" rows="3" class="form-control" placeholder='[{"nome":"Produto A","quantidade":1,"valor_unitario":100,"sku":"SKU123","ncm":"87149990"}]'></textarea>
+                    <small>Use o formato JSON. Exemplo: [{"nome":"Bicicleta","quantidade":1,"valor_unitario":1500,"sku":"BIKE001","ncm":"87120000"}]</small>
+                </div>
+                <div class="d-flex gap-2 mt-3">
+                    <button class="btn btn-success" onclick="emitirNFEAvulsa()">Emitir NF-e</button>
+                    <button class="btn btn-secondary" onclick="limparFormAvulsa()">Limpar</button>
+                </div>
+            </div>
+
+            <!-- Aba: Transportadoras -->
+            <div id="abaTransportadoras" class="card hidden">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-truck"></i> Transportadoras</h2>
+                    <button class="btn btn-primary" onclick="abrirModalTransportadora()">Nova Transportadora</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table" id="tabelaTransportadoras">
+                        <thead><tr><th>Nome</th><th>CNPJ</th><th>IE</th><th>Ações</th></tr></thead>
+                        <tbody id="transportadorasBody"><tr><td colspan="4" class="text-center">Carregando...</td></tr>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Aba: Clientes -->
+            <div id="abaClientes" class="card hidden">
+                <div class="card-header">
+                    <h2 class="card-title"><i class="fas fa-users"></i> Clientes</h2>
+                    <button class="btn btn-primary" onclick="abrirModalNovoCliente()">Novo Cliente</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table" id="tabelaClientes">
+                        <thead><tr><th>Nome</th><th>Documento</th><th>Endereço</th><th>Ações</th></tr></thead>
+                        <tbody id="clientesBody"><tr><td colspan="4" class="text-center">Carregando...</td></tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Atualiza informações do usuário
+    atualizarHeaderNFE();
+
+    // ===== DEFINIÇÃO DAS FUNÇÕES AUXILIARES (FALLBACK) =====
+    // Essas funções são definidas como globais apenas se já não existirem,
+    // para que os botões HTML (onclick) funcionem corretamente.
+
+    if (typeof window.carregarVendasPendentes !== 'function') {
+        window.carregarVendasPendentes = carregarVendasPendentesLocal;
+    }
+    if (typeof window.atualizarListaNFE !== 'function') {
+        window.atualizarListaNFE = atualizarListaNFELocal;
+    }
+    if (typeof window.mostrarAbaNFE !== 'function') {
+        window.mostrarAbaNFE = mostrarAbaNFELocal;
+    }
+
+    // Carrega o nfe_manager.js se disponível (para sobrescrever com funções mais completas)
+    if (typeof window.mostrarAbaNFE === 'function' && window.mostrarAbaNFE === mostrarAbaNFELocal) {
+        // Se ainda não carregou, tenta carregar o script
+        if (!document.querySelector('script[src="nfe_manager.js"]')) {
+            const script = document.createElement('script');
+            script.src = 'nfe_manager.js';
+            script.onload = () => {
+                console.log('✅ nfe_manager.js carregado');
+                // Após carregar, as funções do script sobrescrevem as locais
+                // Então chamamos inicializar novamente
+                inicializarAbaNFE();
+            };
+            script.onerror = () => {
+                console.warn('⚠️ nfe_manager.js não carregou, usando fallback');
+                inicializarAbaNFE();
+            };
+            document.head.appendChild(script);
+        } else {
+            inicializarAbaNFE();
+        }
+    } else {
+        // Já existe uma função melhor (provavelmente do nfe_manager.js)
+        inicializarAbaNFE();
+    }
+
+    // ===== FUNÇÕES AUXILIARES (DEFINIDAS LOCALMENTE) =====
+
+    async function carregarVendasPendentesLocal() {
+        const tbody = document.getElementById('vendasPendentesBody');
+        if (!tbody) return;
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center"><div class="spinner"></div> Carregando vendas...</td></tr>';
+
+        try {
+            // 1. Buscar NF-es emitidas (tabela nfe_emitidas)
+            const { data: nfes, error: nfeError } = await supabaseClient
+                .from('nfe_emitidas')
+                .select('venda_id');
+            if (nfeError) throw nfeError;
+
+            const idsComNFE = new Set(nfes.map(n => String(n.venda_id)).filter(id => id && id !== 'null'));
+
+            // 2. Buscar todas as vendas do Supabase
+            const { data: vendas, error: vendasError } = await supabaseClient
+                .from('vendas_ml')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (vendasError) throw vendasError;
+
+            // 3. Filtrar: sem NF-e E NÃO FULL (usando isFullByAnyField se disponível)
+            const pendentes = vendas.filter(v => {
+                const idVenda = String(v.id_venda_ml || v.id);
+                if (idsComNFE.has(idVenda)) return false;
+
+                let isFull = false;
+                if (typeof window.isFullByAnyField === 'function') {
+                    // Constrói um objeto compatível com a função
+                    const item = {
+                        id: v.id_venda_ml,
+                        shipping: { logistic_type: v.tipo_envio },
+                        tags: [],
+                        titulo: v.titulo,
+                        mlb: v.mlb_id
+                    };
+                    isFull = window.isFullByAnyField(item);
+                } else {
+                    // Fallback: verifica o campo tipo_envio
+                    const tipo = (v.tipo_envio || '').toUpperCase();
+                    isFull = tipo.includes('FULL') || tipo.includes('FULFILLMENT') || tipo === 'FULL';
+                }
+                return !isFull;
+            });
+
+            if (pendentes.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center">✅ Nenhuma venda pendente (todas já possuem NF-e ou são FULL)</td></tr>';
+                return;
+            }
+
+            // 4. Renderizar tabela
+            tbody.innerHTML = pendentes.map(v => {
+                const dataVenda = v.created_at ? new Date(v.created_at).toLocaleDateString('pt-BR') : '-';
+                const valor = (v.valor_total || 0).toFixed(2);
+                const tipoEnvio = v.tipo_envio || 'N/I';
+
+                // Badge de envio
+                let badgeEnvio = '';
+                const tipoUpper = tipoEnvio.toUpperCase();
+                if (tipoUpper.includes('FULL') || tipoUpper.includes('FULFILLMENT')) {
+                    badgeEnvio = '<span class="badge badge-full"><i class="fas fa-warehouse"></i> FULL</span>';
+                } else if (tipoUpper.includes('FLEX')) {
+                    badgeEnvio = '<span class="badge badge-flex"><i class="fas fa-motorcycle"></i> FLEX</span>';
+                } else if (tipoUpper.includes('MERCADO') || tipoUpper.includes('CROSS')) {
+                    badgeEnvio = '<span class="badge badge-mercado"><i class="fas fa-truck"></i> ME</span>';
+                } else {
+                    badgeEnvio = `<span class="badge badge-secondary">${tipoEnvio}</span>`;
+                }
+
+                return `
+                    <tr>
+                        <td>${v.id_venda_ml || v.id}</td>
+                        <td>${dataVenda}</td>
+                        <td>${v.cliente || 'N/I'}</td>
+                        <td>${v.sku || 'N/A'}</td>
+                        <td>R$ ${valor}</td>
+                        <td>${badgeEnvio}</td>
+                        <td>
+                            <button class="btn btn-sm btn-success btn-emitir-nfe" data-venda-id="${v.id_venda_ml || v.id}">
+                                <i class="fas fa-file-invoice"></i> Emitir NF-e
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            // Event listener para os botões de emitir
+            document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
+                btn.removeEventListener('click', handleEmitirNFEClick);
+                btn.addEventListener('click', handleEmitirNFEClick);
+            });
+
+        } catch (error) {
+            console.error('❌ Erro ao carregar vendas pendentes:', error);
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
         }
     }
 
-    showToast('📄 Sistema de NF-e carregado', 'info');
+    // ===== FUNÇÃO DE ATUALIZAÇÃO INDEPENDENTE (NÃO USA A ABA VENDAS) =====
+    async function atualizarListaNFELocal() {
+        const btn = document.getElementById('btnAtualizarNFE');
+        if (btn) {
+            btn.innerHTML = '<span class="spinner"></span> Atualizando...';
+            btn.disabled = true;
+        }
+
+        try {
+            // 1. Buscar vendas do Mercado Livre (usa a função global)
+            if (typeof window.buscarVendasML !== 'function') {
+                throw new Error('Função buscarVendasML não disponível');
+            }
+            const resultado = await window.buscarVendasML(50);
+            if (!resultado || !resultado.success) {
+                throw new Error(resultado?.error || 'Erro ao buscar vendas');
+            }
+
+            // 2. Salvar no banco (usa a função do sales_dashboard se disponível, senão fallback)
+            if (typeof window.processarESalvarVendas === 'function') {
+                await window.processarESalvarVendas(resultado.vendas);
+            } else {
+                await salvarVendasLocal(resultado.vendas);
+            }
+
+            // 3. Recarregar a lista de pendentes
+            await carregarVendasPendentes();
+            showToast('✅ Lista atualizada com sucesso!', 'success');
+        } catch (error) {
+            console.error('❌ Erro ao atualizar lista:', error);
+            showToast('Erro ao sincronizar vendas: ' + error.message, 'error');
+        } finally {
+            if (btn) {
+                btn.innerHTML = '<i class="fas fa-sync-alt"></i> Atualizar Lista';
+                btn.disabled = false;
+            }
+        }
+    }
+
+    // ===== FUNÇÃO DE SALVAMENTO (FALLBACK) =====
+    async function salvarVendasLocal(vendasML) {
+        try {
+            console.log(`💾 Salvando ${vendasML.length} vendas...`);
+            const agora = new Date().toISOString();
+
+            for (const venda of vendasML) {
+                const idVendaML = venda.id_venda_ml || venda.id || `ML${Date.now()}`;
+
+                // Verifica se a venda já existe
+                const { data: existente } = await supabaseClient
+                    .from('vendas_ml')
+                    .select('id_venda_ml')
+                    .eq('id_venda_ml', idVendaML)
+                    .maybeSingle();
+
+                if (existente) {
+                    // Atualiza dados da venda (mantém status de conferência)
+                    await supabaseClient
+                        .from('vendas_ml')
+                        .update({
+                            titulo: venda.titulo || 'Venda sem título',
+                            cliente: venda.cliente || 'Cliente não identificado',
+                            sku: venda.sku || 'SEM_SKU',
+                            mlb_id: venda.mlb_id || null,
+                            estoque_anuncio: venda.estoque_anuncio || 0,
+                            quantidade: venda.quantidade || 1,
+                            valor_total: venda.valor_total || 0,
+                            tipo_envio: venda.tipo_envio || 'N/I',
+                            id_envio: venda.id_envio || null,
+                            informacoes_envio: venda.informacoes_envio || '{}',
+                            updated_at: agora
+                        })
+                        .eq('id_venda_ml', idVendaML);
+                } else {
+                    // Insere nova venda
+                    await supabaseClient
+                        .from('vendas_ml')
+                        .insert([{
+                            id_venda_ml: idVendaML,
+                            titulo: venda.titulo || 'Venda sem título',
+                            cliente: venda.cliente || 'Cliente não identificado',
+                            sku: venda.sku || 'SEM_SKU',
+                            mlb_id: venda.mlb_id || null,
+                            estoque_anuncio: venda.estoque_anuncio || 0,
+                            quantidade: venda.quantidade || 1,
+                            valor_total: venda.valor_total || 0,
+                            tipo_envio: venda.tipo_envio || 'N/I',
+                            id_envio: venda.id_envio || null,
+                            informacoes_envio: venda.informacoes_envio || '{}',
+                            created_at: venda.data_venda || agora,
+                            status_conferencia: 'pendente',
+                            status_sistema: 'nova',
+                            updated_at: agora
+                        }]);
+                }
+            }
+            console.log('✅ Vendas salvas com sucesso');
+        } catch (error) {
+            console.error('❌ Erro ao salvar vendas:', error);
+            throw error;
+        }
+    }
+
+    function mostrarAbaNFELocal(aba) {
+        ['abaVendas', 'abaEmitidas', 'abaAvulsa', 'abaTransportadoras', 'abaClientes'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+
+        const target = document.getElementById(`aba${aba.charAt(0).toUpperCase() + aba.slice(1)}`);
+        if (target) target.classList.remove('hidden');
+
+        const botoes = ['Vendas', 'Emitidas', 'Avulsa', 'Transportadoras', 'Clientes'];
+        botoes.forEach(btn => {
+            const el = document.getElementById(`tab${btn}Btn`);
+            if (el) {
+                if (btn.toLowerCase() === aba) {
+                    el.classList.remove('btn-outline-primary');
+                    el.classList.add('btn-primary');
+                } else {
+                    el.classList.remove('btn-primary');
+                    el.classList.add('btn-outline-primary');
+                }
+            }
+        });
+
+        // Carrega os dados conforme a aba
+        if (aba === 'vendas') carregarVendasPendentes();
+        if (aba === 'emitidas') carregarNFesEmitidas();
+        if (aba === 'transportadoras') carregarTransportadoras();
+        if (aba === 'clientes') carregarClientes();
+    }
+
+    function handleEmitirNFEClick(event) {
+        const vendaId = event.currentTarget.dataset.vendaId;
+        if (!vendaId) {
+            showToast('❌ ID da venda não encontrado', 'error');
+            return;
+        }
+        if (typeof emitirNFEParaVenda === 'function') {
+            emitirNFEParaVenda(vendaId);
+        } else {
+            showToast('Função de emissão não disponível', 'error');
+        }
+    }
+
+    function atualizarHeaderNFE() {
+        const userName = document.getElementById('nfeUserName');
+        const userAvatar = document.getElementById('nfeUserAvatar');
+        const userRole = document.getElementById('nfeUserRole');
+        if (userName) userName.textContent = currentUser.name || 'Usuário';
+        if (userAvatar) userAvatar.textContent = (currentUser.name || 'U')[0].toUpperCase();
+        if (userRole) userRole.textContent = currentUser.role || '';
+    }
+
+    function inicializarAbaNFE() {
+        nfeContainer.classList.remove('hidden');
+        // Chama a função de mostrar a aba (seja a local ou a do nfe_manager)
+        if (typeof window.mostrarAbaNFE === 'function') {
+            window.mostrarAbaNFE('vendas');
+        } else {
+            mostrarAbaNFELocal('vendas');
+        }
+        showToast('📄 Sistema de NF-e carregado', 'info');
+    }
+
+    // Se as funções globais já existirem (do nfe_manager.js), use-as; senão, use as locais.
+    // O inicializarAbaNFE será chamado no final.
+    inicializarAbaNFE();
 };
 
 // ===== INICIALIZAR QUANDO O DOM CARREGAR =====
