@@ -22,10 +22,12 @@ const camposPorCategoria = {
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
     Rolamentos: [
-        { nome: "diametroint", label: "Diâmetro Interno", tipo: "number", placeholder: "Ex: 15" },
-        { nome: "diametroext", label: "Diâmetro Externo", tipo: "number", placeholder: "Ex: 26" },
-        { nome: "largura", label: "Largura", tipo: "number", placeholder: "Ex: 7" },
+        // DIÂMETROS AGORA SÃO TEXT COM VALIDAÇÃO DE NÚMERO E VÍRGULA
+        { nome: "diametroint", label: "Diâmetro Interno", tipo: "text", placeholder: "Ex: 15 ou 15,5", obrigatorio: true, validacao: "numero_virgula" },
+        { nome: "diametroext", label: "Diâmetro Externo", tipo: "text", placeholder: "Ex: 26 ou 26,5", obrigatorio: true, validacao: "numero_virgula" },
+        { nome: "largura", label: "Largura", tipo: "number", placeholder: "Ex: 7", obrigatorio: true },
         { nome: "aplicaçao", label: "Aplicação", tipo: "select", opcoes: ["Cubo", "Caixa de Direção", "Movimento Central", "Outros"] },
+        // Os campos "Ângulo interno" e "Ângulo externo" serão injetados dinamicamente via JS
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
     Raios: [
@@ -140,7 +142,7 @@ async function carregarProdutosEstoque() {
         console.error('Erro ao carregar produtos:', error);
         if (window.showToast) showToast('Erro ao carregar produtos', 'error');
         const tbody = document.getElementById('produtosEstoqueBody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-danger">Erro ao carregar produtos. Consulte o console.穷</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-danger">Erro ao carregar produtos. Consulte o console.</td></tr>';
     }
 }
 
@@ -234,7 +236,7 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     if (!tbody) return;
     const produtos = produtosParaRenderizar || produtosEstoque;
     if (produtos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto encontrado.穷</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto encontrado.</td></tr>';
         return;
     }
     tbody.innerHTML = '';
@@ -339,6 +341,18 @@ function abrirModalProdutoEstoque(produto = null) {
                 if (modeloField && dadosExtra.modelo) {
                     modeloField.value = dadosExtra.modelo;
                 }
+            }
+        }
+        // Se for Rolamento e tiver ângulos, preencher
+        if (produto.categoria === 'Rolamentos') {
+            const anguloInt = document.getElementById('campo_angulo_interno');
+            const anguloExt = document.getElementById('campo_angulo_externo');
+            if (anguloInt && dadosExtra.angulo_interno) anguloInt.value = dadosExtra.angulo_interno;
+            if (anguloExt && dadosExtra.angulo_externo) anguloExt.value = dadosExtra.angulo_externo;
+            // Verificar se deve mostrar os campos
+            const aplicacao = document.getElementById('campo_aplicaçao');
+            if (aplicacao && aplicacao.value === 'Caixa de Direção') {
+                document.getElementById('camposAngulosRolamento').style.display = 'block';
             }
         }
     } else {
@@ -449,7 +463,7 @@ function configurarBulkModeEvents() {
     document.querySelectorAll('#bulkTamanhosBody tr').forEach(row => attachRemoveEvent(row));
 }
 
-// ===== GERAR CAMPOS DINÂMICOS (COM INTEGRAÇÃO DO MODO BULK) =====
+// ===== GERAR CAMPOS DINÂMICOS (COM INTEGRAÇÃO DO MODO BULK E CAMPOS CONDICIONAIS) =====
 function gerarCamposDinamicos(categoria) {
     const container = document.getElementById('camposDinamicos');
     if (!container) return;
@@ -469,6 +483,10 @@ function gerarCamposDinamicos(categoria) {
     grid.style.gap = '10px';
     grid.style.marginTop = '10px';
 
+    // Guardar referência para campos condicionais de Rolamento
+    let aplicacaoSelect = null;
+    let angulosContainer = null;
+
     campos.forEach(campo => {
         const div = document.createElement('div');
         div.className = 'campo-dinamico';
@@ -480,6 +498,32 @@ function gerarCamposDinamicos(categoria) {
         label.textContent = `${campo.label} ${campo.obrigatorio ? '*' : ''}`;
         div.appendChild(label);
 
+        // --- TRATAMENTO ESPECIAL PARA DIÂMETROS (Rolamento) ---
+        if (campo.validacao === 'numero_virgula') {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.id = `campo_${campo.nome}`;
+            input.className = 'form-control';
+            if (campo.placeholder) input.placeholder = campo.placeholder;
+            if (campo.obrigatorio) input.required = true;
+            // Filtro em tempo real: apenas dígitos e vírgula
+            input.addEventListener('input', function(e) {
+                this.value = this.value.replace(/[^0-9,]/g, '');
+            });
+            // Validação no blur: se não for vazio e não for número com vírgula válido
+            input.addEventListener('blur', function(e) {
+                const val = this.value.trim();
+                if (val !== '' && !/^[0-9]+(,[0-9]+)?$/.test(val)) {
+                    showToast('Digite apenas números e vírgula (ex: 15 ou 15,5)', 'warning');
+                    this.focus();
+                }
+            });
+            div.appendChild(input);
+            grid.appendChild(div);
+            return;
+        }
+
+        // --- SELECT ---
         if (campo.tipo === 'select') {
             const select = document.createElement('select');
             select.id = `campo_${campo.nome}`;
@@ -502,9 +546,22 @@ function gerarCamposDinamicos(categoria) {
                     atualizarModelosPorMarca(e.target.value);
                 });
             }
+            // --- PARA ROLAMENTOS: guardar referência do select de aplicação ---
+            if (categoria === 'Rolamentos' && campo.nome === 'aplicaçao') {
+                aplicacaoSelect = select;
+                // Inicialmente esconder os campos de ângulo
+                setTimeout(() => {
+                    const angulosDiv = document.getElementById('camposAngulosRolamento');
+                    if (angulosDiv) angulosDiv.style.display = 'none';
+                }, 50);
+            }
             div.appendChild(select);
-        } 
-        else if (campo.tipo === 'checkbox') {
+            grid.appendChild(div);
+            return;
+        }
+
+        // --- CHECKBOX ---
+        if (campo.tipo === 'checkbox') {
             const wrapper = document.createElement('div');
             wrapper.className = 'form-check';
             const checkbox = document.createElement('input');
@@ -518,32 +575,103 @@ function gerarCamposDinamicos(categoria) {
             wrapper.appendChild(checkbox);
             wrapper.appendChild(checkLabel);
             div.appendChild(wrapper);
-        } 
-        else if (campo.tipo === 'textarea') {
+            grid.appendChild(div);
+            return;
+        }
+
+        // --- TEXTAREA ---
+        if (campo.tipo === 'textarea') {
             const textarea = document.createElement('textarea');
             textarea.id = `campo_${campo.nome}`;
             textarea.className = 'form-control';
             textarea.rows = campo.rows || 2;
             if (campo.placeholder) textarea.placeholder = campo.placeholder;
             div.appendChild(textarea);
-        } 
-        else {
-            const input = document.createElement('input');
-            input.type = campo.tipo;
-            input.id = `campo_${campo.nome}`;
-            input.className = 'form-control';
-            if (campo.step) input.step = campo.step;
-            if (campo.min) input.min = campo.min;
-            if (campo.placeholder) input.placeholder = campo.placeholder;
-            if (campo.obrigatorio) input.required = true;
-            div.appendChild(input);
+            grid.appendChild(div);
+            return;
         }
+
+        // --- INPUT GENÉRICO (number, text, etc) ---
+        const input = document.createElement('input');
+        input.type = campo.tipo || 'text';
+        input.id = `campo_${campo.nome}`;
+        input.className = 'form-control';
+        if (campo.step) input.step = campo.step;
+        if (campo.min) input.min = campo.min;
+        if (campo.placeholder) input.placeholder = campo.placeholder;
+        if (campo.obrigatorio) input.required = true;
+        div.appendChild(input);
         grid.appendChild(div);
     });
 
     container.appendChild(grid);
 
-    // Controle da seção de adição em massa (apenas Raios e modo criação)
+    // =========================================================
+    //  CAMPOS CONDICIONAIS PARA ROLAMENTO "Caixa de Direção"
+    // =========================================================
+    if (categoria === 'Rolamentos') {
+        // Cria um container extra fora do grid para os campos de ângulo
+        let angulosDiv = document.getElementById('camposAngulosRolamento');
+        if (!angulosDiv) {
+            angulosDiv = document.createElement('div');
+            angulosDiv.id = 'camposAngulosRolamento';
+            angulosDiv.style.display = 'none';
+            angulosDiv.style.marginTop = '10px';
+            angulosDiv.style.borderTop = '1px solid #dee2e6';
+            angulosDiv.style.paddingTop = '10px';
+            angulosDiv.innerHTML = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="campo-dinamico">
+                        <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo interno *</label>
+                        <input type="text" id="campo_angulo_interno" class="form-control" placeholder="Ex: 45" required>
+                    </div>
+                    <div class="campo-dinamico">
+                        <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo externo *</label>
+                        <input type="text" id="campo_angulo_externo" class="form-control" placeholder="Ex: 45" required>
+                    </div>
+                </div>
+                <small class="text-muted">Preencha os ângulos internos e externos (apenas números e vírgula).</small>
+            `;
+            container.appendChild(angulosDiv);
+        }
+
+        // Função para mostrar/ocultar os campos de ângulo
+        function toggleAngulos(valorAplicacao) {
+            if (!angulosDiv) return;
+            const shouldShow = (valorAplicacao === 'Caixa de Direção');
+            angulosDiv.style.display = shouldShow ? 'block' : 'none';
+            // Tornar os campos obrigatórios ou não
+            const angInt = document.getElementById('campo_angulo_interno');
+            const angExt = document.getElementById('campo_angulo_externo');
+            if (angInt) angInt.required = shouldShow;
+            if (angExt) angExt.required = shouldShow;
+        }
+
+        // Se o select já existe, adicionar evento
+        if (aplicacaoSelect) {
+            aplicacaoSelect.addEventListener('change', function(e) {
+                toggleAngulos(e.target.value);
+            });
+            // Verificar valor inicial
+            setTimeout(() => {
+                toggleAngulos(aplicacaoSelect.value);
+            }, 100);
+        }
+
+        // Aplicar validação de números e vírgula também nos campos de ângulo
+        setTimeout(() => {
+            ['campo_angulo_interno', 'campo_angulo_externo'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('input', function() {
+                        this.value = this.value.replace(/[^0-9,]/g, '');
+                    });
+                }
+            });
+        }, 150);
+    }
+
+    // --- CONFIGURAR MODO BULK (Raios) ---
     const bulkSection = document.getElementById('bulkAddSection');
     const isEditing = document.getElementById('produtoId').value !== '';
     if (categoria === 'Raios' && !isEditing) {
@@ -591,7 +719,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// ===== SALVAR PRODUTO (COM SUPORTE A MODO BULK) =====
+// =========================================================
+// VALIDAÇÃO DO CAMPO MLB_CODES (formato rígido)
+// =========================================================
+function validarMLBCodes(texto) {
+    if (!texto || texto.trim() === '') return true; // campo opcional
+    const partes = texto.split(',').map(s => s.trim()).filter(s => s !== '');
+    if (partes.length === 0) return true;
+    // Cada parte deve ter 13 caracteres, começar com MLB e o restante dígitos
+    const regex = /^MLB\d{10}$/;
+    for (let p of partes) {
+        if (!regex.test(p)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// ===== SALVAR PRODUTO (COM SUPORTE A MODO BULK E VALIDAÇÕES) =====
 async function salvarProdutoEstoque() {
     const id = document.getElementById('produtoId').value;
     const nome = document.getElementById('produtoNome').value.trim();
@@ -613,12 +758,54 @@ async function salvarProdutoEstoque() {
             if (campo.tipo === 'checkbox') {
                 dadosExtra[campo.nome] = el.checked;
             } else if (campo.nome === 'mlb_codes' && el.value.trim()) {
-                const valores = el.value.split(',').map(v => v.trim()).filter(v => v);
+                // VALIDAÇÃO MLB CODES
+                const mlbText = el.value.trim();
+                if (!validarMLBCodes(mlbText)) {
+                    showToast(`Formato inválido para MLB Codes. Use: "MLB1496273494, MLB4220545731" (cada um com 13 caracteres, separados por ", ")`, 'error');
+                    el.focus();
+                    return;
+                }
+                const valores = mlbText.split(',').map(v => v.trim()).filter(v => v);
                 dadosExtra[campo.nome] = valores;
             } else {
                 let valor = el.value;
                 if (campo.tipo === 'number' && valor !== '') valor = parseFloat(valor);
+                // Validação para campos de diâmetro (número e vírgula)
+                if (campo.validacao === 'numero_virgula' && valor !== '') {
+                    if (!/^[0-9]+(,[0-9]+)?$/.test(valor)) {
+                        showToast(`O campo "${campo.label}" deve conter apenas números e vírgula (ex: 15 ou 15,5)`, 'warning');
+                        el.focus();
+                        return;
+                    }
+                }
                 dadosExtra[campo.nome] = valor;
+            }
+        }
+    }
+
+    // --- Capturar campos de ângulo (Rolamento) se estiverem visíveis ---
+    if (categoria === 'Rolamentos') {
+        const anguloInt = document.getElementById('campo_angulo_interno');
+        const anguloExt = document.getElementById('campo_angulo_externo');
+        const angulosDiv = document.getElementById('camposAngulosRolamento');
+        if (angulosDiv && angulosDiv.style.display !== 'none') {
+            if (anguloInt && anguloInt.value.trim() !== '') {
+                const val = anguloInt.value.trim();
+                if (!/^[0-9]+(,[0-9]+)?$/.test(val)) {
+                    showToast('Ângulo interno deve conter apenas números e vírgula', 'warning');
+                    anguloInt.focus();
+                    return;
+                }
+                dadosExtra.angulo_interno = val;
+            }
+            if (anguloExt && anguloExt.value.trim() !== '') {
+                const val = anguloExt.value.trim();
+                if (!/^[0-9]+(,[0-9]+)?$/.test(val)) {
+                    showToast('Ângulo externo deve conter apenas números e vírgula', 'warning');
+                    anguloExt.focus();
+                    return;
+                }
+                dadosExtra.angulo_externo = val;
             }
         }
     }

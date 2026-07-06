@@ -310,82 +310,78 @@ async function mostrarAbaNFE(aba) {
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando vendas do ML...<\/td><\/tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center"><div class="spinner"></div> Carregando vendas...<\/td><\/tr>';
 
     try {
-        // 1. Obter token ML
-        let token = localStorage.getItem('ml_access_token');
-        if (!token && typeof window.getValidToken === 'function') {
-            const tokenData = await window.getValidToken();
-            token = tokenData?.access_token;
-        }
-        if (!token) throw new Error('Token ML não disponível');
+        // 1. Buscar vendas do Supabase que ainda não têm NF-e
+        //    (vamos considerar que a NF-e foi emitida se existir na tabela nfe_emitidas)
+        const { data: nfes, error: nfeError } = await supabaseClient
+            .from('nfe_emitidas')
+            .select('venda_id');
+        if (nfeError) throw nfeError;
 
-        // 2. Buscar vendas do ML (últimas 50 pagas)
-        const url = `https://api.mercadolibre.com/orders/search?seller=415176739&sort=date_desc&order.status=paid&limit=50`;
-        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
-        const response = await fetch(proxyUrl);
-        const data = await response.json();
-        const results = data.results || [];
+        const idsComNFE = new Set(nfes.map(n => String(n.venda_id)).filter(id => id && id !== 'null'));
 
-        if (results.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda encontrada<\/td><\/tr>';
-            return;
-        }
+        // 2. Buscar todas as vendas do Supabase (já com tipo_envio)
+        const { data: vendas, error: vendasError } = await supabaseClient
+            .from('vendas_ml')
+            .select('*')
+            .order('created_at', { ascending: false });
 
-        // 3. Buscar IDs com NF-e no Supabase (tabela nfe_emitidas)
-        let idsComNFE = new Set();
-        try {
-            const { data: nfes, error } = await window.supabaseClient
-                .from('nfe_emitidas')
-                .select('venda_id');
-            if (!error && nfes) {
-                idsComNFE = new Set(nfes.map(n => String(n.venda_id)).filter(id => id !== 'null' && id !== null));
-                console.log(`📋 ${idsComNFE.size} vendas com NF-e (tabela nfe_emitidas)`);
-            }
-        } catch (e) {
-            console.warn('⚠️ Erro ao consultar nfe_emitidas:', e);
-        }
+        if (vendasError) throw vendasError;
 
-        // 4. Filtrar pendentes: não têm NF-e e NÃO são FULL
-            const pendentes = results.filter(v => {
-            const idVenda = String(v.id);
+        // 3. Filtrar: apenas as que NÃO têm NF-e E NÃO são FULL
+        const pendentes = vendas.filter(v => {
+            const idVenda = String(v.id_venda_ml || v.id);
             if (idsComNFE.has(idVenda)) return false;
 
-            // 🔥 Usa a mesma função robusta do sales_dashboard.js
-            // Dentro do loop, onde você filtra as vendas:
-            const isFull = isFullByAnyField(v);  // chama a função robusta
-            if (isFull) {
-                console.log(`🚫 Venda FULL ignorada: ${idVenda} (logistic_type: ${v.shipping?.logistic_type || 'N/A'})`);
-                return false;
-            }
-            return true;
+            // Verifica se é FULL usando o campo tipo_envio (já padronizado)
+            const tipo = (v.tipo_envio || '').toUpperCase();
+            const isFull = tipo.includes('FULL') || tipo.includes('FULFILLMENT') || tipo === 'FULL';
+
+            return !isFull;
         });
 
         if (pendentes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Todas as vendas já possuem NF-e ou são FULL<\/td><\/tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">✅ Todas as vendas já possuem NF-e ou são FULL<\/td><\/tr>';
             return;
         }
 
-        // Armazena globalmente para uso posterior
-        vendasPendentes = pendentes;
+        // 4. Renderizar tabela com a nova coluna "Método de Envio"
+        tbody.innerHTML = pendentes.map(v => {
+            const dataVenda = v.created_at ? new Date(v.created_at).toLocaleDateString('pt-BR') : '-';
+            const valor = (v.valor_total || 0).toFixed(2);
+            const tipoEnvio = v.tipo_envio || 'N/I';
+            // Badge do tipo de envio
+            let badgeEnvio = '';
+            if (tipoEnvio.toUpperCase().includes('FULL')) {
+                badgeEnvio = '<span class="badge badge-full"><i class="fas fa-warehouse"></i> FULL</span>';
+            } else if (tipoEnvio.toUpperCase().includes('FLEX')) {
+                badgeEnvio = '<span class="badge badge-flex"><i class="fas fa-motorcycle"></i> FLEX</span>';
+            } else if (tipoEnvio.toUpperCase().includes('MERCADO')) {
+                badgeEnvio = '<span class="badge badge-mercado"><i class="fas fa-truck"></i> ME</span>';
+            } else {
+                badgeEnvio = `<span class="badge badge-secondary">${tipoEnvio}</span>`;
+            }
 
-        // Renderiza a tabela
-        tbody.innerHTML = pendentes.map(v => `
-            <tr>
-                <td>${v.id}</td>
-                <td>${new Date(v.date_created).toLocaleDateString('pt-BR')}</td>
-                <td>${v.buyer?.nickname || 'N/I'}</td>
-                <td>${v.order_items?.[0]?.item?.seller_sku || 'N/A'}</td>
-                <td>R$ ${v.total_amount?.toFixed(2)}</td>
-                <td>
-                    <button class="btn btn-sm btn-success btn-emitir-nfe" data-venda-id="${v.id}">
-                        <i class="fas fa-file-invoice"></i> Emitir NF-e
-                    </button>
-                </td>
-            </tr>`).join('');
+            return `
+                <tr>
+                    <td>${v.id_venda_ml || v.id}</td>
+                    <td>${dataVenda}</td>
+                    <td>${v.cliente || 'N/I'}</td>
+                    <td>${v.sku || 'N/A'}</td>
+                    <td>R$ ${valor}</td>
+                    <td>${badgeEnvio}</td>
+                    <td>
+                        <button class="btn btn-sm btn-success btn-emitir-nfe" data-venda-id="${v.id_venda_ml || v.id}">
+                            <i class="fas fa-file-invoice"></i> Emitir NF-e
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
 
-        // Atrela evento de clique para emissão
+        // Atrelar evento de clique para emissão (usando delegação)
         document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
             btn.removeEventListener('click', handleEmitirNFEClick);
             btn.addEventListener('click', handleEmitirNFEClick);
@@ -393,7 +389,7 @@ async function carregarVendasPendentes() {
 
     } catch (error) {
         console.error('❌ Erro ao carregar vendas pendentes:', error);
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Erro: ${error.message}<\/td><\/tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Erro: ${error.message}<\/td><\/tr>`;
     }
 }
 
@@ -1692,6 +1688,44 @@ async function sincronizarVendasML() {
 function inicializarAbaNFE() {
     mostrarAbaNFE('vendas');
 }
+
+// ===================== ATUALIZAR LISTA DE VENDAS NA ABA NF-E =====================
+async function atualizarListaNFE() {
+    const btn = document.getElementById('btnAtualizarNFE');
+    if (btn) {
+        btn.innerHTML = '<span class="spinner"></span> Atualizando...';
+        btn.disabled = true;
+    }
+
+    try {
+        // 1. Sincronizar vendas do ML (usa a função já existente)
+        if (typeof window.sincronizarVendasMLDashboard === 'function') {
+            await window.sincronizarVendasMLDashboard();
+        } else {
+            // Fallback: chama a função do ml_token_manager se existir
+            if (typeof window.sincronizarVendasComSupabase === 'function') {
+                await window.sincronizarVendasComSupabase();
+            } else {
+                console.warn('⚠️ Nenhuma função de sincronização disponível');
+            }
+        }
+
+        // 2. Recarregar a lista de vendas pendentes
+        await carregarVendasPendentes();
+
+    } catch (error) {
+        console.error('❌ Erro ao atualizar lista:', error);
+        showToast('Erro ao sincronizar vendas', 'error');
+    } finally {
+        if (btn) {
+            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Atualizar Lista';
+            btn.disabled = false;
+        }
+    }
+}
+
+// Exportar para uso global
+window.atualizarListaNFE = atualizarListaNFE;
 
 // ===================== EXPORTAÇÕES GLOBAIS =====================
 window.mostrarAbaNFE = mostrarAbaNFE;

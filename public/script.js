@@ -8320,7 +8320,7 @@ window.abrirSistemaNFE = async function() {
                     </div>
                     <div class="table-responsive">
                         <table class="table" id="tabelaVendasPendentes">
-                            <thead><tr><th>Venda</th><th>Data</th><th>Cliente</th><th>SKU</th><th>Valor</th><th>Ações</th></tr></thead>
+                            <thead><tr><th>Venda</th><th>Data</th><th>Cliente</th><th>SKU</th><th>Valor</th><th>Método de Envio</th><th>Ações</th></tr></thead>
                             <tbody id="vendasPendentesBody"><tr><td colspan="6" class="text-center">Carregando...</td></tr></tbody>
                         </table>
                     </div>
