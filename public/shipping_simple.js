@@ -1,12 +1,12 @@
-// shipping_simple.js - VERSÃO COM BOTÃO DE FILTRO CORRIGIDO
-console.log('🚚 shipping_simple.js carregado (v25 - botão de filtro corrigido)');
+// shipping_simple.js - VERSÃO COMPLETA COM EXPORTAÇÃO EXCEL
+console.log('🚚 shipping_simple.js carregado (v26 - com exportação Excel)');
 
 if (typeof window.WORKER_URL === 'undefined') {
     window.WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
 }
 
 // ============================================
-// TABELA DE CUSTOS DE FRETE (mantida)
+// TABELA DE CUSTOS DE FRETE
 // ============================================
 const SHIPPING_COST_TABLE = [
     { priceMin: 0,    priceMax: 18.99,   weightMin: 0,    weightMax: 0.3,   cost: 5.65 },
@@ -52,7 +52,12 @@ const SHIPPING_COST_TABLE = [
 ];
 
 // ============================================
-// FUNÇÕES AUXILIARES (mantidas)
+// VARIÁVEL DE FILTRO
+// ============================================
+let filtroApenasIncorretos = false;
+
+// ============================================
+// FUNÇÕES AUXILIARES
 // ============================================
 function isFullByAnyField(item) {
     const text = `${item.titulo || ''} ${item.mlb || ''} ${item.id || ''}`.toLowerCase();
@@ -370,10 +375,8 @@ async function extrairFreteDaVenda(order, token) {
 }
 
 // ============================================
-// CARREGAR FRETES SALVOS COM FILTRO INCORRETOS
+// CARREGAR FRETES SALVOS (com armazenamento e filtro)
 // ============================================
-let filtroApenasIncorretos = false;
-
 async function carregarFretesSalvos() {
     console.log('📂 Carregando fretes salvos...');
     const tbody = document.getElementById('shippingSimpleBody');
@@ -422,6 +425,9 @@ async function carregarFretesSalvos() {
             }
             return { ...item, freteEsperado, isIncorreto };
         });
+
+        // ARMAZENAR DADOS PROCESSADOS PARA EXPORTAÇÃO
+        window.dadosFretesProcessados = dadosComStatus;
 
         // Atualizar botão de filtro
         const btnFiltro = document.getElementById('btnFiltrarIncorretos');
@@ -959,6 +965,111 @@ function abrirListaReclamacoes() {
 }
 
 // ============================================
+// EXPORTAR FRETES PARA EXCEL
+// ============================================
+function exportarFretesExcel() {
+    if (!window.dadosFretesProcessados || window.dadosFretesProcessados.length === 0) {
+        showToast('Nenhum dado disponível para exportar', 'warning');
+        return;
+    }
+
+    // Aplicar o mesmo filtro de "apenas incorretos"
+    let dadosParaExportar = window.dadosFretesProcessados;
+    if (filtroApenasIncorretos) {
+        dadosParaExportar = dadosParaExportar.filter(item => item.isIncorreto);
+    }
+
+    if (dadosParaExportar.length === 0) {
+        showToast('Nenhum dado incorreto encontrado para exportar', 'warning');
+        return;
+    }
+
+    // Mapear para as colunas do Excel
+    const dadosExcel = dadosParaExportar.map(item => {
+        const peso = item.peso_estimado || 0.3;
+        const comprimento = item.comprimento_cm || 22;
+        const largura = item.largura_cm || 16;
+        const altura = item.altura_cm || 1;
+        const valorProduto = item.valor_produto || 0;
+        const freteCobrado = item.frete_cobrado || 0;
+        const quantidade = item.quantidade || 1;
+        const freteEsperado = item.freteEsperado;
+
+        let statusText = 'Não calculado';
+        let diferenca = 0;
+        if (freteEsperado !== null) {
+            diferenca = freteCobrado - freteEsperado;
+            const diffAbs = Math.abs(diferenca);
+            if (diffAbs < 0.01) {
+                statusText = 'Correto';
+            } else if (diferenca > 0) {
+                statusText = `Acima (R$ ${diferenca.toFixed(2)})`;
+            } else {
+                statusText = `Abaixo (R$ ${Math.abs(diferenca).toFixed(2)})`;
+            }
+        }
+
+        const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
+
+        return {
+            'Venda': item.id || '',
+            'Título': item.titulo || '',
+            'SKU': item.sku || 'N/A',
+            'MLB': item.mlb || 'N/A',
+            'Valor Produto (R$)': valorProduto,
+            'Quantidade': quantidade,
+            'Frete Cobrado (R$)': freteCobrado,
+            'Frete Esperado (R$)': freteEsperado !== null ? freteEsperado : 'N/A',
+            'Diferença (R$)': freteEsperado !== null ? diferenca : 'N/A',
+            'Status': statusText,
+            'Peso (kg)': peso,
+            'Comprimento (cm)': comprimento,
+            'Largura (cm)': largura,
+            'Altura (cm)': altura,
+            'Peso Volumétrico (m³)': pesoVol,
+            'Tipo Envio': item.tipo_envio || 'N/I',
+            'Data Venda': item.data_venda ? new Date(item.data_venda).toLocaleDateString('pt-BR') : ''
+        };
+    });
+
+    // Criar planilha
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(dadosExcel);
+    XLSX.utils.book_append_sheet(wb, ws, 'Fretes');
+    
+    // Ajustar largura das colunas
+    const colWidths = [
+        { wch: 20 }, // Venda
+        { wch: 40 }, // Título
+        { wch: 15 }, // SKU
+        { wch: 15 }, // MLB
+        { wch: 15 }, // Valor
+        { wch: 10 }, // Qtd
+        { wch: 15 }, // Frete Cobrado
+        { wch: 15 }, // Frete Esperado
+        { wch: 15 }, // Diferença
+        { wch: 25 }, // Status
+        { wch: 10 }, // Peso
+        { wch: 15 }, // Comprimento
+        { wch: 15 }, // Largura
+        { wch: 15 }, // Altura
+        { wch: 15 }, // Peso Vol.
+        { wch: 15 }, // Tipo Envio
+        { wch: 15 }, // Data Venda
+    ];
+    ws['!cols'] = colWidths;
+
+    // Gerar nome do arquivo com data e indicador de filtro
+    const dataStr = new Date().toISOString().slice(0,10);
+    const sufixo = filtroApenasIncorretos ? '_incorretos' : '_todos';
+    const nomeArquivo = `fretes_${dataStr}${sufixo}.xlsx`;
+
+    // Baixar
+    XLSX.writeFile(wb, nomeArquivo);
+    showToast(`Arquivo "${nomeArquivo}" exportado com sucesso!`, 'success');
+}
+
+// ============================================
 // FILTRO DE FRETES INCORRETOS
 // ============================================
 function toggleFiltroIncorretos() {
@@ -967,7 +1078,7 @@ function toggleFiltroIncorretos() {
 }
 
 // ============================================
-// INICIALIZAR MODAIS E BOTÃO DE FILTRO
+// CRIAÇÃO DE MODAIS
 // ============================================
 function criarModalEditorFoto() {
     if (document.getElementById('modalEditorFoto')) return;
@@ -1100,61 +1211,63 @@ function criarModalReclamacao() {
 }
 
 // ============================================
-// INICIALIZAR (com correção do botão)
+// INICIALIZAÇÃO
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     criarModalReclamacao();
     criarModalEditorFoto();
 
-    // === CORREÇÃO: INSERIR BOTÃO DE FILTRO NO LOCAL CERTO ===
-    // Procurar o card-header que contém a contagem (onde está #contagemFretes)
+    // INSERIR BOTÃO DE FILTRO E BOTÃO DE EXPORTAÇÃO
+    // Procurar o card-header que contém a contagem
     const headerContagem = document.querySelector('.card-header:has(#contagemFretes)');
     if (headerContagem) {
-        // Verificar se o botão já existe
+        // Botão de filtro
         let btnFiltro = document.getElementById('btnFiltrarIncorretos');
         if (!btnFiltro) {
             btnFiltro = document.createElement('button');
             btnFiltro.id = 'btnFiltrarIncorretos';
             btnFiltro.className = 'btn btn-outline-danger btn-sm ml-2';
-            btnFiltro.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Apenas incorretos';
+            btnFiltro.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Apenas incorretos (0)';
             btnFiltro.onclick = window.toggleFiltroIncorretos;
-            // Inserir ao lado do span de contagem
             headerContagem.appendChild(btnFiltro);
-            console.log('✅ Botão de filtro inserido no card-header da tabela.');
+            console.log('✅ Botão de filtro inserido.');
+        }
+
+        // Botão de exportar Excel
+        let btnExport = document.getElementById('exportarFretesExcelBtn');
+        if (!btnExport) {
+            btnExport = document.createElement('button');
+            btnExport.id = 'exportarFretesExcelBtn';
+            btnExport.className = 'btn btn-success btn-sm ml-2';
+            btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Excel';
+            btnExport.onclick = window.exportarFretesExcel;
+            headerContagem.appendChild(btnExport);
+            console.log('✅ Botão Exportar Excel adicionado.');
         }
     } else {
-        // Fallback: tentar encontrar o card-header do card que contém a tabela
-        const cardTable = document.querySelector('.card:has(.table-responsive)');
-        if (cardTable) {
-            const header = cardTable.querySelector('.card-header');
-            if (header) {
-                let btnFiltro = document.getElementById('btnFiltrarIncorretos');
-                if (!btnFiltro) {
-                    btnFiltro = document.createElement('button');
-                    btnFiltro.id = 'btnFiltrarIncorretos';
-                    btnFiltro.className = 'btn btn-outline-danger btn-sm ml-2';
-                    btnFiltro.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Apenas incorretos';
-                    btnFiltro.onclick = window.toggleFiltroIncorretos;
-                    header.appendChild(btnFiltro);
-                    console.log('✅ Botão de filtro inserido (fallback)');
-                }
-            }
-        } else {
-            console.warn('⚠️ Não foi possível encontrar o local para inserir o botão de filtro.');
-            // Criar um container acima da tabela
-            const tableContainer = document.querySelector('.table-responsive');
-            if (tableContainer) {
-                const wrapper = document.createElement('div');
-                wrapper.className = 'd-flex justify-content-end mb-2';
-                const btnFiltro = document.createElement('button');
-                btnFiltro.id = 'btnFiltrarIncorretos';
-                btnFiltro.className = 'btn btn-outline-danger btn-sm';
-                btnFiltro.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Apenas incorretos';
-                btnFiltro.onclick = window.toggleFiltroIncorretos;
-                wrapper.appendChild(btnFiltro);
-                tableContainer.parentNode.insertBefore(wrapper, tableContainer);
-                console.log('✅ Botão de filtro criado acima da tabela (fallback 2)');
-            }
+        console.warn('⚠️ Não foi possível encontrar o local para inserir os botões.');
+        // Fallback: criar um container acima da tabela
+        const tableContainer = document.querySelector('.table-responsive');
+        if (tableContainer) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'd-flex justify-content-end mb-2 gap-2';
+            
+            const btnFiltro = document.createElement('button');
+            btnFiltro.id = 'btnFiltrarIncorretos';
+            btnFiltro.className = 'btn btn-outline-danger btn-sm';
+            btnFiltro.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Apenas incorretos';
+            btnFiltro.onclick = window.toggleFiltroIncorretos;
+            
+            const btnExport = document.createElement('button');
+            btnExport.id = 'exportarFretesExcelBtn';
+            btnExport.className = 'btn btn-success btn-sm';
+            btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Excel';
+            btnExport.onclick = window.exportarFretesExcel;
+            
+            wrapper.appendChild(btnFiltro);
+            wrapper.appendChild(btnExport);
+            tableContainer.parentNode.insertBefore(wrapper, tableContainer);
+            console.log('✅ Botões criados acima da tabela (fallback)');
         }
     }
 
@@ -1163,14 +1276,22 @@ document.addEventListener('DOMContentLoaded', function() {
         carregarFretesSalvos();
     }
 
-    console.log('✅ shipping_simple.js PRONTO (v25 - botão de filtro corrigido)');
+    // Adicionar evento ao botão de buscar (se existir)
+    const btnBuscar = document.getElementById('btnBuscarFretes');
+    if (btnBuscar) {
+        btnBuscar.addEventListener('click', buscarFretes);
+    }
+
+    console.log('✅ shipping_simple.js PRONTO (com exportação Excel)');
 });
 
 // ============================================
-// EXPORTAÇÕES
+// EXPORTAÇÕES GLOBAIS
 // ============================================
 window.carregarFretesSalvos = carregarFretesSalvos;
 window.buscarFretes = buscarFretes;
+window.exportarFretesExcel = exportarFretesExcel;
+window.toggleFiltroIncorretos = toggleFiltroIncorretos;
 window.atualizarLinhaAposMedidas = atualizarLinhaAposMedidas;
 window.calcularFreteEsperado = calcularFreteEsperado;
 window.calcularPesoVolumetrico = calcularPesoVolumetrico;
@@ -1182,4 +1303,3 @@ window.abrirListaReclamacoes = abrirListaReclamacoes;
 window.abrirEditorFoto = abrirEditorFoto;
 window.fecharEditorFoto = fecharEditorFoto;
 window.salvarMedidasEFoto = salvarMedidasEFoto;
-window.toggleFiltroIncorretos = toggleFiltroIncorretos;

@@ -11,7 +11,6 @@ let produtosEditados = [];
 let vendaIdParaEdicao = null;
 
 // ===== VERIFICAR SE É FULL (versão robusta) =====
-// ===== VERIFICAR SE É FULL (versão robusta) =====
 function isFullByAnyField(item) {
     // 1. Verifica logistic_type (campo mais direto)
     if (item.shipping && item.shipping.logistic_type) {
@@ -353,15 +352,11 @@ async function carregarVendasPendentes() {
             const idVenda = String(v.id);
             if (idsComNFE.has(idVenda)) return false;
 
-            // 🔥 VERIFICAÇÃO DE FULL (AGORA COM includes)
-            const tipoEnvio = (v.shipping?.logistic_type || '').toLowerCase();
-            const tags = (v.tags || []).map(t => t.toLowerCase());
-            const isFull = tipoEnvio.includes('fulfillment') ||
-                           tags.includes('fulfillment') ||
-                           (v.order_items?.[0]?.item?.title || '').toLowerCase().includes('full');
+            // 🔥 Usa a mesma função robusta do sales_dashboard.js
+            const isFull = window.isFullByAnyField ? window.isFullByAnyField(v) : false;
 
             if (isFull) {
-                console.log(`🚫 Venda FULL ignorada: ${idVenda} (logistic_type: ${tipoEnvio})`);
+                console.log(`🚫 Venda FULL ignorada: ${idVenda}`);
                 return false;
             }
             return true;

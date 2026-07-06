@@ -123,35 +123,38 @@ function buscarFornecedor(chave) {
 }
 
 // ===== VERIFICAR SKU NO ESTOQUE (COM BUSCA EM FORNECEDORES) =====
+// ===== VERIFICAR SKU NO ESTOQUE (COM LOG E FALLBACK) =====
 function verificarSKUExistente(sku) {
     if (!sku) return null;
     const skuNormalizado = sku.trim().toLowerCase();
 
+    // Se o estoque ainda não foi carregado, retorna null (será verificado novamente depois)
+    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
+        console.warn('⚠️ produtosEstoque ainda não carregado. SKU não verificado:', skuNormalizado);
+        return null;
+    }
+
     // 1. Busca direta no estoque
-    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-        const encontrado = produtosEstoque.find(p => {
-            const pSku = (p.sku || '').trim().toLowerCase();
-            return pSku === skuNormalizado;
-        });
-        if (encontrado) {
-            console.log(`✅ SKU encontrado diretamente: ${encontrado.sku}`);
-            return encontrado;
-        }
+    const encontrado = produtosEstoque.find(p => {
+        const pSku = (p.sku || '').trim().toLowerCase();
+        return pSku === skuNormalizado;
+    });
+    if (encontrado) {
+        console.log(`✅ SKU encontrado diretamente: ${encontrado.sku}`);
+        return encontrado;
     }
 
     // 2. Busca via fornecedores (mapeamento)
     const fornecedor = buscarFornecedor(skuNormalizado);
     if (fornecedor && fornecedor.sku_sistema) {
         const skuSistema = fornecedor.sku_sistema.trim().toLowerCase();
-        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-            const encontrado = produtosEstoque.find(p => {
-                const pSku = (p.sku || '').trim().toLowerCase();
-                return pSku === skuSistema;
-            });
-            if (encontrado) {
-                console.log(`✅ SKU mapeado via fornecedor: ${encontrado.sku}`);
-                return encontrado;
-            }
+        const encontradoViaFornecedor = produtosEstoque.find(p => {
+            const pSku = (p.sku || '').trim().toLowerCase();
+            return pSku === skuSistema;
+        });
+        if (encontradoViaFornecedor) {
+            console.log(`✅ SKU mapeado via fornecedor: ${encontradoViaFornecedor.sku}`);
+            return encontradoViaFornecedor;
         }
     }
 
@@ -244,10 +247,25 @@ async function carregarEntradas() {
 }
 
 // ============================================
-// RENDERIZAR ENTRADAS
+// RENDERIZAR ENTRADAS (COM ESPERA FORÇADA DO ESTOQUE)
 // ============================================
 async function renderizarEntradas() {
-    await aguardarEstoqueCarregado();
+    // 1. Forçar o carregamento do estoque se ainda não estiver carregado
+    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
+        console.log('🔄 Forçando recarregamento do estoque antes de renderizar...');
+        if (typeof carregarProdutosEstoque === 'function') {
+            await carregarProdutosEstoque();
+        } else {
+            // Fallback: esperar um pouco e tentar novamente
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+        // Verificar novamente após a tentativa
+        if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
+            console.warn('⚠️ Estoque ainda não disponível. Renderizando sem verificação.');
+        } else {
+            console.log(`✅ Estoque carregado: ${produtosEstoque.length} produtos.`);
+        }
+    }
 
     const container = document.getElementById('entradasCardsContainer');
     if (!container) return;
@@ -290,8 +308,13 @@ async function renderizarEntradas() {
 
     let html = '';
     cardsFiltrados.forEach(card => {
-        const total = card.itens.length;
-        const concluidos = card.itens.filter(i => i.status !== 'pendente').length;
+        // Cálculo de progresso: ignorados não contam como pendentes, mas são considerados concluídos
+        const total = card.itens.filter(i => i.status !== 'ignorado').length;
+        const concluidos = card.itens.filter(i => 
+            i.status === 'entrada_realizada' || 
+            i.status === 'cadastrado' || 
+            i.status === 'ignorado'
+        ).length;
         const progresso = total > 0 ? Math.round((concluidos / total) * 100) : 0;
         const isFinalizado = card.status === 'finalizado';
         const criadoEm = new Date(card.criado_em).toLocaleString('pt-BR');
@@ -348,9 +371,10 @@ async function renderizarEntradas() {
                                 <th>Produto</th>
                                 <th>SKU</th>
                                 <th>Fornecedor</th>
-                                <th>Observação</th>
+                                <th style="width:70px;">Qtd Entrada</th>
+                                <th>Obs.</th>
                                 <th style="width:70px;">Status</th>
-                                <th style="width:220px;">Ação</th>
+                                <th style="width:240px;">Ação</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -358,11 +382,25 @@ async function renderizarEntradas() {
 
         card.itens.forEach((item, idx) => {
             const isConcluido = item.status !== 'pendente';
-            const itemStatus = item.status === 'entrada_realizada' ? '✅ Entrada' :
-                              item.status === 'cadastrado' ? '📝 Cadastrado' : '⏳ Pendente';
-            const statusClass = item.status === 'entrada_realizada' ? 'badge-success' :
-                               item.status === 'cadastrado' ? 'badge-info' : 'badge-warning';
+            const isIgnorado = item.status === 'ignorado';
+            
+            let itemStatus = '';
+            let statusClass = '';
+            if (isIgnorado) {
+                itemStatus = '⏭️ Ignorado';
+                statusClass = 'badge-secondary';
+            } else if (item.status === 'entrada_realizada') {
+                itemStatus = '✅ Entrada';
+                statusClass = 'badge-success';
+            } else if (item.status === 'cadastrado') {
+                itemStatus = '📝 Cadastrado';
+                statusClass = 'badge-info';
+            } else {
+                itemStatus = '⏳ Pendente';
+                statusClass = 'badge-warning';
+            }
 
+            // BUSCA DO SKU NO ESTOQUE
             const skuParaVerificar = item.sku_match || item.sku_original;
             const produtoExistente = verificarSKUExistente(skuParaVerificar);
             let tituloProduto = '';
@@ -372,18 +410,22 @@ async function renderizarEntradas() {
 
             let acaoHtml = '';
 
-            if (isConcluido) {
+            if (isConcluido || isIgnorado) {
                 acaoHtml = `
                     <span class="badge ${statusClass}">${itemStatus}</span>
                     <small class="text-muted d-block">${item.responsavel || ''}</small>
                 `;
             } else {
+                // Item pendente – exibe botões conforme produto encontrado ou não
                 if (produtoExistente) {
                     acaoHtml = `
                         <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
                             <i class="fas fa-arrow-right-to-bracket"></i> Dar Entrada
                         </button>
                         ${tituloProduto ? `<small class="d-block text-success">🔍 ${tituloProduto}</small>` : ''}
+                        <button class="btn btn-sm btn-secondary" onclick="ignorarItem('${card.id}', ${item.id})" title="Ignorar este item">
+                            <i class="fas fa-ban"></i> Ignorar
+                        </button>
                     `;
                 } else {
                     acaoHtml = `
@@ -397,6 +439,9 @@ async function renderizarEntradas() {
                             <button class="btn btn-sm btn-warning" onclick="abrirCadastroNovoComOS('${card.id}', ${item.id})" title="Cadastrar novo produto e criar OS para Elaine">
                                 <i class="fas fa-plus"></i> Produto Novo
                             </button>
+                            <button class="btn btn-sm btn-secondary" onclick="ignorarItem('${card.id}', ${item.id})" title="Ignorar este item">
+                                <i class="fas fa-ban"></i> Ignorar
+                            </button>
                         </div>
                         <small class="d-block text-muted">⛔ Produto não encontrado</small>
                     `;
@@ -405,9 +450,10 @@ async function renderizarEntradas() {
 
             const skuDisplay = item.sku_match || item.sku_original || '-';
             const fornecedorDisplay = item.fornecedor_nome || item.cd_fornecedor || '-';
+            const qtdEntrada = item.quantidade_entrada && item.quantidade_entrada > 0 ? item.quantidade_entrada : '-';
 
             html += `
-                <tr class="${isConcluido ? 'table-light' : ''}">
+                <tr class="${isConcluido || isIgnorado ? 'table-light' : ''}">
                     <td>${idx + 1}</td>
                     <td>${item.cd_fornecedor || '-'}</td>
                     <td>${item.rastreio || '-'}</td>
@@ -415,6 +461,7 @@ async function renderizarEntradas() {
                     <td>${item.produto || '-'}</td>
                     <td><code>${skuDisplay}</code></td>
                     <td>${fornecedorDisplay}</td>
+                    <td>${qtdEntrada}</td>
                     <td>${item.observacao || '-'}</td>
                     <td><span class="badge ${statusClass}">${itemStatus}</span></td>
                     <td>${acaoHtml}</td>
@@ -530,6 +577,7 @@ window.processarEntrada = async function() {
             status: 'pendente',
             acao: null,
             responsavel: null,
+            quantidade_entrada: 0,
             data_acao: null
         });
     });
@@ -749,6 +797,7 @@ window.processarXML = async function() {
                     cprod_fornecedor: cProd || '',
                     tipo_entrada: 'xml',
                     status: 'pendente',
+                    quantidade_entrada: 0,
                     acao: null,
                     responsavel: null,
                     data_acao: null
@@ -868,7 +917,7 @@ async function gerarNumeroEntrada() {
 // AÇÕES DOS ITENS
 // ============================================
 
-// ===== DAR ENTRADA EM UM ITEM =====
+// ===== DAR ENTRADA EM UM ITEM (COM CONFIRMAÇÃO DE QUANTIDADE) =====
 window.darEntradaItem = async function(cardId, itemId, produtoId) {
     if (!cardId || !itemId || !produtoId) {
         showToast('Erro: dados incompletos', 'error');
@@ -891,19 +940,34 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
         return;
     }
 
-    const quantidade = item.quantidade || 1;
-    if (quantidade <= 0) {
-        showToast('Quantidade inválida para dar entrada', 'warning');
+    // Quantidade sugerida (do processamento)
+    const quantidadeSugerida = item.quantidade || 1;
+    
+    // Perguntar ao usuário a quantidade a dar entrada
+    const quantidadeStr = prompt(
+        `Quantas unidades deseja dar entrada?\n(Sugestão: ${quantidadeSugerida})`,
+        quantidadeSugerida.toString()
+    );
+    
+    if (quantidadeStr === null) {
+        showToast('Operação cancelada.', 'info');
+        return;
+    }
+    
+    const quantidade = parseInt(quantidadeStr);
+    if (isNaN(quantidade) || quantidade <= 0) {
+        showToast('Quantidade inválida. Deve ser um número positivo.', 'warning');
         return;
     }
 
-    if (!confirm(`Deseja dar entrada de ${quantidade} unidade(s) do SKU "${item.sku_original}"?`)) {
+    if (!confirm(`Confirmar entrada de ${quantidade} unidade(s) do SKU "${item.sku_original}"?`)) {
         return;
     }
 
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
+        // Atualizar estoque
         const { data: produto, error: errProd } = await window.supabaseClient
             .from('produtos_estoque')
             .select('quantidade')
@@ -921,6 +985,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errUpdate) throw errUpdate;
 
+        // Registrar movimentação com a quantidade informada
         await registrarMovimentacao(
             produtoId,
             'entrada',
@@ -929,11 +994,13 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
             'nova'
         );
 
+        // Atualizar item – guardar quantidade_entrada
         const { error: errItem } = await window.supabaseClient
             .from('entrada_items')
             .update({
                 status: 'entrada_realizada',
                 acao: 'entrada',
+                quantidade_entrada: quantidade,  // <-- NOVO
                 responsavel: currentUser.name,
                 data_acao: new Date().toISOString()
             })
@@ -941,8 +1008,11 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errItem) throw errItem;
 
-        const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
-        const total = card.itens.length;
+        // Atualizar card
+        const concluidos = card.itens.filter(i => 
+            i.id != itemId && (i.status !== 'pendente' && i.status !== 'ignorado')
+        ).length + 1;
+        const total = card.itens.filter(i => i.status !== 'ignorado').length; // ignorados não contam
         const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
 
         const { error: errCard } = await window.supabaseClient
@@ -960,6 +1030,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
         showToast(`✅ Entrada de ${quantidade} unidade(s) realizada!`, 'success');
         await carregarEntradas();
 
+        // Sincronizar ML
         if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
             const produtoAtualizado = produtosEstoque.find(p => p.id == produtoId);
             if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes) {
@@ -974,6 +1045,77 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
     } catch (error) {
         console.error('❌ Erro ao dar entrada:', error);
         showToast('❌ Erro ao dar entrada: ' + error.message, 'error');
+    }
+};
+
+// ===== IGNORAR ITEM =====
+window.ignorarItem = async function(cardId, itemId) {
+    if (!cardId || !itemId) {
+        showToast('Erro: dados incompletos', 'error');
+        return;
+    }
+
+    const card = entradasCards.find(c => c.id == cardId);
+    if (!card) {
+        showToast('Card não encontrado', 'error');
+        return;
+    }
+    const item = card.itens.find(i => i.id == itemId);
+    if (!item) {
+        showToast('Item não encontrado', 'error');
+        return;
+    }
+
+    if (item.status !== 'pendente') {
+        showToast('Este item já foi processado', 'warning');
+        return;
+    }
+
+    if (!confirm(`Deseja ignorar o item "${item.produto}"? Ele será marcado como ignorado.`)) {
+        return;
+    }
+
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        const { error: errItem } = await window.supabaseClient
+            .from('entrada_items')
+            .update({
+                status: 'ignorado',
+                acao: 'ignorado',
+                responsavel: currentUser.name,
+                data_acao: new Date().toISOString(),
+                quantidade_entrada: 0
+            })
+            .eq('id', itemId);
+
+        if (errItem) throw errItem;
+
+        // Atualizar card
+        const concluidos = card.itens.filter(i => 
+            i.id != itemId && (i.status !== 'pendente' && i.status !== 'ignorado')
+        ).length + 1; // o item ignorado conta como concluído
+        const total = card.itens.filter(i => i.status !== 'ignorado').length;
+        const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
+
+        const { error: errCard } = await window.supabaseClient
+            .from('entradas_cards')
+            .update({
+                items_concluidos: concluidos,
+                status: novoStatus,
+                finalizado_em: novoStatus === 'finalizado' ? new Date().toISOString() : null,
+                finalizado_por: novoStatus === 'finalizado' ? currentUser.name : null
+            })
+            .eq('id', cardId);
+
+        if (errCard) throw errCard;
+
+        showToast(`⏭️ Item ignorado com sucesso!`, 'info');
+        await carregarEntradas();
+
+    } catch (error) {
+        console.error('❌ Erro ao ignorar item:', error);
+        showToast('❌ Erro ao ignorar: ' + error.message, 'error');
     }
 };
 
