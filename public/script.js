@@ -4425,7 +4425,6 @@ window.abrirSistemaOS = function() {
 
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
-    if (promocoesSystem) promocoesSystem.classList.add('hidden');
     
     // Mostrar sistema principal de OS
     const mainSystem = document.getElementById('mainSystem');
@@ -6759,7 +6758,6 @@ window.abrirSistemaVendas = async function() {
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     if (entradasSystem) entradasSystem.classList.add('hidden');
-    if (promocoesSystem) promocoesSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -7015,7 +7013,6 @@ window.abrirSistemaCaixa = function() {
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     if (feedbackSystem) feedbackSystem.classList.add('hidden');
-    if (promocoesSystem) promocoesSystem.classList.add('hidden');
     
     // Mostrar sistema de caixa
     const caixaSystem = document.getElementById('caixaSystem');
@@ -7320,7 +7317,6 @@ window.abrirSistemaVendas = async function() {
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     if (entradasSystem) entradasSystem.classList.add('hidden');
-    if (promocoesSystem) promocoesSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
