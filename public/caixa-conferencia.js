@@ -83,6 +83,14 @@ window.abrirSistemaCaixa = function() {
     if (mainSystem) mainSystem.classList.add('hidden');
     if (reembolsosSystem) reembolsosSystem.classList.add('hidden');
     if (salesSystem) salesSystem.classList.add('hidden');
+    if (caixaSystem) caixaSystem.classList.add('hidden');
+    if (folgasSystem) folgasSystem.classList.add('hidden');
+    if (shippingSystem) shippingSystem.classList.add('hidden');
+    if (estoqueSystem) estoqueSystem.classList.add('hidden');
+    if (perguntasSystem) perguntasSystem.classList.add('hidden');
+    if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
+    if (entradasSystem) entradasSystem.classList.add('hidden');
+    if (promocoesSystem) promocoesSystem.classList.add('hidden');
     
     // Mostrar sistema de caixa
     const caixaSystem = document.getElementById('caixaSystem');

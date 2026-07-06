@@ -822,7 +822,7 @@ body > * {
                 <h3>Gestão de Estoque</h3>
                 <p>Produtos, entrada/saída</p>
             </div>
-            <div class="menu-card" onclick="abrirGestaoEstoque()">
+            <div class="menu-card" onclick="abrirSistemaPromocoes()">
                 <div class="menu-icon"><i class="fas fa-tag"></i></div>
                 <h3>Promoções</h3>
                 <p>Gerenciar e organizar promoções</p>
@@ -1008,6 +1008,7 @@ body > * {
                                     <option value="edicao">Apenas edição</option>
                                     <option value="criar_anuncio">Criar anúncio</option>
                                     <option value="replicar_anuncio">Replicar anúncio</option>
+                                    <option value="fotos_para_atualizar">Fotos para atualizar</option>
                                 </select>
                             </div>
                         </div>
@@ -1134,12 +1135,22 @@ body > * {
     <button class="btn btn-danger btn-sm" onclick="filterOS('revisao')">
         Revisão <span class="badge" id="countRevision">0</span>
     </button>
+    <button class="btn btn-info btn-sm" onclick="filterOS('fotos_atualizar')">
+    Atualizar Fotos <span class="badge" id="countFotosAtualizar">0</span>
+    </button>
     <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
         Concluídas <span class="badge" id="countCompleted">0</span>
     </button>
     <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
         Todas <span class="badge" id="countTotal">0</span>
     </button>
+</div>
+
+<div id="filtroDataConcluidas" class="hidden" style="display: inline-flex; align-items: center; gap: 5px; margin-left: 10px;">
+    <label for="dataFiltroConcluidas" style="font-size: 12px;">Data de conclusão:</label>
+    <input type="date" id="dataFiltroConcluidas" class="form-control form-control-sm" style="width: 140px;">
+    <button class="btn btn-sm btn-primary" onclick="aplicarFiltroDataConcluidas()">Aplicar</button>
+    <button class="btn btn-sm btn-secondary" onclick="limparFiltroDataConcluidas()">Limpar</button>
 </div>
                         </div>
                         <button class="btn btn-success" id="selectOSBtn" onclick="ativarModoSelecaoOS()">
@@ -4376,8 +4387,73 @@ body > * {
         </div>
     </header>
 
+
     <div class="container">
         <!-- Card: Área de Colagem -->
+         <!-- Card: Pré-entrada (XML) - PADRÃO IGUAL AO DE NOVA ENTRADA -->
+<div class="card mb-4" id="preEntradaCard">
+    <div class="card-header">
+        <h2 class="card-title">
+            <i class="fas fa-file-upload"></i>
+            Pré-entrada (XML)
+        </h2>
+        <div>
+            <span class="text-muted" style="font-size: 12px;">
+                <i class="fas fa-info-circle"></i> 
+                Envie o XML da nota, edite as observações e processe a entrada.
+            </span>
+        </div>
+    </div>
+
+    <!-- Área de upload (mesmo estilo da Nova Entrada) -->
+    <div class="form-group mb-3">
+        <label for="preXmlFileInput"><i class="fas fa-file-code"></i> Selecione o XML da nota fiscal</label>
+        <div class="d-flex gap-2 align-items-center">
+            <input type="file" id="preXmlFileInput" class="form-control" accept=".xml" style="width: auto; flex: 1;">
+            <button class="btn btn-primary" onclick="processarPreEntradaXML()">
+                <i class="fas fa-upload"></i> Carregar XML
+            </button>
+            <button class="btn btn-danger" onclick="limparPreEntrada()">
+                <i class="fas fa-trash"></i> Limpar
+            </button>
+        </div>
+        <small class="text-muted">Aceita arquivos .xml de NF-e (modelo 55). Os itens serão listados para edição.</small>
+    </div>
+
+    <!-- Tabela de itens da pré-entrada (inicialmente oculta) -->
+    <div id="preEntradaTableContainer" style="display: none;">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover" id="preEntradaTable">
+                <thead>
+                    <tr>
+                        <th style="width:40px;">#</th>
+                        <th>Cd. Fornecedor</th>
+                        <th>Referência</th>
+                        <th style="width:80px;">Quant</th>
+                        <th>Produto</th>
+                        <th>SKU</th>
+                        <th>Fornecedor</th>
+                        <th>Observação</th>
+                        <th style="width:100px;">Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="preEntradaTableBody">
+                    <!-- Itens serão renderizados aqui -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Botões de ação (alinhados à direita, como na Nova Entrada) -->
+        <div class="d-flex justify-content-end gap-2 mt-3">
+            <button class="btn btn-secondary" onclick="limparPreEntrada()">
+                <i class="fas fa-times"></i> Cancelar
+            </button>
+            <button class="btn btn-success" onclick="processarPreEntrada()">
+                <i class="fas fa-check-double"></i> Processar Pré-entrada
+            </button>
+        </div>
+    </div>
+</div>
         <div class="card mb-4">
             <div class="card-header">
                 <h2 class="card-title">
@@ -4673,6 +4749,7 @@ body > * {
     <script src="perguntas_manager.js"></script>
     <script src="feedback_manager.js"></script>
     <script src="entradas.js"></script>
+    <script src="promocoes_manager.js"></script>
 
     <script>
         // Funções para controle da sidebar

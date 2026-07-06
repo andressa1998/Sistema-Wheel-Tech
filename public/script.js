@@ -183,6 +183,17 @@ const USER_EMAILS = {
     'AndressaMiotto': 'andmiotto1998@gmail.com'
 };
 
+// Mapeamento de tipos de serviço (fotos)
+const PHOTO_TYPE_MAP = {
+    'estudio': 'Foto Estúdio',
+    'bike': 'Foto Bike',
+    'ambos': 'Foto em Ambos',
+    'edicao': 'Apenas edição',
+    'criar_anuncio': 'Criar anúncio',
+    'replicar_anuncio': 'Replicar anúncio',
+    'fotos_para_atualizar': 'Fotos para atualizar'  // NOVO
+};
+
 // ===== VARIÁVEIS PARA NOTIFICAÇÕES DO SISTEMA =====
 let systemNotifications = [];
 let unreadNotifications = 0;
@@ -366,6 +377,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initSupabase();
     setupEventListeners();
     setupPhotoUpload();
+    toggleFiltroDataConcluidas(false);
     
     // Adicionar evento de tecla ESC para fechar modais
     document.addEventListener('keydown', function(e) {
@@ -1409,7 +1421,6 @@ function toggleCamposAnuncio() {
     
     // Se for criar/replicar anúncio ou apenas edição, definir opções padrão
     if (photoType === 'criar_anuncio' || photoType === 'replicar_anuncio' || photoType === 'edicao') {
-        // Garantir que o campo "precisa de foto" esteja visível
         const precisaFotoSelect = document.getElementById('precisaFoto');
         if (precisaFotoSelect) {
             precisaFotoSelect.value = 'nao'; // Valor padrão
@@ -3291,7 +3302,7 @@ function handleLogout() {
             'caixaSystem', 'precificacaoSystem', 'reviewsSystem',
             'folgasSystem', 'shippingSystem', 'estoqueSystem', 'entradasSystem',
             'estoqueGestaoSystem', 'perguntasSystem', 'feedbackSystem',
-            'nfeSystem', 'historicoAcessosScreen'
+            'nfeSystem', 'historicoAcessosScreen', 'promocoesSystem'
         ];
         sistemas.forEach(id => {
             const el = document.getElementById(id);
@@ -3971,6 +3982,8 @@ function updateCounters() {
     const revision = userOrders.filter(o => o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== '').length;
     const completed = userOrders.filter(o => o.status === 'concluida' && o.conferido === true).length;
     const total = userOrders.length;
+    // NOVO: contagem para serviço "Fotos para atualizar"
+    const fotosAtualizar = userOrders.filter(o => o.photoType === 'fotos_para_atualizar').length;
 
     const setText = (id, value) => {
         const el = document.getElementById(id);
@@ -3982,6 +3995,7 @@ function updateCounters() {
     setText('countRevision', revision);
     setText('countCompleted', completed);
     setText('countTotal', total);
+    setText('countFotosAtualizar', fotosAtualizar); // NOVO
     
     if (myOrdersCount) {
         if (currentUser.role === 'Administrador') {
@@ -4012,6 +4026,108 @@ function updateCounters() {
 
     updateOSNotificationBell();
 }
+
+// Mostra/oculta o campo de data quando o filtro concluída é ativado
+function toggleFiltroDataConcluidas(show) {
+    const div = document.getElementById('filtroDataConcluidas');
+    if (div) {
+        if (show) {
+            div.classList.remove('hidden');
+            div.style.display = 'inline-flex';
+        } else {
+            div.classList.add('hidden');
+            div.style.display = 'none';
+        }
+    }
+}
+
+// Aplica o filtro de data (chamado pelo botão)
+function aplicarFiltroDataConcluidas() {
+    if (currentFilter === 'concluida') {
+        renderOrdersTable();
+    } else {
+        // Se não estiver no filtro concluída, muda para ele
+        filterOS('concluida');
+    }
+}
+
+// Limpa o campo de data e re-renderiza
+function limparFiltroDataConcluidas() {
+    const input = document.getElementById('dataFiltroConcluidas');
+    if (input) input.value = '';
+    if (currentFilter === 'concluida') {
+        renderOrdersTable();
+    }
+}
+
+window.marcarAlteracoesFeitas = async function(orderId) {
+    if (!confirm('Confirmar que as alterações solicitadas foram realizadas? A OS será enviada para "Não conferidas" e o criador será notificado.')) {
+        return;
+    }
+
+    const order = orders.find(o => o.id == orderId);
+    if (!order) {
+        showToast('Ordem não encontrada', 'error');
+        return;
+    }
+
+    try {
+        // Atualizar no Supabase
+        if (supabaseClient) {
+            const { error } = await supabaseClient
+                .from('ordens_service')
+                .update({
+                    status: 'concluida',
+                    conferido: false,
+                    conferido_por: null,
+                    data_conferencia: null,
+                    // Mantém o motivo de rejeição para referência (não o removemos)
+                    ultima_atualizacao: new Date().toISOString()
+                })
+                .eq('id', orderId);
+            if (error) throw error;
+        }
+
+        // Atualizar localmente
+        const idx = orders.findIndex(o => o.id == orderId);
+        if (idx !== -1) {
+            orders[idx].status = 'concluida';
+            orders[idx].conferido = false;
+            orders[idx].conferidoPor = null;
+            orders[idx].dataConferencia = null;
+            orders[idx].updatedAt = new Date().toISOString();
+            // Não removemos o motivo_rejeicao para manter o histórico
+        }
+
+        // Notificar o criador
+        const criador = order.createdBy;
+        if (criador && criador !== currentUser.name) {
+            const assunto = `🔄 Alterações realizadas na OS ${order.code}`;
+            const mensagem = `
+                Olá ${criador},
+
+                A OS ${order.code} - ${order.productName} foi atualizada após a não autorização.
+
+                O responsável realizou as alterações solicitadas e a OS está novamente disponível para conferência.
+
+                Motivo anterior: ${order.motivo_rejeicao || 'Não informado'}
+
+                Acesse o sistema para conferir.
+
+                Sistema Wheel Tech
+            `;
+            await enviarNotificacaoEmail(criador, assunto, mensagem);
+        }
+
+        showToast('✅ OS enviada para "Não conferidas" e criador notificado!', 'success');
+        updateCounters();
+        renderOrdersTable();
+
+    } catch (error) {
+        console.error('❌ Erro ao marcar alterações feitas:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
+    }
+};
 
 // ============================================
 // FUNÇÃO RENDER ORDERS TABLE (CORRIGIDA - MOSTRAR LINK NAS CONCLUÍDAS)
@@ -4054,10 +4170,26 @@ function renderOrdersTable() {
                 o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== ''
             );
             break;
-        case 'concluida':
-            filteredOrders = userOrders.filter(o => 
-                o.status === 'concluida' && o.conferido === true
-            );
+        case 'concluida': {
+            // Filtro base: concluídas e conferidas
+            let base = userOrders.filter(o => o.status === 'concluida' && o.conferido === true);
+            // Aplicar filtro de data se estiver preenchido
+            const dataInput = document.getElementById('dataFiltroConcluidas');
+            if (dataInput && dataInput.value) {
+                const dataSelecionada = new Date(dataInput.value);
+                dataSelecionada.setHours(0,0,0,0);
+                base = base.filter(o => {
+                    if (!o.completionDate) return false;
+                    const compDate = new Date(o.completionDate);
+                    compDate.setHours(0,0,0,0);
+                    return compDate.getTime() === dataSelecionada.getTime();
+                });
+            }
+            filteredOrders = base;
+            break;
+        }
+        case 'fotos_atualizar':
+            filteredOrders = userOrders.filter(o => o.photoType === 'fotos_para_atualizar');
             break;
         default:
             filteredOrders = userOrders;
@@ -4186,6 +4318,12 @@ function renderOrdersTable() {
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
             actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado"><i class="fas fa-ban"></i> Não Autorizado</button>`;
         }
+        // NOVO BOTÃO: Alterações feitas (apenas para OS em revisão)
+        if (isRejectedPending && (hasPermission || isAdmin)) {
+            actionButtons += `<button class="btn btn-success btn-sm" onclick="marcarAlteracoesFeitas('${order.id}')" title="Alterações feitas - enviar para conferência">
+                <i class="fas fa-check-double"></i> Alterações feitas
+            </button>`;
+        }
         if (hasPermission || isAdmin) {
             if (order.status === 'pendente' && !order.motivo_rejeicao) {
                 actionButtons += `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS"><i class="fas fa-play"></i></button>`;
@@ -4219,13 +4357,13 @@ function renderOrdersTable() {
             <td>${urgencyBadge}</td>
             <td>${statusBadge}</td>
             <td>${formattedDate}</td>
-            <td><div class="d-flex gap-2">${actionButtons}</div></td>
+            <td><div class="d-flex gap-2 flex-wrap">${actionButtons}</div></td>
         `;
         
         osTableBody.appendChild(row);
     });
     
-    // Atualiza contadores (já feito em updateCounters, mas garantimos)
+    // Atualiza contadores
     updateCounters();
 }
 
@@ -4234,6 +4372,8 @@ function renderOrdersTable() {
 // ============================================
 window.filterOS = function(filter) {
     currentFilter = filter;
+    // Mostra ou oculta o campo de data conforme o filtro
+    toggleFiltroDataConcluidas(filter === 'concluida');
     renderOrdersTable();
     highlightActiveFilterButton();
 };
@@ -4277,7 +4417,7 @@ window.abrirSistemaOS = function() {
     if (menuSystem) menuSystem.classList.add('hidden');
     
     // Esconder outros sistemas
-    const sistemas = ['salesSystem', 'reembolsosSystem', 'caixaSystem', 'entradasSystem', 'precificacaoSystem', 'reviewsSystem', 'feedbackSystem', 'perguntasSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'estoqueGestaoSystem'];
+    const sistemas = ['salesSystem', 'reembolsosSystem', 'caixaSystem', 'entradasSystem', 'promocoesSystem', 'precificacaoSystem', 'promocoesSystem', 'reviewsSystem', 'feedbackSystem', 'perguntasSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'estoqueGestaoSystem'];
     sistemas.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hidden');
@@ -4285,6 +4425,7 @@ window.abrirSistemaOS = function() {
 
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
+    if (promocoesSystem) promocoesSystem.classList.add('hidden');
     
     // Mostrar sistema principal de OS
     const mainSystem = document.getElementById('mainSystem');
@@ -4745,14 +4886,8 @@ window.openPrintModal = function(osData) {
         'baixa': 'Baixa'
     };
     
-    const photoTypeMap = {
-        'estudio': 'Foto Estúdio',
-        'bike': 'Foto Bike',
-        'ambos': 'Ambos',
-        'edicao': 'Apenas edição',
-        'criar_anuncio': 'Criar anúncio',
-        'replicar_anuncio': 'Replicar anúncio'
-    };
+    // Usa o mapeamento global
+    const photoTypeText = PHOTO_TYPE_MAP[osData.photoType] || osData.photoType;
     
     const osTypeMap = {
         'normal': 'Normal',
@@ -4762,7 +4897,6 @@ window.openPrintModal = function(osData) {
     
     const statusText = statusMap[osData.status] || osData.status;
     const urgencyText = urgencyMap[osData.urgency] || osData.urgency;
-    const photoTypeText = photoTypeMap[osData.photoType] || osData.photoType;
     const osTypeText = osTypeMap[osData.osType] || osData.osType;
     const formattedDate = new Date(osData.createdAt).toLocaleString('pt-BR');
     
@@ -4814,9 +4948,9 @@ function generatePrintPreview(osData, statusText, urgencyText, photoTypeText, os
         `;
     }
     
-    // Seção para criar/replicar anúncio
+    // Seção para criar/replicar anúncio ou edição
     let anuncioSection = '';
-    if (osData.photoType === 'criar_anuncio' || osData.photoType === 'replicar_anuncio') {
+    if (osData.photoType === 'criar_anuncio' || osData.photoType === 'replicar_anuncio' || osData.photoType === 'edicao') {
         anuncioSection = `
             <div class="preview-card" style="grid-column: span ${currentPrintStyle === 'compact' ? 1 : 2}">
                 <div class="card-header">
@@ -5566,19 +5700,13 @@ function generateDetailsTab() {
         'normal': { text: 'Normal (48h)', color: '#ffc107' },
         'alta': { text: 'Alta (2h)', color: '#dc3545' }
     };
-    const photoTypeMap = {
-        'estudio': 'Estúdio',
-        'bike': 'Na Bike',
-        'ambos': 'Ambos',
-        'edicao': 'Apenas edição',
-        'criar_anuncio': 'Criar anúncio',
-        'replicar_anuncio': 'Replicar anúncio'
-    };
+    // Usa o mapeamento global
+    const photoTypeText = PHOTO_TYPE_MAP[order.photoType] || order.photoType;
+    
     const osTypeMap = { 'normal': 'Normal', 'devolucao': 'Devolução' };
     
     const statusInfo = statusMap[order.status] || { text: order.status, class: '' };
     const urgencyInfo = urgencyMap[order.urgency] || { text: order.urgency, color: '#6c757d' };
-    const photoTypeText = photoTypeMap[order.photoType] || order.photoType;
     const osTypeText = osTypeMap[order.osType] || order.osType;
     
     const createdDate = new Date(order.createdAt);
@@ -6137,7 +6265,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // ============================================
 window.voltarParaMenu = function() {
     // Lista de todos os sistemas que podem estar abertos
-    const sistemas = ['mainSystem', 'salesSystem', 'precificacaoSystem', 'reembolsosSystem', 'caixaSystem', 'perguntasSystem',
+    const sistemas = ['mainSystem', 'salesSystem', 'precificacaoSystem', 'reembolsosSystem', 'caixaSystem', 'perguntasSystem', 'promocoesSystem',
                       'reviewsSystem', 'folgasSystem', 'shippingSystem', 'entradasSystem','feedbackSystem','estoqueSystem', 
                       'estoqueGestaoSystem'];
     sistemas.forEach(id => {
@@ -6631,6 +6759,7 @@ window.abrirSistemaVendas = async function() {
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     if (entradasSystem) entradasSystem.classList.add('hidden');
+    if (promocoesSystem) promocoesSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -6829,7 +6958,7 @@ window.abrirSistemaReembolsos = function() {
     // Esconder outros sistemas - usando getElementById com verificação
     const sistemasIds = [
         'mainSystem', 'caixaSystem', 'salesSystem', 'precificacaoSystem', 'reviewsSystem', 
-        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'entradasSystem', 'perguntasSystem', 'feedbackSystem',
+        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'entradasSystem', 'perguntasSystem', 'feedbackSystem', 'promocoesSystem',
         'estoqueGestaoSystem'
     ];
     sistemasIds.forEach(id => {
@@ -6886,6 +7015,7 @@ window.abrirSistemaCaixa = function() {
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     if (feedbackSystem) feedbackSystem.classList.add('hidden');
+    if (promocoesSystem) promocoesSystem.classList.add('hidden');
     
     // Mostrar sistema de caixa
     const caixaSystem = document.getElementById('caixaSystem');
@@ -6916,7 +7046,7 @@ window.abrirSistemaCaixa = function() {
 // Função para voltar ao sistema principal (OS)
 window.voltarParaMenu = function() {
     // Lista de todos os sistemas que podem estar abertos
-    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem', 'entradasSystem',
+    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem', 'entradasSystem', 'promocoesSystem',
                       'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem', 'perguntasSystem',
                       'estoqueGestaoSystem'];
     sistemas.forEach(id => {
@@ -6954,7 +7084,7 @@ window.abrirSistemaReviews = function() {
     // Esconder outros sistemas
     const sistemasIds = [
         'mainSystem', 'reembolsosSystem', 'salesSystem', 'precificacaoSystem', 'caixaSystem', 'entradasSystem',
-        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'perguntasSystem', 
+        'folgasSystem', 'shippingSystem', 'estoqueSystem', 'perguntasSystem', 'promocoesSystem',
         'estoqueGestaoSystem'
     ];
     sistemasIds.forEach(id => {
@@ -7190,6 +7320,7 @@ window.abrirSistemaVendas = async function() {
     if (perguntasSystem) perguntasSystem.classList.add('hidden');
     if (estoqueGestaoSystem) estoqueGestaoSystem.classList.add('hidden');
     if (entradasSystem) entradasSystem.classList.add('hidden');
+    if (promocoesSystem) promocoesSystem.classList.add('hidden');
     
     // Mostrar sistema de vendas
     const salesSystem = document.getElementById('salesSystem');
@@ -8072,7 +8203,7 @@ window.abrirSistemaFrete = function() {
     if (menuSystem) menuSystem.classList.add('hidden');
 
     const sistemasIds = [
-        'mainSystem', 'salesSystem', 'reembolsosSystem', 'perguntasSystem', 'precificacaoSystem',
+        'mainSystem', 'salesSystem', 'reembolsosSystem', 'perguntasSystem', 'precificacaoSystem', 'promocoesSystem',
         'caixaSystem', 'reviewsSystem', 'folgasSystem', 'estoqueSystem', 'feedbackSystem', 'entradasSystem',
         'estoqueGestaoSystem', 'nfeSystem'
     ];
@@ -8126,7 +8257,7 @@ window.abrirSistemaNFE = async function() {
     if (menuSystem) menuSystem.classList.add('hidden');
 
     const sistemasIds = [
-        'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem',
+        'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'caixaSystem', 'promocoesSystem',
         'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem', 'entradasSystem',
         'perguntasSystem', 'estoqueGestaoSystem'
     ];
@@ -8913,7 +9044,7 @@ window.abrirSistemaEstoque = function() {
 
     // 1. Esconder outros sistemas principais
     const sistemas = [
-        'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'entradasSystem',
+        'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem', 'precificacaoSystem', 'entradasSystem', 'promocoesSystem',
         'caixaSystem', 'reviewsSystem', 'folgasSystem', 'shippingSystem', 'feedbackSystem', 'perguntasSystem', 
         'estoqueGestaoSystem'
     ];
@@ -9936,7 +10067,7 @@ window.abrirSistemaPrecificacao = function() {
     const sistemasIds = [
         'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'precificacaoSystem',
         'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'feedbackSystem',
-        'estoqueGestaoSystem', 'nfeSystem', 'perguntasSystem', 'entradasSystem'
+        'estoqueGestaoSystem', 'nfeSystem', 'perguntasSystem', 'entradasSystem', 'promocoesSystem'
     ];
     sistemasIds.forEach(id => {
         const el = document.getElementById(id);

@@ -94,7 +94,7 @@ window.abrirGestaoEstoque = function() {
         return;
     }
 
-    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 
+    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'promocoesSystem',
                       'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'menuSystem', 'perguntasSystem'];
     sistemas.forEach(id => {
         const el = document.getElementById(id);

@@ -33,7 +33,7 @@ window.abrirSistemaPerguntas = async function() {
     const menuSystem = document.getElementById('menuSystem');
     if (menuSystem) menuSystem.classList.add('hidden');
     
-    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 
+    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'promocoesSystem',
                       'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 
                       'estoqueGestaoSystem', 'nfeSystem'];
     sistemas.forEach(id => {

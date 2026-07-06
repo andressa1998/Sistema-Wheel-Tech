@@ -36,7 +36,7 @@ window.abrirSistemaFeedback = function() {
   if (menuSystem) menuSystem.classList.add('hidden');
 
   const sistemas = ['mainSystem','salesSystem','reembolsosSystem','precificacaoSystem','caixaSystem',
-                    'reviewsSystem','folgasSystem','shippingSystem','estoqueSystem',
+                    'reviewsSystem','folgasSystem','shippingSystem','estoqueSystem', 'promocoesSystem',
                     'estoqueGestaoSystem','nfeSystem'];
   sistemas.forEach(id => {
     const el = document.getElementById(id);

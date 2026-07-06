@@ -348,15 +348,15 @@ async function carregarVendasPendentes() {
         }
 
         // 4. Filtrar pendentes: não têm NF-e e NÃO são FULL
-        const pendentes = results.filter(v => {
+            const pendentes = results.filter(v => {
             const idVenda = String(v.id);
             if (idsComNFE.has(idVenda)) return false;
 
             // 🔥 Usa a mesma função robusta do sales_dashboard.js
-            const isFull = window.isFullByAnyField ? window.isFullByAnyField(v) : false;
-
+            // Dentro do loop, onde você filtra as vendas:
+            const isFull = isFullByAnyField(v);  // chama a função robusta
             if (isFull) {
-                console.log(`🚫 Venda FULL ignorada: ${idVenda}`);
+                console.log(`🚫 Venda FULL ignorada: ${idVenda} (logistic_type: ${v.shipping?.logistic_type || 'N/A'})`);
                 return false;
             }
             return true;
