@@ -55,43 +55,61 @@ async function abrirModalEdicaoProdutos(orderId) {
     console.log('🔧 Abrindo edição de produtos para venda:', orderId);
     vendaIdParaEdicao = orderId;
 
-    let token = localStorage.getItem('ml_access_token');
-    if (!token && typeof window.getValidToken === 'function') {
-        const tokenData = await window.getValidToken();
-        token = tokenData?.access_token;
-    }
-    if (!token) {
-        showToast('Token ML não disponível', 'error');
-        return;
-    }
-
     try {
-        const url = `https://api.mercadolibre.com/orders/${orderId}`;
-        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('Erro ao buscar venda');
-        const venda = await response.json();
+        // 1. Buscar a venda diretamente do Supabase (tabela vendas_ml)
+        const { data: venda, error } = await supabaseClient
+            .from('vendas_ml')
+            .select('*')
+            .eq('id_venda_ml', orderId)
+            .single();
 
-        const items = venda.order_items || [];
-        if (items.length === 0) {
-            showToast('Nenhum produto encontrado', 'warning');
+        if (error) {
+            console.error('❌ Venda não encontrada no banco:', error);
+            showToast('Venda não encontrada no banco de dados', 'error');
             return;
         }
 
-        // Buscar NCM salvos por SKU
+        // 2. Extrair produtos da venda (se for kit, usa skus_kit)
+        let items = [];
+        if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
+            // Se for kit, cada SKU do kit vira um item
+            items = venda.skus_kit.map(skuItem => ({
+                item: {
+                    title: venda.titulo || 'Produto do kit',
+                    seller_sku: skuItem.sku
+                },
+                quantity: 1, // geralmente 1 por item do kit
+                unit_price: 0 // não temos valor unitário por item do kit, mas podemos usar 0 ou uma média
+            }));
+            // Se tiver valor total, distribuímos proporcionalmente? Vamos deixar 0 e o usuário ajusta.
+        } else {
+            // Produto normal
+            items = [{
+                item: {
+                    title: venda.titulo || 'Produto sem título',
+                    seller_sku: venda.sku || 'SEM_SKU'
+                },
+                quantity: venda.quantidade || 1,
+                unit_price: venda.valor_total / (venda.quantidade || 1) || 0
+            }];
+        }
+
+        // 3. Buscar NCM salvos por SKU (tabela produto_ncm)
         let ncmPorSku = {};
+        const skus = items.map(item => item.item.seller_sku || 'SEM_SKU');
         try {
-            const { data, error } = await window.supabaseClient
+            const { data: ncmData, error: ncmError } = await supabaseClient
                 .from('produto_ncm')
                 .select('sku, ncm')
-                .in('sku', items.map(item => item.item.seller_sku || 'SEM_SKU'));
-            if (!error && data) {
-                data.forEach(row => ncmPorSku[row.sku] = row.ncm);
+                .in('sku', skus);
+            if (!ncmError && ncmData) {
+                ncmData.forEach(row => ncmPorSku[row.sku] = row.ncm);
             }
         } catch (e) {
             console.warn('Erro ao buscar NCM:', e);
         }
 
+        // 4. Preparar array de produtos editáveis
         produtosEditados = items.map(item => {
             const sku = item.item.seller_sku || 'SEM_SKU';
             const ncmSalvo = ncmPorSku[sku] || '87149990';
@@ -104,7 +122,18 @@ async function abrirModalEdicaoProdutos(orderId) {
             };
         });
 
-        // Criar modal (sem CFOP)
+        // Se não tiver produtos, cria um padrão
+        if (produtosEditados.length === 0) {
+            produtosEditados = [{
+                nome: venda.titulo || 'Produto não identificado',
+                quantidade: 1,
+                valor_unitario: 0,
+                sku: 'SEM_SKU',
+                ncm: '87149990'
+            }];
+        }
+
+        // 5. Exibir modal de edição (igual ao existente)
         const modalHTML = `
         <div id="modalEdicaoProdutos" class="modal" style="display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:9999;">
             <div class="modal-content" style="max-width:900px; width:95%; max-height:90vh; overflow-y:auto; background:white; padding:25px; border-radius:8px;">
@@ -164,7 +193,7 @@ async function abrirModalEdicaoProdutos(orderId) {
         modalContainer.innerHTML = modalHTML;
         document.body.appendChild(modalContainer.firstElementChild);
 
-        // Event listeners para recalcular subtotal e atualizar NCM
+        // Recalcular subtotais
         document.querySelectorAll('.qtd-produto, .valor-produto, .ncm-produto').forEach(input => {
             input.addEventListener('input', function() {
                 const idx = parseInt(this.dataset.index);
@@ -197,7 +226,7 @@ async function abrirModalEdicaoProdutos(orderId) {
         });
 
     } catch (error) {
-        console.error('Erro ao carregar produtos:', error);
+        console.error('❌ Erro ao carregar produtos:', error);
         showToast('Erro ao carregar produtos: ' + error.message, 'error');
     }
 }
