@@ -11,6 +11,7 @@ let produtosEditados = [];
 let vendaIdParaEdicao = null;
 
 // ===== VERIFICAR SE É FULL (versão robusta) =====
+// ===== VERIFICAR SE É FULL (versão robusta) =====
 function isFullByAnyField(item) {
     // 1. Verifica logistic_type (campo mais direto)
     if (item.shipping && item.shipping.logistic_type) {
@@ -55,61 +56,43 @@ async function abrirModalEdicaoProdutos(orderId) {
     console.log('🔧 Abrindo edição de produtos para venda:', orderId);
     vendaIdParaEdicao = orderId;
 
-    try {
-        // 1. Buscar a venda diretamente do Supabase (tabela vendas_ml)
-        const { data: venda, error } = await supabaseClient
-            .from('vendas_ml')
-            .select('*')
-            .eq('id_venda_ml', orderId)
-            .single();
+    let token = localStorage.getItem('ml_access_token');
+    if (!token && typeof window.getValidToken === 'function') {
+        const tokenData = await window.getValidToken();
+        token = tokenData?.access_token;
+    }
+    if (!token) {
+        showToast('Token ML não disponível', 'error');
+        return;
+    }
 
-        if (error) {
-            console.error('❌ Venda não encontrada no banco:', error);
-            showToast('Venda não encontrada no banco de dados', 'error');
+    try {
+        const url = `https://api.mercadolibre.com/orders/${orderId}`;
+        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error('Erro ao buscar venda');
+        const venda = await response.json();
+
+        const items = venda.order_items || [];
+        if (items.length === 0) {
+            showToast('Nenhum produto encontrado', 'warning');
             return;
         }
 
-        // 2. Extrair produtos da venda (se for kit, usa skus_kit)
-        let items = [];
-        if (venda.eh_kit && venda.skus_kit && venda.skus_kit.length > 0) {
-            // Se for kit, cada SKU do kit vira um item
-            items = venda.skus_kit.map(skuItem => ({
-                item: {
-                    title: venda.titulo || 'Produto do kit',
-                    seller_sku: skuItem.sku
-                },
-                quantity: 1, // geralmente 1 por item do kit
-                unit_price: 0 // não temos valor unitário por item do kit, mas podemos usar 0 ou uma média
-            }));
-            // Se tiver valor total, distribuímos proporcionalmente? Vamos deixar 0 e o usuário ajusta.
-        } else {
-            // Produto normal
-            items = [{
-                item: {
-                    title: venda.titulo || 'Produto sem título',
-                    seller_sku: venda.sku || 'SEM_SKU'
-                },
-                quantity: venda.quantidade || 1,
-                unit_price: venda.valor_total / (venda.quantidade || 1) || 0
-            }];
-        }
-
-        // 3. Buscar NCM salvos por SKU (tabela produto_ncm)
+        // Buscar NCM salvos por SKU
         let ncmPorSku = {};
-        const skus = items.map(item => item.item.seller_sku || 'SEM_SKU');
         try {
-            const { data: ncmData, error: ncmError } = await supabaseClient
+            const { data, error } = await window.supabaseClient
                 .from('produto_ncm')
                 .select('sku, ncm')
-                .in('sku', skus);
-            if (!ncmError && ncmData) {
-                ncmData.forEach(row => ncmPorSku[row.sku] = row.ncm);
+                .in('sku', items.map(item => item.item.seller_sku || 'SEM_SKU'));
+            if (!error && data) {
+                data.forEach(row => ncmPorSku[row.sku] = row.ncm);
             }
         } catch (e) {
             console.warn('Erro ao buscar NCM:', e);
         }
 
-        // 4. Preparar array de produtos editáveis
         produtosEditados = items.map(item => {
             const sku = item.item.seller_sku || 'SEM_SKU';
             const ncmSalvo = ncmPorSku[sku] || '87149990';
@@ -122,18 +105,7 @@ async function abrirModalEdicaoProdutos(orderId) {
             };
         });
 
-        // Se não tiver produtos, cria um padrão
-        if (produtosEditados.length === 0) {
-            produtosEditados = [{
-                nome: venda.titulo || 'Produto não identificado',
-                quantidade: 1,
-                valor_unitario: 0,
-                sku: 'SEM_SKU',
-                ncm: '87149990'
-            }];
-        }
-
-        // 5. Exibir modal de edição (igual ao existente)
+        // Criar modal (sem CFOP)
         const modalHTML = `
         <div id="modalEdicaoProdutos" class="modal" style="display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:9999;">
             <div class="modal-content" style="max-width:900px; width:95%; max-height:90vh; overflow-y:auto; background:white; padding:25px; border-radius:8px;">
@@ -193,7 +165,7 @@ async function abrirModalEdicaoProdutos(orderId) {
         modalContainer.innerHTML = modalHTML;
         document.body.appendChild(modalContainer.firstElementChild);
 
-        // Recalcular subtotais
+        // Event listeners para recalcular subtotal e atualizar NCM
         document.querySelectorAll('.qtd-produto, .valor-produto, .ncm-produto').forEach(input => {
             input.addEventListener('input', function() {
                 const idx = parseInt(this.dataset.index);
@@ -226,7 +198,7 @@ async function abrirModalEdicaoProdutos(orderId) {
         });
 
     } catch (error) {
-        console.error('❌ Erro ao carregar produtos:', error);
+        console.error('Erro ao carregar produtos:', error);
         showToast('Erro ao carregar produtos: ' + error.message, 'error');
     }
 }
@@ -339,78 +311,86 @@ async function mostrarAbaNFE(aba) {
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center"><div class="spinner"></div> Carregando vendas...<\/td><\/tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando vendas do ML...<\/td><\/tr>';
 
     try {
-        // 1. Buscar vendas do Supabase que ainda não têm NF-e
-        //    (vamos considerar que a NF-e foi emitida se existir na tabela nfe_emitidas)
-        const { data: nfes, error: nfeError } = await supabaseClient
-            .from('nfe_emitidas')
-            .select('venda_id');
-        if (nfeError) throw nfeError;
+        // 1. Obter token ML
+        let token = localStorage.getItem('ml_access_token');
+        if (!token && typeof window.getValidToken === 'function') {
+            const tokenData = await window.getValidToken();
+            token = tokenData?.access_token;
+        }
+        if (!token) throw new Error('Token ML não disponível');
 
-        const idsComNFE = new Set(nfes.map(n => String(n.venda_id)).filter(id => id && id !== 'null'));
+        // 2. Buscar vendas do ML (últimas 50 pagas)
+        const url = `https://api.mercadolibre.com/orders/search?seller=415176739&sort=date_desc&order.status=paid&limit=50`;
+        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+        const response = await fetch(proxyUrl);
+        const data = await response.json();
+        const results = data.results || [];
 
-        // 2. Buscar todas as vendas do Supabase (já com tipo_envio)
-        const { data: vendas, error: vendasError } = await supabaseClient
-            .from('vendas_ml')
-            .select('*')
-            .order('created_at', { ascending: false });
-
-        if (vendasError) throw vendasError;
-
-        // 3. Filtrar: apenas as que NÃO têm NF-e E NÃO são FULL
-        const pendentes = vendas.filter(v => {
-            const idVenda = String(v.id_venda_ml || v.id);
-            if (idsComNFE.has(idVenda)) return false;
-
-            // Verifica se é FULL usando o campo tipo_envio (já padronizado)
-            const tipo = (v.tipo_envio || '').toUpperCase();
-            const isFull = tipo.includes('FULL') || tipo.includes('FULFILLMENT') || tipo === 'FULL';
-
-            return !isFull;
-        });
-
-        if (pendentes.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center">✅ Todas as vendas já possuem NF-e ou são FULL<\/td><\/tr>';
+        if (results.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma venda encontrada<\/td><\/tr>';
             return;
         }
 
-        // 4. Renderizar tabela com a nova coluna "Método de Envio"
-        tbody.innerHTML = pendentes.map(v => {
-            const dataVenda = v.created_at ? new Date(v.created_at).toLocaleDateString('pt-BR') : '-';
-            const valor = (v.valor_total || 0).toFixed(2);
-            const tipoEnvio = v.tipo_envio || 'N/I';
-            // Badge do tipo de envio
-            let badgeEnvio = '';
-            if (tipoEnvio.toUpperCase().includes('FULL')) {
-                badgeEnvio = '<span class="badge badge-full"><i class="fas fa-warehouse"></i> FULL</span>';
-            } else if (tipoEnvio.toUpperCase().includes('FLEX')) {
-                badgeEnvio = '<span class="badge badge-flex"><i class="fas fa-motorcycle"></i> FLEX</span>';
-            } else if (tipoEnvio.toUpperCase().includes('MERCADO')) {
-                badgeEnvio = '<span class="badge badge-mercado"><i class="fas fa-truck"></i> ME</span>';
-            } else {
-                badgeEnvio = `<span class="badge badge-secondary">${tipoEnvio}</span>`;
+        // 3. Buscar IDs com NF-e no Supabase (tabela nfe_emitidas)
+        let idsComNFE = new Set();
+        try {
+            const { data: nfes, error } = await window.supabaseClient
+                .from('nfe_emitidas')
+                .select('venda_id');
+            if (!error && nfes) {
+                idsComNFE = new Set(nfes.map(n => String(n.venda_id)).filter(id => id !== 'null' && id !== null));
+                console.log(`📋 ${idsComNFE.size} vendas com NF-e (tabela nfe_emitidas)`);
             }
+        } catch (e) {
+            console.warn('⚠️ Erro ao consultar nfe_emitidas:', e);
+        }
 
-            return `
-                <tr>
-                    <td>${v.id_venda_ml || v.id}</td>
-                    <td>${dataVenda}</td>
-                    <td>${v.cliente || 'N/I'}</td>
-                    <td>${v.sku || 'N/A'}</td>
-                    <td>R$ ${valor}</td>
-                    <td>${badgeEnvio}</td>
-                    <td>
-                        <button class="btn btn-sm btn-success btn-emitir-nfe" data-venda-id="${v.id_venda_ml || v.id}">
-                            <i class="fas fa-file-invoice"></i> Emitir NF-e
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
+        // 4. Filtrar pendentes: não têm NF-e e NÃO são FULL
+        const pendentes = results.filter(v => {
+            const idVenda = String(v.id);
+            if (idsComNFE.has(idVenda)) return false;
 
-        // Atrelar evento de clique para emissão (usando delegação)
+            // 🔥 VERIFICAÇÃO DE FULL (AGORA COM includes)
+            const tipoEnvio = (v.shipping?.logistic_type || '').toLowerCase();
+            const tags = (v.tags || []).map(t => t.toLowerCase());
+            const isFull = tipoEnvio.includes('fulfillment') ||
+                           tags.includes('fulfillment') ||
+                           (v.order_items?.[0]?.item?.title || '').toLowerCase().includes('full');
+
+            if (isFull) {
+                console.log(`🚫 Venda FULL ignorada: ${idVenda} (logistic_type: ${tipoEnvio})`);
+                return false;
+            }
+            return true;
+        });
+
+        if (pendentes.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Todas as vendas já possuem NF-e ou são FULL<\/td><\/tr>';
+            return;
+        }
+
+        // Armazena globalmente para uso posterior
+        vendasPendentes = pendentes;
+
+        // Renderiza a tabela
+        tbody.innerHTML = pendentes.map(v => `
+            <tr>
+                <td>${v.id}</td>
+                <td>${new Date(v.date_created).toLocaleDateString('pt-BR')}</td>
+                <td>${v.buyer?.nickname || 'N/I'}</td>
+                <td>${v.order_items?.[0]?.item?.seller_sku || 'N/A'}</td>
+                <td>R$ ${v.total_amount?.toFixed(2)}</td>
+                <td>
+                    <button class="btn btn-sm btn-success btn-emitir-nfe" data-venda-id="${v.id}">
+                        <i class="fas fa-file-invoice"></i> Emitir NF-e
+                    </button>
+                </td>
+            </tr>`).join('');
+
+        // Atrela evento de clique para emissão
         document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
             btn.removeEventListener('click', handleEmitirNFEClick);
             btn.addEventListener('click', handleEmitirNFEClick);
@@ -418,7 +398,7 @@ async function carregarVendasPendentes() {
 
     } catch (error) {
         console.error('❌ Erro ao carregar vendas pendentes:', error);
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Erro: ${error.message}<\/td><\/tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Erro: ${error.message}<\/td><\/tr>`;
     }
 }
 
@@ -1502,7 +1482,7 @@ function abrirModalTransportadora() {
                     </div>
                     <div class="col-md-6">
                         <div class="form-group">
-                            <label>UF</label>
+                            <label>UF</label
                             <input type="text" id="novaTransportadoraUf" class="form-control" maxlength="2">
                         </div>
                     </div>
