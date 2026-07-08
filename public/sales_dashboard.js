@@ -745,9 +745,9 @@ async function abrirModalKit(idVenda, venda, nomeUsuario) {
     const modalHtml = `
         <div id="modalConfigurarKit" class="modal" style="display: flex; z-index: 10000;">
             <div class="modal-content" style="max-width: 600px; max-height: 80vh; overflow-y: auto;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #8A2BE2;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #00ADEE;">
                     <h3 style="margin: 0;">
-                        <i class="fas fa-cubes" style="color: #8A2BE2;"></i> 
+                        <i class="fas fa-cubes" style="color: #00ADEE;"></i> 
                         Configurar Kit
                     </h3>
                     <button onclick="fecharModalKit()" style="background: none; border: none; font-size: 28px; cursor: pointer; color: #666;">&times;</button>
@@ -1264,13 +1264,13 @@ function atualizarTabelaVendas() {
                     <span class="badge badge-warning" style="background: #ffc107; color: #212529;">
                         <i class="fas fa-layer-group"></i> KIT
                     </span>
-                    <span class="badge badge-info">${sku}</span>
+                    <span style="color: #000; font-weight: 600;">${sku}</span>
                 </div>
             `;
         } else {
-            skuDisplay = `<span class="badge badge-info" style="display: inline-block; margin-bottom: 4px;">${sku}</span>`;
+            skuDisplay = `<span style="color: #000; font-weight: 600;">${sku}</span>`;
         }
-        
+                
         let mlbDisplay = '';
         if (mlbId) {
             mlbDisplay = `
@@ -1279,7 +1279,7 @@ function atualizarTabelaVendas() {
                         <i class="fas fa-tag"></i> 
                         <span style="font-family: monospace;">${mlbId.substring(0, 8)}...</span>
                     </span>
-                    <button onclick="copiarMLB('${mlbId}')" style="border: none; background: none; color: #007bff; cursor: pointer;" title="Copiar MLB">
+                    <button onclick="copiarMLB('${mlbId}')" style="border: none; background: none; color: #00ADEE; cursor: pointer;" title="Copiar MLB">
                         <i class="fas fa-copy"></i>
                     </button>
                 </div>
