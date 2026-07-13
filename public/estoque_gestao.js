@@ -1158,6 +1158,7 @@ function parseMultiSkuVariation(skuString) {
 }
 
 async function sincronizarEstoqueML(produto) {
+    // 1. Validar MLB codes
     let mlbCodes = produto.dados_extra?.mlb_codes;
     if (!mlbCodes || (Array.isArray(mlbCodes) && mlbCodes.length === 0)) {
         console.log('ℹ️ Produto sem MLB cadastrado.');
@@ -1166,6 +1167,7 @@ async function sincronizarEstoqueML(produto) {
     let codigos = Array.isArray(mlbCodes) ? mlbCodes : mlbCodes.split(',').map(s => s.trim()).filter(c => c);
     if (codigos.length === 0) return { success: true, results: [] };
 
+    // 2. Obter token
     let token = localStorage.getItem('ml_access_token');
     if (!token) {
         showToast('❌ Token ML não encontrado.', 'error');
@@ -1191,7 +1193,7 @@ async function sincronizarEstoqueML(produto) {
             if (!getRes.ok) throw new Error(`GET falhou: ${getRes.status}`);
             const item = await getRes.json();
 
-            // Buscar detalhes de cada variação
+            // --- Buscar detalhes de variações (se houver) ---
             if (item.variations && item.variations.length > 0) {
                 console.log(`📦 Buscando detalhes de ${item.variations.length} variações...`);
                 for (let i = 0; i < item.variations.length; i++) {
@@ -1207,7 +1209,8 @@ async function sincronizarEstoqueML(produto) {
                                 seller_custom_field: varDetails.seller_custom_field || v.seller_custom_field,
                                 attributes: varDetails.attributes || v.attributes,
                                 attribute_combinations: varDetails.attribute_combinations || v.attribute_combinations,
-                                price: varDetails.price || v.price
+                                price: varDetails.price || v.price,
+                                user_product_id: varDetails.user_product_id || v.user_product_id // <-- importante para FULL
                             };
                             const skuExtraido = extrairSkuDaVariacao(item.variations[i]);
                             if (skuExtraido) console.log(`   Variação ${v.id}: SKU = ${skuExtraido}, Preço = ${item.variations[i].price}`);
@@ -1221,6 +1224,223 @@ async function sincronizarEstoqueML(produto) {
                 }
             }
 
+            // --- Verificar se é FULL ou convivência ---
+            const isFulfillment = item.tags?.includes('fulfillment') || 
+                                  item.shipping?.logistic_type === 'fulfillment' ||
+                                  item.logistic_type === 'fulfillment';
+
+            // Verifica convivência: precisa ter a tag self_service_in e logistic_type fulfillment
+            const hasSelfService = item.tags?.includes('self_service_in') || false;
+            const isConvivio = isFulfillment && hasSelfService;
+
+            console.log(`📦 Item ${itemId}: isFulfillment=${isFulfillment}, hasSelfService=${hasSelfService}, isConvivio=${isConvivio}`);
+
+            // Se for FULL e tiver inventory_id, tentamos primeiro pela lógica de convivência
+            // (A lógica antiga de inventory_id será substituída ou mantida como fallback)
+            if (isFulfillment && isConvivio) {
+                // ---------- NOVA LÓGICA PARA CONVIVÊNCIA FULL/FLEX ----------
+                let userProductId = null;
+                let variacaoAlvo = null;
+
+                // 1) Determinar o user_product_id
+                if (item.variations && item.variations.length > 0) {
+                    variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+                    if (variacaoAlvo && variacaoAlvo.user_product_id) {
+                        userProductId = variacaoAlvo.user_product_id;
+                    } else {
+                        // Se não encontrou pela SKU, tenta pegar o user_product_id da primeira variação que tenha
+                        for (const v of item.variations) {
+                            if (v.user_product_id) {
+                                userProductId = v.user_product_id;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    userProductId = item.user_product_id;
+                }
+
+                if (!userProductId) {
+                    console.warn(`⚠️ user_product_id não encontrado para ${itemId}. Pulando.`);
+                    results.push({ codigo: itemId, success: false, reason: 'sem_user_product_id' });
+                    continue;
+                }
+
+                // 2) Calcular a quantidade a ser enviada (respeitando regras de categoria)
+                let quantidadeParaEnviar = quantidadeReal;
+
+                if (categoria === 'Eixos') {
+                    let precoAnuncio = 0;
+                    if (item.variations && item.variations.length > 0) {
+                        const variacao = encontrarVariacaoPorSKU(item, skuProduto);
+                        if (variacao) precoAnuncio = variacao.price || 0;
+                        else precoAnuncio = item.price || 0;
+                    } else {
+                        precoAnuncio = item.price || 0;
+                    }
+                    const limite = precoAnuncio > 100 ? 2 : 10;
+                    quantidadeParaEnviar = Math.min(quantidadeReal, limite);
+                    console.log(`📊 Regra Eixos: preço=R$ ${precoAnuncio}, limite=${limite}, enviando=${quantidadeParaEnviar}`);
+                }
+                else if (categoria === 'Raios') {
+                    console.log(`\n===== PROCESSANDO RAIOS =====`);
+                    console.log(`Produto: ${produto.nome}, SKU: ${skuProduto}`);
+                    console.log(`Marca: ${marcaProduto}, Modelo: ${modeloProduto}`);
+                    console.log(`Estoque real (unidades): ${quantidadeReal}`);
+
+                    let skuAnuncio = null;
+                    if (item.variations && item.variations.length > 0) {
+                        let variacao = encontrarVariacaoPorSKU(item, skuProduto);
+                        if (variacao) {
+                            skuAnuncio = extrairSkuDaVariacao(variacao);
+                        } else {
+                            for (let v of item.variations) {
+                                let testSku = extrairSkuDaVariacao(v);
+                                if (testSku && testSku.match(/\d/)) {
+                                    skuAnuncio = testSku;
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        skuAnuncio = extrairSkuDoItem(item);
+                    }
+                    if (!skuAnuncio) {
+                        const matchId = item.id.match(/\d+$/);
+                        if (matchId) skuAnuncio = matchId[0];
+                    }
+                    console.log(`🔎 SKU encontrado no anúncio: "${skuAnuncio}"`);
+
+                    const isMultiSku = skuAnuncio && skuAnuncio.includes('.');
+                    let kitsPossiveis = 0;
+
+                    if (isMultiSku) {
+                        const partes = parseMultiSkuVariation(skuAnuncio);
+                        if (!partes || partes.length === 0) {
+                            console.warn("⚠️ Não foi possível parsear o multi-SKU.");
+                            quantidadeParaEnviar = 0;
+                        } else {
+                            console.log(`📦 Kit com ${partes.length} tamanhos:`, partes);
+                            let kitsPorTamanho = [];
+                            for (const parte of partes) {
+                                const produtoTamanho = produtosEstoque.find(p =>
+                                    p.categoria === 'Raios' &&
+                                    p.dados_extra?.marca === marcaProduto &&
+                                    p.dados_extra?.modelo === modeloProduto &&
+                                    p.dados_extra?.cabeçaraio === produto.dados_extra?.cabeçaraio &&
+                                    p.dados_extra?.tamanhoraio == parte.tamanho
+                                );
+                                if (!produtoTamanho) {
+                                    console.warn(`⚠️ Produto com tamanho ${parte.tamanho} não encontrado no estoque.`);
+                                    kitsPorTamanho.push(0);
+                                } else {
+                                    const estoqueUnidades = produtoTamanho.quantidade;
+                                    const kits = Math.floor(estoqueUnidades / parte.quantidadePorKit);
+                                    console.log(`   Tamanho ${parte.tamanho}: ${estoqueUnidades} un. → ${kits} kits (${parte.quantidadePorKit} un/kit)`);
+                                    kitsPorTamanho.push(kits);
+                                }
+                            }
+                            const minKits = Math.min(...kitsPorTamanho);
+                            kitsPossiveis = minKits > 0 ? minKits : 0;
+                            console.log(`📊 Kits possíveis (limitado pelo menor estoque): ${kitsPossiveis}`);
+                        }
+                    } else {
+                        const raiosPorKit = extrairUnidadesPorKit(skuAnuncio);
+                        console.log(`📦 Raios por kit (normal): ${raiosPorKit}`);
+                        kitsPossiveis = Math.floor(quantidadeReal / raiosPorKit);
+                        if (kitsPossiveis < 0) kitsPossiveis = 0;
+                        console.log(`📊 Estoque real: ${quantidadeReal} raios → ${kitsPossiveis} kits possíveis`);
+                    }
+
+                    const regra = obterRegraRaios(marcaProduto, modeloProduto);
+                    let kitsEnviar = kitsPossiveis;
+                    if (regra && regra.max_kits !== undefined) {
+                        kitsEnviar = Math.min(kitsPossiveis, regra.max_kits);
+                        console.log(`🏷️ Regra ${marcaProduto}|${modeloProduto}: limite ${regra.max_kits} kits → enviando ${kitsEnviar}`);
+                    } else {
+                        console.log(`🏷️ Sem regra específica. Enviando ${kitsEnviar} kits`);
+                    }
+                    quantidadeParaEnviar = kitsEnviar;
+                    console.log(`✅ Quantidade final enviada ao ML: ${quantidadeParaEnviar} kits`);
+                }
+
+                // 3) Obter versão atual (x-version)
+                const stockUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock`;
+                const stockProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`;
+                let getStockRes = await fetch(stockProxy);
+                if (!getStockRes.ok) {
+                    const errText = await getStockRes.text();
+                    console.error(`❌ Falha ao obter stock para ${userProductId}: ${getStockRes.status} - ${errText}`);
+                    results.push({ codigo: itemId, success: false, error: `GET stock ${getStockRes.status}` });
+                    continue;
+                }
+                const xVersion = getStockRes.headers.get('x-version');
+                if (!xVersion) {
+                    console.warn(`⚠️ x-version não retornado para ${userProductId}`);
+                    results.push({ codigo: itemId, success: false, reason: 'sem_x_version' });
+                    continue;
+                }
+
+                // 4) Atualizar estoque do selling_address (Flex)
+                const updateUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock/type/selling_address`;
+                const updateProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(updateUrl)}&token=${encodeURIComponent(token)}`;
+                const updateRes = await fetch(updateProxy, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-version': xVersion
+                    },
+                    body: JSON.stringify({ quantity: quantidadeParaEnviar })
+                });
+
+                if (updateRes.status === 204) {
+                    console.log(`✅ Estoque selling_address atualizado para ${quantidadeParaEnviar} (${itemId})`);
+                    results.push({ codigo: itemId, success: true, method: 'selling_address' });
+                } else if (updateRes.status === 409) {
+                    // Conflito de versão: tentar novamente com nova versão (máx 2 tentativas adicionais)
+                    console.warn(`⚠️ Conflito de versão para ${userProductId}, tentando novamente...`);
+                    let retries = 0;
+                    let success = false;
+                    while (retries < 2 && !success) {
+                        retries++;
+                        // Reobter versão
+                        const newStockRes = await fetch(stockProxy);
+                        if (!newStockRes.ok) break;
+                        const newXVersion = newStockRes.headers.get('x-version');
+                        if (!newXVersion) break;
+                        const retryRes = await fetch(updateProxy, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'x-version': newXVersion
+                            },
+                            body: JSON.stringify({ quantity: quantidadeParaEnviar })
+                        });
+                        if (retryRes.status === 204) {
+                            success = true;
+                            console.log(`✅ Re-tentativa bem-sucedida: estoque selling_address atualizado para ${quantidadeParaEnviar} (${itemId})`);
+                            results.push({ codigo: itemId, success: true, method: 'selling_address_retry' });
+                            break;
+                        } else {
+                            const errMsg = await retryRes.text();
+                            console.warn(`⚠️ Tentativa ${retries} falhou: ${retryRes.status} - ${errMsg}`);
+                            await new Promise(r => setTimeout(r, 200));
+                        }
+                    }
+                    if (!success) {
+                        results.push({ codigo: itemId, success: false, reason: 'version_conflict_retry_failed' });
+                    }
+                } else {
+                    const errorText = await updateRes.text();
+                    console.error(`❌ Falha ao atualizar selling_address: ${updateRes.status} - ${errorText}`);
+                    results.push({ codigo: itemId, success: false, error: `selling_address ${updateRes.status}` });
+                }
+
+                continue; // pula para o próximo MLB (já processamos este)
+            }
+
+            // ---------- CASO NÃO SEJA CONVIVÊNCIA: usamos a lógica tradicional (já existente) ----------
+            // (Manter o código antigo para itens normais, incluindo fallback para inventory_id se for FULL sem convivência)
             if (item.tags?.includes('has_price_by_rule')) {
                 console.warn(`⚠️ Item ${itemId} tem preço automático.`);
                 results.push({ codigo: itemId, success: false, reason: 'oferta_ativa' });
@@ -1228,7 +1448,6 @@ async function sincronizarEstoqueML(produto) {
             }
 
             let quantidadeParaEnviar = quantidadeReal;
-
             if (categoria === 'Eixos') {
                 let precoAnuncio = 0;
                 if (item.variations && item.variations.length > 0) {
@@ -1243,17 +1462,17 @@ async function sincronizarEstoqueML(produto) {
                 console.log(`📊 Regra Eixos: preço=R$ ${precoAnuncio}, limite=${limite}, enviando=${quantidadeParaEnviar}`);
             }
             else if (categoria === 'Raios') {
-                console.log(`\n===== PROCESSANDO RAIOS =====`);
-                console.log(`Produto: ${produto.nome}, SKU: ${skuProduto}`);
-                console.log(`Marca: ${marcaProduto}, Modelo: ${modeloProduto}`);
-                console.log(`Estoque real (unidades): ${quantidadeReal}`);
-
+                // Cálculo já feito acima, mas repetimos para itens não-FULL
+                // (se já caiu aqui é porque não é convivência, então o cálculo deve ser refeito)
+                // Para simplificar, usamos a mesma lógica de raios, mas já foi calculado para convivência,
+                // para não-FULL vamos recalcular (ou poderíamos aproveitar, mas faremos um bloco separado)
+                // Vamos copiar o bloco de raios do código original para manter consistência
+                console.log(`\n===== PROCESSANDO RAIOS (não-FULL) =====`);
                 let skuAnuncio = null;
-
                 if (item.variations && item.variations.length > 0) {
-                    let variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
-                    if (variacaoAlvo) {
-                        skuAnuncio = extrairSkuDaVariacao(variacaoAlvo);
+                    let variacao = encontrarVariacaoPorSKU(item, skuProduto);
+                    if (variacao) {
+                        skuAnuncio = extrairSkuDaVariacao(variacao);
                     } else {
                         for (let v of item.variations) {
                             let testSku = extrairSkuDaVariacao(v);
@@ -1266,13 +1485,11 @@ async function sincronizarEstoqueML(produto) {
                 } else {
                     skuAnuncio = extrairSkuDoItem(item);
                 }
-
                 if (!skuAnuncio) {
                     const matchId = item.id.match(/\d+$/);
                     if (matchId) skuAnuncio = matchId[0];
                 }
                 console.log(`🔎 SKU encontrado no anúncio: "${skuAnuncio}"`);
-
                 const isMultiSku = skuAnuncio && skuAnuncio.includes('.');
                 let kitsPossiveis = 0;
 
@@ -1322,18 +1539,14 @@ async function sincronizarEstoqueML(produto) {
                 } else {
                     console.log(`🏷️ Sem regra específica. Enviando ${kitsEnviar} kits`);
                 }
-
                 quantidadeParaEnviar = kitsEnviar;
                 console.log(`✅ Quantidade final enviada ao ML: ${quantidadeParaEnviar} kits`);
             }
 
-            // --- FULL (inventory_id) ---
-            const isFulfillment = item.tags?.includes('fulfillment') || 
-                      item.shipping?.logistic_type === 'fulfillment' ||
-                      item.logistic_type === 'fulfillment';
-
-            if (item.inventory_id && isFulfillment) {
-                console.log(`📦 FULL inventory ${item.inventory_id}`);
+            // --- FULL (inventory_id) - fallback para quando não é convivência, mas é FULL puro ---
+            const isFulfillmentOnly = isFulfillment && !hasSelfService;
+            if (item.inventory_id && isFulfillmentOnly) {
+                console.log(`📦 FULL puro (inventory) para ${item.inventory_id}`);
                 const invUrl = `https://api.mercadolibre.com/inventories/${item.inventory_id}/stock`;
                 const invProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(invUrl)}&token=${encodeURIComponent(token)}`;
                 const invRes = await fetch(invProxy, {
@@ -1342,17 +1555,17 @@ async function sincronizarEstoqueML(produto) {
                     body: JSON.stringify({ total: { available_quantity: quantidadeParaEnviar } })
                 });
                 if (invRes.ok) {
-                    console.log(`✅ FULL atualizado para ${quantidadeParaEnviar}`);
+                    console.log(`✅ FULL inventory atualizado para ${quantidadeParaEnviar}`);
                     results.push({ codigo: itemId, success: true, method: 'inventory' });
                 } else {
                     const errorText = await invRes.text();
-                    console.error(`❌ FULL falhou: ${invRes.status} - ${errorText}`);
+                    console.error(`❌ FULL inventory falhou: ${invRes.status} - ${errorText}`);
                     results.push({ codigo: itemId, success: false, error: `FULL ${invRes.status}` });
                 }
                 continue;
             }
 
-            // --- COM VARIAÇÕES ---
+            // --- COM VARIAÇÕES (não-FULL ou sem inventory) ---
             if (item.variations && item.variations.length > 0) {
                 const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
                 if (!variacaoAlvo) {
@@ -1394,7 +1607,7 @@ async function sincronizarEstoqueML(produto) {
                     results.push({ codigo: itemId, success: false, error: `HTTP ${putRes.status}` });
                 }
             }
-            // --- SEM VARIAÇÃO ---
+            // --- SEM VARIAÇÃO (item simples) ---
             else {
                 console.log(`📦 Atualizando item principal para ${quantidadeParaEnviar}`);
                 const putRes = await fetch(proxyUrl, {
@@ -1413,6 +1626,7 @@ async function sincronizarEstoqueML(produto) {
                     results.push({ codigo: itemId, success: false, reason: 'estoque_ignorado', details: respData });
                 }
             }
+
         } catch (error) {
             console.error(`❌ Erro ${itemId}:`, error);
             results.push({ codigo: itemId, success: false, error: error.message });

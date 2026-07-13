@@ -1,5 +1,5 @@
 // ============================================
-// SISTEMA DE ENTRADAS - VERSÃO COMPLETA COM XML
+// SISTEMA DE ENTRADAS - VERSÃO COMPLETA COM XML E CUSTO
 // ============================================
 
 let entradasCards = [];
@@ -77,13 +77,11 @@ async function carregarFornecedores() {
         if (data) {
             fornecedoresMap = {};
             data.forEach(f => {
-                // Indexar por cd_fornecedor
                 if (!fornecedoresMap[f.cd_fornecedor]) {
                     fornecedoresMap[f.cd_fornecedor] = [];
                 }
                 fornecedoresMap[f.cd_fornecedor].push(f);
                 
-                // Indexar por sku_sistema
                 if (f.sku_sistema) {
                     if (!fornecedoresMap[f.sku_sistema]) {
                         fornecedoresMap[f.sku_sistema] = [];
@@ -91,7 +89,6 @@ async function carregarFornecedores() {
                     fornecedoresMap[f.sku_sistema].push(f);
                 }
                 
-                // Indexar por sku_fornecedor (cProd da nota)
                 if (f.sku_fornecedor) {
                     if (!fornecedoresMap[f.sku_fornecedor]) {
                         fornecedoresMap[f.sku_fornecedor] = [];
@@ -124,19 +121,16 @@ function buscarFornecedor(chave) {
     return null;
 }
 
-// ===== VERIFICAR SKU NO ESTOQUE (COM BUSCA EM FORNECEDORES) =====
-// ===== VERIFICAR SKU NO ESTOQUE (COM LOG E FALLBACK) =====
+// ===== VERIFICAR SKU NO ESTOQUE =====
 function verificarSKUExistente(sku) {
     if (!sku) return null;
     const skuNormalizado = sku.trim().toLowerCase();
 
-    // Se o estoque ainda não foi carregado, retorna null (será verificado novamente depois)
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
         console.warn('⚠️ produtosEstoque ainda não carregado. SKU não verificado:', skuNormalizado);
         return null;
     }
 
-    // 1. Busca direta no estoque
     const encontrado = produtosEstoque.find(p => {
         const pSku = (p.sku || '').trim().toLowerCase();
         return pSku === skuNormalizado;
@@ -146,7 +140,6 @@ function verificarSKUExistente(sku) {
         return encontrado;
     }
 
-    // 2. Busca via fornecedores (mapeamento)
     const fornecedor = buscarFornecedor(skuNormalizado);
     if (fornecedor && fornecedor.sku_sistema) {
         const skuSistema = fornecedor.sku_sistema.trim().toLowerCase();
@@ -252,20 +245,18 @@ async function carregarEntradas() {
 // RENDERIZAR ENTRADAS (COM ESPERA FORÇADA DO ESTOQUE)
 // ============================================
 async function renderizarEntradas() {
-    // 1. Forçar o carregamento do estoque se ainda não estiver carregado
+    // Forçar carregamento do estoque se necessário
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
         console.log('🔄 Forçando recarregamento do estoque antes de renderizar...');
         if (typeof carregarProdutosEstoque === 'function') {
             await carregarProdutosEstoque();
         } else {
-            // Fallback: esperar um pouco e tentar novamente
             await new Promise(resolve => setTimeout(resolve, 2000));
         }
-        // Verificar novamente após a tentativa
-        if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
-            console.warn('⚠️ Estoque ainda não disponível. Renderizando sem verificação.');
-        } else {
+        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
             console.log(`✅ Estoque carregado: ${produtosEstoque.length} produtos.`);
+        } else {
+            console.warn('⚠️ Estoque ainda não disponível. Renderizando sem verificação.');
         }
     }
 
@@ -308,9 +299,11 @@ async function renderizarEntradas() {
         return;
     }
 
+    // Verifica se o usuário pode ver custos (Andressa ou Ronald)
+    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
+
     let html = '';
     cardsFiltrados.forEach(card => {
-        // Cálculo de progresso: ignorados não contam como pendentes, mas são considerados concluídos
         const total = card.itens.filter(i => i.status !== 'ignorado').length;
         const concluidos = card.itens.filter(i => 
             i.status === 'entrada_realizada' || 
@@ -321,7 +314,6 @@ async function renderizarEntradas() {
         const isFinalizado = card.status === 'finalizado';
         const criadoEm = new Date(card.criado_em).toLocaleString('pt-BR');
 
-        // Badge para indicar origem (XML ou Excel)
         const origemBadge = card.tipo_entrada === 'xml' 
             ? '<span class="badge badge-info ml-2">📄 XML</span>' 
             : '';
@@ -374,6 +366,7 @@ async function renderizarEntradas() {
                                 <th>SKU</th>
                                 <th>Fornecedor</th>
                                 <th style="width:70px;">Qtd Entrada</th>
+                                ${podeVerCusto ? '<th style="width:90px;">Custo Unit.</th>' : ''}
                                 <th>Obs.</th>
                                 <th style="width:70px;">Status</th>
                                 <th style="width:240px;">Ação</th>
@@ -402,7 +395,6 @@ async function renderizarEntradas() {
                 statusClass = 'badge-warning';
             }
 
-            // BUSCA DO SKU NO ESTOQUE
             const skuParaVerificar = item.sku_match || item.sku_original;
             const produtoExistente = verificarSKUExistente(skuParaVerificar);
             let tituloProduto = '';
@@ -418,7 +410,6 @@ async function renderizarEntradas() {
                     <small class="text-muted d-block">${item.responsavel || ''}</small>
                 `;
             } else {
-                // Item pendente – exibe botões conforme produto encontrado ou não
                 if (produtoExistente) {
                     acaoHtml = `
                         <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
@@ -453,6 +444,7 @@ async function renderizarEntradas() {
             const skuDisplay = item.sku_match || item.sku_original || '-';
             const fornecedorDisplay = item.fornecedor_nome || item.cd_fornecedor || '-';
             const qtdEntrada = item.quantidade_entrada && item.quantidade_entrada > 0 ? item.quantidade_entrada : '-';
+            const custoDisplay = podeVerCusto && item.valor_custo ? `R$ ${parseFloat(item.valor_custo).toFixed(2)}` : (podeVerCusto ? '-' : '');
 
             html += `
                 <tr class="${isConcluido || isIgnorado ? 'table-light' : ''}">
@@ -464,6 +456,7 @@ async function renderizarEntradas() {
                     <td><code>${skuDisplay}</code></td>
                     <td>${fornecedorDisplay}</td>
                     <td>${qtdEntrada}</td>
+                    ${podeVerCusto ? `<td>${custoDisplay}</td>` : ''}
                     <td>${item.observacao || '-'}</td>
                     <td><span class="badge ${statusClass}">${itemStatus}</span></td>
                     <td>${acaoHtml}</td>
@@ -493,10 +486,9 @@ async function renderizarEntradas() {
 }
 
 // ============================================
-// PROCESSAR ENTRADA (Excel)
+// PROCESSAR ENTRADA (Excel) - COM SUPORTE A CUSTO
 // ============================================
 window.processarEntrada = async function() {
-    // Garantir que o estoque está carregado
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
         showToast('🔄 Carregando estoque...', 'info');
         if (typeof carregarProdutosEstoque === 'function') {
@@ -531,6 +523,7 @@ window.processarEntrada = async function() {
     else if (primeiraLinha.includes(',')) separador = ',';
 
     const cabecalho = linhas[0].split(separador).map(c => c.trim().toLowerCase());
+    // Colunas esperadas: cd fornecedor, rastreio, fornecedor, quant, produto, sku, observações, valor_custo (opcional)
     const colunasEsperadas = ['cd fornecedor', 'rastreio', 'fornecedor', 'quant', 'produto', 'sku', 'observações'];
     const isCabecalho = colunasEsperadas.every(c => cabecalho.some(h => h.includes(c)));
 
@@ -560,6 +553,12 @@ window.processarEntrada = async function() {
         const produto = partes[4] || '';
         const sku = partes[5] ? partes[5].trim() : '';
         const observacao = partes[6] || '';
+        // Coluna 7 (índice 7) pode conter valor_custo
+        let valorCusto = 0;
+        if (partes.length > 7) {
+            const rawCusto = partes[7].replace(',', '.').trim();
+            valorCusto = parseFloat(rawCusto) || 0;
+        }
 
         if (!sku && !cdFornecedor) {
             erros.push(`Linha ${idx + 1}: SKU e cd fornecedor vazios`);
@@ -574,6 +573,7 @@ window.processarEntrada = async function() {
             produto: produto,
             sku_original: sku,
             observacao: observacao,
+            valor_custo: valorCusto,
             sku_match: null,
             produto_id: null,
             status: 'pendente',
@@ -669,6 +669,7 @@ window.processarEntrada = async function() {
             sku_match: item.sku_match,
             produto_id: item.produto_id,
             observacao: item.observacao,
+            valor_custo: item.valor_custo || 0,
             status: 'pendente',
             acao: null,
             responsavel: null,
@@ -692,8 +693,27 @@ window.processarEntrada = async function() {
     }
 };
 
+// ===== EXTRAIR IMPOSTOS DO XML =====
+function extrairImpostos(det) {
+    let icms = 0, ipi = 0;
+    // ICMS
+    const icmsNode = det.querySelector('ICMS');
+    if (icmsNode) {
+        // Pode estar em ICMS00, ICMS10, etc.
+        const icmsValNode = icmsNode.querySelector('vICMS');
+        if (icmsValNode) icms = parseFloat(icmsValNode.textContent) || 0;
+    }
+    // IPI
+    const ipiNode = det.querySelector('IPI');
+    if (ipiNode) {
+        const ipiValNode = ipiNode.querySelector('vIPI');
+        if (ipiValNode) ipi = parseFloat(ipiValNode.textContent) || 0;
+    }
+    return { icms, ipi };
+}
+
 // ============================================
-// PROCESSAR XML DA NOTA FISCAL
+// PROCESSAR XML DA NOTA FISCAL (COM CÁLCULO DE CUSTO)
 // ============================================
 window.processarXML = async function() {
     const fileInput = document.getElementById('xmlFileInput');
@@ -708,7 +728,6 @@ window.processarXML = async function() {
         return;
     }
 
-    // Garantir que o estoque está carregado
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
         showToast('🔄 Carregando estoque...', 'info');
         if (typeof carregarProdutosEstoque === 'function') {
@@ -726,25 +745,21 @@ window.processarXML = async function() {
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlString, "text/xml");
 
-            // Verificar se é uma NF-e
             const nfeNode = xmlDoc.querySelector('NFe') || xmlDoc.querySelector('nfeProc');
             if (!nfeNode) {
                 showToast('❌ Arquivo XML não é uma NF-e válida.', 'error');
                 return;
             }
 
-            // Extrair dados do emitente
             const emitNode = nfeNode.querySelector('emit');
             const fornecedorNome = emitNode ? emitNode.querySelector('xNome')?.textContent || '' : '';
             const fornecedorCNPJ = emitNode ? emitNode.querySelector('CNPJ')?.textContent || '' : '';
 
-            // Extrair número da nota e data
             const ideNode = nfeNode.querySelector('ide');
             const nNF = ideNode ? ideNode.querySelector('nNF')?.textContent || '' : '';
             const dhEmi = ideNode ? ideNode.querySelector('dhEmi')?.textContent || '' : '';
             const dataEmissao = dhEmi ? new Date(dhEmi).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
-            // Buscar os itens (det)
             const detNodes = xmlDoc.querySelectorAll('det');
             if (detNodes.length === 0) {
                 showToast('⚠️ Nenhum item encontrado na nota fiscal.', 'warning');
@@ -763,25 +778,21 @@ window.processarXML = async function() {
                 const vUnCom = parseFloat(prod.querySelector('vUnCom')?.textContent || '0');
                 const uCom = prod.querySelector('uCom')?.textContent || '';
 
-                // Tentar encontrar fornecedor pelo cProd (que pode ser o SKU do fornecedor)
+                // Extrair ICMS e IPI
+                const { icms, ipi } = extrairImpostos(det);
+                const valorCustoUnitario = vUnCom + (icms / (qCom || 1)) + (ipi / (qCom || 1));
+
                 const fornecedor = buscarFornecedor(cProd);
                 let skuSistema = fornecedor ? fornecedor.sku_sistema : null;
                 let nomeFornecedor = fornecedor ? fornecedor.nome_fornecedor : fornecedorNome || '';
                 let cdFornecedor = fornecedor ? fornecedor.cd_fornecedor : cProd;
 
-                // Verificar se o SKU existe no estoque
                 let produtoEstoque = null;
                 if (skuSistema) {
                     produtoEstoque = verificarSKUExistente(skuSistema);
                 }
                 if (!produtoEstoque && cProd) {
                     produtoEstoque = verificarSKUExistente(cProd);
-                }
-
-                // Se ainda não encontrou, tenta buscar por nome parcial (menos preciso)
-                if (!produtoEstoque && xProd) {
-                    // Busca no estoque por similaridade no nome (opcional)
-                    // Pode ser implementado, mas por enquanto deixamos assim
                 }
 
                 itens.push({
@@ -802,7 +813,8 @@ window.processarXML = async function() {
                     quantidade_entrada: 0,
                     acao: null,
                     responsavel: null,
-                    data_acao: null
+                    data_acao: null,
+                    valor_custo: valorCustoUnitario
                 });
             }
 
@@ -811,7 +823,6 @@ window.processarXML = async function() {
                 return;
             }
 
-            // Gerar número de entrada
             const numeroEntrada = await gerarNumeroEntrada();
 
             if (!window.supabaseClient) throw new Error('Supabase não conectado');
@@ -856,7 +867,8 @@ window.processarXML = async function() {
                 status: 'pendente',
                 acao: null,
                 responsavel: null,
-                data_acao: null
+                data_acao: null,
+                valor_custo: item.valor_custo || 0
             }));
 
             const { error: itemsError } = await window.supabaseClient
@@ -942,10 +954,8 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
         return;
     }
 
-    // Quantidade sugerida (do processamento)
     const quantidadeSugerida = item.quantidade || 1;
     
-    // Perguntar ao usuário a quantidade a dar entrada
     const quantidadeStr = prompt(
         `Quantas unidades deseja dar entrada?\n(Sugestão: ${quantidadeSugerida})`,
         quantidadeSugerida.toString()
@@ -969,7 +979,6 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // Atualizar estoque
         const { data: produto, error: errProd } = await window.supabaseClient
             .from('produtos_estoque')
             .select('quantidade')
@@ -987,7 +996,6 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errUpdate) throw errUpdate;
 
-        // Registrar movimentação com a quantidade informada
         await registrarMovimentacao(
             produtoId,
             'entrada',
@@ -996,13 +1004,12 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
             'nova'
         );
 
-        // Atualizar item – guardar quantidade_entrada
         const { error: errItem } = await window.supabaseClient
             .from('entrada_items')
             .update({
                 status: 'entrada_realizada',
                 acao: 'entrada',
-                quantidade_entrada: quantidade,  // <-- NOVO
+                quantidade_entrada: quantidade,
                 responsavel: currentUser.name,
                 data_acao: new Date().toISOString()
             })
@@ -1010,11 +1017,10 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errItem) throw errItem;
 
-        // Atualizar card
         const concluidos = card.itens.filter(i => 
             i.id != itemId && (i.status !== 'pendente' && i.status !== 'ignorado')
         ).length + 1;
-        const total = card.itens.filter(i => i.status !== 'ignorado').length; // ignorados não contam
+        const total = card.itens.filter(i => i.status !== 'ignorado').length;
         const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
 
         const { error: errCard } = await window.supabaseClient
@@ -1032,7 +1038,6 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
         showToast(`✅ Entrada de ${quantidade} unidade(s) realizada!`, 'success');
         await carregarEntradas();
 
-        // Sincronizar ML
         if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
             const produtoAtualizado = produtosEstoque.find(p => p.id == produtoId);
             if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes) {
@@ -1093,10 +1098,9 @@ window.ignorarItem = async function(cardId, itemId) {
 
         if (errItem) throw errItem;
 
-        // Atualizar card
         const concluidos = card.itens.filter(i => 
             i.id != itemId && (i.status !== 'pendente' && i.status !== 'ignorado')
-        ).length + 1; // o item ignorado conta como concluído
+        ).length + 1;
         const total = card.itens.filter(i => i.status !== 'ignorado').length;
         const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
 
@@ -1121,7 +1125,7 @@ window.ignorarItem = async function(cardId, itemId) {
     }
 };
 
-// ===== VINCULAR PRODUTO EXISTENTE (BOTÃO "JÁ EXISTE") =====
+// ===== VINCULAR PRODUTO EXISTENTE =====
 window.vincularProdutoExistente = async function(cardId, itemId) {
     if (!cardId || !itemId) {
         showToast('Erro: dados incompletos', 'error');
@@ -1355,13 +1359,19 @@ async function processarItemAposCadastro(cardId, itemId) {
     }
 }
 
-// ===== RENDERIZAR TABELA DA PRÉ-ENTRADA =====
+// ============================================
+// PRÉ-ENTRADA
+// ============================================
+
 function renderizarPreEntrada() {
     const tbody = document.getElementById('preEntradaTableBody');
     if (!tbody) return;
 
+    // Verifica se o usuário pode ver custos
+    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
+
     if (preEntradaItens.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">Nenhum item carregado.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${podeVerCusto ? 10 : 9}" class="text-center text-muted">Nenhum item carregado.</td></tr>`;
         return;
     }
 
@@ -1369,6 +1379,7 @@ function renderizarPreEntrada() {
     preEntradaItens.forEach((item, idx) => {
         const skuDisplay = item.sku_match || item.sku_original || '-';
         const fornecedorDisplay = item.fornecedor_nome || item.cd_fornecedor || '-';
+        const custoDisplay = podeVerCusto && item.valor_custo ? `R$ ${parseFloat(item.valor_custo).toFixed(2)}` : (podeVerCusto ? '-' : '');
 
         html += `
             <tr>
@@ -1379,6 +1390,7 @@ function renderizarPreEntrada() {
                 <td>${item.produto || '-'}</td>
                 <td><code>${skuDisplay}</code></td>
                 <td>${fornecedorDisplay}</td>
+                ${podeVerCusto ? `<td>${custoDisplay}</td>` : ''}
                 <td>
                     <input type="text" class="form-control form-control-sm pre-observacao" 
                            data-idx="${idx}" value="${item.observacao || ''}" 
@@ -1395,7 +1407,6 @@ function renderizarPreEntrada() {
 
     tbody.innerHTML = html;
 
-    // Adicionar evento para salvar observações ao digitar
     document.querySelectorAll('.pre-observacao').forEach(input => {
         input.addEventListener('input', function() {
             const idx = parseInt(this.dataset.idx);
@@ -1442,10 +1453,8 @@ window.processarPreEntrada = async function() {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
 
-        // Gerar número de entrada
         const numeroEntrada = await gerarNumeroEntrada();
 
-        // Criar card
         const cardData = {
             numero_entrada: numeroEntrada,
             dados_brutos: preEntradaDadosBrutos || 'Pré-entrada processada',
@@ -1467,7 +1476,6 @@ window.processarPreEntrada = async function() {
         if (cardError) throw cardError;
         const card = cardResult[0];
 
-        // Inserir itens
         const itemsToInsert = preEntradaItens.map(item => ({
             entrada_id: card.id,
             cd_fornecedor: item.cd_fornecedor || '',
@@ -1487,7 +1495,8 @@ window.processarPreEntrada = async function() {
             acao: null,
             responsavel: null,
             data_acao: null,
-            quantidade_entrada: 0
+            quantidade_entrada: 0,
+            valor_custo: item.valor_custo || 0
         }));
 
         const { error: itemsError } = await window.supabaseClient
@@ -1498,10 +1507,7 @@ window.processarPreEntrada = async function() {
 
         showToast(`✅ Entrada ${numeroEntrada} criada com ${preEntradaItens.length} item(s) a partir da pré-entrada!`, 'success');
 
-        // Limpar pré-entrada
         limparPreEntrada();
-
-        // Recarregar lista de entradas
         await carregarEntradas();
 
     } catch (error) {
@@ -1510,7 +1516,7 @@ window.processarPreEntrada = async function() {
     }
 };
 
-// ===== PROCESSAR XML PARA PRÉ-ENTRADA (COM EDIÇÃO DE OBSERVAÇÕES) =====
+// ===== PROCESSAR XML PARA PRÉ-ENTRADA (COM CÁLCULO DE CUSTO) =====
 window.processarPreEntradaXML = async function() {
     const fileInput = document.getElementById('preXmlFileInput');
     if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
@@ -1524,7 +1530,6 @@ window.processarPreEntradaXML = async function() {
         return;
     }
 
-    // Garantir que o estoque está carregado
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
         showToast('🔄 Carregando estoque...', 'info');
         if (typeof carregarProdutosEstoque === 'function') {
@@ -1542,25 +1547,21 @@ window.processarPreEntradaXML = async function() {
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(xmlString, "text/xml");
 
-            // Verificar se é uma NF-e
             const nfeNode = xmlDoc.querySelector('NFe') || xmlDoc.querySelector('nfeProc');
             if (!nfeNode) {
                 showToast('❌ Arquivo XML não é uma NF-e válida.', 'error');
                 return;
             }
 
-            // Extrair dados do emitente
             const emitNode = nfeNode.querySelector('emit');
             const fornecedorNome = emitNode ? emitNode.querySelector('xNome')?.textContent || '' : '';
             const fornecedorCNPJ = emitNode ? emitNode.querySelector('CNPJ')?.textContent || '' : '';
 
-            // Extrair número da nota e data
             const ideNode = nfeNode.querySelector('ide');
             const nNF = ideNode ? ideNode.querySelector('nNF')?.textContent || '' : '';
             const dhEmi = ideNode ? ideNode.querySelector('dhEmi')?.textContent || '' : '';
             const dataEmissao = dhEmi ? new Date(dhEmi).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
-            // Buscar os itens (det)
             const detNodes = xmlDoc.querySelectorAll('det');
             if (detNodes.length === 0) {
                 showToast('⚠️ Nenhum item encontrado na nota fiscal.', 'warning');
@@ -1579,13 +1580,15 @@ window.processarPreEntradaXML = async function() {
                 const vUnCom = parseFloat(prod.querySelector('vUnCom')?.textContent || '0');
                 const uCom = prod.querySelector('uCom')?.textContent || '';
 
-                // Tentar encontrar fornecedor pelo cProd
+                // Extrair ICMS e IPI
+                const { icms, ipi } = extrairImpostos(det);
+                const valorCustoUnitario = vUnCom + (icms / (qCom || 1)) + (ipi / (qCom || 1));
+
                 const fornecedor = buscarFornecedor(cProd);
                 let skuSistema = fornecedor ? fornecedor.sku_sistema : null;
                 let nomeFornecedor = fornecedor ? fornecedor.nome_fornecedor : fornecedorNome || '';
                 let cdFornecedor = fornecedor ? fornecedor.cd_fornecedor : cProd;
 
-                // Verificar se o SKU existe no estoque
                 let produtoEstoque = null;
                 if (skuSistema) {
                     produtoEstoque = verificarSKUExistente(skuSistema);
@@ -1603,7 +1606,7 @@ window.processarPreEntradaXML = async function() {
                     sku_original: cProd || '',
                     sku_match: skuSistema || (produtoEstoque ? produtoEstoque.sku : null),
                     produto_id: produtoEstoque ? produtoEstoque.id : null,
-                    observacao: '', // campo editável
+                    observacao: '',
                     ncm: NCM || '',
                     valor_unitario: vUnCom || 0,
                     cprod_fornecedor: cProd || '',
@@ -1612,7 +1615,8 @@ window.processarPreEntradaXML = async function() {
                     acao: null,
                     responsavel: null,
                     data_acao: null,
-                    quantidade_entrada: 0
+                    quantidade_entrada: 0,
+                    valor_custo: valorCustoUnitario
                 });
             }
 
@@ -1621,13 +1625,10 @@ window.processarPreEntradaXML = async function() {
                 return;
             }
 
-            // Armazenar dados brutos para futura referência
             preEntradaDadosBrutos = xmlString.substring(0, 500) + '...';
 
-            // Renderizar tabela
             renderizarPreEntrada();
 
-            // Exibir tabela e ocultar área de upload
             document.getElementById('preEntradaTableContainer').style.display = 'block';
             document.getElementById('preXmlFileInput').value = '';
             showToast(`✅ ${preEntradaItens.length} itens carregados. Edite as observações e processe.`, 'success');

@@ -855,6 +855,11 @@ body > * {
             <h3>Feedback</h3>
             <p>Avaliações, respostas e sugestões</p>
             </div>
+            <div class="menu-card" onclick="abrirSistemaFull()">
+            <div class="menu-icon"><i class="fas fa-warehouse"></i></div>
+            <h3>FULL</h3>
+            <p>Estoque Full, dias sem venda e histórico</p>
+        </div>
         </div>
     </div>
 
@@ -4534,6 +4539,119 @@ body > * {
     </div>
 </div>
 
+<!-- ===== SISTEMA DE ANÁLISE FULL ===== -->
+<div id="fullSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                    Análise de Estoque FULL
+                </h1>
+                <div class="user-info">
+                    <div class="user-avatar" id="fullUserAvatar">U</div>
+                    <div>
+                        <div style="font-weight: 600;" id="fullUserName">Usuário</div>
+                        <div style="font-size: 12px; color: #6c757d;" id="fullUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Painel de resumo -->
+        <div class="card mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h3><i class="fas fa-chart-line" style="color: #00ADEE;"></i> Resumo da Análise</h3>
+                    <p style="margin:5px 0 0; color:#6c757d;">
+                        <span id="fullTotalProdutos">0</span> produtos analisados • 
+                        <span id="fullExcessoEstoque">0</span> com excesso de estoque • 
+                        <span id="fullSemVenda30">0</span> sem venda há +30 dias
+                    </p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" onclick="sincronizarFull()">
+                        <i class="fas fa-sync-alt"></i> Sincronizar Agora
+                    </button>
+                    <button class="btn btn-success" onclick="exportarFullExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="card mb-4">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span><i class="fas fa-filter"></i> Mostrar:</span>
+                <button class="btn btn-sm btn-primary active" data-filtro="todos" onclick="filtrarFull('todos')">Todos</button>
+                <button class="btn btn-sm btn-outline-danger" data-filtro="excesso" onclick="filtrarFull('excesso')">Excesso de estoque</button>
+                <button class="btn btn-sm btn-outline-warning" data-filtro="sem_venda" onclick="filtrarFull('sem_venda')">+30 dias sem venda</button>
+                <button class="btn btn-sm btn-outline-success" data-filtro="ok" onclick="filtrarFull('ok')">OK</button>
+                <div style="flex:1; min-width:200px; margin-left:auto;">
+                    <input type="text" id="buscaFull" class="form-control form-control-sm" placeholder="🔍 Buscar por título, SKU..." oninput="filtrarFull()">
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabela de produtos -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title"><i class="fas fa-boxes"></i> Produtos FULL</h2>
+                <span class="badge badge-info" id="fullContagem">0</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-striped" id="fullTable">
+                    <thead>
+                        <tr>
+                            <th>Título</th>
+                            <th>SKU</th>
+                            <th>MLB</th>
+                            <th>Estoque Full</th>
+                            <th>Média Vendas (3 meses)</th>
+                            <th>Dias sem venda</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fullTableBody">
+                        <tr><td colspan="7" class="text-center py-5">Clique em "Sincronizar Agora" para carregar dados.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Histórico de sincronizações -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h2 class="card-title"><i class="fas fa-history"></i> Histórico de Sincronizações</h2>
+                <button class="btn btn-sm btn-info" onclick="carregarHistoricoFull()">Atualizar</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm" id="fullHistoricoTable">
+                    <thead>
+                        <tr>
+                            <th>Data</th>
+                            <th>Total produtos</th>
+                            <th>Excesso</th>
+                            <th>+30 dias sem venda</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fullHistoricoBody">
+                        <tr><td colspan="5" class="text-center">Nenhum histórico disponível.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ===== SISTEMA DE GESTÃO DE ESTOQUE ===== -->
 <div id="estoqueGestaoSystem" class="hidden">
     <header class="main-header">
@@ -4753,8 +4871,170 @@ body > * {
     <script src="feedback_manager.js"></script>
     <script src="entradas.js"></script>
     <script src="promocoes_manager.js"></script>
+    <script src="full_analysis.js"></script>
 
     <script>
+        // ============================================================
+    //  FALBACK INFALÍVEL PARA O SISTEMA FULL
+    //  Define abrirSistemaFull e sincronizarFull imediatamente
+    // ============================================================
+    
+    console.log('🚀 Inicializando fallback do sistema FULL');
+
+    // ===== FUNÇÃO PARA ABRIR A ABA =====
+    window.abrirSistemaFull = function() {
+    if (!window.currentUser) {
+        showToast('⚠️ Faça login primeiro', 'warning');
+        return;
+    }
+
+    // Esconde todos os outros sistemas
+    const sistemas = [
+        'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
+        'caixaSystem', 'precificacaoSystem', 'reviewsSystem', 'folgasSystem',
+        'shippingSystem', 'estoqueSystem', 'entradasSystem', 'estoqueGestaoSystem',
+        'perguntasSystem', 'feedbackSystem', 'nfeSystem', 'promocoesSystem'
+    ];
+    sistemas.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+    });
+
+    // Mostra o sistema FULL
+    const fullSystem = document.getElementById('fullSystem');
+    if (fullSystem) {
+        fullSystem.classList.remove('hidden');
+    } else {
+        showToast('❌ Sistema FULL não encontrado.', 'error');
+        return;
+    }
+
+    // Atualiza dados do usuário
+    const userName = document.getElementById('fullUserName');
+    const userAvatar = document.getElementById('fullUserAvatar');
+    const userRole = document.getElementById('fullUserRole');
+    if (userName) userName.textContent = window.currentUser.name;
+    if (userAvatar) userAvatar.textContent = window.currentUser.avatar;
+    if (userRole) userRole.textContent = window.currentUser.role;
+
+    // Carrega dados (se o módulo já estiver carregado)
+    if (typeof window.carregarUltimaSincronizacao === 'function') {
+        window.carregarUltimaSincronizacao();
+    }
+    if (typeof window.carregarHistoricoFull === 'function') {
+        window.carregarHistoricoFull();
+    }
+
+    showToast('📦 Sistema FULL carregado', 'info');
+};
+
+    // ===== SINCRONIZAR =====
+    window.sincronizarFull = function() {
+        console.log('🔄 sincronizarFull (fallback)');
+        if (window._fullModuleReady && typeof window._sincronizarFullReal === 'function') {
+            window._sincronizarFullReal();
+        } else {
+            alert('⏳ Carregando módulo FULL para sincronizar...');
+            carregarModuloFull(function() {
+                if (typeof window._sincronizarFullReal === 'function') {
+                    window._sincronizarFullReal();
+                } else {
+                    alert('❌ Função de sincronização não disponível.');
+                }
+            });
+        }
+    };
+
+    // ===== CARREGAR MÓDULO =====
+    function carregarModuloFull(callback) {
+        if (window._fullModuleReady) {
+            if (callback) callback();
+            return;
+        }
+        console.log('⏳ Carregando full_analysis.js...');
+        const script = document.createElement('script');
+        script.src = 'full_analysis.js';
+        script.onload = function() {
+            console.log('✅ full_analysis.js carregado');
+            setTimeout(function() {
+                window._fullModuleReady = true;
+                if (callback) callback();
+            }, 300);
+        };
+        script.onerror = function() {
+            alert('❌ Erro ao carregar full_analysis.js');
+        };
+        document.head.appendChild(script);
+    }
+
+    console.log('✅ Fallback FULL definido');
+        
+         // ===== FUNÇÃO DE ABERTURA DO FULL (FALBACK INFALÍVEL) =====
+    window.abrirSistemaFull = function() {
+        console.log('📦 abrirSistemaFull (fallback) chamado');
+        if (!window.currentUser) {
+            alert('⚠️ Faça login primeiro');
+            return;
+        }
+
+        // Esconde outros sistemas
+        const sistemas = [
+            'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
+            'caixaSystem', 'precificacaoSystem', 'reviewsSystem', 'folgasSystem',
+            'shippingSystem', 'estoqueSystem', 'entradasSystem', 'estoqueGestaoSystem',
+            'perguntasSystem', 'feedbackSystem', 'nfeSystem', 'promocoesSystem'
+        ];
+        sistemas.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+
+        // Mostra sistema FULL
+        const fullSystem = document.getElementById('fullSystem');
+        if (!fullSystem) {
+            alert('❌ Elemento #fullSystem não encontrado! Adicione o container no HTML.');
+            console.error('❌ #fullSystem não existe no DOM');
+            return;
+        }
+        fullSystem.classList.remove('hidden');
+
+        // Atualiza dados do usuário
+        const userName = document.getElementById('fullUserName');
+        const userAvatar = document.getElementById('fullUserAvatar');
+        const userRole = document.getElementById('fullUserRole');
+        if (userName) userName.textContent = window.currentUser.name;
+        if (userAvatar) userAvatar.textContent = window.currentUser.avatar;
+        if (userRole) userRole.textContent = window.currentUser.role;
+
+        // Se o módulo completo já foi carregado, executa a função de carregamento
+        if (typeof window._fullModuleReady !== 'undefined' && window._fullModuleReady) {
+            if (typeof carregarDadosFull === 'function') {
+                carregarDadosFull();
+            }
+        } else {
+            // Tenta carregar o módulo dinamicamente
+            console.log('⏳ Carregando módulo FULL completo...');
+            const script = document.createElement('script');
+            script.src = 'full_analysis.js';
+            script.onload = function() {
+                console.log('✅ full_analysis.js carregado dinamicamente');
+                if (typeof carregarDadosFull === 'function') {
+                    carregarDadosFull();
+                } else {
+                    alert('⚠️ Módulo carregado, mas funções não disponíveis. Verifique o console.');
+                }
+            };
+            script.onerror = function() {
+                alert('❌ Erro ao carregar full_analysis.js. Verifique o caminho do arquivo.');
+            };
+            document.head.appendChild(script);
+        }
+
+        alert('✅ Sistema FULL aberto!');
+    };
+
+    console.log('✅ Função abrirSistemaFull definida (fallback inline)');
+
         // Funções para controle da sidebar
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('sidebarOverlay');
