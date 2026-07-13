@@ -693,23 +693,15 @@ window.processarEntrada = async function() {
     }
 };
 
-// ===== EXTRAIR IMPOSTOS DO XML =====
-function extrairImpostos(det) {
-    let icms = 0, ipi = 0;
-    // ICMS
-    const icmsNode = det.querySelector('ICMS');
-    if (icmsNode) {
-        // Pode estar em ICMS00, ICMS10, etc.
-        const icmsValNode = icmsNode.querySelector('vICMS');
-        if (icmsValNode) icms = parseFloat(icmsValNode.textContent) || 0;
-    }
-    // IPI
+// ===== EXTRAIR APENAS O IPI DA NOTA =====
+function extrairIPI(det) {
+    let ipi = 0;
     const ipiNode = det.querySelector('IPI');
     if (ipiNode) {
         const ipiValNode = ipiNode.querySelector('vIPI');
         if (ipiValNode) ipi = parseFloat(ipiValNode.textContent) || 0;
     }
-    return { icms, ipi };
+    return ipi;
 }
 
 // ============================================
@@ -779,8 +771,8 @@ window.processarXML = async function() {
                 const uCom = prod.querySelector('uCom')?.textContent || '';
 
                 // Extrair ICMS e IPI
-                const { icms, ipi } = extrairImpostos(det);
-                const valorCustoUnitario = vUnCom + (icms / (qCom || 1)) + (ipi / (qCom || 1));
+                const ipi = extrairIPI(det);
+                const valorCustoUnitario = vUnCom + (ipi / (qCom || 1));
 
                 const fornecedor = buscarFornecedor(cProd);
                 let skuSistema = fornecedor ? fornecedor.sku_sistema : null;
@@ -1581,8 +1573,8 @@ window.processarPreEntradaXML = async function() {
                 const uCom = prod.querySelector('uCom')?.textContent || '';
 
                 // Extrair ICMS e IPI
-                const { icms, ipi } = extrairImpostos(det);
-                const valorCustoUnitario = vUnCom + (icms / (qCom || 1)) + (ipi / (qCom || 1));
+                const ipi = extrairIPI(det);
+                const valorCustoUnitario = vUnCom + (ipi / (qCom || 1));
 
                 const fornecedor = buscarFornecedor(cProd);
                 let skuSistema = fornecedor ? fornecedor.sku_sistema : null;
