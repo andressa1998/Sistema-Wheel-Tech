@@ -1014,61 +1014,99 @@ function gerarCamposDinamicos(categoria) {
     // =========================================================
     //  CAMPOS CONDICIONAIS PARA ROLAMENTO "Caixa de Direção"
     // =========================================================
-    if (categoria === 'Rolamentos') {
-        let angulosDiv = document.getElementById('camposAngulosRolamento');
-        if (!angulosDiv) {
-            angulosDiv = document.createElement('div');
-            angulosDiv.id = 'camposAngulosRolamento';
-            angulosDiv.style.display = 'none';
-            angulosDiv.style.marginTop = '10px';
-            angulosDiv.style.borderTop = '1px solid #dee2e6';
-            angulosDiv.style.paddingTop = '10px';
-            angulosDiv.innerHTML = `
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                    <div class="campo-dinamico">
-                        <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo interno *</label>
-                        <input type="text" id="campo_angulo_interno" class="form-control" placeholder="Ex: 45" required>
-                    </div>
-                    <div class="campo-dinamico">
-                        <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo externo *</label>
-                        <input type="text" id="campo_angulo_externo" class="form-control" placeholder="Ex: 45" required>
-                    </div>
+    // =========================================================
+//  CAMPOS CONDICIONAIS PARA ROLAMENTO "Caixa de Direção"
+// =========================================================
+if (categoria === 'Rolamentos') {
+    // Cria um container extra fora do grid para os campos de ângulo
+    let angulosDiv = document.getElementById('camposAngulosRolamento');
+    if (!angulosDiv) {
+        angulosDiv = document.createElement('div');
+        angulosDiv.id = 'camposAngulosRolamento';
+        angulosDiv.style.display = 'none';
+        angulosDiv.style.marginTop = '10px';
+        angulosDiv.style.borderTop = '1px solid #dee2e6';
+        angulosDiv.style.paddingTop = '10px';
+        angulosDiv.innerHTML = `
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="campo-dinamico">
+                    <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo interno *</label>
+                    <input type="text" id="campo_angulo_interno" class="form-control" placeholder="Ex: 45" required>
                 </div>
-                <small class="text-muted">Preencha os ângulos internos e externos (apenas números e vírgula).</small>
-            `;
-            container.appendChild(angulosDiv);
-        }
+                <div class="campo-dinamico">
+                    <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo externo *</label>
+                    <input type="text" id="campo_angulo_externo" class="form-control" placeholder="Ex: 45" required>
+                </div>
+            </div>
+            <small class="text-muted">Preencha os ângulos internos e externos (apenas números e vírgula).</small>
+        `;
+        container.appendChild(angulosDiv);
+    }
 
-        function toggleAngulos(valorAplicacao) {
-            if (!angulosDiv) return;
-            const shouldShow = (valorAplicacao === 'Caixa de Direção');
-            angulosDiv.style.display = shouldShow ? 'block' : 'none';
-            const angInt = document.getElementById('campo_angulo_interno');
-            const angExt = document.getElementById('campo_angulo_externo');
-            if (angInt) angInt.required = shouldShow;
-            if (angExt) angExt.required = shouldShow;
+    // Função para mostrar/ocultar os campos de ângulo
+    function toggleAngulos(valorAplicacao) {
+        if (!angulosDiv) return;
+        const shouldShow = (valorAplicacao === 'Cubo/Caixa de Direção');
+        angulosDiv.style.display = shouldShow ? 'block' : 'none';
+        // Tornar os campos obrigatórios ou não
+        const angInt = document.getElementById('campo_angulo_interno');
+        const angExt = document.getElementById('campo_angulo_externo');
+        if (angInt) angInt.required = shouldShow;
+        if (angExt) angExt.required = shouldShow;
+        
+        // Se esconder, limpar valores
+        if (!shouldShow) {
+            if (angInt) angInt.value = '';
+            if (angExt) angExt.value = '';
         }
+    }
 
-        if (aplicacaoSelect) {
-            aplicacaoSelect.addEventListener('change', function(e) {
+    // Se o select já existe, adicionar evento
+    if (aplicacaoSelect) {
+        // Remover eventos antigos para evitar duplicação
+        const newSelect = aplicacaoSelect.cloneNode(true);
+        aplicacaoSelect.parentNode.replaceChild(newSelect, aplicacaoSelect);
+        
+        newSelect.addEventListener('change', function(e) {
+            toggleAngulos(e.target.value);
+        });
+        
+        // Verificar valor inicial após um pequeno delay para garantir que tudo foi renderizado
+        setTimeout(() => {
+            toggleAngulos(newSelect.value);
+        }, 200);
+    } else {
+        // Se o select não foi encontrado, buscar novamente
+        const selectAplicacao = document.getElementById('campo_aplicaçao');
+        if (selectAplicacao) {
+            selectAplicacao.addEventListener('change', function(e) {
                 toggleAngulos(e.target.value);
             });
             setTimeout(() => {
-                toggleAngulos(aplicacaoSelect.value);
-            }, 100);
+                toggleAngulos(selectAplicacao.value);
+            }, 200);
         }
-
-        setTimeout(() => {
-            ['campo_angulo_interno', 'campo_angulo_externo'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) {
-                    el.addEventListener('input', function() {
-                        this.value = this.value.replace(/[^0-9,]/g, '');
-                    });
-                }
-            });
-        }, 150);
     }
+
+    // Aplicar validação de números e vírgula também nos campos de ângulo
+    setTimeout(() => {
+        ['campo_angulo_interno', 'campo_angulo_externo'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener('input', function() {
+                    this.value = this.value.replace(/[^0-9,]/g, '');
+                });
+                el.addEventListener('blur', function() {
+                    const val = this.value.trim();
+                    if (val !== '' && !/^[0-9]+(,[0-9]+)?$/.test(val)) {
+                        showToast('Digite apenas números e vírgula (ex: 45 ou 45,5)', 'warning');
+                        this.focus();
+                    }
+                });
+            }
+        });
+    }, 300);
+}
 
     // --- CONFIGURAR MODO BULK E KIT ---
     const bulkSection = document.getElementById('bulkAddSection');
@@ -1145,6 +1183,7 @@ function validarMLBCodes(texto) {
 }
 
 // ===== SALVAR PRODUTO (COM SUPORTE A MODO BULK E VALIDAÇÕES) =====
+// ===== SALVAR PRODUTO (COM SUPORTE A MODO BULK E VALIDAÇÕES) =====
 async function salvarProdutoEstoque() {
     const id = document.getElementById('produtoId').value;
     const nome = document.getElementById('produtoNome').value.trim();
@@ -1166,7 +1205,6 @@ async function salvarProdutoEstoque() {
             if (campo.tipo === 'checkbox') {
                 dadosExtra[campo.nome] = el.checked;
             } else if (campo.nome === 'mlb_codes' && el.value.trim()) {
-                // VALIDAÇÃO MLB CODES
                 const mlbText = el.value.trim();
                 if (!validarMLBCodes(mlbText)) {
                     showToast(`Formato inválido para MLB Codes. Use: "MLB1496273494, MLB4220545731" (cada um com 13 caracteres, separados por ", ")`, 'error');
@@ -1178,7 +1216,6 @@ async function salvarProdutoEstoque() {
             } else {
                 let valor = el.value;
                 if (campo.tipo === 'number' && valor !== '') valor = parseFloat(valor);
-                // Validação para campos de diâmetro (número e vírgula)
                 if (campo.validacao === 'numero_virgula' && valor !== '') {
                     if (!/^[0-9]+(,[0-9]+)?$/.test(valor)) {
                         showToast(`O campo "${campo.label}" deve conter apenas números e vírgula (ex: 15 ou 15,5)`, 'warning');
@@ -1219,44 +1256,36 @@ async function salvarProdutoEstoque() {
     }
 
     // --- Coletar SKUs do kit (para TODAS as categorias) ---
-let skusKit = [];
-console.log('🔍 [salvarProdutoEstoque] Coletando SKUs do kit...');
+    let skusKit = [];
+    console.log('🔍 [salvarProdutoEstoque] Coletando SKUs do kit...');
 
-const tbody = document.getElementById('kitSkusBody');
-if (tbody) {
-    const rows = tbody.querySelectorAll('tr');
-    console.log(`🔍 [salvarProdutoEstoque] ${rows.length} linhas encontradas na tabela`);
-    
-    rows.forEach((row, index) => {
-        // Verificar se é a linha de "nenhum SKU" (text-muted)
-        const isMuted = row.querySelector('.text-muted');
-        if (isMuted) {
-            console.log(`ℹ️ [salvarProdutoEstoque] Linha ${index} é a mensagem de vazio, ignorando`);
-            return;
-        }
+    const tbody = document.getElementById('kitSkusBody');
+    if (tbody) {
+        const rows = tbody.querySelectorAll('tr');
+        console.log(`🔍 [salvarProdutoEstoque] ${rows.length} linhas encontradas na tabela`);
         
-        // Buscar os campos
-        const skuFilhoInput = row.querySelector('.kit-sku-filho');
-        const quantidadeInput = row.querySelector('.kit-quantidade');
-        
-        if (skuFilhoInput && quantidadeInput) {
-            const skuFilho = skuFilhoInput.value.trim();
-            const quantidade = parseInt(quantidadeInput.value) || 1;
-            
-            console.log(`📝 [salvarProdutoEstoque] Linha ${index}: SKU="${skuFilho}", Qtd=${quantidade}`);
-            
-            if (skuFilho) {
-                skusKit.push({ sku_filho: skuFilho, quantidade });
+        rows.forEach((row, index) => {
+            const isMuted = row.querySelector('.text-muted');
+            if (isMuted) {
+                console.log(`ℹ️ [salvarProdutoEstoque] Linha ${index} é a mensagem de vazio, ignorando`);
+                return;
             }
-        } else {
-            console.log(`⚠️ [salvarProdutoEstoque] Linha ${index} não tem os campos esperados`);
-        }
-    });
-} else {
-    console.warn('⚠️ [salvarProdutoEstoque] Elemento #kitSkusBody não encontrado');
-}
-
-console.log('📦 [salvarProdutoEstoque] SKUs do kit coletados:', JSON.stringify(skusKit, null, 2));
+            
+            const skuFilhoInput = row.querySelector('.kit-sku-filho');
+            const quantidadeInput = row.querySelector('.kit-quantidade');
+            
+            if (skuFilhoInput && quantidadeInput) {
+                const skuFilho = skuFilhoInput.value.trim();
+                const quantidade = parseInt(quantidadeInput.value) || 1;
+                
+                console.log(`📝 [salvarProdutoEstoque] Linha ${index}: SKU="${skuFilho}", Qtd=${quantidade}`);
+                
+                if (skuFilho) {
+                    skusKit.push({ sku_filho: skuFilho, quantidade });
+                }
+            }
+        });
+    }
 
     // --- MODO BULK (apenas para Raios, produto novo e painel ativo) ---
     const bulkPanel = document.getElementById('bulkModePanel');
@@ -1305,7 +1334,6 @@ console.log('📦 [salvarProdutoEstoque] SKUs do kit coletados:', JSON.stringify
         let errors = [];
 
         for (let item of bulkItems) {
-            // Verifica se SKU já existe no banco
             const { data: existing } = await window.supabaseClient
                 .from('produtos_estoque')
                 .select('id')
@@ -1374,16 +1402,23 @@ console.log('📦 [salvarProdutoEstoque] SKUs do kit coletados:', JSON.stringify
 
     try {
         let produtoSalvo;
-        if (id) {
+        
+        // CORREÇÃO: Verificar se id é válido antes de fazer update
+        if (id && id !== 'undefined' && id !== '') {
             // EDITANDO produto existente
             const { data, error } = await window.supabaseClient
                 .from('produtos_estoque')
                 .update(produtoData)
-                .eq('id', id)
+                .eq('id', parseInt(id))
                 .select();
             if (error) throw error;
-            produtoSalvo = data[0];
-            showToast('Produto atualizado!', 'success');
+            produtoSalvo = data && data[0] ? data[0] : null;
+            if (produtoSalvo) {
+                showToast('Produto atualizado!', 'success');
+            } else {
+                showToast('Erro: produto não encontrado para edição.', 'error');
+                return;
+            }
         } else {
             // CRIANDO novo produto
             const { data, error } = await window.supabaseClient
@@ -1391,11 +1426,16 @@ console.log('📦 [salvarProdutoEstoque] SKUs do kit coletados:', JSON.stringify
                 .insert([produtoData])
                 .select();
             if (error) throw error;
-            produtoSalvo = data[0];
-            if (quantidade > 0) {
-                await registrarMovimentacao(produtoSalvo.id, 'entrada', quantidade, 'Criação do produto', 'nova');
+            produtoSalvo = data && data[0] ? data[0] : null;
+            if (produtoSalvo) {
+                if (quantidade > 0) {
+                    await registrarMovimentacao(produtoSalvo.id, 'entrada', quantidade, 'Criação do produto', 'nova');
+                }
+                showToast('Produto adicionado!', 'success');
+            } else {
+                showToast('Erro ao criar produto.', 'error');
+                return;
             }
-            showToast('Produto adicionado!', 'success');
         }
 
         // --- SALVAR SKUs DO KIT (se houver) ---
@@ -1409,7 +1449,6 @@ console.log('📦 [salvarProdutoEstoque] SKUs do kit coletados:', JSON.stringify
                 showToast('Erro ao salvar composição do kit: ' + result.error, 'warning');
             }
         } else if (sku) {
-            // Se não houver SKUs no kit, remover os existentes (limpar)
             console.log('🗑️ Removendo SKUs do kit para o SKU pai:', sku);
             await excluirSkusKit(sku);
         }

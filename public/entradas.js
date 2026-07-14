@@ -1229,6 +1229,7 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
 };
 
 // ===== ABRIR CADASTRO RÁPIDO =====
+// ===== ABRIR CADASTRO RÁPIDO =====
 window.abrirCadastroRapido = function(cardId, itemId) {
     if (!cardId || !itemId) {
         showToast('Erro: dados incompletos', 'error');
@@ -1258,6 +1259,7 @@ window.abrirCadastroRapido = function(cardId, itemId) {
     };
 
     if (typeof abrirModalProdutoEstoque === 'function') {
+        // Criar produto parcial sem ID
         const produtoParcial = {
             nome: item.produto || '',
             sku: item.sku_original || '',
@@ -1267,19 +1269,23 @@ window.abrirCadastroRapido = function(cardId, itemId) {
 
         abrirModalProdutoEstoque(produtoParcial);
 
+        // Configurar o botão de salvar para processar após o cadastro
         const modal = document.getElementById('modalProdutoEstoque');
         if (modal) {
-            const salvarBtn = document.getElementById('salvarProdutoEstoqueBtn') ||
-                             document.querySelector('#modalProdutoEstoque .btn-success');
+            const salvarBtn = document.querySelector('#modalProdutoEstoque .btn-success');
             if (salvarBtn) {
+                // Remover eventos antigos
                 const novoBtn = salvarBtn.cloneNode(true);
                 salvarBtn.parentNode.replaceChild(novoBtn, salvarBtn);
-                novoBtn.onclick = function() {
+                
+                novoBtn.onclick = async function() {
+                    // Chamar a função de salvar original
                     if (typeof salvarProdutoEstoque === 'function') {
-                        salvarProdutoEstoque();
+                        await salvarProdutoEstoque();
+                        // Aguardar um pouco para o produto ser criado
                         setTimeout(() => {
                             processarItemAposCadastro(cardId, itemId);
-                        }, 1000);
+                        }, 1500);
                     }
                 };
             }
