@@ -47,7 +47,7 @@ window.abrirSistemaEntradas = function() {
         'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'promocoesSystem',
         'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem',
         'feedbackSystem', 'perguntasSystem', 'estoqueGestaoSystem', 'nfeSystem',
-        'precificacaoSystem'
+        'precificacaoSystem', 'fullSystem'
     ];
     sistemasIds.forEach(id => {
         const el = document.getElementById(id);
@@ -245,7 +245,6 @@ async function carregarEntradas() {
 // RENDERIZAR ENTRADAS (COM ESPERA FORÇADA DO ESTOQUE)
 // ============================================
 async function renderizarEntradas() {
-    // Forçar carregamento do estoque se necessário
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
         console.log('🔄 Forçando recarregamento do estoque antes de renderizar...');
         if (typeof carregarProdutosEstoque === 'function') {
@@ -299,7 +298,6 @@ async function renderizarEntradas() {
         return;
     }
 
-    // Verifica se o usuário pode ver custos (Andressa ou Ronald)
     const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
 
     let html = '';
@@ -523,7 +521,6 @@ window.processarEntrada = async function() {
     else if (primeiraLinha.includes(',')) separador = ',';
 
     const cabecalho = linhas[0].split(separador).map(c => c.trim().toLowerCase());
-    // Colunas esperadas: cd fornecedor, rastreio, fornecedor, quant, produto, sku, observações, valor_custo (opcional)
     const colunasEsperadas = ['cd fornecedor', 'rastreio', 'fornecedor', 'quant', 'produto', 'sku', 'observações'];
     const isCabecalho = colunasEsperadas.every(c => cabecalho.some(h => h.includes(c)));
 
@@ -553,7 +550,6 @@ window.processarEntrada = async function() {
         const produto = partes[4] || '';
         const sku = partes[5] ? partes[5].trim() : '';
         const observacao = partes[6] || '';
-        // Coluna 7 (índice 7) pode conter valor_custo
         let valorCusto = 0;
         if (partes.length > 7) {
             const rawCusto = partes[7].replace(',', '.').trim();
@@ -770,7 +766,6 @@ window.processarXML = async function() {
                 const vUnCom = parseFloat(prod.querySelector('vUnCom')?.textContent || '0');
                 const uCom = prod.querySelector('uCom')?.textContent || '';
 
-                // Extrair ICMS e IPI
                 const ipi = extrairIPI(det);
                 const valorCustoUnitario = vUnCom + (ipi / (qCom || 1));
 
@@ -1228,8 +1223,8 @@ window.vincularProdutoExistente = async function(cardId, itemId) {
     }
 };
 
-// ===== ABRIR CADASTRO RÁPIDO =====
-// ===== ABRIR CADASTRO RÁPIDO =====
+// ===== ABRIR CADASTRO RÁPIDO (CORRIGIDO) =====
+// ===== ABRIR CADASTRO RÁPIDO (CORRIGIDO) =====
 window.abrirCadastroRapido = function(cardId, itemId) {
     if (!cardId || !itemId) {
         showToast('Erro: dados incompletos', 'error');
@@ -1258,49 +1253,77 @@ window.abrirCadastroRapido = function(cardId, itemId) {
         item: item
     };
 
-    if (typeof abrirModalProdutoEstoque === 'function') {
-        // Criar produto parcial sem ID
-        const produtoParcial = {
-            nome: item.produto || '',
-            sku: item.sku_original || '',
-            categoria: '',
-            dados_extra: {}
-        };
+    // Verificar se a função existe
+    if (typeof abrirModalProdutoEstoque !== 'function') {
+        showToast('❌ Função de cadastro não disponível. Recarregue a página.', 'error');
+        console.error('❌ abrirModalProdutoEstoque não é uma função');
+        return;
+    }
 
-        abrirModalProdutoEstoque(produtoParcial);
-
-        // Configurar o botão de salvar para processar após o cadastro
+    // Abrir o modal para novo produto
+    abrirModalProdutoEstoque(null);
+    
+    // Preencher os campos com os dados do item
+    setTimeout(() => {
+        const nomeInput = document.getElementById('produtoNome');
+        const skuInput = document.getElementById('produtoSKU');
+        const categoriaSelect = document.getElementById('produtoCategoria');
+        
+        if (nomeInput) nomeInput.value = item.produto || '';
+        if (skuInput) skuInput.value = item.sku_original || '';
+        
+        // Se tiver categoria, tenta selecionar
+        if (categoriaSelect && item.categoria) {
+            categoriaSelect.value = item.categoria;
+            gerarCamposDinamicos(item.categoria);
+        }
+        
+        // Forçar a exibição do modal novamente (por segurança)
         const modal = document.getElementById('modalProdutoEstoque');
         if (modal) {
-            const salvarBtn = document.querySelector('#modalProdutoEstoque .btn-success');
-            if (salvarBtn) {
-                // Remover eventos antigos
-                const novoBtn = salvarBtn.cloneNode(true);
-                salvarBtn.parentNode.replaceChild(novoBtn, salvarBtn);
-                
-                novoBtn.onclick = async function() {
-                    // Chamar a função de salvar original
-                    if (typeof salvarProdutoEstoque === 'function') {
-                        await salvarProdutoEstoque();
-                        // Aguardar um pouco para o produto ser criado
-                        setTimeout(() => {
-                            processarItemAposCadastro(cardId, itemId);
-                        }, 1500);
-                    }
-                };
-            }
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            modal.style.zIndex = '9999';
         }
+        
+        // Configurar o botão de salvar
+        configurarBotaoSalvarModal(cardId, itemId);
+    }, 300);
 
-        showToast('📝 Preencha os dados do produto e clique em Salvar', 'info');
-    } else {
-        showToast('❌ Função de cadastro não disponível', 'error');
-    }
+    showToast('📝 Preencha os dados do produto e clique em Salvar', 'info');
 };
+
+// ===== CONFIGURAR BOTÃO SALVAR DO MODAL =====
+function configurarBotaoSalvarModal(cardId, itemId) {
+    const modal = document.getElementById('modalProdutoEstoque');
+    if (!modal) return;
+    
+    const salvarBtn = document.getElementById('salvarProdutoEstoqueBtn') || 
+                     document.querySelector('#modalProdutoEstoque .btn-success');
+    if (salvarBtn) {
+        const novoBtn = salvarBtn.cloneNode(true);
+        salvarBtn.parentNode.replaceChild(novoBtn, salvarBtn);
+        
+        novoBtn.onclick = async function() {
+            if (typeof salvarProdutoEstoque === 'function') {
+                await salvarProdutoEstoque();
+                setTimeout(() => {
+                    processarItemAposCadastro(cardId, itemId);
+                }, 1500);
+            }
+        };
+    }
+}
 
 // ===== PROCESSAR ITEM APÓS CADASTRO =====
 async function processarItemAposCadastro(cardId, itemId) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        // Aguardar um pouco para garantir que o produto foi salvo
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         const { data: item, error: errItem } = await window.supabaseClient
             .from('entrada_items')
@@ -1312,15 +1335,31 @@ async function processarItemAposCadastro(cardId, itemId) {
 
         const produto = verificarSKUExistente(item.sku_original);
         if (!produto) {
+            // Tentar buscar pelo SKU match
+            const produtoMatch = verificarSKUExistente(item.sku_match);
+            if (produtoMatch) {
+                await atualizarItemEntrada(cardId, itemId, produtoMatch.id, produtoMatch.sku);
+                return;
+            }
             showToast('⚠️ Produto não encontrado após cadastro. Tente novamente.', 'warning');
             return;
         }
 
+        await atualizarItemEntrada(cardId, itemId, produto.id, produto.sku);
+
+    } catch (error) {
+        console.error('❌ Erro ao processar item após cadastro:', error);
+        showToast('❌ Erro: ' + error.message, 'error');
+    }
+}
+
+async function atualizarItemEntrada(cardId, itemId, produtoId, skuMatch) {
+    try {
         const { error: errUpdate } = await window.supabaseClient
             .from('entrada_items')
             .update({
-                produto_id: produto.id,
-                sku_match: produto.sku,
+                produto_id: produtoId,
+                sku_match: skuMatch,
                 status: 'cadastrado',
                 acao: 'cadastro',
                 responsavel: currentUser.name,
@@ -1352,292 +1391,10 @@ async function processarItemAposCadastro(cardId, itemId) {
         await carregarEntradas();
 
     } catch (error) {
-        console.error('❌ Erro ao processar item após cadastro:', error);
-        showToast('❌ Erro: ' + error.message, 'error');
+        console.error('❌ Erro ao atualizar item da entrada:', error);
+        throw error;
     }
 }
-
-// ============================================
-// PRÉ-ENTRADA
-// ============================================
-
-function renderizarPreEntrada() {
-    const tbody = document.getElementById('preEntradaTableBody');
-    if (!tbody) return;
-
-    // Verifica se o usuário pode ver custos
-    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
-
-    if (preEntradaItens.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${podeVerCusto ? 10 : 9}" class="text-center text-muted">Nenhum item carregado.</td></tr>`;
-        return;
-    }
-
-    let html = '';
-    preEntradaItens.forEach((item, idx) => {
-        const skuDisplay = item.sku_match || item.sku_original || '-';
-        const fornecedorDisplay = item.fornecedor_nome || item.cd_fornecedor || '-';
-        const custoDisplay = podeVerCusto && item.valor_custo ? `R$ ${parseFloat(item.valor_custo).toFixed(2)}` : (podeVerCusto ? '-' : '');
-
-        html += `
-            <tr>
-                <td>${idx + 1}</td>
-                <td>${item.cd_fornecedor || '-'}</td>
-                <td>${item.rastreio || '-'}</td>
-                <td><strong>${item.quantidade || 0}</strong></td>
-                <td>${item.produto || '-'}</td>
-                <td><code>${skuDisplay}</code></td>
-                <td>${fornecedorDisplay}</td>
-                ${podeVerCusto ? `<td>${custoDisplay}</td>` : ''}
-                <td>
-                    <input type="text" class="form-control form-control-sm pre-observacao" 
-                           data-idx="${idx}" value="${item.observacao || ''}" 
-                           placeholder="Observações..." style="min-width:150px;">
-                </td>
-                <td>
-                    <button class="btn btn-sm btn-danger" onclick="removerItemPreEntrada(${idx})" title="Remover item">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-
-    tbody.innerHTML = html;
-
-    document.querySelectorAll('.pre-observacao').forEach(input => {
-        input.addEventListener('input', function() {
-            const idx = parseInt(this.dataset.idx);
-            preEntradaItens[idx].observacao = this.value;
-        });
-    });
-}
-
-// ===== REMOVER ITEM DA PRÉ-ENTRADA =====
-window.removerItemPreEntrada = function(idx) {
-    if (!confirm(`Remover o item "${preEntradaItens[idx].produto}" da pré-entrada?`)) return;
-    preEntradaItens.splice(idx, 1);
-    renderizarPreEntrada();
-    if (preEntradaItens.length === 0) {
-        document.getElementById('preEntradaTableContainer').style.display = 'none';
-        showToast('Todos os itens removidos. A pré-entrada está vazia.', 'info');
-    }
-};
-
-// ===== LIMPAR PRÉ-ENTRADA =====
-window.limparPreEntrada = function() {
-    if (preEntradaItens.length > 0) {
-        if (!confirm('Limpar todos os itens da pré-entrada? Os dados não salvos serão perdidos.')) return;
-    }
-    preEntradaItens = [];
-    preEntradaDadosBrutos = '';
-    document.getElementById('preEntradaTableContainer').style.display = 'none';
-    document.getElementById('preXmlFileInput').value = '';
-    renderizarPreEntrada();
-    showToast('🧹 Pré-entrada limpa.', 'info');
-};
-
-// ===== PROCESSAR PRÉ-ENTRADA (CRIAR ENTRADA FINAL) =====
-window.processarPreEntrada = async function() {
-    if (preEntradaItens.length === 0) {
-        showToast('⚠️ Nenhum item na pré-entrada. Carregue um XML primeiro.', 'warning');
-        return;
-    }
-
-    if (!confirm(`Confirmar a criação da entrada com ${preEntradaItens.length} item(s)?`)) {
-        return;
-    }
-
-    try {
-        if (!window.supabaseClient) throw new Error('Supabase não conectado');
-
-        const numeroEntrada = await gerarNumeroEntrada();
-
-        const cardData = {
-            numero_entrada: numeroEntrada,
-            dados_brutos: preEntradaDadosBrutos || 'Pré-entrada processada',
-            status: 'pendente',
-            criado_por: currentUser.name,
-            criado_em: new Date().toISOString(),
-            total_items: preEntradaItens.length,
-            items_concluidos: 0,
-            tipo_entrada: 'xml',
-            fornecedor: preEntradaItens[0]?.fornecedor_nome || '',
-            nf_numero: preEntradaItens[0]?.rastreio?.split('-')[1] || ''
-        };
-
-        const { data: cardResult, error: cardError } = await window.supabaseClient
-            .from('entradas_cards')
-            .insert([cardData])
-            .select();
-
-        if (cardError) throw cardError;
-        const card = cardResult[0];
-
-        const itemsToInsert = preEntradaItens.map(item => ({
-            entrada_id: card.id,
-            cd_fornecedor: item.cd_fornecedor || '',
-            rastreio: item.rastreio || '',
-            fornecedor_nome: item.fornecedor_nome || '',
-            quantidade: item.quantidade,
-            produto: item.produto || '',
-            sku_original: item.sku_original || '',
-            sku_match: item.sku_match || '',
-            produto_id: item.produto_id || null,
-            observacao: item.observacao || '',
-            ncm: item.ncm || '',
-            valor_unitario: item.valor_unitario || 0,
-            cprod_fornecedor: item.cprod_fornecedor || '',
-            tipo_entrada: 'xml',
-            status: 'pendente',
-            acao: null,
-            responsavel: null,
-            data_acao: null,
-            quantidade_entrada: 0,
-            valor_custo: item.valor_custo || 0
-        }));
-
-        const { error: itemsError } = await window.supabaseClient
-            .from('entrada_items')
-            .insert(itemsToInsert);
-
-        if (itemsError) throw itemsError;
-
-        showToast(`✅ Entrada ${numeroEntrada} criada com ${preEntradaItens.length} item(s) a partir da pré-entrada!`, 'success');
-
-        limparPreEntrada();
-        await carregarEntradas();
-
-    } catch (error) {
-        console.error('❌ Erro ao processar pré-entrada:', error);
-        showToast('❌ Erro ao processar pré-entrada: ' + error.message, 'error');
-    }
-};
-
-// ===== PROCESSAR XML PARA PRÉ-ENTRADA (COM CÁLCULO DE CUSTO) =====
-window.processarPreEntradaXML = async function() {
-    const fileInput = document.getElementById('preXmlFileInput');
-    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-        showToast('⚠️ Selecione um arquivo XML primeiro.', 'warning');
-        return;
-    }
-
-    const file = fileInput.files[0];
-    if (!file.name.toLowerCase().endsWith('.xml')) {
-        showToast('⚠️ O arquivo deve ser um XML (.xml)', 'warning');
-        return;
-    }
-
-    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
-        showToast('🔄 Carregando estoque...', 'info');
-        if (typeof carregarProdutosEstoque === 'function') {
-            await carregarProdutosEstoque();
-        } else {
-            await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-    }
-    await aguardarEstoqueCarregado();
-
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-        try {
-            const xmlString = e.target.result;
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-
-            const nfeNode = xmlDoc.querySelector('NFe') || xmlDoc.querySelector('nfeProc');
-            if (!nfeNode) {
-                showToast('❌ Arquivo XML não é uma NF-e válida.', 'error');
-                return;
-            }
-
-            const emitNode = nfeNode.querySelector('emit');
-            const fornecedorNome = emitNode ? emitNode.querySelector('xNome')?.textContent || '' : '';
-            const fornecedorCNPJ = emitNode ? emitNode.querySelector('CNPJ')?.textContent || '' : '';
-
-            const ideNode = nfeNode.querySelector('ide');
-            const nNF = ideNode ? ideNode.querySelector('nNF')?.textContent || '' : '';
-            const dhEmi = ideNode ? ideNode.querySelector('dhEmi')?.textContent || '' : '';
-            const dataEmissao = dhEmi ? new Date(dhEmi).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
-
-            const detNodes = xmlDoc.querySelectorAll('det');
-            if (detNodes.length === 0) {
-                showToast('⚠️ Nenhum item encontrado na nota fiscal.', 'warning');
-                return;
-            }
-
-            preEntradaItens = [];
-            for (const det of detNodes) {
-                const prod = det.querySelector('prod');
-                if (!prod) continue;
-
-                const cProd = prod.querySelector('cProd')?.textContent || '';
-                const xProd = prod.querySelector('xProd')?.textContent || '';
-                const NCM = prod.querySelector('NCM')?.textContent || '';
-                const qCom = parseFloat(prod.querySelector('qCom')?.textContent || '0');
-                const vUnCom = parseFloat(prod.querySelector('vUnCom')?.textContent || '0');
-                const uCom = prod.querySelector('uCom')?.textContent || '';
-
-                // Extrair ICMS e IPI
-                const ipi = extrairIPI(det);
-                const valorCustoUnitario = vUnCom + (ipi / (qCom || 1));
-
-                const fornecedor = buscarFornecedor(cProd);
-                let skuSistema = fornecedor ? fornecedor.sku_sistema : null;
-                let nomeFornecedor = fornecedor ? fornecedor.nome_fornecedor : fornecedorNome || '';
-                let cdFornecedor = fornecedor ? fornecedor.cd_fornecedor : cProd;
-
-                let produtoEstoque = null;
-                if (skuSistema) {
-                    produtoEstoque = verificarSKUExistente(skuSistema);
-                }
-                if (!produtoEstoque && cProd) {
-                    produtoEstoque = verificarSKUExistente(cProd);
-                }
-
-                preEntradaItens.push({
-                    cd_fornecedor: cdFornecedor || '',
-                    fornecedor_nome: nomeFornecedor || '',
-                    rastreio: `NF-${nNF}-${cProd}`,
-                    quantidade: qCom || 0,
-                    produto: xProd || '',
-                    sku_original: cProd || '',
-                    sku_match: skuSistema || (produtoEstoque ? produtoEstoque.sku : null),
-                    produto_id: produtoEstoque ? produtoEstoque.id : null,
-                    observacao: '',
-                    ncm: NCM || '',
-                    valor_unitario: vUnCom || 0,
-                    cprod_fornecedor: cProd || '',
-                    tipo_entrada: 'xml',
-                    status: 'pendente',
-                    acao: null,
-                    responsavel: null,
-                    data_acao: null,
-                    quantidade_entrada: 0,
-                    valor_custo: valorCustoUnitario
-                });
-            }
-
-            if (preEntradaItens.length === 0) {
-                showToast('⚠️ Nenhum item válido extraído da nota.', 'warning');
-                return;
-            }
-
-            preEntradaDadosBrutos = xmlString.substring(0, 500) + '...';
-
-            renderizarPreEntrada();
-
-            document.getElementById('preEntradaTableContainer').style.display = 'block';
-            document.getElementById('preXmlFileInput').value = '';
-            showToast(`✅ ${preEntradaItens.length} itens carregados. Edite as observações e processe.`, 'success');
-
-        } catch (error) {
-            console.error('❌ Erro ao processar XML para pré-entrada:', error);
-            showToast('❌ Erro ao processar XML: ' + error.message, 'error');
-        }
-    };
-    reader.readAsText(file);
-};
 
 // ===== ABRIR CADASTRO DE PRODUTO NOVO + CRIAR OS =====
 window.abrirCadastroNovoComOS = function(cardId, itemId) {
@@ -1670,18 +1427,21 @@ window.abrirCadastroNovoComOS = function(cardId, itemId) {
     };
 
     if (typeof abrirModalProdutoEstoque === 'function') {
-        const produtoParcial = {
-            nome: item.produto || '',
-            sku: item.sku_original || '',
-            categoria: '',
-            dados_extra: {}
-        };
-
-        abrirModalProdutoEstoque(produtoParcial);
-
-        const modal = document.getElementById('modalProdutoEstoque');
-        if (modal) {
-            const salvarBtn = document.getElementById('salvarProdutoEstoqueBtn') ||
+        abrirModalProdutoEstoque(null);
+        
+        setTimeout(() => {
+            const nomeInput = document.getElementById('produtoNome');
+            const skuInput = document.getElementById('produtoSKU');
+            if (nomeInput) nomeInput.value = item.produto || '';
+            if (skuInput) skuInput.value = item.sku_original || '';
+            
+            const modal = document.getElementById('modalProdutoEstoque');
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.style.display = 'flex';
+            }
+            
+            const salvarBtn = document.getElementById('salvarProdutoEstoqueBtn') || 
                              document.querySelector('#modalProdutoEstoque .btn-success');
             if (salvarBtn) {
                 const novoBtn = salvarBtn.cloneNode(true);
@@ -1695,7 +1455,7 @@ window.abrirCadastroNovoComOS = function(cardId, itemId) {
                     }
                 };
             }
-        }
+        }, 300);
 
         showToast('📝 Preencha os dados do produto e clique em Salvar. Depois criaremos a(s) OS.', 'info');
     } else {
@@ -1707,6 +1467,8 @@ window.abrirCadastroNovoComOS = function(cardId, itemId) {
 async function processarNovoProdutoComOS(cardId, itemId) {
     try {
         if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         const { data: item, error: errItem } = await window.supabaseClient
             .from('entrada_items')
@@ -2013,6 +1775,286 @@ window.salvarProdutoEstoque = async function() {
             }
         }
     }
+};
+
+// ============================================
+// PRÉ-ENTRADA
+// ============================================
+
+function renderizarPreEntrada() {
+    const tbody = document.getElementById('preEntradaTableBody');
+    if (!tbody) return;
+
+    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
+
+    if (preEntradaItens.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${podeVerCusto ? 10 : 9}" class="text-center text-muted">Nenhum item carregado.</td></tr>`;
+        return;
+    }
+
+    let html = '';
+    preEntradaItens.forEach((item, idx) => {
+        const skuDisplay = item.sku_match || item.sku_original || '-';
+        const fornecedorDisplay = item.fornecedor_nome || item.cd_fornecedor || '-';
+        const custoDisplay = podeVerCusto && item.valor_custo ? `R$ ${parseFloat(item.valor_custo).toFixed(2)}` : (podeVerCusto ? '-' : '');
+
+        html += `
+            <tr>
+                <td>${idx + 1}</td>
+                <td>${item.cd_fornecedor || '-'}</td>
+                <td>${item.rastreio || '-'}</td>
+                <td><strong>${item.quantidade || 0}</strong></td>
+                <td>${item.produto || '-'}</td>
+                <td><code>${skuDisplay}</code></td>
+                <td>${fornecedorDisplay}</td>
+                ${podeVerCusto ? `<td>${custoDisplay}</td>` : ''}
+                <td>
+                    <input type="text" class="form-control form-control-sm pre-observacao" 
+                           data-idx="${idx}" value="${item.observacao || ''}" 
+                           placeholder="Observações..." style="min-width:150px;">
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-danger" onclick="removerItemPreEntrada(${idx})" title="Remover item">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+
+    document.querySelectorAll('.pre-observacao').forEach(input => {
+        input.addEventListener('input', function() {
+            const idx = parseInt(this.dataset.idx);
+            preEntradaItens[idx].observacao = this.value;
+        });
+    });
+}
+
+// ===== REMOVER ITEM DA PRÉ-ENTRADA =====
+window.removerItemPreEntrada = function(idx) {
+    if (!confirm(`Remover o item "${preEntradaItens[idx].produto}" da pré-entrada?`)) return;
+    preEntradaItens.splice(idx, 1);
+    renderizarPreEntrada();
+    if (preEntradaItens.length === 0) {
+        document.getElementById('preEntradaTableContainer').style.display = 'none';
+        showToast('Todos os itens removidos. A pré-entrada está vazia.', 'info');
+    }
+};
+
+// ===== LIMPAR PRÉ-ENTRADA =====
+window.limparPreEntrada = function() {
+    if (preEntradaItens.length > 0) {
+        if (!confirm('Limpar todos os itens da pré-entrada? Os dados não salvos serão perdidos.')) return;
+    }
+    preEntradaItens = [];
+    preEntradaDadosBrutos = '';
+    document.getElementById('preEntradaTableContainer').style.display = 'none';
+    document.getElementById('preXmlFileInput').value = '';
+    renderizarPreEntrada();
+    showToast('🧹 Pré-entrada limpa.', 'info');
+};
+
+// ===== PROCESSAR PRÉ-ENTRADA (CRIAR ENTRADA FINAL) =====
+window.processarPreEntrada = async function() {
+    if (preEntradaItens.length === 0) {
+        showToast('⚠️ Nenhum item na pré-entrada. Carregue um XML primeiro.', 'warning');
+        return;
+    }
+
+    if (!confirm(`Confirmar a criação da entrada com ${preEntradaItens.length} item(s)?`)) {
+        return;
+    }
+
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        const numeroEntrada = await gerarNumeroEntrada();
+
+        const cardData = {
+            numero_entrada: numeroEntrada,
+            dados_brutos: preEntradaDadosBrutos || 'Pré-entrada processada',
+            status: 'pendente',
+            criado_por: currentUser.name,
+            criado_em: new Date().toISOString(),
+            total_items: preEntradaItens.length,
+            items_concluidos: 0,
+            tipo_entrada: 'xml',
+            fornecedor: preEntradaItens[0]?.fornecedor_nome || '',
+            nf_numero: preEntradaItens[0]?.rastreio?.split('-')[1] || ''
+        };
+
+        const { data: cardResult, error: cardError } = await window.supabaseClient
+            .from('entradas_cards')
+            .insert([cardData])
+            .select();
+
+        if (cardError) throw cardError;
+        const card = cardResult[0];
+
+        const itemsToInsert = preEntradaItens.map(item => ({
+            entrada_id: card.id,
+            cd_fornecedor: item.cd_fornecedor || '',
+            rastreio: item.rastreio || '',
+            fornecedor_nome: item.fornecedor_nome || '',
+            quantidade: item.quantidade,
+            produto: item.produto || '',
+            sku_original: item.sku_original || '',
+            sku_match: item.sku_match || '',
+            produto_id: item.produto_id || null,
+            observacao: item.observacao || '',
+            ncm: item.ncm || '',
+            valor_unitario: item.valor_unitario || 0,
+            cprod_fornecedor: item.cprod_fornecedor || '',
+            tipo_entrada: 'xml',
+            status: 'pendente',
+            acao: null,
+            responsavel: null,
+            data_acao: null,
+            quantidade_entrada: 0,
+            valor_custo: item.valor_custo || 0
+        }));
+
+        const { error: itemsError } = await window.supabaseClient
+            .from('entrada_items')
+            .insert(itemsToInsert);
+
+        if (itemsError) throw itemsError;
+
+        showToast(`✅ Entrada ${numeroEntrada} criada com ${preEntradaItens.length} item(s) a partir da pré-entrada!`, 'success');
+
+        limparPreEntrada();
+        await carregarEntradas();
+
+    } catch (error) {
+        console.error('❌ Erro ao processar pré-entrada:', error);
+        showToast('❌ Erro ao processar pré-entrada: ' + error.message, 'error');
+    }
+};
+
+// ===== PROCESSAR XML PARA PRÉ-ENTRADA (COM CÁLCULO DE CUSTO) =====
+window.processarPreEntradaXML = async function() {
+    const fileInput = document.getElementById('preXmlFileInput');
+    if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        showToast('⚠️ Selecione um arquivo XML primeiro.', 'warning');
+        return;
+    }
+
+    const file = fileInput.files[0];
+    if (!file.name.toLowerCase().endsWith('.xml')) {
+        showToast('⚠️ O arquivo deve ser um XML (.xml)', 'warning');
+        return;
+    }
+
+    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
+        showToast('🔄 Carregando estoque...', 'info');
+        if (typeof carregarProdutosEstoque === 'function') {
+            await carregarProdutosEstoque();
+        } else {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+    }
+    await aguardarEstoqueCarregado();
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const xmlString = e.target.result;
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+
+            const nfeNode = xmlDoc.querySelector('NFe') || xmlDoc.querySelector('nfeProc');
+            if (!nfeNode) {
+                showToast('❌ Arquivo XML não é uma NF-e válida.', 'error');
+                return;
+            }
+
+            const emitNode = nfeNode.querySelector('emit');
+            const fornecedorNome = emitNode ? emitNode.querySelector('xNome')?.textContent || '' : '';
+            const fornecedorCNPJ = emitNode ? emitNode.querySelector('CNPJ')?.textContent || '' : '';
+
+            const ideNode = nfeNode.querySelector('ide');
+            const nNF = ideNode ? ideNode.querySelector('nNF')?.textContent || '' : '';
+            const dhEmi = ideNode ? ideNode.querySelector('dhEmi')?.textContent || '' : '';
+            const dataEmissao = dhEmi ? new Date(dhEmi).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
+            const detNodes = xmlDoc.querySelectorAll('det');
+            if (detNodes.length === 0) {
+                showToast('⚠️ Nenhum item encontrado na nota fiscal.', 'warning');
+                return;
+            }
+
+            preEntradaItens = [];
+            for (const det of detNodes) {
+                const prod = det.querySelector('prod');
+                if (!prod) continue;
+
+                const cProd = prod.querySelector('cProd')?.textContent || '';
+                const xProd = prod.querySelector('xProd')?.textContent || '';
+                const NCM = prod.querySelector('NCM')?.textContent || '';
+                const qCom = parseFloat(prod.querySelector('qCom')?.textContent || '0');
+                const vUnCom = parseFloat(prod.querySelector('vUnCom')?.textContent || '0');
+                const uCom = prod.querySelector('uCom')?.textContent || '';
+
+                const ipi = extrairIPI(det);
+                const valorCustoUnitario = vUnCom + (ipi / (qCom || 1));
+
+                const fornecedor = buscarFornecedor(cProd);
+                let skuSistema = fornecedor ? fornecedor.sku_sistema : null;
+                let nomeFornecedor = fornecedor ? fornecedor.nome_fornecedor : fornecedorNome || '';
+                let cdFornecedor = fornecedor ? fornecedor.cd_fornecedor : cProd;
+
+                let produtoEstoque = null;
+                if (skuSistema) {
+                    produtoEstoque = verificarSKUExistente(skuSistema);
+                }
+                if (!produtoEstoque && cProd) {
+                    produtoEstoque = verificarSKUExistente(cProd);
+                }
+
+                preEntradaItens.push({
+                    cd_fornecedor: cdFornecedor || '',
+                    fornecedor_nome: nomeFornecedor || '',
+                    rastreio: `NF-${nNF}-${cProd}`,
+                    quantidade: qCom || 0,
+                    produto: xProd || '',
+                    sku_original: cProd || '',
+                    sku_match: skuSistema || (produtoEstoque ? produtoEstoque.sku : null),
+                    produto_id: produtoEstoque ? produtoEstoque.id : null,
+                    observacao: '',
+                    ncm: NCM || '',
+                    valor_unitario: vUnCom || 0,
+                    cprod_fornecedor: cProd || '',
+                    tipo_entrada: 'xml',
+                    status: 'pendente',
+                    acao: null,
+                    responsavel: null,
+                    data_acao: null,
+                    quantidade_entrada: 0,
+                    valor_custo: valorCustoUnitario
+                });
+            }
+
+            if (preEntradaItens.length === 0) {
+                showToast('⚠️ Nenhum item válido extraído da nota.', 'warning');
+                return;
+            }
+
+            preEntradaDadosBrutos = xmlString.substring(0, 500) + '...';
+
+            renderizarPreEntrada();
+
+            document.getElementById('preEntradaTableContainer').style.display = 'block';
+            document.getElementById('preXmlFileInput').value = '';
+            showToast(`✅ ${preEntradaItens.length} itens carregados. Edite as observações e processe.`, 'success');
+
+        } catch (error) {
+            console.error('❌ Erro ao processar XML para pré-entrada:', error);
+            showToast('❌ Erro ao processar XML: ' + error.message, 'error');
+        }
+    };
+    reader.readAsText(file);
 };
 
 // ============================================

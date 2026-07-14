@@ -667,11 +667,17 @@ async function registrarMovimentacao(produtoId, tipo, quantidade, numeroDocument
 }
 
 // ===== MODAL PRODUTO (COM CATEGORIA E CAMPOS DINÂMICOS) =====
+// ===== MODAL PRODUTO (COM CATEGORIA E CAMPOS DINÂMICOS) =====
 function abrirModalProdutoEstoque(produto = null) {
     console.log('🚪 [abrirModalProdutoEstoque] Abrindo modal para:', produto?.sku || 'NOVO PRODUTO');
     
     const modal = document.getElementById('modalProdutoEstoque');
-    if (!modal) return;
+    if (!modal) {
+        console.error('❌ Modal #modalProdutoEstoque não encontrado!');
+        showToast('Erro: Modal não encontrado', 'error');
+        return;
+    }
+    
     const title = document.getElementById('modalProdutoTitle');
     const idInput = document.getElementById('produtoId');
     const nomeInput = document.getElementById('produtoNome');
@@ -681,24 +687,32 @@ function abrirModalProdutoEstoque(produto = null) {
     const descInput = document.getElementById('produtoDescricao');
     const categoriaSelect = document.getElementById('produtoCategoria');
 
-    if (produto) {
+    // Verificar se todos os elementos existem
+    if (!title || !idInput || !nomeInput || !skuInput || !qtdInput || !precoInput || !descInput || !categoriaSelect) {
+        console.error('❌ Um ou mais elementos do modal não foram encontrados!');
+        showToast('Erro: Elementos do modal não encontrados', 'error');
+        return;
+    }
+
+    if (produto && produto.id) {
+        // Modo edição
         title.textContent = 'Editar Produto';
         idInput.value = produto.id;
-        nomeInput.value = produto.nome;
-        skuInput.value = produto.sku;
-        qtdInput.value = produto.quantidade;
+        nomeInput.value = produto.nome || '';
+        skuInput.value = produto.sku || '';
+        qtdInput.value = produto.quantidade || 0;
         qtdInput.readOnly = true;
         qtdInput.classList.add('bg-light');
         precoInput.value = produto.preco || 0;
         descInput.value = produto.descricao || '';
         categoriaSelect.value = produto.categoria || '';
         
-        console.log('📦 [abrirModalProdutoEstoque] Produto SKU:', produto.sku);
+        console.log('📦 [abrirModalProdutoEstoque] Editando produto:', produto.sku);
         
-        // Primeiro, gerar os campos dinâmicos
+        // Gerar campos dinâmicos
         gerarCamposDinamicos(produto.categoria);
         
-        // Depois, preencher os dados extras
+        // Preencher dados extras
         const dadosExtra = produto.dados_extra || {};
         Object.keys(dadosExtra).forEach(chave => {
             const campo = document.getElementById(`campo_${chave}`);
@@ -730,34 +744,27 @@ function abrirModalProdutoEstoque(produto = null) {
             if (anguloInt && dadosExtra.angulo_interno) anguloInt.value = dadosExtra.angulo_interno;
             if (anguloExt && dadosExtra.angulo_externo) anguloExt.value = dadosExtra.angulo_externo;
             const aplicacao = document.getElementById('campo_aplicaçao');
-            if (aplicacao && aplicacao.value === 'Caixa de Direção') {
+            if (aplicacao && aplicacao.value === 'Cubo/Caixa de Direção') {
                 document.getElementById('camposAngulosRolamento').style.display = 'block';
             }
         }
         
-        // --- CARREGAR SKUs DO KIT (para TODAS as categorias) ---
-// Aguardar o DOM ser completamente renderizado
-console.log('⏳ [abrirModalProdutoEstoque] Agendando carregamento dos SKUs do kit...');
-setTimeout(async () => {
-    const skuAtual = document.getElementById('produtoSKU').value;
-    console.log('🔍 [abrirModalProdutoEstoque] SKU atual do campo:', skuAtual);
-    
-    if (skuAtual) {
-        try {
-            const skus = await carregarSkusKit(skuAtual);
-            console.log('📦 [abrirModalProdutoEstoque] SKUs encontrados:', skus);
-            renderizarSkusKit(skus);
-        } catch (error) {
-            console.error('❌ [abrirModalProdutoEstoque] Erro ao carregar SKUs do kit:', error);
-            renderizarSkusKit([]);
-        }
-    } else {
-        console.warn('⚠️ [abrirModalProdutoEstoque] SKU pai vazio, não é possível carregar SKUs do kit');
-        renderizarSkusKit([]);
-    }
-}, 500);
+        // Carregar SKUs do kit
+        setTimeout(async () => {
+            const skuAtual = document.getElementById('produtoSKU').value;
+            if (skuAtual) {
+                try {
+                    const skus = await carregarSkusKit(skuAtual);
+                    renderizarSkusKit(skus);
+                } catch (error) {
+                    console.error('❌ Erro ao carregar SKUs do kit:', error);
+                    renderizarSkusKit([]);
+                }
+            }
+        }, 500);
         
     } else {
+        // Modo novo produto
         title.textContent = 'Novo Produto';
         idInput.value = '';
         nomeInput.value = '';
@@ -772,18 +779,28 @@ setTimeout(async () => {
         renderizarSkusKit([]);
     }
 
+    // Configurar evento de mudança de categoria
     categoriaSelect.onchange = function() {
         const novaCategoria = categoriaSelect.value;
-        if (produto && produto.categoria && novaCategoria !== produto.categoria) {
+        const produtoAtual = document.getElementById('produtoId').value;
+        if (produtoAtual && produto && produto.categoria && novaCategoria !== produto.categoria) {
             if (!confirm('Alterar a categoria limpará os atributos específicos. Deseja continuar?')) {
-                categoriaSelect.value = produto.categoria;
+                categoriaSelect.value = produto.categoria || '';
                 return;
             }
         }
         gerarCamposDinamicos(novaCategoria);
     };
 
+    // ===== FORÇAR A EXIBIÇÃO DO MODAL =====
     modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    modal.style.alignItems = 'center';
+    modal.style.justifyContent = 'center';
+    modal.style.zIndex = '9999';
+    
+    // Garantir que o modal esteja visível
+    console.log('✅ Modal exibido!');
 }
 
 function fecharModalProdutoEstoque() {
@@ -867,6 +884,7 @@ function configurarBulkModeEvents() {
 }
 
 // ===== GERAR CAMPOS DINÂMICOS (COM INTEGRAÇÃO DO MODO BULK E CAMPOS CONDICIONAIS) =====
+// ===== GERAR CAMPOS DINÂMICOS (COM INTEGRAÇÃO DO MODO BULK E CAMPOS CONDICIONAIS) =====
 function gerarCamposDinamicos(categoria) {
     const container = document.getElementById('camposDinamicos');
     if (!container) return;
@@ -878,7 +896,6 @@ function gerarCamposDinamicos(categoria) {
         const bulkSection = document.getElementById('bulkAddSection');
         if (bulkSection) bulkSection.style.display = 'none';
         
-        // --- CORREÇÃO: Mostrar kit para TODAS as categorias ---
         const kitContainer = document.getElementById('kitComposicaoContainer');
         if (kitContainer) {
             kitContainer.style.display = 'block';
@@ -955,10 +972,6 @@ function gerarCamposDinamicos(categoria) {
             }
             if (categoria === 'Rolamentos' && campo.nome === 'aplicaçao') {
                 aplicacaoSelect = select;
-                setTimeout(() => {
-                    const angulosDiv = document.getElementById('camposAngulosRolamento');
-                    if (angulosDiv) angulosDiv.style.display = 'none';
-                }, 50);
             }
             div.appendChild(select);
             grid.appendChild(div);
@@ -1012,121 +1025,117 @@ function gerarCamposDinamicos(categoria) {
     container.appendChild(grid);
 
     // =========================================================
-    //  CAMPOS CONDICIONAIS PARA ROLAMENTO "Caixa de Direção"
+    //  CAMPOS CONDICIONAIS PARA ROLAMENTO "Cubo/Caixa de Direção"
     // =========================================================
-    // =========================================================
-//  CAMPOS CONDICIONAIS PARA ROLAMENTO "Caixa de Direção"
-// =========================================================
-if (categoria === 'Rolamentos') {
-    // Cria um container extra fora do grid para os campos de ângulo
-    let angulosDiv = document.getElementById('camposAngulosRolamento');
-    if (!angulosDiv) {
-        angulosDiv = document.createElement('div');
-        angulosDiv.id = 'camposAngulosRolamento';
-        angulosDiv.style.display = 'none';
-        angulosDiv.style.marginTop = '10px';
-        angulosDiv.style.borderTop = '1px solid #dee2e6';
-        angulosDiv.style.paddingTop = '10px';
-        angulosDiv.innerHTML = `
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                <div class="campo-dinamico">
-                    <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo interno *</label>
-                    <input type="text" id="campo_angulo_interno" class="form-control" placeholder="Ex: 45" required>
+    if (categoria === 'Rolamentos') {
+        // Cria um container extra fora do grid para os campos de ângulo
+        let angulosDiv = document.getElementById('camposAngulosRolamento');
+        if (!angulosDiv) {
+            angulosDiv = document.createElement('div');
+            angulosDiv.id = 'camposAngulosRolamento';
+            angulosDiv.style.display = 'none';
+            angulosDiv.style.marginTop = '10px';
+            angulosDiv.style.borderTop = '1px solid #dee2e6';
+            angulosDiv.style.paddingTop = '10px';
+            angulosDiv.innerHTML = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="campo-dinamico">
+                        <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo interno *</label>
+                        <input type="text" id="campo_angulo_interno" class="form-control" placeholder="Ex: 45" required>
+                    </div>
+                    <div class="campo-dinamico">
+                        <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo externo *</label>
+                        <input type="text" id="campo_angulo_externo" class="form-control" placeholder="Ex: 45" required>
+                    </div>
                 </div>
-                <div class="campo-dinamico">
-                    <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo externo *</label>
-                    <input type="text" id="campo_angulo_externo" class="form-control" placeholder="Ex: 45" required>
-                </div>
-            </div>
-            <small class="text-muted">Preencha os ângulos internos e externos (apenas números e vírgula).</small>
-        `;
-        container.appendChild(angulosDiv);
-    }
-
-    // Função para mostrar/ocultar os campos de ângulo
-    function toggleAngulos(valorAplicacao) {
-        if (!angulosDiv) return;
-        const shouldShow = (valorAplicacao === 'Cubo/Caixa de Direção');
-        angulosDiv.style.display = shouldShow ? 'block' : 'none';
-        // Tornar os campos obrigatórios ou não
-        const angInt = document.getElementById('campo_angulo_interno');
-        const angExt = document.getElementById('campo_angulo_externo');
-        if (angInt) angInt.required = shouldShow;
-        if (angExt) angExt.required = shouldShow;
-        
-        // Se esconder, limpar valores
-        if (!shouldShow) {
-            if (angInt) angInt.value = '';
-            if (angExt) angExt.value = '';
+                <small class="text-muted">Preencha os ângulos internos e externos (apenas números e vírgula).</small>
+            `;
+            container.appendChild(angulosDiv);
         }
-    }
 
-    // Se o select já existe, adicionar evento
-    if (aplicacaoSelect) {
-        // Remover eventos antigos para evitar duplicação
-        const newSelect = aplicacaoSelect.cloneNode(true);
-        aplicacaoSelect.parentNode.replaceChild(newSelect, aplicacaoSelect);
-        
-        newSelect.addEventListener('change', function(e) {
-            toggleAngulos(e.target.value);
-        });
-        
-        // Verificar valor inicial após um pequeno delay para garantir que tudo foi renderizado
-        setTimeout(() => {
-            toggleAngulos(newSelect.value);
-        }, 200);
-    } else {
-        // Se o select não foi encontrado, buscar novamente
+        // Função para mostrar/ocultar os campos de ângulo
+        function toggleAngulos(valorAplicacao) {
+            if (!angulosDiv) return;
+            const shouldShow = (valorAplicacao === 'Cubo/Caixa de Direção');
+            angulosDiv.style.display = shouldShow ? 'block' : 'none';
+            // Tornar os campos obrigatórios ou não
+            const angInt = document.getElementById('campo_angulo_interno');
+            const angExt = document.getElementById('campo_angulo_externo');
+            if (angInt) angInt.required = shouldShow;
+            if (angExt) angExt.required = shouldShow;
+            
+            // Se esconder, limpar valores
+            if (!shouldShow) {
+                if (angInt) angInt.value = '';
+                if (angExt) angExt.value = '';
+            }
+        }
+
+        // Buscar o select de aplicação
         const selectAplicacao = document.getElementById('campo_aplicaçao');
         if (selectAplicacao) {
-            selectAplicacao.addEventListener('change', function(e) {
+            // Remover eventos antigos
+            const novoSelect = selectAplicacao.cloneNode(true);
+            selectAplicacao.parentNode.replaceChild(novoSelect, selectAplicacao);
+            
+            novoSelect.addEventListener('change', function(e) {
                 toggleAngulos(e.target.value);
             });
+            
+            // Verificar valor inicial
             setTimeout(() => {
-                toggleAngulos(selectAplicacao.value);
-            }, 200);
+                toggleAngulos(novoSelect.value);
+            }, 300);
+        } else {
+            // Se não encontrou, buscar novamente
+            setTimeout(() => {
+                const selectAplicacaoRetry = document.getElementById('campo_aplicaçao');
+                if (selectAplicacaoRetry) {
+                    selectAplicacaoRetry.addEventListener('change', function(e) {
+                        toggleAngulos(e.target.value);
+                    });
+                    toggleAngulos(selectAplicacaoRetry.value);
+                }
+            }, 500);
         }
-    }
 
-    // Aplicar validação de números e vírgula também nos campos de ângulo
-    setTimeout(() => {
-        ['campo_angulo_interno', 'campo_angulo_externo'].forEach(id => {
-            const el = document.getElementById(id);
-            if (el) {
-                el.addEventListener('input', function() {
-                    this.value = this.value.replace(/[^0-9,]/g, '');
-                });
-                el.addEventListener('blur', function() {
-                    const val = this.value.trim();
-                    if (val !== '' && !/^[0-9]+(,[0-9]+)?$/.test(val)) {
-                        showToast('Digite apenas números e vírgula (ex: 45 ou 45,5)', 'warning');
-                        this.focus();
-                    }
-                });
-            }
-        });
-    }, 300);
-}
+        // Aplicar validação de números e vírgula também nos campos de ângulo
+        setTimeout(() => {
+            ['campo_angulo_interno', 'campo_angulo_externo'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('input', function() {
+                        this.value = this.value.replace(/[^0-9,]/g, '');
+                    });
+                    el.addEventListener('blur', function() {
+                        const val = this.value.trim();
+                        if (val !== '' && !/^[0-9]+(,[0-9]+)?$/.test(val)) {
+                            showToast('Digite apenas números e vírgula (ex: 45 ou 45,5)', 'warning');
+                            this.focus();
+                        }
+                    });
+                }
+            });
+        }, 300);
+    }
 
     // --- CONFIGURAR MODO BULK E KIT ---
     const bulkSection = document.getElementById('bulkAddSection');
     const kitContainer = document.getElementById('kitComposicaoContainer');
     const isEditing = document.getElementById('produtoId').value !== '';
     
-    // --- CORREÇÃO: Mostrar composição do kit para TODAS as categorias ---
     if (kitContainer) {
         kitContainer.style.display = 'block';
         configurarEventosKit();
     }
 
-    // Modo Bulk continua apenas para Raios (quando NÃO está editando)
     if (categoria === 'Raios' && !isEditing) {
         if (bulkSection) bulkSection.style.display = 'block';
         configurarBulkModeEvents();
     } else {
         if (bulkSection) bulkSection.style.display = 'none';
     }
-}        
+}       
 
 function atualizarModelosPorMarca(marcaSelecionada) {
     const selectModelo = document.getElementById('campo_modelo');
@@ -1182,7 +1191,6 @@ function validarMLBCodes(texto) {
     return true;
 }
 
-// ===== SALVAR PRODUTO (COM SUPORTE A MODO BULK E VALIDAÇÕES) =====
 // ===== SALVAR PRODUTO (COM SUPORTE A MODO BULK E VALIDAÇÕES) =====
 async function salvarProdutoEstoque() {
     const id = document.getElementById('produtoId').value;
@@ -1255,21 +1263,14 @@ async function salvarProdutoEstoque() {
         }
     }
 
-    // --- Coletar SKUs do kit (para TODAS as categorias) ---
+    // --- Coletar SKUs do kit ---
     let skusKit = [];
-    console.log('🔍 [salvarProdutoEstoque] Coletando SKUs do kit...');
-
     const tbody = document.getElementById('kitSkusBody');
     if (tbody) {
         const rows = tbody.querySelectorAll('tr');
-        console.log(`🔍 [salvarProdutoEstoque] ${rows.length} linhas encontradas na tabela`);
-        
-        rows.forEach((row, index) => {
+        rows.forEach((row) => {
             const isMuted = row.querySelector('.text-muted');
-            if (isMuted) {
-                console.log(`ℹ️ [salvarProdutoEstoque] Linha ${index} é a mensagem de vazio, ignorando`);
-                return;
-            }
+            if (isMuted) return;
             
             const skuFilhoInput = row.querySelector('.kit-sku-filho');
             const quantidadeInput = row.querySelector('.kit-quantidade');
@@ -1277,9 +1278,6 @@ async function salvarProdutoEstoque() {
             if (skuFilhoInput && quantidadeInput) {
                 const skuFilho = skuFilhoInput.value.trim();
                 const quantidade = parseInt(quantidadeInput.value) || 1;
-                
-                console.log(`📝 [salvarProdutoEstoque] Linha ${index}: SKU="${skuFilho}", Qtd=${quantidade}`);
-                
                 if (skuFilho) {
                     skusKit.push({ sku_filho: skuFilho, quantidade });
                 }
@@ -1287,7 +1285,7 @@ async function salvarProdutoEstoque() {
         });
     }
 
-    // --- MODO BULK (apenas para Raios, produto novo e painel ativo) ---
+    // --- MODO BULK ---
     const bulkPanel = document.getElementById('bulkModePanel');
     const isBulkMode = (categoria === 'Raios' && !id && bulkPanel && bulkPanel.style.display === 'block');
 
@@ -1302,20 +1300,16 @@ async function salvarProdutoEstoque() {
             const sku = row.querySelector('.bulk-sku')?.value?.trim();
             const quantidade = parseInt(row.querySelector('.bulk-quantidade')?.value) || 0;
 
-            if (!tamanho) {
-                showToast('Todos os tamanhos devem ser preenchidos', 'warning');
-                return;
-            }
-            if (!sku) {
-                showToast('Todos os SKUs devem ser preenchidos', 'warning');
+            if (!tamanho || !sku) {
+                showToast('Todos os tamanhos e SKUs devem ser preenchidos', 'warning');
                 return;
             }
             if (tamanhosSet.has(tamanho)) {
-                showToast(`Tamanho ${tamanho} duplicado na lista`, 'warning');
+                showToast(`Tamanho ${tamanho} duplicado`, 'warning');
                 return;
             }
             if (skusSet.has(sku)) {
-                showToast(`SKU ${sku} duplicado na lista`, 'warning');
+                showToast(`SKU ${sku} duplicado`, 'warning');
                 return;
             }
             tamanhosSet.add(tamanho);
@@ -1324,16 +1318,16 @@ async function salvarProdutoEstoque() {
         }
 
         if (bulkItems.length === 0) {
-            showToast('Adicione pelo menos um tamanho na tabela', 'warning');
+            showToast('Adicione pelo menos um tamanho', 'warning');
             return;
         }
 
-        if (!confirm(`Deseja criar ${bulkItems.length} produto(s) com os SKUs informados?`)) return;
+        if (!confirm(`Criar ${bulkItems.length} produto(s)?`)) return;
 
         let created = 0;
         let errors = [];
 
-        for (let item of bulkItems) {
+        for (const item of bulkItems) {
             const { data: existing } = await window.supabaseClient
                 .from('produtos_estoque')
                 .select('id')
@@ -1341,7 +1335,7 @@ async function salvarProdutoEstoque() {
                 .maybeSingle();
 
             if (existing) {
-                errors.push(`${item.sku} (SKU já existe)`);
+                errors.push(`${item.sku} (já existe)`);
                 continue;
             }
 
@@ -1370,11 +1364,10 @@ async function salvarProdutoEstoque() {
                 }
             } catch (err) {
                 errors.push(`${item.sku}: ${err.message}`);
-                console.error(err);
             }
         }
 
-        if (created > 0) showToast(`✅ ${created} produto(s) criado(s) em massa!`, 'success');
+        if (created > 0) showToast(`✅ ${created} produto(s) criado(s)!`, 'success');
         if (errors.length) showToast(`⚠️ Erros: ${errors.join(', ')}`, 'error');
 
         fecharModalProdutoEstoque();
@@ -1382,7 +1375,7 @@ async function salvarProdutoEstoque() {
         return;
     }
 
-    // --- MODO NORMAL (um produto) ---
+    // --- MODO NORMAL ---
     const sku = document.getElementById('produtoSKU').value.trim();
     if (!sku) {
         showToast('SKU é obrigatório', 'warning');
@@ -1402,9 +1395,11 @@ async function salvarProdutoEstoque() {
 
     try {
         let produtoSalvo;
-        
-        // CORREÇÃO: Verificar se id é válido antes de fazer update
-        if (id && id !== 'undefined' && id !== '') {
+
+        // VERIFICAR SE ID É VÁLIDO - CORREÇÃO PRINCIPAL
+        const idValido = id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
+
+        if (idValido) {
             // EDITANDO produto existente
             const { data, error } = await window.supabaseClient
                 .from('produtos_estoque')
@@ -1438,30 +1433,31 @@ async function salvarProdutoEstoque() {
             }
         }
 
-        // --- SALVAR SKUs DO KIT (se houver) ---
+        // --- SALVAR SKUs DO KIT ---
         if (sku && skusKit.length > 0) {
-            console.log('💾 Salvando SKUs do kit para o SKU pai:', sku);
             const result = await salvarSkusKit(sku, skusKit);
-            if (result.success) {
-                console.log('✅ SKUs do kit salvos com sucesso!');
-            } else {
-                console.error('❌ Erro ao salvar SKUs do kit:', result.error);
+            if (!result.success) {
+                console.error('Erro ao salvar SKUs do kit:', result.error);
                 showToast('Erro ao salvar composição do kit: ' + result.error, 'warning');
             }
         } else if (sku) {
-            console.log('🗑️ Removendo SKUs do kit para o SKU pai:', sku);
             await excluirSkusKit(sku);
         }
 
-        fecharModalProdutoEstoque();
+        // Fechar modal APENAS se não estiver vindo da entrada
+        if (!entradaEmProcessamento) {
+            fecharModalProdutoEstoque();
+        }
+
         await carregarProdutosEstoque();
 
-        // Se tiver MLB codes, sincronizar com ML
+        // Sincronizar com ML se tiver MLB codes
         if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length) {
             setTimeout(() => {
                 sincronizarEstoqueML(produtoSalvo);
             }, 500);
         }
+
     } catch (error) {
         console.error('Erro ao salvar produto:', error);
         showToast('Erro: ' + error.message, 'error');

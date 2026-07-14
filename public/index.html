@@ -682,6 +682,32 @@ body > * {
     color: white !important;
     opacity: 1;
 }
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: none; /* Importante: começa oculto */
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal:not(.hidden) {
+    display: flex !important;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    max-width: 800px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
     </style>
 </head>
 <body>
@@ -4669,6 +4695,96 @@ body > * {
     </div>
 </div>
 
+<!-- MODAL PARA CADASTRO/EDIÇÃO DE PRODUTO -->
+<div id="modalProdutoEstoque" class="modal hidden">
+    <div class="modal-content" style="max-width: 800px; width: 90%;">
+        <h3 id="modalProdutoTitle">Novo Produto</h3>
+        <input type="hidden" id="produtoId">
+
+        <div class="form-group">
+            <label><i class="fas fa-tags"></i> Categoria *</label>
+            <select id="produtoCategoria" class="form-control" required>
+                <option value="">Selecione uma categoria</option>
+                <option value="Eixos">Eixos Passantes</option>
+                <option value="Parafusos">Parafusos</option>
+                <option value="Rolamentos">Rolamentos</option>
+                <option value="Raios">Raios</option>
+                <option value="Arruelas">Arruelas</option>
+                <option value="Porcas">Porcas</option>
+                <option value="outros">Outros</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Nome do Produto *</label>
+            <input type="text" id="produtoNome" class="form-control" required>
+        </div>
+
+        <div class="form-group">
+            <label>SKU *</label>
+            <input type="text" id="produtoSKU" class="form-control" required>
+        </div>
+
+        <div class="form-group">
+            <label>Preço (R$)</label>
+            <input type="number" id="produtoPreco" class="form-control" step="0.01" value="0">
+        </div>
+
+        <div class="form-group">
+            <label>Quantidade inicial</label>
+            <input type="number" id="produtoQuantidade" class="form-control" value="0" min="0">
+        </div>
+
+        <!-- Área dinâmica para atributos específicos da categoria -->
+        <div id="camposDinamicosContainer" style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px;">
+            <h5><i class="fas fa-cog"></i> Atributos específicos da categoria</h5>
+            <div id="camposDinamicos" class="row g-3"></div>
+            
+            <!-- Área para adição em massa -->
+            <div id="bulkAddSection" style="display: none; margin-top: 15px; border-top: 1px solid #dee2e6; padding-top: 15px;">
+                <!-- conteúdo do bulk -->
+            </div>
+
+            <!-- Área para composição do Kit -->
+            <div id="kitComposicaoContainer" style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px; display: none;">
+                <h5><i class="fas fa-puzzle-piece"></i> Composição do Kit</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered" id="kitSkusTable">
+                        <thead>
+                            <tr>
+                                <th>SKU Filho</th>
+                                <th style="width: 100px;">Quantidade por Kit</th>
+                                <th style="width: 40px;">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kitSkusBody">
+                            <tr><td colspan="3" class="text-center text-muted">Nenhum SKU adicionado ao kit.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex gap-2 mb-2">
+                    <button type="button" id="addKitSkuBtn" class="btn btn-sm btn-secondary">
+                        <i class="fas fa-plus"></i> Adicionar SKU ao Kit
+                    </button>
+                    <button type="button" id="clearKitSkusBtn" class="btn btn-sm btn-outline-danger">
+                        <i class="fas fa-trash"></i> Limpar Todos
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Descrição / Observações</label>
+            <textarea id="produtoDescricao" class="form-control" rows="2"></textarea>
+        </div>
+
+        <div class="d-flex justify-content-between gap-2 mt-3">
+            <button class="btn btn-secondary" onclick="fecharModalProdutoEstoque()">Cancelar</button>
+            <button class="btn btn-success" id="salvarProdutoEstoqueBtn" onclick="salvarProdutoEstoque()">Salvar</button>
+        </div>
+    </div>
+</div>
+
 <!-- ===== SISTEMA DE GESTÃO DE ESTOQUE ===== -->
 <div id="estoqueGestaoSystem" class="hidden">
     <header class="main-header">
@@ -4723,144 +4839,6 @@ body > * {
         </div>
         <!-- ===== CONTAINER DE PAGINAÇÃO - FORA DA table-responsive ===== -->
         <div id="paginacaoEstoque" class="p-3 border-top"></div>
-    </div>
-</div>
-
-<!-- MODAL PARA CADASTRO/EDIÇÃO DE PRODUTO -->
-<div id="modalProdutoEstoque" class="modal hidden">
-    <div class="modal-content" style="max-width: 800px; width: 90%;">
-        <h3 id="modalProdutoTitle">Novo Produto</h3>
-        <input type="hidden" id="produtoId">
-
-        <div class="form-group">
-            <label><i class="fas fa-tags"></i> Categoria *</label>
-            <select id="produtoCategoria" class="form-control" required>
-                <option value="">Selecione uma categoria</option>
-                <option value="Eixos">Eixos Passantes</option>
-                <option value="Parafusos">Parafusos</option>
-                <option value="Rolamentos">Rolamentos</option>
-                <option value="Raios">Raios</option>
-                <option value="Arruelas">Arruelas</option>
-                <option value="Porcas">Porcas</option>
-                <option value="outros">Outros</option>
-            </select>
-        </div>
-
-        <div class="form-group">
-            <label>Nome do Produto *</label>
-            <input type="text" id="produtoNome" class="form-control" required>
-        </div>
-
-        <div class="form-group">
-            <label>SKU *</label>
-            <input type="text" id="produtoSKU" class="form-control" required>
-        </div>
-
-        <div class="form-group">
-            <label>Preço (R$)</label>
-            <input type="number" id="produtoPreco" class="form-control" step="0.01" value="0">
-        </div>
-
-        <div class="form-group">
-            <label>Quantidade inicial</label>
-            <input type="number" id="produtoQuantidade" class="form-control" value="0" min="0">
-        </div>
-
-        <!-- Área dinâmica para atributos específicos da categoria -->
-        <div id="camposDinamicosContainer" style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px;">
-            <h5><i class="fas fa-cog"></i> Atributos específicos da categoria</h5>
-            <div id="camposDinamicos" class="row g-3"></div>
-            
-            <!-- Área para adição em massa (visível apenas para categoria Raios e em modo criação) -->
-            <div id="bulkAddSection" style="display: none; margin-top: 15px; border-top: 1px solid #dee2e6; padding-top: 15px;">
-                <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6><i class="fas fa-layer-group"></i> Adicionar múltiplos tamanhos</h6>
-                    <button type="button" id="toggleBulkModeBtn" class="btn btn-sm btn-outline-primary">
-                        <i class="fas fa-plus-circle"></i> Ativar modo múltiplo
-                    </button>
-                </div>
-                <div id="bulkModePanel" style="display: none;">
-                    <div class="alert alert-info alert-sm">
-                        <i class="fas fa-info-circle"></i> Preencha os atributos comuns (marca, modelo, cabeça, MLB codes) e depois adicione os tamanhos com SKU e quantidade.
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered" id="bulkTamanhosTable">
-                            <thead>
-                                <tr>
-                                    <th>Tamanho (mm)</th>
-                                    <th>SKU</th>
-                                    <th>Quantidade inicial</th>
-                                    <th style="width: 40px"></th>
-                                </tr>
-                            </thead>
-                            <tbody id="bulkTamanhosBody">
-                                <tr>
-                                    <td><input type="number" class="form-control form-control-sm bulk-tamanho" placeholder="ex: 284" step="1" min="1"></td>
-                                    <td><input type="text" class="form-control form-control-sm bulk-sku" placeholder="SKU"></td>
-                                    <td><input type="number" class="form-control form-control-sm bulk-quantidade" value="0" min="0" step="1"></td>
-                                    <td><button type="button" class="btn btn-sm btn-danger remove-bulk-row"><i class="fas fa-trash"></i></button></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="d-flex gap-2 mb-2">
-                        <button type="button" id="addBulkRowBtn" class="btn btn-sm btn-secondary">
-                            <i class="fas fa-plus"></i> Adicionar outra linha
-                        </button>
-                        <button type="button" id="autoFillSkusBtn" class="btn btn-sm btn-info">
-                            <i class="fas fa-magic"></i> Preencher SKUs (Base + Tamanho)
-                        </button>
-                    </div>
-                    <div class="form-group mt-2">
-                        <label>SKU base (opcional)</label>
-                        <input type="text" id="bulkSkuBase" class="form-control" placeholder="Ex: RAIOSAPIMLASER">
-                        <small class="text-muted">
-                            Se informado, o botão "Preencher SKUs" gerará SKUs = BASE + "-" + TAMANHO.<br>
-                            Caso contrário, você deverá digitar cada SKU manualmente.
-                        </small>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Área para composição do Kit -->
-            <div id="kitComposicaoContainer" style="border-top: 2px solid #e9ecef; margin-top: 15px; padding-top: 15px; display: none;">
-                <h5><i class="fas fa-puzzle-piece"></i> Composição do Kit</h5>
-                <p class="text-muted small">Defina os SKUs que compõem este kit. O estoque do anúncio será limitado pelo SKU com menor disponibilidade.</p>
-                
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered" id="kitSkusTable">
-                        <thead>
-                            <tr>
-                                <th>SKU Filho</th>
-                                <th style="width: 100px;">Quantidade por Kit</th>
-                                <th style="width: 40px;">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody id="kitSkusBody">
-                            <tr><td colspan="3" class="text-center text-muted">Nenhum SKU adicionado ao kit.</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                <div class="d-flex gap-2 mb-2">
-                    <button type="button" id="addKitSkuBtn" class="btn btn-sm btn-secondary">
-                        <i class="fas fa-plus"></i> Adicionar SKU ao Kit
-                    </button>
-                    <button type="button" id="clearKitSkusBtn" class="btn btn-sm btn-outline-danger">
-                        <i class="fas fa-trash"></i> Limpar Todos
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <div class="form-group">
-            <label>Descrição / Observações</label>
-            <textarea id="produtoDescricao" class="form-control" rows="2"></textarea>
-        </div>
-
-        <div class="d-flex justify-content-between gap-2 mt-3">
-            <button class="btn btn-secondary" onclick="fecharModalProdutoEstoque()">Cancelar</button>
-            <button class="btn btn-success" onclick="salvarProdutoEstoque()">Salvar</button>
-        </div>
     </div>
 </div>
 
