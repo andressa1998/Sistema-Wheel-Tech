@@ -26,7 +26,7 @@ const camposPorCategoria = {
         { nome: "diametroint", label: "Diâmetro Interno", tipo: "text", placeholder: "Ex: 15 ou 15,5", obrigatorio: true, validacao: "numero_virgula" },
         { nome: "diametroext", label: "Diâmetro Externo", tipo: "text", placeholder: "Ex: 26 ou 26,5", obrigatorio: true, validacao: "numero_virgula" },
         { nome: "largura", label: "Largura", tipo: "number", placeholder: "Ex: 7", obrigatorio: true },
-        { nome: "aplicaçao", label: "Aplicação", tipo: "select", opcoes: ["Cubo", "Caixa de Direção", "Movimento Central", "Outros"] },
+        { nome: "aplicaçao", label: "Aplicação", tipo: "select", opcoes: ["Cubo/Caixa de Direção", "Movimento Central", "Outros"] },
         // Os campos "Ângulo interno" e "Ângulo externo" serão injetados dinamicamente via JS
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
@@ -144,6 +144,174 @@ async function carregarProdutosEstoque() {
         const tbody = document.getElementById('produtosEstoqueBody');
         if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-danger">Erro ao carregar produtos. Consulte o console.</td></tr>';
     }
+}
+
+// ============================================
+// FUNÇÕES PARA GERENCIAR SKUS DO KIT - VERSÃO COM DEBUG
+// ============================================
+
+async function carregarSkusKit(skuPai) {
+    console.log('🔍 [carregarSkusKit] INICIANDO busca para:', skuPai);
+    console.log('🔍 [carregarSkusKit] supabaseClient existe?', !!window.supabaseClient);
+    
+    if (!skuPai || !window.supabaseClient) {
+        console.log(`⚠️ [carregarSkusKit] SKU pai "${skuPai}" ou Supabase não disponível`);
+        return [];
+    }
+    
+    try {
+        console.log(`🔍 [carregarSkusKit] Buscando SKUs para o pai: "${skuPai}"`);
+        
+        const { data, error } = await window.supabaseClient
+            .from('produto_skus_kit')
+            .select('*')
+            .eq('sku_pai', skuPai);
+        
+        if (error) {
+            console.error(`❌ [carregarSkusKit] Erro na consulta:`, error);
+            throw error;
+        }
+        
+        console.log(`📦 [carregarSkusKit] ${data?.length || 0} SKUs encontrados:`, JSON.stringify(data, null, 2));
+        return data || [];
+        
+    } catch (error) {
+        console.error(`❌ [carregarSkusKit] Erro completo:`, error);
+        return [];
+    }
+}
+
+async function salvarSkusKit(skuPai, skusFilhos) {
+    console.log('💾 [salvarSkusKit] INICIANDO');
+    console.log('💾 [salvarSkusKit] skuPai:', skuPai);
+    console.log('💾 [salvarSkusKit] skusFilhos:', JSON.stringify(skusFilhos, null, 2));
+    console.log('💾 [salvarSkusKit] supabaseClient existe?', !!window.supabaseClient);
+    
+    if (!skuPai || !window.supabaseClient) {
+        console.error('❌ [salvarSkusKit] Dados inválidos', { skuPai, supabase: !!window.supabaseClient });
+        return { success: false, error: 'Dados inválidos' };
+    }
+    
+    try {
+        // 1. Buscar SKUs existentes para este pai
+        console.log(`🔍 [salvarSkusKit] Buscando SKUs existentes para: ${skuPai}`);
+        const { data: existentes, error: fetchError } = await window.supabaseClient
+            .from('produto_skus_kit')
+            .select('sku_filho, quantidade')
+            .eq('sku_pai', skuPai);
+        
+        if (fetchError) {
+            console.error('❌ [salvarSkusKit] Erro ao buscar SKUs existentes:', fetchError);
+            throw fetchError;
+        }
+        
+        console.log(`📊 [salvarSkusKit] SKUs existentes:`, JSON.stringify(existentes, null, 2));
+        
+        const skusExistentes = existentes.map(item => item.sku_filho);
+        const skusNovos = skusFilhos.map(item => item.sku_filho);
+        
+        console.log(`📊 [salvarSkusKit] SKUs existentes: ${skusExistentes.length}, SKUs novos: ${skusNovos.length}`);
+        console.log(`📊 [salvarSkusKit] skusExistentes:`, skusExistentes);
+        console.log(`📊 [salvarSkusKit] skusNovos:`, skusNovos);
+        
+        // 2. Remover SKUs que não estão mais na lista
+        const skusParaRemover = skusExistentes.filter(sku => !skusNovos.includes(sku));
+        console.log(`🗑️ [salvarSkusKit] Removendo ${skusParaRemover.length} SKUs:`, skusParaRemover);
+        
+        for (const sku of skusParaRemover) {
+            console.log(`🗑️ [salvarSkusKit] Removendo SKU: ${sku}`);
+            const { error: delError } = await window.supabaseClient
+                .from('produto_skus_kit')
+                .delete()
+                .eq('sku_pai', skuPai)
+                .eq('sku_filho', sku);
+            if (delError) {
+                console.error(`❌ [salvarSkusKit] Erro ao remover SKU ${sku}:`, delError);
+                throw delError;
+            }
+            console.log(`✅ [salvarSkusKit] SKU ${sku} removido`);
+        }
+        
+        // 3. Inserir ou atualizar SKUs
+        console.log(`📝 [salvarSkusKit] Inserindo/atualizando ${skusFilhos.length} SKUs`);
+        for (const item of skusFilhos) {
+            if (!item.sku_filho) {
+                console.warn('⚠️ [salvarSkusKit] SKU filho vazio, ignorando...');
+                continue;
+            }
+            
+            console.log(`📝 [salvarSkusKit] Salvando SKU: ${item.sku_filho}, quantidade: ${item.quantidade || 1}`);
+            
+            const { error: upsertError } = await window.supabaseClient
+                .from('produto_skus_kit')
+                .upsert({
+                    sku_pai: skuPai,
+                    sku_filho: item.sku_filho,
+                    quantidade: item.quantidade || 1
+                }, { onConflict: 'sku_pai, sku_filho' });
+            
+            if (upsertError) {
+                console.error(`❌ [salvarSkusKit] Erro ao salvar SKU ${item.sku_filho}:`, upsertError);
+                throw upsertError;
+            }
+            console.log(`✅ [salvarSkusKit] SKU ${item.sku_filho} salvo`);
+        }
+        
+        // 4. Verificar se os dados foram realmente salvos
+        console.log(`🔍 [salvarSkusKit] Verificando se os dados foram salvos...`);
+        const { data: verifyData, error: verifyError } = await window.supabaseClient
+            .from('produto_skus_kit')
+            .select('*')
+            .eq('sku_pai', skuPai);
+        
+        if (verifyError) {
+            console.warn('⚠️ [salvarSkusKit] Não foi possível verificar os dados:', verifyError);
+        } else {
+            console.log(`✅ [salvarSkusKit] Dados salvos verificados:`, JSON.stringify(verifyData, null, 2));
+        }
+        
+        console.log(`✅ [salvarSkusKit] SKUs do kit salvos com sucesso para ${skuPai}`);
+        return { success: true };
+        
+    } catch (error) {
+        console.error('❌ [salvarSkusKit] Erro ao salvar SKUs do kit:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+async function excluirSkusKit(skuPai) {
+    if (!skuPai || !window.supabaseClient) return { success: false, error: 'Dados inválidos' };
+    try {
+        const { error } = await window.supabaseClient
+            .from('produto_skus_kit')
+            .delete()
+            .eq('sku_pai', skuPai);
+        if (error) throw error;
+        return { success: true };
+    } catch (error) {
+        console.error('Erro ao excluir SKUs do kit:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Função para calcular quantos kits podem ser montados com base no estoque dos SKUs filhos
+function calcularKitsDisponiveis(skusFilhos, produtosEstoque) {
+    if (!skusFilhos || skusFilhos.length === 0) return Infinity; // Sem filhos, estoque ilimitado
+    
+    let kitsPossiveis = Infinity;
+    
+    for (const item of skusFilhos) {
+        const produto = produtosEstoque.find(p => p.sku === item.sku_filho);
+        if (!produto) {
+            // Se um SKU filho não existe no estoque, não é possível montar nenhum kit
+            return 0;
+        }
+        const quantidadeNecessaria = item.quantidade || 1;
+        const kitsDoProduto = Math.floor(produto.quantidade / quantidadeNecessaria);
+        kitsPossiveis = Math.min(kitsPossiveis, kitsDoProduto);
+    }
+    
+    return kitsPossiveis;
 }
 
 function filtrarProdutosEstoque() {
@@ -297,6 +465,8 @@ async function registrarMovimentacao(produtoId, tipo, quantidade, numeroDocument
 
 // ===== MODAL PRODUTO (COM CATEGORIA E CAMPOS DINÂMICOS) =====
 function abrirModalProdutoEstoque(produto = null) {
+    console.log('🚪 [abrirModalProdutoEstoque] Abrindo modal para:', produto?.sku || 'NOVO PRODUTO');
+    
     const modal = document.getElementById('modalProdutoEstoque');
     if (!modal) return;
     const title = document.getElementById('modalProdutoTitle');
@@ -319,7 +489,13 @@ function abrirModalProdutoEstoque(produto = null) {
         precoInput.value = produto.preco || 0;
         descInput.value = produto.descricao || '';
         categoriaSelect.value = produto.categoria || '';
+        
+        console.log('📦 [abrirModalProdutoEstoque] Produto SKU:', produto.sku);
+        
+        // Primeiro, gerar os campos dinâmicos
         gerarCamposDinamicos(produto.categoria);
+        
+        // Depois, preencher os dados extras
         const dadosExtra = produto.dados_extra || {};
         Object.keys(dadosExtra).forEach(chave => {
             const campo = document.getElementById(`campo_${chave}`);
@@ -333,6 +509,7 @@ function abrirModalProdutoEstoque(produto = null) {
                 }
             }
         });
+        
         if (produto.categoria === 'Raios') {
             const marcaField = document.getElementById('campo_marca');
             if (marcaField && marcaField.value) {
@@ -343,18 +520,40 @@ function abrirModalProdutoEstoque(produto = null) {
                 }
             }
         }
-        // Se for Rolamento e tiver ângulos, preencher
+        
         if (produto.categoria === 'Rolamentos') {
             const anguloInt = document.getElementById('campo_angulo_interno');
             const anguloExt = document.getElementById('campo_angulo_externo');
             if (anguloInt && dadosExtra.angulo_interno) anguloInt.value = dadosExtra.angulo_interno;
             if (anguloExt && dadosExtra.angulo_externo) anguloExt.value = dadosExtra.angulo_externo;
-            // Verificar se deve mostrar os campos
             const aplicacao = document.getElementById('campo_aplicaçao');
             if (aplicacao && aplicacao.value === 'Caixa de Direção') {
                 document.getElementById('camposAngulosRolamento').style.display = 'block';
             }
         }
+        
+        // --- CARREGAR SKUs DO KIT (para TODAS as categorias) ---
+// Aguardar o DOM ser completamente renderizado
+console.log('⏳ [abrirModalProdutoEstoque] Agendando carregamento dos SKUs do kit...');
+setTimeout(async () => {
+    const skuAtual = document.getElementById('produtoSKU').value;
+    console.log('🔍 [abrirModalProdutoEstoque] SKU atual do campo:', skuAtual);
+    
+    if (skuAtual) {
+        try {
+            const skus = await carregarSkusKit(skuAtual);
+            console.log('📦 [abrirModalProdutoEstoque] SKUs encontrados:', skus);
+            renderizarSkusKit(skus);
+        } catch (error) {
+            console.error('❌ [abrirModalProdutoEstoque] Erro ao carregar SKUs do kit:', error);
+            renderizarSkusKit([]);
+        }
+    } else {
+        console.warn('⚠️ [abrirModalProdutoEstoque] SKU pai vazio, não é possível carregar SKUs do kit');
+        renderizarSkusKit([]);
+    }
+}, 500);
+        
     } else {
         title.textContent = 'Novo Produto';
         idInput.value = '';
@@ -367,6 +566,7 @@ function abrirModalProdutoEstoque(produto = null) {
         descInput.value = '';
         categoriaSelect.value = '';
         gerarCamposDinamicos('');
+        renderizarSkusKit([]);
     }
 
     categoriaSelect.onchange = function() {
@@ -474,6 +674,13 @@ function gerarCamposDinamicos(categoria) {
         container.innerHTML = '<div class="alert alert-info">Nenhum campo específico para esta categoria.</div>';
         const bulkSection = document.getElementById('bulkAddSection');
         if (bulkSection) bulkSection.style.display = 'none';
+        
+        // --- CORREÇÃO: Mostrar kit para TODAS as categorias ---
+        const kitContainer = document.getElementById('kitComposicaoContainer');
+        if (kitContainer) {
+            kitContainer.style.display = 'block';
+            configurarEventosKit();
+        }
         return;
     }
 
@@ -485,7 +692,6 @@ function gerarCamposDinamicos(categoria) {
 
     // Guardar referência para campos condicionais de Rolamento
     let aplicacaoSelect = null;
-    let angulosContainer = null;
 
     campos.forEach(campo => {
         const div = document.createElement('div');
@@ -506,11 +712,9 @@ function gerarCamposDinamicos(categoria) {
             input.className = 'form-control';
             if (campo.placeholder) input.placeholder = campo.placeholder;
             if (campo.obrigatorio) input.required = true;
-            // Filtro em tempo real: apenas dígitos e vírgula
             input.addEventListener('input', function(e) {
                 this.value = this.value.replace(/[^0-9,]/g, '');
             });
-            // Validação no blur: se não for vazio e não for número com vírgula válido
             input.addEventListener('blur', function(e) {
                 const val = this.value.trim();
                 if (val !== '' && !/^[0-9]+(,[0-9]+)?$/.test(val)) {
@@ -546,10 +750,8 @@ function gerarCamposDinamicos(categoria) {
                     atualizarModelosPorMarca(e.target.value);
                 });
             }
-            // --- PARA ROLAMENTOS: guardar referência do select de aplicação ---
             if (categoria === 'Rolamentos' && campo.nome === 'aplicaçao') {
                 aplicacaoSelect = select;
-                // Inicialmente esconder os campos de ângulo
                 setTimeout(() => {
                     const angulosDiv = document.getElementById('camposAngulosRolamento');
                     if (angulosDiv) angulosDiv.style.display = 'none';
@@ -591,7 +793,7 @@ function gerarCamposDinamicos(categoria) {
             return;
         }
 
-        // --- INPUT GENÉRICO (number, text, etc) ---
+        // --- INPUT GENÉRICO ---
         const input = document.createElement('input');
         input.type = campo.tipo || 'text';
         input.id = `campo_${campo.nome}`;
@@ -610,7 +812,6 @@ function gerarCamposDinamicos(categoria) {
     //  CAMPOS CONDICIONAIS PARA ROLAMENTO "Caixa de Direção"
     // =========================================================
     if (categoria === 'Rolamentos') {
-        // Cria um container extra fora do grid para os campos de ângulo
         let angulosDiv = document.getElementById('camposAngulosRolamento');
         if (!angulosDiv) {
             angulosDiv = document.createElement('div');
@@ -635,30 +836,25 @@ function gerarCamposDinamicos(categoria) {
             container.appendChild(angulosDiv);
         }
 
-        // Função para mostrar/ocultar os campos de ângulo
         function toggleAngulos(valorAplicacao) {
             if (!angulosDiv) return;
             const shouldShow = (valorAplicacao === 'Caixa de Direção');
             angulosDiv.style.display = shouldShow ? 'block' : 'none';
-            // Tornar os campos obrigatórios ou não
             const angInt = document.getElementById('campo_angulo_interno');
             const angExt = document.getElementById('campo_angulo_externo');
             if (angInt) angInt.required = shouldShow;
             if (angExt) angExt.required = shouldShow;
         }
 
-        // Se o select já existe, adicionar evento
         if (aplicacaoSelect) {
             aplicacaoSelect.addEventListener('change', function(e) {
                 toggleAngulos(e.target.value);
             });
-            // Verificar valor inicial
             setTimeout(() => {
                 toggleAngulos(aplicacaoSelect.value);
             }, 100);
         }
 
-        // Aplicar validação de números e vírgula também nos campos de ângulo
         setTimeout(() => {
             ['campo_angulo_interno', 'campo_angulo_externo'].forEach(id => {
                 const el = document.getElementById(id);
@@ -671,16 +867,25 @@ function gerarCamposDinamicos(categoria) {
         }, 150);
     }
 
-    // --- CONFIGURAR MODO BULK (Raios) ---
+    // --- CONFIGURAR MODO BULK E KIT ---
     const bulkSection = document.getElementById('bulkAddSection');
+    const kitContainer = document.getElementById('kitComposicaoContainer');
     const isEditing = document.getElementById('produtoId').value !== '';
+    
+    // --- CORREÇÃO: Mostrar composição do kit para TODAS as categorias ---
+    if (kitContainer) {
+        kitContainer.style.display = 'block';
+        configurarEventosKit();
+    }
+
+    // Modo Bulk continua apenas para Raios (quando NÃO está editando)
     if (categoria === 'Raios' && !isEditing) {
         if (bulkSection) bulkSection.style.display = 'block';
         configurarBulkModeEvents();
     } else {
         if (bulkSection) bulkSection.style.display = 'none';
     }
-}
+}        
 
 function atualizarModelosPorMarca(marcaSelecionada) {
     const selectModelo = document.getElementById('campo_modelo');
@@ -810,6 +1015,46 @@ async function salvarProdutoEstoque() {
         }
     }
 
+    // --- Coletar SKUs do kit (para TODAS as categorias) ---
+let skusKit = [];
+console.log('🔍 [salvarProdutoEstoque] Coletando SKUs do kit...');
+
+const tbody = document.getElementById('kitSkusBody');
+if (tbody) {
+    const rows = tbody.querySelectorAll('tr');
+    console.log(`🔍 [salvarProdutoEstoque] ${rows.length} linhas encontradas na tabela`);
+    
+    rows.forEach((row, index) => {
+        // Verificar se é a linha de "nenhum SKU" (text-muted)
+        const isMuted = row.querySelector('.text-muted');
+        if (isMuted) {
+            console.log(`ℹ️ [salvarProdutoEstoque] Linha ${index} é a mensagem de vazio, ignorando`);
+            return;
+        }
+        
+        // Buscar os campos
+        const skuFilhoInput = row.querySelector('.kit-sku-filho');
+        const quantidadeInput = row.querySelector('.kit-quantidade');
+        
+        if (skuFilhoInput && quantidadeInput) {
+            const skuFilho = skuFilhoInput.value.trim();
+            const quantidade = parseInt(quantidadeInput.value) || 1;
+            
+            console.log(`📝 [salvarProdutoEstoque] Linha ${index}: SKU="${skuFilho}", Qtd=${quantidade}`);
+            
+            if (skuFilho) {
+                skusKit.push({ sku_filho: skuFilho, quantidade });
+            }
+        } else {
+            console.log(`⚠️ [salvarProdutoEstoque] Linha ${index} não tem os campos esperados`);
+        }
+    });
+} else {
+    console.warn('⚠️ [salvarProdutoEstoque] Elemento #kitSkusBody não encontrado');
+}
+
+console.log('📦 [salvarProdutoEstoque] SKUs do kit coletados:', JSON.stringify(skusKit, null, 2));
+
     // --- MODO BULK (apenas para Raios, produto novo e painel ativo) ---
     const bulkPanel = document.getElementById('bulkModePanel');
     const isBulkMode = (categoria === 'Raios' && !id && bulkPanel && bulkPanel.style.display === 'block');
@@ -927,6 +1172,7 @@ async function salvarProdutoEstoque() {
     try {
         let produtoSalvo;
         if (id) {
+            // EDITANDO produto existente
             const { data, error } = await window.supabaseClient
                 .from('produtos_estoque')
                 .update(produtoData)
@@ -936,6 +1182,7 @@ async function salvarProdutoEstoque() {
             produtoSalvo = data[0];
             showToast('Produto atualizado!', 'success');
         } else {
+            // CRIANDO novo produto
             const { data, error } = await window.supabaseClient
                 .from('produtos_estoque')
                 .insert([produtoData])
@@ -948,11 +1195,30 @@ async function salvarProdutoEstoque() {
             showToast('Produto adicionado!', 'success');
         }
 
+        // --- SALVAR SKUs DO KIT (se houver) ---
+        if (sku && skusKit.length > 0) {
+            console.log('💾 Salvando SKUs do kit para o SKU pai:', sku);
+            const result = await salvarSkusKit(sku, skusKit);
+            if (result.success) {
+                console.log('✅ SKUs do kit salvos com sucesso!');
+            } else {
+                console.error('❌ Erro ao salvar SKUs do kit:', result.error);
+                showToast('Erro ao salvar composição do kit: ' + result.error, 'warning');
+            }
+        } else if (sku) {
+            // Se não houver SKUs no kit, remover os existentes (limpar)
+            console.log('🗑️ Removendo SKUs do kit para o SKU pai:', sku);
+            await excluirSkusKit(sku);
+        }
+
         fecharModalProdutoEstoque();
         await carregarProdutosEstoque();
 
+        // Se tiver MLB codes, sincronizar com ML
         if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length) {
-            setTimeout(() => sincronizarEstoqueML(produtoSalvo), 500);
+            setTimeout(() => {
+                sincronizarEstoqueML(produtoSalvo);
+            }, 500);
         }
     } catch (error) {
         console.error('Erro ao salvar produto:', error);
@@ -1182,6 +1448,14 @@ async function sincronizarEstoqueML(produto) {
     const marcaProduto = produto.dados_extra?.marca || '';
     const modeloProduto = produto.dados_extra?.modelo || '';
 
+    // --- CARREGAR SKUS DO KIT (se existir) - para TODAS as categorias ---
+    const skusFilhos = await carregarSkusKit(skuProduto);
+    const isKitPai = skusFilhos && skusFilhos.length > 0;
+
+    if (isKitPai) {
+        console.log(`📦 Produto ${skuProduto} é um KIT pai com ${skusFilhos.length} SKUs filhos`);
+    }
+
     for (const codigo of codigos) {
         const itemId = codigo.startsWith('MLB') ? codigo : `MLB${codigo}`;
         const apiUrl = `https://api.mercadolibre.com/items/${itemId}`;
@@ -1210,7 +1484,7 @@ async function sincronizarEstoqueML(produto) {
                                 attributes: varDetails.attributes || v.attributes,
                                 attribute_combinations: varDetails.attribute_combinations || v.attribute_combinations,
                                 price: varDetails.price || v.price,
-                                user_product_id: varDetails.user_product_id || v.user_product_id // <-- importante para FULL
+                                user_product_id: varDetails.user_product_id || v.user_product_id
                             };
                             const skuExtraido = extrairSkuDaVariacao(item.variations[i]);
                             if (skuExtraido) console.log(`   Variação ${v.id}: SKU = ${skuExtraido}, Preço = ${item.variations[i].price}`);
@@ -1224,231 +1498,37 @@ async function sincronizarEstoqueML(produto) {
                 }
             }
 
-            // --- Verificar se é FULL ou convivência ---
-            const isFulfillment = item.tags?.includes('fulfillment') || 
-                                  item.shipping?.logistic_type === 'fulfillment' ||
-                                  item.logistic_type === 'fulfillment';
+            // =========================================================
+            // VERIFICAR SE É FULL
+            // =========================================================
+            // Um item é FULL se:
+            // - shipping.logistic_type for "fulfillment" OU
+            // - logistic_type for "fulfillment" OU
+            // - tiver a tag "fulfillment"
+            const isFulfillment = item.shipping?.logistic_type === 'fulfillment' || 
+                                  item.logistic_type === 'fulfillment' ||
+                                  item.tags?.includes('fulfillment');
 
-            // Verifica convivência: precisa ter a tag self_service_in e logistic_type fulfillment
-            const hasSelfService = item.tags?.includes('self_service_in') || false;
-            const isConvivio = isFulfillment && hasSelfService;
+            // Tem convivência se tiver a tag self_service_in (no item ou no shipping)
+            const hasSelfService = item.tags?.includes('self_service_in') || 
+                                   item.shipping?.tags?.includes('self_service_in');
 
-            console.log(`📦 Item ${itemId}: isFulfillment=${isFulfillment}, hasSelfService=${hasSelfService}, isConvivio=${isConvivio}`);
+            console.log(`📦 Item ${itemId}: isFulfillment=${isFulfillment}, hasSelfService=${hasSelfService}`);
 
-            // Se for FULL e tiver inventory_id, tentamos primeiro pela lógica de convivência
-            // (A lógica antiga de inventory_id será substituída ou mantida como fallback)
-            if (isFulfillment && isConvivio) {
-                // ---------- NOVA LÓGICA PARA CONVIVÊNCIA FULL/FLEX ----------
-                let userProductId = null;
-                let variacaoAlvo = null;
-
-                // 1) Determinar o user_product_id
-                if (item.variations && item.variations.length > 0) {
-                    variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
-                    if (variacaoAlvo && variacaoAlvo.user_product_id) {
-                        userProductId = variacaoAlvo.user_product_id;
-                    } else {
-                        // Se não encontrou pela SKU, tenta pegar o user_product_id da primeira variação que tenha
-                        for (const v of item.variations) {
-                            if (v.user_product_id) {
-                                userProductId = v.user_product_id;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    userProductId = item.user_product_id;
+            // =========================================================
+            // FUNÇÃO AUXILIAR PARA CALCULAR QUANTIDADE COM REGRAS
+            // =========================================================
+            function calcularQuantidadeComRegras(quantidadeBase, categoria, item, skuProduto, marcaProduto, modeloProduto, produto, isKitPai, skusFilhos) {
+                let quantidadeFinal = quantidadeBase;
+                
+                // --- SE FOR KIT ---
+                if (isKitPai) {
+                    const kitsDisponiveis = calcularKitsDisponiveis(skusFilhos, produtosEstoque);
+                    console.log(`📦 Produto é um KIT. Kits disponíveis: ${kitsDisponiveis}`);
+                    quantidadeFinal = kitsDisponiveis;
                 }
-
-                if (!userProductId) {
-                    console.warn(`⚠️ user_product_id não encontrado para ${itemId}. Pulando.`);
-                    results.push({ codigo: itemId, success: false, reason: 'sem_user_product_id' });
-                    continue;
-                }
-
-                // 2) Calcular a quantidade a ser enviada (respeitando regras de categoria)
-                let quantidadeParaEnviar = quantidadeReal;
-
-                if (categoria === 'Eixos') {
-                    let precoAnuncio = 0;
-                    if (item.variations && item.variations.length > 0) {
-                        const variacao = encontrarVariacaoPorSKU(item, skuProduto);
-                        if (variacao) precoAnuncio = variacao.price || 0;
-                        else precoAnuncio = item.price || 0;
-                    } else {
-                        precoAnuncio = item.price || 0;
-                    }
-                    const limite = precoAnuncio > 100 ? 2 : 10;
-                    quantidadeParaEnviar = Math.min(quantidadeReal, limite);
-                    console.log(`📊 Regra Eixos: preço=R$ ${precoAnuncio}, limite=${limite}, enviando=${quantidadeParaEnviar}`);
-                }
-                else if (categoria === 'Raios') {
-                    console.log(`\n===== PROCESSANDO RAIOS =====`);
-                    console.log(`Produto: ${produto.nome}, SKU: ${skuProduto}`);
-                    console.log(`Marca: ${marcaProduto}, Modelo: ${modeloProduto}`);
-                    console.log(`Estoque real (unidades): ${quantidadeReal}`);
-
-                    let skuAnuncio = null;
-                    if (item.variations && item.variations.length > 0) {
-                        let variacao = encontrarVariacaoPorSKU(item, skuProduto);
-                        if (variacao) {
-                            skuAnuncio = extrairSkuDaVariacao(variacao);
-                        } else {
-                            for (let v of item.variations) {
-                                let testSku = extrairSkuDaVariacao(v);
-                                if (testSku && testSku.match(/\d/)) {
-                                    skuAnuncio = testSku;
-                                    break;
-                                }
-                            }
-                        }
-                    } else {
-                        skuAnuncio = extrairSkuDoItem(item);
-                    }
-                    if (!skuAnuncio) {
-                        const matchId = item.id.match(/\d+$/);
-                        if (matchId) skuAnuncio = matchId[0];
-                    }
-                    console.log(`🔎 SKU encontrado no anúncio: "${skuAnuncio}"`);
-
-                    const isMultiSku = skuAnuncio && skuAnuncio.includes('.');
-                    let kitsPossiveis = 0;
-
-                    if (isMultiSku) {
-                        const partes = parseMultiSkuVariation(skuAnuncio);
-                        if (!partes || partes.length === 0) {
-                            console.warn("⚠️ Não foi possível parsear o multi-SKU.");
-                            quantidadeParaEnviar = 0;
-                        } else {
-                            console.log(`📦 Kit com ${partes.length} tamanhos:`, partes);
-                            let kitsPorTamanho = [];
-                            for (const parte of partes) {
-                                const produtoTamanho = produtosEstoque.find(p =>
-                                    p.categoria === 'Raios' &&
-                                    p.dados_extra?.marca === marcaProduto &&
-                                    p.dados_extra?.modelo === modeloProduto &&
-                                    p.dados_extra?.cabeçaraio === produto.dados_extra?.cabeçaraio &&
-                                    p.dados_extra?.tamanhoraio == parte.tamanho
-                                );
-                                if (!produtoTamanho) {
-                                    console.warn(`⚠️ Produto com tamanho ${parte.tamanho} não encontrado no estoque.`);
-                                    kitsPorTamanho.push(0);
-                                } else {
-                                    const estoqueUnidades = produtoTamanho.quantidade;
-                                    const kits = Math.floor(estoqueUnidades / parte.quantidadePorKit);
-                                    console.log(`   Tamanho ${parte.tamanho}: ${estoqueUnidades} un. → ${kits} kits (${parte.quantidadePorKit} un/kit)`);
-                                    kitsPorTamanho.push(kits);
-                                }
-                            }
-                            const minKits = Math.min(...kitsPorTamanho);
-                            kitsPossiveis = minKits > 0 ? minKits : 0;
-                            console.log(`📊 Kits possíveis (limitado pelo menor estoque): ${kitsPossiveis}`);
-                        }
-                    } else {
-                        const raiosPorKit = extrairUnidadesPorKit(skuAnuncio);
-                        console.log(`📦 Raios por kit (normal): ${raiosPorKit}`);
-                        kitsPossiveis = Math.floor(quantidadeReal / raiosPorKit);
-                        if (kitsPossiveis < 0) kitsPossiveis = 0;
-                        console.log(`📊 Estoque real: ${quantidadeReal} raios → ${kitsPossiveis} kits possíveis`);
-                    }
-
-                    const regra = obterRegraRaios(marcaProduto, modeloProduto);
-                    let kitsEnviar = kitsPossiveis;
-                    if (regra && regra.max_kits !== undefined) {
-                        kitsEnviar = Math.min(kitsPossiveis, regra.max_kits);
-                        console.log(`🏷️ Regra ${marcaProduto}|${modeloProduto}: limite ${regra.max_kits} kits → enviando ${kitsEnviar}`);
-                    } else {
-                        console.log(`🏷️ Sem regra específica. Enviando ${kitsEnviar} kits`);
-                    }
-                    quantidadeParaEnviar = kitsEnviar;
-                    console.log(`✅ Quantidade final enviada ao ML: ${quantidadeParaEnviar} kits`);
-                }
-
-                // 3) Obter versão atual (x-version)
-                const stockUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock`;
-                const stockProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`;
-                let getStockRes = await fetch(stockProxy);
-                if (!getStockRes.ok) {
-                    const errText = await getStockRes.text();
-                    console.error(`❌ Falha ao obter stock para ${userProductId}: ${getStockRes.status} - ${errText}`);
-                    results.push({ codigo: itemId, success: false, error: `GET stock ${getStockRes.status}` });
-                    continue;
-                }
-                const xVersion = getStockRes.headers.get('x-version');
-                if (!xVersion) {
-                    console.warn(`⚠️ x-version não retornado para ${userProductId}`);
-                    results.push({ codigo: itemId, success: false, reason: 'sem_x_version' });
-                    continue;
-                }
-
-                // 4) Atualizar estoque do selling_address (Flex)
-                const updateUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock/type/selling_address`;
-                const updateProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(updateUrl)}&token=${encodeURIComponent(token)}`;
-                const updateRes = await fetch(updateProxy, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-version': xVersion
-                    },
-                    body: JSON.stringify({ quantity: quantidadeParaEnviar })
-                });
-
-                if (updateRes.status === 204) {
-                    console.log(`✅ Estoque selling_address atualizado para ${quantidadeParaEnviar} (${itemId})`);
-                    results.push({ codigo: itemId, success: true, method: 'selling_address' });
-                } else if (updateRes.status === 409) {
-                    // Conflito de versão: tentar novamente com nova versão (máx 2 tentativas adicionais)
-                    console.warn(`⚠️ Conflito de versão para ${userProductId}, tentando novamente...`);
-                    let retries = 0;
-                    let success = false;
-                    while (retries < 2 && !success) {
-                        retries++;
-                        // Reobter versão
-                        const newStockRes = await fetch(stockProxy);
-                        if (!newStockRes.ok) break;
-                        const newXVersion = newStockRes.headers.get('x-version');
-                        if (!newXVersion) break;
-                        const retryRes = await fetch(updateProxy, {
-                            method: 'PUT',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'x-version': newXVersion
-                            },
-                            body: JSON.stringify({ quantity: quantidadeParaEnviar })
-                        });
-                        if (retryRes.status === 204) {
-                            success = true;
-                            console.log(`✅ Re-tentativa bem-sucedida: estoque selling_address atualizado para ${quantidadeParaEnviar} (${itemId})`);
-                            results.push({ codigo: itemId, success: true, method: 'selling_address_retry' });
-                            break;
-                        } else {
-                            const errMsg = await retryRes.text();
-                            console.warn(`⚠️ Tentativa ${retries} falhou: ${retryRes.status} - ${errMsg}`);
-                            await new Promise(r => setTimeout(r, 200));
-                        }
-                    }
-                    if (!success) {
-                        results.push({ codigo: itemId, success: false, reason: 'version_conflict_retry_failed' });
-                    }
-                } else {
-                    const errorText = await updateRes.text();
-                    console.error(`❌ Falha ao atualizar selling_address: ${updateRes.status} - ${errorText}`);
-                    results.push({ codigo: itemId, success: false, error: `selling_address ${updateRes.status}` });
-                }
-
-                continue; // pula para o próximo MLB (já processamos este)
-            }
-
-            // ---------- CASO NÃO SEJA CONVIVÊNCIA: usamos a lógica tradicional (já existente) ----------
-            // (Manter o código antigo para itens normais, incluindo fallback para inventory_id se for FULL sem convivência)
-            if (item.tags?.includes('has_price_by_rule')) {
-                console.warn(`⚠️ Item ${itemId} tem preço automático.`);
-                results.push({ codigo: itemId, success: false, reason: 'oferta_ativa' });
-                continue;
-            }
-
-            let quantidadeParaEnviar = quantidadeReal;
-            if (categoria === 'Eixos') {
+                
+                // --- REGRA UNIVERSAL DE PREÇO (aplicada a TODOS os produtos) ---
                 let precoAnuncio = 0;
                 if (item.variations && item.variations.length > 0) {
                     const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
@@ -1458,114 +1538,122 @@ async function sincronizarEstoqueML(produto) {
                     precoAnuncio = item.price || 0;
                 }
                 const limite = precoAnuncio > 100 ? 2 : 10;
-                quantidadeParaEnviar = Math.min(quantidadeReal, limite);
-                console.log(`📊 Regra Eixos: preço=R$ ${precoAnuncio}, limite=${limite}, enviando=${quantidadeParaEnviar}`);
+                quantidadeFinal = Math.min(quantidadeFinal, limite);
+                console.log(`📊 Regra Universal de Preço: preço=R$ ${precoAnuncio}, limite=${limite}, enviando=${quantidadeFinal}`);
+                
+                // --- REGRA ESPECÍFICA PARA RAIOS ---
+                if (categoria === 'Raios') {
+                    const regra = obterRegraRaios(marcaProduto, modeloProduto);
+                    if (regra && regra.max_kits !== undefined) {
+                        quantidadeFinal = Math.min(quantidadeFinal, regra.max_kits);
+                        console.log(`🏷️ Regra Raios ${marcaProduto}|${modeloProduto}: limite ${regra.max_kits} kits → enviando ${quantidadeFinal}`);
+                    }
+                }
+                
+                return Math.max(0, quantidadeFinal);
             }
-            else if (categoria === 'Raios') {
-                // Cálculo já feito acima, mas repetimos para itens não-FULL
-                // (se já caiu aqui é porque não é convivência, então o cálculo deve ser refeito)
-                // Para simplificar, usamos a mesma lógica de raios, mas já foi calculado para convivência,
-                // para não-FULL vamos recalcular (ou poderíamos aproveitar, mas faremos um bloco separado)
-                // Vamos copiar o bloco de raios do código original para manter consistência
-                console.log(`\n===== PROCESSANDO RAIOS (não-FULL) =====`);
-                let skuAnuncio = null;
+
+            // =========================================================
+            // CASO 1: FULL COM CONVIVÊNCIA (Full + Flex)
+            // =========================================================
+            if (isFulfillment && hasSelfService) {
+                console.log(`📦 Item ${itemId} é FULL com CONVIVÊNCIA (Full+Flex)`);
+                
+                // 1. Obter o user_product_id
+                let userProductId = null;
+                
                 if (item.variations && item.variations.length > 0) {
-                    let variacao = encontrarVariacaoPorSKU(item, skuProduto);
-                    if (variacao) {
-                        skuAnuncio = extrairSkuDaVariacao(variacao);
+                    const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+                    if (variacaoAlvo && variacaoAlvo.user_product_id) {
+                        userProductId = variacaoAlvo.user_product_id;
+                        console.log(`✅ user_product_id da variação: ${userProductId}`);
                     } else {
-                        for (let v of item.variations) {
-                            let testSku = extrairSkuDaVariacao(v);
-                            if (testSku && testSku.match(/\d/)) {
-                                skuAnuncio = testSku;
+                        // Se não encontrou pela SKU, pega o primeiro que tiver user_product_id
+                        for (const v of item.variations) {
+                            if (v.user_product_id) {
+                                userProductId = v.user_product_id;
+                                console.log(`✅ user_product_id da primeira variação: ${userProductId}`);
                                 break;
                             }
                         }
                     }
                 } else {
-                    skuAnuncio = extrairSkuDoItem(item);
+                    userProductId = item.user_product_id;
+                    console.log(`✅ user_product_id do item: ${userProductId}`);
                 }
-                if (!skuAnuncio) {
-                    const matchId = item.id.match(/\d+$/);
-                    if (matchId) skuAnuncio = matchId[0];
-                }
-                console.log(`🔎 SKU encontrado no anúncio: "${skuAnuncio}"`);
-                const isMultiSku = skuAnuncio && skuAnuncio.includes('.');
-                let kitsPossiveis = 0;
-
-                if (isMultiSku) {
-                    const partes = parseMultiSkuVariation(skuAnuncio);
-                    if (!partes || partes.length === 0) {
-                        console.warn("⚠️ Não foi possível parsear o multi-SKU.");
-                        quantidadeParaEnviar = 0;
-                    } else {
-                        console.log(`📦 Kit com ${partes.length} tamanhos:`, partes);
-                        let kitsPorTamanho = [];
-                        for (const parte of partes) {
-                            const produtoTamanho = produtosEstoque.find(p =>
-                                p.categoria === 'Raios' &&
-                                p.dados_extra?.marca === marcaProduto &&
-                                p.dados_extra?.modelo === modeloProduto &&
-                                p.dados_extra?.cabeçaraio === produto.dados_extra?.cabeçaraio &&
-                                p.dados_extra?.tamanhoraio == parte.tamanho
-                            );
-                            if (!produtoTamanho) {
-                                console.warn(`⚠️ Produto com tamanho ${parte.tamanho} não encontrado no estoque.`);
-                                kitsPorTamanho.push(0);
-                            } else {
-                                const estoqueUnidades = produtoTamanho.quantidade;
-                                const kits = Math.floor(estoqueUnidades / parte.quantidadePorKit);
-                                console.log(`   Tamanho ${parte.tamanho}: ${estoqueUnidades} un. → ${kits} kits (${parte.quantidadePorKit} un/kit)`);
-                                kitsPorTamanho.push(kits);
-                            }
-                        }
-                        const minKits = Math.min(...kitsPorTamanho);
-                        kitsPossiveis = minKits > 0 ? minKits : 0;
-                        console.log(`📊 Kits possíveis (limitado pelo menor estoque): ${kitsPossiveis}`);
-                    }
-                } else {
-                    const raiosPorKit = extrairUnidadesPorKit(skuAnuncio);
-                    console.log(`📦 Raios por kit (normal): ${raiosPorKit}`);
-                    kitsPossiveis = Math.floor(quantidadeReal / raiosPorKit);
-                    if (kitsPossiveis < 0) kitsPossiveis = 0;
-                    console.log(`📊 Estoque real: ${quantidadeReal} raios → ${kitsPossiveis} kits possíveis`);
+                
+                if (!userProductId) {
+                    console.warn(`⚠️ user_product_id não encontrado para ${itemId}. Pulando.`);
+                    results.push({ codigo: itemId, success: false, reason: 'sem_user_product_id' });
+                    continue;
                 }
 
-                const regra = obterRegraRaios(marcaProduto, modeloProduto);
-                let kitsEnviar = kitsPossiveis;
-                if (regra && regra.max_kits !== undefined) {
-                    kitsEnviar = Math.min(kitsPossiveis, regra.max_kits);
-                    console.log(`🏷️ Regra ${marcaProduto}|${modeloProduto}: limite ${regra.max_kits} kits → enviando ${kitsEnviar}`);
-                } else {
-                    console.log(`🏷️ Sem regra específica. Enviando ${kitsEnviar} kits`);
-                }
-                quantidadeParaEnviar = kitsEnviar;
-                console.log(`✅ Quantidade final enviada ao ML: ${quantidadeParaEnviar} kits`);
-            }
+                // 2. Calcular a quantidade com as regras
+                let quantidadeParaEnviar = calcularQuantidadeComRegras(
+                    quantidadeReal, categoria, item, skuProduto, 
+                    marcaProduto, modeloProduto, produto, isKitPai, skusFilhos
+                );
 
-            // --- FULL (inventory_id) - fallback para quando não é convivência, mas é FULL puro ---
-            const isFulfillmentOnly = isFulfillment && !hasSelfService;
-            if (item.inventory_id && isFulfillmentOnly) {
-                console.log(`📦 FULL puro (inventory) para ${item.inventory_id}`);
-                const invUrl = `https://api.mercadolibre.com/inventories/${item.inventory_id}/stock`;
-                const invProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(invUrl)}&token=${encodeURIComponent(token)}`;
-                const invRes = await fetch(invProxy, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ total: { available_quantity: quantidadeParaEnviar } })
-                });
-                if (invRes.ok) {
-                    console.log(`✅ FULL inventory atualizado para ${quantidadeParaEnviar}`);
-                    results.push({ codigo: itemId, success: true, method: 'inventory' });
+                console.log(`📊 [FULL] Quantidade a ser enviada: ${quantidadeParaEnviar}`);
+
+                // 3. Atualizar o estoque usando o endpoint correto para convivência
+                const resultado = await atualizarEstoqueFullConvivio(
+                    itemId, userProductId, quantidadeParaEnviar, token, WORKER_URL, item
+                );
+
+                if (resultado.success) {
+                    results.push({ 
+                        codigo: itemId, 
+                        success: true, 
+                        method: resultado.method || 'full_convivio' 
+                    });
                 } else {
-                    const errorText = await invRes.text();
-                    console.error(`❌ FULL inventory falhou: ${invRes.status} - ${errorText}`);
-                    results.push({ codigo: itemId, success: false, error: `FULL ${invRes.status}` });
+                    results.push({ 
+                        codigo: itemId, 
+                        success: false, 
+                        error: resultado.error 
+                    });
                 }
+
                 continue;
             }
 
-            // --- COM VARIAÇÕES (não-FULL ou sem inventory) ---
+            // =========================================================
+            // CASO 2: FULL PURO (sem convivência)
+            // =========================================================
+            if (isFulfillment && !hasSelfService) {
+                console.log(`📦 Item ${itemId} é FULL PURO (sem convivência)`);
+                console.log(`⚠️ Itens FULL puros NÃO podem ter estoque atualizado via API.`);
+                console.log(`ℹ️ Atualize manualmente no Mercado Livre.`);
+                
+                results.push({ 
+                    codigo: itemId, 
+                    success: false, 
+                    error: 'FULL puro - atualize manualmente no ML',
+                    ignorado: true 
+                });
+                continue;
+            }
+
+            // =========================================================
+            // CASO 3: ITEM NORMAL (não é FULL)
+            // =========================================================
+            console.log(`📦 Item ${itemId} é NORMAL (não é FULL).`);
+
+            // Verificar se tem preço automático
+            if (item.tags?.includes('has_price_by_rule')) {
+                console.warn(`⚠️ Item ${itemId} tem preço automático.`);
+                results.push({ codigo: itemId, success: false, reason: 'oferta_ativa' });
+                continue;
+            }
+
+            // Calcular quantidade com as regras
+            let quantidadeParaEnviar = calcularQuantidadeComRegras(
+                quantidadeReal, categoria, item, skuProduto, 
+                marcaProduto, modeloProduto, produto, isKitPai, skusFilhos
+            );
+
+            // --- COM VARIAÇÕES ---
             if (item.variations && item.variations.length > 0) {
                 const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
                 if (!variacaoAlvo) {
@@ -1703,11 +1791,303 @@ async function gerarNumeroMovimentacao() {
     return `MOV-${prefixo}-${String(sequencial).padStart(4, '0')}`;
 }
 
+// ============================================
+// FUNÇÕES PARA RENDERIZAR SKUS DO KIT
+// ============================================
+
+function renderizarSkusKit(skus) {
+    const tbody = document.getElementById('kitSkusBody');
+    if (!tbody) {
+        console.warn('⚠️ Elemento #kitSkusBody não encontrado');
+        return;
+    }
+    
+    tbody.innerHTML = '';
+    
+    if (!skus || skus.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Nenhum SKU adicionado ao kit.</td></tr>';
+        console.log('📭 Nenhum SKU para renderizar');
+        return;
+    }
+    
+    console.log(`📦 Renderizando ${skus.length} SKU(s) do kit:`, skus);
+    
+    skus.forEach((item) => {
+        const row = document.createElement('tr');
+        const skuFilho = typeof item === 'string' ? item : (item.sku_filho || '');
+        const quantidade = typeof item === 'string' ? 1 : (item.quantidade || 1);
+        
+        row.innerHTML = `
+            <td>
+                <input type="text" class="form-control form-control-sm kit-sku-filho" value="${escapeHtml(skuFilho)}" placeholder="SKU filho">
+            </td>
+            <td>
+                <input type="number" class="form-control form-control-sm kit-quantidade" value="${quantidade}" min="1" step="1">
+            </td>
+            <td>
+                <button type="button" class="btn btn-sm btn-danger remove-kit-sku">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+        
+        // Adicionar evento de remoção
+        row.querySelector('.remove-kit-sku').addEventListener('click', function() {
+            row.remove();
+            const rows = document.querySelectorAll('#kitSkusBody tr:not(.text-muted)');
+            if (rows.length === 0) {
+                document.getElementById('kitSkusBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Nenhum SKU adicionado ao kit.</td></tr>';
+            }
+        });
+    });
+}
+
+// =========================================================
+// FUNÇÃO PARA ATUALIZAR ESTOQUE DE ANÚNCIOS FULL (CONVIVÊNCIA) - VERSÃO BRASIL
+// =========================================================
+
+async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, token, workerUrl, item) {
+    try {
+        console.log(`📦 [FULL] Atualizando estoque do item ${itemId} para ${quantidade} unidades`);
+        
+        // =========================================================
+        // MÉTODO 1: Tentar via PUT /items/{item_id}/stock (endpoint Brasil)
+        // =========================================================
+        console.log(`🔄 [FULL] Tentando via PUT /items/${itemId}/stock...`);
+        
+        const stockUrl = `https://api.mercadolibre.com/items/${itemId}/stock`;
+        const stockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`;
+        
+        // Primeiro, obter o estoque atual para ver o formato
+        console.log(`🔍 [FULL] Obtendo estoque atual do item...`);
+        const getStockRes = await fetch(stockProxy);
+        
+        if (getStockRes.ok) {
+            const stockData = await getStockRes.json();
+            console.log(`📊 [FULL] Estoque atual do item:`, JSON.stringify(stockData, null, 2));
+            
+            // Para itens FULL, o corpo deve ser { "available_quantity": X }
+            const requestBody = { 
+                available_quantity: quantidade 
+            };
+            
+            console.log(`📤 [FULL] Corpo da requisição:`, JSON.stringify(requestBody, null, 2));
+            
+            const updateRes = await fetch(stockProxy, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+            
+            if (updateRes.status === 200 || updateRes.status === 204) {
+                console.log(`✅ [FULL] Estoque atualizado para ${quantidade} (${itemId}) via /items/stock`);
+                return { success: true, method: 'items_stock' };
+            } else {
+                const errorText = await updateRes.text();
+                console.warn(`⚠️ [FULL] Falha /items/stock: ${updateRes.status} - ${errorText}`);
+            }
+        } else {
+            const errText = await getStockRes.text();
+            console.warn(`⚠️ [FULL] Falha ao obter stock do item: ${getStockRes.status} - ${errText}`);
+        }
+        
+        // =========================================================
+        // MÉTODO 2: Tentar via user-products com o ID completo (já tentamos, mas vamos de novo)
+        // =========================================================
+        console.log(`🔄 [FULL] Tentando via /user-products/${userProductId}/stock...`);
+        
+        const userStockUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock`;
+        const userStockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(userStockUrl)}&token=${encodeURIComponent(token)}`;
+        
+        const getUserStockRes = await fetch(userStockProxy);
+        if (getUserStockRes.ok) {
+            const stockData = await getUserStockRes.json();
+            console.log(`📊 [FULL] Estoque user-products:`, JSON.stringify(stockData, null, 2));
+            
+            // Para user-products, enviar a estrutura completa de locations
+            const locations = stockData.locations || [];
+            const updatedLocations = locations.map(loc => {
+                if (loc.type === 'seller_warehouse' || loc.type === 'selling_address') {
+                    return { ...loc, quantity: quantidade };
+                }
+                return loc;
+            });
+            
+            const requestBody = { locations: updatedLocations };
+            
+            const updateRes = await fetch(userStockProxy, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+            
+            if (updateRes.status === 204) {
+                console.log(`✅ [FULL] Estoque atualizado via user-products para ${quantidade}`);
+                return { success: true, method: 'user_products_stock' };
+            } else {
+                const errorText = await updateRes.text();
+                console.warn(`⚠️ [FULL] Falha user-products: ${updateRes.status} - ${errorText}`);
+            }
+        }
+        
+        // =========================================================
+        // MÉTODO 3: Tentar via item principal (último recurso)
+        // =========================================================
+        console.log(`🔄 [FULL] Último recurso: tentando via item principal...`);
+        
+        const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
+        const itemProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
+        
+        const getItemRes = await fetch(itemProxy);
+        if (!getItemRes.ok) {
+            return { success: false, error: `GET item ${getItemRes.status}` };
+        }
+        
+        const itemData = await getItemRes.json();
+        const xVersion = getItemRes.headers.get('x-version');
+        
+        // Tentar atualizar o item principal
+        const updateBody = { available_quantity: quantidade };
+        const headers = { 'Content-Type': 'application/json' };
+        if (xVersion) headers['x-version'] = xVersion;
+        
+        const putItemRes = await fetch(itemProxy, {
+            method: 'PUT',
+            headers: headers,
+            body: JSON.stringify(updateBody)
+        });
+        
+        if (putItemRes.ok) {
+            console.log(`✅ [FULL] Item principal atualizado para ${quantidade}`);
+            return { success: true, method: 'item_principal' };
+        } else {
+            const errorText = await putItemRes.text();
+            console.error(`❌ [FULL] Item principal falhou: ${putItemRes.status} - ${errorText}`);
+            
+            if (errorText.includes('not_modifiable')) {
+                console.log(`⚠️ [FULL] Item é FULL e não pode ser atualizado diretamente.`);
+                console.log(`ℹ️ O estoque deste item FULL só pode ser atualizado via inbound no Mercado Livre.`);
+                console.log(`ℹ️ Ou através do endpoint /items/${itemId}/stock (se disponível).`);
+                return { 
+                    success: false, 
+                    error: 'FULL - estoque gerenciado pelo ML. Atualize via inbound ou /items/{id}/stock.' 
+                };
+            }
+            
+            return { success: false, error: `item ${putItemRes.status}` };
+        }
+        
+    } catch (error) {
+        console.error(`❌ [FULL] Erro:`, error);
+        return { success: false, error: error.message };
+    }
+}
+
+// =========================================================
+// FUNÇÃO PARA ATUALIZAR ESTOQUE FULL COM SELLER_WAREHOUSE (FALLBACK)
+// =========================================================
+
+async function atualizarEstoqueFullSellerWarehouse(userProductId, quantidade, token, workerUrl) {
+    try {
+        console.log(`📦 [FULL] Atualizando via seller_warehouse para ${userProductId}`);
+        
+        const stockUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock`;
+        const stockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`;
+        
+        const getStockRes = await fetch(stockProxy);
+        if (!getStockRes.ok) {
+            return { success: false, error: `GET stock ${getStockRes.status}` };
+        }
+        
+        const xVersion = getStockRes.headers.get('x-version');
+        
+        const updateUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock/type/seller_warehouse`;
+        const updateProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(updateUrl)}&token=${encodeURIComponent(token)}`;
+        
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        if (xVersion) {
+            headers['x-version'] = xVersion;
+        }
+        
+        const updateRes = await fetch(updateProxy, {
+            method: 'PUT',
+            headers: headers,
+            body: JSON.stringify({ quantity: quantidade })
+        });
+        
+        if (updateRes.status === 204) {
+            console.log(`✅ [FULL] seller_warehouse atualizado para ${quantidade}`);
+            return { success: true, method: 'seller_warehouse' };
+        } else {
+            const errorText = await updateRes.text();
+            console.error(`❌ [FULL] seller_warehouse falhou: ${updateRes.status} - ${errorText}`);
+            return { success: false, error: `seller_warehouse ${updateRes.status}` };
+        }
+        
+    } catch (error) {
+        console.error(`❌ [FULL] Erro:`, error);
+        return { success: false, error: error.message };
+    }
+}
+
+function configurarEventosKit() {
+    const addBtn = document.getElementById('addKitSkuBtn');
+    const clearBtn = document.getElementById('clearKitSkusBtn');
+    
+    if (addBtn) {
+        addBtn.onclick = function() {
+            const tbody = document.getElementById('kitSkusBody');
+            // Remover mensagem de vazio se existir
+            const emptyRow = tbody.querySelector('.text-muted');
+            if (emptyRow) emptyRow.remove();
+            
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>
+                    <input type="text" class="form-control form-control-sm kit-sku-filho" placeholder="SKU filho">
+                </td>
+                <td>
+                    <input type="number" class="form-control form-control-sm kit-quantidade" value="1" min="1" step="1">
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-danger remove-kit-sku">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+            
+            // Adicionar evento de remoção para a nova linha
+            row.querySelector('.remove-kit-sku').addEventListener('click', function() {
+                row.remove();
+                if (document.querySelectorAll('#kitSkusBody tr').length === 0) {
+                    document.getElementById('kitSkusBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Nenhum SKU adicionado ao kit.</td></tr>';
+                }
+            });
+        };
+    }
+    
+    if (clearBtn) {
+        clearBtn.onclick = function() {
+            if (confirm('Remover todos os SKUs do kit?')) {
+                document.getElementById('kitSkusBody').innerHTML = '<tr><td colspan="3" class="text-center text-muted">Nenhum SKU adicionado ao kit.</td></tr>';
+            }
+        };
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     const buscaInput = document.getElementById('buscaEstoqueInput');
     if (buscaInput) {
         buscaInput.addEventListener('input', filtrarProdutosEstoque);
     }
+    
+    // Configurar eventos do kit
+    configurarEventosKit();
+    
     setTimeout(async () => {
         if (!window.supabaseClient) return;
         try {
