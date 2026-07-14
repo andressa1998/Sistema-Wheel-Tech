@@ -427,9 +427,6 @@ async function renderizarEntradas() {
                             <button class="btn btn-sm btn-info" onclick="vincularProdutoExistente('${card.id}', ${item.id})" title="Vincular a um produto já existente">
                                 <i class="fas fa-link"></i> Já existe
                             </button>
-                            <button class="btn btn-sm btn-warning" onclick="abrirCadastroNovoComOS('${card.id}', ${item.id})" title="Cadastrar novo produto e criar OS para Elaine">
-                                <i class="fas fa-plus"></i> Produto Novo
-                            </button>
                             <button class="btn btn-sm btn-secondary" onclick="ignorarItem('${card.id}', ${item.id})" title="Ignorar este item">
                                 <i class="fas fa-ban"></i> Ignorar
                             </button>
