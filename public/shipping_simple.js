@@ -1,5 +1,7 @@
-// shipping_simple.js - VERSÃO COMPLETA COM EXPORTAÇÃO EXCEL
-console.log('🚚 shipping_simple.js carregado (v26 - com exportação Excel)');
+// shipping_simple.js - CORRIGIDO
+// Removida a coluna 'foto_url' da inserção no Supabase
+
+console.log('🚚 shipping_simple.js carregado (v27 - sem foto_url)');
 
 if (typeof window.WORKER_URL === 'undefined') {
     window.WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
@@ -247,17 +249,16 @@ async function buscarFretes() {
 
             let medidas = await buscarMedidasPorSKU(sku);
             let comprimento = 22, largura = 16, altura = 1, peso = 0.3;
-            let fotoUrl = null;
             if (medidas) {
                 comprimento = medidas.comprimento_cm || 22;
                 largura = medidas.largura_cm || 16;
                 altura = medidas.altura_cm || 1;
                 peso = medidas.peso_kg || 0.3;
-                fotoUrl = medidas.foto_url || null;
             }
 
             const pesoVolumetrico = calcularPesoVolumetrico(comprimento, largura, altura);
 
+            // REMOVIDO: foto_url da inserção
             registrosParaInserir.push({
                 id: idVenda,
                 titulo: titulo,
@@ -273,8 +274,8 @@ async function buscarFretes() {
                 comprimento_cm: comprimento,
                 largura_cm: largura,
                 altura_cm: altura,
-                peso_volumetrico: pesoVolumetrico,
-                foto_url: fotoUrl
+                peso_volumetrico: pesoVolumetrico
+                // foto_url removida
             });
 
             await new Promise(resolve => setTimeout(resolve, 200));
@@ -375,7 +376,7 @@ async function extrairFreteDaVenda(order, token) {
 }
 
 // ============================================
-// CARREGAR FRETES SALVOS (com armazenamento e filtro)
+// CARREGAR FRETES SALVOS
 // ============================================
 async function carregarFretesSalvos() {
     console.log('📂 Carregando fretes salvos...');
@@ -1218,10 +1219,8 @@ document.addEventListener('DOMContentLoaded', function() {
     criarModalEditorFoto();
 
     // INSERIR BOTÃO DE FILTRO E BOTÃO DE EXPORTAÇÃO
-    // Procurar o card-header que contém a contagem
     const headerContagem = document.querySelector('.card-header:has(#contagemFretes)');
     if (headerContagem) {
-        // Botão de filtro
         let btnFiltro = document.getElementById('btnFiltrarIncorretos');
         if (!btnFiltro) {
             btnFiltro = document.createElement('button');
@@ -1233,7 +1232,6 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log('✅ Botão de filtro inserido.');
         }
 
-        // Botão de exportar Excel
         let btnExport = document.getElementById('exportarFretesExcelBtn');
         if (!btnExport) {
             btnExport = document.createElement('button');
@@ -1246,7 +1244,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     } else {
         console.warn('⚠️ Não foi possível encontrar o local para inserir os botões.');
-        // Fallback: criar um container acima da tabela
         const tableContainer = document.querySelector('.table-responsive');
         if (tableContainer) {
             const wrapper = document.createElement('div');
@@ -1271,18 +1268,16 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Carregar fretes
     if (document.getElementById('shippingSimpleBody')) {
         carregarFretesSalvos();
     }
 
-    // Adicionar evento ao botão de buscar (se existir)
     const btnBuscar = document.getElementById('btnBuscarFretes');
     if (btnBuscar) {
         btnBuscar.addEventListener('click', buscarFretes);
     }
 
-    console.log('✅ shipping_simple.js PRONTO (com exportação Excel)');
+    console.log('✅ shipping_simple.js PRONTO (v27 - sem foto_url)');
 });
 
 // ============================================
