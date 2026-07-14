@@ -965,7 +965,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         const { data: produto, error: errProd } = await window.supabaseClient
             .from('produtos_estoque')
-            .select('quantidade')
+            .select('quantidade, dados_extra, historico_custos')
             .eq('id', produtoId)
             .single();
 
@@ -973,9 +973,47 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         const novaQuantidade = (produto.quantidade || 0) + quantidade;
 
+        // ==== SALVAR VALOR DE CUSTO ====
+        const valorCusto = item.valor_custo || 0;
+        let historicoCustos = produto.historico_custos || [];
+        
+        // Adicionar novo custo ao histórico
+        if (valorCusto > 0) {
+            historicoCustos.push({
+                valor: valorCusto,
+                data: new Date().toISOString(),
+                entrada: card.numero_entrada,
+                quantidade: quantidade,
+                usuario: currentUser.name
+            });
+            
+            // Manter apenas os últimos 50 registros
+            if (historicoCustos.length > 50) {
+                historicoCustos = historicoCustos.slice(-50);
+            }
+        }
+
+        // Calcular custo médio
+        const custosValidos = historicoCustos.filter(h => h.valor > 0);
+        const custoMedio = custosValidos.length > 0 
+            ? custosValidos.reduce((sum, h) => sum + h.valor, 0) / custosValidos.length 
+            : 0;
+
+        // Atualizar dados_extra com o custo
+        let dadosExtra = produto.dados_extra || {};
+        dadosExtra.ultimo_custo = valorCusto;
+        dadosExtra.custo_medio = custoMedio;
+        dadosExtra.historico_custos = historicoCustos;
+
         const { error: errUpdate } = await window.supabaseClient
             .from('produtos_estoque')
-            .update({ quantidade: novaQuantidade })
+            .update({ 
+                quantidade: novaQuantidade,
+                dados_extra: dadosExtra,
+                historico_custos: historicoCustos,
+                ultimo_custo: valorCusto,
+                custo_medio: custoMedio
+            })
             .eq('id', produtoId);
 
         if (errUpdate) throw errUpdate;
@@ -1019,7 +1057,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         if (errCard) throw errCard;
 
-        showToast(`✅ Entrada de ${quantidade} unidade(s) realizada!`, 'success');
+        showToast(`✅ Entrada de ${quantidade} unidade(s) realizada! Custo: R$ ${valorCusto.toFixed(2)}`, 'success');
         await carregarEntradas();
 
         if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {

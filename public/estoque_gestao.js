@@ -444,22 +444,39 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
         return;
     }
     
-    // Se não recebeu produtos para renderizar, usa todos
     const todosProdutos = produtosParaRenderizar || produtosEstoque;
     produtosFiltradosAtuais = todosProdutos;
     
-    console.log(`📊 [renderizarTabelaProdutos] Total de produtos: ${todosProdutos.length}`);
-    
     if (todosProdutos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto encontrado.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Nenhum produto encontrado.</td></tr>';
         atualizarPaginacaoEstoque(todosProdutos.length);
         return;
     }
 
-    // Calcular paginação
+    // Verificar se o usuário é admin (para ver custos)
+    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald' || currentUser.role === 'admin');
+    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'Administrador');
+
+    // Atualizar o cabeçalho da tabela
+    const thead = document.querySelector('#produtosEstoqueTable thead tr');
+    if (thead) {
+        let headerHtml = `
+            <th>ID</th>
+            <th>Nome / Categoria</th>
+            <th>SKU</th>
+            <th>Quantidade</th>
+        `;
+        if (podeVerCusto) {
+            headerHtml += `
+                <th>Último Custo</th>
+                <th>Custo Médio</th>
+            `;
+        }
+        headerHtml += `<th>Atributos</th><th>Ações</th>`;
+        thead.innerHTML = headerHtml;
+    }
+
     const totalPaginas = Math.ceil(todosProdutos.length / itensPorPaginaEstoque);
-    console.log(`📊 [renderizarTabelaProdutos] Total páginas: ${totalPaginas}, itens por página: ${itensPorPaginaEstoque}`);
-    
     if (paginaAtualEstoque > totalPaginas) paginaAtualEstoque = totalPaginas;
     if (paginaAtualEstoque < 1) paginaAtualEstoque = 1;
     
@@ -467,15 +484,7 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     const fim = Math.min(inicio + itensPorPaginaEstoque, todosProdutos.length);
     const produtosPagina = todosProdutos.slice(inicio, fim);
     
-    console.log(`📊 [renderizarTabelaProdutos] Exibindo produtos ${inicio + 1} a ${fim} (${produtosPagina.length} itens)`);
-    
     tbody.innerHTML = '';
-    
-    if (produtosPagina.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto nesta página.</td></tr>';
-        atualizarPaginacaoEstoque(todosProdutos.length);
-        return;
-    }
     
     produtosPagina.forEach(prod => {
         const row = document.createElement('tr');
@@ -486,35 +495,53 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             if (Object.keys(prod.dados_extra).length > 2) atributosResumo += '...';
         }
         
-        // VERIFICAR MLB CODES (agora em mlb_codes)
-        const mlbCodes = prod.mlb_codes;
+        const mlbCodes = prod.mlb_codes || prod.dados_extra?.mlb_codes;
         const temMLB = mlbCodes && ((Array.isArray(mlbCodes) && mlbCodes.length > 0) || (typeof mlbCodes === 'string' && mlbCodes.trim() !== ''));
+        
+        // Obter custos
+        const ultimoCusto = prod.ultimo_custo || prod.dados_extra?.ultimo_custo || 0;
+        const custoMedio = prod.custo_medio || prod.dados_extra?.custo_medio || 0;
         
         let botoes = `
             <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
             <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
             <button class="btn btn-sm btn-secondary" onclick="verHistoricoMovimentacoes(${prod.id})" title="Histórico"><i class="fas fa-history"></i></button>
-            <button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})" title="Excluir"><i class="fas fa-trash"></i></button>
         `;
+        
+        if (isAdmin) {
+            botoes += `<button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})" title="Excluir"><i class="fas fa-trash"></i></button>`;
+        }
+        
         if (temMLB) {
             botoes += `<button class="btn btn-sm btn-primary" onclick="sincronizarProdutoML(${prod.id})" title="Sincronizar estoque com ML"><i class="fab fa-mercadolibre"></i></button>`;
         }
         
-        row.innerHTML = `
+        let rowHtml = `
             <td>${prod.id}</td>
             <td><strong>${escapeHtml(prod.nome)}</strong><br><small class="text-muted">${escapeHtml(prod.categoria || 'sem categoria')}</small></td>
             <td>${escapeHtml(prod.sku)}</td>
             <td class="${prod.quantidade <= 5 ? 'text-danger fw-bold' : ''}">${prod.quantidade}</td>
+        `;
+        
+        if (podeVerCusto) {
+            rowHtml += `
+                <td>${ultimoCusto > 0 ? `R$ ${parseFloat(ultimoCusto).toFixed(2)}` : '-'}</td>
+                <td>${custoMedio > 0 ? `R$ ${parseFloat(custoMedio).toFixed(2)}` : '-'}</td>
+            `;
+        }
+        
+        rowHtml += `
             <td>
                 <span title="${escapeHtml(atributosResumo)}" class="badge bg-info">${Object.keys(prod.dados_extra || {}).length} atributos</span>
                 ${temMLB ? `<span class="badge bg-success"><i class="fab fa-mercadolibre"></i> ${Array.isArray(mlbCodes) ? mlbCodes.length : 1}</span>` : ''}
             </td>
             <td><div class="d-flex flex-wrap gap-1">${botoes}</div></td>
         `;
+        
+        row.innerHTML = rowHtml;
         tbody.appendChild(row);
     });
     
-    // Atualizar controles de paginação
     atualizarPaginacaoEstoque(todosProdutos.length);
     console.log('✅ [renderizarTabelaProdutos] Renderização concluída!');
 }
@@ -1204,7 +1231,7 @@ async function salvarProdutoEstoque() {
         return;
     }
 
-    // Coletar dados extras da categoria (atributos comuns)
+    // Coletar dados extras
     const dadosExtra = {};
     const campos = camposPorCategoria[categoria] || [];
     for (const campo of campos) {
@@ -1215,7 +1242,7 @@ async function salvarProdutoEstoque() {
             } else if (campo.nome === 'mlb_codes' && el.value.trim()) {
                 const mlbText = el.value.trim();
                 if (!validarMLBCodes(mlbText)) {
-                    showToast(`Formato inválido para MLB Codes. Use: "MLB1496273494, MLB4220545731" (cada um com 13 caracteres, separados por ", ")`, 'error');
+                    showToast(`Formato inválido para MLB Codes. Use: "MLB1496273494, MLB4220545731"`, 'error');
                     el.focus();
                     return;
                 }
@@ -1226,7 +1253,7 @@ async function salvarProdutoEstoque() {
                 if (campo.tipo === 'number' && valor !== '') valor = parseFloat(valor);
                 if (campo.validacao === 'numero_virgula' && valor !== '') {
                     if (!/^[0-9]+(,[0-9]+)?$/.test(valor)) {
-                        showToast(`O campo "${campo.label}" deve conter apenas números e vírgula (ex: 15 ou 15,5)`, 'warning');
+                        showToast(`O campo "${campo.label}" deve conter apenas números e vírgula`, 'warning');
                         el.focus();
                         return;
                     }
@@ -1236,7 +1263,7 @@ async function salvarProdutoEstoque() {
         }
     }
 
-    // --- Capturar campos de ângulo (Rolamento) se estiverem visíveis ---
+    // Capturar campos de ângulo
     if (categoria === 'Rolamentos') {
         const anguloInt = document.getElementById('campo_angulo_interno');
         const anguloExt = document.getElementById('campo_angulo_externo');
@@ -1263,7 +1290,7 @@ async function salvarProdutoEstoque() {
         }
     }
 
-    // --- Coletar SKUs do kit ---
+    // Coletar SKUs do kit
     let skusKit = [];
     const tbody = document.getElementById('kitSkusBody');
     if (tbody) {
@@ -1285,7 +1312,7 @@ async function salvarProdutoEstoque() {
         });
     }
 
-    // --- MODO BULK ---
+    // MODO BULK
     const bulkPanel = document.getElementById('bulkModePanel');
     const isBulkMode = (categoria === 'Raios' && !id && bulkPanel && bulkPanel.style.display === 'block');
 
@@ -1349,7 +1376,11 @@ async function salvarProdutoEstoque() {
                 preco: preco,
                 descricao: descricao,
                 categoria: categoria,
-                dados_extra: produtoDadosExtra
+                dados_extra: produtoDadosExtra,
+                // Inicializar campos de custo
+                ultimo_custo: 0,
+                custo_medio: 0,
+                historico_custos: []
             };
 
             try {
@@ -1375,13 +1406,27 @@ async function salvarProdutoEstoque() {
         return;
     }
 
-    // --- MODO NORMAL ---
+    // MODO NORMAL
     const sku = document.getElementById('produtoSKU').value.trim();
     if (!sku) {
         showToast('SKU é obrigatório', 'warning');
         return;
     }
     const quantidade = parseInt(document.getElementById('produtoQuantidade').value) || 0;
+
+    // Manter custos existentes se for edição
+    let ultimoCusto = 0;
+    let custoMedio = 0;
+    let historicoCustos = [];
+    
+    if (id) {
+        const produtoExistente = produtosEstoque.find(p => p.id == id);
+        if (produtoExistente) {
+            ultimoCusto = produtoExistente.ultimo_custo || produtoExistente.dados_extra?.ultimo_custo || 0;
+            custoMedio = produtoExistente.custo_medio || produtoExistente.dados_extra?.custo_medio || 0;
+            historicoCustos = produtoExistente.historico_custos || [];
+        }
+    }
 
     const produtoData = {
         nome,
@@ -1390,17 +1435,18 @@ async function salvarProdutoEstoque() {
         preco,
         descricao,
         categoria,
-        dados_extra: dadosExtra
+        dados_extra: dadosExtra,
+        ultimo_custo: ultimoCusto,
+        custo_medio: custoMedio,
+        historico_custos: historicoCustos
     };
 
     try {
         let produtoSalvo;
 
-        // VERIFICAR SE ID É VÁLIDO - CORREÇÃO PRINCIPAL
         const idValido = id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
 
         if (idValido) {
-            // EDITANDO produto existente
             const { data, error } = await window.supabaseClient
                 .from('produtos_estoque')
                 .update(produtoData)
@@ -1415,7 +1461,6 @@ async function salvarProdutoEstoque() {
                 return;
             }
         } else {
-            // CRIANDO novo produto
             const { data, error } = await window.supabaseClient
                 .from('produtos_estoque')
                 .insert([produtoData])
@@ -1433,7 +1478,7 @@ async function salvarProdutoEstoque() {
             }
         }
 
-        // --- SALVAR SKUs DO KIT ---
+        // SALVAR SKUs DO KIT
         if (sku && skusKit.length > 0) {
             const result = await salvarSkusKit(sku, skusKit);
             if (!result.success) {
@@ -1444,14 +1489,12 @@ async function salvarProdutoEstoque() {
             await excluirSkusKit(sku);
         }
 
-        // Fechar modal APENAS se não estiver vindo da entrada
         if (!entradaEmProcessamento) {
             fecharModalProdutoEstoque();
         }
 
         await carregarProdutosEstoque();
 
-        // Sincronizar com ML se tiver MLB codes
         if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length) {
             setTimeout(() => {
                 sincronizarEstoqueML(produtoSalvo);
