@@ -448,7 +448,7 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     produtosFiltradosAtuais = todosProdutos;
     
     if (todosProdutos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Nenhum produto encontrado.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhum produto encontrado.</td></tr>';
         atualizarPaginacaoEstoque(todosProdutos.length);
         return;
     }
@@ -472,7 +472,12 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
                 <th>Custo Médio</th>
             `;
         }
-        headerHtml += `<th>Atributos</th><th>Ações</th>`;
+        // ===== ADICIONAR COLUNA SYNC ML =====
+        headerHtml += `
+            <th>Sync ML</th>
+            <th>Atributos</th>
+            <th>Ações</th>
+        `;
         thead.innerHTML = headerHtml;
     }
 
@@ -502,6 +507,12 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
         const ultimoCusto = prod.ultimo_custo || prod.dados_extra?.ultimo_custo || 0;
         const custoMedio = prod.custo_medio || prod.dados_extra?.custo_medio || 0;
         
+        // ===== VERIFICAR BLOQUEIO DE SINCRONIZAÇÃO =====
+        const syncBloqueado = prod.bloquear_sync_ml || prod.dados_extra?.bloquear_sync_ml || false;
+        const syncStatusHtml = syncBloqueado 
+            ? '<span class="sync-status-badge bloqueado"><i class="fas fa-lock"></i> Bloqueado</span>'
+            : '<span class="sync-status-badge ativo"><i class="fas fa-check-circle"></i> Ativo</span>';
+        
         let botoes = `
             <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
             <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
@@ -530,7 +541,9 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             `;
         }
         
+        // ===== ADICIONAR COLUNA SYNC ML =====
         rowHtml += `
+            <td>${syncStatusHtml}</td>
             <td>
                 <span title="${escapeHtml(atributosResumo)}" class="badge bg-info">${Object.keys(prod.dados_extra || {}).length} atributos</span>
                 ${temMLB ? `<span class="badge bg-success"><i class="fab fa-mercadolibre"></i> ${Array.isArray(mlbCodes) ? mlbCodes.length : 1}</span>` : ''}
@@ -693,8 +706,6 @@ async function registrarMovimentacao(produtoId, tipo, quantidade, numeroDocument
     }
 }
 
-// ===== MODAL PRODUTO (COM CATEGORIA E CAMPOS DINÂMICOS) =====
-// ===== MODAL PRODUTO (COM CATEGORIA E CAMPOS DINÂMICOS) =====
 function abrirModalProdutoEstoque(produto = null) {
     console.log('🚪 [abrirModalProdutoEstoque] Abrindo modal para:', produto?.sku || 'NOVO PRODUTO');
     
@@ -713,10 +724,23 @@ function abrirModalProdutoEstoque(produto = null) {
     const precoInput = document.getElementById('produtoPreco');
     const descInput = document.getElementById('produtoDescricao');
     const categoriaSelect = document.getElementById('produtoCategoria');
+    const toggleSync = document.getElementById('bloquearSyncML');
+    const syncStatusLabel = document.getElementById('mlSyncStatusLabel');
 
-    // Verificar se todos os elementos existem
+    // Verificar se o usuário é admin
+    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'Administrador');
+    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald' || isAdmin);
+
+    // Controle do toggle - apenas admin pode modificar
+    if (toggleSync) {
+        toggleSync.disabled = !isAdmin;
+        if (!isAdmin) {
+            toggleSync.title = 'Apenas administradores podem modificar esta configuração';
+        }
+    }
+
     if (!title || !idInput || !nomeInput || !skuInput || !qtdInput || !precoInput || !descInput || !categoriaSelect) {
-        console.error('❌ Um ou mais elementos do modal não foram encontrados!');
+        console.error('❌ Elementos do modal não encontrados!');
         showToast('Erro: Elementos do modal não encontrados', 'error');
         return;
     }
@@ -734,12 +758,18 @@ function abrirModalProdutoEstoque(produto = null) {
         descInput.value = produto.descricao || '';
         categoriaSelect.value = produto.categoria || '';
         
-        console.log('📦 [abrirModalProdutoEstoque] Editando produto:', produto.sku);
+        // Carregar status do toggle
+        const syncBloqueado = produto.bloquear_sync_ml || produto.dados_extra?.bloquear_sync_ml || false;
+        if (toggleSync) {
+            toggleSync.checked = syncBloqueado;
+            atualizarStatusSyncLabel(toggleSync.checked);
+        }
         
-        // Gerar campos dinâmicos
+        console.log('📦 [abrirModalProdutoEstoque] Editando produto:', produto.sku);
+        console.log('🔒 Sync ML bloqueado?', syncBloqueado);
+        
         gerarCamposDinamicos(produto.categoria);
         
-        // Preencher dados extras
         const dadosExtra = produto.dados_extra || {};
         Object.keys(dadosExtra).forEach(chave => {
             const campo = document.getElementById(`campo_${chave}`);
@@ -772,11 +802,11 @@ function abrirModalProdutoEstoque(produto = null) {
             if (anguloExt && dadosExtra.angulo_externo) anguloExt.value = dadosExtra.angulo_externo;
             const aplicacao = document.getElementById('campo_aplicaçao');
             if (aplicacao && aplicacao.value === 'Cubo/Caixa de Direção') {
-                document.getElementById('camposAngulosRolamento').style.display = 'block';
+                const angulosDiv = document.getElementById('camposAngulosRolamento');
+                if (angulosDiv) angulosDiv.style.display = 'block';
             }
         }
         
-        // Carregar SKUs do kit
         setTimeout(async () => {
             const skuAtual = document.getElementById('produtoSKU').value;
             if (skuAtual) {
@@ -802,11 +832,24 @@ function abrirModalProdutoEstoque(produto = null) {
         precoInput.value = '0';
         descInput.value = '';
         categoriaSelect.value = '';
+        
+        // Toggle padrão: desbloqueado (sincronização ativa)
+        if (toggleSync) {
+            toggleSync.checked = false;
+            atualizarStatusSyncLabel(false);
+        }
+        
         gerarCamposDinamicos('');
         renderizarSkusKit([]);
     }
 
-    // Configurar evento de mudança de categoria
+    // Evento para atualizar o label quando o toggle mudar
+    if (toggleSync) {
+        toggleSync.onchange = function() {
+            atualizarStatusSyncLabel(this.checked);
+        };
+    }
+
     categoriaSelect.onchange = function() {
         const novaCategoria = categoriaSelect.value;
         const produtoAtual = document.getElementById('produtoId').value;
@@ -819,15 +862,43 @@ function abrirModalProdutoEstoque(produto = null) {
         gerarCamposDinamicos(novaCategoria);
     };
 
-    // ===== FORÇAR A EXIBIÇÃO DO MODAL =====
-    modal.classList.remove('hidden');
+    // Forçar exibição do modal
     modal.style.display = 'flex';
     modal.style.alignItems = 'center';
     modal.style.justifyContent = 'center';
-    modal.style.zIndex = '9999';
+    modal.style.position = 'fixed';
+    modal.style.top = '0';
+    modal.style.left = '0';
+    modal.style.width = '100%';
+    modal.style.height = '100%';
+    modal.style.backgroundColor = 'rgba(0,0,0,0.7)';
+    modal.style.zIndex = '99999';
+    modal.style.visibility = 'visible';
+    modal.style.opacity = '1';
+    modal.classList.remove('hidden');
     
-    // Garantir que o modal esteja visível
-    console.log('✅ Modal exibido!');
+    const modalContent = modal.querySelector('.modal-content');
+    if (modalContent) {
+        modalContent.style.backgroundColor = 'white';
+        modalContent.style.position = 'relative';
+        modalContent.style.zIndex = '100000';
+    }
+    
+    console.log('✅ Modal exibido com sucesso!');
+}
+
+// Função auxiliar para atualizar o label do toggle
+function atualizarStatusSyncLabel(bloqueado) {
+    const label = document.getElementById('mlSyncStatusLabel');
+    if (!label) return;
+    
+    if (bloqueado) {
+        label.innerHTML = '<i class="fas fa-circle" style="font-size: 10px; color: #dc3545;"></i> Bloqueado';
+        label.style.color = '#dc3545';
+    } else {
+        label.innerHTML = '<i class="fas fa-circle" style="font-size: 10px; color: #28a745;"></i> Ativo';
+        label.style.color = '#28a745';
+    }
 }
 
 function fecharModalProdutoEstoque() {
@@ -1225,6 +1296,11 @@ async function salvarProdutoEstoque() {
     const preco = parseFloat(document.getElementById('produtoPreco').value) || 0;
     const descricao = document.getElementById('produtoDescricao').value.trim();
     const categoria = document.getElementById('produtoCategoria').value;
+    const toggleSync = document.getElementById('bloquearSyncML');
+    const bloquearSync = toggleSync ? toggleSync.checked : false;
+
+    // Verificar se é admin (apenas admin pode modificar o toggle)
+    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'Administrador');
 
     if (!nome || !categoria) {
         if (window.showToast) showToast('Nome e Categoria são obrigatórios', 'warning');
@@ -1261,6 +1337,11 @@ async function salvarProdutoEstoque() {
                 dadosExtra[campo.nome] = valor;
             }
         }
+    }
+
+    // Salvar o status do toggle nos dados_extra (apenas se for admin)
+    if (isAdmin) {
+        dadosExtra.bloquear_sync_ml = bloquearSync;
     }
 
     // Capturar campos de ângulo
@@ -1368,6 +1449,9 @@ async function salvarProdutoEstoque() {
 
             const produtoDadosExtra = { ...dadosExtra };
             produtoDadosExtra.tamanhoraio = item.tamanho;
+            if (isAdmin) {
+                produtoDadosExtra.bloquear_sync_ml = bloquearSync;
+            }
 
             const produtoData = {
                 nome: nome,
@@ -1377,10 +1461,10 @@ async function salvarProdutoEstoque() {
                 descricao: descricao,
                 categoria: categoria,
                 dados_extra: produtoDadosExtra,
-                // Inicializar campos de custo
                 ultimo_custo: 0,
                 custo_medio: 0,
-                historico_custos: []
+                historico_custos: [],
+                bloquear_sync_ml: isAdmin ? bloquearSync : false
             };
 
             try {
@@ -1418,6 +1502,7 @@ async function salvarProdutoEstoque() {
     let ultimoCusto = 0;
     let custoMedio = 0;
     let historicoCustos = [];
+    let bloquearSyncExistente = false;
     
     if (id) {
         const produtoExistente = produtosEstoque.find(p => p.id == id);
@@ -1425,6 +1510,7 @@ async function salvarProdutoEstoque() {
             ultimoCusto = produtoExistente.ultimo_custo || produtoExistente.dados_extra?.ultimo_custo || 0;
             custoMedio = produtoExistente.custo_medio || produtoExistente.dados_extra?.custo_medio || 0;
             historicoCustos = produtoExistente.historico_custos || [];
+            bloquearSyncExistente = produtoExistente.bloquear_sync_ml || produtoExistente.dados_extra?.bloquear_sync_ml || false;
         }
     }
 
@@ -1438,7 +1524,9 @@ async function salvarProdutoEstoque() {
         dados_extra: dadosExtra,
         ultimo_custo: ultimoCusto,
         custo_medio: custoMedio,
-        historico_custos: historicoCustos
+        historico_custos: historicoCustos,
+        // Se for admin, salva o valor do toggle, senão mantém o existente
+        bloquear_sync_ml: isAdmin ? bloquearSync : bloquearSyncExistente
     };
 
     try {
@@ -1495,10 +1583,17 @@ async function salvarProdutoEstoque() {
 
         await carregarProdutosEstoque();
 
-        if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length) {
+        // ===== SINCRONIZAR COM ML - VERIFICAR SE ESTÁ BLOQUEADO =====
+        const syncBloqueado = produtoSalvo?.bloquear_sync_ml || produtoSalvo?.dados_extra?.bloquear_sync_ml || false;
+        
+        if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length && !syncBloqueado) {
+            console.log(`🔄 Sincronizando produto ${produtoSalvo.sku} com ML (sincronização ATIVA)`);
             setTimeout(() => {
                 sincronizarEstoqueML(produtoSalvo);
             }, 500);
+        } else if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length && syncBloqueado) {
+            console.log(`🔒 Produto ${produtoSalvo.sku} com sincronização BLOQUEADA. Não será sincronizado.`);
+            showToast(`🔒 Sincronização com ML bloqueada para este produto`, 'info');
         }
 
     } catch (error) {
@@ -2058,6 +2153,15 @@ window.sincronizarProdutoML = async function(produtoId) {
         if (window.showToast) showToast('Produto não encontrado', 'error');
         return;
     }
+    
+    // Verificar se a sincronização está bloqueada
+    const syncBloqueado = produto.bloquear_sync_ml || produto.dados_extra?.bloquear_sync_ml || false;
+    
+    if (syncBloqueado) {
+        showToast(`🔒 Sincronização com ML bloqueada para ${produto.nome}`, 'warning');
+        return;
+    }
+    
     if (window.showToast) showToast(`🔄 Sincronizando estoque (${produto.quantidade}) com ML...`, 'info');
     await sincronizarEstoqueML(produto);
 };

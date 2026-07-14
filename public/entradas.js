@@ -965,7 +965,7 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
 
         const { data: produto, error: errProd } = await window.supabaseClient
             .from('produtos_estoque')
-            .select('quantidade, dados_extra, historico_custos')
+            .select('quantidade, dados_extra, historico_custos, bloquear_sync_ml')
             .eq('id', produtoId)
             .single();
 
@@ -1060,14 +1060,22 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
         showToast(`✅ Entrada de ${quantidade} unidade(s) realizada! Custo: R$ ${valorCusto.toFixed(2)}`, 'success');
         await carregarEntradas();
 
+        // ===== VERIFICAR BLOQUEIO DE SINCRONIZAÇÃO =====
+        const syncBloqueado = produto.bloquear_sync_ml || dadosExtra.bloquear_sync_ml || false;
+
         if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
             const produtoAtualizado = produtosEstoque.find(p => p.id == produtoId);
             if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes) {
-                setTimeout(() => {
-                    if (typeof sincronizarEstoqueML === 'function') {
-                        sincronizarEstoqueML(produtoAtualizado);
-                    }
-                }, 500);
+                if (!syncBloqueado) {
+                    setTimeout(() => {
+                        if (typeof sincronizarEstoqueML === 'function') {
+                            console.log(`🔄 Sincronizando produto ${produtoAtualizado.sku} com ML (entrada de estoque)`);
+                            sincronizarEstoqueML(produtoAtualizado);
+                        }
+                    }, 500);
+                } else {
+                    console.log(`🔒 Produto ${produtoAtualizado.sku} com sincronização BLOQUEADA. Não será sincronizado após entrada.`);
+                }
             }
         }
 

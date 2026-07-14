@@ -708,6 +708,97 @@ body > * {
     max-height: 90vh;
     overflow-y: auto;
 }
+/* ===== TOGGLE SWITCH ===== */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 28px;
+    flex-shrink: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #28a745;
+    transition: 0.4s;
+    border-radius: 34px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: 0.4s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #dc3545;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(22px);
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Badge de status */
+.sync-status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.sync-status-badge.bloqueado {
+    background: #f8d7da;
+    color: #dc3545;
+}
+
+.sync-status-badge.ativo {
+    background: #d4edda;
+    color: #28a745;
+}
+/* Badge de status de sincronização */
+.sync-status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.sync-status-badge.bloqueado {
+    background: #f8d7da;
+    color: #dc3545;
+}
+
+.sync-status-badge.ativo {
+    background: #d4edda;
+    color: #28a745;
+}
     </style>
 </head>
 <body>
@@ -4728,6 +4819,31 @@ body > * {
         <div class="form-group">
             <label>Quantidade inicial</label>
             <input type="number" id="produtoQuantidade" class="form-control" value="0" min="0">
+        </div>
+
+        <!-- ===== TOGGLE BLOQUEAR SINCRONIZAÇÃO ML ===== -->
+        <div class="form-group" style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <label style="font-weight: 600; margin: 0; display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-sync-alt" style="color: #00ADEE;"></i>
+                        Sincronização com Mercado Livre
+                    </label>
+                    <small style="color: #6c757d; display: block; margin-top: 4px;">
+                        <i class="fas fa-info-circle"></i> 
+                        Quando ativado, o estoque NÃO será sincronizado automaticamente com o ML
+                    </small>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span id="mlSyncStatusLabel" style="font-size: 14px; font-weight: 600; color: #28a745;">
+                        <i class="fas fa-circle" style="font-size: 10px;"></i> Ativo
+                    </span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="bloquearSyncML">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
         </div>
 
         <!-- Área dinâmica para atributos específicos da categoria -->
