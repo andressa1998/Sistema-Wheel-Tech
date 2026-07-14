@@ -916,6 +916,7 @@ async function gerarNumeroEntrada() {
 // ============================================
 
 // ===== DAR ENTRADA EM UM ITEM (COM CONFIRMAÇÃO DE QUANTIDADE) =====
+// ===== DAR ENTRADA EM UM ITEM (COM CONFIRMAÇÃO DE QUANTIDADE) =====
 window.darEntradaItem = async function(cardId, itemId, produtoId) {
     if (!cardId || !itemId || !produtoId) {
         showToast('Erro: dados incompletos', 'error');
@@ -1067,12 +1068,21 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
             const produtoAtualizado = produtosEstoque.find(p => p.id == produtoId);
             if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes) {
                 if (!syncBloqueado) {
-                    setTimeout(() => {
-                        if (typeof sincronizarEstoqueML === 'function') {
-                            console.log(`🔄 Sincronizando produto ${produtoAtualizado.sku} com ML (entrada de estoque)`);
-                            sincronizarEstoqueML(produtoAtualizado);
-                        }
-                    }, 500);
+                    // Verificar se o usuário é autorizado a sincronizar (opcional)
+                    const username = currentUser?.username?.toLowerCase() || '';
+                    const isAdmin = usuariosAdmin && usuariosAdmin.includes(username);
+                    const podeModificarSync = (usuariosAutorizadosSync && usuariosAutorizadosSync.includes(username)) || isAdmin;
+                    
+                    if (podeModificarSync) {
+                        setTimeout(() => {
+                            if (typeof sincronizarEstoqueML === 'function') {
+                                console.log(`🔄 Sincronizando produto ${produtoAtualizado.sku} com ML (entrada de estoque)`);
+                                sincronizarEstoqueML(produtoAtualizado);
+                            }
+                        }, 500);
+                    } else {
+                        console.log(`ℹ️ Usuário ${username} não autorizado a sincronizar com ML. Sincronização automática ignorada.`);
+                    }
                 } else {
                     console.log(`🔒 Produto ${produtoAtualizado.sku} com sincronização BLOQUEADA. Não será sincronizado após entrada.`);
                 }

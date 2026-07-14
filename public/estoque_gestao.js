@@ -8,6 +8,15 @@ let paginaAtualEstoque = 1;
 let itensPorPaginaEstoque = 20;
 let produtosFiltradosAtuais = [];
 
+// ===== USUÁRIOS AUTORIZADOS A MODIFICAR SINCRONIZAÇÃO =====
+const usuariosAutorizadosSync = ['andressamiotto', 'ronald', 'bruna', 'arthur'];
+
+// ===== USUÁRIOS QUE PODEM VER CUSTOS =====
+const usuariosVerCusto = ['andressamiotto', 'ronald'];
+
+// ===== USUÁRIOS ADMIN =====
+const usuariosAdmin = ['andressamiotto', 'ronald', 'leticia'];
+
 // Definição dos campos específicos por categoria (organizados em grade)
 const camposPorCategoria = {
     Eixos: [
@@ -453,9 +462,11 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
         return;
     }
 
-    // Verificar se o usuário é admin (para ver custos)
-    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald' || currentUser.role === 'admin');
-    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'Administrador');
+    // ===== VERIFICAÇÃO DE USUÁRIOS =====
+    const username = currentUser?.username?.toLowerCase() || '';
+    const isAdmin = usuariosAdmin.includes(username);
+    const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
+    const podeVerCusto = usuariosVerCusto.includes(username) || isAdmin;
 
     // Atualizar o cabeçalho da tabela
     const thead = document.querySelector('#produtosEstoqueTable thead tr');
@@ -472,7 +483,6 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
                 <th>Custo Médio</th>
             `;
         }
-        // ===== ADICIONAR COLUNA SYNC ML =====
         headerHtml += `
             <th>Sync ML</th>
             <th>Atributos</th>
@@ -513,18 +523,24 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             ? '<span class="sync-status-badge bloqueado"><i class="fas fa-lock"></i> Bloqueado</span>'
             : '<span class="sync-status-badge ativo"><i class="fas fa-check-circle"></i> Ativo</span>';
         
+        // ===== BOTÕES DE AÇÃO =====
         let botoes = `
             <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
             <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
             <button class="btn btn-sm btn-secondary" onclick="verHistoricoMovimentacoes(${prod.id})" title="Histórico"><i class="fas fa-history"></i></button>
         `;
         
+        // Botão excluir - APENAS ADMIN (Andressa e Ronald)
         if (isAdmin) {
             botoes += `<button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})" title="Excluir"><i class="fas fa-trash"></i></button>`;
         }
         
-        if (temMLB) {
+        // Botão sincronizar ML - apenas para usuários autorizados e se tiver MLB
+        if (temMLB && podeModificarSync) {
             botoes += `<button class="btn btn-sm btn-primary" onclick="sincronizarProdutoML(${prod.id})" title="Sincronizar estoque com ML"><i class="fab fa-mercadolibre"></i></button>`;
+        } else if (temMLB && !podeModificarSync) {
+            // Mostra o botão desabilitado para não autorizados
+            botoes += `<button class="btn btn-sm btn-secondary" disabled title="Apenas administradores podem sincronizar"><i class="fab fa-mercadolibre"></i></button>`;
         }
         
         let rowHtml = `
@@ -541,7 +557,6 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             `;
         }
         
-        // ===== ADICIONAR COLUNA SYNC ML =====
         rowHtml += `
             <td>${syncStatusHtml}</td>
             <td>
@@ -727,18 +742,45 @@ function abrirModalProdutoEstoque(produto = null) {
     const toggleSync = document.getElementById('bloquearSyncML');
     const syncStatusLabel = document.getElementById('mlSyncStatusLabel');
 
-    // Verificar se o usuário é admin
-    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'Administrador');
-    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald' || isAdmin);
+    // ===== VERIFICAÇÃO DE USUÁRIO AUTORIZADO =====
+    const username = currentUser?.username?.toLowerCase() || '';
+    const isAdmin = usuariosAdmin.includes(username);
+    const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
+    const podeVerCusto = usuariosVerCusto.includes(username) || isAdmin;
 
-    // Controle do toggle - apenas admin pode modificar
+    // ===== CONTROLE DO TOGGLE - APENAS USUÁRIOS AUTORIZADOS =====
     if (toggleSync) {
-        toggleSync.disabled = !isAdmin;
-        if (!isAdmin) {
-            toggleSync.title = 'Apenas administradores podem modificar esta configuração';
+        if (!podeModificarSync) {
+            // Desabilita o toggle para usuários não autorizados
+            toggleSync.disabled = true;
+            toggleSync.title = '🔒 Apenas administradores (Andressa, Ronald, Bruna, Arthur) podem modificar a sincronização com o ML';
+            toggleSync.parentElement.style.opacity = '0.6';
+            toggleSync.parentElement.style.cursor = 'not-allowed';
+        } else {
+            toggleSync.disabled = false;
+            toggleSync.title = 'Clique para alternar a sincronização com o ML';
+            toggleSync.parentElement.style.opacity = '1';
+            toggleSync.parentElement.style.cursor = 'pointer';
         }
     }
 
+    // Mostrar/esconder a mensagem de admin only
+    const adminOnlyMsg = document.getElementById('mlSyncAdminOnly');
+    if (adminOnlyMsg) {
+        adminOnlyMsg.style.display = podeModificarSync ? 'none' : 'block';
+    }
+
+    // Atualizar o texto de ajuda
+    const helpText = document.getElementById('mlSyncHelpText');
+    if (helpText) {
+        if (podeModificarSync) {
+            helpText.textContent = 'Quando ativado, o estoque NÃO será sincronizado automaticamente com o ML';
+        } else {
+            helpText.textContent = 'Esta configuração é gerenciada por administradores (Andressa, Ronald, Bruna, Arthur)';
+        }
+    }
+
+    // Resto da função...
     if (!title || !idInput || !nomeInput || !skuInput || !qtdInput || !precoInput || !descInput || !categoriaSelect) {
         console.error('❌ Elementos do modal não encontrados!');
         showToast('Erro: Elementos do modal não encontrados', 'error');
@@ -833,7 +875,6 @@ function abrirModalProdutoEstoque(produto = null) {
         descInput.value = '';
         categoriaSelect.value = '';
         
-        // Toggle padrão: desbloqueado (sincronização ativa)
         if (toggleSync) {
             toggleSync.checked = false;
             atualizarStatusSyncLabel(false);
@@ -1297,10 +1338,23 @@ async function salvarProdutoEstoque() {
     const descricao = document.getElementById('produtoDescricao').value.trim();
     const categoria = document.getElementById('produtoCategoria').value;
     const toggleSync = document.getElementById('bloquearSyncML');
-    const bloquearSync = toggleSync ? toggleSync.checked : false;
-
-    // Verificar se é admin (apenas admin pode modificar o toggle)
-    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.role === 'Administrador');
+    
+    // ===== VERIFICAÇÃO DE USUÁRIO AUTORIZADO =====
+    const username = currentUser?.username?.toLowerCase() || '';
+    const isAdmin = usuariosAdmin.includes(username);
+    const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
+    
+    // Se não for autorizado, ignora o valor do toggle e mantém o existente
+    let bloquearSync = false;
+    if (podeModificarSync && toggleSync) {
+        bloquearSync = toggleSync.checked;
+    } else if (id) {
+        // Se for edição e não for autorizado, buscar o valor existente
+        const produtoExistente = produtosEstoque.find(p => p.id == id);
+        if (produtoExistente) {
+            bloquearSync = produtoExistente.bloquear_sync_ml || produtoExistente.dados_extra?.bloquear_sync_ml || false;
+        }
+    }
 
     if (!nome || !categoria) {
         if (window.showToast) showToast('Nome e Categoria são obrigatórios', 'warning');
@@ -1339,9 +1393,12 @@ async function salvarProdutoEstoque() {
         }
     }
 
-    // Salvar o status do toggle nos dados_extra (apenas se for admin)
-    if (isAdmin) {
+    // ===== SALVAR O STATUS DO TOGGLE (APENAS SE FOR AUTORIZADO) =====
+    if (podeModificarSync) {
         dadosExtra.bloquear_sync_ml = bloquearSync;
+    } else {
+        // Se não for autorizado, garantir que o valor não seja alterado
+        delete dadosExtra.bloquear_sync_ml;
     }
 
     // Capturar campos de ângulo
@@ -1449,7 +1506,9 @@ async function salvarProdutoEstoque() {
 
             const produtoDadosExtra = { ...dadosExtra };
             produtoDadosExtra.tamanhoraio = item.tamanho;
-            if (isAdmin) {
+            
+            // ===== APENAS USUÁRIOS AUTORIZADOS PODEM DEFINIR O BLOQUEIO =====
+            if (podeModificarSync) {
                 produtoDadosExtra.bloquear_sync_ml = bloquearSync;
             }
 
@@ -1464,7 +1523,8 @@ async function salvarProdutoEstoque() {
                 ultimo_custo: 0,
                 custo_medio: 0,
                 historico_custos: [],
-                bloquear_sync_ml: isAdmin ? bloquearSync : false
+                // ===== APENAS USUÁRIOS AUTORIZADOS PODEM DEFINIR O BLOQUEIO =====
+                bloquear_sync_ml: podeModificarSync ? bloquearSync : false
             };
 
             try {
@@ -1525,8 +1585,8 @@ async function salvarProdutoEstoque() {
         ultimo_custo: ultimoCusto,
         custo_medio: custoMedio,
         historico_custos: historicoCustos,
-        // Se for admin, salva o valor do toggle, senão mantém o existente
-        bloquear_sync_ml: isAdmin ? bloquearSync : bloquearSyncExistente
+        // ===== APENAS USUÁRIOS AUTORIZADOS PODEM MODIFICAR O BLOQUEIO =====
+        bloquear_sync_ml: podeModificarSync ? bloquearSync : bloquearSyncExistente
     };
 
     try {
@@ -1583,7 +1643,7 @@ async function salvarProdutoEstoque() {
 
         await carregarProdutosEstoque();
 
-        // ===== SINCRONIZAR COM ML - VERIFICAR SE ESTÁ BLOQUEADO =====
+        // ===== VERIFICAR SE PODE SINCRONIZAR (APENAS SE NÃO ESTIVER BLOQUEADO) =====
         const syncBloqueado = produtoSalvo?.bloquear_sync_ml || produtoSalvo?.dados_extra?.bloquear_sync_ml || false;
         
         if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length && !syncBloqueado) {
@@ -1593,7 +1653,9 @@ async function salvarProdutoEstoque() {
             }, 500);
         } else if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length && syncBloqueado) {
             console.log(`🔒 Produto ${produtoSalvo.sku} com sincronização BLOQUEADA. Não será sincronizado.`);
-            showToast(`🔒 Sincronização com ML bloqueada para este produto`, 'info');
+            if (podeModificarSync) {
+                showToast(`🔒 Sincronização com ML bloqueada para este produto`, 'info');
+            }
         }
 
     } catch (error) {
@@ -2154,11 +2216,21 @@ window.sincronizarProdutoML = async function(produtoId) {
         return;
     }
     
-    // Verificar se a sincronização está bloqueada
+    // ===== VERIFICAR SE A SINCRONIZAÇÃO ESTÁ BLOQUEADA =====
     const syncBloqueado = produto.bloquear_sync_ml || produto.dados_extra?.bloquear_sync_ml || false;
     
     if (syncBloqueado) {
         showToast(`🔒 Sincronização com ML bloqueada para ${produto.nome}`, 'warning');
+        return;
+    }
+    
+    // ===== VERIFICAR SE O USUÁRIO É AUTORIZADO =====
+    const username = currentUser?.username?.toLowerCase() || '';
+    const isAdmin = usuariosAdmin.includes(username);
+    const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
+    
+    if (!podeModificarSync) {
+        showToast('⚠️ Apenas administradores (Andressa, Ronald, Bruna, Arthur) podem sincronizar manualmente', 'warning');
         return;
     }
     
