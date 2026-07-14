@@ -665,6 +665,23 @@ body > * {
 .badge-full { background: #6f42c1; color: white; }
 .badge-flex { background: #fd7e14; color: white; }
 .badge-mercado { background: #17a2b8; color: white; }
+/* Estilo para a paginação */
+#paginacaoEstoque {
+    background: #f8f9fa;
+    border-radius: 0 0 8px 8px;
+    min-height: 50px;
+}
+
+#paginacaoEstoque .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#paginacaoEstoque .btn-primary.disabled {
+    background: #00ADEE !important;
+    color: white !important;
+    opacity: 1;
+}
     </style>
 </head>
 <body>
@@ -4677,34 +4694,35 @@ body > * {
     </header>
 
     <div class="container">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h2 class="card-title"><i class="fas fa-boxes"></i> Produtos em Estoque</h2>
-                <div class="d-flex gap-2">
+    <div class="card mb-4">
+        <div class="card-header">
+            <h2 class="card-title"><i class="fas fa-boxes"></i> Produtos em Estoque</h2>
+            <div class="d-flex gap-2">
                 <input type="text" id="buscaEstoqueInput" class="form-control" placeholder="🔍 Buscar por nome, SKU ou MLB..." style="width: 250px;">
                 <button class="btn btn-success" onclick="abrirModalProdutoEstoque()">
                     <i class="fas fa-plus"></i> Novo Produto
                 </button>
-                </div>
-            </div>
-            <div class="table-responsive">
-                <table class="table" id="produtosEstoqueTable">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Nome / Categoria</th>
-                            <th>SKU</th>
-                            <th>Quantidade</th>
-                            <th>Atributos</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="produtosEstoqueBody">
-                        <tr><td colspan="7" class="text-center">Carregando...</td></tr>
-                    </tbody>
-                </table>
             </div>
         </div>
+        <div class="table-responsive">
+            <table class="table" id="produtosEstoqueTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nome / Categoria</th>
+                        <th>SKU</th>
+                        <th>Quantidade</th>
+                        <th>Atributos</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="produtosEstoqueBody">
+                    <tr><td colspan="6" class="text-center">Carregando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- ===== CONTAINER DE PAGINAÇÃO - FORA DA table-responsive ===== -->
+        <div id="paginacaoEstoque" class="p-3 border-top"></div>
     </div>
 </div>
 

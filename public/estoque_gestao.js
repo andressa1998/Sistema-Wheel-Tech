@@ -3,6 +3,10 @@
 // ============================================
 
 let produtosEstoque = [];
+// ===== VARIÁVEIS DE PAGINAÇÃO =====
+let paginaAtualEstoque = 1;
+let itensPorPaginaEstoque = 20;
+let produtosFiltradosAtuais = [];
 
 // Definição dos campos específicos por categoria (organizados em grade)
 const camposPorCategoria = {
@@ -38,10 +42,12 @@ const camposPorCategoria = {
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
     Porcas: [
-        { nome: "tamanho", label: "Tamanho", tipo: "text", placeholder: "Ex: 1mm ou 2mm" }
+        { nome: "tamanho", label: "Tamanho", tipo: "text", placeholder: "Ex: 1mm ou 2mm" },
+        { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],  
     Arruelas: [
-        { nome: "tamanho", label: "Tamanho", tipo: "text", placeholder: "Ex: 1mm ou 2mm" }
+        { nome: "tamanho", label: "Tamanho", tipo: "text", placeholder: "Ex: 1mm ou 2mm" },
+        { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],   
     outros: [
         { nome: "observacoes_adicionais", label: "Observações", tipo: "textarea", rows: 2 },
@@ -143,7 +149,10 @@ async function carregarProdutosEstoque() {
             .order('nome', { ascending: true });
         if (error) throw error;
         produtosEstoque = data || [];
+        produtosFiltradosAtuais = produtosEstoque;
+        paginaAtualEstoque = 1;
         renderizarTabelaProdutos();
+        console.log(`✅ ${produtosEstoque.length} produtos carregados`);
     } catch (error) {
         console.error('Erro ao carregar produtos:', error);
         if (window.showToast) showToast('Erro ao carregar produtos', 'error');
@@ -301,44 +310,65 @@ async function excluirSkusKit(skuPai) {
 }
 
 // Função para calcular quantos kits podem ser montados com base no estoque dos SKUs filhos
-function calcularKitsDisponiveis(skusFilhos, produtosEstoque) {
-    if (!skusFilhos || skusFilhos.length === 0) return Infinity; // Sem filhos, estoque ilimitado
+function calcularKitsDisponiveis(skusFilhos, produtosEstoque, skuAnuncio = null) {
+    console.log(`📦 [calcularKitsDisponiveis] Calculando kits para ${skusFilhos.length} SKUs filhos`);
+    console.log(`📦 [calcularKitsDisponiveis] SKU do anúncio: ${skuAnuncio}`);
+    
+    if (!skusFilhos || skusFilhos.length === 0) {
+        console.log(`📦 [calcularKitsDisponiveis] Sem SKUs filhos, estoque ilimitado`);
+        return Infinity;
+    }
+    
+    // Extrair a quantidade total do SKU do anúncio
+    let quantidadePorKit = 1;
+    if (skuAnuncio) {
+        quantidadePorKit = extrairUnidadesPorKit(skuAnuncio);
+        console.log(`📦 [calcularKitsDisponiveis] Quantidade por kit (do SKU): ${quantidadePorKit}`);
+    }
     
     let kitsPossiveis = Infinity;
     
     for (const item of skusFilhos) {
+        console.log(`📦 [calcularKitsDisponiveis] Verificando SKU: ${item.sku_filho}`);
+        
         const produto = produtosEstoque.find(p => p.sku === item.sku_filho);
         if (!produto) {
-            // Se um SKU filho não existe no estoque, não é possível montar nenhum kit
+            console.log(`❌ [calcularKitsDisponiveis] SKU ${item.sku_filho} não encontrado no estoque!`);
             return 0;
         }
-        const quantidadeNecessaria = item.quantidade || 1;
+        
+        // Usar a quantidade extraída do SKU do anúncio
+        const quantidadeNecessaria = quantidadePorKit;
         const kitsDoProduto = Math.floor(produto.quantidade / quantidadeNecessaria);
+        console.log(`📦 [calcularKitsDisponiveis] SKU ${item.sku_filho}: estoque=${produto.quantidade}, necessário=${quantidadeNecessaria}, kits=${kitsDoProduto}`);
+        
         kitsPossiveis = Math.min(kitsPossiveis, kitsDoProduto);
     }
     
+    console.log(`📦 [calcularKitsDisponiveis] Total de kits possíveis: ${kitsPossiveis}`);
     return kitsPossiveis;
 }
 
 function filtrarProdutosEstoque() {
     const termo = document.getElementById('buscaEstoqueInput').value.toLowerCase().trim();
     if (!termo) {
-        renderizarTabelaProdutos(produtosEstoque);
-        return;
-    }
-    const produtosFiltrados = produtosEstoque.filter(prod => {
-        if (prod.nome && prod.nome.toLowerCase().includes(termo)) return true;
-        if (prod.sku && prod.sku.toLowerCase().includes(termo)) return true;
-        if (prod.dados_extra && prod.dados_extra.mlb_codes) {
-            let mlbArray = prod.dados_extra.mlb_codes;
-            if (typeof mlbArray === 'string') mlbArray = mlbArray.split(',').map(s => s.trim());
-            if (Array.isArray(mlbArray)) {
-                return mlbArray.some(code => code.toLowerCase().includes(termo));
+        produtosFiltradosAtuais = produtosEstoque;
+    } else {
+        produtosFiltradosAtuais = produtosEstoque.filter(prod => {
+            if (prod.nome && prod.nome.toLowerCase().includes(termo)) return true;
+            if (prod.sku && prod.sku.toLowerCase().includes(termo)) return true;
+            if (prod.mlb_codes) {
+                let mlbArray = prod.mlb_codes;
+                if (typeof mlbArray === 'string') mlbArray = mlbArray.split(',').map(s => s.trim());
+                if (Array.isArray(mlbArray)) {
+                    return mlbArray.some(code => code.toLowerCase().includes(termo));
+                }
             }
-        }
-        return false;
-    });
-    renderizarTabelaProdutos(produtosFiltrados);
+            return false;
+        });
+    }
+    paginaAtualEstoque = 1;
+    renderizarTabelaProdutos(produtosFiltradosAtuais);
 }
 
 function obterRegraRaios(marca, modelo) {
@@ -406,15 +436,48 @@ async function verHistoricoMovimentacoes(produtoId) {
 }
 
 function renderizarTabelaProdutos(produtosParaRenderizar = null) {
+    console.log('🔍 [renderizarTabelaProdutos] Iniciando renderização...');
+    
     const tbody = document.getElementById('produtosEstoqueBody');
-    if (!tbody) return;
-    const produtos = produtosParaRenderizar || produtosEstoque;
-    if (produtos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto encontrado.</td></tr>';
+    if (!tbody) {
+        console.error('❌ Elemento #produtosEstoqueBody não encontrado');
         return;
     }
+    
+    // Se não recebeu produtos para renderizar, usa todos
+    const todosProdutos = produtosParaRenderizar || produtosEstoque;
+    produtosFiltradosAtuais = todosProdutos;
+    
+    console.log(`📊 [renderizarTabelaProdutos] Total de produtos: ${todosProdutos.length}`);
+    
+    if (todosProdutos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto encontrado.</td></tr>';
+        atualizarPaginacaoEstoque(todosProdutos.length);
+        return;
+    }
+
+    // Calcular paginação
+    const totalPaginas = Math.ceil(todosProdutos.length / itensPorPaginaEstoque);
+    console.log(`📊 [renderizarTabelaProdutos] Total páginas: ${totalPaginas}, itens por página: ${itensPorPaginaEstoque}`);
+    
+    if (paginaAtualEstoque > totalPaginas) paginaAtualEstoque = totalPaginas;
+    if (paginaAtualEstoque < 1) paginaAtualEstoque = 1;
+    
+    const inicio = (paginaAtualEstoque - 1) * itensPorPaginaEstoque;
+    const fim = Math.min(inicio + itensPorPaginaEstoque, todosProdutos.length);
+    const produtosPagina = todosProdutos.slice(inicio, fim);
+    
+    console.log(`📊 [renderizarTabelaProdutos] Exibindo produtos ${inicio + 1} a ${fim} (${produtosPagina.length} itens)`);
+    
     tbody.innerHTML = '';
-    produtos.forEach(prod => {
+    
+    if (produtosPagina.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhum produto nesta página.</td></tr>';
+        atualizarPaginacaoEstoque(todosProdutos.length);
+        return;
+    }
+    
+    produtosPagina.forEach(prod => {
         const row = document.createElement('tr');
         let atributosResumo = '';
         if (prod.dados_extra) {
@@ -422,26 +485,160 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             atributosResumo = keys.map(k => `${k}: ${prod.dados_extra[k]}`).join(', ');
             if (Object.keys(prod.dados_extra).length > 2) atributosResumo += '...';
         }
+        
+        // VERIFICAR MLB CODES (agora em mlb_codes)
+        const mlbCodes = prod.mlb_codes;
+        const temMLB = mlbCodes && ((Array.isArray(mlbCodes) && mlbCodes.length > 0) || (typeof mlbCodes === 'string' && mlbCodes.trim() !== ''));
+        
         let botoes = `
-    <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})"><i class="fas fa-edit"></i></button>
-    <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')"><i class="fas fa-exchange-alt"></i></button>
-    <button class="btn btn-sm btn-secondary" onclick="verHistoricoMovimentacoes(${prod.id})" title="Histórico"><i class="fas fa-history"></i></button>
-    <button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})"><i class="fas fa-trash"></i></button>
-`;
-        const mlbCodes = prod.dados_extra?.mlb_codes;
-        if (mlbCodes && ((Array.isArray(mlbCodes) && mlbCodes.length > 0) || (typeof mlbCodes === 'string' && mlbCodes.trim() !== ''))) {
+            <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
+            <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
+            <button class="btn btn-sm btn-secondary" onclick="verHistoricoMovimentacoes(${prod.id})" title="Histórico"><i class="fas fa-history"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})" title="Excluir"><i class="fas fa-trash"></i></button>
+        `;
+        if (temMLB) {
             botoes += `<button class="btn btn-sm btn-primary" onclick="sincronizarProdutoML(${prod.id})" title="Sincronizar estoque com ML"><i class="fab fa-mercadolibre"></i></button>`;
         }
+        
         row.innerHTML = `
             <td>${prod.id}</td>
             <td><strong>${escapeHtml(prod.nome)}</strong><br><small class="text-muted">${escapeHtml(prod.categoria || 'sem categoria')}</small></td>
             <td>${escapeHtml(prod.sku)}</td>
             <td class="${prod.quantidade <= 5 ? 'text-danger fw-bold' : ''}">${prod.quantidade}</td>
-            <td><span title="${escapeHtml(atributosResumo)}" class="badge bg-info">${Object.keys(prod.dados_extra || {}).length} atributos</span></td>
-            <td>${botoes}</td>
+            <td>
+                <span title="${escapeHtml(atributosResumo)}" class="badge bg-info">${Object.keys(prod.dados_extra || {}).length} atributos</span>
+                ${temMLB ? `<span class="badge bg-success"><i class="fab fa-mercadolibre"></i> ${Array.isArray(mlbCodes) ? mlbCodes.length : 1}</span>` : ''}
+            </td>
+            <td><div class="d-flex flex-wrap gap-1">${botoes}</div></td>
         `;
         tbody.appendChild(row);
     });
+    
+    // Atualizar controles de paginação
+    atualizarPaginacaoEstoque(todosProdutos.length);
+    console.log('✅ [renderizarTabelaProdutos] Renderização concluída!');
+}
+
+function atualizarPaginacaoEstoque(totalItens) {
+    const paginationContainer = document.getElementById('paginacaoEstoque');
+    if (!paginationContainer) {
+        console.error('❌ #paginacaoEstoque não encontrado');
+        return;
+    }
+    
+    console.log('🔍 [atualizarPaginacaoEstoque] Total de itens:', totalItens);
+    console.log('🔍 [atualizarPaginacaoEstoque] Itens por página:', itensPorPaginaEstoque);
+    console.log('🔍 [atualizarPaginacaoEstoque] Página atual:', paginaAtualEstoque);
+    
+    if (totalItens === 0) {
+        paginationContainer.innerHTML = '';
+        paginationContainer.style.display = 'none';
+        return;
+    }
+    
+    if (totalItens <= itensPorPaginaEstoque) {
+        paginationContainer.innerHTML = `
+            <div style="text-align: center; color: #6c757d; padding: 5px 0; font-size: 14px;">
+                <i class="fas fa-list"></i> Total: <strong>${totalItens}</strong> produtos
+            </div>
+        `;
+        paginationContainer.style.display = 'block';
+        return;
+    }
+    
+    paginationContainer.style.display = 'block';
+    paginationContainer.style.padding = '15px 20px';
+    paginationContainer.style.borderTop = '1px solid #dee2e6';
+    paginationContainer.style.background = '#f8f9fa';
+    paginationContainer.style.borderRadius = '0 0 8px 8px';
+    
+    const totalPaginas = Math.ceil(totalItens / itensPorPaginaEstoque);
+    const inicio = (paginaAtualEstoque - 1) * itensPorPaginaEstoque + 1;
+    const fim = Math.min(paginaAtualEstoque * itensPorPaginaEstoque, totalItens);
+    
+    console.log(`📊 Página ${paginaAtualEstoque} de ${totalPaginas}, mostrando ${inicio}-${fim}`);
+    
+    let html = `
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="color: #6c757d; font-size: 14px;">
+                <i class="fas fa-list"></i> 
+                Mostrando <strong>${inicio}</strong> - <strong>${fim}</strong> de <strong>${totalItens}</strong> produtos
+                <span style="background: #6c757d; color: white; padding: 2px 10px; border-radius: 20px; font-size: 12px; margin-left: 8px;">
+                    ${totalPaginas} página(s)
+                </span>
+            </div>
+            <div style="display: flex; gap: 5px; align-items: center;">
+                <button class="btn btn-sm btn-outline-secondary" onclick="irParaPaginaEstoque(1)" ${paginaAtualEstoque === 1 ? 'disabled' : ''}>
+                    <i class="fas fa-angle-double-left"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="irParaPaginaEstoque(${paginaAtualEstoque - 1})" ${paginaAtualEstoque === 1 ? 'disabled' : ''}>
+                    <i class="fas fa-angle-left"></i>
+                </button>
+                <span style="background: #00ADEE; color: white; padding: 5px 15px; border-radius: 4px; font-size: 14px; min-width: 60px; text-align: center;">
+                    ${paginaAtualEstoque} / ${totalPaginas}
+                </span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="irParaPaginaEstoque(${paginaAtualEstoque + 1})" ${paginaAtualEstoque === totalPaginas ? 'disabled' : ''}>
+                    <i class="fas fa-angle-right"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="irParaPaginaEstoque(${totalPaginas})" ${paginaAtualEstoque === totalPaginas ? 'disabled' : ''}>
+                    <i class="fas fa-angle-double-right"></i>
+                </button>
+            </div>
+            <div style="display: flex; gap: 5px; align-items: center;">
+                <label style="font-size: 13px; color: #6c757d; margin: 0;">Itens:</label>
+                <select style="padding: 3px 8px; border-radius: 4px; border: 1px solid #ced4da; font-size: 13px;" onchange="alterarItensPorPaginaEstoque(this.value)">
+                    <option value="10" ${itensPorPaginaEstoque === 10 ? 'selected' : ''}>10</option>
+                    <option value="20" ${itensPorPaginaEstoque === 20 ? 'selected' : ''}>20</option>
+                    <option value="50" ${itensPorPaginaEstoque === 50 ? 'selected' : ''}>50</option>
+                    <option value="100" ${itensPorPaginaEstoque === 100 ? 'selected' : ''}>100</option>
+                    <option value="999999" ${itensPorPaginaEstoque === 999999 ? 'selected' : ''}>Todos</option>
+                </select>
+            </div>
+        </div>
+    `;
+    
+    paginationContainer.innerHTML = html;
+    console.log('✅ Paginação renderizada com sucesso!');
+}
+
+function irParaPaginaEstoque(pagina) {
+    const totalPaginas = Math.ceil(produtosFiltradosAtuais.length / itensPorPaginaEstoque);
+    if (pagina < 1 || pagina > totalPaginas) return;
+    paginaAtualEstoque = pagina;
+    renderizarTabelaProdutos(produtosFiltradosAtuais);
+    const tableContainer = document.querySelector('.card.mb-4');
+    if (tableContainer) {
+        tableContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+
+function alterarItensPorPaginaEstoque(valor) {
+    itensPorPaginaEstoque = parseInt(valor);
+    paginaAtualEstoque = 1;
+    renderizarTabelaProdutos(produtosFiltradosAtuais);
+}
+
+// Função para atualizar a lista após filtro
+function atualizarListaEstoque() {
+    const termo = document.getElementById('buscaEstoqueInput').value.toLowerCase().trim();
+    if (!termo) {
+        produtosFiltradosAtuais = produtosEstoque;
+    } else {
+        produtosFiltradosAtuais = produtosEstoque.filter(prod => {
+            if (prod.nome && prod.nome.toLowerCase().includes(termo)) return true;
+            if (prod.sku && prod.sku.toLowerCase().includes(termo)) return true;
+            if (prod.mlb_codes) {
+                let mlbArray = prod.mlb_codes;
+                if (typeof mlbArray === 'string') mlbArray = mlbArray.split(',').map(s => s.trim());
+                if (Array.isArray(mlbArray)) {
+                    return mlbArray.some(code => code.toLowerCase().includes(termo));
+                }
+            }
+            return false;
+        });
+    }
+    paginaAtualEstoque = 1;
+    renderizarTabelaProdutos(produtosFiltradosAtuais);
 }
 
 async function registrarMovimentacao(produtoId, tipo, quantidade, numeroDocumento, tipoEntrada = null) {
@@ -1382,51 +1579,50 @@ function extrairSkuDoItem(item) {
     return null;
 }
 
-/**
- * Analisa um SKU que pode conter múltiplas partes separadas por "."
- * Ex: "03600000RARIJ280PTN_KSI.03600000RARIJ275PTN_KSI"
- * Retorna um array de objetos: { quantidadePorKit, tamanho }
- */
 function parseMultiSkuVariation(skuString) {
     if (!skuString || typeof skuString !== 'string') return null;
     
     const partes = skuString.split('.');
     const resultados = [];
+    let quantidadeTotalKit = 0;
     
     for (const parte of partes) {
-        // Extrai todos os grupos de 2 ou 3 dígitos
-        const grupos = parte.match(/\d{2,3}/g);
-        if (!grupos || grupos.length < 2) continue;
+        // Extrai os 3 primeiros dígitos (quantidade por kit)
+        const match = parte.match(/^(\d{3})/);
+        if (!match) continue;
         
-        // 1) Quantidade: primeiro grupo que seja > 0 (ignorar zeros à esquerda)
-        let quantidade = null;
-        for (let i = 0; i < grupos.length; i++) {
-            const num = parseInt(grupos[i], 10);
-            if (num > 0) {
-                quantidade = num;
-                break;
-            }
-        }
-        if (quantidade === null) quantidade = parseInt(grupos[0], 10); // fallback
+        const quantidade = parseInt(match[1], 10);
+        if (quantidade === 0) continue;
         
-        // 2) Tamanho: último grupo de 3 dígitos (assumindo que seja o tamanho)
+        // Extrai o tamanho (últimos 3 dígitos antes das letras)
+        const tamanhoMatch = parte.match(/\d{3}(?=[A-Z])/);
         let tamanho = null;
-        for (let i = grupos.length - 1; i >= 0; i--) {
-            if (grupos[i].length === 3) {
-                tamanho = parseInt(grupos[i], 10);
-                break;
+        if (tamanhoMatch) {
+            tamanho = tamanhoMatch[0];
+        } else {
+            // Fallback: pegar qualquer grupo de 3 dígitos
+            const grupos = parte.match(/\d{3}/g);
+            if (grupos && grupos.length > 0) {
+                tamanho = grupos[grupos.length - 1];
             }
         }
         
         if (quantidade && tamanho) {
-            resultados.push({ 
-                quantidadePorKit: quantidade, 
-                tamanho: tamanho.toString() 
+            resultados.push({
+                quantidadePorKit: quantidade,
+                tamanho: tamanho.toString()
             });
+            quantidadeTotalKit += quantidade;
         }
     }
     
-    return resultados.length ? resultados : null;
+    if (resultados.length === 0) return null;
+    
+    // Adicionar a quantidade total do kit
+    return {
+        partes: resultados,
+        quantidadeTotal: quantidadeTotalKit
+    };
 }
 
 async function sincronizarEstoqueML(produto) {
@@ -1507,34 +1703,69 @@ async function sincronizarEstoqueML(produto) {
             // =========================================================
             // VERIFICAR SE É FULL
             // =========================================================
-            // Um item é FULL se:
-            // - shipping.logistic_type for "fulfillment" OU
-            // - logistic_type for "fulfillment" OU
-            // - tiver a tag "fulfillment"
             const isFulfillment = item.shipping?.logistic_type === 'fulfillment' || 
                                   item.logistic_type === 'fulfillment' ||
                                   item.tags?.includes('fulfillment');
 
-            // Tem convivência se tiver a tag self_service_in (no item ou no shipping)
             const hasSelfService = item.tags?.includes('self_service_in') || 
                                    item.shipping?.tags?.includes('self_service_in');
 
             console.log(`📦 Item ${itemId}: isFulfillment=${isFulfillment}, hasSelfService=${hasSelfService}`);
 
             // =========================================================
-            // FUNÇÃO AUXILIAR PARA CALCULAR QUANTIDADE COM REGRAS
+            // FUNÇÃO PARA EXTRAIR SKU DO ANÚNCIO
             // =========================================================
-            function calcularQuantidadeComRegras(quantidadeBase, categoria, item, skuProduto, marcaProduto, modeloProduto, produto, isKitPai, skusFilhos) {
-                let quantidadeFinal = quantidadeBase;
+            function obterSkuAnuncio(item, skuProduto) {
+                let skuAnuncio = null;
                 
-                // --- SE FOR KIT ---
-                if (isKitPai) {
-                    const kitsDisponiveis = calcularKitsDisponiveis(skusFilhos, produtosEstoque);
-                    console.log(`📦 Produto é um KIT. Kits disponíveis: ${kitsDisponiveis}`);
-                    quantidadeFinal = kitsDisponiveis;
+                if (item.variations && item.variations.length > 0) {
+                    const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+                    if (variacaoAlvo) {
+                        skuAnuncio = extrairSkuDaVariacao(variacaoAlvo);
+                    } else {
+                        for (const v of item.variations) {
+                            const testSku = extrairSkuDaVariacao(v);
+                            if (testSku && testSku.match(/\d/)) {
+                                skuAnuncio = testSku;
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    skuAnuncio = extrairSkuDoItem(item);
                 }
                 
-                // --- REGRA UNIVERSAL DE PREÇO (aplicada a TODOS os produtos) ---
+                return skuAnuncio;
+            }
+
+            // =========================================================
+            // FUNÇÃO AUXILIAR PARA CALCULAR QUANTIDADE COM REGRAS
+            // =========================================================
+            function calcularQuantidadeComRegras(quantidadeBase, categoria, item, skuProduto, marcaProduto, modeloProduto, produto, isKitPai, skusFilhos, skuAnuncio) {
+                let quantidadeFinal = quantidadeBase;
+                
+                console.log(`📊 [calcularQuantidadeComRegras] Quantidade base: ${quantidadeBase}`);
+                console.log(`📊 [calcularQuantidadeComRegras] Categoria: ${categoria}`);
+                console.log(`📊 [calcularQuantidadeComRegras] isKitPai: ${isKitPai}`);
+                console.log(`📊 [calcularQuantidadeComRegras] SKU do anúncio: ${skuAnuncio}`);
+                
+                // --- SE FOR KIT ---
+                if (isKitPai && skusFilhos && skusFilhos.length > 0) {
+                    const kitsDisponiveis = calcularKitsDisponiveis(skusFilhos, produtosEstoque, skuAnuncio);
+                    console.log(`📦 Produto é um KIT. Kits disponíveis: ${kitsDisponiveis}`);
+                    quantidadeFinal = kitsDisponiveis;
+                    console.log(`📊 [calcularQuantidadeComRegras] Após KIT: ${quantidadeFinal}`);
+                } else if (skuAnuncio) {
+                    // Se não for kit mas tiver SKU do anúncio, extrair a quantidade
+                    const quantidadePorKit = extrairUnidadesPorKit(skuAnuncio);
+                    if (quantidadePorKit > 1) {
+                        console.log(`📦 Produto NÃO é kit, mas SKU indica venda em quantidade: ${quantidadePorKit}`);
+                        quantidadeFinal = Math.floor(quantidadeBase / quantidadePorKit);
+                        console.log(`📊 [calcularQuantidadeComRegras] Estoque ajustado para venda em quantidade: ${quantidadeFinal}`);
+                    }
+                }
+                
+                // --- REGRA UNIVERSAL DE PREÇO ---
                 let precoAnuncio = 0;
                 if (item.variations && item.variations.length > 0) {
                     const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
@@ -1574,7 +1805,6 @@ async function sincronizarEstoqueML(produto) {
                         userProductId = variacaoAlvo.user_product_id;
                         console.log(`✅ user_product_id da variação: ${userProductId}`);
                     } else {
-                        // Se não encontrou pela SKU, pega o primeiro que tiver user_product_id
                         for (const v of item.variations) {
                             if (v.user_product_id) {
                                 userProductId = v.user_product_id;
@@ -1594,15 +1824,20 @@ async function sincronizarEstoqueML(produto) {
                     continue;
                 }
 
-                // 2. Calcular a quantidade com as regras
+                // 2. Obter SKU do anúncio
+                const skuAnuncio = obterSkuAnuncio(item, skuProduto);
+                console.log(`🔍 SKU do anúncio encontrado: "${skuAnuncio}"`);
+
+                // 3. Calcular a quantidade com as regras
                 let quantidadeParaEnviar = calcularQuantidadeComRegras(
                     quantidadeReal, categoria, item, skuProduto, 
-                    marcaProduto, modeloProduto, produto, isKitPai, skusFilhos
+                    marcaProduto, modeloProduto, produto, isKitPai, skusFilhos,
+                    skuAnuncio
                 );
 
                 console.log(`📊 [FULL] Quantidade a ser enviada: ${quantidadeParaEnviar}`);
 
-                // 3. Atualizar o estoque usando o endpoint correto para convivência
+                // 4. Atualizar o estoque
                 const resultado = await atualizarEstoqueFullConvivio(
                     itemId, userProductId, quantidadeParaEnviar, token, WORKER_URL, item
                 );
@@ -1653,10 +1888,15 @@ async function sincronizarEstoqueML(produto) {
                 continue;
             }
 
+            // Obter SKU do anúncio
+            const skuAnuncio = obterSkuAnuncio(item, skuProduto);
+            console.log(`🔍 SKU do anúncio encontrado: "${skuAnuncio}"`);
+
             // Calcular quantidade com as regras
             let quantidadeParaEnviar = calcularQuantidadeComRegras(
                 quantidadeReal, categoria, item, skuProduto, 
-                marcaProduto, modeloProduto, produto, isKitPai, skusFilhos
+                marcaProduto, modeloProduto, produto, isKitPai, skusFilhos,
+                skuAnuncio
             );
 
             // --- COM VARIAÇÕES ---
@@ -1748,20 +1988,55 @@ function extrairUnidadesPorKit(skuAnuncio) {
     console.log(`🔍 extrairUnidadesPorKit recebeu: "${skuAnuncio}" (tipo: ${typeof skuAnuncio})`);
     if (!skuAnuncio || typeof skuAnuncio !== 'string') return 1;
     
-    // Encontra todos os grupos de 2 ou 3 dígitos
-    const grupos = skuAnuncio.match(/\d{2,3}/g);
-    if (!grupos) return 1;
+    // Limpar espaços e caracteres especiais
+    skuAnuncio = skuAnuncio.trim();
     
-    // Procura o primeiro grupo que seja maior que zero
-    for (let grupo of grupos) {
-        const valor = parseInt(grupo, 10);
+    // Verificar se tem múltiplos SKUs separados por "."
+    if (skuAnuncio.includes('.')) {
+        console.log(`📦 Multi-SKU detectado: ${skuAnuncio}`);
+        const partes = skuAnuncio.split('.');
+        let totalQuantidade = 0;
+        
+        for (const parte of partes) {
+            // Extrair os 3 primeiros dígitos de cada parte
+            const match = parte.match(/^(\d{3})/);
+            if (match) {
+                const valor = parseInt(match[1], 10);
+                if (valor > 0) {
+                    totalQuantidade += valor;
+                    console.log(`   Parte "${parte}": ${valor} unidades`);
+                }
+            }
+        }
+        
+        if (totalQuantidade > 0) {
+            console.log(`✅ Total de unidades por kit (multi-SKU): ${totalQuantidade}`);
+            return totalQuantidade;
+        }
+    }
+    
+    // SKU único - extrair os 3 primeiros dígitos
+    const match = skuAnuncio.match(/^(\d{3})/);
+    if (match) {
+        const valor = parseInt(match[1], 10);
         if (valor > 0) {
-            console.log(`✅ Quantidade por kit extraída: ${valor} (do grupo "${grupo}")`);
+            console.log(`✅ Quantidade por kit extraída: ${valor} (dos 3 primeiros dígitos "${match[1]}")`);
             return valor;
         }
     }
     
-    // Se todos forem zero, retorna 1 (fallback seguro)
+    // Fallback: procurar qualquer grupo de 2 ou 3 dígitos
+    const grupos = skuAnuncio.match(/\d{2,3}/g);
+    if (grupos) {
+        for (let grupo of grupos) {
+            const valor = parseInt(grupo, 10);
+            if (valor > 0) {
+                console.log(`✅ Quantidade por kit extraída (fallback): ${valor} (do grupo "${grupo}")`);
+                return valor;
+            }
+        }
+    }
+    
     console.warn(`⚠️ Nenhum dígito positivo encontrado, usando 1`);
     return 1;
 }
@@ -2093,6 +2368,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Configurar eventos do kit
     configurarEventosKit();
+
+    // Inicializar paginação
+    paginaAtualEstoque = 1;
+    itensPorPaginaEstoque = 20;
+    produtosFiltradosAtuais = [];
     
     setTimeout(async () => {
         if (!window.supabaseClient) return;
