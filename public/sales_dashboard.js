@@ -95,10 +95,24 @@ function isAdmin() {
     return false;
 }
 
+// Adicione isso no início do sales_dashboard.js, após as variáveis globais
 function getVendasSemFull(vendas = vendasML) {
     return vendas.filter(v => {
-        const tipo = (v.tipo_envio || '').toUpperCase();
-        return !tipo.includes('FULL') && !tipo.includes('FULFILLMENT') && tipo !== 'FULL';
+        // Verifica múltiplos campos que podem indicar FULL
+        const tipoEnvio = (v.tipo_envio || '').toUpperCase();
+        const informacoesEnvio = v.informacoes_envio ? JSON.parse(v.informacoes_envio) : {};
+        const tipoLogistico = (informacoesEnvio.tipo || '').toUpperCase();
+        
+        // Verifica se é FULL por qualquer um dos campos
+        const isFull = 
+            tipoEnvio.includes('FULL') || 
+            tipoEnvio.includes('FULFILLMENT') || 
+            tipoEnvio === 'FULL' ||
+            tipoLogistico.includes('FULL') ||
+            tipoLogistico.includes('FULFILLMENT') ||
+            tipoLogistico === 'FULL';
+        
+        return !isFull;
     });
 }
 
@@ -1525,11 +1539,30 @@ function paginarVendasLista(vendas) {
     console.log(`📊 Página ${paginaAtual} de ${totalPaginas} - Mostrando ${vendasPaginadas.length} vendas`);
 }
 
+// Adicione no script.js ou sales_dashboard.js
+function isFullVenda(venda) {
+    const tipo = (venda.tipo_envio || '').toUpperCase();
+    const tags = venda.tags || [];
+    
+    return tipo.includes('FULL') || 
+           tipo.includes('FULFILLMENT') || 
+           tipo === 'FULL' ||
+           tags.some(t => t.toUpperCase().includes('FULL'));
+}
+
 // ============================================
 // APLICAR FILTRO ATUAL (COM FILTRO FULL AUTOMÁTICO)
 // ============================================
 function aplicarFiltroAtual() {
     let vendasFiltradas = [...vendasML];
+
+    // Adicione no início de aplicarFiltroAtual()
+        console.log('🔍 VENDAS TOTAL:', vendasML.length);
+        console.log('🔍 TIPOS DE ENVIO:', vendasML.map(v => v.tipo_envio));
+        console.log('🔍 VENDAS FULL:', vendasML.filter(v => {
+            const tipo = (v.tipo_envio || '').toUpperCase();
+            return tipo.includes('FULL') || tipo.includes('FULFILLMENT');
+        }).length);
     
     console.log('🔍 Aplicando filtros:', {
         filtroConferencia,
