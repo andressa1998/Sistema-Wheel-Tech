@@ -23,6 +23,62 @@ const usuariosVerCusto = ['andressamiotto', 'ronald'];
 // ===== USUÁRIOS ADMIN =====
 const usuariosAdmin = ['andressamiotto', 'ronald', 'leticia'];
 
+// ===== USUÁRIOS AUTORIZADOS A MODIFICAR REGRAS =====
+const usuariosRegraEstoque = ['andressamiotto', 'ronald', 'bruna', 'arthur'];
+
+// =========================================================
+// REGRAS DE ESTOQUE CONDICIONAIS (VALOR DO ANÚNCIO + QUANTIDADE)
+// =========================================================
+
+// Estrutura padrão das regras por categoria
+// Cada categoria pode ter múltiplas condições
+const regrasEstoquePadrao = {
+    'Eixos': {
+        condicoes: [
+            { operador: 'maior_que', valor: 100, estoque_maximo: 10 },
+            { operador: 'padrao', estoque_maximo: 50 }
+        ]
+    },
+    'Parafusos': {
+        condicoes: [
+            { operador: 'maior_que', valor: 80, estoque_maximo: 15 },
+            { operador: 'padrao', estoque_maximo: 30 }
+        ]
+    },
+    'Rolamentos': {
+        condicoes: [
+            { operador: 'maior_que', valor: 150, estoque_maximo: 10 },
+            { operador: 'padrao', estoque_maximo: 40 }
+        ]
+    },
+    'Raios': {
+        condicoes: [
+            { operador: 'maior_que', valor: 200, estoque_maximo: 20 },
+            { operador: 'padrao', estoque_maximo: 60 }
+        ]
+    },
+    'Arruelas': {
+        condicoes: [
+            { operador: 'maior_que', valor: 50, estoque_maximo: 20 },
+            { operador: 'padrao', estoque_maximo: 50 }
+        ]
+    },
+    'Porcas': {
+        condicoes: [
+            { operador: 'maior_que', valor: 50, estoque_maximo: 20 },
+            { operador: 'padrao', estoque_maximo: 50 }
+        ]
+    },
+    'outros': {
+        condicoes: [
+            { operador: 'maior_que', valor: 100, estoque_maximo: 15 },
+            { operador: 'padrao', estoque_maximo: 30 }
+        ]
+    }
+};
+
+let regrasEstoqueAtuais = {};
+
 // Definição dos campos específicos por categoria (organizados em grade)
 const camposPorCategoria = {
     Eixos: [
@@ -144,6 +200,7 @@ window.abrirGestaoEstoque = function() {
     if (userRoleEl) userRoleEl.textContent = currentUser.role;
 
     carregarProdutosEstoque();
+    carregarRegrasEstoque();
 
     const buscaInput = document.getElementById('buscaEstoqueInput');
     if (buscaInput) {
@@ -151,7 +208,6 @@ window.abrirGestaoEstoque = function() {
         buscaInput.addEventListener('input', filtrarProdutosEstoque);
     }
 
-    // Adicionar filtro de categoria
     const categoriaFilter = document.getElementById('filtroCategoriaEstoque');
     if (categoriaFilter) {
         categoriaFilter.removeEventListener('change', filtrarProdutosEstoque);
@@ -188,12 +244,10 @@ function filtrarProdutosEstoque() {
 
     let filtrados = produtosEstoque;
 
-    // Filtrar por categoria
     if (categoriaSelecionada && categoriaSelecionada !== '') {
         filtrados = filtrados.filter(prod => prod.categoria === categoriaSelecionada);
     }
 
-    // Filtrar por termo de busca
     if (termo) {
         filtrados = filtrados.filter(prod => {
             if (prod.nome && prod.nome.toLowerCase().includes(termo)) return true;
@@ -223,7 +277,6 @@ function ordenarEstoquePor(coluna) {
         ordemColunaEstoque.direcao = 'asc';
     }
     
-    // Atualizar ícones das colunas
     document.querySelectorAll('#produtosEstoqueTable thead th').forEach(th => {
         const icon = th.querySelector('.ordenacao-icon');
         if (icon) {
@@ -305,6 +358,7 @@ async function verHistoricoMovimentacoes(produtoId) {
     document.body.appendChild(modal);
 }
 
+// ===== RENDERIZAR TABELA DE PRODUTOS =====
 function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     console.log('🔍 [renderizarTabelaProdutos] Iniciando renderização...');
     
@@ -443,6 +497,30 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             ? '<span class="sync-status-badge bloqueado"><i class="fas fa-lock"></i> Bloqueado</span>'
             : '<span class="sync-status-badge ativo"><i class="fas fa-check-circle"></i> Ativo</span>';
         
+        // ===== VERIFICAR EXCESSO DE ESTOQUE (baseado no preço unitário) =====
+        const isExcesso = verificarExcessoEstoque(prod);
+        const maximoPermitido = calcularEstoqueMaximo(prod);
+        const precoUnitario = prod.preco || 0;
+        
+        // ===== MONTAR TOOLTIP COM INFORMAÇÕES DA REGRA =====
+        let excessoTooltip = '';
+        if (isExcesso) {
+            excessoTooltip = `Preço: R$ ${precoUnitario.toFixed(2)} | Estoque máximo: ${maximoPermitido} | Atual: ${prod.quantidade}`;
+        }
+        
+        // ===== MONTAR QUANTIDADE COM INDICADORES =====
+        let quantidadeHtml = `${prod.quantidade}`;
+        if (isExcesso) {
+            quantidadeHtml += ` <span class="badge badge-danger" title="${excessoTooltip}"><i class="fas fa-exclamation-triangle"></i> EXCESSO (máx: ${maximoPermitido})</span>`;
+        } else if (prod.quantidade <= 5) {
+            quantidadeHtml = `<span class="text-danger fw-bold">${prod.quantidade}</span>`;
+        }
+        
+        // ===== DESCRIÇÃO DA REGRA APLICADA =====
+        const descricaoRegra = getDescricaoRegra(prod);
+        const excessoInfo = isExcesso ? `<br><span class="badge badge-danger mt-1" title="${descricaoRegra}">⚠️ Excesso (máx: ${maximoPermitido})</span>` : '';
+        
+        // ===== BOTÕES DE AÇÃO =====
         let botoes = `
             <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
             <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
@@ -463,7 +541,7 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             <td>${prod.id}</td>
             <td><strong>${escapeHtml(prod.nome)}</strong><br><small class="text-muted">${escapeHtml(prod.categoria || 'sem categoria')}</small></td>
             <td>${escapeHtml(prod.sku)}</td>
-            <td class="${prod.quantidade <= 5 ? 'text-danger fw-bold' : ''}">${prod.quantidade}</td>
+            <td>${quantidadeHtml}</td>
         `;
         
         if (podeVerCusto) {
@@ -478,6 +556,7 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             <td>
                 <span title="${escapeHtml(atributosResumo)}" class="badge bg-info">${Object.keys(prod.dados_extra || {}).length} atributos</span>
                 ${temMLB ? `<span class="badge bg-success"><i class="fab fa-mercadolibre"></i> ${Array.isArray(mlbCodes) ? mlbCodes.length : 1}</span>` : ''}
+                ${excessoInfo}
             </td>
             <td><div class="d-flex flex-wrap gap-1">${botoes}</div></td>
         `;
@@ -2110,6 +2189,479 @@ function extrairUnidadesPorKit(skuAnuncio) {
     return 1;
 }
 
+// =========================================================
+// EXPORTAR DADOS PARA EXCEL
+// =========================================================
+
+function exportarEstoqueExcel() {
+    const produtos = produtosFiltradosAtuais || produtosEstoque;
+    
+    if (!produtos || produtos.length === 0) {
+        showToast('⚠️ Nenhum produto para exportar.', 'warning');
+        return;
+    }
+    
+    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
+    
+    const dados = [];
+    
+    const cabecalho = ['ID', 'Nome', 'SKU', 'Categoria', 'Quantidade', 'Preço Venda'];
+    if (podeVerCusto) {
+        cabecalho.push('Último Custo', 'Custo Médio');
+    }
+    cabecalho.push('Atributos', 'MLB Codes', 'Sync ML Bloqueado');
+    dados.push(cabecalho);
+    
+    produtos.forEach(prod => {
+        const atributos = prod.dados_extra ? Object.entries(prod.dados_extra)
+            .filter(([key]) => key !== 'mlb_codes' && key !== 'historico_custos' && key !== 'bloquear_sync_ml')
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('; ') : '';
+        
+        const mlbCodes = prod.mlb_codes || prod.dados_extra?.mlb_codes;
+        const mlbString = mlbCodes && Array.isArray(mlbCodes) 
+            ? mlbCodes.join(', ') 
+            : (mlbCodes || '');
+        
+        const syncBloqueado = prod.bloquear_sync_ml || prod.dados_extra?.bloquear_sync_ml || false;
+        
+        const linha = [
+            prod.id || '',
+            prod.nome || '',
+            prod.sku || '',
+            prod.categoria || '',
+            prod.quantidade || 0,
+            prod.preco || 0
+        ];
+        
+        if (podeVerCusto) {
+            const ultimoCusto = prod.ultimo_custo || prod.dados_extra?.ultimo_custo || 0;
+            const custoMedio = prod.custo_medio || prod.dados_extra?.custo_medio || 0;
+            linha.push(ultimoCusto);
+            linha.push(custoMedio);
+        }
+        
+        linha.push(atributos);
+        linha.push(mlbString);
+        linha.push(syncBloqueado ? 'Sim' : 'Não');
+        dados.push(linha);
+    });
+    
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(dados);
+    
+    const colunas = [
+        { wch: 8 }, { wch: 35 }, { wch: 25 }, { wch: 15 }, 
+        { wch: 12 }, { wch: 12 }
+    ];
+    if (podeVerCusto) {
+        colunas.push({ wch: 12 }, { wch: 12 });
+    }
+    colunas.push({ wch: 40 }, { wch: 30 }, { wch: 15 });
+    ws['!cols'] = colunas;
+    
+    XLSX.utils.book_append_sheet(wb, ws, 'Estoque');
+    
+    const data = new Date();
+    const dataStr = `${data.getFullYear()}-${String(data.getMonth()+1).padStart(2,'0')}-${String(data.getDate()).padStart(2,'0')}`;
+    const filename = `estoque_${dataStr}.xlsx`;
+    
+    XLSX.writeFile(wb, filename);
+    showToast(`✅ ${produtos.length} produtos exportados com sucesso!`, 'success');
+}
+
+// =========================================================
+// REGRAS DE ESTOQUE CONDICIONAIS (VALOR DO ANÚNCIO + QUANTIDADE)
+// =========================================================
+
+async function carregarRegrasEstoque() {
+    try {
+        if (!window.supabaseClient) {
+            const localData = localStorage.getItem('regras_estoque_condicionais');
+            if (localData) {
+                regrasEstoqueAtuais = JSON.parse(localData);
+                console.log('✅ Regras carregadas do localStorage');
+            } else {
+                regrasEstoqueAtuais = JSON.parse(JSON.stringify(regrasEstoquePadrao));
+                localStorage.setItem('regras_estoque_condicionais', JSON.stringify(regrasEstoqueAtuais));
+                console.log('✅ Regras padrão carregadas');
+            }
+            return;
+        }
+        
+        const { data, error } = await window.supabaseClient
+            .from('configuracoes_sistema')
+            .select('*')
+            .eq('chave', 'regras_estoque_condicionais')
+            .single();
+        
+        if (error && error.code !== 'PGRST116') {
+            console.error('Erro ao carregar regras:', error);
+            return;
+        }
+        
+        if (data && data.valor) {
+            regrasEstoqueAtuais = typeof data.valor === 'string' ? JSON.parse(data.valor) : data.valor;
+            console.log('✅ Regras carregadas do Supabase:', regrasEstoqueAtuais);
+        } else {
+            regrasEstoqueAtuais = JSON.parse(JSON.stringify(regrasEstoquePadrao));
+            await salvarRegrasEstoque(regrasEstoqueAtuais);
+        }
+        
+        if (document.getElementById('modalRegrasEstoque')) {
+            preencherModalRegras();
+        }
+    } catch (error) {
+        console.error('❌ Erro ao carregar regras:', error);
+        regrasEstoqueAtuais = JSON.parse(JSON.stringify(regrasEstoquePadrao));
+    }
+}
+
+async function salvarRegrasEstoque(regras) {
+    try {
+        if (!window.supabaseClient) {
+            localStorage.setItem('regras_estoque_condicionais', JSON.stringify(regras));
+            regrasEstoqueAtuais = regras;
+            showToast('✅ Regras salvas no localStorage!', 'success');
+            renderizarTabelaProdutos(produtosFiltradosAtuais);
+            return;
+        }
+        
+        const { error } = await window.supabaseClient
+            .from('configuracoes_sistema')
+            .upsert({
+                chave: 'regras_estoque_condicionais',
+                valor: JSON.stringify(regras),
+                atualizado_em: new Date().toISOString(),
+                atualizado_por: currentUser?.name || 'sistema'
+            }, { onConflict: 'chave' });
+        
+        if (error) throw error;
+        
+        regrasEstoqueAtuais = regras;
+        console.log('✅ Regras salvas com sucesso!');
+        showToast('✅ Regras de estoque atualizadas!', 'success');
+        renderizarTabelaProdutos(produtosFiltradosAtuais);
+        
+    } catch (error) {
+        console.error('❌ Erro ao salvar regras:', error);
+        showToast('Erro ao salvar regras: ' + error.message, 'error');
+    }
+}
+
+// ===== CALCULAR ESTOQUE MÁXIMO PERMITIDO (baseado no preço unitário) =====
+function calcularEstoqueMaximo(produto) {
+    if (!produto || !produto.categoria) return 30;
+    
+    const regrasCategoria = regrasEstoqueAtuais[produto.categoria] || regrasEstoquePadrao['outros'];
+    if (!regrasCategoria || !regrasCategoria.condicoes) return 30;
+    
+    const precoUnitario = produto.preco || 0;
+    
+    for (const condicao of regrasCategoria.condicoes) {
+        if (condicao.operador === 'padrao') {
+            return condicao.estoque_maximo || 30;
+        }
+        
+        if (condicao.operador === 'maior_que' && precoUnitario > condicao.valor) {
+            return condicao.estoque_maximo || 30;
+        }
+        
+        if (condicao.operador === 'menor_que' && precoUnitario < condicao.valor) {
+            return condicao.estoque_maximo || 30;
+        }
+        
+        if (condicao.operador === 'igual_a' && precoUnitario === condicao.valor) {
+            return condicao.estoque_maximo || 30;
+        }
+    }
+    
+    return 30;
+}
+
+// ===== VERIFICAR EXCESSO =====
+function verificarExcessoEstoque(produto) {
+    if (!produto) return false;
+    const estoqueMaximo = calcularEstoqueMaximo(produto);
+    return produto.quantidade > estoqueMaximo;
+}
+
+// ===== DESCRIÇÃO DA REGRA APLICADA =====
+function getDescricaoRegra(produto) {
+    if (!produto || !produto.categoria) return 'Sem regra definida';
+    
+    const regrasCategoria = regrasEstoqueAtuais[produto.categoria] || regrasEstoquePadrao['outros'];
+    if (!regrasCategoria || !regrasCategoria.condicoes) return 'Sem regra definida';
+    
+    const precoUnitario = produto.preco || 0;
+    const regrasAplicadas = [];
+    
+    for (const condicao of regrasCategoria.condicoes) {
+        if (condicao.operador === 'padrao') {
+            regrasAplicadas.push(`Padrão: ${condicao.estoque_maximo} unidades`);
+            continue;
+        }
+        
+        const operadorTexto = condicao.operador === 'maior_que' ? '>' : 
+                             condicao.operador === 'menor_que' ? '<' : '=';
+        
+        let aplicado = false;
+        if (condicao.operador === 'maior_que' && precoUnitario > condicao.valor) aplicado = true;
+        else if (condicao.operador === 'menor_que' && precoUnitario < condicao.valor) aplicado = true;
+        else if (condicao.operador === 'igual_a' && precoUnitario === condicao.valor) aplicado = true;
+        
+        const prefixo = aplicado ? '✅' : '⏭️';
+        regrasAplicadas.push(`${prefixo} Se preço ${operadorTexto} R$ ${condicao.valor.toFixed(2)} → ${condicao.estoque_maximo} unid.`);
+    }
+    
+    return regrasAplicadas.join('\n');
+}
+
+// ===== ABRIR MODAL DE REGRAS =====
+function abrirModalRegrasEstoque() {
+    const username = currentUser?.username?.toLowerCase() || '';
+    const isAuthorized = usuariosRegraEstoque.includes(username) || usuariosAdmin.includes(username);
+    
+    if (!isAuthorized) {
+        showToast('⚠️ Apenas administradores podem modificar as regras de estoque.', 'warning');
+        return;
+    }
+    
+    let modal = document.getElementById('modalRegrasEstoque');
+    if (!modal) {
+        modal = criarModalRegrasEstoque();
+    }
+    
+    preencherModalRegras();
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+}
+
+// ===== CRIAR MODAL DE REGRAS =====
+function criarModalRegrasEstoque() {
+    const modal = document.createElement('div');
+    modal.id = 'modalRegrasEstoque';
+    modal.className = 'modal hidden';
+    modal.style.cssText = 'display: none; align-items: center; justify-content: center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99999;';
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 900px; background: white; padding: 30px; border-radius: 12px; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3><i class="fas fa-sliders-h" style="color: #00ADEE;"></i> Regras de Estoque Máximo</h3>
+                <button onclick="fecharModalRegrasEstoque()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">&times;</button>
+            </div>
+            <div style="background: #fff3cd; padding: 12px 15px; border-radius: 6px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                <i class="fas fa-info-circle"></i> 
+                <strong>Como funciona:</strong> As regras são baseadas no <strong>preço do anúncio</strong> do produto.
+                <br>Exemplo: Se preço > R$ 100,00 → estoque máximo = 10 unidades. Senão → estoque máximo = 50 unidades.
+            </div>
+            <div id="regrasEstoqueContainer">
+                <!-- Campos serão preenchidos dinamicamente -->
+            </div>
+            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; border-top: 1px solid #dee2e6; padding-top: 20px;">
+                <button class="btn btn-secondary" onclick="fecharModalRegrasEstoque()">Cancelar</button>
+                <button class="btn btn-success" onclick="salvarRegrasEstoqueModal()">
+                    <i class="fas fa-save"></i> Salvar Regras
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    return modal;
+}
+
+// ===== PREENCHER MODAL DE REGRAS =====
+function preencherModalRegras() {
+    const container = document.getElementById('regrasEstoqueContainer');
+    if (!container) return;
+    
+    const categorias = ['Eixos', 'Parafusos', 'Rolamentos', 'Raios', 'Arruelas', 'Porcas', 'outros'];
+    const labels = {
+        'Eixos': 'Eixos Passantes',
+        'Parafusos': 'Parafusos',
+        'Rolamentos': 'Rolamentos',
+        'Raios': 'Raios',
+        'Arruelas': 'Arruelas',
+        'Porcas': 'Porcas',
+        'outros': 'Outros'
+    };
+    
+    const operadores = [
+        { value: 'maior_que', label: '>' },
+        { value: 'menor_que', label: '<' },
+        { value: 'igual_a', label: '=' },
+        { value: 'padrao', label: 'Padrão' }
+    ];
+    
+    let html = '';
+    
+    categorias.forEach((cat) => {
+        const regras = regrasEstoqueAtuais[cat] || regrasEstoquePadrao[cat] || { condicoes: [] };
+        const condicoes = regras.condicoes || [];
+        
+        html += `
+            <div style="border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: #fafafa;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                    <h4 style="margin: 0; font-size: 16px; color: #00ADEE;">${labels[cat] || cat}</h4>
+                    <button class="btn btn-sm btn-primary" onclick="adicionarCondicaoRegra('${cat}')">
+                        <i class="fas fa-plus"></i> Adicionar Condição
+                    </button>
+                </div>
+                <div id="condicoes_${cat}" style="display: flex; flex-direction: column; gap: 8px;">
+        `;
+        
+        if (condicoes.length === 0) {
+            html += `
+                <div style="text-align: center; color: #6c757d; padding: 10px; font-size: 13px; background: white; border-radius: 6px; border: 1px dashed #dee2e6;">
+                    Nenhuma condição definida. Clique em "Adicionar Condição".
+                </div>
+            `;
+        } else {
+            condicoes.forEach((condicao, idx) => {
+                const isPadrao = condicao.operador === 'padrao';
+                html += `
+                    <div style="display: flex; align-items: center; gap: 8px; background: white; padding: 8px 12px; border-radius: 6px; border: 1px solid #e9ecef;" id="condicao_${cat}_${idx}">
+                        <span style="font-weight: 600; font-size: 13px; color: #495057; min-width: 60px;">Se preço</span>
+                        <select class="form-control form-control-sm" style="width: 100px;" onchange="atualizarCondicaoRegra('${cat}', ${idx}, 'operador', this.value)">
+                            ${operadores.map(op => `
+                                <option value="${op.value}" ${condicao.operador === op.value ? 'selected' : ''}>${op.label}</option>
+                            `).join('')}
+                        </select>
+                        ${!isPadrao ? `
+                            <span style="color: #6c757d; font-size: 13px;">R$</span>
+                            <input type="number" class="form-control form-control-sm" style="width: 100px;" 
+                                   value="${condicao.valor || 0}" step="0.01" min="0"
+                                   onchange="atualizarCondicaoRegra('${cat}', ${idx}, 'valor', parseFloat(this.value) || 0)"
+                                   placeholder="Valor">
+                            <span style="color: #6c757d; font-size: 13px;">→</span>
+                        ` : ''}
+                        <span style="color: #6c757d; font-size: 13px;">Estoque máx.:</span>
+                        <input type="number" class="form-control form-control-sm" style="width: 80px;" 
+                               value="${condicao.estoque_maximo || 0}" step="1" min="0"
+                               onchange="atualizarCondicaoRegra('${cat}', ${idx}, 'estoque_maximo', parseInt(this.value) || 0)"
+                               placeholder="Máx">
+                        <span style="color: #6c757d; font-size: 12px;">unidades</span>
+                        ${!isPadrao ? `
+                            <button class="btn btn-sm btn-danger" onclick="removerCondicaoRegra('${cat}', ${idx})" title="Remover condição">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        ` : `
+                            <span class="badge badge-secondary" style="font-size: 11px;">Padrão (senão)</span>
+                        `}
+                    </div>
+                    ${!isPadrao ? `
+                        <div style="font-size: 11px; color: #6c757d; padding-left: 15px; margin-top: -4px;">
+                            <i class="fas fa-info-circle"></i> Exemplo: Se preço ${condicao.operador === 'maior_que' ? '>' : condicao.operador === 'menor_que' ? '<' : '='} R$ ${condicao.valor || 0} → estoque máximo = ${condicao.estoque_maximo || 0} unidades
+                        </div>
+                    ` : ''}
+                `;
+            });
+        }
+        
+        html += `
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+// ===== ADICIONAR CONDIÇÃO =====
+function adicionarCondicaoRegra(categoria) {
+    if (!regrasEstoqueAtuais[categoria]) {
+        regrasEstoqueAtuais[categoria] = { condicoes: [] };
+    }
+    
+    const condicoes = regrasEstoqueAtuais[categoria].condicoes;
+    const padraoIndex = condicoes.findIndex(c => c.operador === 'padrao');
+    
+    const novaCondicao = { operador: 'maior_que', valor: 100, estoque_maximo: 10 };
+    
+    if (padraoIndex !== -1) {
+        condicoes.splice(padraoIndex, 0, novaCondicao);
+    } else {
+        condicoes.push(novaCondicao);
+    }
+    
+    preencherModalRegras();
+}
+
+// ===== REMOVER CONDIÇÃO =====
+function removerCondicaoRegra(categoria, index) {
+    if (!regrasEstoqueAtuais[categoria]) return;
+    
+    const condicoes = regrasEstoqueAtuais[categoria].condicoes;
+    if (condicoes[index] && condicoes[index].operador === 'padrao') {
+        showToast('Não é possível remover a condição padrão (senão).', 'warning');
+        return;
+    }
+    
+    if (condicoes.length <= 1) {
+        showToast('Mantenha pelo menos a condição padrão.', 'warning');
+        return;
+    }
+    
+    condicoes.splice(index, 1);
+    preencherModalRegras();
+}
+
+// ===== ATUALIZAR CONDIÇÃO =====
+function atualizarCondicaoRegra(categoria, index, campo, valor) {
+    if (!regrasEstoqueAtuais[categoria]) return;
+    
+    const condicoes = regrasEstoqueAtuais[categoria].condicoes;
+    if (!condicoes[index]) return;
+    
+    condicoes[index][campo] = valor;
+    
+    if (campo === 'operador' && valor === 'padrao') {
+        delete condicoes[index].valor;
+    }
+    
+    clearTimeout(window._saveTimeout);
+    window._saveTimeout = setTimeout(() => {
+        salvarRegrasEstoque(regrasEstoqueAtuais);
+    }, 1000);
+}
+
+// ===== SALVAR REGRAS DO MODAL =====
+async function salvarRegrasEstoqueModal() {
+    const categorias = ['Eixos', 'Parafusos', 'Rolamentos', 'Raios', 'Arruelas', 'Porcas', 'outros'];
+    let valido = true;
+    
+    for (const cat of categorias) {
+        const regras = regrasEstoqueAtuais[cat];
+        if (!regras || !regras.condicoes || regras.condicoes.length === 0) {
+            showToast(`A categoria "${cat}" não tem nenhuma condição definida.`, 'warning');
+            valido = false;
+            break;
+        }
+        
+        const temPadrao = regras.condicoes.some(c => c.operador === 'padrao');
+        if (!temPadrao) {
+            showToast(`A categoria "${cat}" não tem uma condição padrão (senão).`, 'warning');
+            valido = false;
+            break;
+        }
+    }
+    
+    if (!valido) return;
+    
+    await salvarRegrasEstoque(regrasEstoqueAtuais);
+    fecharModalRegrasEstoque();
+}
+
+// ===== FECHAR MODAL DE REGRAS =====
+function fecharModalRegrasEstoque() {
+    const modal = document.getElementById('modalRegrasEstoque');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+}
+
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>]/g, function(m) {
@@ -2204,9 +2756,7 @@ async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, t
             const stockData = await getStockRes.json();
             console.log(`📊 [FULL] Estoque atual do item:`, JSON.stringify(stockData, null, 2));
             
-            const requestBody = { 
-                available_quantity: quantidade 
-            };
+            const requestBody = { available_quantity: quantidade };
             
             console.log(`📤 [FULL] Corpo da requisição:`, JSON.stringify(requestBody, null, 2));
             
@@ -2582,6 +3132,10 @@ function calcularKitsDisponiveis(skusFilhos, produtosEstoque, skuAnuncio = null)
     return kitsPossiveis;
 }
 
+// ============================================
+// INICIALIZAÇÃO
+// ============================================
+
 document.addEventListener('DOMContentLoaded', () => {
     const buscaInput = document.getElementById('buscaEstoqueInput');
     if (buscaInput) {
@@ -2598,6 +3152,8 @@ document.addEventListener('DOMContentLoaded', () => {
     paginaAtualEstoque = 1;
     itensPorPaginaEstoque = 20;
     produtosFiltradosAtuais = [];
+    
+    setTimeout(carregarRegrasEstoque, 1000);
     
     setTimeout(async () => {
         if (!window.supabaseClient) return;
