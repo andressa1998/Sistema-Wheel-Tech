@@ -4982,6 +4982,35 @@ body > * {
     </div>
 </div>
 
+<!-- MODAL PARA ANÚNCIOS FULL DETECTADOS -->
+<div id="modalFullDetectados" class="modal hidden">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; padding: 0;">
+        <div style="background: linear-gradient(135deg, #6f42c1, #4B0082); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h3 style="margin: 0;"><i class="fas fa-warehouse"></i> Anúncios FULL Detectados</h3>
+                <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
+                    Os seguintes anúncios estão em FULL e precisam ser atualizados manualmente
+                </p>
+            </div>
+            <!-- NÃO TEM BOTÃO DE FECHAR (X) - só fecha quando todos os OK forem clicados -->
+        </div>
+        <div style="padding: 20px; max-height: 60vh; overflow-y: auto;">
+            <div id="fullDetectadosLista">
+                <!-- Itens serão carregados dinamicamente -->
+            </div>
+            <div class="progress mt-3" style="height: 8px;">
+                <div id="fullProgressBar" class="progress-bar bg-danger" role="progressbar" style="width: 0%;"></div>
+            </div>
+            <div class="text-center mt-2">
+                <small id="fullProgressText" class="text-muted">0 de 0 confirmados</small>
+            </div>
+        </div>
+        <div style="background: #f8f9fa; padding: 15px 25px; border-top: 1px solid #dee2e6; display: flex; justify-content: flex-end; gap: 10px;">
+            <!-- NÃO TEM BOTÃO DE FECHAR - só fecha quando todos os OK forem clicados -->
+        </div>
+    </div>
+</div>
+
 <!-- MODAL PARA MOVIMENTAÇÃO DE ESTOQUE (ENTRADA/SAÍDA) -->
 <div id="modalMovimentacaoEstoque" class="modal hidden">
     <div class="modal-content" style="max-width: 500px;">
@@ -5020,37 +5049,6 @@ body > * {
         <div class="d-flex justify-content-between gap-2 mt-3">
             <button class="btn btn-secondary" onclick="fecharModalMovimentacaoEstoque()">Cancelar</button>
             <button class="btn btn-primary" onclick="confirmarMovimentacaoEstoque()">Confirmar</button>
-        </div>
-    </div>
-</div>
-
-<!-- MODAL PARA ANÚNCIOS FULL DETECTADOS -->
-<div id="modalFullDetectados" class="modal hidden">
-    <div class="modal-content" style="max-width: 700px; max-height: 90vh; padding: 0;">
-        <div style="background: linear-gradient(135deg, #6f42c1, #4B0082); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <h3 style="margin: 0;"><i class="fas fa-warehouse"></i> Anúncios FULL Detectados</h3>
-                <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
-                    Os seguintes anúncios estão em FULL e precisam ser atualizados manualmente
-                </p>
-            </div>
-            <button onclick="fecharModalFullDetectados()" style="background: rgba(255,255,255,0.2); border: none; color: white; font-size: 24px; cursor: pointer; width: 40px; height: 40px; border-radius: 50%;">
-                &times;
-            </button>
-        </div>
-        <div style="padding: 20px; max-height: 60vh; overflow-y: auto;">
-            <div id="fullDetectadosLista">
-                <!-- Itens serão carregados dinamicamente -->
-            </div>
-            <div class="progress mt-3" style="height: 8px;">
-                <div id="fullProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
-            </div>
-            <div class="text-center mt-2">
-                <small id="fullProgressText" class="text-muted">0 de 0 confirmados</small>
-            </div>
-        </div>
-        <div style="background: #f8f9fa; padding: 15px 25px; border-top: 1px solid #dee2e6; display: flex; justify-content: flex-end; gap: 10px;">
-            <button class="btn btn-secondary" onclick="fecharModalFullDetectados()">Fechar</button>
         </div>
     </div>
 </div>

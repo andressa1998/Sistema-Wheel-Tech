@@ -1796,7 +1796,170 @@ function parseMultiSkuVariation(skuString) {
     };
 }
 
+// =========================================================
+// MODAL PARA ANÚNCIOS FULL DETECTADOS
+// =========================================================
+
+function abrirModalFullDetectados(anunciosFull) {
+    console.log('🚀 [abrirModalFullDetectados] INICIANDO');
+    console.log('📦 [abrirModalFullDetectados] Anúncios recebidos:', anunciosFull);
+    
+    fullDetectados = anunciosFull || [];
+    fullConfirmados = new Set();
+    
+    const modal = document.getElementById('modalFullDetectados');
+    if (!modal) {
+        console.error('❌ [abrirModalFullDetectados] Modal #modalFullDetectados não encontrado');
+        showToast('Erro: Modal FULL não encontrado', 'error');
+        return;
+    }
+    console.log('✅ [abrirModalFullDetectados] Modal encontrado');
+    
+    const lista = document.getElementById('fullDetectadosLista');
+    if (!lista) {
+        console.error('❌ [abrirModalFullDetectados] #fullDetectadosLista não encontrado');
+        return;
+    }
+    console.log('✅ [abrirModalFullDetectados] Lista encontrada');
+    
+    if (fullDetectados.length === 0) {
+        console.log('ℹ️ [abrirModalFullDetectados] Nenhum anúncio FULL para exibir');
+        return;
+    }
+    
+    let html = `
+        <div class="alert alert-warning" style="margin-bottom: 15px;">
+            <i class="fas fa-exclamation-triangle"></i>
+            <strong>Atenção:</strong> Os anúncios abaixo estão em FULL e não puderam ser atualizados automaticamente.
+            <br>Você precisa atualizar o estoque manualmente no Mercado Livre e depois confirmar cada um clicando em "OK".
+            <br><br>
+            <strong>⚠️ O modal só será fechado quando TODOS os anúncios forem confirmados.</strong>
+        </div>
+        <div class="list-group">
+    `;
+    
+    fullDetectados.forEach((item, index) => {
+        const mlb = item.codigo || item.mlb || item.itemId || `MLB-${index}`;
+        const link = item.link || `https://www.mercadolivre.com.br/item/${mlb}`;
+        const estoque = item.estoque || item.quantidade || '?';
+        const nome = item.nome || item.titulo || 'Produto';
+        const erro = item.erro || item.error || 'FULL - atualize manualmente';
+        
+        html += `
+            <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" id="full-item-${index}">
+                <div style="flex:1;">
+                    <div><strong>${mlb}</strong></div>
+                    <div style="font-size: 12px; color: #6c757d;">${nome}</div>
+                    <div style="font-size: 12px; color: #6c757d;">Estoque sugerido: ${estoque} unidades</div>
+                    <div style="font-size: 11px; color: #dc3545;">${erro}</div>
+                    <a href="${link}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-primary mt-1">
+                        <i class="fas fa-external-link-alt"></i> Abrir anúncio para modificar
+                    </a>
+                </div>
+                <div style="min-width: 80px; text-align: right;">
+                    <button class="btn btn-sm btn-success" onclick="confirmarFullDetectado(${index})" id="btn-confirm-${index}">
+                        <i class="fas fa-check"></i> OK
+                    </button>
+                    <span class="badge badge-success ml-2" id="badge-confirm-${index}" style="display:none;">✅ Confirmado</span>
+                </div>
+            </div>
+        `;
+    });
+    
+    html += '</div>';
+    lista.innerHTML = html;
+    console.log('✅ [abrirModalFullDetectados] HTML renderizado');
+    
+    // Atualizar barra de progresso
+    atualizarProgressoFull();
+    
+    // Mostrar o modal
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    console.log('✅ [abrirModalFullDetectados] Modal exibido');
+}
+
+function confirmarFullDetectado(index) {
+    console.log(`✅ [confirmarFullDetectado] Confirmando índice ${index}`);
+    fullConfirmados.add(index);
+    
+    // Atualizar UI
+    const btn = document.getElementById(`btn-confirm-${index}`);
+    const badge = document.getElementById(`badge-confirm-${index}`);
+    const item = document.getElementById(`full-item-${index}`);
+    
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        setTimeout(() => {
+            btn.style.display = 'none';
+        }, 500);
+    }
+    if (badge) badge.style.display = 'inline-block';
+    if (item) {
+        item.style.backgroundColor = '#d4edda';
+        item.style.borderLeft = '4px solid #28a745';
+    }
+    
+    atualizarProgressoFull();
+    
+    // Verificar se todos foram confirmados
+    if (fullConfirmados.size === fullDetectados.length && fullDetectados.length > 0) {
+        console.log('✅ [confirmarFullDetectado] TODOS confirmados!');
+        setTimeout(() => {
+            showToast('✅ Todos os anúncios FULL foram confirmados!', 'success');
+            setTimeout(() => {
+                fecharModalFullDetectados();
+            }, 1000);
+        }, 500);
+    }
+}
+
+function atualizarProgressoFull() {
+    const total = fullDetectados.length;
+    const confirmados = fullConfirmados.size;
+    const porcentagem = total > 0 ? (confirmados / total) * 100 : 100;
+    
+    const barra = document.getElementById('fullProgressBar');
+    const texto = document.getElementById('fullProgressText');
+    
+    if (barra) {
+        barra.style.width = `${porcentagem}%`;
+        if (porcentagem === 100) {
+            barra.classList.remove('bg-danger');
+            barra.classList.add('bg-success');
+        } else {
+            barra.classList.remove('bg-success');
+            barra.classList.add('bg-danger');
+        }
+    }
+    if (texto) {
+        texto.textContent = `${confirmados} de ${total} confirmados`;
+        if (confirmados === total && total > 0) {
+            texto.innerHTML = '<span style="color: #28a745;">✅ Todos confirmados! Fechando modal em instantes...</span>';
+        }
+    }
+}
+
+function fecharModalFullDetectados() {
+    console.log('🔚 [fecharModalFullDetectados] Fechando modal...');
+    const modal = document.getElementById('modalFullDetectados');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+    fullDetectados = [];
+    fullConfirmados = new Set();
+}
+
+// ===== EXPORTAR FUNÇÕES PARA USO GLOBAL =====
+window.abrirModalFullDetectados = abrirModalFullDetectados;
+window.confirmarFullDetectado = confirmarFullDetectado;
+window.fecharModalFullDetectados = fecharModalFullDetectados;
+
 async function sincronizarEstoqueML(produto) {
+    console.log('🚀 [sincronizarEstoqueML] INICIANDO para produto:', produto.sku);
+    
     let mlbCodes = produto.dados_extra?.mlb_codes;
     if (!mlbCodes || (Array.isArray(mlbCodes) && mlbCodes.length === 0)) {
         console.log('ℹ️ Produto sem MLB cadastrado.');
@@ -1929,9 +2092,15 @@ async function sincronizarEstoqueML(produto) {
                 } else {
                     precoAnuncio = item.price || 0;
                 }
-                const limite = precoAnuncio > 100 ? 2 : 10;
-                quantidadeFinal = Math.min(quantidadeFinal, limite);
-                console.log(`📊 Regra Universal de Preço: preço=R$ ${precoAnuncio}, limite=${limite}, enviando=${quantidadeFinal}`);
+                
+                // ===== APLICA AS REGRAS CONDICIONAIS =====
+                const estoqueMaximo = calcularEstoqueMaximo({ 
+                    preco: precoAnuncio, 
+                    categoria: categoria 
+                });
+                
+                quantidadeFinal = Math.min(quantidadeFinal, estoqueMaximo);
+                console.log(`📊 Regra Condicional: preço=R$ ${precoAnuncio}, estoque máximo=${estoqueMaximo}, enviando=${quantidadeFinal}`);
                 
                 if (categoria === 'Raios') {
                     const regra = obterRegraRaios(marcaProduto, modeloProduto);
@@ -1944,6 +2113,9 @@ async function sincronizarEstoqueML(produto) {
                 return Math.max(0, quantidadeFinal);
             }
 
+            // =========================================================
+            // CASO 1: FULL COM CONVIVÊNCIA (Full + Flex)
+            // =========================================================
             if (isFulfillment && hasSelfService) {
                 console.log(`📦 Item ${itemId} é FULL com CONVIVÊNCIA (Full+Flex)`);
                 
@@ -1996,30 +2168,63 @@ async function sincronizarEstoqueML(produto) {
                         method: resultado.method || 'full_convivio' 
                     });
                 } else {
+                    // ===== VERIFICA SE É FULL PURO (erro de não modificável) =====
+                    const isFullPuro = resultado.error && (
+                        resultado.error.includes('FULL') || 
+                        resultado.error.includes('not_modifiable') ||
+                        resultado.error.includes('field_not_updatable') ||
+                        resultado.tipo === 'full_puro'
+                    );
+                    
                     results.push({ 
                         codigo: itemId, 
                         success: false, 
-                        error: resultado.error 
+                        error: resultado.error,
+                        tipo: isFullPuro ? 'full_puro' : 'full_convivio',
+                        link: `https://www.mercadolivre.com.br/anuncios/${itemId}/modificar/`,
+                        estoque: quantidadeParaEnviar,
+                        nome: produto.nome || 'Produto'
                     });
+                    
+                    // Se for FULL puro, já adicionamos à lista para o modal
+                    if (isFullPuro) {
+                        console.log(`🔴 [FULL] Item ${itemId} é FULL PURO detectado!`);
+                    }
                 }
 
                 continue;
             }
 
+            // =========================================================
+            // CASO 2: FULL PURO (sem convivência)
+            // =========================================================
             if (isFulfillment && !hasSelfService) {
                 console.log(`📦 Item ${itemId} é FULL PURO (sem convivência)`);
                 console.log(`⚠️ Itens FULL puros NÃO podem ter estoque atualizado via API.`);
                 console.log(`ℹ️ Atualize manualmente no Mercado Livre.`);
                 
+                const skuAnuncio = obterSkuAnuncio(item, skuProduto);
+                
+                // ===== ADICIONA DIRETAMENTE À LISTA DE FULL =====
                 results.push({ 
                     codigo: itemId, 
                     success: false, 
                     error: 'FULL puro - atualize manualmente no ML',
-                    ignorado: true 
+                    tipo: 'full_puro',
+                    ignorado: true,
+                    sku: skuAnuncio,
+                    link: `https://www.mercadolivre.com.br/item/${itemId}`,
+                    estoque: quantidadeReal,
+                    nome: produto.nome || 'Produto'
                 });
+                
+                console.log(`🔴 [FULL] Item ${itemId} é FULL PURO detectado!`);
                 continue;
             }
 
+            // =========================================================
+            // CASO 3: ITEM NORMAL (não é FULL)
+            // =========================================================
             console.log(`📦 Item ${itemId} é NORMAL (não é FULL).`);
 
             if (item.tags?.includes('has_price_by_rule')) {
@@ -2105,8 +2310,57 @@ async function sincronizarEstoqueML(produto) {
 
     const sucessos = results.filter(r => r.success).length;
     const falhas = results.filter(r => !r.success).length;
+    
     if (sucessos) showToast(`✅ ${sucessos} anúncio(s) sincronizado(s)`, 'success');
     if (falhas) showToast(`⚠️ ${falhas} anúncio(s) falharam. Verifique console.`, 'warning');
+
+    // =========================================================
+    // COLETAR ANÚNCIOS FULL DETECTADOS PARA MODAL
+    // =========================================================
+    console.log('🔍 [FULL] Filtrando resultados FULL...');
+    console.log('📊 [FULL] Resultados completos:', results);
+    
+    const fullDetectadosLista = results.filter(r => {
+        const isFull = r.tipo === 'full_puro' || 
+                       (r.error && (r.error.includes('FULL') || r.error.includes('not_modifiable') || r.error.includes('field_not_updatable')));
+        if (isFull) {
+            console.log(`🔴 [FULL] FULL detectado:`, r);
+        }
+        return isFull;
+    });
+
+    console.log(`📊 [FULL] Total de FULL detectados: ${fullDetectadosLista.length}`);
+
+    if (fullDetectadosLista.length > 0) {
+        console.log(`📦 ${fullDetectadosLista.length} anúncios FULL detectados. Abrindo modal...`);
+        
+        const fullItems = fullDetectadosLista.map(r => ({
+            codigo: r.codigo || r.itemId,
+            link: r.link || `https://www.mercadolivre.com.br/item/${r.codigo || r.itemId}`,
+            erro: r.error || 'FULL - atualize manualmente',
+            estoque: r.estoque || quantidadeReal,
+            nome: r.nome || produto.nome || 'Produto'
+        }));
+        
+        console.log('📦 [FULL] Itens para modal:', fullItems);
+        
+        // Aguarda um pouco e abre o modal
+        setTimeout(() => {
+            console.log('🔄 [FULL] Tentando abrir modal...');
+            
+            if (typeof window.abrirModalFullDetectados === 'function') {
+                console.log('✅ [FULL] Chamando abrirModalFullDetectados...');
+                window.abrirModalFullDetectados(fullItems);
+            } else {
+                console.warn('⚠️ [FULL] Função abrirModalFullDetectados não encontrada');
+                // Fallback: alert
+                alert(`🔴 ${fullItems.length} anúncio(s) FULL detectados!\nAtualize manualmente no Mercado Livre.\n\n${fullItems.map(i => `${i.codigo} - ${i.link}`).join('\n')}`);
+            }
+        }, 800);
+    } else {
+        console.log('ℹ️ [FULL] Nenhum anúncio FULL detectado.');
+    }
+
     return { success: falhas === 0, results };
 }
 
@@ -2744,6 +2998,9 @@ async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, t
     try {
         console.log(`📦 [FULL] Atualizando estoque do item ${itemId} para ${quantidade} unidades`);
         
+        // =========================================================
+        // MÉTODO 1: Tentar via PUT /items/{item_id}/stock (endpoint Brasil)
+        // =========================================================
         console.log(`🔄 [FULL] Tentando via PUT /items/${itemId}/stock...`);
         
         const stockUrl = `https://api.mercadolibre.com/items/${itemId}/stock`;
@@ -2778,6 +3035,9 @@ async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, t
             console.warn(`⚠️ [FULL] Falha ao obter stock do item: ${getStockRes.status} - ${errText}`);
         }
         
+        // =========================================================
+        // MÉTODO 2: Tentar via user-products com o ID completo
+        // =========================================================
         console.log(`🔄 [FULL] Tentando via /user-products/${userProductId}/stock...`);
         
         const userStockUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock`;
@@ -2813,6 +3073,9 @@ async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, t
             }
         }
         
+        // =========================================================
+        // MÉTODO 3: Tentar via item principal (último recurso)
+        // =========================================================
         console.log(`🔄 [FULL] Último recurso: tentando via item principal...`);
         
         const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
@@ -2843,13 +3106,13 @@ async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, t
             const errorText = await putItemRes.text();
             console.error(`❌ [FULL] Item principal falhou: ${putItemRes.status} - ${errorText}`);
             
-            if (errorText.includes('not_modifiable')) {
-                console.log(`⚠️ [FULL] Item é FULL e não pode ser atualizado diretamente.`);
-                console.log(`ℹ️ O estoque deste item FULL só pode ser atualizado via inbound no Mercado Livre.`);
-                console.log(`ℹ️ Ou através do endpoint /items/${itemId}/stock (se disponível).`);
+            // ==== DETECTAR QUE É FULL ====
+            if (errorText.includes('not_modifiable') || errorText.includes('field_not_updatable')) {
+                console.log(`🔴 [FULL] Item ${itemId} é FULL e não pode ser atualizado via API!`);
                 return { 
                     success: false, 
-                    error: 'FULL - estoque gerenciado pelo ML. Atualize via inbound ou /items/{id}/stock.' 
+                    error: 'FULL - atualize manualmente no ML',
+                    tipo: 'full_puro'
                 };
             }
             
