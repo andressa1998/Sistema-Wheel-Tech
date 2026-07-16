@@ -4920,29 +4920,52 @@ body > * {
         </div>
     </header>
 
-    <div class="container">
     <div class="card mb-4">
-        <div class="card-header">
-            <h2 class="card-title"><i class="fas fa-boxes"></i> Produtos em Estoque</h2>
-            <div class="d-flex gap-2">
-                <input type="text" id="buscaEstoqueInput" class="form-control" placeholder="🔍 Buscar por nome, SKU ou MLB..." style="width: 250px;">
-                <button class="btn btn-success" onclick="abrirModalProdutoEstoque()">
-                    <i class="fas fa-plus"></i> Novo Produto
-                </button>
-            </div>
+    <div class="card-header">
+        <h2 class="card-title"><i class="fas fa-boxes"></i> Produtos em Estoque</h2>
+        <div class="d-flex gap-2 align-items-center">
+            <select id="filtroCategoriaEstoque" class="form-control" style="width: 180px;">
+                <option value="">Todas as categorias</option>
+                <option value="Eixos">Eixos Passantes</option>
+                <option value="Parafusos">Parafusos</option>
+                <option value="Rolamentos">Rolamentos</option>
+                <option value="Raios">Raios</option>
+                <option value="Arruelas">Arruelas</option>
+                <option value="Porcas">Porcas</option>
+                <option value="outros">Outros</option>
+            </select>
+            <input type="text" id="buscaEstoqueInput" class="form-control" placeholder="🔍 Buscar por nome, SKU ou MLB..." style="width: 250px;">
+            <button class="btn btn-success" onclick="abrirModalProdutoEstoque()">
+                <i class="fas fa-plus"></i> Novo Produto
+            </button>
         </div>
+    </div>
         <div class="table-responsive">
             <table class="table" id="produtosEstoqueTable">
                 <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Nome / Categoria</th>
-                        <th>SKU</th>
-                        <th>Quantidade</th>
-                        <th>Atributos</th>
-                        <th>Ações</th>
-                    </tr>
-                </thead>
+    <tr>
+        <th data-coluna="id" style="cursor: pointer;" onclick="ordenarEstoquePor('id')">
+            ID <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #00ADEE;"></i>
+        </th>
+        <th data-coluna="nome" style="cursor: pointer;" onclick="ordenarEstoquePor('nome')">
+            Nome / Categoria <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
+        </th>
+        <th data-coluna="sku" style="cursor: pointer;" onclick="ordenarEstoquePor('sku')">
+            SKU <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
+        </th>
+        <th data-coluna="quantidade" style="cursor: pointer;" onclick="ordenarEstoquePor('quantidade')">
+            Quantidade <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
+        </th>
+        <th data-coluna="preco_custo" style="cursor: pointer;" onclick="ordenarEstoquePor('preco_custo')">
+            Custo (R$) <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
+        </th>
+        <th data-coluna="preco_medio" style="cursor: pointer;" onclick="ordenarEstoquePor('preco_medio')">
+            Médio (R$) <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
+        </th>
+        <th>Atributos</th>
+        <th>Ações</th>
+    </tr>
+</thead>
                 <tbody id="produtosEstoqueBody">
                     <tr><td colspan="6" class="text-center">Carregando...</td></tr>
                 </tbody>
@@ -4991,6 +5014,37 @@ body > * {
         <div class="d-flex justify-content-between gap-2 mt-3">
             <button class="btn btn-secondary" onclick="fecharModalMovimentacaoEstoque()">Cancelar</button>
             <button class="btn btn-primary" onclick="confirmarMovimentacaoEstoque()">Confirmar</button>
+        </div>
+    </div>
+</div>
+
+<!-- MODAL PARA ANÚNCIOS FULL DETECTADOS -->
+<div id="modalFullDetectados" class="modal hidden">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; padding: 0;">
+        <div style="background: linear-gradient(135deg, #6f42c1, #4B0082); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h3 style="margin: 0;"><i class="fas fa-warehouse"></i> Anúncios FULL Detectados</h3>
+                <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">
+                    Os seguintes anúncios estão em FULL e precisam ser atualizados manualmente
+                </p>
+            </div>
+            <button onclick="fecharModalFullDetectados()" style="background: rgba(255,255,255,0.2); border: none; color: white; font-size: 24px; cursor: pointer; width: 40px; height: 40px; border-radius: 50%;">
+                &times;
+            </button>
+        </div>
+        <div style="padding: 20px; max-height: 60vh; overflow-y: auto;">
+            <div id="fullDetectadosLista">
+                <!-- Itens serão carregados dinamicamente -->
+            </div>
+            <div class="progress mt-3" style="height: 8px;">
+                <div id="fullProgressBar" class="progress-bar bg-success" role="progressbar" style="width: 0%;"></div>
+            </div>
+            <div class="text-center mt-2">
+                <small id="fullProgressText" class="text-muted">0 de 0 confirmados</small>
+            </div>
+        </div>
+        <div style="background: #f8f9fa; padding: 15px 25px; border-top: 1px solid #dee2e6; display: flex; justify-content: flex-end; gap: 10px;">
+            <button class="btn btn-secondary" onclick="fecharModalFullDetectados()">Fechar</button>
         </div>
     </div>
 </div>
