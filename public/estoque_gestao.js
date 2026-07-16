@@ -69,6 +69,12 @@ const regrasEstoquePadrao = {
             { operador: 'padrao', estoque_maximo: 50 }
         ]
     },
+    'CapacetesEPartes': {
+        condicoes: [
+            { operador: 'maior_que', valor: 100, estoque_maximo: 2 },
+            { operador: 'padrao', estoque_maximo: 10 }
+        ]
+    },
     'outros': {
         condicoes: [
             { operador: 'maior_que', valor: 100, estoque_maximo: 15 },
@@ -101,6 +107,7 @@ const camposPorCategoria = {
         { nome: "diametroext", label: "Diâmetro Externo", tipo: "text", placeholder: "Ex: 26 ou 26,5", obrigatorio: true, validacao: "numero_virgula" },
         { nome: "largura", label: "Largura", tipo: "number", placeholder: "Ex: 7", obrigatorio: true },
         { nome: "aplicaçao", label: "Aplicação", tipo: "select", opcoes: ["Cubo/Caixa de Direção", "Movimento Central", "Outros"] },
+        { nome: "marca", label: "Marca", tipo: "text", placeholder: "Enduro"  },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
     Raios: [
@@ -118,6 +125,12 @@ const camposPorCategoria = {
         { nome: "tamanho", label: "Tamanho", tipo: "text", placeholder: "Ex: 1mm ou 2mm" },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],   
+    CapacetesEPartes: [
+        { nome: "tamanhopadrao", label: "Tamanho Padrão", tipo: "select", opcoes: ["P", "M", "G", "P/M", "M/G"] },
+        { nome: "tamanhonumerico", label: "Tamanho Númerico", tipo: "number", rows: 2 },
+        { nome: "cor", label: "Cor", tipo: "text", placeholder: "Ex: Preto", rows: 2 },
+        { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
+    ], 
     outros: [
         { nome: "observacoes_adicionais", label: "Observações", tipo: "textarea", rows: 2 },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
@@ -2730,7 +2743,7 @@ function preencherModalRegras() {
     const container = document.getElementById('regrasEstoqueContainer');
     if (!container) return;
     
-    const categorias = ['Eixos', 'Parafusos', 'Rolamentos', 'Raios', 'Arruelas', 'Porcas', 'outros'];
+    const categorias = ['Eixos', 'Parafusos', 'Rolamentos', 'Raios', 'Arruelas', 'Porcas', 'CapacetesEPartes', 'outros'];
     const labels = {
         'Eixos': 'Eixos Passantes',
         'Parafusos': 'Parafusos',
@@ -2738,6 +2751,7 @@ function preencherModalRegras() {
         'Raios': 'Raios',
         'Arruelas': 'Arruelas',
         'Porcas': 'Porcas',
+        'CapacetesEPartes': 'Capacetes e Partes',
         'outros': 'Outros'
     };
     
@@ -2882,7 +2896,7 @@ function atualizarCondicaoRegra(categoria, index, campo, valor) {
 
 // ===== SALVAR REGRAS DO MODAL =====
 async function salvarRegrasEstoqueModal() {
-    const categorias = ['Eixos', 'Parafusos', 'Rolamentos', 'Raios', 'Arruelas', 'Porcas', 'outros'];
+    const categorias = ['Eixos', 'Parafusos', 'Rolamentos', 'Raios', 'Arruelas', 'Porcas', 'CapacetesEPartes', 'outros'];
     let valido = true;
     
     for (const cat of categorias) {
