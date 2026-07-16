@@ -1830,6 +1830,312 @@ window.salvarProdutoEstoque = async function() {
     }
 };
 
+// ===== FUNÇÃO PARA ADICIONAR BOTÃO "PRODUTO NOVO" =====
+function adicionarBotaoProdutoNovo(cardId, itemId) {
+    // Remove botão existente se houver
+    const btnExistente = document.getElementById('btnProdutoNovoOS');
+    if (btnExistente) btnExistente.remove();
+
+    // Cria o container do botão
+    const container = document.querySelector('#modalProdutoEstoque .d-flex.justify-content-between.gap-2.mt-3');
+    if (!container) return;
+
+    // Cria o botão
+    const btn = document.createElement('button');
+    btn.id = 'btnProdutoNovoOS';
+    btn.className = 'btn btn-warning';
+    btn.innerHTML = '<i class="fas fa-plus-circle"></i> Produto Novo + OS';
+    btn.style.marginRight = 'auto';
+    btn.title = 'Cadastrar como produto novo e criar automaticamente uma OS para Elaine';
+    
+    btn.onclick = function() {
+        // Armazena que é um produto novo
+        produtoNovoParaOS = {
+            cardId: cardId,
+            itemId: itemId,
+            item: entradaEmProcessamento?.item || null
+        };
+        
+        // Abre modal para descrição da OS
+        abrirModalDescricaoOS();
+    };
+    
+    // Insere antes dos botões existentes
+    const existingButtons = container.querySelectorAll('.btn:not(#btnProdutoNovoOS)');
+    if (existingButtons.length > 0) {
+        container.insertBefore(btn, existingButtons[0]);
+    } else {
+        container.prepend(btn);
+    }
+}
+
+// ===== MODAL PARA DESCRIÇÃO DA OS =====
+function abrirModalDescricaoOS() {
+    // Cria o modal se não existir
+    let modal = document.getElementById('modalDescricaoOS');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modalDescricaoOS';
+        modal.className = 'modal hidden';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 500px; max-height: 80vh; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #f1f3f5; padding-bottom: 15px;">
+                    <h3 style="margin: 0; color: #00ADEE;">
+                        <i class="fas fa-clipboard-list"></i> Descrição da OS
+                    </h3>
+                    <button onclick="fecharModalDescricaoOS()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
+                        &times;
+                    </button>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <p style="color: #6c757d; font-size: 14px;">
+                        <i class="fas fa-info-circle"></i> 
+                        Esta OS será criada para <strong>Elaine</strong> com os dados do produto.
+                    </p>
+                </div>
+                <div class="form-group">
+                    <label for="descricaoOSInput">
+                        <i class="fas fa-comment"></i> Descrição / Observações da OS *
+                    </label>
+                    <textarea id="descricaoOSInput" class="form-control" rows="4" 
+                              placeholder="Ex: Mínimo três fotos, seguir briefing do produto..." 
+                              style="resize: vertical;"></textarea>
+                    <small class="text-muted">Esta descrição será adicionada à OS criada para Elaine.</small>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; border-top: 1px solid #f1f3f5; padding-top: 20px;">
+                    <button class="btn btn-secondary" onclick="fecharModalDescricaoOS()">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                    <button class="btn btn-success" onclick="confirmarCriacaoOS()">
+                        <i class="fas fa-check"></i> Criar OS
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+
+    // Limpa o campo
+    const textarea = document.getElementById('descricaoOSInput');
+    if (textarea) textarea.value = '';
+
+    // Mostra o modal
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    modal.style.alignItems = 'center';
+    modal.style.justifyContent = 'center';
+    modal.style.zIndex = '10000';
+    
+    // Foca no textarea
+    setTimeout(() => {
+        if (textarea) textarea.focus();
+    }, 300);
+}
+
+// ===== FECHAR MODAL DESCRIÇÃO OS =====
+window.fecharModalDescricaoOS = function() {
+    const modal = document.getElementById('modalDescricaoOS');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+};
+
+// ===== CONFIRMAR CRIAÇÃO DA OS =====
+window.confirmarCriacaoOS = async function() {
+    const descricao = document.getElementById('descricaoOSInput')?.value?.trim();
+    if (!descricao) {
+        showToast('⚠️ Por favor, preencha a descrição da OS.', 'warning');
+        return;
+    }
+
+    if (!produtoNovoParaOS) {
+        showToast('❌ Nenhum produto novo identificado.', 'error');
+        return;
+    }
+
+    const { cardId, itemId, item } = produtoNovoParaOS;
+    
+    // Verifica se o produto foi salvo
+    const produto = verificarSKUExistente(item?.sku_original);
+    if (!produto) {
+        showToast('⚠️ Produto não encontrado. Salve o produto primeiro.', 'warning');
+        return;
+    }
+
+    // Fecha modal de descrição
+    fecharModalDescricaoOS();
+
+    // Cria a OS
+    try {
+        const osCriada = await criarOSCompleta({
+            nomeProduto: produto.nome || item?.produto || 'Produto sem nome',
+            sku: produto.sku || item?.sku_original || '',
+            responsavel: 'Elaine',
+            urgência: 'normal',
+            tipoOS: 'normal',
+            servico: 'estudio',
+            observacoes: descricao,
+            criadoPor: currentUser.name,
+            linkAnuncio: '',
+            valorAnuncio: 0,
+            precisaFoto: 'sim',
+            descricaoAnuncio: ''
+        });
+
+        if (osCriada) {
+            showToast('✅ OS criada com sucesso para Elaine!', 'success');
+            
+            // Atualiza o item da entrada
+            await atualizarItemEntrada(cardId, itemId, produto.id, produto.sku);
+            
+            // Limpa a variável
+            produtoNovoParaOS = null;
+            
+            // Recarrega as entradas
+            await carregarEntradas();
+        } else {
+            showToast('❌ Erro ao criar OS. Tente novamente.', 'error');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao criar OS:', error);
+        showToast('❌ Erro ao criar OS: ' + error.message, 'error');
+    }
+};
+
+// ===== FUNÇÃO PARA CRIAR OS COMPLETA (SOBRESCREVENDO A EXISTENTE) =====
+const _criarOSCompletaOriginal = window.criarOSCompleta || async function(dados) {
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        const codigo = window.generateOSCode ? window.generateOSCode() : `OS-${Date.now().toString().slice(-6)}`;
+
+        const prazoHoras = dados.urgência === 'alta' ? 2 : dados.urgência === 'normal' ? 48 : 36;
+
+        let prazoEsperado = null;
+        if (typeof window.calcularPrazoPorPrioridade === 'function') {
+            prazoEsperado = window.calcularPrazoPorPrioridade(new Date(), dados.urgência);
+        }
+
+        const osData = {
+            codigo: codigo,
+            produto_nome: dados.nomeProduto,
+            responsavel: dados.responsavel || 'Elaine',
+            link_anuncio: dados.linkAnuncio || '',
+            criado_por: dados.criadoPor || currentUser.name,
+            urgencia: dados.urgência || 'normal',
+            tipo_os: dados.tipoOS || 'normal',
+            status: 'pendente',
+            tipo_foto: dados.servico || 'estudio',
+            observacoes: dados.observacoes || '',
+            skus: dados.sku ? [dados.sku] : [],
+            fotos: [],
+            qtd_fotos: 0,
+            qtd_edicoes: 0,
+            conferido: false,
+            user_notified: false,
+            precisa_foto: 'nao',
+            valor_anuncio: 0,
+            descricao_anuncio: '',
+            link_novo_anuncio: '',
+            data_criacao: new Date().toISOString(),
+            ultima_atualizacao: new Date().toISOString(),
+            prazo_horas: prazoHoras,
+            prazo_esperado: prazoEsperado,
+            anuncio_criado: false
+        };
+
+        const { data, error } = await window.supabaseClient
+            .from('ordens_service')
+            .insert([osData])
+            .select();
+
+        if (error) throw error;
+
+        console.log('✅ OS criada:', data);
+        return data && data[0] ? data[0] : true;
+
+    } catch (error) {
+        console.error('❌ Erro ao criar OS:', error);
+        return false;
+    }
+};
+
+// Sobrescreve a função global
+window.criarOSCompleta = window.criarOSCompleta || _criarOSCompletaOriginal;
+
+// ===== FUNÇÃO PARA ATUALIZAR ITEM DA ENTRADA (JÁ EXISTE, MAS VAMOS GARANTIR) =====
+const _atualizarItemEntradaOriginal = window.atualizarItemEntrada;
+
+async function atualizarItemEntrada(cardId, itemId, produtoId, skuMatch) {
+    try {
+        if (!window.supabaseClient) throw new Error('Supabase não conectado');
+
+        const { error: errUpdate } = await window.supabaseClient
+            .from('entrada_items')
+            .update({
+                produto_id: produtoId,
+                sku_match: skuMatch,
+                status: 'cadastrado',
+                acao: 'cadastro_com_os',
+                responsavel: currentUser.name,
+                data_acao: new Date().toISOString()
+            })
+            .eq('id', itemId);
+
+        if (errUpdate) throw errUpdate;
+
+        const card = entradasCards.find(c => c.id == cardId);
+        if (card) {
+            const concluidos = card.itens.filter(i => i.id != itemId && i.status !== 'pendente').length + 1;
+            const total = card.itens.length;
+            const novoStatus = concluidos === total ? 'finalizado' : 'pendente';
+
+            await window.supabaseClient
+                .from('entradas_cards')
+                .update({
+                    items_concluidos: concluidos,
+                    status: novoStatus,
+                    finalizado_em: novoStatus === 'finalizado' ? new Date().toISOString() : null,
+                    finalizado_por: novoStatus === 'finalizado' ? currentUser.name : null
+                })
+                .eq('id', cardId);
+        }
+
+        return true;
+
+    } catch (error) {
+        console.error('❌ Erro ao atualizar item da entrada:', error);
+        throw error;
+    }
+}
+
+// Garante que a função global esteja disponível
+window.atualizarItemEntrada = window.atualizarItemEntrada || atualizarItemEntrada;
+
+// ===== SOBRESCREVER SALVAR PRODUTO PARA TRATAR PRODUTO NOVO =====
+const _salvarProdutoEstoqueComOS = window.salvarProdutoEstoque;
+
+window.salvarProdutoEstoque = async function() {
+    // Chama o salvar original
+    if (typeof _salvarProdutoEstoqueComOS === 'function') {
+        await _salvarProdutoEstoqueComOS();
+    }
+
+    // Se tiver produto novo aguardando, cria a OS
+    if (produtoNovoParaOS) {
+        const { item } = produtoNovoParaOS;
+        const produto = verificarSKUExistente(item?.sku_original);
+        
+        if (produto) {
+            // Abre o modal de descrição automaticamente
+            abrirModalDescricaoOS();
+        }
+    }
+};
+
+console.log('✅ Extensão de criação automática de OS para produtos novos carregada!');
+
 // ============================================
 // PRÉ-ENTRADA
 // ============================================
@@ -2110,6 +2416,87 @@ window.processarPreEntradaXML = async function() {
     reader.readAsText(file);
 };
 
+// ============================================
+// EXTENSÃO: CRIAÇÃO AUTOMÁTICA DE OS PARA PRODUTOS NOVOS
+// ============================================
+
+// ===== VARIÁVEL PARA ARMAZENAR DADOS DO PRODUTO NOVO =====
+let produtoNovoParaOS = null;
+
+// ===== SOBRESCREVER ABRIR CADASTRO RÁPIDO COM BOTÃO PRODUTO NOVO =====
+const _abrirCadastroRapidoOriginal = window.abrirCadastroRapido;
+
+window.abrirCadastroRapido = function(cardId, itemId) {
+    if (!cardId || !itemId) {
+        showToast('Erro: dados incompletos', 'error');
+        return;
+    }
+
+    const card = entradasCards.find(c => c.id == cardId);
+    if (!card) {
+        showToast('Card não encontrado', 'error');
+        return;
+    }
+    const item = card.itens.find(i => i.id == itemId);
+    if (!item) {
+        showToast('Item não encontrado', 'error');
+        return;
+    }
+
+    if (item.status !== 'pendente') {
+        showToast('Este item já foi processado', 'warning');
+        return;
+    }
+
+    entradaEmProcessamento = {
+        cardId: cardId,
+        itemId: itemId,
+        item: item
+    };
+
+    // Verificar se a função existe
+    if (typeof abrirModalProdutoEstoque !== 'function') {
+        showToast('❌ Função de cadastro não disponível. Recarregue a página.', 'error');
+        console.error('❌ abrirModalProdutoEstoque não é uma função');
+        return;
+    }
+
+    // Abrir o modal para novo produto
+    abrirModalProdutoEstoque(null);
+    
+    // Preencher os campos com os dados do item
+    setTimeout(() => {
+        const nomeInput = document.getElementById('produtoNome');
+        const skuInput = document.getElementById('produtoSKU');
+        const categoriaSelect = document.getElementById('produtoCategoria');
+        
+        if (nomeInput) nomeInput.value = item.produto || '';
+        if (skuInput) skuInput.value = item.sku_original || '';
+        
+        if (categoriaSelect && item.categoria) {
+            categoriaSelect.value = item.categoria;
+            gerarCamposDinamicos(item.categoria);
+        }
+        
+        // Forçar a exibição do modal novamente (por segurança)
+        const modal = document.getElementById('modalProdutoEstoque');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            modal.style.zIndex = '9999';
+        }
+        
+        // ==== ADICIONAR BOTÃO "PRODUTO NOVO" NO MODAL ====
+        adicionarBotaoProdutoNovo(cardId, itemId);
+        
+        // Configurar o botão de salvar
+        configurarBotaoSalvarModal(cardId, itemId);
+    }, 300);
+
+    showToast('📝 Preencha os dados do produto e clique em Salvar', 'info');
+};
 // ============================================
 // EXPORTAR FUNÇÕES PARA USO GLOBAL
 // ============================================
