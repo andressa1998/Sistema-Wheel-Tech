@@ -126,7 +126,7 @@ const camposPorCategoria = {
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],   
     CapacetesEPartes: [
-        { nome: "tamanhopadrao", label: "Tamanho Padrão", tipo: "select", opcoes: ["P", "M", "G", "P/M", "M/G"] },
+        { nome: "tamanhopadrao", label: "Tamanho Padrão", tipo: "select", opcoes: ["P", "M", "G", "P/M", "M/G", "U"] },
         { nome: "tamanhonumerico", label: "Tamanho Númerico", tipo: "number", rows: 2 },
         { nome: "cor", label: "Cor", tipo: "text", placeholder: "Ex: Preto", rows: 2 },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
