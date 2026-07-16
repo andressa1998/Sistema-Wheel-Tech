@@ -1,7 +1,7 @@
-// shipping_simple.js - CORRIGIDO
-// Removida a coluna 'foto_url' da inserção no Supabase
+// shipping_simple.js - VERSÃO COMPLETA CORRIGIDA (v35)
+// Sistema completo de reclamações de frete
 
-console.log('🚚 shipping_simple.js carregado (v27 - sem foto_url)');
+console.log('🚚 shipping_simple.js carregado (v35)');
 
 if (typeof window.WORKER_URL === 'undefined') {
     window.WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
@@ -54,9 +54,11 @@ const SHIPPING_COST_TABLE = [
 ];
 
 // ============================================
-// VARIÁVEL DE FILTRO
+// VARIÁVEIS GLOBAIS
 // ============================================
-let filtroApenasIncorretos = false;
+let filtroStatusReclamacao = 'todos';
+let reclamacoesCache = [];
+let protocolosTemp = [];
 
 // ============================================
 // FUNÇÕES AUXILIARES
@@ -84,6 +86,56 @@ function calcularFreteEsperado(valorProduto, peso) {
 function calcularPesoVolumetrico(comprimento, largura, altura) {
     const cm3 = comprimento * largura * altura;
     return cm3 / 6000;
+}
+
+function getNomeUsuario() {
+    if (window.currentUser && window.currentUser.name) {
+        return window.currentUser.name;
+    }
+    try {
+        const userData = localStorage.getItem('wheeltech_user');
+        if (userData) {
+            const user = JSON.parse(userData);
+            if (user.name) return user.name;
+        }
+    } catch (e) {}
+    return 'Sistema';
+}
+
+// ============================================
+// TOAST CORRIGIDO (sem recursão)
+// ============================================
+function showToast(mensagem, tipo = 'info') {
+    // Verificar se já existe um toast e remover
+    const toastExistente = document.querySelector('.custom-toast');
+    if (toastExistente) {
+        toastExistente.remove();
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = 'custom-toast';
+    toast.style.cssText = `
+        position: fixed; 
+        bottom: 20px; 
+        right: 20px; 
+        padding: 12px 20px;
+        background: ${tipo === 'success' ? '#28a745' : tipo === 'error' ? '#dc3545' : tipo === 'warning' ? '#ffc107' : '#17a2b8'};
+        color: ${tipo === 'warning' ? '#212529' : 'white'};
+        border-radius: 8px; 
+        z-index: 99999; 
+        max-width: 400px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        font-size: 14px;
+        animation: slideIn 0.3s ease;
+    `;
+    toast.innerHTML = mensagem;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.remove();
+        }
+    }, 4000);
 }
 
 // ============================================
@@ -155,7 +207,269 @@ async function salvarMedidasSKU(sku, comprimento, largura, altura, peso, fotoUrl
 }
 
 // ============================================
-// BUSCAR FRETES (sincronização)
+// FUNÇÃO PARA BUSCAR VENDAS ML
+// ============================================
+async function buscarVendasMLFrete(limit = 50) {
+    console.log('🔍 Buscando vendas para análise de frete...');
+    
+    try {
+        if (typeof window.buscarVendasML === 'function') {
+            console.log('✅ Usando window.buscarVendasML da aba de vendas');
+            const resultado = await window.buscarVendasML(limit);
+            
+            if (Array.isArray(resultado)) {
+                return { vendas: resultado };
+            }
+            if (resultado && resultado.vendas) {
+                return resultado;
+            }
+            if (resultado && resultado.data) {
+                return { vendas: resultado.data };
+            }
+            if (resultado) {
+                for (const key of Object.keys(resultado)) {
+                    if (Array.isArray(resultado[key]) && resultado[key].length > 0) {
+                        return { vendas: resultado[key] };
+                    }
+                }
+            }
+        }
+        
+        console.log('🔄 Usando fallback para buscar vendas');
+        const tokenData = await window.getValidToken();
+        const token = tokenData?.access_token;
+        if (!token) {
+            throw new Error('Token ML não disponível');
+        }
+
+        const url = `https://api.mercadolibre.com/orders/search?limit=${limit}&sort=date_desc&status=paid`;
+        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+        
+        console.log('📡 Buscando pedidos pagos...');
+        const response = await fetch(proxyUrl);
+        if (!response.ok) {
+            if (response.status === 403) {
+                console.warn('⚠️ Token rejeitado, tentando renovar...');
+                if (window.forceTokenRefresh) {
+                    await window.forceTokenRefresh();
+                    const newTokenData = await window.getValidToken();
+                    const newToken = newTokenData?.access_token;
+                    if (newToken) {
+                        console.log('🔄 Token renovado, tentando novamente...');
+                        const newProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(newToken)}`;
+                        const newResponse = await fetch(newProxyUrl);
+                        if (newResponse.ok) {
+                            const data = await newResponse.json();
+                            return processarPedidosML(data, newToken);
+                        }
+                    }
+                }
+                throw new Error(`Erro na API: ${response.status} - Token inválido ou expirado`);
+            }
+            throw new Error(`Erro na API: ${response.status} - ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        console.log(`📦 ${data.results?.length || 0} pedidos encontrados`);
+        return processarPedidosML(data, token);
+        
+    } catch (error) {
+        console.error('Erro ao buscar vendas para frete:', error);
+        throw error;
+    }
+}
+
+// ============================================
+// PROCESSAR PEDIDOS DO ML
+// ============================================
+async function processarPedidosML(data, token) {
+    const orders = data.results || [];
+    console.log(`📦 ${orders.length} pedidos encontrados para análise de frete`);
+    
+    const vendas = [];
+    for (const order of orders) {
+        try {
+            const shippingMode = order.shipping?.mode || '';
+            
+            // Ignorar FULL
+            if (shippingMode.toLowerCase().includes('full') || 
+                order.shipping?.fulfillment?.toLowerCase().includes('full')) {
+                console.log(`⏭️ Venda ${order.id} é FULL, ignorando`);
+                continue;
+            }
+
+            const itemId = order.order_items?.[0]?.item?.id;
+            let titulo = 'Sem título';
+            let sku = 'N/A';
+            let mlbId = 'N/A';
+            let valorTotal = 0;
+            
+            if (order.order_items && order.order_items.length > 0) {
+                valorTotal = order.order_items.reduce((sum, item) => {
+                    return sum + (item.unit_price || 0) * (item.quantity || 0);
+                }, 0);
+            }
+            
+            if (itemId) {
+                try {
+                    const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
+                    const itemProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
+                    const itemResp = await fetch(itemProxy);
+                    if (itemResp.ok) {
+                        const itemData = await itemResp.json();
+                        titulo = itemData.title || titulo;
+                        sku = itemData.seller_sku || sku;
+                        mlbId = itemId;
+                    }
+                } catch (e) {
+                    console.warn(`Erro ao buscar item ${itemId}:`, e.message);
+                }
+            }
+            
+            // ===== EXTRAIR FRETE USANDO A FUNÇÃO CORRIGIDA =====
+            let freteCobrado = await extrairFreteDaVenda(order, token);
+            
+            // Se freteCobrado for 0, tentar uma última vez com mais detalhes
+            if (freteCobrado === 0) {
+                console.log(`🔄 Tentando extrair frete novamente para ${order.id}...`);
+                // Buscar shipment diretamente
+                if (order.shipping?.id) {
+                    try {
+                        const shipUrl = `https://api.mercadolibre.com/shipments/${order.shipping.id}`;
+                        const shipProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${encodeURIComponent(token)}`;
+                        const shipResp = await fetch(shipProxy);
+                        if (shipResp.ok) {
+                            const shipData = await shipResp.json();
+                            if (shipData.receiver_cost && shipData.receiver_cost > 0) {
+                                freteCobrado = shipData.receiver_cost;
+                                console.log(`✅ Frete encontrado na segunda tentativa: R$ ${freteCobrado.toFixed(2)}`);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn(`Erro na segunda tentativa:`, e.message);
+                    }
+                }
+            }
+            
+            console.log(`📊 Venda ${order.id}: Frete = R$ ${freteCobrado.toFixed(2)}, Valor = R$ ${valorTotal.toFixed(2)}`);
+            
+            vendas.push({
+                id_venda_ml: order.id.toString(),
+                id: order.id.toString(),
+                titulo: titulo,
+                sku: sku,
+                mlb_id: mlbId,
+                valor_total: valorTotal,
+                data_venda: order.date_created || new Date().toISOString(),
+                tipo_envio: shippingMode || 'N/I',
+                status: order.status,
+                frete_cobrado: freteCobrado,
+                quantidade: order.order_items?.[0]?.quantity || 1
+            });
+            
+            await new Promise(resolve => setTimeout(resolve, 150));
+            
+        } catch (e) {
+            console.warn('Erro ao processar pedido:', e.message);
+        }
+    }
+    
+    console.log(`✅ ${vendas.length} vendas processadas para análise de frete`);
+    return { vendas };
+}
+
+// ============================================
+// EXTRAIR FRETE DA VENDA (VERSÃO CORRIGIDA)
+// ============================================
+async function extrairFreteDaVenda(order, token) {
+    console.log(`🔍 Extraindo frete da venda ${order.id}...`);
+    
+    // 1. Tentar receiver_cost diretamente do order.shipping
+    if (order.shipping && order.shipping.receiver_cost) {
+        const frete = parseFloat(order.shipping.receiver_cost);
+        if (frete > 0) {
+            console.log(`✅ Frete via shipping.receiver_cost: R$ ${frete.toFixed(2)}`);
+            return frete;
+        }
+    }
+
+    // 2. Tentar cost diretamente do order.shipping
+    if (order.shipping && order.shipping.cost) {
+        const frete = parseFloat(order.shipping.cost);
+        if (frete > 0) {
+            console.log(`✅ Frete via shipping.cost: R$ ${frete.toFixed(2)}`);
+            return frete;
+        }
+    }
+
+    // 3. Buscar shipment completo
+    if (order.shipping && order.shipping.id && token) {
+        try {
+            console.log(`🔄 Buscando shipment ${order.shipping.id}...`);
+            
+            const shipUrl = `https://api.mercadolibre.com/shipments/${order.shipping.id}`;
+            const shipProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${encodeURIComponent(token)}`;
+            
+            const response = await fetch(shipProxy);
+            if (response.ok) {
+                const shipData = await response.json();
+                console.log('📦 Shipment data:', JSON.stringify(shipData, null, 2));
+                
+                // Tentar receiver_cost
+                if (shipData.receiver_cost) {
+                    const frete = parseFloat(shipData.receiver_cost);
+                    if (frete > 0) {
+                        console.log(`✅ Frete via shipment.receiver_cost: R$ ${frete.toFixed(2)}`);
+                        return frete;
+                    }
+                }
+                
+                // Tentar cost
+                if (shipData.cost) {
+                    const frete = parseFloat(shipData.cost);
+                    if (frete > 0) {
+                        console.log(`✅ Frete via shipment.cost: R$ ${frete.toFixed(2)}`);
+                        return frete;
+                    }
+                }
+                
+                // Tentar shipping_option.cost
+                if (shipData.shipping_option && shipData.shipping_option.cost) {
+                    const frete = parseFloat(shipData.shipping_option.cost);
+                    if (frete > 0) {
+                        console.log(`✅ Frete via shipping_option.cost: R$ ${frete.toFixed(2)}`);
+                        return frete;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn(`Erro ao buscar shipment:`, e.message);
+        }
+    }
+
+    // 4. Tentar buscar da order diretamente (total_amount - item_amount)
+    try {
+        if (order.total_amount && order.order_items && order.order_items.length > 0) {
+            let itemTotal = 0;
+            for (const item of order.order_items) {
+                itemTotal += (item.unit_price || 0) * (item.quantity || 0);
+            }
+            const diff = order.total_amount - itemTotal;
+            if (diff > 0) {
+                console.log(`✅ Frete calculado por diferença: R$ ${diff.toFixed(2)}`);
+                return diff;
+            }
+        }
+    } catch (e) {
+        console.warn('Erro ao calcular por diferença:', e.message);
+    }
+
+    console.log(`⚠️ Nenhum frete encontrado para venda ${order.id}`);
+    return 0;
+}
+
+// ============================================
+// BUSCAR FRETES (sincronização - APENAS INCORRETOS)
 // ============================================
 async function buscarFretes() {
     console.log('🔍 Iniciando sincronização de fretes...');
@@ -170,79 +484,42 @@ async function buscarFretes() {
         btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
     }
 
-    tbody.innerHTML = '<tr><td colspan="13" class="text-center"><div class="spinner"></div> Buscando vendas...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="text-center"><div class="spinner"></div> Buscando vendas para análise de frete...</td></tr>';
     if (contagem) contagem.textContent = 'Sincronizando...';
 
     try {
-        const tokenData = await window.getValidToken();
-        const token = tokenData?.access_token;
-        if (!token) {
-            throw new Error('Token ML não disponível. Verifique a conexão.');
+        const resultado = await buscarVendasMLFrete(50);
+
+        if (!resultado || !resultado.vendas) {
+            throw new Error('Nenhum resultado retornado');
         }
 
-        if (typeof window.buscarVendasML !== 'function') {
-            throw new Error('Função buscarVendasML não disponível.');
-        }
+        console.log(`📦 ${resultado.vendas.length} vendas retornadas da busca de frete`);
 
-        const resultado = await window.buscarVendasML(50);
-        console.log(`📦 ${resultado.vendas?.length || 0} vendas retornadas da busca`);
-
-        if (!resultado || !resultado.vendas || resultado.vendas.length === 0) {
+        if (resultado.vendas.length === 0) {
             tbody.innerHTML = '<tr><td colspan="13" class="text-center">Nenhuma venda encontrada.</td></tr>';
             if (contagem) contagem.textContent = '0 registros';
+            showToast('Nenhuma venda encontrada', 'info');
             return;
         }
 
-        const { data: salvos, error: erroSalvos } = await window.supabaseClient
-            .from('fretes_ml')
-            .select('id');
-        if (erroSalvos) throw erroSalvos;
-        const idsSalvos = new Set(salvos.map(item => item.id));
-
         const registrosParaInserir = [];
+        const idsIncorretos = [];
         let totalFullIgnorados = 0;
-        let totalSemFrete = 0;
+        let totalCorretosIgnorados = 0;
 
         for (const venda of resultado.vendas) {
             const idVenda = venda.id_venda_ml || venda.id;
-            if (idsSalvos.has(idVenda)) continue;
+            if (!idVenda) continue;
 
             if (venda.tipo_envio === 'FULL' || isFullByAnyField(venda)) {
                 totalFullIgnorados++;
                 continue;
             }
 
-            const orderId = venda.id_venda_ml || venda.id;
-            const idML = orderId.replace(/^ML/, '');
-            const orderUrl = `https://api.mercadolibre.com/orders/${idML}`;
-            const orderProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${encodeURIComponent(token)}`;
-            let order = null;
-            try {
-                const resp = await fetch(orderProxy);
-                if (resp.ok) order = await resp.json();
-            } catch (e) {
-                console.warn(`Erro ao buscar ordem ${idML}:`, e.message);
-            }
-
-            let freteCobrado = 0;
-            let quantidade = 1;
-            let sku = venda.sku || 'N/A';
-
-            if (order) {
-                freteCobrado = await extrairFreteDaVenda(order, token);
-                if (order.order_items && order.order_items.length > 0) {
-                    quantidade = order.order_items.reduce((sum, item) => sum + (item.quantity || 0), 0);
-                    if (order.order_items[0].item && order.order_items[0].item.seller_sku) {
-                        sku = order.order_items[0].item.seller_sku || 'N/A';
-                    }
-                }
-            }
-
-            if (freteCobrado === 0) totalSemFrete++;
-
-            const fretePorUnidade = freteCobrado / (quantidade || 1);
-            const freteTotal = fretePorUnidade * quantidade;
-
+            const freteCobrado = venda.frete_cobrado || 0;
+            const quantidade = venda.quantidade || 1;
+            const sku = venda.sku || 'N/A';
             const titulo = venda.titulo || 'Sem título';
             const mlb = venda.mlb_id || 'N/A';
             const valorProduto = venda.valor_total || 0;
@@ -256,57 +533,89 @@ async function buscarFretes() {
                 peso = medidas.peso_kg || 0.3;
             }
 
-            const pesoVolumetrico = calcularPesoVolumetrico(comprimento, largura, altura);
+            const freteEsperado = calcularFreteEsperado(valorProduto, peso);
+            const isIncorreto = freteEsperado !== null && Math.abs(freteCobrado - freteEsperado) > 0.01;
 
-            // REMOVIDO: foto_url da inserção
-            registrosParaInserir.push({
-                id: idVenda,
-                titulo: titulo,
-                mlb: mlb,
-                sku: sku,
-                valor_produto: valorProduto,
-                quantidade: quantidade,
-                frete_cobrado: freteTotal,
-                frete_por_unidade: fretePorUnidade,
-                data_venda: venda.data_venda || venda.created_at || new Date().toISOString(),
-                tipo_envio: venda.tipo_envio || 'N/I',
-                peso_estimado: peso,
-                comprimento_cm: comprimento,
-                largura_cm: largura,
-                altura_cm: altura,
-                peso_volumetrico: pesoVolumetrico
-                // foto_url removida
-            });
+            if (isIncorreto) {
+                const pesoVolumetrico = calcularPesoVolumetrico(comprimento, largura, altura);
+                idsIncorretos.push(idVenda);
+                
+                registrosParaInserir.push({
+                    id: idVenda,
+                    titulo: titulo,
+                    mlb: mlb,
+                    sku: sku,
+                    valor_produto: valorProduto,
+                    quantidade: quantidade,
+                    frete_cobrado: freteCobrado,
+                    frete_esperado: freteEsperado,
+                    frete_por_unidade: freteCobrado / (quantidade || 1),
+                    data_venda: venda.data_venda || new Date().toISOString(),
+                    tipo_envio: venda.tipo_envio || 'N/I',
+                    peso_estimado: peso,
+                    comprimento_cm: comprimento,
+                    largura_cm: largura,
+                    altura_cm: altura,
+                    peso_volumetrico: pesoVolumetrico,
+                    updated_at: new Date().toISOString()
+                });
+            } else {
+                totalCorretosIgnorados++;
+            }
 
-            await new Promise(resolve => setTimeout(resolve, 200));
+            await new Promise(resolve => setTimeout(resolve, 50));
         }
 
-        console.log(`📊 Resumo: ${registrosParaInserir.length} para inserir, ${totalFullIgnorados} FULL ignorados, ${totalSemFrete} sem frete`);
+        console.log(`📊 Resumo: ${registrosParaInserir.length} incorretos para salvar, ${totalCorretosIgnorados} corretos ignorados, ${totalFullIgnorados} FULL ignorados`);
+
+        // REMOVER CORRETOS DO BANCO
+        if (totalCorretosIgnorados > 0) {
+            console.log('🗑️ Buscando registros corretos para remover...');
+            const { data: todosRegistros } = await window.supabaseClient
+                .from('fretes_ml')
+                .select('id, frete_cobrado, valor_produto, peso_estimado');
+            
+            if (todosRegistros) {
+                let removidos = 0;
+                for (const registro of todosRegistros) {
+                    const freteEsperado = calcularFreteEsperado(registro.valor_produto || 0, registro.peso_estimado || 0.3);
+                    const isCorreto = freteEsperado !== null && Math.abs((registro.frete_cobrado || 0) - freteEsperado) <= 0.01;
+                    
+                    if (isCorreto && !idsIncorretos.includes(registro.id)) {
+                        await window.supabaseClient.from('fretes_ml').delete().eq('id', registro.id);
+                        removidos++;
+                    }
+                }
+                console.log(`🗑️ ${removidos} registros corretos removidos do banco`);
+            }
+        }
 
         if (registrosParaInserir.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="13" class="text-center">Nenhuma venda nova (${totalFullIgnorados} FULL ignorados).</td></tr>`;
-            if (contagem) contagem.textContent = 'Nenhuma nova';
+            let msg = `Nenhum frete incorreto encontrado.`;
+            if (totalCorretosIgnorados > 0) msg += ` ${totalCorretosIgnorados} corretos ignorados.`;
+            if (totalFullIgnorados > 0) msg += ` ${totalFullIgnorados} FULL ignorados.`;
+            tbody.innerHTML = `<tr><td colspan="13" class="text-center">${msg}</td></tr>`;
+            if (contagem) contagem.textContent = '0 incorretos';
+            showToast(msg, 'info');
             return;
         }
 
-        const { error: insertError } = await window.supabaseClient
+        await window.supabaseClient
             .from('fretes_ml')
-            .insert(registrosParaInserir);
+            .upsert(registrosParaInserir, { onConflict: 'id', ignoreDuplicates: false });
 
-        if (insertError) throw insertError;
-
-        console.log(`✅ ${registrosParaInserir.length} fretes inseridos`);
+        console.log(`✅ ${registrosParaInserir.length} fretes incorretos salvos`);
         await carregarFretesSalvos();
 
         if (contagem) {
             const { count } = await window.supabaseClient.from('fretes_ml').select('id', { count: 'exact', head: true });
-            contagem.textContent = `${count || 0} registros (${registrosParaInserir.length} novos, ${totalFullIgnorados} FULL ignorados)`;
+            contagem.textContent = `${count || 0} incorretos (${registrosParaInserir.length} novos)`;
         }
 
-        showToast(`✅ ${registrosParaInserir.length} fretes adicionados`, 'success');
+        showToast(`✅ ${registrosParaInserir.length} fretes incorretos salvos`, 'success');
 
     } catch (error) {
-        console.error('❌ Erro na sincronização:', error);
+        console.error('❌ Erro na sincronização de fretes:', error);
         tbody.innerHTML = `<tr><td colspan="13" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
         if (contagem) contagem.textContent = 'Erro';
         showToast('Erro ao sincronizar: ' + error.message, 'error');
@@ -319,67 +628,93 @@ async function buscarFretes() {
 }
 
 // ============================================
-// EXTRAIR FRETE
+// SALVAR MEDIDAS E RECALCULAR
 // ============================================
-async function extrairFreteDaVenda(order, token) {
-    const shipping = order.shipping || {};
-    let frete = 0;
+async function salvarMedidasERecalcular(row, vendaId, sku) {
+    try {
+        const compInput = row.querySelector('.medida-input[data-medida="comprimento"]');
+        const largInput = row.querySelector('.medida-input[data-medida="largura"]');
+        const altInput = row.querySelector('.medida-input[data-medida="altura"]');
+        const pesoInput = row.querySelector('.peso-input');
+        
+        const comprimento = parseFloat(compInput?.value) || 22;
+        const largura = parseFloat(largInput?.value) || 16;
+        const altura = parseFloat(altInput?.value) || 1;
+        const peso = parseFloat(pesoInput?.value) || 0.3;
 
-    if (shipping.receiver_cost !== undefined && shipping.receiver_cost !== null && shipping.receiver_cost > 0) {
-        frete = shipping.receiver_cost;
-        return frete;
-    }
-
-    if (shipping.cost !== undefined && shipping.cost !== null && shipping.cost > 0) {
-        if (order.total_amount && shipping.cost < order.total_amount * 0.5) {
-            frete = shipping.cost;
-            return frete;
+        if (comprimento <= 0 || largura <= 0 || altura <= 0 || peso <= 0) {
+            showToast('Medidas e peso devem ser maiores que zero', 'warning');
+            return;
         }
-    }
 
-    if (shipping.id && token) {
-        try {
-            const shipUrl = `https://api.mercadolibre.com/shipments/${shipping.id}`;
-            const shipProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${encodeURIComponent(token)}`;
-            const resp = await fetch(shipProxy);
-            if (resp.ok) {
-                const shipData = await resp.json();
-                if (shipData.receiver_cost && shipData.receiver_cost > 0) {
-                    frete = shipData.receiver_cost;
-                    return frete;
-                }
-                if (frete === 0 && shipData.cost && shipData.cost > 0) {
-                    frete = shipData.cost;
-                    return frete;
-                }
-                const costsUrl = `https://api.mercadolibre.com/shipments/${shipping.id}/costs`;
-                const costsProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(costsUrl)}&token=${encodeURIComponent(token)}`;
-                const costsResp = await fetch(costsProxy);
-                if (costsResp.ok) {
-                    const costsData = await costsResp.json();
-                    if (costsData.receiver && costsData.receiver.cost !== undefined && costsData.receiver.cost > 0) {
-                        frete = costsData.receiver.cost;
-                        return frete;
-                    }
-                    if (frete === 0 && costsData.senders && costsData.senders.length > 0 && costsData.senders[0].cost > 0) {
-                        frete = costsData.senders[0].cost;
-                        return frete;
-                    }
-                }
+        await salvarMedidasSKU(sku, comprimento, largura, altura, peso);
+
+        const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
+        await window.supabaseClient
+            .from('fretes_ml')
+            .update({
+                comprimento_cm: comprimento,
+                largura_cm: largura,
+                altura_cm: altura,
+                peso_estimado: peso,
+                peso_volumetrico: pesoVol,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', vendaId);
+
+        const valorCell = row.querySelector('td:nth-child(5)');
+        const valorText = valorCell?.textContent.replace('R$ ', '').replace(',', '.') || '0';
+        const valorProduto = parseFloat(valorText) || 0;
+        
+        const freteEsperado = calcularFreteEsperado(valorProduto, peso);
+        const freteCobradoCell = row.querySelector('td:nth-child(7)');
+        const freteCobradoText = freteCobradoCell?.textContent.replace('R$ ', '').replace(',', '.') || '0';
+        const freteCobrado = parseFloat(freteCobradoText) || 0;
+
+        const freteEsperadoCell = row.querySelector('.frete-esperado-cell');
+        const statusBadge = row.querySelector('.status-badge');
+        const volDisplay = row.querySelector('.peso-volumetrico-display');
+
+        if (freteEsperado !== null) {
+            freteEsperadoCell.textContent = `R$ ${freteEsperado.toFixed(2)}`;
+            const diferenca = freteCobrado - freteEsperado;
+            const diffAbs = Math.abs(diferenca);
+            let statusClass, statusText;
+            if (diffAbs < 0.01) {
+                statusClass = 'success';
+                statusText = '✅ Correto';
+                await window.supabaseClient.from('fretes_ml').delete().eq('id', vendaId);
+                showToast(`✅ Frete corrigido! Registro removido.`, 'success');
+                await carregarFretesSalvos();
+                return;
+            } else if (diferenca > 0) {
+                statusClass = 'danger';
+                statusText = `❌ Acima (R$ ${diferenca.toFixed(2)})`;
+            } else {
+                statusClass = 'warning';
+                statusText = `⚠️ Abaixo (R$ ${Math.abs(diferenca).toFixed(2)})`;
             }
-        } catch (e) {
-            console.warn(`Erro ao buscar shipment ${shipping.id}:`, e.message);
+            statusBadge.className = `badge badge-${statusClass} status-badge`;
+            statusBadge.textContent = statusText;
         }
-    }
 
-    return 0;
+        if (volDisplay) {
+            volDisplay.textContent = pesoVol.toFixed(3);
+        }
+
+        showToast(`✅ Medidas salvas para ${sku}!`, 'success');
+
+    } catch (error) {
+        console.error('Erro ao salvar medidas:', error);
+        showToast('Erro ao salvar: ' + error.message, 'error');
+    }
 }
 
 // ============================================
-// CARREGAR FRETES SALVOS
+// CARREGAR FRETES SALVOS (APENAS INCORRETOS)
 // ============================================
 async function carregarFretesSalvos() {
-    console.log('📂 Carregando fretes salvos...');
+    console.log('📂 Carregando fretes salvos (apenas incorretos)...');
     const tbody = document.getElementById('shippingSimpleBody');
     const contagem = document.getElementById('contagemFretes');
     if (!tbody) return;
@@ -390,8 +725,7 @@ async function carregarFretesSalvos() {
         const { data, error } = await window.supabaseClient
             .from('fretes_ml')
             .select('*')
-            .order('data_venda', { ascending: false })
-            .limit(500);
+            .order('data_venda', { ascending: false });
 
         if (error) throw error;
 
@@ -406,57 +740,29 @@ async function carregarFretesSalvos() {
             reclamacoes.forEach(r => { reclamacoesMap[r.venda_id] = r.status; });
         }
 
-        // Filtrar FULL
         let dados = (data || []).filter(item => {
             if (item.tipo_envio === 'FULL') return false;
             if (isFullByAnyField(item)) return false;
-            return true;
-        });
-
-        // Calcular status e identificar incorretos
-        let totalIncorretos = 0;
-        const dadosComStatus = dados.map(item => {
             const peso = item.peso_estimado || 0.3;
             const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
-            let isIncorreto = false;
-            if (freteEsperado !== null) {
-                const diff = Math.abs(item.frete_cobrado - freteEsperado);
-                isIncorreto = diff > 0.01;
-                if (isIncorreto) totalIncorretos++;
-            }
-            return { ...item, freteEsperado, isIncorreto };
+            if (freteEsperado === null) return false;
+            return Math.abs(item.frete_cobrado - freteEsperado) > 0.01;
         });
 
-        // ARMAZENAR DADOS PROCESSADOS PARA EXPORTAÇÃO
-        window.dadosFretesProcessados = dadosComStatus;
+        window.dadosFretesProcessados = dados.map(item => {
+            const peso = item.peso_estimado || 0.3;
+            const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
+            return { ...item, freteEsperado, isIncorreto: true };
+        });
 
-        // Atualizar botão de filtro
-        const btnFiltro = document.getElementById('btnFiltrarIncorretos');
-        if (btnFiltro) {
-            if (filtroApenasIncorretos) {
-                btnFiltro.innerHTML = `<i class="fas fa-filter"></i> Mostrar todos (${totalIncorretos} incorretos)`;
-                btnFiltro.classList.remove('btn-outline-danger');
-                btnFiltro.classList.add('btn-danger');
-            } else {
-                btnFiltro.innerHTML = `<i class="fas fa-exclamation-triangle"></i> Apenas incorretos (${totalIncorretos})`;
-                btnFiltro.classList.remove('btn-danger');
-                btnFiltro.classList.add('btn-outline-danger');
-            }
-        }
-
-        // Aplicar filtro
-        let dadosFiltrados = filtroApenasIncorretos
-            ? dadosComStatus.filter(item => item.isIncorreto)
-            : dadosComStatus;
-
-        if (dadosFiltrados.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="13" class="text-center">${filtroApenasIncorretos ? 'Nenhum frete incorreto encontrado.' : 'Nenhum frete válido (FULL removidos).'}</td></tr>`;
-            if (contagem) contagem.textContent = '0 registros';
+        if (dados.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="13" class="text-center">Nenhum frete incorreto encontrado. 🎉</td></tr>';
+            if (contagem) contagem.textContent = '0 incorretos';
             return;
         }
 
         tbody.innerHTML = '';
-        dadosFiltrados.forEach(item => {
+        dados.forEach(item => {
             const row = document.createElement('tr');
 
             const peso = item.peso_estimado || 0.3;
@@ -468,7 +774,7 @@ async function carregarFretesSalvos() {
             const quantidade = item.quantidade || 1;
             const sku = item.sku || 'N/A';
             const fotoUrl = item.foto_url || null;
-            const freteEsperado = item.freteEsperado;
+            const freteEsperado = calcularFreteEsperado(valorProduto, peso);
 
             const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
             let statusClass = 'secondary', statusText = 'Não calculado', diferenca = 0;
@@ -489,14 +795,6 @@ async function carregarFretesSalvos() {
 
             const temReclamacao = reclamacoesMap[item.id] === 'aberto';
             const badgeReclamacao = temReclamacao ? '<span class="badge badge-info ml-1">Reclamação Aberta</span>' : '';
-
-            let badgeEnvio = '';
-            const tipo = (item.tipo_envio || 'N/I').toUpperCase();
-            if (tipo.includes('FULL')) badgeEnvio = '<span class="badge badge-danger">FULL</span>';
-            else if (tipo.includes('FLEX')) badgeEnvio = '<span class="badge badge-warning">FLEX</span>';
-            else if (tipo.includes('MERCADO') || tipo.includes('ME')) badgeEnvio = '<span class="badge badge-success">ME</span>';
-            else if (tipo.includes('CROSS')) badgeEnvio = '<span class="badge badge-info">CROSS</span>';
-            else badgeEnvio = `<span class="badge badge-secondary">${tipo}</span>`;
 
             let fotoThumb = '';
             if (fotoUrl) {
@@ -524,7 +822,7 @@ async function carregarFretesSalvos() {
                            data-venda-id="${item.id}" style="width: 65px;">
                 </td>
                 <td>
-                    <div style="display:flex; gap:3px; flex-wrap:wrap;">
+                    <div style="display:flex; gap:3px; flex-wrap:wrap; align-items:center;">
                         <input type="number" class="form-control form-control-sm medida-input" 
                                value="${comprimento}" step="0.1" min="0" 
                                data-venda-id="${item.id}" data-medida="comprimento" style="width: 55px;" placeholder="C">
@@ -536,6 +834,12 @@ async function carregarFretesSalvos() {
                         <input type="number" class="form-control form-control-sm medida-input" 
                                value="${altura}" step="0.1" min="0" 
                                data-venda-id="${item.id}" data-medida="altura" style="width: 55px;" placeholder="A">
+                        <button class="btn btn-sm btn-success btn-salvar-medidas" 
+                                data-venda-id="${item.id}" 
+                                data-sku="${sku}"
+                                style="padding: 2px 8px; margin-left: 4px;">
+                            <i class="fas fa-save"></i>
+                        </button>
                     </div>
                     <div style="font-size:10px; color:#6c757d; margin-top:3px;">
                         Vol: <span class="peso-volumetrico-display">${pesoVol.toFixed(3)}</span> m³
@@ -562,61 +866,62 @@ async function carregarFretesSalvos() {
 
             tbody.appendChild(row);
 
-            // Eventos para peso
+            const btnSalvar = row.querySelector('.btn-salvar-medidas');
+            if (btnSalvar) {
+                btnSalvar.addEventListener('click', function() {
+                    salvarMedidasERecalcular(row, this.dataset.vendaId, this.dataset.sku);
+                });
+            }
+
             const pesoInput = row.querySelector('.peso-input');
             if (pesoInput) {
                 pesoInput.addEventListener('change', function() {
                     const novoPeso = parseFloat(this.value);
                     if (!isNaN(novoPeso) && novoPeso >= 0) {
-                        atualizarLinhaAposMedidas(row, item.id, null, null, null, novoPeso);
+                        atualizarVisualizacaoLinha(row, item.id, null, null, null, novoPeso);
                     }
                 });
             }
 
-            // Eventos para medidas
             const medidaInputs = row.querySelectorAll('.medida-input');
             medidaInputs.forEach(input => {
                 input.addEventListener('change', function() {
                     const valor = parseFloat(this.value);
                     if (isNaN(valor) || valor < 0) return;
-                    const vendaId = this.dataset.vendaId;
                     const comprimentoInput = row.querySelector('.medida-input[data-medida="comprimento"]');
                     const larguraInput = row.querySelector('.medida-input[data-medida="largura"]');
                     const alturaInput = row.querySelector('.medida-input[data-medida="altura"]');
-                    const comp = parseFloat(comprimentoInput.value) || 0;
-                    const larg = parseFloat(larguraInput.value) || 0;
-                    const alt = parseFloat(alturaInput.value) || 0;
-                    atualizarLinhaAposMedidas(row, vendaId, comp, larg, alt, null);
+                    atualizarVisualizacaoLinha(row, item.id, 
+                        parseFloat(comprimentoInput.value) || 0,
+                        parseFloat(larguraInput.value) || 0,
+                        parseFloat(alturaInput.value) || 0, null);
                 });
             });
 
-            // Botões reclamar
             const btnReclamar = row.querySelector('.btn-reclamar');
             if (btnReclamar) {
                 btnReclamar.addEventListener('click', function() {
-                    const vendaId = this.dataset.vendaId;
-                    const valor = parseFloat(this.dataset.valor);
-                    const freteCobrado = parseFloat(this.dataset.freteCobrado);
-                    const freteEsperado = parseFloat(this.dataset.freteEsperado);
-                    abrirModalReclamacao(vendaId, valor, freteCobrado, freteEsperado);
+                    abrirModalReclamacaoCompleta(
+                        this.dataset.vendaId,
+                        parseFloat(this.dataset.valor),
+                        parseFloat(this.dataset.freteCobrado),
+                        parseFloat(this.dataset.freteEsperado)
+                    );
                 });
             }
 
             const btnVerReclamacao = row.querySelector('.btn-ver-reclamacao');
             if (btnVerReclamacao) {
                 btnVerReclamacao.addEventListener('click', function() {
-                    verReclamacao(this.dataset.vendaId);
+                    verReclamacaoCompleta(this.dataset.vendaId);
                 });
             }
         });
 
         if (contagem) {
-            const totalExibidos = dadosFiltrados.length;
-            const totalTotal = dadosComStatus.length;
-            const filtroMsg = filtroApenasIncorretos ? ' (incorretos)' : '';
-            contagem.textContent = `${totalExibidos} registros${filtroMsg} (${totalTotal} total)`;
+            contagem.textContent = `${dados.length} incorretos`;
         }
-        console.log(`✅ ${dadosFiltrados.length} fretes carregados`);
+        console.log(`✅ ${dados.length} fretes incorretos carregados`);
 
     } catch (error) {
         console.error('❌ Erro ao carregar fretes:', error);
@@ -625,9 +930,9 @@ async function carregarFretesSalvos() {
 }
 
 // ============================================
-// ATUALIZAR LINHA APÓS MEDIDAS/PESO
+// ATUALIZAR VISUALIZAÇÃO DA LINHA
 // ============================================
-async function atualizarLinhaAposMedidas(row, vendaId, comprimento, largura, altura, peso) {
+function atualizarVisualizacaoLinha(row, vendaId, comprimento, largura, altura, peso) {
     try {
         if (comprimento === null) {
             const compInput = row.querySelector('.medida-input[data-medida="comprimento"]');
@@ -646,37 +951,16 @@ async function atualizarLinhaAposMedidas(row, vendaId, comprimento, largura, alt
             peso = pesoInput ? parseFloat(pesoInput.value) || 0.3 : 0.3;
         }
 
-        if (comprimento <= 0 || largura <= 0 || altura <= 0 || peso <= 0) {
-            showToast('Medidas e peso devem ser maiores que zero', 'warning');
-            return;
-        }
+        if (comprimento <= 0 || largura <= 0 || altura <= 0 || peso <= 0) return;
 
         const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
 
-        const skuCell = row.querySelector('td:nth-child(3)');
-        const sku = skuCell ? skuCell.textContent.trim() : 'N/A';
-
-        await window.supabaseClient
-            .from('fretes_ml')
-            .update({
-                comprimento_cm: comprimento,
-                largura_cm: largura,
-                altura_cm: altura,
-                peso_estimado: peso,
-                peso_volumetrico: pesoVol
-            })
-            .eq('id', vendaId);
-
-        if (sku && sku !== 'N/A' && sku !== 'SEM SKU') {
-            await salvarMedidasSKU(sku, comprimento, largura, altura, peso);
-        }
-
         const valorCell = row.querySelector('td:nth-child(5)');
-        const valorText = valorCell.textContent.replace('R$ ', '').replace(',', '.');
-        const valorProduto = parseFloat(valorText);
+        const valorText = valorCell?.textContent.replace('R$ ', '').replace(',', '.') || '0';
+        const valorProduto = parseFloat(valorText) || 0;
         const freteCobradoCell = row.querySelector('td:nth-child(7)');
-        const freteCobradoText = freteCobradoCell.textContent.replace('R$ ', '').replace(',', '.');
-        const freteCobrado = parseFloat(freteCobradoText);
+        const freteCobradoText = freteCobradoCell?.textContent.replace('R$ ', '').replace(',', '.') || '0';
+        const freteCobrado = parseFloat(freteCobradoText) || 0;
 
         const freteEsperado = calcularFreteEsperado(valorProduto, peso);
         const freteEsperadoCell = row.querySelector('.frete-esperado-cell');
@@ -704,10 +988,6 @@ async function atualizarLinhaAposMedidas(row, vendaId, comprimento, largura, alt
             if (btnReclamar) {
                 btnReclamar.dataset.freteEsperado = freteEsperado;
             }
-        } else {
-            freteEsperadoCell.textContent = 'N/A';
-            statusBadge.className = 'badge badge-secondary status-badge';
-            statusBadge.textContent = 'Não calculado';
         }
 
         const volDisplay = row.querySelector('.peso-volumetrico-display');
@@ -715,16 +995,834 @@ async function atualizarLinhaAposMedidas(row, vendaId, comprimento, largura, alt
             volDisplay.textContent = pesoVol.toFixed(3);
         }
 
-        // Se filtro de incorretos estiver ativo, recarregar a lista
-        if (filtroApenasIncorretos) {
-            await carregarFretesSalvos();
+    } catch (error) {
+        console.error('Erro ao atualizar visualização:', error);
+    }
+}
+
+// ============================================
+// MODAL DE RECLAMAÇÃO COMPLETA
+// ============================================
+function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, freteEsperado) {
+    // Verificar se o modal existe, se não, criar
+    let modal = document.getElementById('modalReclamacaoCompleta');
+    if (!modal) {
+        criarModalReclamacaoCompleta();
+        modal = document.getElementById('modalReclamacaoCompleta');
+        if (!modal) {
+            showToast('Erro ao criar modal. Tente novamente.', 'error');
+            return;
+        }
+    }
+
+    // Garantir que os elementos existem antes de tentar definir valores
+    const elementos = {
+        vendaId: document.getElementById('reclamacaoVendaId'),
+        valorProduto: document.getElementById('reclamacaoValorProduto'),
+        freteCobrado: document.getElementById('reclamacaoFreteCobrado'),
+        freteEsperado: document.getElementById('reclamacaoFreteEsperado'),
+        diferenca: document.getElementById('reclamacaoDiferenca'),
+        status: document.getElementById('reclamacaoStatus'),
+        data: document.getElementById('reclamacaoData'),
+        numeroReclamacao: document.getElementById('reclamacaoNumeroReclamacao'),
+        numeroOperacao: document.getElementById('reclamacaoNumeroOperacao'),
+        observacoes: document.getElementById('reclamacaoObservacoes'),
+        justificativa: document.getElementById('reclamacaoJustificativa'),
+        numeroTransacao: document.getElementById('reclamacaoNumeroTransacao'),
+        id: document.getElementById('reclamacaoId'),
+        valor: document.getElementById('reclamacaoValor'),
+        motivo: document.getElementById('reclamacaoMotivo'),
+        campoProtocolo: document.getElementById('campoProtocolo'),
+        listaProtocolos: document.getElementById('listaProtocolos'),
+        campoNumeroOperacao: document.getElementById('campoNumeroOperacao'),
+        campoJustificativa: document.getElementById('campoJustificativa'),
+        campoNumeroTransacao: document.getElementById('campoNumeroTransacao'),
+        campoNumeroVenda: document.getElementById('campoNumeroVenda')
+    };
+
+    // Verificar se todos os elementos existem
+    const elementosFaltando = Object.entries(elementos)
+        .filter(([key, el]) => !el)
+        .map(([key]) => key);
+
+    if (elementosFaltando.length > 0) {
+        console.error('Elementos faltando no modal:', elementosFaltando);
+        showToast('Erro: elementos do modal não encontrados. Recarregue a página.', 'error');
+        return;
+    }
+
+    const diferenca = freteCobrado - freteEsperado;
+    
+    // Definir valores
+    elementos.vendaId.value = vendaId || '';
+    elementos.valorProduto.value = (valorProduto || 0).toFixed(2);
+    elementos.freteCobrado.value = (freteCobrado || 0).toFixed(2);
+    elementos.freteEsperado.value = (freteEsperado || 0).toFixed(2);
+    elementos.diferenca.value = diferenca.toFixed(2);
+    elementos.status.value = 'aberto';
+    elementos.data.value = new Date().toISOString().split('T')[0];
+    
+    // Limpar campos
+    elementos.numeroReclamacao.value = '';
+    elementos.numeroOperacao.value = '';
+    elementos.observacoes.value = '';
+    elementos.justificativa.value = '';
+    elementos.numeroTransacao.value = '';
+    elementos.id.value = '';
+    elementos.valor.value = '0';
+    elementos.motivo.value = '';
+    
+    // Limpar protocolos
+    protocolosTemp = [];
+    if (elementos.listaProtocolos) {
+        elementos.listaProtocolos.innerHTML = '<small style="color: #6c757d;">Nenhum protocolo adicionado</small>';
+    }
+    if (elementos.campoProtocolo) {
+        elementos.campoProtocolo.value = '';
+    }
+    
+    // Esconder campos condicionais
+    if (elementos.campoJustificativa) {
+        elementos.campoJustificativa.style.display = 'none';
+    }
+    if (elementos.campoNumeroTransacao) {
+        elementos.campoNumeroTransacao.style.display = 'none';
+    }
+    if (elementos.campoNumeroOperacao) {
+        elementos.campoNumeroOperacao.style.display = 'block';
+    }
+    
+    // Mostrar modal
+    modal.classList.remove('hidden');
+    
+    // Carregar reclamação existente
+    carregarReclamacaoExistente(vendaId);
+}
+
+function criarModalReclamacaoCompleta() {
+    if (document.getElementById('modalReclamacaoCompleta')) return;
+
+    const modalHTML = `
+        <div id="modalReclamacaoCompleta" class="modal hidden">
+            <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #00ADEE; padding-bottom: 15px;">
+                    <h3 style="margin:0;"><i class="fas fa-comment-dots" style="color:#00ADEE;"></i> Nova Reclamação de Frete</h3>
+                    <button onclick="fecharModalReclamacaoCompleta()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+                </div>
+
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <p><strong>Venda:</strong> <span id="reclamacaoNumeroVendaDisplay">-</span></p>
+                    <p><strong>Valor Produto:</strong> R$ <span id="reclamacaoValorProdutoDisplay">0,00</span></p>
+                    <p><strong>Frete Cobrado:</strong> R$ <span id="reclamacaoFreteCobradoDisplay">0,00</span></p>
+                    <p><strong>Frete Esperado:</strong> R$ <span id="reclamacaoFreteEsperadoDisplay">0,00</span></p>
+                    <p><strong>Diferença:</strong> R$ <span id="reclamacaoDiferencaDisplay" style="font-weight: bold;">0,00</span></p>
+                </div>
+
+                <input type="hidden" id="reclamacaoId">
+                <input type="hidden" id="reclamacaoVendaId">
+                <input type="hidden" id="reclamacaoValorProduto">
+                <input type="hidden" id="reclamacaoFreteCobrado">
+                <input type="hidden" id="reclamacaoFreteEsperado">
+                <input type="hidden" id="reclamacaoDiferenca">
+
+                <!-- Tipo de referência -->
+                <div class="form-group">
+                    <label><strong>Tipo de referência *</strong></label>
+                    <div class="d-flex gap-3">
+                        <label><input type="radio" name="tipoReferencia" value="venda" checked onchange="toggleReferenciaFields()"> Venda</label>
+                        <label><input type="radio" name="tipoReferencia" value="retirada" onchange="toggleReferenciaFields()"> Retirada FULL</label>
+                    </div>
+                </div>
+
+                <!-- Número da Venda -->
+                <div class="form-group" id="campoNumeroVenda">
+                    <label><i class="fas fa-tag"></i> Número da Venda (16 caracteres)</label>
+                    <input type="text" id="reclamacaoNumeroVenda" class="form-control" placeholder="Ex: 1234567890123456" maxlength="16">
+                    <small style="color: #6c757d;">Deve ter exatamente 16 caracteres</small>
+                </div>
+
+                <!-- Número da Reclamação -->
+                <div class="form-group">
+                    <label><i class="fas fa-exclamation-circle"></i> Número da Reclamação *</label>
+                    <input type="text" id="reclamacaoNumeroReclamacao" class="form-control" placeholder="Ex: REC123456" required>
+                </div>
+
+                <!-- Número da Operação -->
+                <div class="form-group">
+                    <label><i class="fas fa-receipt"></i> Número da Operação</label>
+                    <div class="d-flex gap-3 mb-2">
+                        <label><input type="radio" name="tipoOperacao" value="adicionar" checked onchange="toggleOperacaoField()"> Adicionar número da operação</label>
+                        <label><input type="radio" name="tipoOperacao" value="reembolso_venda" onchange="toggleOperacaoField()"> Reembolso na venda (sem número)</label>
+                    </div>
+                    <div id="campoNumeroOperacao">
+                        <input type="text" id="reclamacaoNumeroOperacao" class="form-control" placeholder="Ex: OP789012">
+                    </div>
+                </div>
+
+                <!-- Tipo de reclamação -->
+                <div class="form-group">
+                    <label><i class="fas fa-tag"></i> Tipo de reclamação *</label>
+                    <div class="d-flex gap-3">
+                        <label><input type="radio" name="tipoReclamacao" value="com_reembolso" checked onchange="toggleCamposReclamacao()"> Com reembolso</label>
+                        <label><input type="radio" name="tipoReclamacao" value="sem_reembolso" onchange="toggleCamposReclamacao()"> Sem reembolso (apenas acompanhamento)</label>
+                    </div>
+                </div>
+
+                <!-- Valor e Data -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label><i class="fas fa-money-bill-wave"></i> Valor *</label>
+                            <input type="number" id="reclamacaoValor" class="form-control" step="0.01" min="0" placeholder="0,00" value="0">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label><i class="fas fa-calendar"></i> Data *</label>
+                            <input type="date" id="reclamacaoData" class="form-control" required>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Motivo -->
+                <div class="form-group">
+                    <label><i class="fas fa-question-circle"></i> Motivo *</label>
+                    <select id="reclamacaoMotivo" class="form-control" required>
+                        <option value="">Selecione o motivo</option>
+                        <option value="Frete">Frete</option>
+                        <option value="Extravio no envio">Extravio no envio</option>
+                        <option value="Extravio na devolução">Extravio na devolução</option>
+                        <option value="Devolução danificada">Devolução danificada</option>
+                        <option value="Valor incorreto">Valor incorreto</option>
+                        <option value="Prazo de entrega">Prazo de entrega</option>
+                    </select>
+                </div>
+
+                <!-- Protocolos -->
+                <div class="form-group">
+                    <label><i class="fas fa-list"></i> Protocolos</label>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="campoProtocolo" class="form-control" placeholder="Número do protocolo">
+                        <button type="button" class="btn btn-primary btn-sm" onclick="adicionarProtocolo()">
+                            <i class="fas fa-plus"></i> Adicionar
+                        </button>
+                    </div>
+                    <div id="listaProtocolos" style="margin-top: 10px;">
+                        <small style="color: #6c757d;">Nenhum protocolo adicionado</small>
+                    </div>
+                </div>
+
+                <!-- Status -->
+                <div class="form-group">
+                    <label><i class="fas fa-tag"></i> Status *</label>
+                    <select id="reclamacaoStatus" class="form-control" onchange="onStatusChange()" required>
+                        <option value="aberto">Aberto</option>
+                        <option value="em_andamento">Em andamento</option>
+                        <option value="rejeitado">Rejeitado</option>
+                        <option value="resolvido">Resolvido</option>
+                    </select>
+                </div>
+
+                <!-- Justificativa (aparece quando status = rejeitado) -->
+                <div id="campoJustificativa" style="display: none;">
+                    <div class="form-group">
+                        <label><i class="fas fa-comment"></i> Justificativa da Rejeição *</label>
+                        <textarea id="reclamacaoJustificativa" class="form-control" rows="3" placeholder="Descreva o motivo da rejeição..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label><i class="fas fa-paperclip"></i> Anexar Arquivo</label>
+                        <input type="file" id="reclamacaoArquivo" class="form-control" accept=".pdf,.jpg,.png,.doc,.docx">
+                        <small style="color: #6c757d;">Anexe evidências (PDF, imagem, documento)</small>
+                    </div>
+                </div>
+
+                <!-- Número de Transação (aparece quando status = resolvido) -->
+                <div id="campoNumeroTransacao" style="display: none;">
+                    <div class="form-group">
+                        <label><i class="fas fa-exchange-alt"></i> Número da Transação</label>
+                        <input type="text" id="reclamacaoNumeroTransacao" class="form-control" placeholder="Ex: TRANS123456">
+                        <small style="color: #6c757d;">Número da transação do reembolso</small>
+                    </div>
+                </div>
+
+                <!-- Observações -->
+                <div class="form-group">
+                    <label><i class="fas fa-sticky-note"></i> Observações</label>
+                    <textarea id="reclamacaoObservacoes" class="form-control" rows="3" placeholder="Detalhes sobre a reclamação..."></textarea>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                    <button type="button" class="btn btn-secondary" onclick="fecharModalReclamacaoCompleta()">Cancelar</button>
+                    <button type="button" class="btn btn-success" onclick="salvarReclamacaoCompleta()">
+                        <i class="fas fa-save"></i> Salvar
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const div = document.createElement('div');
+    div.innerHTML = modalHTML;
+    document.body.appendChild(div.firstElementChild);
+}
+
+// ============================================
+// FUNÇÕES DO MODAL DE RECLAMAÇÃO
+// ============================================
+function fecharModalReclamacaoCompleta() {
+    const modal = document.getElementById('modalReclamacaoCompleta');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    protocolosTemp = [];
+}
+
+function toggleReferenciaFields() {
+    const tipo = document.querySelector('input[name="tipoReferencia"]:checked')?.value || 'venda';
+    const campoNumeroVenda = document.getElementById('campoNumeroVenda');
+    if (campoNumeroVenda) {
+        campoNumeroVenda.style.display = tipo === 'venda' ? 'block' : 'none';
+    }
+}
+
+function toggleOperacaoField() {
+    const tipo = document.querySelector('input[name="tipoOperacao"]:checked')?.value || 'adicionar';
+    const campoNumeroOperacao = document.getElementById('campoNumeroOperacao');
+    if (campoNumeroOperacao) {
+        campoNumeroOperacao.style.display = tipo === 'adicionar' ? 'block' : 'none';
+    }
+}
+
+function toggleCamposReclamacao() {
+    const tipo = document.querySelector('input[name="tipoReclamacao"]:checked')?.value || 'com_reembolso';
+    const campoValor = document.getElementById('reclamacaoValor');
+    if (campoValor) {
+        campoValor.disabled = tipo === 'sem_reembolso';
+        if (tipo === 'sem_reembolso') {
+            campoValor.value = '0';
+        }
+    }
+}
+
+function onStatusChange() {
+    const status = document.getElementById('reclamacaoStatus')?.value;
+    const campoJustificativa = document.getElementById('campoJustificativa');
+    const campoNumeroTransacao = document.getElementById('campoNumeroTransacao');
+    
+    if (campoJustificativa) {
+        campoJustificativa.style.display = status === 'rejeitado' ? 'block' : 'none';
+    }
+    if (campoNumeroTransacao) {
+        campoNumeroTransacao.style.display = status === 'resolvido' ? 'block' : 'none';
+    }
+}
+
+function adicionarProtocolo() {
+    const input = document.getElementById('campoProtocolo');
+    if (!input) return;
+    
+    const protocolo = input.value.trim();
+    if (!protocolo) {
+        showToast('Digite um número de protocolo', 'warning');
+        return;
+    }
+    
+    if (protocolosTemp.includes(protocolo)) {
+        showToast('Protocolo já adicionado', 'warning');
+        return;
+    }
+    
+    protocolosTemp.push(protocolo);
+    input.value = '';
+    renderizarProtocolos();
+}
+
+function removerProtocolo(index) {
+    protocolosTemp.splice(index, 1);
+    renderizarProtocolos();
+}
+
+function renderizarProtocolos() {
+    const container = document.getElementById('listaProtocolos');
+    if (!container) return;
+    
+    if (protocolosTemp.length === 0) {
+        container.innerHTML = '<small style="color: #6c757d;">Nenhum protocolo adicionado</small>';
+        return;
+    }
+    
+    container.innerHTML = protocolosTemp.map((p, i) => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 5px;">
+            <span><i class="fas fa-hashtag"></i> ${p}</span>
+            <button type="button" class="btn btn-sm btn-danger" onclick="removerProtocolo(${i})" style="padding: 0 8px;">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `).join('');
+}
+
+// ============================================
+// CARREGAR RECLAMAÇÃO EXISTENTE
+// ============================================
+async function carregarReclamacaoExistente(vendaId) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('reclamacoes_frete')
+            .select('*')
+            .eq('venda_id', vendaId)
+            .order('criado_em', { ascending: false })
+            .limit(1);
+        
+        if (error) throw error;
+        if (data && data.length > 0) {
+            const recl = data[0];
+            document.getElementById('reclamacaoId').value = recl.id;
+            document.getElementById('reclamacaoNumeroReclamacao').value = recl.numero_reclamacao || '';
+            document.getElementById('reclamacaoNumeroOperacao').value = recl.numero_operacao || '';
+            document.getElementById('reclamacaoValor').value = recl.valor || 0;
+            document.getElementById('reclamacaoData').value = recl.data_reclamacao ? recl.data_reclamacao.split('T')[0] : new Date().toISOString().split('T')[0];
+            document.getElementById('reclamacaoMotivo').value = recl.motivo || '';
+            document.getElementById('reclamacaoStatus').value = recl.status || 'aberto';
+            document.getElementById('reclamacaoObservacoes').value = recl.observacoes || '';
+            document.getElementById('reclamacaoJustificativa').value = recl.justificativa_rejeicao || '';
+            document.getElementById('reclamacaoNumeroTransacao').value = recl.numero_transacao || '';
+            
+            // Protocolos
+            if (recl.protocolos && recl.protocolos.length > 0) {
+                protocolosTemp = recl.protocolos;
+                renderizarProtocolos();
+            }
+            
+            // Tipo de referência
+            if (recl.tipo_referencia) {
+                document.querySelector(`input[name="tipoReferencia"][value="${recl.tipo_referencia}"]`).checked = true;
+                toggleReferenciaFields();
+            }
+            
+            // Tipo de reclamação
+            if (recl.tipo_reclamacao) {
+                document.querySelector(`input[name="tipoReclamacao"][value="${recl.tipo_reclamacao}"]`).checked = true;
+                toggleCamposReclamacao();
+            }
+            
+            onStatusChange();
+        }
+    } catch (error) {
+        console.error('Erro ao carregar reclamação:', error);
+    }
+}
+
+// ============================================
+// SALVAR RECLAMAÇÃO COMPLETA
+// ============================================
+async function salvarReclamacaoCompleta() {
+    const vendaId = document.getElementById('reclamacaoVendaId').value;
+    const id = document.getElementById('reclamacaoId').value;
+    const numeroReclamacao = document.getElementById('reclamacaoNumeroReclamacao').value.trim();
+    const numeroOperacao = document.getElementById('reclamacaoNumeroOperacao').value.trim();
+    const valor = parseFloat(document.getElementById('reclamacaoValor').value) || 0;
+    const data = document.getElementById('reclamacaoData').value;
+    const motivo = document.getElementById('reclamacaoMotivo').value;
+    const status = document.getElementById('reclamacaoStatus').value;
+    const observacoes = document.getElementById('reclamacaoObservacoes').value.trim();
+    const justificativa = document.getElementById('reclamacaoJustificativa').value.trim();
+    const numeroTransacao = document.getElementById('reclamacaoNumeroTransacao').value.trim();
+    const tipoReferencia = document.querySelector('input[name="tipoReferencia"]:checked')?.value || 'venda';
+    const tipoReclamacao = document.querySelector('input[name="tipoReclamacao"]:checked')?.value || 'com_reembolso';
+    
+    const nomeUsuario = getNomeUsuario();
+
+    if (!vendaId) {
+        showToast('Erro: venda não identificada', 'error');
+        return;
+    }
+
+    if (!numeroReclamacao) {
+        showToast('Número da reclamação é obrigatório', 'warning');
+        return;
+    }
+
+    if (!data) {
+        showToast('Data é obrigatória', 'warning');
+        return;
+    }
+
+    if (!motivo) {
+        showToast('Motivo é obrigatório', 'warning');
+        return;
+    }
+
+    if (status === 'rejeitado' && !justificativa) {
+        showToast('Justificativa é obrigatória para rejeição', 'warning');
+        return;
+    }
+
+    const dados = {
+        venda_id: vendaId,
+        numero_reclamacao: numeroReclamacao,
+        numero_operacao: numeroOperacao,
+        protocolos: protocolosTemp,
+        valor: valor,
+        data_reclamacao: data,
+        motivo: motivo,
+        status: status,
+        tipo_referencia: tipoReferencia,
+        tipo_reclamacao: tipoReclamacao,
+        observacoes: observacoes,
+        justificativa_rejeicao: justificativa,
+        numero_transacao: numeroTransacao,
+        atualizado_em: new Date().toISOString()
+    };
+
+    if (status === 'resolvido') {
+        dados.resolvido_por = nomeUsuario;
+        dados.data_resolucao = new Date().toISOString();
+    }
+
+    try {
+        let result;
+        if (id) {
+            // Atualizar existente
+            result = await window.supabaseClient
+                .from('reclamacoes_frete')
+                .update(dados)
+                .eq('id', id);
+        } else {
+            // Criar nova
+            dados.criado_por = nomeUsuario;
+            dados.criado_em = new Date().toISOString();
+            result = await window.supabaseClient
+                .from('reclamacoes_frete')
+                .insert([dados]);
         }
 
-        showToast(`Medidas e peso atualizados! Vol: ${pesoVol.toFixed(3)} m³`, 'success');
+        if (result.error) throw result.error;
+
+        // ===== SE RESOLVIDO E COM REEMBOLSO, CRIAR NA ABA RECLAMAÇÕES =====
+        if (status === 'resolvido' && tipoReclamacao === 'com_reembolso') {
+            await criarReclamacaoNaAbaReembolsos(vendaId, dados);
+        }
+
+        showToast('Reclamação salva com sucesso!', 'success');
+        fecharModalReclamacaoCompleta();
+        await carregarFretesSalvos();
+        await carregarListaReclamacoes();
 
     } catch (error) {
-        console.error('Erro ao atualizar linha:', error);
-        showToast('Erro ao atualizar: ' + error.message, 'error');
+        console.error('Erro ao salvar reclamação:', error);
+        showToast('Erro ao salvar: ' + error.message, 'error');
+    }
+}
+
+// ============================================
+// CRIAR RECLAMAÇÃO NA ABA REEMBOLSOS
+// ============================================
+async function criarReclamacaoNaAbaReembolsos(vendaId, dados) {
+    try {
+        // Verificar se já existe na tabela reembolsos
+        const { data: existente } = await window.supabaseClient
+            .from('reembolsos')
+            .select('id')
+            .eq('venda_id', vendaId)
+            .maybeSingle();
+
+        if (existente) {
+            console.log('📋 Reclamação já existe na aba Reembolsos');
+            return;
+        }
+
+        const nomeUsuario = getNomeUsuario();
+
+        const dadosReembolso = {
+            venda_id: vendaId,
+            numero_venda: dados.numero_reclamacao || vendaId,
+            numero_reclamacao: dados.numero_reclamacao,
+            numero_operacao: dados.numero_operacao,
+            valor: dados.valor || 0,
+            data_reclamacao: dados.data_reclamacao || new Date().toISOString(),
+            motivo: dados.motivo || 'Frete',
+            status: 'a_verificar', // Status inicial na aba reclamações
+            tipo_referencia: dados.tipo_referencia || 'venda',
+            tipo_reclamacao: dados.tipo_reclamacao || 'com_reembolso',
+            observacoes: dados.observacoes || '',
+            protocolos: dados.protocolos || [],
+            criado_por: nomeUsuario,
+            criado_em: new Date().toISOString(),
+            atualizado_em: new Date().toISOString()
+        };
+
+        const { error } = await window.supabaseClient
+            .from('reembolsos')
+            .insert([dadosReembolso]);
+
+        if (error) throw error;
+
+        console.log(`✅ Reclamação criada na aba Reembolsos para venda ${vendaId}`);
+        showToast('📋 Reclamação enviada para a aba Reclamações!', 'success');
+
+    } catch (error) {
+        console.error('Erro ao criar reclamação na aba Reembolsos:', error);
+    }
+}
+
+// ============================================
+// VER RECLAMAÇÃO COMPLETA
+// ============================================
+async function verReclamacaoCompleta(vendaId) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('reclamacoes_frete')
+            .select('*')
+            .eq('venda_id', vendaId)
+            .order('criado_em', { ascending: false });
+        
+        if (error) throw error;
+        if (!data || data.length === 0) {
+            showToast('Nenhuma reclamação encontrada', 'info');
+            return;
+        }
+        
+        const recl = data[0];
+        abrirModalReclamacaoCompleta(
+            recl.venda_id,
+            recl.valor || 0,
+            0, // freteCobrado
+            0  // freteEsperado
+        );
+        
+        // Preencher com os dados existentes
+        document.getElementById('reclamacaoId').value = recl.id;
+        document.getElementById('reclamacaoNumeroReclamacao').value = recl.numero_reclamacao || '';
+        document.getElementById('reclamacaoNumeroOperacao').value = recl.numero_operacao || '';
+        document.getElementById('reclamacaoValor').value = recl.valor || 0;
+        document.getElementById('reclamacaoData').value = recl.data_reclamacao ? recl.data_reclamacao.split('T')[0] : '';
+        document.getElementById('reclamacaoMotivo').value = recl.motivo || '';
+        document.getElementById('reclamacaoStatus').value = recl.status || 'aberto';
+        document.getElementById('reclamacaoObservacoes').value = recl.observacoes || '';
+        document.getElementById('reclamacaoJustificativa').value = recl.justificativa_rejeicao || '';
+        document.getElementById('reclamacaoNumeroTransacao').value = recl.numero_transacao || '';
+        
+        if (recl.protocolos && recl.protocolos.length > 0) {
+            protocolosTemp = recl.protocolos;
+            renderizarProtocolos();
+        }
+        
+        onStatusChange();
+        
+    } catch (error) {
+        console.error('Erro ao ver reclamação:', error);
+        showToast('Erro ao carregar reclamação', 'error');
+    }
+}
+
+// ============================================
+// CARREGAR LISTA DE RECLAMAÇÕES (FILTRO)
+// ============================================
+async function carregarListaReclamacoes() {
+    const tbody = document.getElementById('reclamacoesFreteBody');
+    if (!tbody) return;
+
+    try {
+        let query = window.supabaseClient
+            .from('reclamacoes_frete')
+            .select('*')
+            .order('criado_em', { ascending: false });
+
+        if (filtroStatusReclamacao !== 'todos') {
+            query = query.eq('status', filtroStatusReclamacao);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        reclamacoesCache = data || [];
+
+        if (reclamacoesCache.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center">Nenhuma reclamação encontrada.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = '';
+        reclamacoesCache.forEach(recl => {
+            const statusColors = {
+                'aberto': 'warning',
+                'em_andamento': 'info',
+                'rejeitado': 'danger',
+                'resolvido': 'success'
+            };
+
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><strong>${recl.venda_id}</strong></td>
+                <td>${recl.numero_reclamacao || '-'}</td>
+                <td>${recl.numero_operacao || '-'}</td>
+                <td>${recl.protocolos ? recl.protocolos.join(', ') : '-'}</td>
+                <td>R$ ${(recl.valor || 0).toFixed(2)}</td>
+                <td>${recl.motivo || '-'}</td>
+                <td><span class="badge badge-${statusColors[recl.status] || 'secondary'}">${recl.status}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-primary" onclick="verReclamacaoCompleta('${recl.venda_id}')">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="btn btn-sm btn-info" onclick="verHistoricoReclamacao('${recl.venda_id}')">
+                        <i class="fas fa-history"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+
+    } catch (error) {
+        console.error('Erro ao carregar reclamações:', error);
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+    }
+}
+
+// ============================================
+// FILTRAR RECLAMAÇÕES
+// ============================================
+function filtrarReclamacoes(status) {
+    filtroStatusReclamacao = status;
+    
+    // Atualizar botões
+    document.querySelectorAll('.btn-filtro-reclamacao').forEach(btn => {
+        btn.classList.remove('btn-primary', 'active');
+        btn.classList.add('btn-outline-secondary');
+    });
+    
+    const btn = document.querySelector(`.btn-filtro-reclamacao[data-status="${status}"]`);
+    if (btn) {
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-primary', 'active');
+    }
+    
+    carregarListaReclamacoes();
+}
+
+// ============================================
+// VER HISTÓRICO DA RECLAMAÇÃO
+// ============================================
+async function verHistoricoReclamacao(vendaId) {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('reclamacoes_frete')
+            .select('*')
+            .eq('venda_id', vendaId)
+            .order('criado_em', { ascending: true });
+        
+        if (error) throw error;
+        if (!data || data.length === 0) {
+            showToast('Nenhum histórico encontrado', 'info');
+            return;
+        }
+
+        let html = `
+            <div id="modalHistoricoReclamacao" class="modal" style="display: flex;">
+                <div class="modal-content" style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #00ADEE; padding-bottom: 15px;">
+                        <h3 style="margin:0;"><i class="fas fa-history"></i> Histórico da Reclamação</h3>
+                        <button onclick="fecharModalHistoricoReclamacao()" style="background:none; border:none; font-size:24px;">&times;</button>
+                    </div>
+                    <p><strong>Venda:</strong> ${vendaId}</p>
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Status</th>
+                                    <th>Protocolos</th>
+                                    <th>Observações</th>
+                                    <th>Usuário</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.map(item => `
+                                    <tr>
+                                        <td>${new Date(item.criado_em).toLocaleString('pt-BR')}</td>
+                                        <td><span class="badge badge-${item.status === 'resolvido' ? 'success' : item.status === 'rejeitado' ? 'danger' : 'warning'}">${item.status}</span></td>
+                                        <td>${item.protocolos ? item.protocolos.join(', ') : '-'}</td>
+                                        <td>${item.observacoes || '-'}</td>
+                                        <td>${item.criado_por || '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex justify-content-end mt-3">
+                        <button class="btn btn-secondary" onclick="fecharModalHistoricoReclamacao()">Fechar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const modalAnterior = document.getElementById('modalHistoricoReclamacao');
+        if (modalAnterior) modalAnterior.remove();
+        
+        document.body.insertAdjacentHTML('beforeend', html);
+
+    } catch (error) {
+        console.error('Erro ao carregar histórico:', error);
+        showToast('Erro ao carregar histórico', 'error');
+    }
+}
+
+function fecharModalHistoricoReclamacao() {
+    document.getElementById('modalHistoricoReclamacao')?.remove();
+}
+
+// ============================================
+// GERAR RELATÓRIO DE RECLAMAÇÕES
+// ============================================
+async function gerarRelatorioReclamacoes() {
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('reclamacoes_frete')
+            .select('*')
+            .order('criado_em', { ascending: false });
+        
+        if (error) throw error;
+        if (!data || data.length === 0) {
+            showToast('Nenhuma reclamação para gerar relatório', 'info');
+            return;
+        }
+
+        const dadosExcel = data.map(item => ({
+            'Venda': item.venda_id,
+            'Nº Reclamação': item.numero_reclamacao || '-',
+            'Nº Operação': item.numero_operacao || '-',
+            'Protocolos': item.protocolos ? item.protocolos.join('; ') : '-',
+            'Valor (R$)': item.valor || 0,
+            'Data': item.data_reclamacao ? new Date(item.data_reclamacao).toLocaleDateString('pt-BR') : '-',
+            'Motivo': item.motivo || '-',
+            'Status': item.status,
+            'Observações': item.observacoes || '-',
+            'Justificativa Rejeição': item.justificativa_rejeicao || '-',
+            'Nº Transação': item.numero_transacao || '-',
+            'Criado por': item.criado_por || '-',
+            'Resolvido por': item.resolvido_por || '-',
+            'Data Resolução': item.data_resolucao ? new Date(item.data_resolucao).toLocaleString('pt-BR') : '-',
+            'Criado em': new Date(item.criado_em).toLocaleString('pt-BR')
+        }));
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(dadosExcel);
+        XLSX.utils.book_append_sheet(wb, ws, 'Reclamações Frete');
+        
+        const colWidths = [
+            { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 25 },
+            { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 15 },
+            { wch: 30 }, { wch: 30 }, { wch: 15 }, { wch: 15 },
+            { wch: 15 }, { wch: 20 }, { wch: 20 }
+        ];
+        ws['!cols'] = colWidths;
+
+        const nomeArquivo = `reclamacoes_frete_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(wb, nomeArquivo);
+        showToast(`Relatório gerado com ${data.length} registros!`, 'success');
+
+    } catch (error) {
+        console.error('Erro ao gerar relatório:', error);
+        showToast('Erro ao gerar relatório', 'error');
     }
 }
 
@@ -740,7 +1838,8 @@ function abrirEditorFoto(vendaId, sku) {
 
     const modal = document.getElementById('modalEditorFoto');
     if (!modal) {
-        console.error('Modal editor não encontrado');
+        criarModalEditorFoto();
+        setTimeout(() => abrirEditorFoto(vendaId, sku), 100);
         return;
     }
 
@@ -830,257 +1929,6 @@ async function salvarMedidasEFoto() {
     }
 }
 
-// ============================================
-// MODAL DE RECLAMAÇÃO
-// ============================================
-function abrirModalReclamacao(vendaId, valorProduto, freteCobrado, freteEsperado) {
-    const modal = document.getElementById('modalReclamacaoFrete');
-    if (!modal) {
-        console.error('Modal de reclamação não encontrado');
-        return;
-    }
-
-    const diferenca = freteCobrado - freteEsperado;
-    document.getElementById('reclamacaoVendaId').value = vendaId;
-    document.getElementById('reclamacaoValorProduto').value = valorProduto.toFixed(2);
-    document.getElementById('reclamacaoFreteCobrado').value = freteCobrado.toFixed(2);
-    document.getElementById('reclamacaoFreteEsperado').value = freteEsperado.toFixed(2);
-    document.getElementById('reclamacaoDiferenca').value = diferenca.toFixed(2);
-    document.getElementById('reclamacaoStatus').value = 'aberto';
-    document.getElementById('reclamacaoObservacoes').value = '';
-    document.getElementById('reclamacaoNumeroVenda').textContent = vendaId;
-
-    carregarReclamacaoExistente(vendaId);
-
-    modal.classList.remove('hidden');
-}
-
-async function carregarReclamacaoExistente(vendaId) {
-    try {
-        const { data, error } = await window.supabaseClient
-            .from('reclamacoes_frete')
-            .select('*')
-            .eq('venda_id', vendaId)
-            .order('data_criacao', { ascending: false })
-            .limit(1);
-        if (error) throw error;
-        if (data && data.length > 0) {
-            const recl = data[0];
-            document.getElementById('reclamacaoId').value = recl.id;
-            document.getElementById('reclamacaoStatus').value = recl.status;
-            document.getElementById('reclamacaoObservacoes').value = recl.observacoes || '';
-            document.getElementById('reclamacaoMotivo').value = recl.motivo || '';
-        } else {
-            document.getElementById('reclamacaoId').value = '';
-            document.getElementById('reclamacaoMotivo').value = '';
-        }
-    } catch (error) {
-        console.error('Erro ao carregar reclamação:', error);
-    }
-}
-
-function fecharModalReclamacao() {
-    document.getElementById('modalReclamacaoFrete').classList.add('hidden');
-}
-
-async function salvarReclamacao() {
-    const vendaId = document.getElementById('reclamacaoVendaId').value;
-    const valorProduto = parseFloat(document.getElementById('reclamacaoValorProduto').value);
-    const freteCobrado = parseFloat(document.getElementById('reclamacaoFreteCobrado').value);
-    const freteEsperado = parseFloat(document.getElementById('reclamacaoFreteEsperado').value);
-    const diferenca = parseFloat(document.getElementById('reclamacaoDiferenca').value);
-    const status = document.getElementById('reclamacaoStatus').value;
-    const observacoes = document.getElementById('reclamacaoObservacoes').value.trim();
-    const motivo = document.getElementById('reclamacaoMotivo').value.trim() || 'Diferença de frete';
-    const reclId = document.getElementById('reclamacaoId').value;
-
-    if (!vendaId) {
-        showToast('Erro: venda não identificada', 'error');
-        return;
-    }
-
-    const dados = {
-        venda_id: vendaId,
-        valor_produto: valorProduto,
-        frete_cobrado: freteCobrado,
-        frete_esperado: freteEsperado,
-        diferenca: diferenca,
-        motivo: motivo,
-        status: status,
-        observacoes: observacoes,
-        atualizado_em: new Date().toISOString()
-    };
-
-    try {
-        let result;
-        if (reclId) {
-            result = await window.supabaseClient
-                .from('reclamacoes_frete')
-                .update(dados)
-                .eq('id', reclId);
-        } else {
-            dados.data_criacao = new Date().toISOString();
-            dados.criado_por = window.currentUser?.name || 'Sistema';
-            result = await window.supabaseClient
-                .from('reclamacoes_frete')
-                .insert([dados]);
-        }
-
-        if (result.error) throw result.error;
-
-        showToast('Reclamação salva com sucesso!', 'success');
-        fecharModalReclamacao();
-        await carregarFretesSalvos();
-    } catch (error) {
-        console.error('Erro ao salvar reclamação:', error);
-        showToast('Erro ao salvar: ' + error.message, 'error');
-    }
-}
-
-async function verReclamacao(vendaId) {
-    try {
-        const { data, error } = await window.supabaseClient
-            .from('reclamacoes_frete')
-            .select('*')
-            .eq('venda_id', vendaId)
-            .order('data_criacao', { ascending: false });
-        if (error) throw error;
-        if (!data || data.length === 0) {
-            showToast('Nenhuma reclamação encontrada', 'info');
-            return;
-        }
-        const recl = data[0];
-        abrirModalReclamacao(vendaId, recl.valor_produto, recl.frete_cobrado, recl.frete_esperado);
-        document.getElementById('reclamacaoId').value = recl.id;
-        document.getElementById('reclamacaoStatus').value = recl.status;
-        document.getElementById('reclamacaoObservacoes').value = recl.observacoes || '';
-        document.getElementById('reclamacaoMotivo').value = recl.motivo || '';
-    } catch (error) {
-        console.error('Erro ao buscar reclamação:', error);
-        showToast('Erro ao buscar reclamação', 'error');
-    }
-}
-
-function abrirListaReclamacoes() {
-    showToast('Função em desenvolvimento - acesse a aba Reclamações', 'info');
-}
-
-// ============================================
-// EXPORTAR FRETES PARA EXCEL
-// ============================================
-function exportarFretesExcel() {
-    if (!window.dadosFretesProcessados || window.dadosFretesProcessados.length === 0) {
-        showToast('Nenhum dado disponível para exportar', 'warning');
-        return;
-    }
-
-    // Aplicar o mesmo filtro de "apenas incorretos"
-    let dadosParaExportar = window.dadosFretesProcessados;
-    if (filtroApenasIncorretos) {
-        dadosParaExportar = dadosParaExportar.filter(item => item.isIncorreto);
-    }
-
-    if (dadosParaExportar.length === 0) {
-        showToast('Nenhum dado incorreto encontrado para exportar', 'warning');
-        return;
-    }
-
-    // Mapear para as colunas do Excel
-    const dadosExcel = dadosParaExportar.map(item => {
-        const peso = item.peso_estimado || 0.3;
-        const comprimento = item.comprimento_cm || 22;
-        const largura = item.largura_cm || 16;
-        const altura = item.altura_cm || 1;
-        const valorProduto = item.valor_produto || 0;
-        const freteCobrado = item.frete_cobrado || 0;
-        const quantidade = item.quantidade || 1;
-        const freteEsperado = item.freteEsperado;
-
-        let statusText = 'Não calculado';
-        let diferenca = 0;
-        if (freteEsperado !== null) {
-            diferenca = freteCobrado - freteEsperado;
-            const diffAbs = Math.abs(diferenca);
-            if (diffAbs < 0.01) {
-                statusText = 'Correto';
-            } else if (diferenca > 0) {
-                statusText = `Acima (R$ ${diferenca.toFixed(2)})`;
-            } else {
-                statusText = `Abaixo (R$ ${Math.abs(diferenca).toFixed(2)})`;
-            }
-        }
-
-        const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
-
-        return {
-            'Venda': item.id || '',
-            'Título': item.titulo || '',
-            'SKU': item.sku || 'N/A',
-            'MLB': item.mlb || 'N/A',
-            'Valor Produto (R$)': valorProduto,
-            'Quantidade': quantidade,
-            'Frete Cobrado (R$)': freteCobrado,
-            'Frete Esperado (R$)': freteEsperado !== null ? freteEsperado : 'N/A',
-            'Diferença (R$)': freteEsperado !== null ? diferenca : 'N/A',
-            'Status': statusText,
-            'Peso (kg)': peso,
-            'Comprimento (cm)': comprimento,
-            'Largura (cm)': largura,
-            'Altura (cm)': altura,
-            'Peso Volumétrico (m³)': pesoVol,
-            'Tipo Envio': item.tipo_envio || 'N/I',
-            'Data Venda': item.data_venda ? new Date(item.data_venda).toLocaleDateString('pt-BR') : ''
-        };
-    });
-
-    // Criar planilha
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(dadosExcel);
-    XLSX.utils.book_append_sheet(wb, ws, 'Fretes');
-    
-    // Ajustar largura das colunas
-    const colWidths = [
-        { wch: 20 }, // Venda
-        { wch: 40 }, // Título
-        { wch: 15 }, // SKU
-        { wch: 15 }, // MLB
-        { wch: 15 }, // Valor
-        { wch: 10 }, // Qtd
-        { wch: 15 }, // Frete Cobrado
-        { wch: 15 }, // Frete Esperado
-        { wch: 15 }, // Diferença
-        { wch: 25 }, // Status
-        { wch: 10 }, // Peso
-        { wch: 15 }, // Comprimento
-        { wch: 15 }, // Largura
-        { wch: 15 }, // Altura
-        { wch: 15 }, // Peso Vol.
-        { wch: 15 }, // Tipo Envio
-        { wch: 15 }, // Data Venda
-    ];
-    ws['!cols'] = colWidths;
-
-    // Gerar nome do arquivo com data e indicador de filtro
-    const dataStr = new Date().toISOString().slice(0,10);
-    const sufixo = filtroApenasIncorretos ? '_incorretos' : '_todos';
-    const nomeArquivo = `fretes_${dataStr}${sufixo}.xlsx`;
-
-    // Baixar
-    XLSX.writeFile(wb, nomeArquivo);
-    showToast(`Arquivo "${nomeArquivo}" exportado com sucesso!`, 'success');
-}
-
-// ============================================
-// FILTRO DE FRETES INCORRETOS
-// ============================================
-function toggleFiltroIncorretos() {
-    filtroApenasIncorretos = !filtroApenasIncorretos;
-    carregarFretesSalvos();
-}
-
-// ============================================
-// CRIAÇÃO DE MODAIS
-// ============================================
 function criarModalEditorFoto() {
     if (document.getElementById('modalEditorFoto')) return;
 
@@ -1137,101 +1985,16 @@ function criarModalEditorFoto() {
     document.body.appendChild(div.firstElementChild);
 }
 
-function criarModalReclamacao() {
-    if (document.getElementById('modalReclamacaoFrete')) return;
-
-    const modalHTML = `
-        <div id="modalReclamacaoFrete" class="modal hidden">
-            <div class="modal-content" style="max-width: 600px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                    <h3><i class="fas fa-comment-dots"></i> Reclamação de Frete</h3>
-                    <button onclick="fecharModalReclamacao()" style="background:none; border:none; font-size:24px;">&times;</button>
-                </div>
-                <div class="form-group">
-                    <label>Venda</label>
-                    <div><strong id="reclamacaoNumeroVenda"></strong></div>
-                </div>
-                <input type="hidden" id="reclamacaoId">
-                <input type="hidden" id="reclamacaoVendaId">
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label>Valor Produto</label>
-                            <input type="text" id="reclamacaoValorProduto" class="form-control" readonly>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label>Frete Cobrado</label>
-                            <input type="text" id="reclamacaoFreteCobrado" class="form-control" readonly>
-                        </div>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label>Frete Esperado</label>
-                            <input type="text" id="reclamacaoFreteEsperado" class="form-control" readonly>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label>Diferença</label>
-                            <input type="text" id="reclamacaoDiferenca" class="form-control" readonly style="font-weight:bold;">
-                        </div>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>Motivo</label>
-                    <input type="text" id="reclamacaoMotivo" class="form-control" placeholder="Ex: Frete acima do esperado">
-                </div>
-                <div class="form-group">
-                    <label>Status</label>
-                    <select id="reclamacaoStatus" class="form-control">
-                        <option value="aberto">Aberto</option>
-                        <option value="em_andamento">Em andamento</option>
-                        <option value="resolvido">Resolvido</option>
-                        <option value="rejeitado">Rejeitado</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Observações</label>
-                    <textarea id="reclamacaoObservacoes" class="form-control" rows="3" placeholder="Detalhes..."></textarea>
-                </div>
-                <div class="d-flex justify-content-end gap-2 mt-3">
-                    <button class="btn btn-secondary" onclick="fecharModalReclamacao()">Cancelar</button>
-                    <button class="btn btn-success" onclick="salvarReclamacao()">Salvar</button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    const div = document.createElement('div');
-    div.innerHTML = modalHTML;
-    document.body.appendChild(div.firstElementChild);
-}
-
 // ============================================
 // INICIALIZAÇÃO
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
-    criarModalReclamacao();
     criarModalEditorFoto();
+    criarModalReclamacaoCompleta();
 
-    // INSERIR BOTÃO DE FILTRO E BOTÃO DE EXPORTAÇÃO
+    // Botão de exportar
     const headerContagem = document.querySelector('.card-header:has(#contagemFretes)');
     if (headerContagem) {
-        let btnFiltro = document.getElementById('btnFiltrarIncorretos');
-        if (!btnFiltro) {
-            btnFiltro = document.createElement('button');
-            btnFiltro.id = 'btnFiltrarIncorretos';
-            btnFiltro.className = 'btn btn-outline-danger btn-sm ml-2';
-            btnFiltro.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Apenas incorretos (0)';
-            btnFiltro.onclick = window.toggleFiltroIncorretos;
-            headerContagem.appendChild(btnFiltro);
-            console.log('✅ Botão de filtro inserido.');
-        }
-
         let btnExport = document.getElementById('exportarFretesExcelBtn');
         if (!btnExport) {
             btnExport = document.createElement('button');
@@ -1240,36 +2003,28 @@ document.addEventListener('DOMContentLoaded', function() {
             btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Excel';
             btnExport.onclick = window.exportarFretesExcel;
             headerContagem.appendChild(btnExport);
-            console.log('✅ Botão Exportar Excel adicionado.');
         }
-    } else {
-        console.warn('⚠️ Não foi possível encontrar o local para inserir os botões.');
-        const tableContainer = document.querySelector('.table-responsive');
-        if (tableContainer) {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'd-flex justify-content-end mb-2 gap-2';
-            
-            const btnFiltro = document.createElement('button');
-            btnFiltro.id = 'btnFiltrarIncorretos';
-            btnFiltro.className = 'btn btn-outline-danger btn-sm';
-            btnFiltro.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Apenas incorretos';
-            btnFiltro.onclick = window.toggleFiltroIncorretos;
-            
-            const btnExport = document.createElement('button');
-            btnExport.id = 'exportarFretesExcelBtn';
-            btnExport.className = 'btn btn-success btn-sm';
-            btnExport.innerHTML = '<i class="fas fa-file-excel"></i> Exportar Excel';
-            btnExport.onclick = window.exportarFretesExcel;
-            
-            wrapper.appendChild(btnFiltro);
-            wrapper.appendChild(btnExport);
-            tableContainer.parentNode.insertBefore(wrapper, tableContainer);
-            console.log('✅ Botões criados acima da tabela (fallback)');
+        
+        // Botão de relatório
+        let btnRelatorio = document.getElementById('btnRelatorioReclamacoes');
+        if (!btnRelatorio) {
+            btnRelatorio = document.createElement('button');
+            btnRelatorio.id = 'btnRelatorioReclamacoes';
+            btnRelatorio.className = 'btn btn-info btn-sm ml-2';
+            btnRelatorio.innerHTML = '<i class="fas fa-chart-bar"></i> Relatório';
+            btnRelatorio.onclick = window.gerarRelatorioReclamacoes;
+            headerContagem.appendChild(btnRelatorio);
         }
     }
 
+    // Carregar dados iniciais
     if (document.getElementById('shippingSimpleBody')) {
         carregarFretesSalvos();
+    }
+
+    // Carregar lista de reclamações
+    if (document.getElementById('reclamacoesFreteBody')) {
+        carregarListaReclamacoes();
     }
 
     const btnBuscar = document.getElementById('btnBuscarFretes');
@@ -1277,7 +2032,7 @@ document.addEventListener('DOMContentLoaded', function() {
         btnBuscar.addEventListener('click', buscarFretes);
     }
 
-    console.log('✅ shipping_simple.js PRONTO (v27 - sem foto_url)');
+    console.log('✅ shipping_simple.js PRONTO (v35) - Sistema completo de reclamações');
 });
 
 // ============================================
@@ -1286,15 +2041,25 @@ document.addEventListener('DOMContentLoaded', function() {
 window.carregarFretesSalvos = carregarFretesSalvos;
 window.buscarFretes = buscarFretes;
 window.exportarFretesExcel = exportarFretesExcel;
-window.toggleFiltroIncorretos = toggleFiltroIncorretos;
-window.atualizarLinhaAposMedidas = atualizarLinhaAposMedidas;
+window.salvarMedidasERecalcular = salvarMedidasERecalcular;
 window.calcularFreteEsperado = calcularFreteEsperado;
 window.calcularPesoVolumetrico = calcularPesoVolumetrico;
-window.abrirModalReclamacao = abrirModalReclamacao;
-window.fecharModalReclamacao = fecharModalReclamacao;
-window.salvarReclamacao = salvarReclamacao;
-window.verReclamacao = verReclamacao;
-window.abrirListaReclamacoes = abrirListaReclamacoes;
+window.abrirModalReclamacaoCompleta = abrirModalReclamacaoCompleta;
+window.fecharModalReclamacaoCompleta = fecharModalReclamacaoCompleta;
+window.salvarReclamacaoCompleta = salvarReclamacaoCompleta;
+window.verReclamacaoCompleta = verReclamacaoCompleta;
+window.carregarListaReclamacoes = carregarListaReclamacoes;
+window.filtrarReclamacoes = filtrarReclamacoes;
+window.gerarRelatorioReclamacoes = gerarRelatorioReclamacoes;
+window.verHistoricoReclamacao = verHistoricoReclamacao;
+window.fecharModalHistoricoReclamacao = fecharModalHistoricoReclamacao;
+window.adicionarProtocolo = adicionarProtocolo;
+window.removerProtocolo = removerProtocolo;
+window.onStatusChange = onStatusChange;
+window.toggleReferenciaFields = toggleReferenciaFields;
+window.toggleOperacaoField = toggleOperacaoField;
+window.toggleCamposReclamacao = toggleCamposReclamacao;
 window.abrirEditorFoto = abrirEditorFoto;
 window.fecharEditorFoto = fecharEditorFoto;
 window.salvarMedidasEFoto = salvarMedidasEFoto;
+window.extrairFreteDaVenda = extrairFreteDaVenda;
