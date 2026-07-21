@@ -4065,6 +4065,7 @@ function limparFiltroDataConcluidas() {
     }
 }
 
+// ===== MARCAR ALTERAÇÕES FEITAS =====
 window.marcarAlteracoesFeitas = async function(orderId) {
     if (!confirm('Confirmar que as alterações solicitadas foram realizadas? A OS será enviada para "Não conferidas" e o criador será notificado.')) {
         return;
@@ -4086,7 +4087,6 @@ window.marcarAlteracoesFeitas = async function(orderId) {
                     conferido: false,
                     conferido_por: null,
                     data_conferencia: null,
-                    // Mantém o motivo de rejeição para referência (não o removemos)
                     ultima_atualizacao: new Date().toISOString()
                 })
                 .eq('id', orderId);
@@ -4101,7 +4101,6 @@ window.marcarAlteracoesFeitas = async function(orderId) {
             orders[idx].conferidoPor = null;
             orders[idx].dataConferencia = null;
             orders[idx].updatedAt = new Date().toISOString();
-            // Não removemos o motivo_rejeicao para manter o histórico
         }
 
         // Notificar o criador
@@ -4110,15 +4109,15 @@ window.marcarAlteracoesFeitas = async function(orderId) {
             const assunto = `🔄 Alterações realizadas na OS ${order.code}`;
             const mensagem = `
                 Olá ${criador},
-
+                
                 A OS ${order.code} - ${order.productName} foi atualizada após a não autorização.
-
+                
                 O responsável realizou as alterações solicitadas e a OS está novamente disponível para conferência.
-
+                
                 Motivo anterior: ${order.motivo_rejeicao || 'Não informado'}
-
+                
                 Acesse o sistema para conferir.
-
+                
                 Sistema Wheel Tech
             `;
             await enviarNotificacaoEmail(criador, assunto, mensagem);
@@ -4133,8 +4132,6 @@ window.marcarAlteracoesFeitas = async function(orderId) {
         showToast('❌ Erro: ' + error.message, 'error');
     }
 };
-
-
 
 // ===== FUNÇÃO PARA MUDAR ITENS POR PÁGINA =====
 function mudarItensPorPaginaOS() {
@@ -4393,8 +4390,11 @@ function renderOrdersTable() {
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
             actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Conferir"><i class="fas fa-check-double"></i></button>`;
         }
+        // Botão "Não Autorizado" - aparece apenas para OS concluídas e não conferidas
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado"><i class="fas fa-ban"></i></button>`;
+            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado">
+                <i class="fas fa-ban"></i> Não Autorizado
+            </button>`;
         }
         if (isRejectedPending && (hasPermission || isAdmin)) {
             actionButtons += `<button class="btn btn-success btn-sm" onclick="marcarAlteracoesFeitas('${order.id}')" title="Alterações feitas">
@@ -9545,26 +9545,73 @@ window.abrirSistemaEstoque = function() {
     console.log('✅ Aba NF-e exibida com sucesso');
 };
 
+// ===== MODAL PARA NÃO AUTORIZADO - VERSÃO CORRIGIDA (FORÇA DISPLAY) =====
 window.abrirRejeitarModal = function(orderId) {
-    document.getElementById('rejeitarOSId').value = orderId;
-    document.getElementById('motivoRejeicao').value = '';
-    document.getElementById('rejeitarOSModal').classList.remove('hidden');
-};
-
-window.closeRejeitarModal = function() {
-    document.getElementById('rejeitarOSModal').classList.add('hidden');
-};
-
-window.confirmarRejeicaoOS = async function() {
-    const orderId = document.getElementById('rejeitarOSId').value;
-    const motivo = document.getElementById('motivoRejeicao').value.trim();
+    console.log('🔴 Abrindo modal Não Autorizado para OS:', orderId);
     
-    if (!motivo) {
-        showToast('⚠️ Informe o motivo da não autorização', 'warning');
+    const modal = document.getElementById('rejeitarOSModal');
+    const osIdInput = document.getElementById('rejeitarOSId');
+    const motivoInput = document.getElementById('motivoRejeicao');
+    
+    if (!modal) {
+        console.error('❌ Modal #rejeitarOSModal não encontrado!');
+        showToast('Erro: Modal não encontrado', 'error');
         return;
     }
     
-    if (!confirm('Esta OS voltará para PENDENTE. O motivo será registrado. Continuar?')) return;
+    // Preencher o ID da OS
+    if (osIdInput) osIdInput.value = orderId;
+    
+    // Limpar campo de motivo
+    if (motivoInput) motivoInput.value = '';
+    
+    // 🔥 FORÇAR A EXIBIÇÃO - REMOVER TODAS AS CLASSES QUE OCULTAM
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    modal.style.visibility = 'visible';
+    modal.style.opacity = '1';
+    modal.style.zIndex = '9999';
+    
+    // Também garantir que o body não esteja com overflow hidden
+    document.body.style.overflow = '';
+    
+    console.log('✅ Modal aberto para OS:', orderId);
+    console.log('🔍 Modal display:', modal.style.display);
+    console.log('🔍 Modal classes:', modal.className);
+};
+
+window.closeRejeitarModal = function() {
+    console.log('🔴 Fechando modal Não Autorizado');
+    
+    const modal = document.getElementById('rejeitarOSModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+        modal.style.visibility = 'hidden';
+        modal.style.opacity = '0';
+    }
+};
+
+window.confirmarRejeicaoOS = async function() {
+    console.log('🔴 Confirmando rejeição da OS');
+    
+    const orderId = document.getElementById('rejeitarOSId').value;
+    const motivo = document.getElementById('motivoRejeicao').value.trim();
+    
+    if (!orderId) {
+        showToast('❌ ID da OS não encontrado', 'error');
+        return;
+    }
+    
+    if (!motivo) {
+        showToast('⚠️ Informe o motivo da não autorização', 'warning');
+        document.getElementById('motivoRejeicao').focus();
+        return;
+    }
+    
+    if (!confirm(`⚠️ Tem certeza que deseja NÃO AUTORIZAR esta OS?\n\nMotivo: ${motivo}\n\nA OS voltará para REVISÃO e o criador será notificado.`)) {
+        return;
+    }
     
     try {
         if (!supabaseClient) throw new Error('Supabase não conectado');
@@ -9593,9 +9640,30 @@ window.confirmarRejeicaoOS = async function() {
             orders[index].rejeitado_por = currentUser.name;
             orders[index].data_rejeicao = new Date().toISOString();
             orders[index].conferido = false;
+            orders[index].conferidoPor = null;
+            orders[index].dataConferencia = null;
         }
         
-        showToast('✅ OS rejeitada e movida para Pendentes', 'success');
+        // Notificar o criador da OS
+        const order = orders.find(o => o.id == orderId);
+        if (order && order.createdBy && order.createdBy !== currentUser.name) {
+            const assunto = `📋 OS não autorizada: ${order.code}`;
+            const mensagem = `
+                Olá ${order.createdBy},
+                
+                A OS ${order.code} - ${order.productName} não foi autorizada.
+                
+                Motivo: ${motivo}
+                
+                Por favor, verifique o sistema para mais detalhes.
+                
+                Sistema Wheel Tech
+            `;
+            await enviarNotificacaoEmail(order.createdBy, assunto, mensagem);
+            showToast(`📧 Notificação enviada para ${order.createdBy}`, 'info');
+        }
+        
+        showToast('✅ OS rejeitada e movida para REVISÃO', 'success');
         closeRejeitarModal();
         updateCounters();
         renderOrdersTable();

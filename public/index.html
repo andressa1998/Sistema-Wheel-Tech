@@ -1083,6 +1083,44 @@ body > * {
         min-width: 300px;
     }
 }
+/* ===== MODAL ===== */
+.modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: none; /* Importante: começa oculto */
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal:not(.hidden) {
+    display: flex !important;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+/* Para garantir que o modal fique visível */
+#rejeitarOSModal:not(.hidden) {
+    display: flex !important;
+}
+
+#rejeitarOSModal .modal-content {
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+}
     </style>
 </head>
 <body>
@@ -1646,6 +1684,25 @@ body > * {
     </div>
     
     <div id="emptyMessage" class="text-center py-5 hidden">...</div>
+</div>
+
+<!-- Modal para Não Autorizado -->
+<div id="rejeitarOSModal" class="modal hidden" style="display: none !important;">
+    <div class="modal-content" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="fas fa-ban"></i> Não Autorizado</h3>
+            <button onclick="closeRejeitarModal()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+        </div>
+        <input type="hidden" id="rejeitarOSId">
+        <div class="form-group mb-3">
+            <label for="motivoRejeicao">Motivo da não autorização *</label>
+            <textarea id="motivoRejeicao" class="form-control" rows="3" placeholder="Descreva o que precisa ser ajustado..." required></textarea>
+        </div>
+        <div class="d-flex justify-content-end gap-2">
+            <button class="btn btn-secondary" onclick="closeRejeitarModal()">Cancelar</button>
+            <button class="btn btn-danger" onclick="confirmarRejeicaoOS()">Enviar para Revisão</button>
+        </div>
+    </div>
 </div>
 
         <!-- MODAL DE EDIÇÃO DA OS -->
@@ -4824,25 +4881,6 @@ body > * {
                 <button type="button" class="btn btn-success" id="confirmarModalNFEBtn">Confirmar e Emitir NF-e</button>
             </div>
         </form>
-    </div>
-</div>
-
-<!-- Modal para Não Autorizado -->
-<div id="rejeitarOSModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 500px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h3><i class="fas fa-ban"></i> Não Autorizado</h3>
-            <button onclick="closeRejeitarModal()" style="background:none; border:none; font-size:24px;">&times;</button>
-        </div>
-        <input type="hidden" id="rejeitarOSId">
-        <div class="form-group mb-3">
-            <label for="motivoRejeicao">Motivo da não autorização *</label>
-            <textarea id="motivoRejeicao" class="form-control" rows="3" placeholder="Descreva o que precisa ser ajustado..." required></textarea>
-        </div>
-        <div class="d-flex justify-content-end gap-2">
-            <button class="btn btn-secondary" onclick="closeRejeitarModal()">Cancelar</button>
-            <button class="btn btn-danger" onclick="confirmarRejeicaoOS()">Enviar para Pendentes</button>
-        </div>
     </div>
 </div>
 

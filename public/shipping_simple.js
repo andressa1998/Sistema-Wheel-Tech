@@ -1,9 +1,9 @@
 // ============================================
-// SHIPPING_SIMPLE.JS - VERSÃO COMPLETA V3.0
-// SISTEMA DE RECLAMAÇÕES DE FRETE COM MELHORIAS
+// SHIPPING_SIMPLE.JS - VERSÃO COMPLETA V3.5
+// SISTEMA DE RECLAMAÇÕES DE FRETE COM PAGINAÇÃO E SCROLL FIXO
 // ============================================
 
-console.log('🚚 shipping_simple.js v3.0 carregado - Sistema completo de reclamações de frete');
+console.log('🚚 shipping_simple.js v3.5 carregado - Sistema completo de reclamações de frete');
 
 if (typeof window.WORKER_URL === 'undefined') {
     window.WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
@@ -64,6 +64,12 @@ let protocolosTemp = [];
 let currentReclamacaoId = null;
 let graficoReclamacoes = null;
 
+// Variáveis de paginação
+let fretesPaginaAtual = 1;
+let fretesPorPagina = 20;
+let fretesDadosCompletos = [];
+let fretesFiltrados = [];
+
 // ============================================
 // FUNÇÕES AUXILIARES
 // ============================================
@@ -123,7 +129,7 @@ function escapeHtml(str) {
 }
 
 // ============================================
-// TOAST CORRIGIDO
+// TOAST
 // ============================================
 function showToast(mensagem, tipo = 'info') {
     const toastExistente = document.querySelector('.custom-toast');
@@ -222,7 +228,7 @@ async function salvarMedidasSKU(sku, comprimento, largura, altura, peso, fotoUrl
 }
 
 // ============================================
-// FUNÇÃO PARA BUSCAR VENDAS ML
+// BUSCAR VENDAS ML
 // ============================================
 async function buscarVendasMLFrete(limit = 50) {
     console.log('🔍 Buscando vendas para análise de frete...');
@@ -306,7 +312,6 @@ async function processarPedidosML(data, token) {
         try {
             const shippingMode = order.shipping?.mode || '';
             
-            // Ignorar FULL
             if (shippingMode.toLowerCase().includes('full') || 
                 order.shipping?.fulfillment?.toLowerCase().includes('full')) {
                 console.log(`⏭️ Venda ${order.id} é FULL, ignorando`);
@@ -572,7 +577,6 @@ async function buscarFretes() {
 
         console.log(`📊 Resumo: ${registrosParaInserir.length} incorretos para salvar, ${totalCorretosIgnorados} corretos ignorados, ${totalFullIgnorados} FULL ignorados`);
 
-        // REMOVER CORRETOS DO BANCO
         if (totalCorretosIgnorados > 0) {
             console.log('🗑️ Buscando registros corretos para remover...');
             const { data: todosRegistros } = await window.supabaseClient
@@ -715,7 +719,7 @@ async function salvarMedidasERecalcular(row, vendaId, sku) {
 }
 
 // ============================================
-// CARREGAR FRETES SALVOS - TABELA EXPANDIDA E OTIMIZADA
+// CARREGAR FRETES SALVOS - COM PAGINAÇÃO
 // ============================================
 async function carregarFretesSalvos() {
     console.log('📂 Carregando fretes salvos (apenas incorretos)...');
@@ -733,7 +737,7 @@ async function carregarFretesSalvos() {
 
         if (error) throw error;
 
-        // Buscar reclamações abertas
+        // Buscar reclamações
         const { data: reclamacoes } = await window.supabaseClient
             .from('reclamacoes_frete')
             .select('venda_id, status, id, criado_por, data_reclamacao, numero_operacao, numero_transacao, protocolos, justificativa_rejeicao')
@@ -749,6 +753,7 @@ async function carregarFretesSalvos() {
             });
         }
 
+        // Filtrar apenas fretes incorretos
         let dados = (data || []).filter(item => {
             if (item.tipo_envio === 'FULL') return false;
             if (isFullByAnyField(item)) return false;
@@ -758,220 +763,295 @@ async function carregarFretesSalvos() {
             return Math.abs(item.frete_cobrado - freteEsperado) > 0.01;
         });
 
-        window.dadosFretesProcessados = dados.map(item => {
+        // Armazenar dados completos com informações adicionais
+        fretesDadosCompletos = dados.map(item => {
             const peso = item.peso_estimado || 0.3;
             const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
-            return { ...item, freteEsperado, isIncorreto: true };
+            const recls = reclamacoesMap[item.id] || [];
+            
+            return {
+                ...item,
+                freteEsperado,
+                isIncorreto: true,
+                reclamacoes: recls,
+                temReclamacaoAberta: recls.some(r => r.status === 'aberto' || r.status === 'em_andamento'),
+                temReclamacaoRejeitada: recls.some(r => r.status === 'rejeitado'),
+                temReclamacaoResolvida: recls.some(r => r.status === 'resolvido'),
+                ultimaReclamacao: recls.length > 0 ? recls[0] : null
+            };
         });
 
-        if (dados.length === 0) {
+        fretesFiltrados = [...fretesDadosCompletos];
+
+        if (fretesFiltrados.length === 0) {
             tbody.innerHTML = '<tr><td colspan="15" class="text-center py-5">Nenhum frete incorreto encontrado. 🎉</td></tr>';
             if (contagem) contagem.textContent = '0 incorretos';
+            atualizarInfoPagina();
             return;
         }
 
-        tbody.innerHTML = '';
-        dados.forEach(item => {
-            const row = document.createElement('tr');
-
-            const peso = item.peso_estimado || 0.3;
-            const comprimento = item.comprimento_cm || 22;
-            const largura = item.largura_cm || 16;
-            const altura = item.altura_cm || 1;
-            const valorProduto = item.valor_produto || 0;
-            const freteCobrado = item.frete_cobrado || 0;
-            const quantidade = item.quantidade || 1;
-            const sku = item.sku || 'N/A';
-            const fotoUrl = item.foto_url || null;
-            const freteEsperado = calcularFreteEsperado(valorProduto, peso);
-
-            const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
-            let statusClass = 'secondary', statusText = 'Não calculado', diferenca = 0;
-            if (freteEsperado !== null) {
-                diferenca = freteCobrado - freteEsperado;
-                const diffAbs = Math.abs(diferenca);
-                if (diffAbs < 0.01) {
-                    statusClass = 'success';
-                    statusText = '✅ Correto';
-                } else if (diferenca > 0) {
-                    statusClass = 'danger';
-                    statusText = `❌ Acima (R$ ${diferenca.toFixed(2)})`;
-                } else {
-                    statusClass = 'warning';
-                    statusText = `⚠️ Abaixo (R$ ${Math.abs(diferenca).toFixed(2)})`;
-                }
-            }
-
-            // Verificar reclamações existentes
-            const recls = reclamacoesMap[item.id] || [];
-            const temReclamacaoAberta = recls.some(r => r.status === 'aberto' || r.status === 'em_andamento');
-            const temReclamacaoRejeitada = recls.some(r => r.status === 'rejeitado');
-            const temReclamacaoResolvida = recls.some(r => r.status === 'resolvido');
-            
-            let badgeReclamacao = '';
-            if (temReclamacaoAberta) {
-                badgeReclamacao = '<span class="badge badge-info ml-1"><i class="fas fa-clock"></i> Em andamento</span>';
-            } else if (temReclamacaoRejeitada) {
-                badgeReclamacao = '<span class="badge badge-danger ml-1"><i class="fas fa-times"></i> Rejeitada</span>';
-            } else if (temReclamacaoResolvida) {
-                badgeReclamacao = '<span class="badge badge-success ml-1"><i class="fas fa-check"></i> Resolvida</span>';
-            }
-
-            // Última reclamação (mais recente)
-            const ultimaRecl = recls.length > 0 ? recls[0] : null;
-            let infoReclamacao = '';
-            if (ultimaRecl) {
-                infoReclamacao = `
-                    <div style="font-size: 10px; color: #6c757d; margin-top: 2px;">
-                        ${ultimaRecl.status}: ${ultimaRecl.numero_operacao || ''}
-                        ${ultimaRecl.numero_transacao ? `| TRANS: ${ultimaRecl.numero_transacao}` : ''}
-                    </div>
-                `;
-            }
-
-            let fotoThumb = '';
-            if (fotoUrl) {
-                fotoThumb = `<img src="${fotoUrl}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; cursor: pointer;" onclick="window.open('${fotoUrl}','_blank')">`;
-            } else {
-                fotoThumb = '<span class="text-muted">Sem foto</span>';
-            }
-
-            // Data formatada
-            const dataVenda = item.data_venda ? new Date(item.data_venda).toLocaleDateString('pt-BR') : '-';
-
-            row.innerHTML = `
-                <td><strong style="font-size:12px;">${item.id}</strong></td>
-                <td style="max-width:200px; word-wrap:break-word; font-size:12px;">${item.titulo || 'Sem título'}</td>
-                <td><code style="font-size:11px;">${sku}</code></td>
-                <td><code style="font-size:11px;">${item.mlb || 'N/A'}</code></td>
-                <td style="font-weight:600; color:#28a745;">R$ ${valorProduto.toFixed(2)}</td>
-                <td style="text-align:center;">${quantidade}</td>
-                <td style="font-weight:600; color:#dc3545;">R$ ${freteCobrado.toFixed(2)}</td>
-                <td class="frete-esperado-cell" style="font-weight:600; color:#17a2b8;">${freteEsperado !== null ? `R$ ${freteEsperado.toFixed(2)}` : 'N/A'}</td>
-                <td>
-                    <span class="badge badge-${statusClass} status-badge" style="font-size:11px;">${statusText}</span>
-                    ${badgeReclamacao}
-                    ${infoReclamacao}
-                </td>
-                <td style="min-width:80px;">
-                    <input type="number" class="form-control form-control-sm peso-input" 
-                           value="${peso}" step="0.01" min="0" 
-                           data-venda-id="${item.id}" style="width:65px; font-size:11px;">
-                </td>
-                <td style="min-width:180px;">
-                    <div style="display:flex; gap:2px; flex-wrap:wrap; align-items:center;">
-                        <input type="number" class="form-control form-control-sm medida-input" 
-                               value="${comprimento}" step="0.1" min="0" 
-                               data-venda-id="${item.id}" data-medida="comprimento" style="width:45px; font-size:11px; padding:2px 4px;" placeholder="C">
-                        <span style="font-size:10px;">x</span>
-                        <input type="number" class="form-control form-control-sm medida-input" 
-                               value="${largura}" step="0.1" min="0" 
-                               data-venda-id="${item.id}" data-medida="largura" style="width:45px; font-size:11px; padding:2px 4px;" placeholder="L">
-                        <span style="font-size:10px;">x</span>
-                        <input type="number" class="form-control form-control-sm medida-input" 
-                               value="${altura}" step="0.1" min="0" 
-                               data-venda-id="${item.id}" data-medida="altura" style="width:45px; font-size:11px; padding:2px 4px;" placeholder="A">
-                        <button class="btn btn-sm btn-success btn-salvar-medidas" 
-                                data-venda-id="${item.id}" 
-                                data-sku="${sku}"
-                                style="padding:1px 6px; font-size:11px;">
-                            <i class="fas fa-save"></i>
-                        </button>
-                    </div>
-                    <div style="font-size:9px; color:#6c757d; margin-top:2px;">
-                        Vol: <span class="peso-volumetrico-display">${pesoVol.toFixed(3)}</span> m³
-                    </div>
-                </td>
-                <td style="min-width:80px; text-align:center;">
-                    <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
-                        ${fotoThumb}
-                        <button class="btn btn-sm btn-outline-secondary" onclick="abrirEditorFoto('${item.id}', '${sku}')" title="Editar foto" style="padding:1px 6px; font-size:10px;">
-                            <i class="fas fa-camera"></i>
-                        </button>
-                    </div>
-                </td>
-                <td style="min-width:100px;">
-                    <button class="btn btn-sm btn-primary btn-reclamar" 
-                            data-venda-id="${item.id}"
-                            data-valor="${valorProduto}"
-                            data-frete-cobrado="${freteCobrado}"
-                            data-frete-esperado="${freteEsperado !== null ? freteEsperado : 0}"
-                            ${temReclamacaoAberta ? 'disabled' : ''}
-                            style="padding:2px 8px; font-size:11px; width:100%;">
-                        <i class="fas fa-comment-dots"></i> Reclamar
-                    </button>
-                    ${temReclamacaoAberta || temReclamacaoRejeitada || temReclamacaoResolvida ? 
-                        `<button class="btn btn-sm btn-info btn-ver-reclamacao" data-venda-id="${item.id}" title="Ver reclamações" style="padding:2px 8px; font-size:11px; width:100%; margin-top:3px;">
-                            <i class="fas fa-eye"></i> Ver
-                        </button>` : ''}
-                </td>
-                <td style="font-size:11px;">${dataVenda}</td>
-                <td><span class="badge badge-secondary" style="font-size:10px;">${item.tipo_envio || 'N/I'}</span></td>
-            `;
-
-            tbody.appendChild(row);
-
-            // Event listeners...
-            const btnSalvar = row.querySelector('.btn-salvar-medidas');
-            if (btnSalvar) {
-                btnSalvar.addEventListener('click', function() {
-                    salvarMedidasERecalcular(row, this.dataset.vendaId, this.dataset.sku);
-                });
-            }
-
-            const pesoInput = row.querySelector('.peso-input');
-            if (pesoInput) {
-                pesoInput.addEventListener('change', function() {
-                    const novoPeso = parseFloat(this.value);
-                    if (!isNaN(novoPeso) && novoPeso >= 0) {
-                        atualizarVisualizacaoLinha(row, item.id, null, null, null, novoPeso);
-                    }
-                });
-            }
-
-            const medidaInputs = row.querySelectorAll('.medida-input');
-            medidaInputs.forEach(input => {
-                input.addEventListener('change', function() {
-                    const valor = parseFloat(this.value);
-                    if (isNaN(valor) || valor < 0) return;
-                    const comprimentoInput = row.querySelector('.medida-input[data-medida="comprimento"]');
-                    const larguraInput = row.querySelector('.medida-input[data-medida="largura"]');
-                    const alturaInput = row.querySelector('.medida-input[data-medida="altura"]');
-                    atualizarVisualizacaoLinha(row, item.id, 
-                        parseFloat(comprimentoInput.value) || 0,
-                        parseFloat(larguraInput.value) || 0,
-                        parseFloat(alturaInput.value) || 0, null);
-                });
-            });
-
-            const btnReclamar = row.querySelector('.btn-reclamar');
-            if (btnReclamar) {
-                btnReclamar.addEventListener('click', function() {
-                    abrirModalReclamacaoCompleta(
-                        this.dataset.vendaId,
-                        parseFloat(this.dataset.valor),
-                        parseFloat(this.dataset.freteCobrado),
-                        parseFloat(this.dataset.freteEsperado)
-                    );
-                });
-            }
-
-            const btnVerReclamacao = row.querySelector('.btn-ver-reclamacao');
-            if (btnVerReclamacao) {
-                btnVerReclamacao.addEventListener('click', function() {
-                    verHistoricoReclamacoes(this.dataset.vendaId);
-                });
-            }
-        });
-
         if (contagem) {
-            contagem.textContent = `${dados.length} incorretos`;
+            contagem.textContent = `${fretesFiltrados.length} incorretos`;
         }
-        console.log(`✅ ${dados.length} fretes incorretos carregados`);
+
+        // Resetar para primeira página
+        fretesPaginaAtual = 1;
+        renderizarPaginaFretes();
+        atualizarInfoPagina();
 
     } catch (error) {
         console.error('❌ Erro ao carregar fretes:', error);
-        tbody.innerHTML = `<tr><td colspan="15" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+        const tbody = document.getElementById('shippingSimpleBody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="15" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+        }
+    }
+}
+
+// ============================================
+// RENDERIZAR PÁGINA DE FRETES
+// ============================================
+function renderizarPaginaFretes() {
+    const tbody = document.getElementById('shippingSimpleBody');
+    if (!tbody) return;
+
+    const inicio = (fretesPaginaAtual - 1) * fretesPorPagina;
+    const fim = Math.min(inicio + fretesPorPagina, fretesFiltrados.length);
+    const paginaDados = fretesFiltrados.slice(inicio, fim);
+
+    if (paginaDados.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="15" class="text-center py-5">Nenhum dado encontrado.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = '';
+
+    paginaDados.forEach((item) => {
+        const row = document.createElement('tr');
+        
+        const peso = item.peso_estimado || 0.3;
+        const comprimento = item.comprimento_cm || 22;
+        const largura = item.largura_cm || 16;
+        const altura = item.altura_cm || 1;
+        const valorProduto = item.valor_produto || 0;
+        const freteCobrado = item.frete_cobrado || 0;
+        const quantidade = item.quantidade || 1;
+        const sku = item.sku || 'N/A';
+        const fotoUrl = item.foto_url || null;
+        const freteEsperado = item.freteEsperado;
+
+        const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
+        let statusClass = 'secondary', statusText = 'Não calculado', diferenca = 0;
+        if (freteEsperado !== null) {
+            diferenca = freteCobrado - freteEsperado;
+            const diffAbs = Math.abs(diferenca);
+            if (diffAbs < 0.01) {
+                statusClass = 'success';
+                statusText = '✅ Correto';
+            } else if (diferenca > 0) {
+                statusClass = 'danger';
+                statusText = `❌ Acima (R$ ${diferenca.toFixed(2)})`;
+            } else {
+                statusClass = 'warning';
+                statusText = `⚠️ Abaixo (R$ ${Math.abs(diferenca).toFixed(2)})`;
+            }
+        }
+
+        let badgeReclamacao = '';
+        if (item.temReclamacaoAberta) {
+            badgeReclamacao = '<span class="badge badge-info ml-1"><i class="fas fa-clock"></i> Em andamento</span>';
+        } else if (item.temReclamacaoRejeitada) {
+            badgeReclamacao = '<span class="badge badge-danger ml-1"><i class="fas fa-times"></i> Rejeitada</span>';
+        } else if (item.temReclamacaoResolvida) {
+            badgeReclamacao = '<span class="badge badge-success ml-1"><i class="fas fa-check"></i> Resolvida</span>';
+        }
+
+        let infoReclamacao = '';
+        if (item.ultimaReclamacao) {
+            infoReclamacao = `
+                <div style="font-size: 9px; color: #6c757d; margin-top: 2px; line-height: 1.2;">
+                    ${item.ultimaReclamacao.status}: ${item.ultimaReclamacao.numero_operacao || ''}
+                    ${item.ultimaReclamacao.numero_transacao ? `| TRANS: ${item.ultimaReclamacao.numero_transacao}` : ''}
+                </div>
+            `;
+        }
+
+        let fotoThumb = '';
+        if (fotoUrl) {
+            fotoThumb = `<img src="${fotoUrl}" style="width:35px; height:35px; object-fit:cover; border-radius:4px; cursor:pointer;" onclick="window.open('${fotoUrl}','_blank')">`;
+        } else {
+            fotoThumb = '<span class="text-muted" style="font-size:10px;">Sem foto</span>';
+        }
+
+        const dataVenda = item.data_venda ? new Date(item.data_venda).toLocaleDateString('pt-BR') : '-';
+
+        // Garantir que o frete cobrado seja exibido corretamente
+        const freteCobradoDisplay = freteCobrado !== undefined && freteCobrado !== null && freteCobrado > 0 
+            ? `R$ ${freteCobrado.toFixed(2)}` 
+            : 'R$ 0,00';
+
+        row.innerHTML = `
+            <td><strong style="font-size:11px;">${item.id}</strong></td>
+            <td style="max-width:180px; word-wrap:break-word; font-size:11px;">${item.titulo || 'Sem título'}</td>
+            <td><code style="font-size:10px; word-break:break-all;">${sku}</code></td>
+            <td><code style="font-size:10px;">${item.mlb || 'N/A'}</code></td>
+            <td style="font-weight:600; color:#28a745; font-size:12px; text-align:right;">R$ ${valorProduto.toFixed(2)}</td>
+            <td style="text-align:center; font-size:12px;">${quantidade}</td>
+            <td style="font-weight:700; color:#dc3545; font-size:12px; text-align:right;">${freteCobradoDisplay}</td>
+            <td class="frete-esperado-cell" style="font-weight:600; color:#17a2b8; font-size:12px; text-align:right;">${freteEsperado !== null ? `R$ ${freteEsperado.toFixed(2)}` : 'N/A'}</td>
+            <td style="min-width:130px;">
+                <span class="badge badge-${statusClass} status-badge" style="font-size:10px;">${statusText}</span>
+                ${badgeReclamacao}
+                ${infoReclamacao}
+            </td>
+            <td style="min-width:65px;">
+                <input type="number" class="form-control form-control-sm peso-input" 
+                       value="${peso}" step="0.01" min="0" 
+                       data-venda-id="${item.id}" style="width:60px; font-size:10px; padding:2px 4px;">
+            </td>
+            <td style="min-width:160px;">
+                <div style="display:flex; gap:2px; flex-wrap:wrap; align-items:center;">
+                    <input type="number" class="form-control form-control-sm medida-input" 
+                           value="${comprimento}" step="0.1" min="0" 
+                           data-venda-id="${item.id}" data-medida="comprimento" style="width:40px; font-size:10px; padding:2px 4px;" placeholder="C">
+                    <span style="font-size:9px;">x</span>
+                    <input type="number" class="form-control form-control-sm medida-input" 
+                           value="${largura}" step="0.1" min="0" 
+                           data-venda-id="${item.id}" data-medida="largura" style="width:40px; font-size:10px; padding:2px 4px;" placeholder="L">
+                    <span style="font-size:9px;">x</span>
+                    <input type="number" class="form-control form-control-sm medida-input" 
+                           value="${altura}" step="0.1" min="0" 
+                           data-venda-id="${item.id}" data-medida="altura" style="width:40px; font-size:10px; padding:2px 4px;" placeholder="A">
+                    <button class="btn btn-sm btn-success btn-salvar-medidas" 
+                            data-venda-id="${item.id}" 
+                            data-sku="${sku}"
+                            style="padding:1px 5px; font-size:10px;">
+                        <i class="fas fa-save"></i>
+                    </button>
+                </div>
+                <div style="font-size:8px; color:#6c757d; margin-top:2px;">
+                    Vol: <span class="peso-volumetrico-display">${pesoVol.toFixed(3)}</span> m³
+                </div>
+            </td>
+            <td style="min-width:70px; text-align:center;">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
+                    ${fotoThumb}
+                    <button class="btn btn-sm btn-outline-secondary" onclick="abrirEditorFoto('${item.id}', '${sku}')" title="Editar foto" style="padding:1px 5px; font-size:9px;">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                </div>
+            </td>
+            <td style="min-width:90px;">
+                <button class="btn btn-sm btn-primary btn-reclamar" 
+                        data-venda-id="${item.id}"
+                        data-valor="${valorProduto}"
+                        data-frete-cobrado="${freteCobrado}"
+                        data-frete-esperado="${freteEsperado !== null ? freteEsperado : 0}"
+                        ${item.temReclamacaoAberta ? 'disabled' : ''}
+                        style="padding:2px 6px; font-size:10px; width:100%;">
+                    <i class="fas fa-comment-dots"></i> Reclamar
+                </button>
+                ${item.temReclamacaoAberta || item.temReclamacaoRejeitada || item.temReclamacaoResolvida ? 
+                    `<button class="btn btn-sm btn-info btn-ver-reclamacao" data-venda-id="${item.id}" title="Ver reclamações" style="padding:2px 6px; font-size:10px; width:100%; margin-top:2px;">
+                        <i class="fas fa-eye"></i> Ver
+                    </button>` : ''}
+            </td>
+            <td style="font-size:10px;">${dataVenda}</td>
+            <td><span class="badge badge-secondary" style="font-size:9px;">${item.tipo_envio || 'N/I'}</span></td>
+        `;
+
+        tbody.appendChild(row);
+
+        // Event listeners
+        const btnSalvar = row.querySelector('.btn-salvar-medidas');
+        if (btnSalvar) {
+            btnSalvar.addEventListener('click', function() {
+                salvarMedidasERecalcular(row, this.dataset.vendaId, this.dataset.sku);
+            });
+        }
+
+        const pesoInput = row.querySelector('.peso-input');
+        if (pesoInput) {
+            pesoInput.addEventListener('change', function() {
+                const novoPeso = parseFloat(this.value);
+                if (!isNaN(novoPeso) && novoPeso >= 0) {
+                    atualizarVisualizacaoLinha(row, item.id, null, null, null, novoPeso);
+                }
+            });
+        }
+
+        const medidaInputs = row.querySelectorAll('.medida-input');
+        medidaInputs.forEach(input => {
+            input.addEventListener('change', function() {
+                const valor = parseFloat(this.value);
+                if (isNaN(valor) || valor < 0) return;
+                const comprimentoInput = row.querySelector('.medida-input[data-medida="comprimento"]');
+                const larguraInput = row.querySelector('.medida-input[data-medida="largura"]');
+                const alturaInput = row.querySelector('.medida-input[data-medida="altura"]');
+                atualizarVisualizacaoLinha(row, item.id, 
+                    parseFloat(comprimentoInput?.value) || 0,
+                    parseFloat(larguraInput?.value) || 0,
+                    parseFloat(alturaInput?.value) || 0, null);
+            });
+        });
+
+        const btnReclamar = row.querySelector('.btn-reclamar');
+        if (btnReclamar) {
+            btnReclamar.addEventListener('click', function() {
+                abrirModalReclamacaoCompleta(
+                    this.dataset.vendaId,
+                    parseFloat(this.dataset.valor),
+                    parseFloat(this.dataset.freteCobrado),
+                    parseFloat(this.dataset.freteEsperado)
+                );
+            });
+        }
+
+        const btnVerReclamacao = row.querySelector('.btn-ver-reclamacao');
+        if (btnVerReclamacao) {
+            btnVerReclamacao.addEventListener('click', function() {
+                verHistoricoReclamacoes(this.dataset.vendaId);
+            });
+        }
+    });
+
+    atualizarInfoPagina();
+}
+
+// ============================================
+// ATUALIZAR INFORMAÇÕES DA PÁGINA
+// ============================================
+function atualizarInfoPagina() {
+    const total = fretesFiltrados.length;
+    const inicio = (fretesPaginaAtual - 1) * fretesPorPagina + 1;
+    const fim = Math.min(inicio + fretesPorPagina - 1, total);
+
+    const infoEl = document.getElementById('infoFretes');
+    if (infoEl) {
+        infoEl.textContent = total > 0 ? `Mostrando ${inicio}-${fim} de ${total}` : 'Nenhum registro';
+    }
+
+    const btnAnterior = document.getElementById('btnFretesAnterior');
+    const btnProxima = document.getElementById('btnFretesProxima');
+    if (btnAnterior) btnAnterior.disabled = fretesPaginaAtual <= 1;
+    if (btnProxima) btnProxima.disabled = fim >= total;
+}
+
+// ============================================
+// NAVEGAÇÃO DA PÁGINA
+// ============================================
+function paginaFretesAnterior() {
+    if (fretesPaginaAtual > 1) {
+        fretesPaginaAtual--;
+        renderizarPaginaFretes();
+    }
+}
+
+function paginaFretesProxima() {
+    const totalPaginas = Math.ceil(fretesFiltrados.length / fretesPorPagina);
+    if (fretesPaginaAtual < totalPaginas) {
+        fretesPaginaAtual++;
+        renderizarPaginaFretes();
     }
 }
 
@@ -1047,10 +1127,9 @@ function atualizarVisualizacaoLinha(row, vendaId, comprimento, largura, altura, 
 }
 
 // ============================================
-// MODAL DE RECLAMAÇÃO COMPLETA (V2)
+// MODAL DE RECLAMAÇÃO COMPLETA
 // ============================================
 function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, freteEsperado) {
-    // Verificar se o modal existe, se não, criar
     let modal = document.getElementById('modalReclamacaoCompleta');
     if (!modal) {
         criarModalReclamacaoCompleta();
@@ -1061,7 +1140,6 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
         }
     }
 
-    // Garantir que os elementos existem
     const elementos = {
         vendaId: document.getElementById('reclamacaoVendaId'),
         valorProduto: document.getElementById('reclamacaoValorProduto'),
@@ -1102,7 +1180,6 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
 
     const diferenca = freteCobrado - freteEsperado;
     
-    // Definir valores
     elementos.vendaId.value = vendaId || '';
     elementos.valorProduto.value = (valorProduto || 0).toFixed(2);
     elementos.freteCobrado.value = (freteCobrado || 0).toFixed(2);
@@ -1111,7 +1188,6 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
     elementos.status.value = 'aberto';
     elementos.data.value = new Date().toISOString().split('T')[0];
     
-    // Display
     elementos.valorDisplay.textContent = (valorProduto || 0).toFixed(2);
     elementos.freteCobradoDisplay.textContent = (freteCobrado || 0).toFixed(2);
     elementos.freteEsperadoDisplay.textContent = (freteEsperado || 0).toFixed(2);
@@ -1119,7 +1195,6 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
     elementos.diferencaDisplay.style.color = diferenca > 0 ? '#dc3545' : (diferenca < 0 ? '#28a745' : '#6c757d');
     elementos.numeroVendaDisplay.textContent = vendaId || '-';
     
-    // Limpar campos
     elementos.numeroReclamacao.value = '';
     elementos.numeroOperacao.value = '';
     elementos.observacoes.value = '';
@@ -1129,7 +1204,6 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
     elementos.valor.value = '0';
     elementos.motivo.value = '';
     
-    // Limpar protocolos
     protocolosTemp = [];
     if (elementos.listaProtocolos) {
         elementos.listaProtocolos.innerHTML = '<small style="color: #6c757d;">Nenhum protocolo adicionado</small>';
@@ -1138,7 +1212,6 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
         elementos.campoProtocolo.value = '';
     }
     
-    // Esconder campos condicionais
     if (elementos.campoJustificativa) {
         elementos.campoJustificativa.style.display = 'none';
     }
@@ -1146,10 +1219,7 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
         elementos.campoNumeroTransacao.style.display = 'none';
     }
     
-    // Mostrar modal
     modal.classList.remove('hidden');
-    
-    // Carregar reclamação existente
     carregarReclamacaoExistente(vendaId);
 }
 
@@ -1165,7 +1235,6 @@ function criarModalReclamacaoCompleta() {
                 </div>
 
                 <div style="padding: 20px;">
-                    <!-- Informações da venda -->
                     <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                         <div>
                             <p style="margin: 4px 0;"><strong>Venda:</strong> <span id="reclamacaoNumeroVendaDisplay">-</span></p>
@@ -1185,7 +1254,6 @@ function criarModalReclamacaoCompleta() {
                     <input type="hidden" id="reclamacaoFreteEsperado">
                     <input type="hidden" id="reclamacaoDiferenca">
 
-                    <!-- Tipo de referência -->
                     <div class="form-group">
                         <label><strong>Tipo de referência *</strong></label>
                         <div class="d-flex gap-3">
@@ -1194,27 +1262,23 @@ function criarModalReclamacaoCompleta() {
                         </div>
                     </div>
 
-                    <!-- Número da Venda -->
                     <div class="form-group" id="campoNumeroVenda">
                         <label><i class="fas fa-tag"></i> Número da Venda (16 caracteres)</label>
                         <input type="text" id="reclamacaoNumeroVenda" class="form-control" placeholder="Ex: 1234567890123456" maxlength="16">
                         <small style="color: #6c757d;">Deve ter exatamente 16 caracteres</small>
                     </div>
 
-                    <!-- Número da Reclamação -->
                     <div class="form-group">
                         <label><i class="fas fa-exclamation-circle"></i> Número da Reclamação *</label>
                         <input type="text" id="reclamacaoNumeroReclamacao" class="form-control" placeholder="Ex: REC123456" required>
                     </div>
 
-                    <!-- Número da Operação - NOVO CAMPO OBRIGATÓRIO -->
                     <div class="form-group">
                         <label><i class="fas fa-receipt"></i> Número da Operação *</label>
                         <input type="text" id="reclamacaoNumeroOperacao" class="form-control" placeholder="Ex: OP789012" required>
                         <small style="color: #6c757d;">Número da operação de reembolso no Mercado Livre</small>
                     </div>
 
-                    <!-- Tipo de reclamação -->
                     <div class="form-group">
                         <label><i class="fas fa-tag"></i> Tipo de reclamação *</label>
                         <div class="d-flex gap-3">
@@ -1223,7 +1287,6 @@ function criarModalReclamacaoCompleta() {
                         </div>
                     </div>
 
-                    <!-- Valor e Data -->
                     <div class="row">
                         <div class="col-md-6">
                             <div class="form-group">
@@ -1239,7 +1302,6 @@ function criarModalReclamacaoCompleta() {
                         </div>
                     </div>
 
-                    <!-- Motivo -->
                     <div class="form-group">
                         <label><i class="fas fa-question-circle"></i> Motivo *</label>
                         <select id="reclamacaoMotivo" class="form-control" required>
@@ -1253,7 +1315,6 @@ function criarModalReclamacaoCompleta() {
                         </select>
                     </div>
 
-                    <!-- Protocolos - MÚLTIPLOS -->
                     <div class="form-group">
                         <label><i class="fas fa-list"></i> Protocolos</label>
                         <div class="d-flex gap-2">
@@ -1267,7 +1328,6 @@ function criarModalReclamacaoCompleta() {
                         </div>
                     </div>
 
-                    <!-- Status -->
                     <div class="form-group">
                         <label><i class="fas fa-tag"></i> Status *</label>
                         <select id="reclamacaoStatus" class="form-control" onchange="onStatusChange()" required>
@@ -1278,7 +1338,6 @@ function criarModalReclamacaoCompleta() {
                         </select>
                     </div>
 
-                    <!-- Justificativa (aparece quando status = rejeitado) -->
                     <div id="campoJustificativa" style="display: none;">
                         <div class="form-group">
                             <label><i class="fas fa-comment"></i> Justificativa da Rejeição *</label>
@@ -1291,7 +1350,6 @@ function criarModalReclamacaoCompleta() {
                         </div>
                     </div>
 
-                    <!-- Número de Transação (aparece quando status = resolvido) -->
                     <div id="campoNumeroTransacao" style="display: none;">
                         <div class="form-group">
                             <label><i class="fas fa-exchange-alt"></i> Número da Transação *</label>
@@ -1300,7 +1358,6 @@ function criarModalReclamacaoCompleta() {
                         </div>
                     </div>
 
-                    <!-- Observações -->
                     <div class="form-group">
                         <label><i class="fas fa-sticky-note"></i> Observações</label>
                         <textarea id="reclamacaoObservacoes" class="form-control" rows="3" placeholder="Detalhes sobre a reclamação..."></textarea>
@@ -1445,19 +1502,16 @@ async function carregarReclamacaoExistente(vendaId) {
             document.getElementById('reclamacaoJustificativa').value = recl.justificativa_rejeicao || '';
             document.getElementById('reclamacaoNumeroTransacao').value = recl.numero_transacao || '';
             
-            // Protocolos
             if (recl.protocolos && recl.protocolos.length > 0) {
                 protocolosTemp = recl.protocolos;
                 renderizarProtocolos();
             }
             
-            // Tipo de referência
             if (recl.tipo_referencia) {
                 document.querySelector(`input[name="tipoReferencia"][value="${recl.tipo_referencia}"]`).checked = true;
                 toggleReferenciaFields();
             }
             
-            // Tipo de reclamação
             if (recl.tipo_reclamacao) {
                 document.querySelector(`input[name="tipoReclamacao"][value="${recl.tipo_reclamacao}"]`).checked = true;
                 toggleCamposReclamacao();
@@ -1471,7 +1525,7 @@ async function carregarReclamacaoExistente(vendaId) {
 }
 
 // ============================================
-// SALVAR RECLAMAÇÃO COMPLETA (V2)
+// SALVAR RECLAMAÇÃO COMPLETA
 // ============================================
 async function salvarReclamacaoCompleta() {
     const vendaId = document.getElementById('reclamacaoVendaId').value;
@@ -1558,7 +1612,6 @@ async function salvarReclamacaoCompleta() {
         let reclId = id;
         
         if (id) {
-            // Atualizar existente
             result = await window.supabaseClient
                 .from('reclamacoes_frete')
                 .update(dados)
@@ -1566,7 +1619,6 @@ async function salvarReclamacaoCompleta() {
             
             if (result.error) throw result.error;
         } else {
-            // Criar nova
             dados.criado_por = nomeUsuario;
             dados.criado_em = new Date().toISOString();
             
@@ -1579,7 +1631,6 @@ async function salvarReclamacaoCompleta() {
             reclId = insertResult.data?.[0]?.id;
         }
 
-        // ===== SE RESOLVIDO E COM REEMBOLSO, CRIAR NA ABA RECLAMAÇÕES =====
         if (status === 'resolvido' && tipoReclamacao === 'com_reembolso') {
             await criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId);
         }
@@ -1600,7 +1651,6 @@ async function salvarReclamacaoCompleta() {
 // ============================================
 async function criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId) {
     try {
-        // Verificar se já existe na tabela reembolsos
         const { data: existente } = await window.supabaseClient
             .from('reembolsos')
             .select('id')
@@ -1631,7 +1681,7 @@ async function criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId) {
             criado_por: nomeUsuario,
             criado_em: new Date().toISOString(),
             atualizado_em: new Date().toISOString(),
-            reclamacao_frete_id: reclId // Link para a reclamação original
+            reclamacao_frete_id: reclId
         };
 
         const { error } = await window.supabaseClient
@@ -1641,7 +1691,6 @@ async function criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId) {
         if (error) throw error;
 
         console.log(`✅ Reclamação criada na aba Reembolsos para venda ${vendaId}`);
-        showToast('📋 Reclamação enviada para a aba Reclamações!', 'success');
 
     } catch (error) {
         console.error('Erro ao criar reclamação na aba Reembolsos:', error);
@@ -1738,7 +1787,7 @@ function fecharModalHistoricoReclamacao() {
 }
 
 // ============================================
-// CARREGAR LISTA DE RECLAMAÇÕES COM FILTROS
+// CARREGAR LISTA DE RECLAMAÇÕES
 // ============================================
 async function carregarListaReclamacoes() {
     const tbody = document.getElementById('reclamacoesFreteBody');
@@ -1813,7 +1862,6 @@ async function carregarListaReclamacoes() {
 function filtrarReclamacoes(status) {
     filtroStatusReclamacao = status;
     
-    // Atualizar botões
     document.querySelectorAll('.btn-filtro-reclamacao').forEach(btn => {
         btn.classList.remove('btn-primary', 'active');
         btn.classList.add('btn-outline-secondary');
@@ -1829,7 +1877,7 @@ function filtrarReclamacoes(status) {
 }
 
 // ============================================
-// MUDAR STATUS DA RECLAMAÇÃO (REJEITADO -> RESOLVIDO)
+// MUDAR STATUS DA RECLAMAÇÃO
 // ============================================
 async function mudarStatusReclamacao(id, novoStatus) {
     if (!confirm(`Deseja alterar o status para "${novoStatus}"?`)) return;
@@ -1874,7 +1922,6 @@ async function editarReclamacao(id) {
         return;
     }
 
-    // Buscar dados da venda para preencher
     const { data: venda } = await window.supabaseClient
         .from('fretes_ml')
         .select('*')
@@ -1887,7 +1934,6 @@ async function editarReclamacao(id) {
 
     abrirModalReclamacaoCompleta(recl.venda_id, valorProduto, freteCobrado, freteEsperado);
 
-    // Preencher com os dados existentes
     document.getElementById('reclamacaoId').value = recl.id;
     document.getElementById('reclamacaoNumeroReclamacao').value = recl.numero_reclamacao || '';
     document.getElementById('reclamacaoNumeroOperacao').value = recl.numero_operacao || '';
@@ -1918,14 +1964,8 @@ async function editarReclamacao(id) {
 }
 
 // ============================================
-// RELATÓRIO DE RECLAMAÇÕES - COMPLETO
+// RELATÓRIO DE RECLAMAÇÕES
 // ============================================
-
-// Variáveis para o relatório
-let relatorioData = [];
-let graficoRelatorio = null;
-
-// Abrir modal de relatório
 function abrirModalRelatorioReclamacoes() {
     const modal = document.getElementById('modalRelatorioFrete');
     if (!modal) {
@@ -1934,7 +1974,6 @@ function abrirModalRelatorioReclamacoes() {
         return;
     }
 
-    // Configurar datas padrão (últimos 30 dias)
     const hoje = new Date();
     const umMesAtras = new Date();
     umMesAtras.setDate(hoje.getDate() - 30);
@@ -1942,7 +1981,6 @@ function abrirModalRelatorioReclamacoes() {
     document.getElementById('relDataInicio').value = umMesAtras.toISOString().split('T')[0];
     document.getElementById('relDataFim').value = hoje.toISOString().split('T')[0];
     
-    // Carregar lista de usuários para o filtro
     carregarUsuariosFiltro();
     
     modal.classList.remove('hidden');
@@ -1964,7 +2002,6 @@ function criarModalRelatorio() {
                     <button onclick="fecharModalRelatorio()" style="background: rgba(255,255,255,0.2); border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
                 </div>
                 <div style="padding: 20px; max-height: 80vh; overflow-y: auto;">
-                    <!-- Filtros -->
                     <div class="row mb-4">
                         <div class="col-md-3">
                             <div class="form-group">
@@ -2011,7 +2048,6 @@ function criarModalRelatorio() {
                         </button>
                     </div>
 
-                    <!-- Cards de Resumo -->
                     <div class="row mb-4">
                         <div class="col-md-3">
                             <div class="card text-center bg-light">
@@ -2047,7 +2083,6 @@ function criarModalRelatorio() {
                         </div>
                     </div>
 
-                    <!-- Gráficos -->
                     <div class="row mb-4">
                         <div class="col-md-6">
                             <div class="card">
@@ -2071,7 +2106,6 @@ function criarModalRelatorio() {
                         </div>
                     </div>
 
-                    <!-- Tabela Detalhada -->
                     <div class="card">
                         <div class="card-header">
                             <h5><i class="fas fa-list"></i> Detalhamento</h5>
@@ -2109,6 +2143,9 @@ function criarModalRelatorio() {
     document.body.appendChild(div.firstElementChild);
 }
 
+// ============================================
+// CARREGAR USUÁRIOS PARA FILTRO
+// ============================================
 async function carregarUsuariosFiltro() {
     try {
         const { data, error } = await window.supabaseClient
@@ -2131,6 +2168,9 @@ async function carregarUsuariosFiltro() {
     }
 }
 
+// ============================================
+// GERAR RELATÓRIO DE RECLAMAÇÕES
+// ============================================
 async function gerarRelatorioReclamacoes() {
     const dataInicio = document.getElementById('relDataInicio').value;
     const dataFim = document.getElementById('relDataFim').value;
@@ -2143,7 +2183,7 @@ async function gerarRelatorioReclamacoes() {
     }
 
     try {
-        // 1. Buscar todos os fretes incorretos
+        // Buscar todos os fretes incorretos
         let fretesQuery = window.supabaseClient
             .from('fretes_ml')
             .select('*');
@@ -2157,7 +2197,6 @@ async function gerarRelatorioReclamacoes() {
         const { data: fretes, error: fretesError } = await fretesQuery;
         if (fretesError) throw fretesError;
 
-        // Filtrar apenas incorretos
         const fretesIncorretos = (fretes || []).filter(item => {
             if (item.tipo_envio === 'FULL') return false;
             if (isFullByAnyField(item)) return false;
@@ -2167,7 +2206,7 @@ async function gerarRelatorioReclamacoes() {
             return Math.abs(item.frete_cobrado - freteEsperado) > 0.01;
         });
 
-        // 2. Buscar reclamações
+        // Buscar reclamações
         let reclamacoesQuery = window.supabaseClient
             .from('reclamacoes_frete')
             .select('*')
@@ -2190,15 +2229,15 @@ async function gerarRelatorioReclamacoes() {
         const { data: reclamacoes, error: reclamacoesError } = await reclamacoesQuery;
         if (reclamacoesError) throw reclamacoesError;
 
-        relatorioData = reclamacoes || [];
+        const relatorioData = reclamacoes || [];
 
-        // 3. Atualizar cards
+        // Atualizar cards
         document.getElementById('relTotalFretes').textContent = fretesIncorretos.length;
         document.getElementById('relTotalReclamacoes').textContent = relatorioData.length;
         document.getElementById('relTotalResolvidas').textContent = relatorioData.filter(r => r.status === 'resolvido').length;
         document.getElementById('relTotalRejeitadas').textContent = relatorioData.filter(r => r.status === 'rejeitado').length;
 
-        // 4. Preencher tabela
+        // Preencher tabela
         const tbody = document.getElementById('relatorioReclamacoesBody');
         tbody.innerHTML = '';
 
@@ -2229,8 +2268,8 @@ async function gerarRelatorioReclamacoes() {
             });
         }
 
-        // 5. Atualizar gráficos
-        atualizarGraficosRelatorio();
+        // Atualizar gráficos
+        atualizarGraficosRelatorio(relatorioData);
 
         showToast(`✅ Relatório gerado: ${relatorioData.length} registros`, 'success');
 
@@ -2240,9 +2279,10 @@ async function gerarRelatorioReclamacoes() {
     }
 }
 
-function atualizarGraficosRelatorio() {
-    const dados = relatorioData;
-
+// ============================================
+// ATUALIZAR GRÁFICOS DO RELATÓRIO
+// ============================================
+function atualizarGraficosRelatorio(dados) {
     // Gráfico Pizza - Distribuição por Status
     const statusCount = {};
     dados.forEach(item => {
@@ -2387,7 +2427,6 @@ function imprimirRelatorioReclamacoes() {
     const totalResolvidas = document.getElementById('relTotalResolvidas').textContent;
     const totalRejeitadas = document.getElementById('relTotalRejeitadas').textContent;
 
-    // Pegar dados da tabela
     const tbody = document.getElementById('relatorioReclamacoesBody');
     let tabelaHTML = '';
     tbody.querySelectorAll('tr').forEach(row => {
@@ -2406,8 +2445,8 @@ function imprimirRelatorioReclamacoes() {
             <style>
                 body { font-family: Arial, sans-serif; margin: 20px; }
                 h1 { color: #333; }
-                .resumo { display: flex; gap: 20px; margin: 20px 0; }
-                .resumo-card { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; flex: 1; }
+                .resumo { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
+                .resumo-card { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; flex: 1; min-width: 150px; }
                 .resumo-card h3 { margin: 0; font-size: 24px; }
                 .resumo-card p { margin: 5px 0 0; color: #6c757d; }
                 table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
@@ -2660,7 +2699,6 @@ document.addEventListener('DOMContentLoaded', function() {
     criarModalReclamacaoCompleta();
     criarModalRelatorio();
 
-    // Botão de exportar
     const headerContagem = document.querySelector('.card-header:has(#contagemFretes)');
     if (headerContagem) {
         let btnExport = document.getElementById('exportarFretesExcelBtn');
@@ -2684,12 +2722,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Carregar dados iniciais
     if (document.getElementById('shippingSimpleBody')) {
         carregarFretesSalvos();
     }
 
-    // Carregar lista de reclamações
     if (document.getElementById('reclamacoesFreteBody')) {
         carregarListaReclamacoes();
     }
@@ -2699,7 +2735,13 @@ document.addEventListener('DOMContentLoaded', function() {
         btnBuscar.addEventListener('click', buscarFretes);
     }
 
-    console.log('✅ shipping_simple.js PRONTO (v3.0) - Sistema completo de reclamações de frete');
+    // Configurar botões de paginação
+    const btnAnterior = document.getElementById('btnFretesAnterior');
+    const btnProxima = document.getElementById('btnFretesProxima');
+    if (btnAnterior) btnAnterior.addEventListener('click', paginaFretesAnterior);
+    if (btnProxima) btnProxima.addEventListener('click', paginaFretesProxima);
+
+    console.log('✅ shipping_simple.js PRONTO (v3.5) - Sistema completo de reclamações de frete com paginação');
 });
 
 // ============================================
@@ -2735,3 +2777,5 @@ window.salvarMedidasEFoto = salvarMedidasEFoto;
 window.extrairFreteDaVenda = extrairFreteDaVenda;
 window.fecharModalHistoricoReclamacao = fecharModalHistoricoReclamacao;
 window.renderizarProtocolos = renderizarProtocolos;
+window.paginaFretesAnterior = paginaFretesAnterior;
+window.paginaFretesProxima = paginaFretesProxima;
