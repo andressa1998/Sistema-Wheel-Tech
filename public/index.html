@@ -958,6 +958,22 @@ body > * {
     50% { opacity: 0.6; }
     100% { opacity: 1; }
 }
+/* ===== PAGINAÇÃO ===== */
+#paginacaoOS {
+    background: #f8f9fa;
+    border-radius: 0 0 8px 8px;
+    min-height: 50px;
+}
+
+#paginacaoOS .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#paginacaoOS select {
+    width: 70px;
+    display: inline-block;
+}
     </style>
 </head>
 <body>
@@ -1481,10 +1497,36 @@ body > * {
                         <tbody id="osTableBody"></tbody>
                     </table>
                 </div>
+
+                <!-- PAGINAÇÃO (ADICIONE AQUI) -->
+    <div id="paginacaoOS" class="p-3 border-top" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: #f8f9fa; border-radius: 0 0 8px 8px;">
+        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+            <span id="osInfo" class="text-muted" style="font-size: 14px;">Mostrando 0-0 de 0</span>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <label style="font-size: 13px; color: #6c757d; margin: 0;">Itens por página:</label>
+                <select id="itensPorPaginaOS" class="form-control form-control-sm" style="width: 70px; display: inline-block;" onchange="mudarItensPorPaginaOS()">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+            </div>
+        </div>
+        <div class="d-flex gap-2" style="flex-wrap: wrap; align-items: center;">
+            <button id="btnOSAnterior" class="btn btn-sm btn-outline-secondary" onclick="paginarOS('anterior')" disabled>
+                <i class="fas fa-chevron-left"></i> Anterior
+            </button>
+            <span id="osPaginaInfo" class="text-muted" style="font-size: 14px; display: flex; align-items: center;">Página 1 de 1</span>
+            <button id="btnOSProxima" class="btn btn-sm btn-outline-secondary" onclick="paginarOS('proxima')" disabled>
+                Próxima <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    </div>
                 <div id="emptyMessage" class="text-center py-5 hidden">...</div>
             </div>
         </div>
 
+                        
         <!-- Modal para Não Autorizado -->
 <div id="rejeitarOSModal" class="modal hidden">
     <div class="modal-content" style="max-width: 500px;">
