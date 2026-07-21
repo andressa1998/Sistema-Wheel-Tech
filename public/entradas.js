@@ -481,7 +481,57 @@ async function renderizarEntradas() {
 }
 
 // ============================================
-// PROCESSAR ENTRADA (Excel) - COM SUPORTE A CUSTO
+// FUNÇÃO PARA VERIFICAR DUPLICIDADE DE ENTRADA
+// ============================================
+async function verificarDuplicidadeEntrada(referencia, sku) {
+    if (!referencia || !sku) return false;
+    
+    try {
+        // Busca todos os itens de entrada com a mesma referência
+        const { data, error } = await window.supabaseClient
+            .from('entrada_items')
+            .select('entrada_id, rastreio, sku_original, sku_match')
+            .eq('rastreio', referencia.trim());
+        
+        if (error) {
+            console.error('Erro ao verificar duplicidade:', error);
+            return false;
+        }
+        
+        if (!data || data.length === 0) return false;
+        
+        // Verifica se algum item tem o mesmo SKU (original ou match)
+        const skuNormalizado = sku.trim().toLowerCase();
+        const duplicado = data.some(item => {
+            const skuOriginal = (item.sku_original || '').trim().toLowerCase();
+            const skuMatch = (item.sku_match || '').trim().toLowerCase();
+            return skuOriginal === skuNormalizado || skuMatch === skuNormalizado;
+        });
+        
+        if (duplicado) {
+            // Busca o número da entrada para mostrar no erro
+            const cardIds = [...new Set(data.map(i => i.entrada_id))];
+            const { data: cards } = await window.supabaseClient
+                .from('entradas_cards')
+                .select('numero_entrada')
+                .in('id', cardIds);
+            
+            const numeros = cards ? cards.map(c => c.numero_entrada).join(', ') : 'desconhecida';
+            return {
+                duplicado: true,
+                entrada: numeros
+            };
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('Erro ao verificar duplicidade:', error);
+        return false;
+    }
+}
+
+// ============================================
+// PROCESSAR ENTRADA (Excel) - COM VERIFICAÇÃO DE DUPLICIDADE
 // ============================================
 window.processarEntrada = async function() {
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
@@ -532,12 +582,15 @@ window.processarEntrada = async function() {
 
     const itensRaw = [];
     let erros = [];
+    let duplicatasEncontradas = [];
 
-    dadosLinhas.forEach((linha, idx) => {
+    // Primeiro, processamos todos os itens para verificar duplicatas
+    for (let idx = 0; idx < dadosLinhas.length; idx++) {
+        const linha = dadosLinhas[idx];
         const partes = linha.split(separador).map(c => c.trim());
         if (partes.length < 6) {
             erros.push(`Linha ${idx + 1}: poucas colunas (${partes.length})`);
-            return;
+            continue;
         }
 
         const cdFornecedor = partes[0] || '';
@@ -555,7 +608,21 @@ window.processarEntrada = async function() {
 
         if (!sku && !cdFornecedor) {
             erros.push(`Linha ${idx + 1}: SKU e cd fornecedor vazios`);
-            return;
+            continue;
+        }
+
+        // ==== VERIFICAÇÃO DE DUPLICIDADE ====
+        if (rastreio && sku) {
+            const duplicado = await verificarDuplicidadeEntrada(rastreio, sku);
+            if (duplicado && duplicado.duplicado) {
+                duplicatasEncontradas.push({
+                    linha: idx + 1,
+                    rastreio: rastreio,
+                    sku: sku,
+                    entrada: duplicado.entrada
+                });
+                continue; // Pula este item
+            }
         }
 
         itensRaw.push({
@@ -575,7 +642,19 @@ window.processarEntrada = async function() {
             quantidade_entrada: 0,
             data_acao: null
         });
-    });
+    }
+
+    // Se houver duplicatas, mostra aviso e não processa
+    if (duplicatasEncontradas.length > 0) {
+        let mensagem = '⚠️ Foram encontradas entradas duplicadas:\n\n';
+        duplicatasEncontradas.forEach(d => {
+            mensagem += `Linha ${d.linha}: Referência "${d.rastreio}" + SKU "${d.sku}" → Já existe na entrada ${d.entrada}\n`;
+        });
+        mensagem += '\n\n❌ Corrija os dados e tente novamente.';
+        alert(mensagem);
+        showToast('❌ Entradas duplicadas detectadas. Corrija os dados.', 'error');
+        return;
+    }
 
     if (itensRaw.length === 0) {
         showToast(`⚠️ Nenhum item válido encontrado. ${erros.length} erro(s).`, 'error');
@@ -587,8 +666,10 @@ window.processarEntrada = async function() {
         console.warn('Erros no parsing:', erros);
     }
 
+    // Ordena os itens por rastreio
     itensRaw.sort((a, b) => (a.rastreio || '').localeCompare(b.rastreio || ''));
 
+    // Busca fornecedores e produtos
     for (const item of itensRaw) {
         let fornecedor = null;
 
@@ -698,7 +779,7 @@ function extrairIPI(det) {
 }
 
 // ============================================
-// PROCESSAR XML DA NOTA FISCAL (COM CÁLCULO DE CUSTO)
+// PROCESSAR XML DA NOTA FISCAL - COM VERIFICAÇÃO DE DUPLICIDADE
 // ============================================
 window.processarXML = async function() {
     const fileInput = document.getElementById('xmlFileInput');
@@ -752,6 +833,8 @@ window.processarXML = async function() {
             }
 
             const itens = [];
+            let duplicatasEncontradas = [];
+
             for (const det of detNodes) {
                 const prod = det.querySelector('prod');
                 if (!prod) continue;
@@ -765,6 +848,22 @@ window.processarXML = async function() {
 
                 const ipi = extrairIPI(det);
                 const valorCustoUnitario = vUnCom + (ipi / (qCom || 1));
+
+                const rastreio = `NF-${nNF}-${cProd}`;
+
+                // ==== VERIFICAÇÃO DE DUPLICIDADE ====
+                if (rastreio && cProd) {
+                    const duplicado = await verificarDuplicidadeEntrada(rastreio, cProd);
+                    if (duplicado && duplicado.duplicado) {
+                        duplicatasEncontradas.push({
+                            rastreio: rastreio,
+                            sku: cProd,
+                            entrada: duplicado.entrada,
+                            produto: xProd || 'Sem nome'
+                        });
+                        continue; // Pula este item
+                    }
+                }
 
                 const fornecedor = buscarFornecedor(cProd);
                 let skuSistema = fornecedor ? fornecedor.sku_sistema : null;
@@ -782,7 +881,7 @@ window.processarXML = async function() {
                 itens.push({
                     cd_fornecedor: cdFornecedor || '',
                     fornecedor_nome: nomeFornecedor || '',
-                    rastreio: `NF-${nNF}-${cProd}`,
+                    rastreio: rastreio,
                     quantidade: qCom || 0,
                     produto: xProd || '',
                     sku_original: cProd || '',
@@ -800,6 +899,18 @@ window.processarXML = async function() {
                     data_acao: null,
                     valor_custo: valorCustoUnitario
                 });
+            }
+
+            // Se houver duplicatas, mostra aviso e não processa
+            if (duplicatasEncontradas.length > 0) {
+                let mensagem = '⚠️ Foram encontradas entradas duplicadas no XML:\n\n';
+                duplicatasEncontradas.forEach(d => {
+                    mensagem += `Produto "${d.produto}" (SKU: ${d.sku}) → Já existe na entrada ${d.entrada}\n`;
+                });
+                mensagem += '\n\n❌ Corrija os dados do XML e tente novamente.';
+                alert(mensagem);
+                showToast('❌ Entradas duplicadas detectadas no XML.', 'error');
+                return;
             }
 
             if (itens.length === 0) {
@@ -852,6 +963,7 @@ window.processarXML = async function() {
                 acao: null,
                 responsavel: null,
                 data_acao: null,
+                quantidade_entrada: 0,
                 valor_custo: item.valor_custo || 0
             }));
 
@@ -2215,7 +2327,9 @@ window.limparPreEntrada = function() {
     showToast('🧹 Pré-entrada limpa.', 'info');
 };
 
-// ===== PROCESSAR PRÉ-ENTRADA (CRIAR ENTRADA FINAL) =====
+// ============================================
+// PROCESSAR PRÉ-ENTRADA - COM VERIFICAÇÃO DE DUPLICIDADE
+// ============================================
 window.processarPreEntrada = async function() {
     if (preEntradaItens.length === 0) {
         showToast('⚠️ Nenhum item na pré-entrada. Carregue um XML primeiro.', 'warning');
@@ -2223,6 +2337,33 @@ window.processarPreEntrada = async function() {
     }
 
     if (!confirm(`Confirmar a criação da entrada com ${preEntradaItens.length} item(s)?`)) {
+        return;
+    }
+
+    // ==== VERIFICAÇÃO DE DUPLICIDADE PARA TODOS OS ITENS ====
+    let duplicatasEncontradas = [];
+    for (const item of preEntradaItens) {
+        if (item.rastreio && item.sku_original) {
+            const duplicado = await verificarDuplicidadeEntrada(item.rastreio, item.sku_original);
+            if (duplicado && duplicado.duplicado) {
+                duplicatasEncontradas.push({
+                    rastreio: item.rastreio,
+                    sku: item.sku_original,
+                    entrada: duplicado.entrada,
+                    produto: item.produto || 'Sem nome'
+                });
+            }
+        }
+    }
+
+    if (duplicatasEncontradas.length > 0) {
+        let mensagem = '⚠️ Foram encontradas entradas duplicadas na pré-entrada:\n\n';
+        duplicatasEncontradas.forEach(d => {
+            mensagem += `Produto "${d.produto}" (SKU: ${d.sku}) → Já existe na entrada ${d.entrada}\n`;
+        });
+        mensagem += '\n\n❌ Remova os itens duplicados e tente novamente.';
+        alert(mensagem);
+        showToast('❌ Entradas duplicadas detectadas na pré-entrada.', 'error');
         return;
     }
 
@@ -2292,7 +2433,9 @@ window.processarPreEntrada = async function() {
     }
 };
 
-// ===== PROCESSAR XML PARA PRÉ-ENTRADA (COM CÁLCULO DE CUSTO) =====
+// ============================================
+// PROCESSAR XML PARA PRÉ-ENTRADA - COM VERIFICAÇÃO DE DUPLICIDADE
+// ============================================
 window.processarPreEntradaXML = async function() {
     const fileInput = document.getElementById('preXmlFileInput');
     if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
@@ -2344,7 +2487,9 @@ window.processarPreEntradaXML = async function() {
                 return;
             }
 
-            preEntradaItens = [];
+            const itens = [];
+            let duplicatasEncontradas = [];
+
             for (const det of detNodes) {
                 const prod = det.querySelector('prod');
                 if (!prod) continue;
@@ -2359,6 +2504,22 @@ window.processarPreEntradaXML = async function() {
                 const ipi = extrairIPI(det);
                 const valorCustoUnitario = vUnCom + (ipi / (qCom || 1));
 
+                const rastreio = `NF-${nNF}-${cProd}`;
+
+                // ==== VERIFICAÇÃO DE DUPLICIDADE ====
+                if (rastreio && cProd) {
+                    const duplicado = await verificarDuplicidadeEntrada(rastreio, cProd);
+                    if (duplicado && duplicado.duplicado) {
+                        duplicatasEncontradas.push({
+                            rastreio: rastreio,
+                            sku: cProd,
+                            entrada: duplicado.entrada,
+                            produto: xProd || 'Sem nome'
+                        });
+                        continue; // Pula este item
+                    }
+                }
+
                 const fornecedor = buscarFornecedor(cProd);
                 let skuSistema = fornecedor ? fornecedor.sku_sistema : null;
                 let nomeFornecedor = fornecedor ? fornecedor.nome_fornecedor : fornecedorNome || '';
@@ -2372,10 +2533,10 @@ window.processarPreEntradaXML = async function() {
                     produtoEstoque = verificarSKUExistente(cProd);
                 }
 
-                preEntradaItens.push({
+                itens.push({
                     cd_fornecedor: cdFornecedor || '',
                     fornecedor_nome: nomeFornecedor || '',
-                    rastreio: `NF-${nNF}-${cProd}`,
+                    rastreio: rastreio,
                     quantidade: qCom || 0,
                     produto: xProd || '',
                     sku_original: cProd || '',
@@ -2387,19 +2548,32 @@ window.processarPreEntradaXML = async function() {
                     cprod_fornecedor: cProd || '',
                     tipo_entrada: 'xml',
                     status: 'pendente',
+                    quantidade_entrada: 0,
                     acao: null,
                     responsavel: null,
                     data_acao: null,
-                    quantidade_entrada: 0,
                     valor_custo: valorCustoUnitario
                 });
             }
 
-            if (preEntradaItens.length === 0) {
+            // Se houver duplicatas, mostra aviso
+            if (duplicatasEncontradas.length > 0) {
+                let mensagem = '⚠️ Foram encontradas entradas duplicadas no XML:\n\n';
+                duplicatasEncontradas.forEach(d => {
+                    mensagem += `Produto "${d.produto}" (SKU: ${d.sku}) → Já existe na entrada ${d.entrada}\n`;
+                });
+                mensagem += '\n\n❌ Remova os itens duplicados e tente novamente.';
+                alert(mensagem);
+                showToast('❌ Entradas duplicadas detectadas no XML.', 'error');
+                return;
+            }
+
+            if (itens.length === 0) {
                 showToast('⚠️ Nenhum item válido extraído da nota.', 'warning');
                 return;
             }
 
+            preEntradaItens = itens;
             preEntradaDadosBrutos = xmlString.substring(0, 500) + '...';
 
             renderizarPreEntrada();
