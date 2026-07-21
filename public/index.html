@@ -1457,6 +1457,8 @@ body > * {
             </div>
         </div>
 
+        
+
         <!-- MODAL DE EDIÇÃO DA OS -->
 <div id="editOSModal" class="modal hidden">
     <div class="modal-content" style="max-width: 700px; max-height: 90vh; padding: 0;">
@@ -4030,7 +4032,6 @@ body > * {
 </div>
 
 <!-- ===== SISTEMA DE GERENCIAMENTO DE FRETE (VERSÃO SIMPLES) ===== -->
-<!-- ===== SISTEMA DE GERENCIAMENTO DE FRETE (VERSÃO SIMPLES) ===== -->
 <div id="shippingSystem" class="hidden">
     <header class="main-header">
         <div class="container">
@@ -4106,6 +4107,22 @@ body > * {
                     </tbody>
                 </table>
             </div>
+            
+<!-- Paginação -->
+    <div id="paginacaoFretes" class="p-3 border-top d-flex justify-content-between align-items-center">
+        <div>
+            <span id="infoFretes" class="text-muted">Mostrando 0-0 de 0</span>
+        </div>
+        <div class="d-flex gap-2">
+            <button id="btnFretesAnterior" class="btn btn-sm btn-outline-secondary" disabled>
+                <i class="fas fa-chevron-left"></i> Anterior
+            </button>
+            <button id="btnFretesProxima" class="btn btn-sm btn-outline-secondary" disabled>
+                Próxima <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    </div>
+</div>
         </div>
     </div>
 </div>
@@ -4156,6 +4173,7 @@ body > * {
         </form>
     </div>
 </div>
+
 
 <!-- Modal de Relatório -->
 <div id="modalRelatorioFrete" class="modal hidden">
