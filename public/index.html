@@ -958,169 +958,6 @@ body > * {
     50% { opacity: 0.6; }
     100% { opacity: 1; }
 }
-/* ===== SCROLL HORIZONTAL VISÍVEL ===== */
-/* Barra de rolagem para o container da tabela */
-#osTable ~ div:first-child {
-    scrollbar-width: auto;
-    scrollbar-color: #00ADEE #e9ecef;
-}
-
-/* WebKit (Chrome, Safari, Edge) */
-#osTable ~ div:first-child::-webkit-scrollbar {
-    height: 14px;
-    width: 14px;
-}
-
-#osTable ~ div:first-child::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 8px;
-    border: 1px solid #dee2e6;
-}
-
-#osTable ~ div:first-child::-webkit-scrollbar-thumb {
-    background: linear-gradient(90deg, #00ADEE, #80D6F7);
-    border-radius: 8px;
-    border: 2px solid #f1f1f1;
-}
-
-#osTable ~ div:first-child::-webkit-scrollbar-thumb:hover {
-    background: #00ADEE;
-}
-
-/* Estilo para a tabela */
-#osTable {
-    min-width: 1300px;
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-}
-
-#osTable thead th {
-    background: #f8f9fa;
-    border-bottom: 2px solid #dee2e6;
-    padding: 10px 12px;
-    font-weight: 600;
-    white-space: nowrap;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-}
-
-#osTable tbody td {
-    padding: 10px 12px;
-    vertical-align: middle;
-    border-bottom: 1px solid #e9ecef;
-    word-break: break-word;
-}
-
-/* Coluna de ações - não quebrar */
-#osTable td:last-child {
-    white-space: nowrap;
-    min-width: 380px;
-}
-
-/* Ajuste para a coluna de links */
-#osTable td:nth-child(7) {
-    min-width: 160px;
-    max-width: 250px;
-}
-
-/* Links de anúncio */
-.link-anuncio {
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 4px;
-    background: #f8f9fa;
-    border: 1px solid #e9ecef;
-    font-size: 11px;
-    text-decoration: none;
-    transition: all 0.2s;
-    color: #495057;
-    margin: 2px 0;
-}
-
-.link-anuncio:hover {
-    background: #e9ecef;
-    transform: scale(1.02);
-    text-decoration: none;
-}
-
-.link-anuncio i {
-    margin-right: 4px;
-}
-
-/* Badges na tabela */
-#osTable .badge {
-    font-size: 10px;
-    padding: 3px 8px;
-    margin: 1px 2px;
-    white-space: nowrap;
-}
-
-#osTable .badge-warning {
-    animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.6; }
-    100% { opacity: 1; }
-}
-
-/* Responsivo */
-@media (max-width: 768px) {
-    #osTable {
-        min-width: 1000px;
-        font-size: 12px;
-    }
-    
-    #osTable thead th,
-    #osTable tbody td {
-        padding: 6px 8px;
-    }
-    
-    #osTable td:last-child {
-        min-width: 300px;
-    }
-}
-/* ===== MODAL ===== */
-.modal {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.5);
-    display: none; /* Importante: começa oculto */
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-}
-
-.modal:not(.hidden) {
-    display: flex !important;
-}
-
-.modal-content {
-    background: white;
-    padding: 30px;
-    border-radius: 12px;
-    max-width: 500px;
-    width: 90%;
-    max-height: 90vh;
-    overflow-y: auto;
-}
-
-/* Para garantir que o modal fique visível */
-#rejeitarOSModal:not(.hidden) {
-    display: flex !important;
-}
-
-#rejeitarOSModal .modal-content {
-    max-width: 500px;
-    width: 90%;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-}
     </style>
 </head>
 <body>
@@ -1572,126 +1409,88 @@ body > * {
                 </div>
             </div>
             
-           <!-- Lista de Ordens de Serviço -->
-<div class="card">
-    <div class="card-header">
-        <h2 class="card-title">
-            <i class="fas fa-list"></i> Minhas Ordens de Serviço
-        </h2>
-        
-        <div class="d-flex flex-wrap gap-2" style="align-items: center;">
-            <div class="filter-group" style="display: flex; gap: 5px; flex-wrap: wrap;">
-                <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">
-                    Pendentes <span class="badge" id="countPending">0</span>
-                </button>
-                <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">
-                    Andamento <span class="badge" id="countProgress">0</span>
-                </button>
-                <button class="btn btn-secondary btn-sm" onclick="filterOS('nao_conferidas')">
-                    Não Conferidas <span class="badge" id="countNotChecked">0</span>
-                </button>
-                <button class="btn btn-danger btn-sm" onclick="filterOS('revisao')">
-                    Revisão <span class="badge" id="countRevision">0</span>
-                </button>
-                <button class="btn btn-info btn-sm" onclick="filterOS('fotos_atualizar')">
-                    Atualizar Fotos <span class="badge" id="countFotosAtualizar">0</span>
-                </button>
-                <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
-                    Concluídas <span class="badge" id="countCompleted">0</span>
-                </button>
-                <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
-                    Todas <span class="badge" id="countTotal">0</span>
-                </button>
-            </div>
-
-            <div id="filtroDataConcluidas" class="hidden" style="display: inline-flex; align-items: center; gap: 5px; margin-left: 10px;">
-                <label for="dataFiltroConcluidas" style="font-size: 12px;">Data de conclusão:</label>
-                <input type="date" id="dataFiltroConcluidas" class="form-control form-control-sm" style="width: 140px;">
-                <button class="btn btn-sm btn-primary" onclick="aplicarFiltroDataConcluidas()">Aplicar</button>
-                <button class="btn btn-sm btn-secondary" onclick="limparFiltroDataConcluidas()">Limpar</button>
-            </div>
-            
-            <button class="btn btn-success" id="selectOSBtn" onclick="ativarModoSelecaoOS()">
-                <i class="fas fa-check-double"></i> Selecionar OS
-            </button>
-            <button class="btn btn-info" onclick="abrirModalRelatorioOS()" style="margin-left: 10px;">
-                <i class="fas fa-chart-line"></i> Relatórios
-            </button>
-        </div>
-    </div>
-    
-    <div id="selectedOSBar" class="selected-os-bar hidden">
-        <div style="background: #f0f0f0; padding: 10px 20px; margin: 10px 0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; border-left: 4px solid #00ADEE; flex-wrap: wrap; gap: 10px;">
-            <div>
-                <i class="fas fa-check-circle" style="color: #00ADEE;"></i>
-                <strong id="selectedOSCount">0</strong> OS selecionada(s)
-            </div>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <button class="btn btn-sm btn-info" onclick="selecionarTodasOS()"><i class="fas fa-check-double"></i> Selecionar Todas</button>
-                <button class="btn btn-sm btn-warning" onclick="limparSelecaoOS()"><i class="fas fa-eraser"></i> Limpar</button>
-                <button class="btn btn-sm btn-primary" id="printSelectedOSBtn" onclick="imprimirOSSelecionadas()" disabled><i class="fas fa-print"></i> Imprimir Selecionadas</button>
-                <button class="btn btn-sm btn-danger" onclick="ativarModoSelecaoOS()"><i class="fas fa-times"></i> Cancelar</button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- TABELA COM SCROLL HORIZONTAL VISÍVEL -->
-    <div style="position: relative; overflow-x: auto; overflow-y: visible; padding-bottom: 12px; min-height: 300px;">
-        <div style="overflow-x: auto; overflow-y: visible; min-height: 300px;">
-            <table class="table" id="osTable" style="min-width: 1300px; width: 100%; border-collapse: collapse;">
-                <thead style="position: sticky; top: 0; z-index: 10; background: #f8f9fa;">
-                    <tr>
-                        <th style="min-width: 110px; white-space: nowrap;">Código</th>
-                        <th style="min-width: 200px;">Produto</th>
-                        <th style="min-width: 140px;">Responsável</th>
-                        <th style="min-width: 100px; white-space: nowrap;">Urgência</th>
-                        <th style="min-width: 100px; white-space: nowrap;">Status</th>
-                        <th style="min-width: 140px; white-space: nowrap;">Criado em</th>
-                        <th style="min-width: 160px; white-space: nowrap;">🔗 Links</th>
-                        <th style="min-width: 380px; white-space: nowrap;">Ações</th>
-                    </tr>
-                </thead>
-                <tbody id="osTableBody">
-                    <!-- Conteúdo renderizado pelo JavaScript -->
-                </tbody>
-            </table>
-        </div>
-    </div>
-    
-    <!-- PAGINAÇÃO -->
-    <div id="paginacaoOS" class="p-3 border-top" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: #f8f9fa; border-radius: 0 0 8px 8px;">
-        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-            <span id="osInfo" class="text-muted" style="font-size: 14px;">Mostrando 0-0 de 0</span>
-            <div style="display: flex; align-items: center; gap: 5px;">
-                <label style="font-size: 13px; color: #6c757d; margin: 0;">Itens por página:</label>
-                <select id="itensPorPaginaOS" class="form-control form-control-sm" style="width: 70px; display: inline-block;" onchange="mudarItensPorPaginaOS()">
-                    <option value="10">10</option>
-                    <option value="20" selected>20</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                </select>
-            </div>
-        </div>
-        <div class="d-flex gap-2" style="flex-wrap: wrap; align-items: center;">
-            <button id="btnOSAnterior" class="btn btn-sm btn-outline-secondary" onclick="paginarOS('anterior')" disabled>
-                <i class="fas fa-chevron-left"></i> Anterior
-            </button>
-            <span id="osPaginaInfo" class="text-muted" style="font-size: 14px; display: flex; align-items: center;">Página 1 de 1</span>
-            <button id="btnOSProxima" class="btn btn-sm btn-outline-secondary" onclick="paginarOS('proxima')" disabled>
-                Próxima <i class="fas fa-chevron-right"></i>
-            </button>
-        </div>
-    </div>
-    
-    <div id="emptyMessage" class="text-center py-5 hidden">...</div>
+            <!-- Lista de Ordens de Serviço -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">
+                        <i class="fas fa-list"></i> Minhas Ordens de Serviço
+                    </h2>
+                    
+                    <div class="d-flex flex-wrap gap-2" style="align-items: center;">
+                        <div class="filter-group" style="display: flex; gap: 5px;">
+                            <div class="filter-group">
+    <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">
+        Pendentes <span class="badge" id="countPending">0</span>
+    </button>
+    <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">
+        Andamento <span class="badge" id="countProgress">0</span>
+    </button>
+    <button class="btn btn-secondary btn-sm" onclick="filterOS('nao_conferidas')">
+        Não Conferidas <span class="badge" id="countNotChecked">0</span>
+    </button>
+    <button class="btn btn-danger btn-sm" onclick="filterOS('revisao')">
+        Revisão <span class="badge" id="countRevision">0</span>
+    </button>
+    <button class="btn btn-info btn-sm" onclick="filterOS('fotos_atualizar')">
+    Atualizar Fotos <span class="badge" id="countFotosAtualizar">0</span>
+    </button>
+    <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
+        Concluídas <span class="badge" id="countCompleted">0</span>
+    </button>
+    <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
+        Todas <span class="badge" id="countTotal">0</span>
+    </button>
 </div>
 
-<!-- Modal para Não Autorizado -->
-<div id="rejeitarOSModal" class="modal hidden" style="display: none !important;">
+<div id="filtroDataConcluidas" class="hidden" style="display: inline-flex; align-items: center; gap: 5px; margin-left: 10px;">
+    <label for="dataFiltroConcluidas" style="font-size: 12px;">Data de conclusão:</label>
+    <input type="date" id="dataFiltroConcluidas" class="form-control form-control-sm" style="width: 140px;">
+    <button class="btn btn-sm btn-primary" onclick="aplicarFiltroDataConcluidas()">Aplicar</button>
+    <button class="btn btn-sm btn-secondary" onclick="limparFiltroDataConcluidas()">Limpar</button>
+</div>
+                        </div>
+                        <button class="btn btn-success" id="selectOSBtn" onclick="ativarModoSelecaoOS()">
+                            <i class="fas fa-check-double"></i> Selecionar OS
+                        </button>
+                        <button class="btn btn-info" onclick="abrirModalRelatorioOS()" style="margin-left: 10px;">
+                        <i class="fas fa-chart-line"></i> Relatórios
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="selectedOSBar" class="selected-os-bar hidden">
+                    <div style="background: #f0f0f0; padding: 10px 20px; margin: 10px 0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; border-left: 4px solid #00ADEE;">
+                        <div>
+                            <i class="fas fa-check-circle" style="color: #00ADEE;"></i>
+                            <strong id="selectedOSCount">0</strong> OS selecionada(s)
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn btn-sm btn-info" onclick="selecionarTodasOS()"><i class="fas fa-check-double"></i> Selecionar Todas</button>
+                            <button class="btn btn-sm btn-warning" onclick="limparSelecaoOS()"><i class="fas fa-eraser"></i> Limpar</button>
+                            <button class="btn btn-sm btn-primary" id="printSelectedOSBtn" onclick="imprimirOSSelecionadas()" disabled><i class="fas fa-print"></i> Imprimir Selecionadas</button>
+                            <button class="btn btn-sm btn-danger" onclick="ativarModoSelecaoOS()"><i class="fas fa-times"></i> Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="table" id="osTable">
+                        <thead>
+                            <tr><th>Código</th><th>Produto</th><th>Responsável</th><th>Urgência</th><th>Status</th><th>Criado em</th><th>🔗 Links</th><th>Ações</th></tr>
+                        </thead>
+                        <tbody id="osTableBody"></tbody>
+                    </table>
+                </div>
+                <div id="emptyMessage" class="text-center py-5 hidden">...</div>
+            </div>
+        </div>
+
+        <!-- Modal para Não Autorizado -->
+<div id="rejeitarOSModal" class="modal hidden">
     <div class="modal-content" style="max-width: 500px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h3><i class="fas fa-ban"></i> Não Autorizado</h3>
-            <button onclick="closeRejeitarModal()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+            <button onclick="closeRejeitarModal()" style="background:none; border:none; font-size:24px;">&times;</button>
         </div>
         <input type="hidden" id="rejeitarOSId">
         <div class="form-group mb-3">
@@ -1700,7 +1499,7 @@ body > * {
         </div>
         <div class="d-flex justify-content-end gap-2">
             <button class="btn btn-secondary" onclick="closeRejeitarModal()">Cancelar</button>
-            <button class="btn btn-danger" onclick="confirmarRejeicaoOS()">Enviar para Revisão</button>
+            <button class="btn btn-danger" onclick="confirmarRejeicaoOS()">Enviar para Pendentes</button>
         </div>
     </div>
 </div>
