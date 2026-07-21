@@ -1,7 +1,9 @@
-// shipping_simple.js - VERSÃO COMPLETA CORRIGIDA (v35)
-// Sistema completo de reclamações de frete
+// ============================================
+// SHIPPING_SIMPLE.JS - VERSÃO COMPLETA V3.0
+// SISTEMA DE RECLAMAÇÕES DE FRETE COM MELHORIAS
+// ============================================
 
-console.log('🚚 shipping_simple.js carregado (v35)');
+console.log('🚚 shipping_simple.js v3.0 carregado - Sistema completo de reclamações de frete');
 
 if (typeof window.WORKER_URL === 'undefined') {
     window.WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
@@ -59,6 +61,8 @@ const SHIPPING_COST_TABLE = [
 let filtroStatusReclamacao = 'todos';
 let reclamacoesCache = [];
 let protocolosTemp = [];
+let currentReclamacaoId = null;
+let graficoReclamacoes = null;
 
 // ============================================
 // FUNÇÕES AUXILIARES
@@ -102,15 +106,28 @@ function getNomeUsuario() {
     return 'Sistema';
 }
 
+function formatarDataISO(dataISO) {
+    if (!dataISO) return '-';
+    const data = new Date(dataISO);
+    return data.toLocaleDateString('pt-BR') + ' ' + data.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // ============================================
-// TOAST CORRIGIDO (sem recursão)
+// TOAST CORRIGIDO
 // ============================================
 function showToast(mensagem, tipo = 'info') {
-    // Verificar se já existe um toast e remover
     const toastExistente = document.querySelector('.custom-toast');
-    if (toastExistente) {
-        toastExistente.remove();
-    }
+    if (toastExistente) toastExistente.remove();
     
     const toast = document.createElement('div');
     toast.className = 'custom-toast';
@@ -132,9 +149,7 @@ function showToast(mensagem, tipo = 'info') {
     document.body.appendChild(toast);
     
     setTimeout(() => {
-        if (toast.parentNode) {
-            toast.remove();
-        }
+        if (toast.parentNode) toast.remove();
     }, 4000);
 }
 
@@ -326,13 +341,10 @@ async function processarPedidosML(data, token) {
                 }
             }
             
-            // ===== EXTRAIR FRETE USANDO A FUNÇÃO CORRIGIDA =====
             let freteCobrado = await extrairFreteDaVenda(order, token);
             
-            // Se freteCobrado for 0, tentar uma última vez com mais detalhes
             if (freteCobrado === 0) {
                 console.log(`🔄 Tentando extrair frete novamente para ${order.id}...`);
-                // Buscar shipment diretamente
                 if (order.shipping?.id) {
                     try {
                         const shipUrl = `https://api.mercadolibre.com/shipments/${order.shipping.id}`;
@@ -379,12 +391,11 @@ async function processarPedidosML(data, token) {
 }
 
 // ============================================
-// EXTRAIR FRETE DA VENDA (VERSÃO CORRIGIDA)
+// EXTRAIR FRETE DA VENDA
 // ============================================
 async function extrairFreteDaVenda(order, token) {
     console.log(`🔍 Extraindo frete da venda ${order.id}...`);
     
-    // 1. Tentar receiver_cost diretamente do order.shipping
     if (order.shipping && order.shipping.receiver_cost) {
         const frete = parseFloat(order.shipping.receiver_cost);
         if (frete > 0) {
@@ -393,7 +404,6 @@ async function extrairFreteDaVenda(order, token) {
         }
     }
 
-    // 2. Tentar cost diretamente do order.shipping
     if (order.shipping && order.shipping.cost) {
         const frete = parseFloat(order.shipping.cost);
         if (frete > 0) {
@@ -402,7 +412,6 @@ async function extrairFreteDaVenda(order, token) {
         }
     }
 
-    // 3. Buscar shipment completo
     if (order.shipping && order.shipping.id && token) {
         try {
             console.log(`🔄 Buscando shipment ${order.shipping.id}...`);
@@ -413,9 +422,7 @@ async function extrairFreteDaVenda(order, token) {
             const response = await fetch(shipProxy);
             if (response.ok) {
                 const shipData = await response.json();
-                console.log('📦 Shipment data:', JSON.stringify(shipData, null, 2));
                 
-                // Tentar receiver_cost
                 if (shipData.receiver_cost) {
                     const frete = parseFloat(shipData.receiver_cost);
                     if (frete > 0) {
@@ -424,7 +431,6 @@ async function extrairFreteDaVenda(order, token) {
                     }
                 }
                 
-                // Tentar cost
                 if (shipData.cost) {
                     const frete = parseFloat(shipData.cost);
                     if (frete > 0) {
@@ -433,7 +439,6 @@ async function extrairFreteDaVenda(order, token) {
                     }
                 }
                 
-                // Tentar shipping_option.cost
                 if (shipData.shipping_option && shipData.shipping_option.cost) {
                     const frete = parseFloat(shipData.shipping_option.cost);
                     if (frete > 0) {
@@ -447,7 +452,6 @@ async function extrairFreteDaVenda(order, token) {
         }
     }
 
-    // 4. Tentar buscar da order diretamente (total_amount - item_amount)
     try {
         if (order.total_amount && order.order_items && order.order_items.length > 0) {
             let itemTotal = 0;
@@ -469,7 +473,7 @@ async function extrairFreteDaVenda(order, token) {
 }
 
 // ============================================
-// BUSCAR FRETES (sincronização - APENAS INCORRETOS)
+// BUSCAR FRETES (SINCRONIZAÇÃO)
 // ============================================
 async function buscarFretes() {
     console.log('🔍 Iniciando sincronização de fretes...');
@@ -484,7 +488,7 @@ async function buscarFretes() {
         btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
     }
 
-    tbody.innerHTML = '<tr><td colspan="13" class="text-center"><div class="spinner"></div> Buscando vendas para análise de frete...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" class="text-center"><div class="spinner"></div> Buscando vendas para análise de frete...</td></tr>';
     if (contagem) contagem.textContent = 'Sincronizando...';
 
     try {
@@ -497,7 +501,7 @@ async function buscarFretes() {
         console.log(`📦 ${resultado.vendas.length} vendas retornadas da busca de frete`);
 
         if (resultado.vendas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="13" class="text-center">Nenhuma venda encontrada.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="15" class="text-center">Nenhuma venda encontrada.</td></tr>';
             if (contagem) contagem.textContent = '0 registros';
             showToast('Nenhuma venda encontrada', 'info');
             return;
@@ -594,7 +598,7 @@ async function buscarFretes() {
             let msg = `Nenhum frete incorreto encontrado.`;
             if (totalCorretosIgnorados > 0) msg += ` ${totalCorretosIgnorados} corretos ignorados.`;
             if (totalFullIgnorados > 0) msg += ` ${totalFullIgnorados} FULL ignorados.`;
-            tbody.innerHTML = `<tr><td colspan="13" class="text-center">${msg}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="15" class="text-center">${msg}</td></tr>`;
             if (contagem) contagem.textContent = '0 incorretos';
             showToast(msg, 'info');
             return;
@@ -616,7 +620,7 @@ async function buscarFretes() {
 
     } catch (error) {
         console.error('❌ Erro na sincronização de fretes:', error);
-        tbody.innerHTML = `<tr><td colspan="13" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="15" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
         if (contagem) contagem.textContent = 'Erro';
         showToast('Erro ao sincronizar: ' + error.message, 'error');
     } finally {
@@ -711,7 +715,7 @@ async function salvarMedidasERecalcular(row, vendaId, sku) {
 }
 
 // ============================================
-// CARREGAR FRETES SALVOS (APENAS INCORRETOS)
+// CARREGAR FRETES SALVOS - TABELA EXPANDIDA E OTIMIZADA
 // ============================================
 async function carregarFretesSalvos() {
     console.log('📂 Carregando fretes salvos (apenas incorretos)...');
@@ -732,12 +736,17 @@ async function carregarFretesSalvos() {
         // Buscar reclamações abertas
         const { data: reclamacoes } = await window.supabaseClient
             .from('reclamacoes_frete')
-            .select('venda_id, status')
-            .eq('status', 'aberto');
+            .select('venda_id, status, id, criado_por, data_reclamacao, numero_operacao, numero_transacao, protocolos, justificativa_rejeicao')
+            .order('criado_em', { ascending: false });
 
         const reclamacoesMap = {};
         if (reclamacoes) {
-            reclamacoes.forEach(r => { reclamacoesMap[r.venda_id] = r.status; });
+            reclamacoes.forEach(r => {
+                if (!reclamacoesMap[r.venda_id]) {
+                    reclamacoesMap[r.venda_id] = [];
+                }
+                reclamacoesMap[r.venda_id].push(r);
+            });
         }
 
         let dados = (data || []).filter(item => {
@@ -756,7 +765,7 @@ async function carregarFretesSalvos() {
         });
 
         if (dados.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="13" class="text-center">Nenhum frete incorreto encontrado. 🎉</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="15" class="text-center py-5">Nenhum frete incorreto encontrado. 🎉</td></tr>';
             if (contagem) contagem.textContent = '0 incorretos';
             return;
         }
@@ -793,8 +802,32 @@ async function carregarFretesSalvos() {
                 }
             }
 
-            const temReclamacao = reclamacoesMap[item.id] === 'aberto';
-            const badgeReclamacao = temReclamacao ? '<span class="badge badge-info ml-1">Reclamação Aberta</span>' : '';
+            // Verificar reclamações existentes
+            const recls = reclamacoesMap[item.id] || [];
+            const temReclamacaoAberta = recls.some(r => r.status === 'aberto' || r.status === 'em_andamento');
+            const temReclamacaoRejeitada = recls.some(r => r.status === 'rejeitado');
+            const temReclamacaoResolvida = recls.some(r => r.status === 'resolvido');
+            
+            let badgeReclamacao = '';
+            if (temReclamacaoAberta) {
+                badgeReclamacao = '<span class="badge badge-info ml-1"><i class="fas fa-clock"></i> Em andamento</span>';
+            } else if (temReclamacaoRejeitada) {
+                badgeReclamacao = '<span class="badge badge-danger ml-1"><i class="fas fa-times"></i> Rejeitada</span>';
+            } else if (temReclamacaoResolvida) {
+                badgeReclamacao = '<span class="badge badge-success ml-1"><i class="fas fa-check"></i> Resolvida</span>';
+            }
+
+            // Última reclamação (mais recente)
+            const ultimaRecl = recls.length > 0 ? recls[0] : null;
+            let infoReclamacao = '';
+            if (ultimaRecl) {
+                infoReclamacao = `
+                    <div style="font-size: 10px; color: #6c757d; margin-top: 2px;">
+                        ${ultimaRecl.status}: ${ultimaRecl.numero_operacao || ''}
+                        ${ultimaRecl.numero_transacao ? `| TRANS: ${ultimaRecl.numero_transacao}` : ''}
+                    </div>
+                `;
+            }
 
             let fotoThumb = '';
             if (fotoUrl) {
@@ -803,69 +836,82 @@ async function carregarFretesSalvos() {
                 fotoThumb = '<span class="text-muted">Sem foto</span>';
             }
 
+            // Data formatada
+            const dataVenda = item.data_venda ? new Date(item.data_venda).toLocaleDateString('pt-BR') : '-';
+
             row.innerHTML = `
-                <td><strong>${item.id}</strong></td>
-                <td>${item.titulo || 'Sem título'}</td>
-                <td><code>${sku}</code></td>
-                <td><code>${item.mlb || 'N/A'}</code></td>
-                <td>R$ ${valorProduto.toFixed(2)}</td>
-                <td>${quantidade}</td>
-                <td>R$ ${freteCobrado.toFixed(2)}</td>
-                <td class="frete-esperado-cell">${freteEsperado !== null ? `R$ ${freteEsperado.toFixed(2)}` : 'N/A'}</td>
+                <td><strong style="font-size:12px;">${item.id}</strong></td>
+                <td style="max-width:200px; word-wrap:break-word; font-size:12px;">${item.titulo || 'Sem título'}</td>
+                <td><code style="font-size:11px;">${sku}</code></td>
+                <td><code style="font-size:11px;">${item.mlb || 'N/A'}</code></td>
+                <td style="font-weight:600; color:#28a745;">R$ ${valorProduto.toFixed(2)}</td>
+                <td style="text-align:center;">${quantidade}</td>
+                <td style="font-weight:600; color:#dc3545;">R$ ${freteCobrado.toFixed(2)}</td>
+                <td class="frete-esperado-cell" style="font-weight:600; color:#17a2b8;">${freteEsperado !== null ? `R$ ${freteEsperado.toFixed(2)}` : 'N/A'}</td>
                 <td>
-                    <span class="badge badge-${statusClass} status-badge">${statusText}</span>
+                    <span class="badge badge-${statusClass} status-badge" style="font-size:11px;">${statusText}</span>
                     ${badgeReclamacao}
+                    ${infoReclamacao}
                 </td>
-                <td>
+                <td style="min-width:80px;">
                     <input type="number" class="form-control form-control-sm peso-input" 
                            value="${peso}" step="0.01" min="0" 
-                           data-venda-id="${item.id}" style="width: 65px;">
+                           data-venda-id="${item.id}" style="width:65px; font-size:11px;">
                 </td>
-                <td>
-                    <div style="display:flex; gap:3px; flex-wrap:wrap; align-items:center;">
+                <td style="min-width:180px;">
+                    <div style="display:flex; gap:2px; flex-wrap:wrap; align-items:center;">
                         <input type="number" class="form-control form-control-sm medida-input" 
                                value="${comprimento}" step="0.1" min="0" 
-                               data-venda-id="${item.id}" data-medida="comprimento" style="width: 55px;" placeholder="C">
-                        <span style="font-size:11px;">x</span>
+                               data-venda-id="${item.id}" data-medida="comprimento" style="width:45px; font-size:11px; padding:2px 4px;" placeholder="C">
+                        <span style="font-size:10px;">x</span>
                         <input type="number" class="form-control form-control-sm medida-input" 
                                value="${largura}" step="0.1" min="0" 
-                               data-venda-id="${item.id}" data-medida="largura" style="width: 55px;" placeholder="L">
-                        <span style="font-size:11px;">x</span>
+                               data-venda-id="${item.id}" data-medida="largura" style="width:45px; font-size:11px; padding:2px 4px;" placeholder="L">
+                        <span style="font-size:10px;">x</span>
                         <input type="number" class="form-control form-control-sm medida-input" 
                                value="${altura}" step="0.1" min="0" 
-                               data-venda-id="${item.id}" data-medida="altura" style="width: 55px;" placeholder="A">
+                               data-venda-id="${item.id}" data-medida="altura" style="width:45px; font-size:11px; padding:2px 4px;" placeholder="A">
                         <button class="btn btn-sm btn-success btn-salvar-medidas" 
                                 data-venda-id="${item.id}" 
                                 data-sku="${sku}"
-                                style="padding: 2px 8px; margin-left: 4px;">
+                                style="padding:1px 6px; font-size:11px;">
                             <i class="fas fa-save"></i>
                         </button>
                     </div>
-                    <div style="font-size:10px; color:#6c757d; margin-top:3px;">
+                    <div style="font-size:9px; color:#6c757d; margin-top:2px;">
                         Vol: <span class="peso-volumetrico-display">${pesoVol.toFixed(3)}</span> m³
                     </div>
                 </td>
-                <td>
-                    ${fotoThumb}
-                    <button class="btn btn-sm btn-outline-secondary mt-1" onclick="abrirEditorFoto('${item.id}', '${sku}')" title="Editar foto">
-                        <i class="fas fa-camera"></i>
-                    </button>
+                <td style="min-width:80px; text-align:center;">
+                    <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+                        ${fotoThumb}
+                        <button class="btn btn-sm btn-outline-secondary" onclick="abrirEditorFoto('${item.id}', '${sku}')" title="Editar foto" style="padding:1px 6px; font-size:10px;">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                    </div>
                 </td>
-                <td>
+                <td style="min-width:100px;">
                     <button class="btn btn-sm btn-primary btn-reclamar" 
                             data-venda-id="${item.id}"
                             data-valor="${valorProduto}"
                             data-frete-cobrado="${freteCobrado}"
                             data-frete-esperado="${freteEsperado !== null ? freteEsperado : 0}"
-                            ${temReclamacao ? 'disabled' : ''}>
-                        <i class="fas fa-comment-dots"></i>
+                            ${temReclamacaoAberta ? 'disabled' : ''}
+                            style="padding:2px 8px; font-size:11px; width:100%;">
+                        <i class="fas fa-comment-dots"></i> Reclamar
                     </button>
-                    ${temReclamacao ? `<button class="btn btn-sm btn-info btn-ver-reclamacao" data-venda-id="${item.id}"><i class="fas fa-eye"></i></button>` : ''}
+                    ${temReclamacaoAberta || temReclamacaoRejeitada || temReclamacaoResolvida ? 
+                        `<button class="btn btn-sm btn-info btn-ver-reclamacao" data-venda-id="${item.id}" title="Ver reclamações" style="padding:2px 8px; font-size:11px; width:100%; margin-top:3px;">
+                            <i class="fas fa-eye"></i> Ver
+                        </button>` : ''}
                 </td>
+                <td style="font-size:11px;">${dataVenda}</td>
+                <td><span class="badge badge-secondary" style="font-size:10px;">${item.tipo_envio || 'N/I'}</span></td>
             `;
 
             tbody.appendChild(row);
 
+            // Event listeners...
             const btnSalvar = row.querySelector('.btn-salvar-medidas');
             if (btnSalvar) {
                 btnSalvar.addEventListener('click', function() {
@@ -913,7 +959,7 @@ async function carregarFretesSalvos() {
             const btnVerReclamacao = row.querySelector('.btn-ver-reclamacao');
             if (btnVerReclamacao) {
                 btnVerReclamacao.addEventListener('click', function() {
-                    verReclamacaoCompleta(this.dataset.vendaId);
+                    verHistoricoReclamacoes(this.dataset.vendaId);
                 });
             }
         });
@@ -925,7 +971,7 @@ async function carregarFretesSalvos() {
 
     } catch (error) {
         console.error('❌ Erro ao carregar fretes:', error);
-        tbody.innerHTML = `<tr><td colspan="13" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="15" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
     }
 }
 
@@ -1001,7 +1047,7 @@ function atualizarVisualizacaoLinha(row, vendaId, comprimento, largura, altura, 
 }
 
 // ============================================
-// MODAL DE RECLAMAÇÃO COMPLETA
+// MODAL DE RECLAMAÇÃO COMPLETA (V2)
 // ============================================
 function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, freteEsperado) {
     // Verificar se o modal existe, se não, criar
@@ -1015,7 +1061,7 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
         }
     }
 
-    // Garantir que os elementos existem antes de tentar definir valores
+    // Garantir que os elementos existem
     const elementos = {
         vendaId: document.getElementById('reclamacaoVendaId'),
         valorProduto: document.getElementById('reclamacaoValorProduto'),
@@ -1034,13 +1080,16 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
         motivo: document.getElementById('reclamacaoMotivo'),
         campoProtocolo: document.getElementById('campoProtocolo'),
         listaProtocolos: document.getElementById('listaProtocolos'),
-        campoNumeroOperacao: document.getElementById('campoNumeroOperacao'),
         campoJustificativa: document.getElementById('campoJustificativa'),
         campoNumeroTransacao: document.getElementById('campoNumeroTransacao'),
-        campoNumeroVenda: document.getElementById('campoNumeroVenda')
+        campoNumeroVenda: document.getElementById('campoNumeroVenda'),
+        valorDisplay: document.getElementById('reclamacaoValorProdutoDisplay'),
+        freteCobradoDisplay: document.getElementById('reclamacaoFreteCobradoDisplay'),
+        freteEsperadoDisplay: document.getElementById('reclamacaoFreteEsperadoDisplay'),
+        diferencaDisplay: document.getElementById('reclamacaoDiferencaDisplay'),
+        numeroVendaDisplay: document.getElementById('reclamacaoNumeroVendaDisplay')
     };
 
-    // Verificar se todos os elementos existem
     const elementosFaltando = Object.entries(elementos)
         .filter(([key, el]) => !el)
         .map(([key]) => key);
@@ -1061,6 +1110,14 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
     elementos.diferenca.value = diferenca.toFixed(2);
     elementos.status.value = 'aberto';
     elementos.data.value = new Date().toISOString().split('T')[0];
+    
+    // Display
+    elementos.valorDisplay.textContent = (valorProduto || 0).toFixed(2);
+    elementos.freteCobradoDisplay.textContent = (freteCobrado || 0).toFixed(2);
+    elementos.freteEsperadoDisplay.textContent = (freteEsperado || 0).toFixed(2);
+    elementos.diferencaDisplay.textContent = diferenca.toFixed(2);
+    elementos.diferencaDisplay.style.color = diferenca > 0 ? '#dc3545' : (diferenca < 0 ? '#28a745' : '#6c757d');
+    elementos.numeroVendaDisplay.textContent = vendaId || '-';
     
     // Limpar campos
     elementos.numeroReclamacao.value = '';
@@ -1088,9 +1145,6 @@ function abrirModalReclamacaoCompleta(vendaId, valorProduto, freteCobrado, frete
     if (elementos.campoNumeroTransacao) {
         elementos.campoNumeroTransacao.style.display = 'none';
     }
-    if (elementos.campoNumeroOperacao) {
-        elementos.campoNumeroOperacao.style.display = 'block';
-    }
     
     // Mostrar modal
     modal.classList.remove('hidden');
@@ -1104,158 +1158,160 @@ function criarModalReclamacaoCompleta() {
 
     const modalHTML = `
         <div id="modalReclamacaoCompleta" class="modal hidden">
-            <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #00ADEE; padding-bottom: 15px;">
-                    <h3 style="margin:0;"><i class="fas fa-comment-dots" style="color:#00ADEE;"></i> Nova Reclamação de Frete</h3>
-                    <button onclick="fecharModalReclamacaoCompleta()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
+            <div class="modal-content" style="max-width: 750px; max-height: 90vh; overflow-y: auto; padding: 0;">
+                <div style="background: linear-gradient(135deg, #00ADEE, #80D6F7); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin:0;"><i class="fas fa-comment-dots"></i> Nova Reclamação de Frete</h3>
+                    <button onclick="fecharModalReclamacaoCompleta()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
                 </div>
 
-                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <p><strong>Venda:</strong> <span id="reclamacaoNumeroVendaDisplay">-</span></p>
-                    <p><strong>Valor Produto:</strong> R$ <span id="reclamacaoValorProdutoDisplay">0,00</span></p>
-                    <p><strong>Frete Cobrado:</strong> R$ <span id="reclamacaoFreteCobradoDisplay">0,00</span></p>
-                    <p><strong>Frete Esperado:</strong> R$ <span id="reclamacaoFreteEsperadoDisplay">0,00</span></p>
-                    <p><strong>Diferença:</strong> R$ <span id="reclamacaoDiferencaDisplay" style="font-weight: bold;">0,00</span></p>
-                </div>
-
-                <input type="hidden" id="reclamacaoId">
-                <input type="hidden" id="reclamacaoVendaId">
-                <input type="hidden" id="reclamacaoValorProduto">
-                <input type="hidden" id="reclamacaoFreteCobrado">
-                <input type="hidden" id="reclamacaoFreteEsperado">
-                <input type="hidden" id="reclamacaoDiferenca">
-
-                <!-- Tipo de referência -->
-                <div class="form-group">
-                    <label><strong>Tipo de referência *</strong></label>
-                    <div class="d-flex gap-3">
-                        <label><input type="radio" name="tipoReferencia" value="venda" checked onchange="toggleReferenciaFields()"> Venda</label>
-                        <label><input type="radio" name="tipoReferencia" value="retirada" onchange="toggleReferenciaFields()"> Retirada FULL</label>
-                    </div>
-                </div>
-
-                <!-- Número da Venda -->
-                <div class="form-group" id="campoNumeroVenda">
-                    <label><i class="fas fa-tag"></i> Número da Venda (16 caracteres)</label>
-                    <input type="text" id="reclamacaoNumeroVenda" class="form-control" placeholder="Ex: 1234567890123456" maxlength="16">
-                    <small style="color: #6c757d;">Deve ter exatamente 16 caracteres</small>
-                </div>
-
-                <!-- Número da Reclamação -->
-                <div class="form-group">
-                    <label><i class="fas fa-exclamation-circle"></i> Número da Reclamação *</label>
-                    <input type="text" id="reclamacaoNumeroReclamacao" class="form-control" placeholder="Ex: REC123456" required>
-                </div>
-
-                <!-- Número da Operação -->
-                <div class="form-group">
-                    <label><i class="fas fa-receipt"></i> Número da Operação</label>
-                    <div class="d-flex gap-3 mb-2">
-                        <label><input type="radio" name="tipoOperacao" value="adicionar" checked onchange="toggleOperacaoField()"> Adicionar número da operação</label>
-                        <label><input type="radio" name="tipoOperacao" value="reembolso_venda" onchange="toggleOperacaoField()"> Reembolso na venda (sem número)</label>
-                    </div>
-                    <div id="campoNumeroOperacao">
-                        <input type="text" id="reclamacaoNumeroOperacao" class="form-control" placeholder="Ex: OP789012">
-                    </div>
-                </div>
-
-                <!-- Tipo de reclamação -->
-                <div class="form-group">
-                    <label><i class="fas fa-tag"></i> Tipo de reclamação *</label>
-                    <div class="d-flex gap-3">
-                        <label><input type="radio" name="tipoReclamacao" value="com_reembolso" checked onchange="toggleCamposReclamacao()"> Com reembolso</label>
-                        <label><input type="radio" name="tipoReclamacao" value="sem_reembolso" onchange="toggleCamposReclamacao()"> Sem reembolso (apenas acompanhamento)</label>
-                    </div>
-                </div>
-
-                <!-- Valor e Data -->
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label><i class="fas fa-money-bill-wave"></i> Valor *</label>
-                            <input type="number" id="reclamacaoValor" class="form-control" step="0.01" min="0" placeholder="0,00" value="0">
+                <div style="padding: 20px;">
+                    <!-- Informações da venda -->
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <p style="margin: 4px 0;"><strong>Venda:</strong> <span id="reclamacaoNumeroVendaDisplay">-</span></p>
+                            <p style="margin: 4px 0;"><strong>Valor Produto:</strong> R$ <span id="reclamacaoValorProdutoDisplay">0,00</span></p>
+                        </div>
+                        <div>
+                            <p style="margin: 4px 0;"><strong>Frete Cobrado:</strong> R$ <span id="reclamacaoFreteCobradoDisplay">0,00</span></p>
+                            <p style="margin: 4px 0;"><strong>Frete Esperado:</strong> R$ <span id="reclamacaoFreteEsperadoDisplay">0,00</span></p>
+                            <p style="margin: 4px 0;"><strong>Diferença:</strong> R$ <span id="reclamacaoDiferencaDisplay" style="font-weight: bold;">0,00</span></p>
                         </div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="form-group">
-                            <label><i class="fas fa-calendar"></i> Data *</label>
-                            <input type="date" id="reclamacaoData" class="form-control" required>
+
+                    <input type="hidden" id="reclamacaoId">
+                    <input type="hidden" id="reclamacaoVendaId">
+                    <input type="hidden" id="reclamacaoValorProduto">
+                    <input type="hidden" id="reclamacaoFreteCobrado">
+                    <input type="hidden" id="reclamacaoFreteEsperado">
+                    <input type="hidden" id="reclamacaoDiferenca">
+
+                    <!-- Tipo de referência -->
+                    <div class="form-group">
+                        <label><strong>Tipo de referência *</strong></label>
+                        <div class="d-flex gap-3">
+                            <label><input type="radio" name="tipoReferencia" value="venda" checked onchange="toggleReferenciaFields()"> Venda</label>
+                            <label><input type="radio" name="tipoReferencia" value="retirada" onchange="toggleReferenciaFields()"> Retirada FULL</label>
                         </div>
                     </div>
-                </div>
 
-                <!-- Motivo -->
-                <div class="form-group">
-                    <label><i class="fas fa-question-circle"></i> Motivo *</label>
-                    <select id="reclamacaoMotivo" class="form-control" required>
-                        <option value="">Selecione o motivo</option>
-                        <option value="Frete">Frete</option>
-                        <option value="Extravio no envio">Extravio no envio</option>
-                        <option value="Extravio na devolução">Extravio na devolução</option>
-                        <option value="Devolução danificada">Devolução danificada</option>
-                        <option value="Valor incorreto">Valor incorreto</option>
-                        <option value="Prazo de entrega">Prazo de entrega</option>
-                    </select>
-                </div>
+                    <!-- Número da Venda -->
+                    <div class="form-group" id="campoNumeroVenda">
+                        <label><i class="fas fa-tag"></i> Número da Venda (16 caracteres)</label>
+                        <input type="text" id="reclamacaoNumeroVenda" class="form-control" placeholder="Ex: 1234567890123456" maxlength="16">
+                        <small style="color: #6c757d;">Deve ter exatamente 16 caracteres</small>
+                    </div>
 
-                <!-- Protocolos -->
-                <div class="form-group">
-                    <label><i class="fas fa-list"></i> Protocolos</label>
-                    <div class="d-flex gap-2">
-                        <input type="text" id="campoProtocolo" class="form-control" placeholder="Número do protocolo">
-                        <button type="button" class="btn btn-primary btn-sm" onclick="adicionarProtocolo()">
-                            <i class="fas fa-plus"></i> Adicionar
+                    <!-- Número da Reclamação -->
+                    <div class="form-group">
+                        <label><i class="fas fa-exclamation-circle"></i> Número da Reclamação *</label>
+                        <input type="text" id="reclamacaoNumeroReclamacao" class="form-control" placeholder="Ex: REC123456" required>
+                    </div>
+
+                    <!-- Número da Operação - NOVO CAMPO OBRIGATÓRIO -->
+                    <div class="form-group">
+                        <label><i class="fas fa-receipt"></i> Número da Operação *</label>
+                        <input type="text" id="reclamacaoNumeroOperacao" class="form-control" placeholder="Ex: OP789012" required>
+                        <small style="color: #6c757d;">Número da operação de reembolso no Mercado Livre</small>
+                    </div>
+
+                    <!-- Tipo de reclamação -->
+                    <div class="form-group">
+                        <label><i class="fas fa-tag"></i> Tipo de reclamação *</label>
+                        <div class="d-flex gap-3">
+                            <label><input type="radio" name="tipoReclamacao" value="com_reembolso" checked onchange="toggleCamposReclamacao()"> Com reembolso</label>
+                            <label><input type="radio" name="tipoReclamacao" value="sem_reembolso" onchange="toggleCamposReclamacao()"> Sem reembolso (apenas acompanhamento)</label>
+                        </div>
+                    </div>
+
+                    <!-- Valor e Data -->
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label><i class="fas fa-money-bill-wave"></i> Valor *</label>
+                                <input type="number" id="reclamacaoValor" class="form-control" step="0.01" min="0" placeholder="0,00" value="0">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label><i class="fas fa-calendar"></i> Data *</label>
+                                <input type="date" id="reclamacaoData" class="form-control" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Motivo -->
+                    <div class="form-group">
+                        <label><i class="fas fa-question-circle"></i> Motivo *</label>
+                        <select id="reclamacaoMotivo" class="form-control" required>
+                            <option value="">Selecione o motivo</option>
+                            <option value="Frete">Frete</option>
+                            <option value="Extravio no envio">Extravio no envio</option>
+                            <option value="Extravio na devolução">Extravio na devolução</option>
+                            <option value="Devolução danificada">Devolução danificada</option>
+                            <option value="Valor incorreto">Valor incorreto</option>
+                            <option value="Prazo de entrega">Prazo de entrega</option>
+                        </select>
+                    </div>
+
+                    <!-- Protocolos - MÚLTIPLOS -->
+                    <div class="form-group">
+                        <label><i class="fas fa-list"></i> Protocolos</label>
+                        <div class="d-flex gap-2">
+                            <input type="text" id="campoProtocolo" class="form-control" placeholder="Número do protocolo">
+                            <button type="button" class="btn btn-primary btn-sm" onclick="adicionarProtocolo()">
+                                <i class="fas fa-plus"></i> Adicionar
+                            </button>
+                        </div>
+                        <div id="listaProtocolos" style="margin-top: 10px; max-height: 120px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 4px; padding: 5px; background: #fafafa;">
+                            <small style="color: #6c757d;">Nenhum protocolo adicionado</small>
+                        </div>
+                    </div>
+
+                    <!-- Status -->
+                    <div class="form-group">
+                        <label><i class="fas fa-tag"></i> Status *</label>
+                        <select id="reclamacaoStatus" class="form-control" onchange="onStatusChange()" required>
+                            <option value="aberto">Aberto</option>
+                            <option value="em_andamento">Em andamento</option>
+                            <option value="rejeitado">Rejeitado</option>
+                            <option value="resolvido">Resolvido</option>
+                        </select>
+                    </div>
+
+                    <!-- Justificativa (aparece quando status = rejeitado) -->
+                    <div id="campoJustificativa" style="display: none;">
+                        <div class="form-group">
+                            <label><i class="fas fa-comment"></i> Justificativa da Rejeição *</label>
+                            <textarea id="reclamacaoJustificativa" class="form-control" rows="3" placeholder="Descreva o motivo da rejeição..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label><i class="fas fa-paperclip"></i> Anexar Arquivo</label>
+                            <input type="file" id="reclamacaoArquivo" class="form-control" accept=".pdf,.jpg,.png,.doc,.docx">
+                            <small style="color: #6c757d;">Anexe evidências (PDF, imagem, documento)</small>
+                        </div>
+                    </div>
+
+                    <!-- Número de Transação (aparece quando status = resolvido) -->
+                    <div id="campoNumeroTransacao" style="display: none;">
+                        <div class="form-group">
+                            <label><i class="fas fa-exchange-alt"></i> Número da Transação *</label>
+                            <input type="text" id="reclamacaoNumeroTransacao" class="form-control" placeholder="Ex: TRANS123456">
+                            <small style="color: #6c757d;">Número da transação do reembolso</small>
+                        </div>
+                    </div>
+
+                    <!-- Observações -->
+                    <div class="form-group">
+                        <label><i class="fas fa-sticky-note"></i> Observações</label>
+                        <textarea id="reclamacaoObservacoes" class="form-control" rows="3" placeholder="Detalhes sobre a reclamação..."></textarea>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2 mt-3">
+                        <button type="button" class="btn btn-secondary" onclick="fecharModalReclamacaoCompleta()">Cancelar</button>
+                        <button type="button" class="btn btn-success" onclick="salvarReclamacaoCompleta()">
+                            <i class="fas fa-save"></i> Salvar
                         </button>
                     </div>
-                    <div id="listaProtocolos" style="margin-top: 10px;">
-                        <small style="color: #6c757d;">Nenhum protocolo adicionado</small>
-                    </div>
-                </div>
-
-                <!-- Status -->
-                <div class="form-group">
-                    <label><i class="fas fa-tag"></i> Status *</label>
-                    <select id="reclamacaoStatus" class="form-control" onchange="onStatusChange()" required>
-                        <option value="aberto">Aberto</option>
-                        <option value="em_andamento">Em andamento</option>
-                        <option value="rejeitado">Rejeitado</option>
-                        <option value="resolvido">Resolvido</option>
-                    </select>
-                </div>
-
-                <!-- Justificativa (aparece quando status = rejeitado) -->
-                <div id="campoJustificativa" style="display: none;">
-                    <div class="form-group">
-                        <label><i class="fas fa-comment"></i> Justificativa da Rejeição *</label>
-                        <textarea id="reclamacaoJustificativa" class="form-control" rows="3" placeholder="Descreva o motivo da rejeição..."></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label><i class="fas fa-paperclip"></i> Anexar Arquivo</label>
-                        <input type="file" id="reclamacaoArquivo" class="form-control" accept=".pdf,.jpg,.png,.doc,.docx">
-                        <small style="color: #6c757d;">Anexe evidências (PDF, imagem, documento)</small>
-                    </div>
-                </div>
-
-                <!-- Número de Transação (aparece quando status = resolvido) -->
-                <div id="campoNumeroTransacao" style="display: none;">
-                    <div class="form-group">
-                        <label><i class="fas fa-exchange-alt"></i> Número da Transação</label>
-                        <input type="text" id="reclamacaoNumeroTransacao" class="form-control" placeholder="Ex: TRANS123456">
-                        <small style="color: #6c757d;">Número da transação do reembolso</small>
-                    </div>
-                </div>
-
-                <!-- Observações -->
-                <div class="form-group">
-                    <label><i class="fas fa-sticky-note"></i> Observações</label>
-                    <textarea id="reclamacaoObservacoes" class="form-control" rows="3" placeholder="Detalhes sobre a reclamação..."></textarea>
-                </div>
-
-                <div class="d-flex justify-content-end gap-2 mt-3">
-                    <button type="button" class="btn btn-secondary" onclick="fecharModalReclamacaoCompleta()">Cancelar</button>
-                    <button type="button" class="btn btn-success" onclick="salvarReclamacaoCompleta()">
-                        <i class="fas fa-save"></i> Salvar
-                    </button>
                 </div>
             </div>
         </div>
@@ -1271,10 +1327,9 @@ function criarModalReclamacaoCompleta() {
 // ============================================
 function fecharModalReclamacaoCompleta() {
     const modal = document.getElementById('modalReclamacaoCompleta');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
+    if (modal) modal.classList.add('hidden');
     protocolosTemp = [];
+    currentReclamacaoId = null;
 }
 
 function toggleReferenciaFields() {
@@ -1282,14 +1337,6 @@ function toggleReferenciaFields() {
     const campoNumeroVenda = document.getElementById('campoNumeroVenda');
     if (campoNumeroVenda) {
         campoNumeroVenda.style.display = tipo === 'venda' ? 'block' : 'none';
-    }
-}
-
-function toggleOperacaoField() {
-    const tipo = document.querySelector('input[name="tipoOperacao"]:checked')?.value || 'adicionar';
-    const campoNumeroOperacao = document.getElementById('campoNumeroOperacao');
-    if (campoNumeroOperacao) {
-        campoNumeroOperacao.style.display = tipo === 'adicionar' ? 'block' : 'none';
     }
 }
 
@@ -1311,9 +1358,19 @@ function onStatusChange() {
     
     if (campoJustificativa) {
         campoJustificativa.style.display = status === 'rejeitado' ? 'block' : 'none';
+        if (status === 'rejeitado') {
+            document.getElementById('reclamacaoJustificativa').required = true;
+        } else {
+            document.getElementById('reclamacaoJustificativa').required = false;
+        }
     }
     if (campoNumeroTransacao) {
         campoNumeroTransacao.style.display = status === 'resolvido' ? 'block' : 'none';
+        if (status === 'resolvido') {
+            document.getElementById('reclamacaoNumeroTransacao').required = true;
+        } else {
+            document.getElementById('reclamacaoNumeroTransacao').required = false;
+        }
     }
 }
 
@@ -1352,9 +1409,9 @@ function renderizarProtocolos() {
     }
     
     container.innerHTML = protocolosTemp.map((p, i) => `
-        <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 5px;">
-            <span><i class="fas fa-hashtag"></i> ${p}</span>
-            <button type="button" class="btn btn-sm btn-danger" onclick="removerProtocolo(${i})" style="padding: 0 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 4px; border-left: 3px solid #00ADEE;">
+            <span style="font-size: 13px;"><i class="fas fa-hashtag" style="color:#00ADEE;"></i> ${p}</span>
+            <button type="button" class="btn btn-sm btn-danger" onclick="removerProtocolo(${i})" style="padding: 0 6px; font-size: 12px;">
                 <i class="fas fa-times"></i>
             </button>
         </div>
@@ -1376,6 +1433,7 @@ async function carregarReclamacaoExistente(vendaId) {
         if (error) throw error;
         if (data && data.length > 0) {
             const recl = data[0];
+            currentReclamacaoId = recl.id;
             document.getElementById('reclamacaoId').value = recl.id;
             document.getElementById('reclamacaoNumeroReclamacao').value = recl.numero_reclamacao || '';
             document.getElementById('reclamacaoNumeroOperacao').value = recl.numero_operacao || '';
@@ -1413,7 +1471,7 @@ async function carregarReclamacaoExistente(vendaId) {
 }
 
 // ============================================
-// SALVAR RECLAMAÇÃO COMPLETA
+// SALVAR RECLAMAÇÃO COMPLETA (V2)
 // ============================================
 async function salvarReclamacaoCompleta() {
     const vendaId = document.getElementById('reclamacaoVendaId').value;
@@ -1442,6 +1500,11 @@ async function salvarReclamacaoCompleta() {
         return;
     }
 
+    if (!numeroOperacao) {
+        showToast('Número da operação é obrigatório', 'warning');
+        return;
+    }
+
     if (!data) {
         showToast('Data é obrigatória', 'warning');
         return;
@@ -1454,6 +1517,11 @@ async function salvarReclamacaoCompleta() {
 
     if (status === 'rejeitado' && !justificativa) {
         showToast('Justificativa é obrigatória para rejeição', 'warning');
+        return;
+    }
+
+    if (status === 'resolvido' && !numeroTransacao) {
+        showToast('Número da transação é obrigatório para resolução', 'warning');
         return;
     }
 
@@ -1471,7 +1539,8 @@ async function salvarReclamacaoCompleta() {
         observacoes: observacoes,
         justificativa_rejeicao: justificativa,
         numero_transacao: numeroTransacao,
-        atualizado_em: new Date().toISOString()
+        atualizado_em: new Date().toISOString(),
+        atualizado_por: nomeUsuario
     };
 
     if (status === 'resolvido') {
@@ -1479,31 +1548,43 @@ async function salvarReclamacaoCompleta() {
         dados.data_resolucao = new Date().toISOString();
     }
 
+    if (status === 'rejeitado') {
+        dados.rejeitado_por = nomeUsuario;
+        dados.data_rejeicao = new Date().toISOString();
+    }
+
     try {
         let result;
+        let reclId = id;
+        
         if (id) {
             // Atualizar existente
             result = await window.supabaseClient
                 .from('reclamacoes_frete')
                 .update(dados)
                 .eq('id', id);
+            
+            if (result.error) throw result.error;
         } else {
             // Criar nova
             dados.criado_por = nomeUsuario;
             dados.criado_em = new Date().toISOString();
-            result = await window.supabaseClient
+            
+            const insertResult = await window.supabaseClient
                 .from('reclamacoes_frete')
-                .insert([dados]);
+                .insert([dados])
+                .select();
+            
+            if (insertResult.error) throw insertResult.error;
+            reclId = insertResult.data?.[0]?.id;
         }
-
-        if (result.error) throw result.error;
 
         // ===== SE RESOLVIDO E COM REEMBOLSO, CRIAR NA ABA RECLAMAÇÕES =====
         if (status === 'resolvido' && tipoReclamacao === 'com_reembolso') {
-            await criarReclamacaoNaAbaReembolsos(vendaId, dados);
+            await criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId);
         }
 
-        showToast('Reclamação salva com sucesso!', 'success');
+        showToast('✅ Reclamação salva com sucesso!', 'success');
         fecharModalReclamacaoCompleta();
         await carregarFretesSalvos();
         await carregarListaReclamacoes();
@@ -1517,7 +1598,7 @@ async function salvarReclamacaoCompleta() {
 // ============================================
 // CRIAR RECLAMAÇÃO NA ABA REEMBOLSOS
 // ============================================
-async function criarReclamacaoNaAbaReembolsos(vendaId, dados) {
+async function criarReclamacaoNaAbaReembolsos(vendaId, dados, reclId) {
     try {
         // Verificar se já existe na tabela reembolsos
         const { data: existente } = await window.supabaseClient
@@ -1541,14 +1622,16 @@ async function criarReclamacaoNaAbaReembolsos(vendaId, dados) {
             valor: dados.valor || 0,
             data_reclamacao: dados.data_reclamacao || new Date().toISOString(),
             motivo: dados.motivo || 'Frete',
-            status: 'a_verificar', // Status inicial na aba reclamações
+            status: 'a_verificar',
             tipo_referencia: dados.tipo_referencia || 'venda',
             tipo_reclamacao: dados.tipo_reclamacao || 'com_reembolso',
             observacoes: dados.observacoes || '',
             protocolos: dados.protocolos || [],
+            numero_transacao: dados.numero_transacao || '',
             criado_por: nomeUsuario,
             criado_em: new Date().toISOString(),
-            atualizado_em: new Date().toISOString()
+            atualizado_em: new Date().toISOString(),
+            reclamacao_frete_id: reclId // Link para a reclamação original
         };
 
         const { error } = await window.supabaseClient
@@ -1566,9 +1649,9 @@ async function criarReclamacaoNaAbaReembolsos(vendaId, dados) {
 }
 
 // ============================================
-// VER RECLAMAÇÃO COMPLETA
+// VER HISTÓRICO DE RECLAMAÇÕES
 // ============================================
-async function verReclamacaoCompleta(vendaId) {
+async function verHistoricoReclamacoes(vendaId) {
     try {
         const { data, error } = await window.supabaseClient
             .from('reclamacoes_frete')
@@ -1581,42 +1664,81 @@ async function verReclamacaoCompleta(vendaId) {
             showToast('Nenhuma reclamação encontrada', 'info');
             return;
         }
+
+        let html = `
+            <div id="modalHistoricoReclamacao" class="modal" style="display: flex;">
+                <div class="modal-content" style="max-width: 900px; max-height: 80vh; padding: 0; overflow: hidden;">
+                    <div style="background: linear-gradient(135deg, #00ADEE, #80D6F7); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
+                        <h3 style="margin:0;"><i class="fas fa-history"></i> Histórico de Reclamações</h3>
+                        <button onclick="fecharModalHistoricoReclamacao()" style="background:none; border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+                    </div>
+                    <div style="padding: 20px; max-height: 70vh; overflow-y: auto;">
+                        <p><strong>Venda:</strong> ${vendaId}</p>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Data</th>
+                                        <th>Nº Reclamação</th>
+                                        <th>Nº Operação</th>
+                                        <th>Valor</th>
+                                        <th>Motivo</th>
+                                        <th>Status</th>
+                                        <th>Protocolos</th>
+                                        <th>Nº Transação</th>
+                                        <th>Criado por</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.map(item => {
+                                        const statusColors = {
+                                            'aberto': 'warning',
+                                            'em_andamento': 'info',
+                                            'rejeitado': 'danger',
+                                            'resolvido': 'success'
+                                        };
+                                        return `
+                                            <tr>
+                                                <td>${formatarDataISO(item.criado_em)}</td>
+                                                <td>${item.numero_reclamacao || '-'}</td>
+                                                <td>${item.numero_operacao || '-'}</td>
+                                                <td>R$ ${(item.valor || 0).toFixed(2)}</td>
+                                                <td>${item.motivo || '-'}</td>
+                                                <td><span class="badge badge-${statusColors[item.status] || 'secondary'}">${item.status}</span></td>
+                                                <td>${item.protocolos ? item.protocolos.join(', ') : '-'}</td>
+                                                <td>${item.numero_transacao || '-'}</td>
+                                                <td>${item.criado_por || '-'}</td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div style="background: #f8f9fa; padding: 15px 25px; border-top: 1px solid #dee2e6; display: flex; justify-content: flex-end;">
+                        <button class="btn btn-secondary" onclick="fecharModalHistoricoReclamacao()">Fechar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const modalAnterior = document.getElementById('modalHistoricoReclamacao');
+        if (modalAnterior) modalAnterior.remove();
         
-        const recl = data[0];
-        abrirModalReclamacaoCompleta(
-            recl.venda_id,
-            recl.valor || 0,
-            0, // freteCobrado
-            0  // freteEsperado
-        );
-        
-        // Preencher com os dados existentes
-        document.getElementById('reclamacaoId').value = recl.id;
-        document.getElementById('reclamacaoNumeroReclamacao').value = recl.numero_reclamacao || '';
-        document.getElementById('reclamacaoNumeroOperacao').value = recl.numero_operacao || '';
-        document.getElementById('reclamacaoValor').value = recl.valor || 0;
-        document.getElementById('reclamacaoData').value = recl.data_reclamacao ? recl.data_reclamacao.split('T')[0] : '';
-        document.getElementById('reclamacaoMotivo').value = recl.motivo || '';
-        document.getElementById('reclamacaoStatus').value = recl.status || 'aberto';
-        document.getElementById('reclamacaoObservacoes').value = recl.observacoes || '';
-        document.getElementById('reclamacaoJustificativa').value = recl.justificativa_rejeicao || '';
-        document.getElementById('reclamacaoNumeroTransacao').value = recl.numero_transacao || '';
-        
-        if (recl.protocolos && recl.protocolos.length > 0) {
-            protocolosTemp = recl.protocolos;
-            renderizarProtocolos();
-        }
-        
-        onStatusChange();
-        
+        document.body.insertAdjacentHTML('beforeend', html);
+
     } catch (error) {
-        console.error('Erro ao ver reclamação:', error);
-        showToast('Erro ao carregar reclamação', 'error');
+        console.error('Erro ao carregar histórico:', error);
+        showToast('Erro ao carregar histórico', 'error');
     }
 }
 
+function fecharModalHistoricoReclamacao() {
+    document.getElementById('modalHistoricoReclamacao')?.remove();
+}
+
 // ============================================
-// CARREGAR LISTA DE RECLAMAÇÕES (FILTRO)
+// CARREGAR LISTA DE RECLAMAÇÕES COM FILTROS
 // ============================================
 async function carregarListaReclamacoes() {
     const tbody = document.getElementById('reclamacoesFreteBody');
@@ -1638,7 +1760,7 @@ async function carregarListaReclamacoes() {
         reclamacoesCache = data || [];
 
         if (reclamacoesCache.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center">Nenhuma reclamação encontrada.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="text-center">Nenhuma reclamação encontrada.</td></tr>`;
             return;
         }
 
@@ -1656,17 +1778,24 @@ async function carregarListaReclamacoes() {
                 <td><strong>${recl.venda_id}</strong></td>
                 <td>${recl.numero_reclamacao || '-'}</td>
                 <td>${recl.numero_operacao || '-'}</td>
-                <td>${recl.protocolos ? recl.protocolos.join(', ') : '-'}</td>
                 <td>R$ ${(recl.valor || 0).toFixed(2)}</td>
+                <td>${formatarDataISO(recl.data_reclamacao)}</td>
                 <td>${recl.motivo || '-'}</td>
                 <td><span class="badge badge-${statusColors[recl.status] || 'secondary'}">${recl.status}</span></td>
+                <td>${recl.protocolos ? recl.protocolos.join(', ') : '-'}</td>
+                <td>${recl.numero_transacao || '-'}</td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="verReclamacaoCompleta('${recl.venda_id}')">
+                    <button class="btn btn-sm btn-primary" onclick="verHistoricoReclamacoes('${recl.venda_id}')">
                         <i class="fas fa-eye"></i>
                     </button>
-                    <button class="btn btn-sm btn-info" onclick="verHistoricoReclamacao('${recl.venda_id}')">
-                        <i class="fas fa-history"></i>
+                    <button class="btn btn-sm btn-warning" onclick="editarReclamacao('${recl.id}')">
+                        <i class="fas fa-edit"></i>
                     </button>
+                    ${recl.status === 'rejeitado' ? `
+                        <button class="btn btn-sm btn-success" onclick="mudarStatusReclamacao('${recl.id}', 'resolvido')" title="Marcar como resolvido">
+                            <i class="fas fa-check"></i>
+                        </button>
+                    ` : ''}
                 </td>
             `;
             tbody.appendChild(row);
@@ -1674,7 +1803,7 @@ async function carregarListaReclamacoes() {
 
     } catch (error) {
         console.error('Erro ao carregar reclamações:', error);
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
     }
 }
 
@@ -1700,130 +1829,668 @@ function filtrarReclamacoes(status) {
 }
 
 // ============================================
-// VER HISTÓRICO DA RECLAMAÇÃO
+// MUDAR STATUS DA RECLAMAÇÃO (REJEITADO -> RESOLVIDO)
 // ============================================
-async function verHistoricoReclamacao(vendaId) {
+async function mudarStatusReclamacao(id, novoStatus) {
+    if (!confirm(`Deseja alterar o status para "${novoStatus}"?`)) return;
+
     try {
-        const { data, error } = await window.supabaseClient
-            .from('reclamacoes_frete')
-            .select('*')
-            .eq('venda_id', vendaId)
-            .order('criado_em', { ascending: true });
-        
-        if (error) throw error;
-        if (!data || data.length === 0) {
-            showToast('Nenhum histórico encontrado', 'info');
-            return;
+        const nomeUsuario = getNomeUsuario();
+        const updateData = {
+            status: novoStatus,
+            atualizado_em: new Date().toISOString(),
+            atualizado_por: nomeUsuario
+        };
+
+        if (novoStatus === 'resolvido') {
+            updateData.resolvido_por = nomeUsuario;
+            updateData.data_resolucao = new Date().toISOString();
         }
 
-        let html = `
-            <div id="modalHistoricoReclamacao" class="modal" style="display: flex;">
-                <div class="modal-content" style="max-width: 800px; max-height: 80vh; overflow-y: auto;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid #00ADEE; padding-bottom: 15px;">
-                        <h3 style="margin:0;"><i class="fas fa-history"></i> Histórico da Reclamação</h3>
-                        <button onclick="fecharModalHistoricoReclamacao()" style="background:none; border:none; font-size:24px;">&times;</button>
+        const { error } = await window.supabaseClient
+            .from('reclamacoes_frete')
+            .update(updateData)
+            .eq('id', id);
+
+        if (error) throw error;
+
+        showToast(`✅ Status alterado para "${novoStatus}"`, 'success');
+        carregarListaReclamacoes();
+        carregarFretesSalvos();
+
+    } catch (error) {
+        console.error('Erro ao alterar status:', error);
+        showToast('Erro ao alterar status: ' + error.message, 'error');
+    }
+}
+
+// ============================================
+// EDITAR RECLAMAÇÃO
+// ============================================
+async function editarReclamacao(id) {
+    const recl = reclamacoesCache.find(r => r.id === id);
+    if (!recl) {
+        showToast('Reclamação não encontrada', 'error');
+        return;
+    }
+
+    // Buscar dados da venda para preencher
+    const { data: venda } = await window.supabaseClient
+        .from('fretes_ml')
+        .select('*')
+        .eq('id', recl.venda_id)
+        .maybeSingle();
+
+    const valorProduto = venda?.valor_produto || 0;
+    const freteCobrado = venda?.frete_cobrado || 0;
+    const freteEsperado = venda?.frete_esperado || 0;
+
+    abrirModalReclamacaoCompleta(recl.venda_id, valorProduto, freteCobrado, freteEsperado);
+
+    // Preencher com os dados existentes
+    document.getElementById('reclamacaoId').value = recl.id;
+    document.getElementById('reclamacaoNumeroReclamacao').value = recl.numero_reclamacao || '';
+    document.getElementById('reclamacaoNumeroOperacao').value = recl.numero_operacao || '';
+    document.getElementById('reclamacaoValor').value = recl.valor || 0;
+    document.getElementById('reclamacaoData').value = recl.data_reclamacao ? recl.data_reclamacao.split('T')[0] : '';
+    document.getElementById('reclamacaoMotivo').value = recl.motivo || '';
+    document.getElementById('reclamacaoStatus').value = recl.status || 'aberto';
+    document.getElementById('reclamacaoObservacoes').value = recl.observacoes || '';
+    document.getElementById('reclamacaoJustificativa').value = recl.justificativa_rejeicao || '';
+    document.getElementById('reclamacaoNumeroTransacao').value = recl.numero_transacao || '';
+    
+    if (recl.protocolos && recl.protocolos.length > 0) {
+        protocolosTemp = recl.protocolos;
+        renderizarProtocolos();
+    }
+    
+    if (recl.tipo_referencia) {
+        document.querySelector(`input[name="tipoReferencia"][value="${recl.tipo_referencia}"]`).checked = true;
+        toggleReferenciaFields();
+    }
+    
+    if (recl.tipo_reclamacao) {
+        document.querySelector(`input[name="tipoReclamacao"][value="${recl.tipo_reclamacao}"]`).checked = true;
+        toggleCamposReclamacao();
+    }
+    
+    onStatusChange();
+}
+
+// ============================================
+// RELATÓRIO DE RECLAMAÇÕES - COMPLETO
+// ============================================
+
+// Variáveis para o relatório
+let relatorioData = [];
+let graficoRelatorio = null;
+
+// Abrir modal de relatório
+function abrirModalRelatorioReclamacoes() {
+    const modal = document.getElementById('modalRelatorioFrete');
+    if (!modal) {
+        criarModalRelatorio();
+        setTimeout(() => abrirModalRelatorioReclamacoes(), 100);
+        return;
+    }
+
+    // Configurar datas padrão (últimos 30 dias)
+    const hoje = new Date();
+    const umMesAtras = new Date();
+    umMesAtras.setDate(hoje.getDate() - 30);
+    
+    document.getElementById('relDataInicio').value = umMesAtras.toISOString().split('T')[0];
+    document.getElementById('relDataFim').value = hoje.toISOString().split('T')[0];
+    
+    // Carregar lista de usuários para o filtro
+    carregarUsuariosFiltro();
+    
+    modal.classList.remove('hidden');
+    gerarRelatorioReclamacoes();
+}
+
+function fecharModalRelatorio() {
+    document.getElementById('modalRelatorioFrete').classList.add('hidden');
+}
+
+function criarModalRelatorio() {
+    if (document.getElementById('modalRelatorioFrete')) return;
+
+    const modalHTML = `
+        <div id="modalRelatorioFrete" class="modal hidden">
+            <div class="modal-content" style="max-width: 1100px; max-height: 90vh; padding: 0; overflow: hidden;">
+                <div style="background: linear-gradient(135deg, #fd7e14, #e8590c); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="margin:0;"><i class="fas fa-chart-bar"></i> Relatório de Reclamações de Frete</h3>
+                    <button onclick="fecharModalRelatorio()" style="background: rgba(255,255,255,0.2); border:none; color:white; font-size:24px; cursor:pointer;">&times;</button>
+                </div>
+                <div style="padding: 20px; max-height: 80vh; overflow-y: auto;">
+                    <!-- Filtros -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label>Data Início</label>
+                                <input type="date" id="relDataInicio" class="form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label>Data Fim</label>
+                                <input type="date" id="relDataFim" class="form-control">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label>Status</label>
+                                <select id="relStatus" class="form-control">
+                                    <option value="">Todos</option>
+                                    <option value="aberto">Aberto</option>
+                                    <option value="em_andamento">Em andamento</option>
+                                    <option value="rejeitado">Rejeitado</option>
+                                    <option value="resolvido">Resolvido</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="form-group">
+                                <label>Usuário</label>
+                                <select id="relUsuario" class="form-control">
+                                    <option value="">Todos</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
-                    <p><strong>Venda:</strong> ${vendaId}</p>
-                    <div class="table-responsive">
-                        <table class="table table-striped">
-                            <thead>
-                                <tr>
-                                    <th>Data</th>
-                                    <th>Status</th>
-                                    <th>Protocolos</th>
-                                    <th>Observações</th>
-                                    <th>Usuário</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${data.map(item => `
+                    <div class="d-flex justify-content-end mb-3 gap-2">
+                        <button onclick="gerarRelatorioReclamacoes()" class="btn btn-primary">
+                            <i class="fas fa-chart-bar"></i> Gerar Relatório
+                        </button>
+                        <button onclick="exportarRelatorioReclamacoesExcel()" class="btn btn-success">
+                            <i class="fas fa-file-excel"></i> Exportar Excel
+                        </button>
+                        <button onclick="imprimirRelatorioReclamacoes()" class="btn btn-info">
+                            <i class="fas fa-print"></i> Imprimir
+                        </button>
+                    </div>
+
+                    <!-- Cards de Resumo -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card text-center bg-light">
+                                <div class="card-body">
+                                    <h5 class="card-title">Total de Fretes Incorretos</h5>
+                                    <h3 id="relTotalFretes">0</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-center bg-warning">
+                                <div class="card-body">
+                                    <h5 class="card-title">Total Reclamações</h5>
+                                    <h3 id="relTotalReclamacoes">0</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-center bg-success">
+                                <div class="card-body">
+                                    <h5 class="card-title">Resolvidas</h5>
+                                    <h3 id="relTotalResolvidas">0</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card text-center bg-danger">
+                                <div class="card-body">
+                                    <h5 class="card-title">Rejeitadas</h5>
+                                    <h3 id="relTotalRejeitadas">0</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gráficos -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5><i class="fas fa-chart-pie"></i> Distribuição por Status</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="graficoPizzaReclamacoes" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5><i class="fas fa-chart-bar"></i> Reclamações por Usuário</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="graficoBarrasReclamacoes" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tabela Detalhada -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h5><i class="fas fa-list"></i> Detalhamento</h5>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-sm" id="relatorioReclamacoesTable">
+                                <thead>
                                     <tr>
-                                        <td>${new Date(item.criado_em).toLocaleString('pt-BR')}</td>
-                                        <td><span class="badge badge-${item.status === 'resolvido' ? 'success' : item.status === 'rejeitado' ? 'danger' : 'warning'}">${item.status}</span></td>
-                                        <td>${item.protocolos ? item.protocolos.join(', ') : '-'}</td>
-                                        <td>${item.observacoes || '-'}</td>
-                                        <td>${item.criado_por || '-'}</td>
+                                        <th>Venda</th>
+                                        <th>Data</th>
+                                        <th>Nº Reclamação</th>
+                                        <th>Nº Operação</th>
+                                        <th>Nº Transação</th>
+                                        <th>Valor</th>
+                                        <th>Motivo</th>
+                                        <th>Status</th>
+                                        <th>Protocolos</th>
+                                        <th>Criado por</th>
+                                        <th>Atualizado por</th>
                                     </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="d-flex justify-content-end mt-3">
-                        <button class="btn btn-secondary" onclick="fecharModalHistoricoReclamacao()">Fechar</button>
+                                </thead>
+                                <tbody id="relatorioReclamacoesBody">
+                                    <tr><td colspan="11" class="text-center">Clique em "Gerar Relatório" para carregar dados.</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
-        `;
+        </div>
+    `;
 
-        const modalAnterior = document.getElementById('modalHistoricoReclamacao');
-        if (modalAnterior) modalAnterior.remove();
-        
-        document.body.insertAdjacentHTML('beforeend', html);
-
-    } catch (error) {
-        console.error('Erro ao carregar histórico:', error);
-        showToast('Erro ao carregar histórico', 'error');
-    }
+    const div = document.createElement('div');
+    div.innerHTML = modalHTML;
+    document.body.appendChild(div.firstElementChild);
 }
 
-function fecharModalHistoricoReclamacao() {
-    document.getElementById('modalHistoricoReclamacao')?.remove();
-}
-
-// ============================================
-// GERAR RELATÓRIO DE RECLAMAÇÕES
-// ============================================
-async function gerarRelatorioReclamacoes() {
+async function carregarUsuariosFiltro() {
     try {
         const { data, error } = await window.supabaseClient
             .from('reclamacoes_frete')
-            .select('*')
-            .order('criado_em', { ascending: false });
+            .select('criado_por')
+            .not('criado_por', 'is', null);
         
         if (error) throw error;
-        if (!data || data.length === 0) {
-            showToast('Nenhuma reclamação para gerar relatório', 'info');
-            return;
+        
+        const usuarios = [...new Set(data.map(item => item.criado_por).filter(Boolean))].sort();
+        const select = document.getElementById('relUsuario');
+        if (select) {
+            select.innerHTML = '<option value="">Todos</option>';
+            usuarios.forEach(user => {
+                select.innerHTML += `<option value="${user}">${user}</option>`;
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao carregar usuários:', error);
+    }
+}
+
+async function gerarRelatorioReclamacoes() {
+    const dataInicio = document.getElementById('relDataInicio').value;
+    const dataFim = document.getElementById('relDataFim').value;
+    const statusFiltro = document.getElementById('relStatus').value;
+    const usuarioFiltro = document.getElementById('relUsuario').value;
+
+    if (dataInicio && dataFim && new Date(dataInicio) > new Date(dataFim)) {
+        showToast('Data início não pode ser maior que data fim', 'warning');
+        return;
+    }
+
+    try {
+        // 1. Buscar todos os fretes incorretos
+        let fretesQuery = window.supabaseClient
+            .from('fretes_ml')
+            .select('*');
+        
+        if (dataInicio && dataFim) {
+            fretesQuery = fretesQuery
+                .gte('data_venda', `${dataInicio}T00:00:00`)
+                .lte('data_venda', `${dataFim}T23:59:59`);
+        }
+        
+        const { data: fretes, error: fretesError } = await fretesQuery;
+        if (fretesError) throw fretesError;
+
+        // Filtrar apenas incorretos
+        const fretesIncorretos = (fretes || []).filter(item => {
+            if (item.tipo_envio === 'FULL') return false;
+            if (isFullByAnyField(item)) return false;
+            const peso = item.peso_estimado || 0.3;
+            const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
+            if (freteEsperado === null) return false;
+            return Math.abs(item.frete_cobrado - freteEsperado) > 0.01;
+        });
+
+        // 2. Buscar reclamações
+        let reclamacoesQuery = window.supabaseClient
+            .from('reclamacoes_frete')
+            .select('*')
+            .order('criado_em', { ascending: true });
+        
+        if (dataInicio && dataFim) {
+            reclamacoesQuery = reclamacoesQuery
+                .gte('data_reclamacao', dataInicio)
+                .lte('data_reclamacao', dataFim);
+        }
+        
+        if (statusFiltro) {
+            reclamacoesQuery = reclamacoesQuery.eq('status', statusFiltro);
+        }
+        
+        if (usuarioFiltro) {
+            reclamacoesQuery = reclamacoesQuery.eq('criado_por', usuarioFiltro);
+        }
+        
+        const { data: reclamacoes, error: reclamacoesError } = await reclamacoesQuery;
+        if (reclamacoesError) throw reclamacoesError;
+
+        relatorioData = reclamacoes || [];
+
+        // 3. Atualizar cards
+        document.getElementById('relTotalFretes').textContent = fretesIncorretos.length;
+        document.getElementById('relTotalReclamacoes').textContent = relatorioData.length;
+        document.getElementById('relTotalResolvidas').textContent = relatorioData.filter(r => r.status === 'resolvido').length;
+        document.getElementById('relTotalRejeitadas').textContent = relatorioData.filter(r => r.status === 'rejeitado').length;
+
+        // 4. Preencher tabela
+        const tbody = document.getElementById('relatorioReclamacoesBody');
+        tbody.innerHTML = '';
+
+        if (relatorioData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="11" class="text-center">Nenhum dado encontrado.</td></tr>';
+        } else {
+            relatorioData.forEach(item => {
+                const statusColors = {
+                    'aberto': 'warning',
+                    'em_andamento': 'info',
+                    'rejeitado': 'danger',
+                    'resolvido': 'success'
+                };
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td>${item.venda_id || '-'}</td>
+                    <td>${formatarDataISO(item.data_reclamacao)}</td>
+                    <td>${item.numero_reclamacao || '-'}</td>
+                    <td>${item.numero_operacao || '-'}</td>
+                    <td>${item.numero_transacao || '-'}</td>
+                    <td>R$ ${(item.valor || 0).toFixed(2)}</td>
+                    <td>${item.motivo || '-'}</td>
+                    <td><span class="badge badge-${statusColors[item.status] || 'secondary'}">${item.status}</span></td>
+                    <td>${item.protocolos ? item.protocolos.join(', ') : '-'}</td>
+                    <td>${item.criado_por || '-'}</td>
+                    <td>${item.atualizado_por || '-'}</td>
+                `;
+            });
         }
 
-        const dadosExcel = data.map(item => ({
-            'Venda': item.venda_id,
-            'Nº Reclamação': item.numero_reclamacao || '-',
-            'Nº Operação': item.numero_operacao || '-',
-            'Protocolos': item.protocolos ? item.protocolos.join('; ') : '-',
-            'Valor (R$)': item.valor || 0,
-            'Data': item.data_reclamacao ? new Date(item.data_reclamacao).toLocaleDateString('pt-BR') : '-',
-            'Motivo': item.motivo || '-',
-            'Status': item.status,
-            'Observações': item.observacoes || '-',
-            'Justificativa Rejeição': item.justificativa_rejeicao || '-',
-            'Nº Transação': item.numero_transacao || '-',
-            'Criado por': item.criado_por || '-',
-            'Resolvido por': item.resolvido_por || '-',
-            'Data Resolução': item.data_resolucao ? new Date(item.data_resolucao).toLocaleString('pt-BR') : '-',
-            'Criado em': new Date(item.criado_em).toLocaleString('pt-BR')
-        }));
+        // 5. Atualizar gráficos
+        atualizarGraficosRelatorio();
 
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.json_to_sheet(dadosExcel);
-        XLSX.utils.book_append_sheet(wb, ws, 'Reclamações Frete');
-        
-        const colWidths = [
-            { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 25 },
-            { wch: 12 }, { wch: 12 }, { wch: 20 }, { wch: 15 },
-            { wch: 30 }, { wch: 30 }, { wch: 15 }, { wch: 15 },
-            { wch: 15 }, { wch: 20 }, { wch: 20 }
-        ];
-        ws['!cols'] = colWidths;
-
-        const nomeArquivo = `reclamacoes_frete_${new Date().toISOString().split('T')[0]}.xlsx`;
-        XLSX.writeFile(wb, nomeArquivo);
-        showToast(`Relatório gerado com ${data.length} registros!`, 'success');
+        showToast(`✅ Relatório gerado: ${relatorioData.length} registros`, 'success');
 
     } catch (error) {
         console.error('Erro ao gerar relatório:', error);
-        showToast('Erro ao gerar relatório', 'error');
+        showToast('Erro ao gerar relatório: ' + error.message, 'error');
     }
+}
+
+function atualizarGraficosRelatorio() {
+    const dados = relatorioData;
+
+    // Gráfico Pizza - Distribuição por Status
+    const statusCount = {};
+    dados.forEach(item => {
+        statusCount[item.status] = (statusCount[item.status] || 0) + 1;
+    });
+
+    const ctxPizza = document.getElementById('graficoPizzaReclamacoes');
+    if (ctxPizza) {
+        if (window.graficoPizza) window.graficoPizza.destroy();
+        
+        const statusColors = {
+            'aberto': '#ffc107',
+            'em_andamento': '#17a2b8',
+            'rejeitado': '#dc3545',
+            'resolvido': '#28a745'
+        };
+
+        window.graficoPizza = new Chart(ctxPizza, {
+            type: 'pie',
+            data: {
+                labels: Object.keys(statusCount),
+                datasets: [{
+                    data: Object.values(statusCount),
+                    backgroundColor: Object.keys(statusCount).map(s => statusColors[s] || '#6c757d'),
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+    }
+
+    // Gráfico Barras - Por Usuário
+    const usuarioCount = {};
+    dados.forEach(item => {
+        const usuario = item.criado_por || 'Não identificado';
+        usuarioCount[usuario] = (usuarioCount[usuario] || 0) + 1;
+    });
+
+    const ctxBarras = document.getElementById('graficoBarrasReclamacoes');
+    if (ctxBarras) {
+        if (window.graficoBarras) window.graficoBarras.destroy();
+        
+        const sortedUsers = Object.keys(usuarioCount).sort((a, b) => usuarioCount[b] - usuarioCount[a]);
+        
+        window.graficoBarras = new Chart(ctxBarras, {
+            type: 'bar',
+            data: {
+                labels: sortedUsers,
+                datasets: [{
+                    label: 'Quantidade de Reclamações',
+                    data: sortedUsers.map(u => usuarioCount[u]),
+                    backgroundColor: 'rgba(0, 173, 238, 0.6)',
+                    borderColor: '#00ADEE',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        stepSize: 1
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+    }
+}
+
+// ============================================
+// EXPORTAR RELATÓRIO PARA EXCEL
+// ============================================
+function exportarRelatorioReclamacoesExcel() {
+    const tbody = document.getElementById('relatorioReclamacoesBody');
+    const rows = tbody.querySelectorAll('tr');
+    
+    if (rows.length === 0 || (rows.length === 1 && rows[0].querySelector('td[colspan]'))) {
+        showToast('Nenhum dado para exportar', 'warning');
+        return;
+    }
+    
+    const dados = [
+        ['Venda', 'Data', 'Nº Reclamação', 'Nº Operação', 'Nº Transação', 'Valor', 'Motivo', 'Status', 'Protocolos', 'Criado por', 'Atualizado por']
+    ];
+    
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 11) {
+            dados.push([
+                cells[0].textContent,
+                cells[1].textContent,
+                cells[2].textContent,
+                cells[3].textContent,
+                cells[4].textContent,
+                cells[5].textContent,
+                cells[6].textContent,
+                cells[7].textContent,
+                cells[8].textContent,
+                cells[9].textContent,
+                cells[10].textContent
+            ]);
+        }
+    });
+    
+    const ws = XLSX.utils.aoa_to_sheet(dados);
+    ws['!cols'] = [
+        { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 },
+        { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 15 }
+    ];
+    
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Reclamacoes_Frete');
+    
+    const nomeArquivo = `relatorio_reclamacoes_frete_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(wb, nomeArquivo);
+    showToast('✅ Relatório exportado com sucesso!', 'success');
+}
+
+// ============================================
+// IMPRIMIR RELATÓRIO
+// ============================================
+function imprimirRelatorioReclamacoes() {
+    const printWindow = window.open('', '_blank', 'width=1200,height=800');
+    const hoje = new Date().toLocaleDateString('pt-BR');
+    
+    const dataInicio = document.getElementById('relDataInicio').value || '-';
+    const dataFim = document.getElementById('relDataFim').value || '-';
+    const totalFretes = document.getElementById('relTotalFretes').textContent;
+    const totalReclamacoes = document.getElementById('relTotalReclamacoes').textContent;
+    const totalResolvidas = document.getElementById('relTotalResolvidas').textContent;
+    const totalRejeitadas = document.getElementById('relTotalRejeitadas').textContent;
+
+    // Pegar dados da tabela
+    const tbody = document.getElementById('relatorioReclamacoesBody');
+    let tabelaHTML = '';
+    tbody.querySelectorAll('tr').forEach(row => {
+        tabelaHTML += '<tr>';
+        row.querySelectorAll('td').forEach(cell => {
+            tabelaHTML += `<td>${cell.textContent}</td>`;
+        });
+        tabelaHTML += '</tr>';
+    });
+
+    printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Relatório de Reclamações de Frete</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                h1 { color: #333; }
+                .resumo { display: flex; gap: 20px; margin: 20px 0; }
+                .resumo-card { background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center; flex: 1; }
+                .resumo-card h3 { margin: 0; font-size: 24px; }
+                .resumo-card p { margin: 5px 0 0; color: #6c757d; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+                th { background: #00ADEE; color: white; padding: 8px; text-align: left; }
+                td { padding: 6px; border-bottom: 1px solid #ddd; }
+                .badge { padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+                @media print {
+                    body { margin: 0; }
+                    .no-print { display: none; }
+                }
+            </style>
+        </head>
+        <body>
+            <h1>📊 Relatório de Reclamações de Frete</h1>
+            <p><strong>Período:</strong> ${dataInicio} a ${dataFim}</p>
+            <p><strong>Gerado em:</strong> ${hoje}</p>
+            
+            <div class="resumo">
+                <div class="resumo-card" style="background:#e9ecef;">
+                    <h3>${totalFretes}</h3>
+                    <p>Fretes Incorretos</p>
+                </div>
+                <div class="resumo-card" style="background:#fff3cd;">
+                    <h3>${totalReclamacoes}</h3>
+                    <p>Total Reclamações</p>
+                </div>
+                <div class="resumo-card" style="background:#d4edda;">
+                    <h3>${totalResolvidas}</h3>
+                    <p>Resolvidas</p>
+                </div>
+                <div class="resumo-card" style="background:#f8d7da;">
+                    <h3>${totalRejeitadas}</h3>
+                    <p>Rejeitadas</p>
+                </div>
+            </div>
+            
+            <table>
+                <thead>
+                    <tr>
+                        <th>Venda</th>
+                        <th>Data</th>
+                        <th>Nº Reclamação</th>
+                        <th>Nº Operação</th>
+                        <th>Nº Transação</th>
+                        <th>Valor</th>
+                        <th>Motivo</th>
+                        <th>Status</th>
+                        <th>Protocolos</th>
+                        <th>Criado por</th>
+                        <th>Atualizado por</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tabelaHTML}
+                </tbody>
+            </table>
+            
+            <div class="no-print" style="margin-top: 30px;">
+                <button onclick="window.print()" style="padding: 10px 20px; background: #00ADEE; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    <i class="fas fa-print"></i> Imprimir
+                </button>
+                <button onclick="window.close()" style="padding: 10px 20px; background: #6c757d; color: white; border: none; border-radius: 5px; cursor: pointer; margin-left: 10px;">
+                    Fechar
+                </button>
+            </div>
+            
+            <script>
+                window.onload = function() {
+                    setTimeout(function() {
+                        window.print();
+                    }, 1000);
+                };
+                window.onafterprint = function() {
+                    setTimeout(function() {
+                        window.close();
+                    }, 1000);
+                };
+            <\/script>
+        </body>
+        </html>
+    `);
+    
+    printWindow.document.close();
 }
 
 // ============================================
@@ -1991,6 +2658,7 @@ function criarModalEditorFoto() {
 document.addEventListener('DOMContentLoaded', function() {
     criarModalEditorFoto();
     criarModalReclamacaoCompleta();
+    criarModalRelatorio();
 
     // Botão de exportar
     const headerContagem = document.querySelector('.card-header:has(#contagemFretes)');
@@ -2005,14 +2673,13 @@ document.addEventListener('DOMContentLoaded', function() {
             headerContagem.appendChild(btnExport);
         }
         
-        // Botão de relatório
         let btnRelatorio = document.getElementById('btnRelatorioReclamacoes');
         if (!btnRelatorio) {
             btnRelatorio = document.createElement('button');
             btnRelatorio.id = 'btnRelatorioReclamacoes';
             btnRelatorio.className = 'btn btn-info btn-sm ml-2';
             btnRelatorio.innerHTML = '<i class="fas fa-chart-bar"></i> Relatório';
-            btnRelatorio.onclick = window.gerarRelatorioReclamacoes;
+            btnRelatorio.onclick = window.abrirModalRelatorioReclamacoes;
             headerContagem.appendChild(btnRelatorio);
         }
     }
@@ -2032,7 +2699,7 @@ document.addEventListener('DOMContentLoaded', function() {
         btnBuscar.addEventListener('click', buscarFretes);
     }
 
-    console.log('✅ shipping_simple.js PRONTO (v35) - Sistema completo de reclamações');
+    console.log('✅ shipping_simple.js PRONTO (v3.0) - Sistema completo de reclamações de frete');
 });
 
 // ============================================
@@ -2047,19 +2714,24 @@ window.calcularPesoVolumetrico = calcularPesoVolumetrico;
 window.abrirModalReclamacaoCompleta = abrirModalReclamacaoCompleta;
 window.fecharModalReclamacaoCompleta = fecharModalReclamacaoCompleta;
 window.salvarReclamacaoCompleta = salvarReclamacaoCompleta;
-window.verReclamacaoCompleta = verReclamacaoCompleta;
+window.verHistoricoReclamacoes = verHistoricoReclamacoes;
 window.carregarListaReclamacoes = carregarListaReclamacoes;
 window.filtrarReclamacoes = filtrarReclamacoes;
+window.mudarStatusReclamacao = mudarStatusReclamacao;
+window.editarReclamacao = editarReclamacao;
+window.abrirModalRelatorioReclamacoes = abrirModalRelatorioReclamacoes;
+window.fecharModalRelatorio = fecharModalRelatorio;
 window.gerarRelatorioReclamacoes = gerarRelatorioReclamacoes;
-window.verHistoricoReclamacao = verHistoricoReclamacao;
-window.fecharModalHistoricoReclamacao = fecharModalHistoricoReclamacao;
+window.exportarRelatorioReclamacoesExcel = exportarRelatorioReclamacoesExcel;
+window.imprimirRelatorioReclamacoes = imprimirRelatorioReclamacoes;
 window.adicionarProtocolo = adicionarProtocolo;
 window.removerProtocolo = removerProtocolo;
 window.onStatusChange = onStatusChange;
 window.toggleReferenciaFields = toggleReferenciaFields;
-window.toggleOperacaoField = toggleOperacaoField;
 window.toggleCamposReclamacao = toggleCamposReclamacao;
 window.abrirEditorFoto = abrirEditorFoto;
 window.fecharEditorFoto = fecharEditorFoto;
 window.salvarMedidasEFoto = salvarMedidasEFoto;
 window.extrairFreteDaVenda = extrairFreteDaVenda;
+window.fecharModalHistoricoReclamacao = fecharModalHistoricoReclamacao;
+window.renderizarProtocolos = renderizarProtocolos;

@@ -14,6 +14,11 @@ let refreshTokenInterval = null;
 let reembolsoNotificationCount = null;
 let reembolsoNotificationBell = null;
 
+// ===== VARIÁVEIS DE PAGINAÇÃO =====
+let paginaAtualOS = 1;
+let itensPorPaginaOS = 20;
+let todasOSFiltradas = [];
+
 async function handleLogin(e) {
     e.preventDefault();
     
@@ -4129,25 +4134,50 @@ window.marcarAlteracoesFeitas = async function(orderId) {
     }
 };
 
-// ============================================
-// FUNÇÃO RENDER ORDERS TABLE (CORRIGIDA - MOSTRAR LINK NAS CONCLUÍDAS)
-// ============================================
+
+
+// ===== FUNÇÃO PARA MUDAR ITENS POR PÁGINA =====
+function mudarItensPorPaginaOS() {
+    const select = document.getElementById('itensPorPaginaOS');
+    if (select) {
+        itensPorPaginaOS = parseInt(select.value) || 20;
+        paginaAtualOS = 1;
+        renderOrdersTable();
+    }
+}
+
+// ===== FUNÇÃO PARA PAGINAR =====
+function paginarOS(direcao) {
+    console.log('🔄 Paginando:', direcao, 'Página atual:', paginaAtualOS);
+    
+    const totalPaginas = Math.max(1, Math.ceil(todasOSFiltradas.length / itensPorPaginaOS));
+    
+    if (direcao === 'anterior' && paginaAtualOS > 1) {
+        paginaAtualOS--;
+        renderOrdersTable();
+    } else if (direcao === 'proxima' && paginaAtualOS < totalPaginas) {
+        paginaAtualOS++;
+        renderOrdersTable();
+    }
+}
+
+// ===== FUNÇÃO RENDER ORDERS TABLE - COM PAGINAÇÃO CORRIGIDA =====
 function renderOrdersTable() {
+    console.log('📊 Renderizando tabela OS - Página:', paginaAtualOS);
+    
     if (!osTableBody) return;
     
     osTableBody.innerHTML = '';
     
     if (!currentUser) {
         if (emptyMessage) emptyMessage.classList.remove('hidden');
-        const tableResponsive = document.querySelector('.table-responsive');
-        if (tableResponsive) tableResponsive.classList.add('hidden');
         return;
     }
     
+    // --- FILTRAGEM ---
     let userOrders = filterOrdersByUser(orders);
     let filteredOrders = [];
     
-    // Aplicação dos filtros conforme o valor de currentFilter
     switch (currentFilter) {
         case 'todos':
             filteredOrders = userOrders;
@@ -4171,9 +4201,7 @@ function renderOrdersTable() {
             );
             break;
         case 'concluida': {
-            // Filtro base: concluídas e conferidas
             let base = userOrders.filter(o => o.status === 'concluida' && o.conferido === true);
-            // Aplicar filtro de data se estiver preenchido
             const dataInput = document.getElementById('dataFiltroConcluidas');
             if (dataInput && dataInput.value) {
                 const dataSelecionada = new Date(dataInput.value);
@@ -4195,43 +4223,78 @@ function renderOrdersTable() {
             filteredOrders = userOrders;
     }
     
-    // Ordenação: prioriza não conferidas, depois revisão, depois data
+    // --- ORDENAÇÃO ---
     filteredOrders.sort((a, b) => {
-        // Não conferidas primeiro
         const aIsNotChecked = (a.status === 'concluida' && !a.conferido);
         const bIsNotChecked = (b.status === 'concluida' && !b.conferido);
         if (aIsNotChecked && !bIsNotChecked) return -1;
         if (!aIsNotChecked && bIsNotChecked) return 1;
         
-        // Revisão (pendentes com motivo) depois
         const aIsRevision = (a.status === 'pendente' && a.motivo_rejeicao);
         const bIsRevision = (b.status === 'pendente' && b.motivo_rejeicao);
         if (aIsRevision && !bIsRevision) return -1;
         if (!aIsRevision && bIsRevision) return 1;
         
-        // Depois ordena por data de atualização (mais recente primeiro)
         return new Date(b.updatedAt) - new Date(a.updatedAt);
     });
     
-    // Se não houver ordens filtradas, exibe mensagem
-    if (filteredOrders.length === 0) {
+    // --- SALVAR TOTAL FILTRADO ---
+    todasOSFiltradas = filteredOrders;
+    
+    // --- CALCULAR PAGINAÇÃO ---
+    const totalItens = filteredOrders.length;
+    const totalPaginas = Math.max(1, Math.ceil(totalItens / itensPorPaginaOS));
+    
+    // Ajustar página atual
+    if (paginaAtualOS > totalPaginas) paginaAtualOS = totalPaginas;
+    if (paginaAtualOS < 1) paginaAtualOS = 1;
+    
+    const inicio = (paginaAtualOS - 1) * itensPorPaginaOS;
+    const fim = Math.min(inicio + itensPorPaginaOS, totalItens);
+    const paginaItens = filteredOrders.slice(inicio, fim);
+    
+    // --- ATUALIZAR INFORMAÇÕES DE PAGINAÇÃO ---
+    const infoEl = document.getElementById('osInfo');
+    if (infoEl) {
+        if (totalItens === 0) {
+            infoEl.textContent = 'Nenhum registro encontrado';
+        } else {
+            infoEl.textContent = `Mostrando ${inicio + 1}-${fim} de ${totalItens}`;
+        }
+    }
+    
+    const paginaInfoEl = document.getElementById('osPaginaInfo');
+    if (paginaInfoEl) {
+        paginaInfoEl.textContent = `Página ${paginaAtualOS} de ${totalPaginas}`;
+    }
+    
+    const btnAnterior = document.getElementById('btnOSAnterior');
+    const btnProxima = document.getElementById('btnOSProxima');
+    if (btnAnterior) btnAnterior.disabled = (paginaAtualOS <= 1 || totalItens === 0);
+    if (btnProxima) btnProxima.disabled = (paginaAtualOS >= totalPaginas || totalItens === 0);
+    
+    // --- SE NÃO HOUVER ITENS ---
+    if (paginaItens.length === 0 && totalItens > 0) {
+        paginaAtualOS = totalPaginas;
+        renderOrdersTable();
+        return;
+    }
+    
+    if (paginaItens.length === 0) {
         osTableBody.innerHTML = `
             <tr>
                 <td colspan="8" class="text-center" style="padding: 40px;">
                     <i class="fas fa-user-lock fa-3x" style="color: #6c757d; opacity: 0.5; margin-bottom: 15px;"></i>
                     <h4 style="color: #6c757d;">Nenhuma ordem disponível</h4>
-                    ${currentUser.role === 'Administrador' ? 
-                    '<p style="color: #6c757d;">Não há ordens no sistema com seu filtro atual.</p>' :
-                    '<p style="color: #6c757d;">Você não tem permissão para visualizar ordens ou não há ordens com seu filtro atual.</p>'}
                 </td>
             </tr>
         `;
         return;
     }
     
-    // Renderiza cada ordem
+    // --- RENDERIZAR ITENS DA PÁGINA ATUAL ---
     const now = new Date();
-    filteredOrders.forEach(order => {
+    paginaItens.forEach(order => {
         const row = document.createElement('tr');
         const hasPermission = checkOrderPermission(order);
         const isAdmin = currentUser.role === 'Administrador';
@@ -4239,7 +4302,6 @@ function renderOrdersTable() {
         const isRejectedPending = (order.status === 'pendente' && order.motivo_rejeicao && order.motivo_rejeicao.trim() !== '');
         const isNotChecked = (order.status === 'concluida' && !order.conferido);
         
-        // Verifica atraso
         let atrasado = false;
         if (order.status !== 'concluida' && order.prazo_esperado) {
             const prazo = new Date(order.prazo_esperado);
@@ -4250,7 +4312,6 @@ function renderOrdersTable() {
         if (isRejectedPending) {
             row.style.backgroundColor = '#fff3cd';
             row.style.borderLeft = '4px solid #ffc107';
-            row.title = `Motivo: ${order.motivo_rejeicao} | Rejeitado por: ${order.rejeitado_por || '-'}`;
         } else if (isNotChecked) {
             row.style.backgroundColor = '#fff5f5';
             row.style.borderLeft = '4px solid #dc3545';
@@ -4258,30 +4319,47 @@ function renderOrdersTable() {
             row.style.backgroundColor = '#ffe5e5';
         }
         
-        // Badges
+        // --- LINKS ---
+        let linksHtml = '';
+        if (order.linkAnuncio && order.linkAnuncio.trim() !== '') {
+            linksHtml += `
+                <a href="${order.linkAnuncio}" target="_blank" rel="noopener noreferrer" 
+                   class="link-anuncio" title="Link do anúncio original">
+                    <i class="fas fa-link" style="color:#00ADEE;"></i> Anúncio
+                </a>
+            `;
+        }
+        if (order.linkNovoAnuncio && order.linkNovoAnuncio.trim() !== '') {
+            linksHtml += `
+                <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" 
+                   class="link-anuncio" title="Link do novo anúncio">
+                    <i class="fas fa-link" style="color:#28a745;"></i> Novo
+                </a>
+            `;
+        }
+        if (!linksHtml) {
+            linksHtml = '<span style="color:#adb5bd; font-size:11px;">Sem link</span>';
+        }
+        
+        // --- BADGES ---
         let conferenciaBadge = '';
         if (order.status === 'concluida') {
             if (order.conferido) {
                 conferenciaBadge = `<span class="badge badge-success"><i class="fas fa-check-double"></i> Conferido</span>`;
             } else {
-                conferenciaBadge = `<span class="badge badge-warning" style="animation: pulse 1.5s infinite;"><i class="fas fa-exclamation-circle"></i> Aguardando conferência</span>`;
+                conferenciaBadge = `<span class="badge badge-warning"><i class="fas fa-exclamation-circle"></i> Aguardando conferência</span>`;
             }
         }
         
         let ajusteBadge = '';
         if (isRejectedPending) {
             ajusteBadge = `
-                <span class="badge badge-warning" style="background:#ffc107;color:#856404;" title="${order.motivo_rejeicao.replace(/"/g, '&quot;')}">
-                    <i class="fas fa-exclamation-triangle"></i> Ajustes necessários
-                </span>
-                <span class="badge badge-danger" title="Rejeitado por: ${order.rejeitado_por || '?'}">
-                    <i class="fas fa-ban"></i> Não autorizado
-                </span>
+                <span class="badge badge-warning" style="background:#ffc107;color:#856404;">Ajustes</span>
+                <span class="badge badge-danger">Não autorizado</span>
             `;
         }
         
         let atrasoBadge = atrasado ? `<span class="badge badge-danger"><i class="fas fa-clock"></i> Atrasada</span>` : '';
-        
         let anuncioBadge = '';
         const isAnuncio = (order.photoType === 'criar_anuncio' || order.photoType === 'replicar_anuncio');
         if (isAnuncio && !order.anuncio_criado) {
@@ -4296,15 +4374,15 @@ function renderOrdersTable() {
         else urgencyBadge = '<span class="badge badge-success">Baixa (36h)</span>';
         
         let statusBadge = '';
-        if (order.status === 'pendente') statusBadge = '<span class="status-pending">Pendente</span>';
-        else if (order.status === 'andamento') statusBadge = '<span class="status-progress">Em Andamento</span>';
-        else statusBadge = '<span class="status-completed">Concluída</span>';
+        if (order.status === 'pendente') statusBadge = '<span class="badge badge-secondary">Pendente</span>';
+        else if (order.status === 'andamento') statusBadge = '<span class="badge badge-info">Em Andamento</span>';
+        else statusBadge = '<span class="badge badge-success">Concluída</span>';
         
         const createdDate = order.createdAt ? new Date(order.createdAt) : new Date();
         const formattedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
                              createdDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
         
-        // Botões de ação
+        // --- AÇÕES ---
         let actionButtons = '';
         if (hasPermission || isAdmin) {
             actionButtons += `<button class="btn btn-primary btn-sm" onclick="viewOrderDetails('${order.id}')" title="Visualizar OS"><i class="fas fa-eye"></i></button>`;
@@ -4316,12 +4394,11 @@ function renderOrdersTable() {
             actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Conferir"><i class="fas fa-check-double"></i></button>`;
         }
         if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado"><i class="fas fa-ban"></i> Não Autorizado</button>`;
+            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado"><i class="fas fa-ban"></i></button>`;
         }
-        // NOVO BOTÃO: Alterações feitas (apenas para OS em revisão)
         if (isRejectedPending && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-success btn-sm" onclick="marcarAlteracoesFeitas('${order.id}')" title="Alterações feitas - enviar para conferência">
-                <i class="fas fa-check-double"></i> Alterações feitas
+            actionButtons += `<button class="btn btn-success btn-sm" onclick="marcarAlteracoesFeitas('${order.id}')" title="Alterações feitas">
+                <i class="fas fa-check-double"></i> OK
             </button>`;
         }
         if (hasPermission || isAdmin) {
@@ -4331,7 +4408,6 @@ function renderOrdersTable() {
                 actionButtons += `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS"><i class="fas fa-flag-checkered"></i></button>`;
             }
         }
-        // Botão Editar (agora abre modal)
         if (hasPermission || isAdmin) {
             actionButtons += `<button class="btn btn-warning btn-sm" onclick="abrirModalEdicaoOS('${order.id}')" title="Editar OS"><i class="fas fa-edit"></i></button>`;
         }
@@ -4343,28 +4419,39 @@ function renderOrdersTable() {
         row.innerHTML = `
             <td>
                 <strong>${order.code}</strong>
-                ${conferenciaBadge}
-                ${ajusteBadge}
-                ${atrasoBadge}
-                ${anuncioBadge}
-                ${permissionBadge}
+                <div style="display: flex; flex-wrap: wrap; gap: 2px; margin-top: 3px;">
+                    ${conferenciaBadge}
+                    ${ajusteBadge}
+                    ${atrasoBadge}
+                    ${anuncioBadge}
+                    ${permissionBadge}
+                </div>
             </td>
             <td>${order.productName}</td>
             <td>
                 <div>${order.responsibleName}</div>
-                <small><i class="fas fa-user-plus"></i> Criado por: ${order.createdBy || 'Sistema'}</small>
+                <small style="color: #6c757d; font-size: 10px;"><i class="fas fa-user-plus"></i> Criado por: ${order.createdBy || 'Sistema'}</small>
             </td>
             <td>${urgencyBadge}</td>
             <td>${statusBadge}</td>
-            <td>${formattedDate}</td>
-            <td><div class="d-flex gap-2 flex-wrap">${actionButtons}</div></td>
+            <td style="white-space: nowrap;">${formattedDate}</td>
+            <td>
+                <div style="display: flex; flex-wrap: wrap; gap: 3px; align-items: center;">
+                    ${linksHtml}
+                </div>
+            </td>
+            <td style="min-width: 380px;">
+                <div class="d-flex gap-1 flex-wrap" style="gap: 3px;">
+                    ${actionButtons}
+                </div>
+            </td>
         `;
         
         osTableBody.appendChild(row);
     });
     
-    // Atualiza contadores
     updateCounters();
+    console.log('✅ Tabela renderizada com', paginaItens.length, 'itens na página', paginaAtualOS);
 }
 
 // ============================================

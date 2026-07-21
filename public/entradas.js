@@ -767,6 +767,337 @@ window.processarEntrada = async function() {
     }
 };
 
+// ============================================
+// EXPORTAR ENTRADAS PARA EXCEL
+// ============================================
+window.exportarEntradasExcel = async function() {
+    try {
+        showToast('📊 Gerando relatório de entradas...', 'info');
+        
+        // Verifica se há dados
+        if (!entradasCards || entradasCards.length === 0) {
+            showToast('⚠️ Nenhuma entrada encontrada para exportar.', 'warning');
+            return;
+        }
+        
+        // Monta os dados para o Excel
+        const dadosExcel = [];
+        
+        // Cabeçalho
+        const cabecalho = [
+            'Nº Entrada',
+            'Data Criação',
+            'Criado Por',
+            'Status',
+            'Tipo Entrada',
+            'Fornecedor',
+            'NF Número',
+            'NF Data',
+            'Cd Fornecedor',
+            'Referência (Rastreio)',
+            'Fornecedor Nome',
+            'Quantidade',
+            'Produto',
+            'SKU Original',
+            'SKU Match',
+            'Observação',
+            'Valor Custo',
+            'Status Item',
+            'Quantidade Entrada',
+            'Responsável',
+            'Data Ação'
+        ];
+        dadosExcel.push(cabecalho);
+        
+        // Para cada card, adiciona suas linhas
+        entradasCards.forEach(card => {
+            const itensDoCard = card.itens || [];
+            
+            if (itensDoCard.length === 0) {
+                // Adiciona uma linha com os dados do card e itens vazios
+                dadosExcel.push([
+                    card.numero_entrada || '',
+                    formatarDataHora(card.criado_em),
+                    card.criado_por || '',
+                    card.status || '',
+                    card.tipo_entrada || '',
+                    card.fornecedor || '',
+                    card.nf_numero || '',
+                    card.nf_data || '',
+                    '', '', '', '', '', '', '', '', '', '', '', '', ''
+                ]);
+            } else {
+                itensDoCard.forEach(item => {
+                    dadosExcel.push([
+                        card.numero_entrada || '',
+                        formatarDataHora(card.criado_em),
+                        card.criado_por || '',
+                        card.status || '',
+                        card.tipo_entrada || '',
+                        card.fornecedor || '',
+                        card.nf_numero || '',
+                        card.nf_data || '',
+                        item.cd_fornecedor || '',
+                        item.rastreio || '',
+                        item.fornecedor_nome || '',
+                        item.quantidade || 0,
+                        item.produto || '',
+                        item.sku_original || '',
+                        item.sku_match || '',
+                        item.observacao || '',
+                        item.valor_custo ? parseFloat(item.valor_custo).toFixed(2) : '',
+                        item.status || '',
+                        item.quantidade_entrada || 0,
+                        item.responsavel || '',
+                        item.data_acao ? formatarDataHora(item.data_acao) : ''
+                    ]);
+                });
+            }
+        });
+        
+        // Cria o arquivo Excel
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(dadosExcel);
+        
+        // Ajusta a largura das colunas
+        const colWidths = [
+            { wch: 20 }, // Nº Entrada
+            { wch: 20 }, // Data Criação
+            { wch: 15 }, // Criado Por
+            { wch: 12 }, // Status
+            { wch: 14 }, // Tipo Entrada
+            { wch: 25 }, // Fornecedor
+            { wch: 14 }, // NF Número
+            { wch: 14 }, // NF Data
+            { wch: 16 }, // Cd Fornecedor
+            { wch: 25 }, // Referência
+            { wch: 25 }, // Fornecedor Nome
+            { wch: 12 }, // Quantidade
+            { wch: 40 }, // Produto
+            { wch: 18 }, // SKU Original
+            { wch: 18 }, // SKU Match
+            { wch: 30 }, // Observação
+            { wch: 14 }, // Valor Custo
+            { wch: 14 }, // Status Item
+            { wch: 16 }, // Quantidade Entrada
+            { wch: 14 }, // Responsável
+            { wch: 20 }  // Data Ação
+        ];
+        ws['!cols'] = colWidths;
+        
+        XLSX.utils.book_append_sheet(wb, ws, "Entradas");
+        
+        // Gera o arquivo
+        const dataAtual = new Date().toISOString().slice(0, 10);
+        const nomeArquivo = `entradas_completas_${dataAtual}.xlsx`;
+        XLSX.writeFile(wb, nomeArquivo);
+        
+        showToast(`✅ Relatório completo exportado com sucesso! (${dadosExcel.length - 1} linhas)`, 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro ao exportar entradas:', error);
+        showToast('❌ Erro ao exportar: ' + error.message, 'error');
+    }
+};
+
+// ============================================
+// EXPORTAR RELATÓRIO RESUMIDO DE ENTRADAS
+// ============================================
+window.exportarEntradasResumido = async function() {
+    try {
+        showToast('📊 Gerando relatório resumido...', 'info');
+        
+        // Verifica se há dados
+        if (!entradasCards || entradasCards.length === 0) {
+            showToast('⚠️ Nenhuma entrada encontrada.', 'warning');
+            return;
+        }
+        
+        // Monta dados resumidos
+        const dadosExcel = [
+            ['Nº Entrada', 'Data Criação', 'Criado Por', 'Status', 'Tipo', 'Fornecedor', 'NF', 'Total Itens', 'Concluídos', 'Progresso']
+        ];
+        
+        for (const card of entradasCards) {
+            const itens = card.itens || [];
+            const total = itens.length;
+            const concluidos = itens.filter(i => i.status !== 'pendente' && i.status !== 'ignorado').length;
+            const progresso = total > 0 ? Math.round((concluidos / total) * 100) : 0;
+            
+            dadosExcel.push([
+                card.numero_entrada || '',
+                formatarDataHora(card.criado_em),
+                card.criado_por || '',
+                card.status || '',
+                card.tipo_entrada || '',
+                card.fornecedor || '',
+                card.nf_numero || '',
+                total,
+                concluidos,
+                `${progresso}%`
+            ]);
+        }
+        
+        // Cria o arquivo
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(dadosExcel);
+        
+        ws['!cols'] = [
+            { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 12 }, 
+            { wch: 14 }, { wch: 25 }, { wch: 14 }, { wch: 12 },
+            { wch: 12 }, { wch: 10 }
+        ];
+        
+        XLSX.utils.book_append_sheet(wb, ws, "Resumo Entradas");
+        
+        const dataAtual = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `entradas_resumo_${dataAtual}.xlsx`);
+        
+        showToast(`✅ Relatório resumido exportado com sucesso! (${dadosExcel.length - 1} entradas)`, 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro ao exportar resumo:', error);
+        showToast('❌ Erro ao exportar: ' + error.message, 'error');
+    }
+};
+
+// ============================================
+// EXPORTAR ENTRADAS POR STATUS
+// ============================================
+window.exportarEntradasPorStatus = async function() {
+    try {
+        showToast('📊 Gerando relatório por status...', 'info');
+        
+        if (!entradasCards || entradasCards.length === 0) {
+            showToast('⚠️ Nenhuma entrada encontrada.', 'warning');
+            return;
+        }
+        
+        // Separa por status
+        const pendentes = entradasCards.filter(c => c.status === 'pendente');
+        const finalizados = entradasCards.filter(c => c.status === 'finalizado');
+        
+        // Cria workbook com 2 sheets
+        const wb = XLSX.utils.book_new();
+        
+        // Sheet: Pendentes
+        if (pendentes.length > 0) {
+            const dadosPendentes = [
+                ['Nº Entrada', 'Data Criação', 'Criado Por', 'Tipo', 'Fornecedor', 'NF', 'Total Itens', 'Concluídos', 'Progresso']
+            ];
+            for (const card of pendentes) {
+                const itens = card.itens || [];
+                const total = itens.length;
+                const concluidos = itens.filter(i => i.status !== 'pendente' && i.status !== 'ignorado').length;
+                const progresso = total > 0 ? Math.round((concluidos / total) * 100) : 0;
+                
+                dadosPendentes.push([
+                    card.numero_entrada || '',
+                    formatarDataHora(card.criado_em),
+                    card.criado_por || '',
+                    card.tipo_entrada || '',
+                    card.fornecedor || '',
+                    card.nf_numero || '',
+                    total,
+                    concluidos,
+                    `${progresso}%`
+                ]);
+            }
+            const wsPendentes = XLSX.utils.aoa_to_sheet(dadosPendentes);
+            wsPendentes['!cols'] = [
+                { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 14 }, 
+                { wch: 25 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }
+            ];
+            XLSX.utils.book_append_sheet(wb, wsPendentes, "Pendentes");
+        }
+        
+        // Sheet: Finalizados
+        if (finalizados.length > 0) {
+            const dadosFinalizados = [
+                ['Nº Entrada', 'Data Criação', 'Criado Por', 'Finalizado Por', 'Data Finalização', 'Tipo', 'Fornecedor', 'NF', 'Total Itens']
+            ];
+            for (const card of finalizados) {
+                const itens = card.itens || [];
+                
+                dadosFinalizados.push([
+                    card.numero_entrada || '',
+                    formatarDataHora(card.criado_em),
+                    card.criado_por || '',
+                    card.finalizado_por || '',
+                    card.finalizado_em ? formatarDataHora(card.finalizado_em) : '',
+                    card.tipo_entrada || '',
+                    card.fornecedor || '',
+                    card.nf_numero || '',
+                    itens.length
+                ]);
+            }
+            const wsFinalizados = XLSX.utils.aoa_to_sheet(dadosFinalizados);
+            wsFinalizados['!cols'] = [
+                { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, 
+                { wch: 20 }, { wch: 14 }, { wch: 25 }, { wch: 14 }, { wch: 12 }
+            ];
+            XLSX.utils.book_append_sheet(wb, wsFinalizados, "Finalizados");
+        }
+        
+        // Se não houver dados em nenhuma sheet, avisa
+        if (wb.SheetNames.length === 0) {
+            showToast('⚠️ Nenhum dado para exportar.', 'warning');
+            return;
+        }
+        
+        const dataAtual = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `entradas_por_status_${dataAtual}.xlsx`);
+        
+        showToast(`✅ Relatório por status exportado com sucesso!`, 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro ao exportar por status:', error);
+        showToast('❌ Erro ao exportar: ' + error.message, 'error');
+    }
+};
+
+// ============================================
+// FUNÇÃO AUXILIAR PARA FORMATAR DATA/HORA
+// ============================================
+function formatarDataHora(dataISO) {
+    if (!dataISO) return '';
+    try {
+        const data = new Date(dataISO);
+        // Verifica se a data é válida
+        if (isNaN(data.getTime())) return dataISO;
+        return data.toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch {
+        return dataISO;
+    }
+}
+
+// ============================================
+// FUNÇÃO PARA FECHAR O MENU DE EXPORTAÇÃO (GLOBAL)
+// ============================================
+window.toggleExportMenu = function() {
+    const menu = document.getElementById('exportMenu');
+    if (menu) {
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    }
+};
+
+// Fecha o menu ao clicar fora
+document.addEventListener('click', function(e) {
+    const menu = document.getElementById('exportMenu');
+    const btn = document.querySelector('.dropdown .btn-success');
+    if (menu && btn && !menu.contains(e.target) && !btn.contains(e.target)) {
+        menu.style.display = 'none';
+    }
+});
+
+console.log('✅ Funções de exportação de entradas carregadas!');
+
 // ===== EXTRAIR APENAS O IPI DA NOTA =====
 function extrairIPI(det) {
     let ipi = 0;
@@ -777,6 +1108,135 @@ function extrairIPI(det) {
     }
     return ipi;
 }
+
+// ============================================
+// FUNÇÃO AUXILIAR PARA FORMATAR DATA/HORA
+// ============================================
+function formatarDataHora(dataISO) {
+    if (!dataISO) return '';
+    try {
+        const data = new Date(dataISO);
+        return data.toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch {
+        return dataISO;
+    }
+}
+
+// ============================================
+// EXPORTAR ENTRADAS POR STATUS
+// ============================================
+window.exportarEntradasPorStatus = async function() {
+    try {
+        showToast('📊 Gerando relatório por status...', 'info');
+        
+        // Busca todas as entradas
+        const { data: cards, error: errCards } = await window.supabaseClient
+            .from('entradas_cards')
+            .select('*')
+            .order('criado_em', { ascending: false });
+        
+        if (errCards) throw errCards;
+        
+        if (!cards || cards.length === 0) {
+            showToast('⚠️ Nenhuma entrada encontrada.', 'warning');
+            return;
+        }
+        
+        // Separa por status
+        const pendentes = cards.filter(c => c.status === 'pendente');
+        const finalizados = cards.filter(c => c.status === 'finalizado');
+        
+        // Cria workbook com 2 sheets
+        const wb = XLSX.utils.book_new();
+        
+        // Sheet: Pendentes
+        if (pendentes.length > 0) {
+            const dadosPendentes = [
+                ['Nº Entrada', 'Data Criação', 'Criado Por', 'Tipo', 'Fornecedor', 'NF', 'Total Itens', 'Concluídos', 'Progresso']
+            ];
+            for (const card of pendentes) {
+                const { data: itens } = await window.supabaseClient
+                    .from('entrada_items')
+                    .select('status')
+                    .eq('entrada_id', card.id);
+                
+                const total = itens ? itens.length : 0;
+                const concluidos = itens ? itens.filter(i => i.status !== 'pendente' && i.status !== 'ignorado').length : 0;
+                const progresso = total > 0 ? Math.round((concluidos / total) * 100) : 0;
+                
+                dadosPendentes.push([
+                    card.numero_entrada || '',
+                    formatarDataHora(card.criado_em),
+                    card.criado_por || '',
+                    card.tipo_entrada || '',
+                    card.fornecedor || '',
+                    card.nf_numero || '',
+                    total,
+                    concluidos,
+                    `${progresso}%`
+                ]);
+            }
+            const wsPendentes = XLSX.utils.aoa_to_sheet(dadosPendentes);
+            wsPendentes['!cols'] = [
+                { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 14 }, 
+                { wch: 25 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 10 }
+            ];
+            XLSX.utils.book_append_sheet(wb, wsPendentes, "Pendentes");
+        }
+        
+        // Sheet: Finalizados
+        if (finalizados.length > 0) {
+            const dadosFinalizados = [
+                ['Nº Entrada', 'Data Criação', 'Criado Por', 'Finalizado Por', 'Data Finalização', 'Tipo', 'Fornecedor', 'NF', 'Total Itens']
+            ];
+            for (const card of finalizados) {
+                const { data: itens } = await window.supabaseClient
+                    .from('entrada_items')
+                    .select('status')
+                    .eq('entrada_id', card.id);
+                
+                dadosFinalizados.push([
+                    card.numero_entrada || '',
+                    formatarDataHora(card.criado_em),
+                    card.criado_por || '',
+                    card.finalizado_por || '',
+                    card.finalizado_em ? formatarDataHora(card.finalizado_em) : '',
+                    card.tipo_entrada || '',
+                    card.fornecedor || '',
+                    card.nf_numero || '',
+                    itens ? itens.length : 0
+                ]);
+            }
+            const wsFinalizados = XLSX.utils.aoa_to_sheet(dadosFinalizados);
+            wsFinalizados['!cols'] = [
+                { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, 
+                { wch: 20 }, { wch: 14 }, { wch: 25 }, { wch: 14 }, { wch: 12 }
+            ];
+            XLSX.utils.book_append_sheet(wb, wsFinalizados, "Finalizados");
+        }
+        
+        // Se não houver dados em nenhuma sheet, avisa
+        if (wb.SheetNames.length === 0) {
+            showToast('⚠️ Nenhum dado para exportar.', 'warning');
+            return;
+        }
+        
+        const dataAtual = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `entradas_por_status_${dataAtual}.xlsx`);
+        
+        showToast(`✅ Relatório por status exportado com sucesso!`, 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro ao exportar por status:', error);
+        showToast('❌ Erro ao exportar: ' + error.message, 'error');
+    }
+};
 
 // ============================================
 // PROCESSAR XML DA NOTA FISCAL - COM VERIFICAÇÃO DE DUPLICIDADE
@@ -2687,5 +3147,9 @@ window.cancelarEntrada = window.cancelarEntrada;
 window.filtrarEntradas = window.filtrarEntradas;
 window.buscarEntradas = window.buscarEntradas;
 window.limparAreaEntrada = window.limparAreaEntrada;
+window.exportarEntradasExcel = window.exportarEntradasExcel;
+window.exportarEntradasResumido = window.exportarEntradasResumido;
+window.exportarEntradasPorStatus = window.exportarEntradasPorStatus;
+window.toggleExportMenu = window.toggleExportMenu;
 
 console.log('📦 Sistema de Entradas carregado com sucesso!');
