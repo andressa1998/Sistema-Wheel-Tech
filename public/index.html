@@ -930,50 +930,6 @@ body > * {
         padding: 4px 4px;
     }
 }
-/* Estilo para os links de anúncio na tabela */
-.link-anuncio {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: #f8f9fa;
-    border: 1px solid #e9ecef;
-    font-size: 11px;
-    text-decoration: none;
-    transition: all 0.2s;
-    color: #495057;
-}
-
-.link-anuncio:hover {
-    background: #e9ecef;
-    transform: scale(1.02);
-}
-
-.link-anuncio i {
-    margin-right: 4px;
-}
-
-/* Badge de status com animação */
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.6; }
-    100% { opacity: 1; }
-}
-/* ===== PAGINAÇÃO ===== */
-#paginacaoOS {
-    background: #f8f9fa;
-    border-radius: 0 0 8px 8px;
-    min-height: 50px;
-}
-
-#paginacaoOS .btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-#paginacaoOS select {
-    width: 70px;
-    display: inline-block;
-}
     </style>
 </head>
 <body>
@@ -1492,59 +1448,14 @@ body > * {
                 <div class="table-responsive">
                     <table class="table" id="osTable">
                         <thead>
-                            <tr><th>Código</th><th>Produto</th><th>Responsável</th><th>Urgência</th><th>Status</th><th>Criado em</th><th>🔗 Links</th><th>Ações</th></tr>
+                            <tr><th>Código</th><th>Produto</th><th>Responsável</th><th>Urgência</th><th>Status</th><th>Criado em</th><th>Ações</th></tr>
                         </thead>
                         <tbody id="osTableBody"></tbody>
                     </table>
                 </div>
-
-                <!-- PAGINAÇÃO (ADICIONE AQUI) -->
-    <div id="paginacaoOS" class="p-3 border-top" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; background: #f8f9fa; border-radius: 0 0 8px 8px;">
-        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-            <span id="osInfo" class="text-muted" style="font-size: 14px;">Mostrando 0-0 de 0</span>
-            <div style="display: flex; align-items: center; gap: 5px;">
-                <label style="font-size: 13px; color: #6c757d; margin: 0;">Itens por página:</label>
-                <select id="itensPorPaginaOS" class="form-control form-control-sm" style="width: 70px; display: inline-block;" onchange="mudarItensPorPaginaOS()">
-                    <option value="10">10</option>
-                    <option value="20" selected>20</option>
-                    <option value="50">50</option>
-                    <option value="100">100</option>
-                </select>
-            </div>
-        </div>
-        <div class="d-flex gap-2" style="flex-wrap: wrap; align-items: center;">
-            <button id="btnOSAnterior" class="btn btn-sm btn-outline-secondary" onclick="paginarOS('anterior')" disabled>
-                <i class="fas fa-chevron-left"></i> Anterior
-            </button>
-            <span id="osPaginaInfo" class="text-muted" style="font-size: 14px; display: flex; align-items: center;">Página 1 de 1</span>
-            <button id="btnOSProxima" class="btn btn-sm btn-outline-secondary" onclick="paginarOS('proxima')" disabled>
-                Próxima <i class="fas fa-chevron-right"></i>
-            </button>
-        </div>
-    </div>
                 <div id="emptyMessage" class="text-center py-5 hidden">...</div>
             </div>
         </div>
-
-                        
-        <!-- Modal para Não Autorizado -->
-<div id="rejeitarOSModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 500px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-            <h3><i class="fas fa-ban"></i> Não Autorizado</h3>
-            <button onclick="closeRejeitarModal()" style="background:none; border:none; font-size:24px;">&times;</button>
-        </div>
-        <input type="hidden" id="rejeitarOSId">
-        <div class="form-group mb-3">
-            <label for="motivoRejeicao">Motivo da não autorização *</label>
-            <textarea id="motivoRejeicao" class="form-control" rows="3" placeholder="Descreva o que precisa ser ajustado..." required></textarea>
-        </div>
-        <div class="d-flex justify-content-end gap-2">
-            <button class="btn btn-secondary" onclick="closeRejeitarModal()">Cancelar</button>
-            <button class="btn btn-danger" onclick="confirmarRejeicaoOS()">Enviar para Pendentes</button>
-        </div>
-    </div>
-</div>
 
         <!-- MODAL DE EDIÇÃO DA OS -->
 <div id="editOSModal" class="modal hidden">
@@ -4160,66 +4071,41 @@ body > * {
             </div>
         </div>
 
-        <!-- Substitua a div da tabela no sistema de frete por esta versão -->
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h2 class="card-title">
-            <i class="fas fa-list"></i> Lista de Fretes
-        </h2>
-        <div class="d-flex gap-2 align-items-center">
-            <span id="contagemFretes" class="badge badge-info">0 registros</span>
-            <button id="exportarFretesExcelBtn" class="btn btn-success btn-sm">
-                <i class="fas fa-file-excel"></i> Exportar Excel
-            </button>
-            <button id="btnRelatorioReclamacoes" class="btn btn-info btn-sm">
-                <i class="fas fa-chart-bar"></i> Relatório
-            </button>
-        </div>
-    </div>
-    <div class="table-responsive-frete">
-        <table class="table table-hover" id="shippingSimpleTable">
-            <thead>
-                <tr>
-                    <th>Venda</th>
-                    <th>Título</th>
-                    <th>SKU</th>
-                    <th>MLB</th>
-                    <th class="text-end">Valor</th>
-                    <th class="text-center">Qtd</th>
-                    <th class="text-end">Frete Cobrado</th>
-                    <th class="text-end">Frete Esperado</th>
-                    <th>Status</th>
-                    <th>Peso (kg)</th>
-                    <th>Dimensões (CxLxA)</th>
-                    <th>Foto</th>
-                    <th>Ações</th>
-                    <th>Data Venda</th>
-                    <th>Tipo Envio</th>
-                </tr>
-            </thead>
-            <tbody id="shippingSimpleBody">
-                <tr>
-                    <td colspan="15" class="text-center py-5">
-                        <i class="fas fa-truck fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
-                        <h4>Nenhum dado carregado</h4>
-                        <p>Clique em "Buscar Fretes" para carregar as vendas do Mercado Livre.</p>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-    <!-- Paginação -->
-    <div id="paginacaoFretes" class="p-3 border-top d-flex justify-content-between align-items-center">
-        <div>
-            <span id="infoFretes" class="text-muted">Mostrando 0-0 de 0</span>
-        </div>
-        <div class="d-flex gap-2">
-            <button id="btnFretesAnterior" class="btn btn-sm btn-outline-secondary" disabled>
-                <i class="fas fa-chevron-left"></i> Anterior
-            </button>
-            <button id="btnFretesProxima" class="btn btn-sm btn-outline-secondary" disabled>
-                Próxima <i class="fas fa-chevron-right"></i>
-            </button>
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title"><i class="fas fa-list"></i> Lista de Fretes</h2>
+                <span id="contagemFretes" class="badge badge-info">0 registros</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table" id="shippingSimpleTable">
+                    <thead>
+                        <tr>
+                            <th>Venda</th>
+                            <th>Título</th>
+                            <th>SKU</th>
+                            <th>MLB</th>
+                            <th>Valor</th>
+                            <th>Qtd</th>
+                            <th>Frete Cobrado</th>
+                            <th>Frete Esperado</th>
+                            <th>Status</th>
+                            <th>Peso (kg)</th>
+                            <th>Dimensões (CxLxA)</th>
+                            <th>Foto</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="shippingSimpleBody">
+                        <tr>
+                            <td colspan="5" class="text-center py-5">
+                                <i class="fas fa-truck fa-3x mb-3" style="color: #6c757d; opacity: 0.5;"></i>
+                                <h4>Nenhum dado carregado</h4>
+                                <p>Clique em "Buscar Fretes" para carregar as vendas do Mercado Livre.</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
@@ -4722,6 +4608,25 @@ body > * {
                 <button type="button" class="btn btn-success" id="confirmarModalNFEBtn">Confirmar e Emitir NF-e</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Modal para Não Autorizado -->
+<div id="rejeitarOSModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 500px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3><i class="fas fa-ban"></i> Não Autorizado</h3>
+            <button onclick="closeRejeitarModal()" style="background:none; border:none; font-size:24px;">&times;</button>
+        </div>
+        <input type="hidden" id="rejeitarOSId">
+        <div class="form-group mb-3">
+            <label for="motivoRejeicao">Motivo da não autorização *</label>
+            <textarea id="motivoRejeicao" class="form-control" rows="3" placeholder="Descreva o que precisa ser ajustado..." required></textarea>
+        </div>
+        <div class="d-flex justify-content-end gap-2">
+            <button class="btn btn-secondary" onclick="closeRejeitarModal()">Cancelar</button>
+            <button class="btn btn-danger" onclick="confirmarRejeicaoOS()">Enviar para Pendentes</button>
+        </div>
     </div>
 </div>
 
