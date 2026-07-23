@@ -1,7 +1,6 @@
 // ============================================================
-// MÓDULO: GERENCIAMENTO DE PROMOÇÕES (Mercado Livre)
-// ============================================================
-// Dependências: ml_token_manager.js, supabase, currentUser
+// MÓDULO: GERENCIAMENTO DE PROMOÇÕES (Mercado Livre) - VERSÃO OTIMIZADA
+// Baseado no código Python de MonitorPrecosPromocoesAtacado
 // ============================================================
 
 (function() {
@@ -20,45 +19,62 @@
     let containerPromocoes = null;
 
     // ------------------------------------------------------------
-    // VARIÁVEIS DO MÓDULO BULK
+    // VARIÁVEIS DO MÓDULO BULK (PROMOÇÕES EM LOTE)
     // ------------------------------------------------------------
     let todasPromocoes = [];
     let itensPromocaoOrigem = [];
     let itensFiltrados = [];
     let mlbsBloqueados = [];
     let bulkSystemContainer = null;
-    let supabaseClient = null;
+    let isLoadingOrigem = false;
+    let totalItensCarregados = 0;
+    let metodoUsado = '';
 
-    // ------------------------------------------------------------
-    // FUNÇÃO PARA OBTER CLIENTE SUPABASE
-    // ------------------------------------------------------------
-    function getSupabaseClient() {
-        if (supabaseClient) return supabaseClient;
+    // Chave para localStorage
+    const STORAGE_KEY = 'mlbs_bloqueados_promocao';
+    const SELLER_ITEMS_CACHE_KEY = 'seller_items_cache';
+
+    // ============================================================
+    // FUNÇÃO DE LOG
+    // ============================================================
+    function log(msg, type = 'info', data = null) {
+        const prefix = '📢 [PROMOÇÕES]';
+        const timestamp = new Date().toLocaleTimeString();
         
-        // Tenta obter de várias fontes
-        if (window.supabase) {
-            supabaseClient = window.supabase;
-            return supabaseClient;
+        switch(type) {
+            case 'info':
+                console.log(`${prefix} ${timestamp} ℹ️ ${msg}`, data || '');
+                break;
+            case 'success':
+                console.log(`${prefix} ${timestamp} ✅ ${msg}`, data || '');
+                break;
+            case 'warning':
+                console.log(`${prefix} ${timestamp} ⚠️ ${msg}`, data || '');
+                break;
+            case 'error':
+                console.error(`${prefix} ${timestamp} ❌ ${msg}`, data || '');
+                break;
+            case 'debug':
+                console.debug(`${prefix} ${timestamp} 🔍 ${msg}`, data || '');
+                break;
+            default:
+                console.log(`${prefix} ${timestamp} ${msg}`, data || '');
         }
-        
-        if (window._supabase) {
-            supabaseClient = window._supabase;
-            return supabaseClient;
-        }
-        
-        // Se não houver Supabase, usamos apenas localStorage
-        console.warn('⚠️ Supabase não disponível, usando apenas localStorage');
-        return null;
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // FUNÇÃO PRINCIPAL: ABRIR SISTEMA DE PROMOÇÕES
-    // ------------------------------------------------------------
+    // ============================================================
     window.abrirSistemaPromocoes = function() {
+        log('🚀 Iniciando abertura do sistema de promoções', 'info');
+        
         if (!window.currentUser) {
+            log('Usuário não logado', 'error');
             showToast('⚠️ Faça login primeiro', 'warning');
             return;
         }
+
+        log(`Usuário: ${window.currentUser.name} (${window.currentUser.role})`, 'info');
 
         const sistemasIds = [
             'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
@@ -73,9 +89,11 @@
         });
 
         if (!containerPromocoes) {
+            log('Criando container da interface...', 'info');
             containerPromocoes = criarInterfacePromocoes();
             document.body.appendChild(containerPromocoes);
         } else {
+            log('Container já existe, reutilizando...', 'info');
             containerPromocoes.classList.remove('hidden');
         }
 
@@ -86,13 +104,14 @@
         if (userAvatarEl) userAvatarEl.textContent = window.currentUser.avatar;
         if (userRoleEl) userRoleEl.textContent = window.currentUser.role;
 
+        log('Carregando promoções...', 'info');
         carregarPromocoes();
         showToast('📢 Sistema de Promoções carregado', 'info');
     };
 
-    // ------------------------------------------------------------
+    // ============================================================
     // CRIAÇÃO DA INTERFACE PRINCIPAL
-    // ------------------------------------------------------------
+    // ============================================================
     function criarInterfacePromocoes() {
         const div = document.createElement('div');
         div.id = 'promocoesSystem';
@@ -190,13 +209,17 @@
         return div;
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // FUNÇÕES DO MÓDULO PRINCIPAL
-    // ------------------------------------------------------------
+    // ============================================================
     
     window.carregarPromocoes = async function() {
+        log('🔄 Iniciando carregamento de promoções...', 'info');
         const lista = document.getElementById('listaPromocoes');
-        if (!lista) return;
+        if (!lista) {
+            log('Elemento #listaPromocoes não encontrado!', 'error');
+            return;
+        }
 
         lista.innerHTML = `
             <div class="col-12 text-center py-4 text-muted">
@@ -208,34 +231,47 @@
         try {
             const tokenData = await window.getValidToken?.();
             if (!tokenData || !tokenData.access_token) {
+                log('Token não obtido!', 'error');
                 throw new Error('Não foi possível obter token do Mercado Livre');
             }
-            const token = tokenData.access_token;
+            log('Token obtido com sucesso', 'success');
 
             const userId = '415176739';
             const url = `https://api.mercadolibre.com/seller-promotions/users/${userId}?app_version=v2`;
-            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+            log(`Buscando promoções do vendedor ${userId}...`, 'info');
+            
+            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
 
             const response = await fetch(proxyUrl);
+            log(`Resposta da API: status ${response.status}`, 'debug');
+            
             if (!response.ok) {
                 const errorText = await response.text();
+                log(`Erro na API: ${response.status} - ${errorText}`, 'error');
                 throw new Error(`HTTP ${response.status}: ${errorText}`);
             }
 
             const data = await response.json();
-            promocoes = data.results || [];
+            log(`Dados recebidos: ${data.results?.length || 0} promoções`, 'info');
+            
+            promocoes = (data.results || []).filter(p => p.status === 'started');
             todasPromocoes = promocoes;
+            
+            log(`Promoções ativas: ${promocoes.length}`, 'success');
             
             renderizarPromocoes(promocoes);
 
             if (promocoes.length === 0) {
+                log('Nenhuma promoção ativa encontrada', 'warning');
                 showToast('Nenhuma promoção ativa encontrada', 'info');
             } else {
-                showToast(`✅ ${promocoes.length} promoções carregadas`, 'success');
+                log(`${promocoes.length} promoções ativas carregadas`, 'success');
+                showToast(`✅ ${promocoes.length} promoções ativas carregadas`, 'success');
             }
 
         } catch (error) {
-            console.error('❌ Erro ao carregar promoções:', error);
+            log(`Erro ao carregar promoções: ${error.message}`, 'error');
+            console.error(error);
             lista.innerHTML = `
                 <div class="col-12 text-center py-4 text-danger">
                     <i class="fas fa-exclamation-triangle fa-2x"></i><br>
@@ -281,14 +317,7 @@
             };
             const tipoLabel = tipoMap[promo.type] || promo.type;
 
-            const statusMap = {
-                'started': 'Ativa',
-                'pending': 'Pendente',
-                'candidate': 'Candidata',
-                'finished': 'Finalizada',
-                'paused': 'Pausada'
-            };
-            const statusLabel = statusMap[promo.status] || promo.status;
+            const badgeLote = '<span class="badge badge-success" style="font-size:10px;">✅ Consulta automática</span>';
 
             const startDate = promo.start_date ? new Date(promo.start_date).toLocaleDateString('pt-BR') : '-';
             const finishDate = promo.finish_date ? new Date(promo.finish_date).toLocaleDateString('pt-BR') : '-';
@@ -311,15 +340,16 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start">
                             <h5 class="card-title mb-1">${promo.name || 'Sem nome'}</h5>
-                            <span class="badge ${promo.status === 'started' ? 'badge-success' : 'badge-secondary'}">${statusLabel}</span>
+                            <span class="badge badge-success">Ativa</span>
                         </div>
                         <p class="card-text small text-muted">
-                            <i class="fas fa-tag"></i> ${tipoLabel}
+                            <i class="fas fa-tag"></i> ${tipoLabel} (${promo.type})
                         </p>
                         <p class="card-text small">
                             <i class="far fa-calendar-alt"></i> ${startDate} - ${finishDate}
                         </p>
                         <div class="mb-2">${beneficios}</div>
+                        <div class="mb-2">${badgeLote}</div>
                         <button class="btn btn-primary btn-sm" onclick="verItensPromocao('${promo.id}', '${promo.type}')">
                             <i class="fas fa-eye"></i> Ver itens
                         </button>
@@ -332,6 +362,7 @@
     }
 
     window.verItensPromocao = async function(promotionId, promotionType) {
+        log(`🔍 Ver itens da promoção: ${promotionId} (${promotionType})`, 'info');
         currentPromotionId = promotionId;
         currentPromotionType = promotionType;
         searchAfter = null;
@@ -345,11 +376,18 @@
         const promo = promocoes.find(p => p.id === promotionId);
         titulo.innerHTML = `<i class="fas fa-list"></i> Itens da Promoção: ${promo ? promo.name : promotionId}`;
 
+        log(`Carregando itens da promoção ${promo?.name || promotionId}...`, 'info');
         await carregarItensPromocao(promotionId, promotionType);
     };
 
+    // ============================================================
+    // BUSCAR ITENS DE UMA PROMOÇÃO (CORRIGIDO - IGUAL AO PYTHON)
+    // ============================================================
     async function carregarItensPromocao(promotionId, promotionType, loadMore = false) {
-        if (isLoadingItens) return;
+        if (isLoadingItens) {
+            log('Já está carregando itens, aguarde...', 'warning');
+            return;
+        }
         if (!loadMore) {
             itensPromocao = [];
             searchAfter = null;
@@ -357,44 +395,86 @@
         }
 
         isLoadingItens = true;
+        log(`🔄 Carregando itens (loadMore: ${loadMore})...`, 'info');
         const tbody = document.getElementById('bodyItensPromocao');
         const btnCarregarMais = document.getElementById('btnCarregarMaisItens');
 
         try {
             const tokenData = await window.getValidToken?.();
             if (!tokenData || !tokenData.access_token) {
+                log('Token não disponível', 'error');
                 throw new Error('Token não disponível');
             }
             const token = tokenData.access_token;
 
-            let url = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}/items?promotion_type=${promotionType}&app_version=v2&limit=50`;
+            let usouLote = false;
+            let novosItens = [];
+
+            // Tenta consulta em lote usando o mesmo padrão do Python
+            log(`Tentando consulta em lote para ${promotionType}`, 'debug');
+            
+            let url = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}/items`;
+            let params = {
+                promotion_type: promotionType,
+                app_version: 'v2',
+                limit: 50
+            };
+            
             if (searchAfter) {
-                url += `&search_after=${encodeURIComponent(searchAfter)}`;
+                params.search_after = searchAfter;
             }
 
-            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+            // Construir URL com parâmetros
+            const queryString = Object.keys(params)
+                .map(key => `${key}=${encodeURIComponent(params[key])}`)
+                .join('&');
+            const fullUrl = `${url}?${queryString}`;
 
+            log(`URL da consulta: ${fullUrl}`, 'debug');
+            
+            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(fullUrl)}&token=${token}`;
             const response = await fetch(proxyUrl);
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
-            }
-
-            const data = await response.json();
-            const novosItens = data.results || [];
-
-            if (data.searchAfter) {
-                searchAfter = data.searchAfter;
-                hasMoreItens = true;
+            
+            if (response.ok) {
+                const data = await response.json();
+                novosItens = data.results || [];
+                usouLote = true;
+                log(`${novosItens.length} itens encontrados na consulta em lote`, 'info');
+                
+                // Verificar paginação
+                const paging = data.paging || {};
+                const searchAfterValue = paging.searchAfter;
+                if (searchAfterValue) {
+                    searchAfter = searchAfterValue;
+                    hasMoreItens = true;
+                    log('Há mais itens para carregar (searchAfter disponível)', 'debug');
+                } else {
+                    searchAfter = null;
+                    hasMoreItens = false;
+                    log('Todos os itens foram carregados', 'debug');
+                }
             } else {
-                searchAfter = null;
+                const errorText = await response.text();
+                log(`Falha na consulta em lote: ${response.status} - ${errorText}`, 'warning');
+                
+                // Se falhou, tenta o método alternativo
+                log('🔄 Usando método alternativo (busca por anúncios)', 'info');
+                showToast('🔄 Buscando itens via método alternativo...', 'info');
+                
+                const itensEncontrados = await buscarItensPorAnuncios(promotionId, token);
+                novosItens = itensEncontrados;
                 hasMoreItens = false;
+                searchAfter = null;
+                log(`${novosItens.length} itens encontrados via método alternativo`, 'info');
             }
 
+            // Processa os itens
             if (loadMore) {
                 itensPromocao = itensPromocao.concat(novosItens);
+                log(`Adicionados ${novosItens.length} itens, total: ${itensPromocao.length}`, 'info');
             } else {
                 itensPromocao = novosItens;
+                log(`Total de itens carregados: ${itensPromocao.length}`, 'info');
             }
 
             renderizarItensPromocao(itensPromocao);
@@ -409,12 +489,21 @@
                 info.textContent = `Mostrando ${itensPromocao.length} itens${hasMoreItens ? ' (há mais)' : ''}`;
             }
 
-        } catch (error) {
-            console.error('❌ Erro ao carregar itens da promoção:', error);
-            if (tbody) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+            if (itensPromocao.length === 0) {
+                log('Nenhum item encontrado nesta promoção', 'warning');
+                showToast('⚠️ Nenhum item encontrado nesta promoção', 'warning');
+            } else {
+                log(`${itensPromocao.length} itens carregados com sucesso`, 'success');
+                showToast(`✅ ${itensPromocao.length} itens carregados`, 'success');
             }
-            showToast('Erro ao carregar itens', 'error');
+
+        } catch (error) {
+            log(`❌ Erro ao carregar itens da promoção: ${error.message}`, 'error');
+            console.error(error);
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">${error.message}</td></tr>`;
+            }
+            showToast('Erro ao carregar itens: ' + error.message, 'error');
         } finally {
             isLoadingItens = false;
             if (btnCarregarMais) {
@@ -423,9 +512,225 @@
         }
     }
 
+    // ============================================================
+    // MÉTODO ALTERNATIVO: BUSCAR ITENS POR ANÚNCIOS
+    // USANDO A MESMA ESTRATÉGIA DO PYTHON
+    // ============================================================
+    async function buscarItensPorAnuncios(promotionId, token) {
+        log('🔍 Iniciando busca de itens por anúncios...', 'info');
+        showToast('🔄 Buscando anúncios ativos...', 'info');
+        
+        // 1. Buscar todos os anúncios ativos do vendedor
+        const sellerItems = await buscarTodosAnunciosVendedor(token);
+        
+        if (sellerItems.length === 0) {
+            log('Nenhum anúncio ativo encontrado', 'warning');
+            showToast('⚠️ Nenhum anúncio encontrado', 'warning');
+            return [];
+        }
+
+        log(`${sellerItems.length} anúncios ativos encontrados`, 'success');
+        showToast(`🔍 Verificando ${sellerItems.length} anúncios na promoção...`, 'info');
+
+        // 2. Para cada anúncio, verificar se está na promoção
+        const itensNaPromocao = [];
+        let processados = 0;
+        const total = sellerItems.length;
+        let encontrados = 0;
+
+        log(`Verificando ${total} anúncios na promoção ${promotionId}...`, 'info');
+
+        // Processar em lotes para não sobrecarregar
+        const batchSize = 10;
+        for (let i = 0; i < sellerItems.length; i += batchSize) {
+            const batch = sellerItems.slice(i, i + batchSize);
+            log(`Processando lote ${Math.floor(i/batchSize) + 1}/${Math.ceil(total/batchSize)} (${batch.length} itens)`, 'debug');
+            
+            const promises = batch.map(async (item) => {
+                try {
+                    const itemId = item.id;
+                    // Usa o mesmo endpoint do Python: /seller-promotions/items/{item_id}
+                    const url = `https://api.mercadolibre.com/seller-promotions/items/${itemId}?app_version=v2`;
+                    const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+                    const response = await fetch(proxyUrl);
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (Array.isArray(data)) {
+                            // Procura a promoção específica
+                            const promoEncontrada = data.find(p => p.id === promotionId);
+                            if (promoEncontrada) {
+                                encontrados++;
+                                return {
+                                    id: itemId,
+                                    status: promoEncontrada.status || 'started',
+                                    price: promoEncontrada.price || 0,
+                                    original_price: promoEncontrada.original_price || 0,
+                                    meli_percentage: promoEncontrada.meli_percentage || 0,
+                                    seller_percentage: promoEncontrada.seller_percentage || 0,
+                                    boosted_offer: promoEncontrada.boosted_offer || false,
+                                    discount_meli_boosted_percentage: promoEncontrada.discount_meli_boosted_percentage || 0,
+                                    ref_id: promoEncontrada.ref_id || ''
+                                };
+                            }
+                        }
+                    }
+                    return null;
+                } catch (err) {
+                    log(`Erro ao verificar item ${item.id}: ${err.message}`, 'warning');
+                    return null;
+                }
+            });
+
+            const resultados = await Promise.all(promises);
+            const validos = resultados.filter(r => r !== null);
+            itensNaPromocao.push(...validos);
+            
+            processados += batch.length;
+            if (processados % 50 === 0 || processados === total) {
+                log(`Progresso: ${processados}/${total} anúncios verificados, ${encontrados} encontrados`, 'info');
+                showToast(`📊 Verificados ${processados}/${total} anúncios... (${encontrados} encontrados)`, 'info');
+            }
+        }
+
+        log(`✅ ${encontrados} itens encontrados na promoção ${promotionId}`, 'success');
+        showToast(`✅ ${itensNaPromocao.length} itens encontrados na promoção`, 'success');
+        return itensNaPromocao;
+    }
+
+    // ============================================================
+    // BUSCAR TODOS OS ANÚNCIOS ATIVOS DO VENDEDOR
+    // USANDO A MESMA ESTRATÉGIA DO PYTHON
+    // ============================================================
+    async function buscarTodosAnunciosVendedor(token) {
+        log('📦 Buscando todos os anúncios ativos...', 'info');
+        
+        // Verifica cache
+        const cached = localStorage.getItem(SELLER_ITEMS_CACHE_KEY);
+        if (cached) {
+            try {
+                const data = JSON.parse(cached);
+                const cacheTime = data.timestamp || 0;
+                const cacheAge = Date.now() - cacheTime;
+                if (cacheAge < 1800000) { // 30 minutos
+                    log(`📦 Usando cache de anúncios: ${data.items.length} itens (${Math.round(cacheAge/60000)} min atrás)`, 'info');
+                    return data.items;
+                } else {
+                    log(`Cache expirado (${Math.round(cacheAge/60000)} min), buscando novamente...`, 'warning');
+                }
+            } catch (e) {
+                log('Erro ao ler cache, buscando novamente...', 'warning');
+            }
+        }
+
+        const userId = '415176739';
+        const allItems = [];
+        let offset = 0;
+        const limit = 100;
+        let hasMore = true;
+        let totalProcessados = 0;
+        let page = 1;
+
+        showToast('📦 Buscando lista de anúncios ativos...', 'info');
+
+        while (hasMore) {
+            try {
+                // Mesma URL do Python
+                const url = `https://api.mercadolibre.com/users/${userId}/items/search?limit=${limit}&offset=${offset}&order_by=id_desc`;
+                log(`Buscando página ${page} (offset: ${offset})...`, 'debug');
+                
+                const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+                
+                const response = await fetch(proxyUrl);
+                
+                if (!response.ok) {
+                    if (response.status === 400) {
+                        log(`Offset ${offset} retornou 400, pode ser o limite máximo`, 'warning');
+                        hasMore = false;
+                        break;
+                    }
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                const items = data.results || [];
+                
+                if (items.length === 0) {
+                    log('Nenhum anúncio nesta página, finalizando busca', 'debug');
+                    hasMore = false;
+                    break;
+                }
+
+                log(`Processando ${items.length} anúncios da página ${page}...`, 'debug');
+                
+                // Buscar detalhes de cada item para obter o status
+                const itemsProcessados = [];
+                for (const itemId of items) {
+                    try {
+                        // Mesma chamada do Python para obter detalhes
+                        const detailUrl = `https://api.mercadolibre.com/items/${itemId}`;
+                        const detailProxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(detailUrl)}&token=${token}`;
+                        const detailResponse = await fetch(detailProxyUrl);
+                        if (detailResponse.ok) {
+                            const detail = await detailResponse.json();
+                            if (detail.status === 'active') {
+                                itemsProcessados.push({ 
+                                    id: itemId, 
+                                    title: detail.title || 'Sem título'
+                                });
+                            }
+                        }
+                    } catch (err) {
+                        log(`Erro ao buscar detalhe do item ${itemId}: ${err.message}`, 'warning');
+                    }
+                }
+                
+                allItems.push(...itemsProcessados);
+                totalProcessados += itemsProcessados.length;
+                log(`Página ${page}: ${itemsProcessados.length} itens ativos (total: ${totalProcessados})`, 'info');
+                
+                // Verifica se tem mais páginas
+                const totalItems = data.paging?.total || 0;
+                if (offset + limit >= totalItems || items.length < limit) {
+                    hasMore = false;
+                    log('Todos os anúncios foram processados', 'debug');
+                } else {
+                    offset += limit;
+                    page++;
+                }
+                
+            } catch (error) {
+                log(`Erro na página ${page}: ${error.message}`, 'error');
+                // Se o erro for 400, pode ser o limite máximo
+                if (error.message.includes('400')) {
+                    log('Possível limite máximo de offset atingido', 'warning');
+                    hasMore = false;
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        // Salva cache
+        localStorage.setItem(SELLER_ITEMS_CACHE_KEY, JSON.stringify({
+            items: allItems,
+            timestamp: Date.now()
+        }));
+
+        log(`✅ ${allItems.length} anúncios ativos encontrados`, 'success');
+        return allItems;
+    }
+
     window.carregarMaisItens = function() {
-        if (!currentPromotionId || !currentPromotionType) return;
-        if (!hasMoreItens || isLoadingItens) return;
+        if (!currentPromotionId || !currentPromotionType) {
+            log('Nenhuma promoção selecionada para carregar mais itens', 'warning');
+            return;
+        }
+        if (!hasMoreItens || isLoadingItens) {
+            log(`${!hasMoreItens ? 'Todos os itens já foram carregados' : 'Já está carregando'}`, 'warning');
+            return;
+        }
+        log('Carregando mais itens...', 'info');
         carregarItensPromocao(currentPromotionId, currentPromotionType, true);
     };
 
@@ -458,8 +763,9 @@
             const meliPercent = item.meli_percentage !== undefined ? item.meli_percentage : '-';
             const sellerPercent = item.seller_percentage !== undefined ? item.seller_percentage : '-';
 
-            const boost = item.boosted_offer ? 
-                `<span class="badge badge-success" title="Desconto MELI: ${item.discount_meli_boost_percentage || 0}%">Boost</span>` : 
+            const hasBoost = item.boosted_offer === true;
+            const boostBadge = hasBoost ? 
+                `<span class="badge badge-success" title="Desconto MELI Boost: ${item.discount_meli_boosted_percentage || 0}%">🚀 Boost</span>` : 
                 '<span class="badge badge-secondary">Não</span>';
 
             let acoes = '';
@@ -478,7 +784,7 @@
                 <td>R$ ${precoOriginal}</td>
                 <td>${meliPercent}%</td>
                 <td>${sellerPercent}%</td>
-                <td>${boost}</td>
+                <td>${boostBadge}</td>
                 <td>${acoes}</td>
             `;
 
@@ -566,13 +872,14 @@
                 html += `<p class="text-muted">Este item não está em nenhuma promoção.</p>`;
             } else {
                 html += `<div class="table-responsive"><table class="table table-sm table-striped">
-                    <thead><tr><th>Tipo</th><th>Status</th><th>Preço</th><th>Original</th></tr></thead><tbody>`;
+                    <thead><tr><th>Tipo</th><th>Status</th><th>Preço</th><th>Original</th><th>Boost</th></tr></thead><tbody>`;
                 data.forEach(p => {
                     const tipo = p.type || 'N/A';
                     const status = p.status || 'N/A';
                     const preco = p.price ? (p.price/100).toFixed(2) : '-';
                     const original = p.original_price ? (p.original_price/100).toFixed(2) : '-';
-                    html += `<tr><td>${tipo}</td><td>${status}</td><td>R$ ${preco}</td><td>R$ ${original}</td></tr>`;
+                    const boost = p.boosted_offer ? '🚀 Sim' : 'Não';
+                    html += `<tr><td>${tipo}</td><td>${status}</td><td>R$ ${preco}</td><td>R$ ${original}</td><td>${boost}</td></tr>`;
                 });
                 html += `</tbody></table></div>`;
             }
@@ -581,7 +888,7 @@
             modal.className = 'modal';
             modal.style.cssText = 'display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:2000;';
             modal.innerHTML = `
-                <div class="modal-content" style="max-width:600px;">
+                <div class="modal-content" style="max-width:700px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                         <h4 style="margin:0;"><i class="fas fa-search"></i> Promoções do Item</h4>
                         <button onclick="this.closest('.modal').remove()" style="background:none; border:none; font-size:24px;">&times;</button>
@@ -601,11 +908,14 @@
     };
 
     // ============================================================
-    // MÓDULO: GESTÃO DE PROMOÇÕES EM LOTE
+    // MÓDULO: GESTÃO DE PROMOÇÕES EM LOTE (BULK)
     // ============================================================
 
     window.abrirGestaoPromocoesLote = function() {
+        log('🚀 Abrindo Gestão de Promoções em Lote', 'info');
+        
         if (!window.currentUser) {
+            log('Usuário não logado', 'error');
             showToast('⚠️ Faça login primeiro', 'warning');
             return;
         }
@@ -624,9 +934,11 @@
 
         let container = document.getElementById('bulkPromotionSystem');
         if (container) {
+            log('Container já existe, reutilizando...', 'info');
             container.classList.remove('hidden');
             bulkSystemContainer = container;
         } else {
+            log('Criando container da interface...', 'info');
             container = criarInterfaceBulk();
             document.body.appendChild(container);
             bulkSystemContainer = container;
@@ -635,17 +947,21 @@
         atualizarUsuarioBulk();
 
         if (todasPromocoes.length > 0) {
+            log(`Preenchendo selects com ${todasPromocoes.length} promoções...`, 'info');
             preencherSelectsPromocoes();
         } else {
+            log('Nenhuma promoção em cache, carregando...', 'info');
             carregarPromocoesDisponiveis();
         }
 
         carregarMLBsBloqueados();
 
+        log('Gestão de Promoções em Lote carregada com sucesso', 'success');
         showToast('📋 Gestão de Promoções em Lote carregada', 'info');
     };
 
     window.fecharGestaoPromocoesLote = function() {
+        log('Fechando Gestão de Promoções em Lote', 'info');
         if (bulkSystemContainer) {
             bulkSystemContainer.classList.add('hidden');
         }
@@ -868,9 +1184,9 @@
         return div;
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // FUNÇÕES DO MÓDULO BULK
-    // ------------------------------------------------------------
+    // ============================================================
 
     function atualizarUsuarioBulk() {
         const nameEl = document.getElementById('bulkUserName');
@@ -890,7 +1206,7 @@
             todasPromocoes.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
-                opt.textContent = `${p.name} (${p.type}) - ${p.status}`;
+                opt.textContent = `${p.name} (${p.type})`;
                 opt.dataset.type = p.type;
                 origemSelect.appendChild(opt);
             });
@@ -901,7 +1217,7 @@
             todasPromocoes.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
-                opt.textContent = `${p.name} (${p.type}) - ${p.status}`;
+                opt.textContent = `${p.name} (${p.type})`;
                 opt.dataset.type = p.type;
                 destinoSelect.appendChild(opt);
             });
@@ -924,10 +1240,10 @@
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
             const data = await response.json();
-            todasPromocoes = data.results || [];
+            todasPromocoes = (data.results || []).filter(p => p.status === 'started');
             preencherSelectsPromocoes();
 
-            showToast(`✅ ${todasPromocoes.length} promoções carregadas`, 'success');
+            showToast(`✅ ${todasPromocoes.length} promoções ativas carregadas`, 'success');
 
         } catch (error) {
             console.error('❌ Erro ao carregar promoções:', error);
@@ -936,116 +1252,41 @@
     }
 
     // ============================================================
-// VERSÃO COM SUPABASE - PARA USAR COM A TABELA ACIMA
-// ============================================================
-
-async function carregarMLBsBloqueados() {
-    try {
-        const supabase = getSupabaseClient();
-        
-        if (!supabase) {
-            // Fallback para localStorage
-            console.warn('Supabase não disponível, usando localStorage');
-            const saved = localStorage.getItem('mlbs_bloqueados_promocao');
-            if (saved) {
-                mlbsBloqueados = JSON.parse(saved);
-                atualizarInterfaceMLBsBloqueados();
-            }
-            return;
-        }
-
-        const { data, error } = await supabase
-            .from('mlbs_bloqueados_promocao')
-            .select('mlb')
-            .order('created_at', { ascending: false });
-
-        if (error) throw error;
-
-        mlbsBloqueados = data ? data.map(row => row.mlb) : [];
-        atualizarInterfaceMLBsBloqueados();
-
-        // Também salva no localStorage como fallback
-        localStorage.setItem('mlbs_bloqueados_promocao', JSON.stringify(mlbsBloqueados));
-
-    } catch (error) {
-        console.error('❌ Erro ao carregar MLBs bloqueados:', error);
-        // Fallback: localStorage
+    // MLBs BLOQUEADOS - APENAS LOCALSTORAGE
+    // ============================================================
+    
+    function carregarMLBsBloqueados() {
         try {
-            const saved = localStorage.getItem('mlbs_bloqueados_promocao');
+            const saved = localStorage.getItem(STORAGE_KEY);
             if (saved) {
                 mlbsBloqueados = JSON.parse(saved);
-                atualizarInterfaceMLBsBloqueados();
+            } else {
+                mlbsBloqueados = [];
             }
+            atualizarInterfaceMLBsBloqueados();
         } catch (e) {
+            console.error('❌ Erro ao carregar MLBs bloqueados:', e);
             mlbsBloqueados = [];
         }
     }
-}
 
-    async function salvarMLBsBloqueados() {
-    const input = document.getElementById('bulkMLBsBloqueados');
-    if (!input) return;
+    function salvarMLBsBloqueados() {
+        const input = document.getElementById('bulkMLBsBloqueados');
+        if (!input) return;
 
-    const raw = input.value;
-    const mlbs = raw.split(/[,;\s]+/).filter(m => m.trim().length > 0);
-    mlbsBloqueados = mlbs.map(m => m.trim().toUpperCase());
+        const raw = input.value;
+        const mlbs = raw.split(/[,;\s]+/).filter(m => m.trim().length > 0);
+        mlbsBloqueados = mlbs.map(m => m.trim().toUpperCase());
 
-    try {
-        const supabase = getSupabaseClient();
-        
-        // Sempre salva no localStorage como fallback
-        localStorage.setItem('mlbs_bloqueados_promocao', JSON.stringify(mlbsBloqueados));
-
-        if (supabase) {
-            // Primeiro, limpar todos os registros existentes
-            const { error: deleteError } = await supabase
-                .from('mlbs_bloqueados_promocao')
-                .delete()
-                .neq('id', 0);
-
-            if (deleteError) throw deleteError;
-
-            // Inserir novos
-            if (mlbsBloqueados.length > 0) {
-                const inserts = mlbsBloqueados.map(mlb => ({ mlb }));
-                const { error: insertError } = await supabase
-                    .from('mlbs_bloqueados_promocao')
-                    .insert(inserts);
-
-                if (insertError) throw insertError;
-            }
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(mlbsBloqueados));
+            atualizarInterfaceMLBsBloqueados();
+            showToast(`✅ ${mlbsBloqueados.length} MLB's bloqueados salvos`, 'success');
+        } catch (error) {
+            console.error('❌ Erro ao salvar MLBs bloqueados:', error);
+            showToast('Erro ao salvar MLBs bloqueados', 'error');
         }
-
-        atualizarInterfaceMLBsBloqueados();
-        showToast(`✅ ${mlbsBloqueados.length} MLB's bloqueados salvos`, 'success');
-
-    } catch (error) {
-        console.error('❌ Erro ao salvar MLBs bloqueados:', error);
-        // Fallback: localStorage já foi salvo
-        atualizarInterfaceMLBsBloqueados();
-        showToast('⚠️ Salvo localmente (não sincronizado com servidor)', 'warning');
     }
-}
-
-// Função para obter o cliente Supabase
-function getSupabaseClient() {
-    if (supabaseClient) return supabaseClient;
-    
-    // Tenta obter de várias fontes
-    if (window.supabase) {
-        supabaseClient = window.supabase;
-        return supabaseClient;
-    }
-    
-    if (window._supabase) {
-        supabaseClient = window._supabase;
-        return supabaseClient;
-    }
-    
-    // Se não houver Supabase, retorna null (usa localStorage)
-    console.warn('⚠️ Supabase não disponível, usando apenas localStorage');
-    return null;
-}
 
     function atualizarInterfaceMLBsBloqueados() {
         const input = document.getElementById('bulkMLBsBloqueados');
@@ -1138,9 +1379,10 @@ function getSupabaseClient() {
         input.click();
     };
 
-    // ------------------------------------------------------------
+    // ============================================================
     // EVENTOS
-    // ------------------------------------------------------------
+    // ============================================================
+    
     window.onPromocaoOrigemChange = async function() {
         const origemSelect = document.getElementById('bulkPromocaoOrigem');
         const destinoSelect = document.getElementById('bulkPromocaoDestino');
@@ -1152,9 +1394,14 @@ function getSupabaseClient() {
         if (origemId && destinoId && origemId === destinoId) {
             showToast('⚠️ A promoção de origem e destino não podem ser iguais', 'warning');
             destinoSelect.value = '';
+            return;
         }
 
         if (origemId) {
+            // Reset para carregar todos os itens
+            itensPromocaoOrigem = [];
+            totalItensCarregados = 0;
+            
             await carregarItensOrigem(origemId);
         }
     };
@@ -1168,10 +1415,22 @@ function getSupabaseClient() {
         extras.classList.toggle('hidden', !isEntre);
     };
 
-    // ------------------------------------------------------------
-    // CARREGAR ITENS DA ORIGEM - CORRIGIDO
-    // ------------------------------------------------------------
+    // ============================================================
+    // CARREGAR ITENS DA ORIGEM
+    // ============================================================
     async function carregarItensOrigem(promotionId) {
+        if (isLoadingOrigem) {
+            showToast('⏳ Já está carregando...', 'info');
+            return;
+        }
+        
+        isLoadingOrigem = true;
+        itensPromocaoOrigem = [];
+        totalItensCarregados = 0;
+        metodoUsado = '';
+        
+        showToast('🔄 Carregando itens da promoção de origem...', 'info');
+
         try {
             const tokenData = await window.getValidToken?.();
             if (!tokenData?.access_token) {
@@ -1185,53 +1444,93 @@ function getSupabaseClient() {
                 return;
             }
 
-            // CORREÇÃO: Usar o promotion_type correto
-            const promoType = promo.type;
-            let url = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}/items?app_version=v2&limit=200`;
-            
-            // Adicionar promotion_type apenas se for um tipo válido
-            if (promoType && promoType !== 'UNKNOWN') {
-                url += `&promotion_type=${promoType}`;
-            }
+            log(`Tipo da promoção: ${promo.type}`, 'info');
 
-            console.log('🔄 Buscando itens da origem:', url);
+            // Tenta consulta em lote usando o mesmo padrão do Python
+            let url = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}/items`;
+            let params = {
+                promotion_type: promo.type,
+                app_version: 'v2',
+                limit: 50
+            };
             
-            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
+            let searchAfterLocal = null;
+            let hasMore = true;
+            let page = 1;
 
-            const response = await fetch(proxyUrl);
-            
-            if (!response.ok) {
-                // Se falhar, tenta sem o promotion_type
-                if (url.includes('promotion_type')) {
-                    console.warn('⚠️ Tentando sem promotion_type...');
-                    const fallbackUrl = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}/items?app_version=v2&limit=200`;
-                    const fallbackProxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(fallbackUrl)}&token=${tokenData.access_token}`;
-                    const fallbackResponse = await fetch(fallbackProxyUrl);
-                    if (!fallbackResponse.ok) {
-                        throw new Error(`HTTP ${fallbackResponse.status}`);
-                    }
-                    const data = await fallbackResponse.json();
-                    itensPromocaoOrigem = data.results || [];
-                } else {
-                    throw new Error(`HTTP ${response.status}`);
+            while (hasMore) {
+                let paramsPage = { ...params };
+                if (searchAfterLocal) {
+                    paramsPage.search_after = searchAfterLocal;
                 }
-            } else {
-                const data = await response.json();
-                itensPromocaoOrigem = data.results || [];
+
+                const queryString = Object.keys(paramsPage)
+                    .map(key => `${key}=${encodeURIComponent(paramsPage[key])}`)
+                    .join('&');
+                const fullUrl = `${url}?${queryString}`;
+
+                log(`🔄 Buscando página ${page} em lote...`, 'debug');
+                
+                const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(fullUrl)}&token=${tokenData.access_token}`;
+                const response = await fetch(proxyUrl);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const novosItens = data.results || [];
+                    itensPromocaoOrigem = itensPromocaoOrigem.concat(novosItens);
+                    totalItensCarregados += novosItens.length;
+                    log(`Página ${page}: ${novosItens.length} itens (total: ${totalItensCarregados})`, 'info');
+                    
+                    // Verificar paginação
+                    const paging = data.paging || {};
+                    const searchAfterValue = paging.searchAfter;
+                    if (searchAfterValue && novosItens.length > 0) {
+                        searchAfterLocal = searchAfterValue;
+                        hasMore = true;
+                        page++;
+                    } else {
+                        hasMore = false;
+                        log('Fim da lista (sem searchAfter)', 'debug');
+                    }
+                    showToast(`📊 Carregados ${totalItensCarregados} itens (página ${page})`, 'info');
+                } else {
+                    const errorText = await response.text();
+                    log(`Falha na página ${page}: ${errorText}`, 'warning');
+                    
+                    // Se falhou, tenta o método alternativo
+                    log('🔄 Usando método alternativo para buscar itens...', 'info');
+                    metodoUsado = 'alternativo';
+                    showToast('🔄 Buscando itens via método alternativo...', 'info');
+                    
+                    const itensEncontrados = await buscarItensPorAnuncios(promotionId, tokenData.access_token);
+                    itensPromocaoOrigem = itensEncontrados;
+                    totalItensCarregados = itensEncontrados.length;
+                    hasMore = false;
+                    log(`✅ ${totalItensCarregados} itens carregados via método alternativo`, 'success');
+                }
             }
 
-            showToast(`✅ ${itensPromocaoOrigem.length} itens carregados da promoção de origem`, 'success');
+            if (itensPromocaoOrigem.length === 0) {
+                log('⚠️ Nenhum item encontrado nesta promoção', 'warning');
+                showToast('⚠️ Nenhum item encontrado nesta promoção', 'warning');
+            } else {
+                log(`✅ ${itensPromocaoOrigem.length} itens carregados (método: ${metodoUsado || 'lote'})`, 'success');
+                showToast(`✅ ${itensPromocaoOrigem.length} itens carregados da promoção de origem`, 'success');
+            }
 
         } catch (error) {
-            console.error('❌ Erro ao carregar itens da origem:', error);
+            log(`❌ Erro ao carregar itens da origem: ${error.message}`, 'error');
+            console.error(error);
             showToast('Erro ao carregar itens da origem: ' + error.message, 'error');
             itensPromocaoOrigem = [];
+        } finally {
+            isLoadingOrigem = false;
         }
     }
 
-    // ------------------------------------------------------------
+    // ============================================================
     // ANALISAR ITENS
-    // ------------------------------------------------------------
+    // ============================================================
     window.analisarItens = async function() {
         const origemId = document.getElementById('bulkPromocaoOrigem')?.value;
         const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
@@ -1249,8 +1548,7 @@ function getSupabaseClient() {
 
         if (itensPromocaoOrigem.length === 0) {
             showToast('⚠️ Nenhum item carregado da promoção de origem.', 'warning');
-            await carregarItensOrigem(origemId);
-            if (itensPromocaoOrigem.length === 0) return;
+            return;
         }
 
         const promocaoDestino = todasPromocoes.find(p => p.id === destinoId);
@@ -1264,33 +1562,68 @@ function getSupabaseClient() {
         let percentMin = parseFloat(document.getElementById('bulkPercentMin')?.value) || null;
         let percentMax = parseFloat(document.getElementById('bulkPercentMax')?.value) || null;
 
+        // Buscar itens do destino
+        showToast('🔄 Carregando itens da promoção de destino...', 'info');
+        
         let itensDestino = [];
         try {
             const tokenData = await window.getValidToken?.();
             if (tokenData?.access_token) {
-                let url = `https://api.mercadolibre.com/seller-promotions/promotions/${destinoId}/items?app_version=v2&limit=200`;
-                if (promocaoDestino.type && promocaoDestino.type !== 'UNKNOWN') {
-                    url += `&promotion_type=${promocaoDestino.type}`;
+                // Tenta consulta em lote
+                let url = `https://api.mercadolibre.com/seller-promotions/promotions/${destinoId}/items`;
+                let params = {
+                    promotion_type: promocaoDestino.type,
+                    app_version: 'v2',
+                    limit: 50
+                };
+                let searchAfterLocal = null;
+                let hasMore = true;
+                
+                while (hasMore) {
+                    let paramsPage = { ...params };
+                    if (searchAfterLocal) {
+                        paramsPage.search_after = searchAfterLocal;
+                    }
+                    const queryString = Object.keys(paramsPage)
+                        .map(key => `${key}=${encodeURIComponent(paramsPage[key])}`)
+                        .join('&');
+                    const fullUrl = `${url}?${queryString}`;
+                    
+                    const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(fullUrl)}&token=${tokenData.access_token}`;
+                    const response = await fetch(proxyUrl);
+                    if (response.ok) {
+                        const data = await response.json();
+                        itensDestino = itensDestino.concat(data.results || []);
+                        const paging = data.paging || {};
+                        const searchAfterValue = paging.searchAfter;
+                        if (searchAfterValue && data.results?.length > 0) {
+                            searchAfterLocal = searchAfterValue;
+                            hasMore = true;
+                        } else {
+                            hasMore = false;
+                        }
+                    } else {
+                        hasMore = false;
+                    }
                 }
-                const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
-                const response = await fetch(proxyUrl);
-                if (response.ok) {
-                    const data = await response.json();
-                    itensDestino = data.results || [];
+                
+                // Se não encontrou itens no destino, usa método alternativo
+                if (itensDestino.length === 0) {
+                    log('Usando método alternativo para buscar itens do destino', 'info');
+                    itensDestino = await buscarItensPorAnuncios(destinoId, tokenData.access_token);
                 }
             }
         } catch (e) {
-            console.warn('Não foi possível carregar itens do destino:', e);
+            console.warn('Erro ao carregar itens do destino:', e);
         }
 
+        // Criar mapa de preços do destino
         const mapaDestino = {};
         itensDestino.forEach(item => {
             const id = item.id || item.item_id;
             if (id) {
                 mapaDestino[id] = {
                     price: item.price || 0,
-                    original_price: item.original_price || 0,
-                    meli_percentage: item.meli_percentage || 0,
                     seller_percentage: item.seller_percentage || 0
                 };
             }
@@ -1305,6 +1638,7 @@ function getSupabaseClient() {
             const itemId = item.id || item.item_id;
             const mlb = itemId;
 
+            // Verificar se está bloqueado
             if (mlbsBloqueados.includes(mlb)) {
                 bloqueados++;
                 itensFiltrados.push({
@@ -1403,6 +1737,7 @@ function getSupabaseClient() {
             });
         }
 
+        // Atualizar UI
         document.getElementById('bulkResumo').classList.remove('hidden');
         document.getElementById('bulkTabelaContainer').classList.remove('hidden');
         document.getElementById('bulkTotalItens').textContent = itensFiltrados.length;
@@ -1469,6 +1804,9 @@ function getSupabaseClient() {
         });
     };
 
+    // ============================================================
+    // EXECUTAR ATIVAÇÃO EM MASSA
+    // ============================================================
     window.executarAtivacaoEmMassa = async function() {
         const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
         if (!destinoId) {
@@ -1576,6 +1914,9 @@ function getSupabaseClient() {
         }
     };
 
+    // ============================================================
+    // EXPORTAR ANÁLISE PARA EXCEL
+    // ============================================================
     window.exportarAnaliseBulkExcel = function() {
         if (itensFiltrados.length === 0) {
             showToast('⚠️ Nenhum dado para exportar', 'warning');
@@ -1622,9 +1963,10 @@ function getSupabaseClient() {
         }
     };
 
-    // ------------------------------------------------------------
+    // ============================================================
     // INICIALIZAÇÃO
-    // ------------------------------------------------------------
-    console.log('📢 Módulo de Promoções carregado');
+    // ============================================================
+    console.log('📢 [PROMOÇÕES] Módulo carregado com sucesso!');
+    console.log('📢 [PROMOÇÕES] Usando estratégia de paginação igual ao Python');
 
 })();
