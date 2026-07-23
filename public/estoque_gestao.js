@@ -371,6 +371,423 @@ async function verHistoricoMovimentacoes(produtoId) {
     document.body.appendChild(modal);
 }
 
+// =========================================================
+// REGRAS DE ESTOQUE - INDIVIDUAIS E POR CATEGORIA
+// =========================================================
+
+// Estrutura para armazenar regras individuais (por SKU)
+// Será salva no Supabase na tabela 'configuracoes_sistema' com chave 'regras_estoque_individuais'
+let regrasEstoqueIndividuais = {};
+
+// Carregar regras individuais
+async function carregarRegrasIndividuais() {
+    try {
+        if (!window.supabaseClient) {
+            const localData = localStorage.getItem('regras_estoque_individuais');
+            if (localData) {
+                regrasEstoqueIndividuais = JSON.parse(localData);
+                console.log('✅ Regras individuais carregadas do localStorage');
+            }
+            return;
+        }
+        
+        const { data, error } = await window.supabaseClient
+            .from('configuracoes_sistema')
+            .select('*')
+            .eq('chave', 'regras_estoque_individuais')
+            .single();
+        
+        if (error && error.code !== 'PGRST116') {
+            console.error('Erro ao carregar regras individuais:', error);
+            return;
+        }
+        
+        if (data && data.valor) {
+            regrasEstoqueIndividuais = typeof data.valor === 'string' ? JSON.parse(data.valor) : data.valor;
+            console.log('✅ Regras individuais carregadas:', Object.keys(regrasEstoqueIndividuais).length);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao carregar regras individuais:', error);
+        regrasEstoqueIndividuais = {};
+    }
+}
+
+// Salvar regras individuais
+async function salvarRegrasIndividuais(regras) {
+    try {
+        if (!window.supabaseClient) {
+            localStorage.setItem('regras_estoque_individuais', JSON.stringify(regras));
+            regrasEstoqueIndividuais = regras;
+            showToast('✅ Regras individuais salvas no localStorage!', 'success');
+            return;
+        }
+        
+        const { error } = await window.supabaseClient
+            .from('configuracoes_sistema')
+            .upsert({
+                chave: 'regras_estoque_individuais',
+                valor: JSON.stringify(regras),
+                atualizado_em: new Date().toISOString(),
+                atualizado_por: currentUser?.name || 'sistema'
+            }, { onConflict: 'chave' });
+        
+        if (error) throw error;
+        
+        regrasEstoqueIndividuais = regras;
+        console.log('✅ Regras individuais salvas!');
+        showToast('✅ Regras individuais atualizadas!', 'success');
+        
+    } catch (error) {
+        console.error('❌ Erro ao salvar regras individuais:', error);
+        showToast('Erro ao salvar regras individuais: ' + error.message, 'error');
+    }
+}
+
+// ===== CALCULAR ESTOQUE MÁXIMO - PRIORIDADE INDIVIDUAL =====
+function calcularEstoqueMaximo(produto) {
+    if (!produto) return 30;
+    
+    const sku = produto.sku || '';
+    
+    // 1. VERIFICAR REGRA INDIVIDUAL POR SKU
+    const regraIndividual = regrasEstoqueIndividuais[sku];
+    if (regraIndividual && regraIndividual.condicoes) {
+        const precoUnitario = produto.preco || 0;
+        
+        for (const condicao of regraIndividual.condicoes) {
+            if (condicao.operador === 'padrao') {
+                return condicao.estoque_maximo || 30;
+            }
+            
+            if (condicao.operador === 'maior_que' && precoUnitario > condicao.valor) {
+                return condicao.estoque_maximo || 30;
+            }
+            
+            if (condicao.operador === 'menor_que' && precoUnitario < condicao.valor) {
+                return condicao.estoque_maximo || 30;
+            }
+            
+            if (condicao.operador === 'igual_a' && precoUnitario === condicao.valor) {
+                return condicao.estoque_maximo || 30;
+            }
+        }
+        
+        // Se chegou aqui, usou a regra individual mas não encontrou condição
+        // Pega o padrão da individual ou fallback
+        const padrao = regraIndividual.condicoes.find(c => c.operador === 'padrao');
+        if (padrao) return padrao.estoque_maximo || 30;
+    }
+    
+    // 2. VERIFICAR REGRA DA CATEGORIA (se não tiver individual)
+    const regrasCategoria = regrasEstoqueAtuais[produto.categoria] || regrasEstoquePadrao['outros'];
+    if (!regrasCategoria || !regrasCategoria.condicoes) return 30;
+    
+    const precoUnitario = produto.preco || 0;
+    
+    for (const condicao of regrasCategoria.condicoes) {
+        if (condicao.operador === 'padrao') {
+            return condicao.estoque_maximo || 30;
+        }
+        
+        if (condicao.operador === 'maior_que' && precoUnitario > condicao.valor) {
+            return condicao.estoque_maximo || 30;
+        }
+        
+        if (condicao.operador === 'menor_que' && precoUnitario < condicao.valor) {
+            return condicao.estoque_maximo || 30;
+        }
+        
+        if (condicao.operador === 'igual_a' && precoUnitario === condicao.valor) {
+            return condicao.estoque_maximo || 30;
+        }
+    }
+    
+    return 30;
+}
+
+// ===== ABRIR MODAL REGRA INDIVIDUAL =====
+function abrirModalRegraIndividual(sku) {
+    console.log('🔍 [abrirModalRegraIndividual] SKU:', sku);
+    
+    // Verifica se o modal já existe
+    let modal = document.getElementById('modalRegraIndividual');
+    
+    // Se não existir, cria
+    if (!modal) {
+        console.log('📦 Criando modal de regra individual...');
+        modal = criarModalRegraIndividual();
+    }
+    
+    // Preenche os dados
+    const skuInput = document.getElementById('regraSku');
+    const skuDisplay = document.getElementById('regraSkuDisplay');
+    
+    if (skuInput) skuInput.value = sku || '';
+    if (skuDisplay) skuDisplay.textContent = sku || 'SKU';
+    
+    // Carregar regra existente se houver
+    const container = document.getElementById('regraIndividuaisContainer');
+    if (container) {
+        container.innerHTML = '';
+        
+        const regra = regrasEstoqueIndividuais[sku] || { condicoes: [] };
+        
+        if (regra.condicoes.length === 0) {
+            // Adicionar uma condição padrão
+            adicionarCondicaoIndividual();
+        } else {
+            regra.condicoes.forEach((cond, idx) => {
+                adicionarCondicaoIndividual(cond, idx);
+            });
+        }
+    }
+    
+    // Mostra o modal
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    console.log('✅ Modal de regra individual aberto');
+}
+
+// ===== CRIAR MODAL REGRA INDIVIDUAL =====
+function criarModalRegraIndividual() {
+    const modal = document.createElement('div');
+    modal.id = 'modalRegraIndividual';
+    modal.className = 'modal hidden';
+    modal.style.cssText = 'display: none; align-items: center; justify-content: center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99999;';
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 600px; background: white; padding: 30px; border-radius: 12px; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h3 style="margin: 0;">
+                    <i class="fas fa-sliders-h" style="color: #00ADEE;"></i> 
+                    Regra Individual - <span id="regraSkuDisplay" style="color: #00ADEE;">SKU</span>
+                </h3>
+                <button onclick="fecharModalRegraIndividual()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">&times;</button>
+            </div>
+            
+            <input type="hidden" id="regraSku">
+            
+            <div style="background: #fff3cd; padding: 12px 15px; border-radius: 6px; margin-bottom: 20px; border-left: 4px solid #ffc107;">
+                <i class="fas fa-info-circle"></i> 
+                <strong>Regra individual para este produto.</strong> 
+                <br>Se definida, <strong>sobrescreve</strong> a regra da categoria.
+                <br>Deixe vazio para usar a regra da categoria.
+            </div>
+            
+            <div id="regraIndividuaisContainer" style="margin-bottom: 10px;">
+                <!-- Condições serão adicionadas aqui -->
+            </div>
+            
+            <div style="margin-top: 10px; margin-bottom: 15px;">
+                <button class="btn btn-sm btn-primary" onclick="adicionarCondicaoIndividual()">
+                    <i class="fas fa-plus"></i> Adicionar Condição
+                </button>
+            </div>
+            
+            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; border-top: 1px solid #dee2e6; padding-top: 20px;">
+                <button class="btn btn-danger" onclick="removerRegraIndividual()" id="btnRemoverRegraIndividual">
+                    <i class="fas fa-trash"></i> Remover Regra
+                </button>
+                <button class="btn btn-secondary" onclick="fecharModalRegraIndividual()">Cancelar</button>
+                <button class="btn btn-success" onclick="salvarRegraIndividual()">
+                    <i class="fas fa-save"></i> Salvar Regra
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    console.log('✅ Modal de regra individual criado');
+    return modal;
+}
+
+// ===== FECHAR MODAL REGRA INDIVIDUAL =====
+function fecharModalRegraIndividual() {
+    const modal = document.getElementById('modalRegraIndividual');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+}
+
+// ===== ADICIONAR CONDIÇÃO INDIVIDUAL =====
+function adicionarCondicaoIndividual(condicaoExistente = null, idx = null) {
+    const container = document.getElementById('regraIndividuaisContainer');
+    if (!container) {
+        console.error('❌ Container #regraIndividuaisContainer não encontrado');
+        return;
+    }
+    
+    const index = idx !== null ? idx : container.children.length;
+    
+    const div = document.createElement('div');
+    div.className = 'condicao-individual';
+    div.style.cssText = 'display: flex; align-items: center; gap: 8px; background: white; padding: 8px 12px; border-radius: 6px; border: 1px solid #e9ecef; margin-bottom: 8px; flex-wrap: wrap;';
+    div.id = `condicao_indiv_${index}`;
+    
+    const condicao = condicaoExistente || { operador: 'maior_que', valor: 100, estoque_maximo: 10 };
+    const isPadrao = condicao.operador === 'padrao';
+    
+    div.innerHTML = `
+        <span style="font-weight: 600; font-size: 13px; min-width: 60px;">Se preço</span>
+        <select class="form-control form-control-sm" style="width: 100px;" onchange="atualizarCondicaoIndividual(${index}, 'operador', this.value)">
+            <option value="maior_que" ${condicao.operador === 'maior_que' ? 'selected' : ''}>></option>
+            <option value="menor_que" ${condicao.operador === 'menor_que' ? 'selected' : ''}><</option>
+            <option value="igual_a" ${condicao.operador === 'igual_a' ? 'selected' : ''}>=</option>
+            <option value="padrao" ${isPadrao ? 'selected' : ''}>Padrão</option>
+        </select>
+        ${!isPadrao ? `
+            <span style="color: #6c757d; font-size: 13px;">R$</span>
+            <input type="number" class="form-control form-control-sm" style="width: 100px;" 
+                   value="${condicao.valor || 0}" step="0.01" min="0"
+                   onchange="atualizarCondicaoIndividual(${index}, 'valor', parseFloat(this.value) || 0)"
+                   placeholder="Valor">
+            <span style="color: #6c757d; font-size: 13px;">→</span>
+        ` : ''}
+        <span style="color: #6c757d; font-size: 13px;">Máx.:</span>
+        <input type="number" class="form-control form-control-sm" style="width: 80px;" 
+               value="${condicao.estoque_maximo || 0}" step="1" min="0"
+               onchange="atualizarCondicaoIndividual(${index}, 'estoque_maximo', parseInt(this.value) || 0)"
+               placeholder="Máx">
+        <span style="color: #6c757d; font-size: 12px;">unid.</span>
+        ${!isPadrao ? `
+            <button class="btn btn-sm btn-danger" onclick="removerCondicaoIndividual(${index})" title="Remover condição">
+                <i class="fas fa-times"></i>
+            </button>
+        ` : `
+            <span class="badge badge-secondary" style="font-size: 11px;">Padrão</span>
+        `}
+    `;
+    
+    if (idx === null) {
+        container.appendChild(div);
+    } else {
+        // Substituir o elemento existente
+        const existing = document.getElementById(`condicao_indiv_${idx}`);
+        if (existing) {
+            existing.replaceWith(div);
+        } else {
+            container.appendChild(div);
+        }
+    }
+    
+    // Reindexar
+    reindexarCondicoesIndividuais();
+}
+
+function reindexarCondicoesIndividuais() {
+    const container = document.getElementById('regraIndividuaisContainer');
+    const children = container.children;
+    for (let i = 0; i < children.length; i++) {
+        children[i].id = `condicao_indiv_${i}`;
+        // Atualizar os atributos onchange dos elementos internos
+        const selects = children[i].querySelectorAll('select');
+        const inputs = children[i].querySelectorAll('input');
+        const btns = children[i].querySelectorAll('button');
+        
+        selects.forEach(el => {
+            const oldOnchange = el.getAttribute('onchange');
+            if (oldOnchange) {
+                el.setAttribute('onchange', oldOnchange.replace(/\d+/g, i));
+            }
+        });
+        inputs.forEach(el => {
+            const oldOnchange = el.getAttribute('onchange');
+            if (oldOnchange) {
+                el.setAttribute('onchange', oldOnchange.replace(/\d+/g, i));
+            }
+        });
+        btns.forEach(el => {
+            const oldOnclick = el.getAttribute('onclick');
+            if (oldOnclick) {
+                el.setAttribute('onclick', oldOnclick.replace(/\d+/g, i));
+            }
+        });
+    }
+}
+
+function atualizarCondicaoIndividual(index, campo, valor) {
+    // Apenas atualiza o valor no DOM, será salvo ao clicar em Salvar
+    console.log(`Condição ${index} - ${campo} = ${valor}`);
+}
+
+function removerCondicaoIndividual(index) {
+    const container = document.getElementById('regraIndividuaisContainer');
+    const children = container.children;
+    if (children.length <= 1) {
+        showToast('Mantenha pelo menos a condição padrão.', 'warning');
+        return;
+    }
+    const el = document.getElementById(`condicao_indiv_${index}`);
+    if (el) {
+        el.remove();
+        reindexarCondicoesIndividuais();
+    }
+}
+
+function salvarRegraIndividual() {
+    const sku = document.getElementById('regraSku').value;
+    if (!sku) {
+        showToast('SKU não informado', 'warning');
+        return;
+    }
+    
+    const container = document.getElementById('regraIndividuaisContainer');
+    const children = container.children;
+    const condicoes = [];
+    
+    for (let i = 0; i < children.length; i++) {
+        const div = children[i];
+        const operador = div.querySelector('select')?.value || 'padrao';
+        const inputs = div.querySelectorAll('input');
+        let valor = 0;
+        let estoque_maximo = 0;
+        
+        if (operador !== 'padrao') {
+            // O primeiro input é o valor (se existir)
+            const valorInput = inputs[0];
+            if (valorInput) valor = parseFloat(valorInput.value) || 0;
+            
+            // O segundo input é o estoque máximo
+            const maxInput = inputs[inputs.length - 1];
+            if (maxInput) estoque_maximo = parseInt(maxInput.value) || 0;
+        } else {
+            // Para padrão, só tem um input (estoque máximo)
+            const maxInput = inputs[0];
+            if (maxInput) estoque_maximo = parseInt(maxInput.value) || 0;
+        }
+        
+        condicoes.push({ operador, valor, estoque_maximo });
+    }
+    
+    // Verificar se tem uma condição padrão
+    const temPadrao = condicoes.some(c => c.operador === 'padrao');
+    if (!temPadrao) {
+        showToast('Adicione uma condição padrão (senão).', 'warning');
+        return;
+    }
+    
+    regrasEstoqueIndividuais[sku] = { condicoes };
+    salvarRegrasIndividuais(regrasEstoqueIndividuais);
+    
+    fecharModalRegraIndividual();
+    renderizarTabelaProdutos(produtosFiltradosAtuais);
+}
+
+function removerRegraIndividual() {
+    const sku = document.getElementById('regraSku').value;
+    if (!sku) return;
+    
+    if (!confirm(`Remover regra individual para ${sku}?`)) return;
+    
+    delete regrasEstoqueIndividuais[sku];
+    salvarRegrasIndividuais(regrasEstoqueIndividuais);
+    
+    fecharModalRegraIndividual();
+    renderizarTabelaProdutos(produtosFiltradosAtuais);
+    showToast(`✅ Regra removida para ${sku}`, 'success');
+}
+
 // ===== RENDERIZAR TABELA DE PRODUTOS =====
 function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     console.log('🔍 [renderizarTabelaProdutos] Iniciando renderização...');
@@ -535,9 +952,12 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
         
         // ===== BOTÕES DE AÇÃO =====
         let botoes = `
-            <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
-            <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
-            <button class="btn btn-sm btn-secondary" onclick="verHistoricoMovimentacoes(${prod.id})" title="Histórico"><i class="fas fa-history"></i></button>
+        <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
+        <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
+        <button class="btn btn-sm btn-secondary" onclick="verHistoricoMovimentacoes(${prod.id})" title="Histórico"><i class="fas fa-history"></i></button>
+        <button class="btn btn-sm btn-purple" onclick="abrirModalRegraIndividual('${escapeHtml(prod.sku)}')" title="Regra individual de estoque">
+        <i class="fas fa-sliders-h"></i>
+        </button>
         `;
         
         if (isAdmin) {
@@ -2075,28 +2495,114 @@ async function sincronizarEstoqueML(produto) {
                 return skuAnuncio;
             }
 
+        // ===== FUNÇÃO CORRIGIDA: extrairQuantidadePorKit (mais robusta) =====
+function extrairQuantidadePorKit(skuAnuncio) {
+    console.log(`🔍 extrairQuantidadePorKit recebeu: "${skuAnuncio}" (tipo: ${typeof skuAnuncio})`);
+    
+    if (!skuAnuncio || typeof skuAnuncio !== 'string') return 1;
+    
+    skuAnuncio = skuAnuncio.trim();
+    
+    // ===== CASO 1: Multi-SKU com pontos =====
+    // Exemplo: "00100256eipas.00200895rolvergt"
+    if (skuAnuncio.includes('.')) {
+        console.log(`📦 Multi-SKU detectado: ${skuAnuncio}`);
+        const partes = skuAnuncio.split('.');
+        let totalQuantidade = 0;
+        
+        for (const parte of partes) {
+            // Procura por 3 dígitos no início da parte
+            const match = parte.match(/^(\d{3})/);
+            if (match) {
+                const valor = parseInt(match[1], 10);
+                if (valor > 0) {
+                    totalQuantidade += valor;
+                    console.log(`   Parte "${parte}": ${valor} unidades`);
+                }
+            } else {
+                // Fallback: procura qualquer grupo de 3 dígitos
+                const grupos = parte.match(/\d{3}/);
+                if (grupos) {
+                    const valor = parseInt(grupos[0], 10);
+                    if (valor > 0) {
+                        totalQuantidade += valor;
+                        console.log(`   Parte "${parte}" (fallback): ${valor} unidades`);
+                    }
+                }
+            }
+        }
+        
+        if (totalQuantidade > 0) {
+            console.log(`✅ Total de unidades por kit (multi-SKU): ${totalQuantidade}`);
+            return totalQuantidade;
+        }
+    }
+    
+    // ===== CASO 2: SKU único com prefixo de 3 dígitos =====
+    // Exemplo: "00202564..." → 002 = 2 unidades
+    const match = skuAnuncio.match(/^(\d{3})/);
+    if (match) {
+        const valor = parseInt(match[1], 10);
+        if (valor > 0) {
+            console.log(`✅ Quantidade por kit extraída: ${valor} (dos 3 primeiros dígitos "${match[1]}")`);
+            return valor;
+        }
+    }
+    
+    // ===== CASO 3: Procura qualquer grupo de 3 dígitos no início =====
+    const grupos = skuAnuncio.match(/^\d{3}/);
+    if (grupos) {
+        const valor = parseInt(grupos[0], 10);
+        if (valor > 0) {
+            console.log(`✅ Quantidade por kit extraída (fallback): ${valor}`);
+            return valor;
+        }
+    }
+    
+    // ===== CASO 4: SKU com formato "001256eipas" (quantidade 1) =====
+    // Verifica se o SKU começa com "00" seguido de número
+    if (skuAnuncio.match(/^00\d/)) {
+        const valor = parseInt(skuAnuncio.substring(0, 3), 10);
+        if (valor > 0) {
+            console.log(`✅ Quantidade por kit: ${valor} (SKU começa com 00)`);
+            return valor;
+        }
+    }
+    
+    console.warn(`⚠️ Nenhuma quantidade detectada, usando 1`);
+    return 1;
+}
+
+            // ===== FUNÇÃO CORRIGIDA: calcularQuantidadeComRegras =====
             function calcularQuantidadeComRegras(quantidadeBase, categoria, item, skuProduto, marcaProduto, modeloProduto, produto, isKitPai, skusFilhos, skuAnuncio) {
                 let quantidadeFinal = quantidadeBase;
                 
                 console.log(`📊 [calcularQuantidadeComRegras] Quantidade base: ${quantidadeBase}`);
                 console.log(`📊 [calcularQuantidadeComRegras] Categoria: ${categoria}`);
                 console.log(`📊 [calcularQuantidadeComRegras] isKitPai: ${isKitPai}`);
-                console.log(`📊 [calcularQuantidadeComRegras] SKU do anúncio: ${skuAnuncio}`);
+                console.log(`📊 [calcularQuantidadeComRegras] SKU do anúncio: "${skuAnuncio}"`);
                 
+                // ===== 1. EXTRAIR QUANTIDADE POR KIT DO SKU =====
+                let quantidadePorKit = 1;
+                if (skuAnuncio) {
+                    quantidadePorKit = extrairQuantidadePorKit(skuAnuncio);
+                    console.log(`📊 [calcularQuantidadeComRegras] Quantidade por kit do SKU: ${quantidadePorKit}`);
+                }
+                
+                // ===== 2. SE FOR KIT PAI, CALCULAR KITS DISPONÍVEIS =====
                 if (isKitPai && skusFilhos && skusFilhos.length > 0) {
                     const kitsDisponiveis = calcularKitsDisponiveis(skusFilhos, produtosEstoque, skuAnuncio);
                     console.log(`📦 Produto é um KIT. Kits disponíveis: ${kitsDisponiveis}`);
                     quantidadeFinal = kitsDisponiveis;
                     console.log(`📊 [calcularQuantidadeComRegras] Após KIT: ${quantidadeFinal}`);
-                } else if (skuAnuncio) {
-                    const quantidadePorKit = extrairUnidadesPorKit(skuAnuncio);
-                    if (quantidadePorKit > 1) {
-                        console.log(`📦 Produto NÃO é kit, mas SKU indica venda em quantidade: ${quantidadePorKit}`);
-                        quantidadeFinal = Math.floor(quantidadeBase / quantidadePorKit);
-                        console.log(`📊 [calcularQuantidadeComRegras] Estoque ajustado para venda em quantidade: ${quantidadeFinal}`);
-                    }
+                } else if (skuAnuncio && quantidadePorKit > 1) {
+                    // Produto NÃO é kit, mas SKU indica venda em quantidade (ex: 002 = vende de 2 em 2)
+                    console.log(`📦 Produto NÃO é kit, mas SKU indica venda em quantidade: ${quantidadePorKit}`);
+                    quantidadeFinal = Math.floor(quantidadeBase / quantidadePorKit);
+                    console.log(`📊 [calcularQuantidadeComRegras] Estoque ajustado para venda em quantidade: ${quantidadeFinal}`);
                 }
                 
+                // ===== 3. PEGAR PREÇO DO ANÚNCIO =====
                 let precoAnuncio = 0;
                 if (item.variations && item.variations.length > 0) {
                     const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
@@ -2106,15 +2612,17 @@ async function sincronizarEstoqueML(produto) {
                     precoAnuncio = item.price || 0;
                 }
                 
-                // ===== APLICA AS REGRAS CONDICIONAIS =====
+                // ===== 4. APLICAR REGRAS CONDICIONAIS (INDIVIDUAL OU CATEGORIA) =====
                 const estoqueMaximo = calcularEstoqueMaximo({ 
                     preco: precoAnuncio, 
-                    categoria: categoria 
+                    categoria: categoria,
+                    sku: skuProduto
                 });
                 
                 quantidadeFinal = Math.min(quantidadeFinal, estoqueMaximo);
                 console.log(`📊 Regra Condicional: preço=R$ ${precoAnuncio}, estoque máximo=${estoqueMaximo}, enviando=${quantidadeFinal}`);
                 
+                // ===== 5. REGRAS ESPECÍFICAS PARA RAIOS =====
                 if (categoria === 'Raios') {
                     const regra = obterRegraRaios(marcaProduto, modeloProduto);
                     if (regra && regra.max_kits !== undefined) {
@@ -2616,14 +3124,46 @@ async function salvarRegrasEstoque(regras) {
     }
 }
 
-// ===== CALCULAR ESTOQUE MÁXIMO PERMITIDO (baseado no preço unitário) =====
+// ===== CALCULAR ESTOQUE MÁXIMO - PRIORIDADE INDIVIDUAL =====
 function calcularEstoqueMaximo(produto) {
-    if (!produto || !produto.categoria) return 30;
+    if (!produto) return 30;
     
-    const regrasCategoria = regrasEstoqueAtuais[produto.categoria] || regrasEstoquePadrao['outros'];
-    if (!regrasCategoria || !regrasCategoria.condicoes) return 30;
-    
+    const sku = produto.sku || '';
+    const categoria = produto.categoria || '';
     const precoUnitario = produto.preco || 0;
+    
+    // ===== 1. VERIFICAR REGRA INDIVIDUAL POR SKU =====
+    const regraIndividual = regrasEstoqueIndividuais[sku];
+    if (regraIndividual && regraIndividual.condicoes && regraIndividual.condicoes.length > 0) {
+        console.log(`📊 [calcularEstoqueMaximo] Regra individual encontrada para SKU: ${sku}`);
+        
+        for (const condicao of regraIndividual.condicoes) {
+            if (condicao.operador === 'padrao') {
+                return condicao.estoque_maximo || 30;
+            }
+            
+            if (condicao.operador === 'maior_que' && precoUnitario > condicao.valor) {
+                return condicao.estoque_maximo || 30;
+            }
+            
+            if (condicao.operador === 'menor_que' && precoUnitario < condicao.valor) {
+                return condicao.estoque_maximo || 30;
+            }
+            
+            if (condicao.operador === 'igual_a' && precoUnitario === condicao.valor) {
+                return condicao.estoque_maximo || 30;
+            }
+        }
+        
+        // Se chegou aqui, usou a regra individual mas não encontrou condição
+        // Pega o padrão da individual ou fallback
+        const padrao = regraIndividual.condicoes.find(c => c.operador === 'padrao');
+        if (padrao) return padrao.estoque_maximo || 30;
+    }
+    
+    // ===== 2. VERIFICAR REGRA DA CATEGORIA (se não tiver individual) =====
+    const regrasCategoria = regrasEstoqueAtuais[categoria] || regrasEstoquePadrao['outros'];
+    if (!regrasCategoria || !regrasCategoria.condicoes) return 30;
     
     for (const condicao of regrasCategoria.condicoes) {
         if (condicao.operador === 'padrao') {
@@ -3444,4 +3984,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch(e) {}
     }, 2000);
+
+    // Carregar regras individuais
+setTimeout(carregarRegrasIndividuais, 1100);
+
 });

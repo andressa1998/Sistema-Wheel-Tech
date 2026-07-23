@@ -3943,19 +3943,27 @@ function generateOSCode() {
     return code;
 }
 
-// ============================================
-// FUNÇÕES DE FILTRO E PERMISSÃO (ATUALIZADO)
-// ============================================
 function filterOrdersByUser(ordersList) {
-    if (!currentUser) return [];    
-    
-    // Administrador vê TODAS as ordens
-    if (currentUser.role === 'Administrador') {
-        return ordersList;
+    if (!currentUser) return [];
+
+    // 🔥 NOVO: Se o filtro atual NÃO for 'fotos_atualizar',
+    // removemos todas as OS com photoType === 'fotos_para_atualizar'
+    const filtroAtual = currentFilter || 'pendente';
+    let listaFiltrada = [...ordersList];
+
+    if (filtroAtual !== 'fotos_atualizar') {
+        listaFiltrada = listaFiltrada.filter(order => 
+            order.photoType !== 'fotos_para_atualizar'
+        );
     }
-    
+
+    // Administrador vê TODAS as ordens (exceto as que foram filtradas acima)
+    if (currentUser.role === 'Administrador') {
+        return listaFiltrada;
+    }
+
     // Outros usuários só veem as ordens onde são responsáveis ou criadores
-    return ordersList.filter(order => {
+    return listaFiltrada.filter(order => {
         const isResponsible = order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase());
         const isCreator = order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase());
         return isResponsible || isCreator;
@@ -3978,18 +3986,28 @@ function checkOrderPermission(order) {
 
 function updateCounters() {
     if (!currentUser) return;
-    
+
+    // 🔥 CORREÇÃO: Pegamos TODAS as OS do usuário (incluindo as de "Atualizar Fotos")
     const userOrders = filterOrdersByUser(orders);
     
-    const pending = userOrders.filter(o => o.status === 'pendente' && (!o.motivo_rejeicao || o.motivo_rejeicao === '')).length;
-    const progress = userOrders.filter(o => o.status === 'andamento').length;
-    const notChecked = userOrders.filter(o => o.status === 'concluida' && !o.conferido).length;
-    const revision = userOrders.filter(o => o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== '').length;
-    const completed = userOrders.filter(o => o.status === 'concluida' && o.conferido === true).length;
-    const total = userOrders.length;
-    // NOVO: contagem para serviço "Fotos para atualizar"
-    const fotosAtualizar = userOrders.filter(o => o.photoType === 'fotos_para_atualizar').length;
+    // 🔥 SEPARAMOS as OS que são do tipo "fotos_para_atualizar"
+    const fotosAtualizar = userOrders.filter(o => o.photoType === 'fotos_para_atualizar');
+    
+    // 🔥 OS DEMAIS filtros EXCLUEM as "fotos_para_atualizar"
+    const demaisOrders = userOrders.filter(o => o.photoType !== 'fotos_para_atualizar');
 
+    // Contadores para os filtros normais (excluindo "Atualizar Fotos")
+    const pending = demaisOrders.filter(o => o.status === 'pendente' && (!o.motivo_rejeicao || o.motivo_rejeicao === '')).length;
+    const progress = demaisOrders.filter(o => o.status === 'andamento').length;
+    const notChecked = demaisOrders.filter(o => o.status === 'concluida' && !o.conferido).length;
+    const revision = demaisOrders.filter(o => o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== '').length;
+    const completed = demaisOrders.filter(o => o.status === 'concluida' && o.conferido === true).length;
+    const total = demaisOrders.length;
+
+    // 🔥 Contador para "Atualizar Fotos" (TODAS as OS desse tipo, independente do status)
+    const fotosAtualizarCount = fotosAtualizar.length;
+
+    // Atualiza os elementos HTML
     const setText = (id, value) => {
         const el = document.getElementById(id);
         if (el) el.textContent = value;
@@ -4000,8 +4018,9 @@ function updateCounters() {
     setText('countRevision', revision);
     setText('countCompleted', completed);
     setText('countTotal', total);
-    setText('countFotosAtualizar', fotosAtualizar); // NOVO
-    
+    setText('countFotosAtualizar', fotosAtualizarCount); // 🔥 Sempre mostra o total de "Atualizar Fotos"
+
+    // Atualiza contadores do usuário
     if (myOrdersCount) {
         if (currentUser.role === 'Administrador') {
             myOrdersCount.textContent = `${total} (todas)`;
@@ -4010,11 +4029,12 @@ function updateCounters() {
         }
     }
     if (totalOrdersCount) totalOrdersCount.textContent = orders.length;
-    
-    // Mensagem de vazio (se não houver ordens)
+
+    // Mensagem de vazio
     if (emptyMessage) {
         const tableResponsive = document.querySelector('.table-responsive');
-        if (total === 0) {
+        const totalExibido = currentFilter === 'fotos_atualizar' ? fotosAtualizarCount : total;
+        if (totalExibido === 0) {
             emptyMessage.classList.remove('hidden');
             if (tableResponsive) tableResponsive.classList.add('hidden');
             emptyMessage.innerHTML = `

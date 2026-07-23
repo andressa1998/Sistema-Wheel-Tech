@@ -997,6 +997,14 @@ body > * {
         padding: 3px 8px;
     }
 }
+.btn-purple {
+    background: #6f42c1;
+    color: white;
+}
+.btn-purple:hover {
+    background: #5a32a3;
+    color: white;
+}
     </style>
 </head>
 <body>
@@ -1157,10 +1165,11 @@ body > * {
                 <h3>Gestão de Estoque</h3>
                 <p>Produtos, entrada/saída</p>
             </div>
-            <div class="menu-card" onclick="abrirSistemaPromocoes()">
-                <div class="menu-icon"><i class="fas fa-tag"></i></div>
-                <h3>Promoções</h3>
-                <p>Gerenciar e organizar promoções</p>
+            <!-- Adicione no menu-grid dentro de #menuSystem -->
+            <div class="menu-card" onclick="abrirGestaoPromocoesLote()">
+                <div class="menu-icon"><i class="fas fa-layer-group"></i></div>
+                <h3>Promoções em Lote</h3>
+                <p>Ativar em massa com regras</p>
             </div>
             <div class="menu-card" onclick="abrirSistemaPerguntas()">
                 <div class="menu-icon"><i class="fas fa-comments"></i></div>
