@@ -2170,7 +2170,22 @@ body > * {
     <!-- ===== MODAIS (globais) ===== -->
 
     <!-- Modal para detalhes do reembolso (já existente) -->
-    <div id="detalhesReembolsoModal" class="modal hidden">...</div>
+<!-- Modal para Detalhes do Reembolso -->
+<div id="detalhesReembolsoModal" class="modal hidden">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; padding: 0;">
+        <div style="background: linear-gradient(135deg, #00ADEE, #80D6F7); color: white; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin:0;"><i class="fas fa-eye"></i> Detalhes da Reclamação</h3>
+            <button onclick="closeDetalhesReembolso()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
+        </div>
+        <div id="detalhesReembolsoContent" style="padding: 20px; max-height: 70vh; overflow-y: auto;">
+            <!-- Conteúdo será carregado dinamicamente -->
+        </div>
+        <div style="background: #f8f9fa; padding: 15px 25px; border-top: 1px solid #dee2e6; display: flex; justify-content: flex-end;">
+            <button class="btn btn-secondary" onclick="closeDetalhesReembolso()">Fechar</button>
+        </div>
+    </div>
+</div>
+`;
 
     <!-- Modal relatório colaborador (já existente) -->
     <div id="relatorioColaboradorModal" class="modal hidden">...</div>

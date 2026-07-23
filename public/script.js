@@ -9402,16 +9402,23 @@ function exportarRelatorioColaboradorExcel() {
 
 // Abrir modal de detalhes
 window.verDetalhesReembolso = async function(id) {
+    console.log('🔍 Abrindo detalhes do reembolso ID:', id);
+    
     const reembolso = reembolsos.find(r => r.id === id);
     if (!reembolso) {
         showToast('Reembolso não encontrado', 'error');
         return;
     }
     
+    const modal = document.getElementById('detalhesReembolsoModal');
     const content = document.getElementById('detalhesReembolsoContent');
-    if (!content) return;
     
-    // Data corrigida
+    if (!modal || !content) {
+        showToast('Erro: Modal não encontrado', 'error');
+        return;
+    }
+    
+    // Formatar dados
     const dataOp = formatarDataISO(reembolso.data_operacao);
     const dataCriacao = new Date(reembolso.data_criacao).toLocaleString('pt-BR');
     const dataAtualizacao = reembolso.data_atualizacao ? new Date(reembolso.data_atualizacao).toLocaleString('pt-BR') : '-';
@@ -9419,17 +9426,28 @@ window.verDetalhesReembolso = async function(id) {
     const tipoReferencia = reembolso.tipo_referencia || (reembolso.numero_venda?.startsWith('RET-') ? 'retirada' : 'venda');
     const numeroReferencia = tipoReferencia === 'retirada' ? (reembolso.numero_retirada || reembolso.numero_venda?.replace('RET-', '')) : reembolso.numero_venda;
     
+    // Status
     let statusText = '';
-    if (reembolso.status_reembolso === 'em_andamento') statusText = '<span class="badge badge-warning">Em andamento</span>';
-    else if (reembolso.status_reembolso === 'finalizado') statusText = '<span class="badge badge-success">Reembolso finalizado</span>';
-    else statusText = '<span class="badge badge-secondary">Não informado</span>';
+    if (reembolso.tipo_reclamacao === 'sem_reembolso') {
+        statusText = reembolso.resolvida 
+            ? '<span class="badge badge-success">✅ Resolvida (sem reembolso)</span>'
+            : '<span class="badge badge-warning">⏳ Pendente (sem reembolso)</span>';
+    } else if (reembolso.status === 'reembolsado' || reembolso.status_reembolso === 'finalizado') {
+        statusText = '<span class="badge badge-success">💰 Reembolso finalizado</span>';
+    } else if (reembolso.status === 'pendente') {
+        statusText = '<span class="badge badge-danger">❌ Reembolso negado</span>';
+    } else if (reembolso.status === 'a_verificar' || reembolso.status_reembolso === 'em_andamento') {
+        statusText = '<span class="badge badge-warning">⏳ Em andamento</span>';
+    } else {
+        statusText = `<span class="badge badge-secondary">${reembolso.status || 'Desconhecido'}</span>`;
+    }
     
     content.innerHTML = `
         <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
             <div class="info-row"><strong>Número da Venda/Retirada:</strong> ${numeroReferencia || '-'}</div>
             <div class="info-row"><strong>Número da Reclamação:</strong> ${reembolso.numero_reclamacao || '-'}</div>
             <div class="info-row"><strong>Número da Operação:</strong> ${reembolso.numero_operacao || 'Reembolso na venda'}</div>
-            <div class="info-row"><strong>Valor:</strong> R$ ${parseFloat(reembolso.valor).toFixed(2)}</div>
+            <div class="info-row"><strong>Valor:</strong> R$ ${parseFloat(reembolso.valor || 0).toFixed(2)}</div>
             <div class="info-row"><strong>Data da Operação:</strong> ${dataOp}</div>
             <div class="info-row"><strong>Motivo:</strong> ${reembolso.motivo || 'Não informado'}</div>
             <div class="info-row"><strong>Status:</strong> ${statusText}</div>
@@ -9437,6 +9455,8 @@ window.verDetalhesReembolso = async function(id) {
             <div class="info-row"><strong>Data de criação:</strong> ${dataCriacao}</div>
             <div class="info-row"><strong>Última atualização:</strong> ${dataAtualizacao}</div>
             ${reembolso.verificado_por ? `<div class="info-row"><strong>Verificado por:</strong> ${reembolso.verificado_por}</div>` : ''}
+            ${reembolso.responsabilidade ? `<div class="info-row"><strong>Responsabilidade:</strong> ${reembolso.responsabilidade}</div>` : ''}
+            ${reembolso.cliente_bloqueado !== undefined && reembolso.cliente_bloqueado !== null ? `<div class="info-row"><strong>Cliente bloqueado:</strong> ${reembolso.cliente_bloqueado ? 'Sim' : 'Não'}</div>` : ''}
         </div>
         <div class="card">
             <h4><i class="fas fa-comment"></i> Observações</h4>
@@ -9446,11 +9466,16 @@ window.verDetalhesReembolso = async function(id) {
         </div>
     `;
     
-    document.getElementById('detalhesReembolsoModal').classList.remove('hidden');
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
 };
 
 window.closeDetalhesReembolso = function() {
-    document.getElementById('detalhesReembolsoModal').classList.add('hidden');
+    const modal = document.getElementById('detalhesReembolsoModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
 };
 
 window.abrirSistemaEstoque = function() {
@@ -10912,46 +10937,40 @@ function atualizarVisibilidadeRelatorioColaborador() {
 
 // ===== RENDERIZAR DEVOLUÇÕES =====
 function renderizarDevolucoes() {
-    devolucoes.forEach(d => {
-        let status = (d.status || '').toLowerCase().trim();
-        if (status === 'aguardando' || status === 'aguardando_recebimento') d.status = 'aguardando_recebimento';
-        else if (status === 'recebido' || status === 'recebido') d.status = 'recebido';
-        else if (status === 'cancelado' || status === 'cancelado') d.status = 'cancelado';
-        else d.status = status; // mantém original se não mapeado
-    });
     const tbody = document.getElementById('devolucoesTableBody');
-    if (!tbody) {
-        console.warn('⚠️ Tabela devolucoesTableBody não encontrada');
-        return;
-    }
+    if (!tbody) return;
 
     console.log('📊 Renderizando devoluções. Total:', devolucoes.length, 'Filtro atual:', filtroDevolucaoAtual);
 
     // Aplicar filtro
     let lista = [...devolucoes];
+    
+    // Normalizar status
+    lista.forEach(d => {
+        let status = (d.status || '').toLowerCase().trim();
+        if (status === 'aguardando' || status === 'aguardando_recebimento') d.status = 'aguardando_recebimento';
+        else if (status === 'recebido' || status === 'recebido') d.status = 'recebido';
+        else if (status === 'cancelado' || status === 'cancelado') d.status = 'cancelado';
+        else d.status = status;
+    });
+
     if (filtroDevolucaoAtual !== 'todos') {
-        // Mapear os valores do filtro para os status reais
-        let statusMap = {
+        const statusMap = {
             'aguardando': 'aguardando_recebimento',
             'recebidos': 'recebido',
             'cancelados': 'cancelado'
         };
-        let statusFiltro = statusMap[filtroDevolucaoAtual] || filtroDevolucaoAtual;
+        const statusFiltro = statusMap[filtroDevolucaoAtual] || filtroDevolucaoAtual;
         lista = lista.filter(d => d.status === statusFiltro);
-        console.log(`📌 Filtrado por status "${statusFiltro}": ${lista.length} itens`);
-    } else {
-        console.log(`📌 Sem filtro de status: ${lista.length} itens`);
     }
 
     // Busca
     const busca = document.getElementById('buscaDevolucao').value.trim().toLowerCase();
     if (busca) {
-        const antes = lista.length;
         lista = lista.filter(d =>
             (d.nome_produto && d.nome_produto.toLowerCase().includes(busca)) ||
             (d.venda_link && d.venda_link.toLowerCase().includes(busca))
         );
-        console.log(`🔍 Busca "${busca}": ${antes} -> ${lista.length} itens`);
     }
 
     if (lista.length === 0) {
@@ -10960,11 +10979,10 @@ function renderizarDevolucoes() {
     }
 
     const hoje = new Date();
-    hoje.setHours(0,0,0,0);
+    hoje.setHours(0, 0, 0, 0);
 
     let html = '';
     lista.forEach(d => {
-        // Verificar alertas
         let alertaClass = '';
         let alertaMsg = '';
         let statusText = '';
@@ -10974,19 +10992,17 @@ function renderizarDevolucoes() {
             case 'aguardando_recebimento':
                 statusText = 'Aguardando Recebimento';
                 statusClass = 'badge-warning';
-                // Verificar 7 dias sem postagem
                 if (d.data_abertura) {
-                    const abertura = new Date(d.data_abertura);
-                    const diffDias = Math.floor((hoje - abertura) / (1000*60*60*24));
+                    const abertura = new Date(d.data_abertura + 'T00:00:00');
+                    const diffDias = Math.floor((hoje - abertura) / (1000 * 60 * 60 * 24));
                     if (diffDias >= 7 && !d.data_postagem) {
                         alertaClass = 'alerta-nao-enviado';
                         alertaMsg = '⚠️ Cliente não enviou (7 dias)';
                     }
                 }
-                // Verificar 30 dias após postagem
                 if (d.data_postagem) {
-                    const postagem = new Date(d.data_postagem);
-                    const diffDias = Math.floor((hoje - postagem) / (1000*60*60*24));
+                    const postagem = new Date(d.data_postagem + 'T00:00:00');
+                    const diffDias = Math.floor((hoje - postagem) / (1000 * 60 * 60 * 24));
                     if (diffDias >= 30) {
                         alertaClass = 'alerta-extraviado';
                         alertaMsg = '🚨 Pedir reembolso de extravio (30 dias)';
@@ -11002,11 +11018,14 @@ function renderizarDevolucoes() {
                 statusClass = 'badge-secondary';
                 break;
             default:
-                statusText = d.status;
+                statusText = d.status || 'Desconhecido';
                 statusClass = 'badge-secondary';
         }
 
-        // Botões de ação
+        // 🔥 CORREÇÃO: Formatar datas sem conversão de fuso
+        const dataAberturaFormatada = d.data_abertura ? formatarDataBR(d.data_abertura) : '-';
+        const dataPostagemFormatada = d.data_postagem ? formatarDataBR(d.data_postagem) : '-';
+
         let botoes = '';
         if (d.status === 'aguardando_recebimento') {
             botoes += `<button class="btn btn-sm btn-primary" onclick="abrirModalRecebimento('${d.id}')" title="Registrar chegada"><i class="fas fa-box-open"></i> Chegou</button>`;
@@ -11022,8 +11041,8 @@ function renderizarDevolucoes() {
             <tr class="${alertaClass}">
                 <td><a href="${d.venda_link || '#'}" target="_blank" class="text-primary">${d.venda_link ? 'Ver venda' : '-'}</a></td>
                 <td><strong>${d.nome_produto || '-'}</strong></td>
-                <td>${d.data_abertura ? new Date(d.data_abertura).toLocaleDateString('pt-BR') : '-'}</td>
-                <td>${d.data_postagem ? new Date(d.data_postagem).toLocaleDateString('pt-BR') : '-'}</td>
+                <td>${dataAberturaFormatada}</td>
+                <td>${dataPostagemFormatada}</td>
                 <td>
                     <span class="badge ${statusClass}">${statusText}</span>
                     ${linhaAlerta}
@@ -11038,6 +11057,19 @@ function renderizarDevolucoes() {
     });
 
     tbody.innerHTML = html;
+}
+
+// ============================================
+// FUNÇÃO AUXILIAR: FORMATAR DATA BR (YYYY-MM-DD -> DD/MM/YYYY)
+// ============================================
+
+function formatarDataBR(dataStr) {
+    if (!dataStr) return '-';
+    const partes = dataStr.split('-');
+    if (partes.length === 3) {
+        return `${partes[2]}/${partes[1]}/${partes[0]}`;
+    }
+    return dataStr;
 }
 
 // ===== FILTRAR DEVOLUÇÕES =====
@@ -11060,16 +11092,20 @@ function filtrarDevolucoes(filtro) {
     renderizarDevolucoes();
 }
 
-// ===== ABRIR MODAL NOVA DEVOLUÇÃO =====
+// Substitua a função abrirModalNovaDevolucao por esta versão corrigida:
 function abrirModalNovaDevolucao() {
     editingDevolucaoId = null;
     document.getElementById('modalDevolucaoTitle').textContent = 'Nova Devolução';
     document.getElementById('editDevolucaoId').value = '';
     document.getElementById('devCamposRecebimento').style.display = 'none';
+    
     // Limpar campos
     document.getElementById('devVendaLink').value = '';
     document.getElementById('devNomeProduto').value = '';
-    document.getElementById('devDataAbertura').value = new Date().toISOString().split('T')[0];
+    
+    // 🔥 CORREÇÃO: Usar a data atual no formato YYYY-MM-DD (sem conversão de fuso)
+    const hoje = new Date().toISOString().split('T')[0];
+    document.getElementById('devDataAbertura').value = hoje;
     document.getElementById('devDataPostagem').value = '';
     document.getElementById('devAfetaReputacao').value = 'nao';
     document.getElementById('devLocalFull').value = 'local';
@@ -11093,7 +11129,11 @@ function fecharModalNovaDevolucao() {
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('formNovaDevolucao');
     if (form) {
-        form.addEventListener('submit', async function(e) {
+        // Remove listeners antigos (se houver)
+        const newForm = form.cloneNode(true);
+        form.parentNode.replaceChild(newForm, form);
+        
+        newForm.addEventListener('submit', async function(e) {
             e.preventDefault();
 
             const id = document.getElementById('editDevolucaoId').value;
@@ -11109,7 +11149,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
 
-            // Dados da segunda parte (se estiverem visíveis)
+            // Dados da segunda parte
             const dataRecebimento = document.getElementById('devDataRecebimento').value || null;
             const quemRevisou = document.getElementById('devQuemRevisou').value || null;
             const aptaVenda = document.getElementById('devAptaVenda').value === 'sim';
@@ -11118,14 +11158,20 @@ document.addEventListener('DOMContentLoaded', function() {
             const cancelouDevolucao = document.getElementById('devCancelouDevolucao').value === 'sim';
             const observacao = document.getElementById('devObservacao').value || null;
 
+            // 🔥 CORREÇÃO: Garantir que as datas sejam salvas no formato correto (YYYY-MM-DD)
+            // O input type="date" já retorna YYYY-MM-DD, mas vamos garantir que não haja conversão de fuso
+            const dataAberturaCorrigida = dataAbertura ? dataAbertura : null;
+            const dataPostagemCorrigida = dataPostagem ? dataPostagem : null;
+            const dataRecebimentoCorrigida = dataRecebimento ? dataRecebimento : null;
+
             const dados = {
                 venda_link: vendaLink,
                 nome_produto: nomeProduto,
-                data_abertura: dataAbertura,
-                data_postagem: dataPostagem,
+                data_abertura: dataAberturaCorrigida,
+                data_postagem: dataPostagemCorrigida,
                 afeta_reputacao: afetaReputacao,
                 local_ou_full: localFull,
-                data_recebimento: dataRecebimento,
+                data_recebimento: dataRecebimentoCorrigida,
                 quem_revisou: quemRevisou,
                 apta_venda: aptaVenda,
                 bloqueado: bloqueado,
@@ -11135,14 +11181,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 atualizado_em: new Date().toISOString()
             };
 
-            // Se for edição e já tiver status, manter; senão, definir como aguardando
             if (!id) {
                 dados.status = 'aguardando_recebimento';
                 dados.criado_por = currentUser.name;
                 dados.criado_em = new Date().toISOString();
-            } else {
-                // Se já existir, não alterar status (a menos que venha do recebimento)
-                // Mas manter o status atual, a menos que seja forçado
             }
 
             try {
@@ -11175,7 +11217,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// ===== EDITAR DEVOLUÇÃO =====
+// Substitua a função editarDevolucao por esta versão corrigida:
 function editarDevolucao(id) {
     const dev = devolucoes.find(d => d.id === id);
     if (!dev) {
@@ -11188,12 +11230,14 @@ function editarDevolucao(id) {
     document.getElementById('editDevolucaoId').value = id;
     document.getElementById('devVendaLink').value = dev.venda_link || '';
     document.getElementById('devNomeProduto').value = dev.nome_produto || '';
+    
+    // 🔥 CORREÇÃO: Manter a data exata sem conversão de fuso
     document.getElementById('devDataAbertura').value = dev.data_abertura || '';
     document.getElementById('devDataPostagem').value = dev.data_postagem || '';
+    
     document.getElementById('devAfetaReputacao').value = dev.afeta_reputacao ? 'sim' : 'nao';
     document.getElementById('devLocalFull').value = dev.local_ou_full || 'local';
 
-    // Segunda parte
     const temRecebimento = dev.data_recebimento || dev.quem_revisou;
     document.getElementById('devCamposRecebimento').style.display = temRecebimento ? 'block' : 'none';
     document.getElementById('devDataRecebimento').value = dev.data_recebimento || '';
@@ -11224,13 +11268,16 @@ async function excluirDevolucao(id) {
     }
 }
 
-// ===== ABRIR MODAL RECEBIMENTO =====
+// Substitua a função abrirModalRecebimento por esta versão corrigida:
 function abrirModalRecebimento(id) {
     document.getElementById('recebimentoDevolucaoId').value = id;
-    // Preencher com dados atuais se houver
     const dev = devolucoes.find(d => d.id === id);
+    
+    // 🔥 CORREÇÃO: Usar a data exata do banco, sem conversão
+    const hoje = new Date().toISOString().split('T')[0];
+    
     if (dev) {
-        document.getElementById('recebDataRecebimento').value = dev.data_recebimento || new Date().toISOString().split('T')[0];
+        document.getElementById('recebDataRecebimento').value = dev.data_recebimento || hoje;
         document.getElementById('recebQuemRevisou').value = dev.quem_revisou || '';
         document.getElementById('recebAptaVenda').value = dev.apta_venda ? 'sim' : 'nao';
         document.getElementById('recebBloqueado').value = dev.bloqueado ? 'sim' : 'nao';
@@ -11238,8 +11285,7 @@ function abrirModalRecebimento(id) {
         document.getElementById('recebCancelouDevolucao').value = dev.cancelou_devolucao ? 'sim' : 'nao';
         document.getElementById('recebObservacao').value = dev.observacao || '';
     } else {
-        // Valores padrão
-        document.getElementById('recebDataRecebimento').value = new Date().toISOString().split('T')[0];
+        document.getElementById('recebDataRecebimento').value = hoje;
         document.getElementById('recebQuemRevisou').value = '';
         document.getElementById('recebAptaVenda').value = 'nao';
         document.getElementById('recebBloqueado').value = 'nao';
@@ -11247,6 +11293,7 @@ function abrirModalRecebimento(id) {
         document.getElementById('recebCancelouDevolucao').value = 'nao';
         document.getElementById('recebObservacao').value = '';
     }
+    
     document.getElementById('modalRecebimentoDevolucao').classList.remove('hidden');
 }
 
@@ -11255,7 +11302,7 @@ function fecharModalRecebimento() {
     document.getElementById('modalRecebimentoDevolucao').classList.add('hidden');
 }
 
-// ===== SALVAR RECEBIMENTO =====
+// Substitua a função salvarRecebimento por esta versão corrigida:
 async function salvarRecebimento() {
     const id = document.getElementById('recebimentoDevolucaoId').value;
     if (!id) {
@@ -11277,9 +11324,9 @@ async function salvarRecebimento() {
     }
 
     try {
-        // Atualizar devolução
+        // 🔥 CORREÇÃO: Manter a data exata selecionada (YYYY-MM-DD)
         const updateData = {
-            data_recebimento: dataRecebimento,
+            data_recebimento: dataRecebimento, // Já está no formato correto do input type="date"
             quem_revisou: quemRevisou,
             apta_venda: aptaVenda,
             bloqueado: bloqueado,
@@ -11289,7 +11336,6 @@ async function salvarRecebimento() {
             atualizado_em: new Date().toISOString()
         };
 
-        // Se cancelou a devolução, status = cancelado
         if (cancelouDevolucao) {
             updateData.status = 'cancelado';
         } else {
@@ -11306,9 +11352,7 @@ async function salvarRecebimento() {
         showToast('✅ Recebimento registrado!', 'success');
         fecharModalRecebimento();
 
-        // Se NÃO cancelou a devolução, perguntar se quer criar OS
         if (!cancelouDevolucao) {
-            // Buscar devolução atualizada
             const { data: devAtualizada } = await supabaseClient
                 .from('devolucoes_acompanhamento')
                 .select('*')
@@ -11316,9 +11360,7 @@ async function salvarRecebimento() {
                 .single();
 
             if (devAtualizada) {
-                // Salvar referência para criar OS
                 devolucaoParaOS = devAtualizada;
-                // Abrir modal para observação da OS
                 document.getElementById('osDevolucaoId').value = id;
                 document.getElementById('obsOSDevolucao').value = '';
                 document.getElementById('modalObservacaoOS').classList.remove('hidden');

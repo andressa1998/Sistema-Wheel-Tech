@@ -1,13 +1,12 @@
 // ============================================================
-// MÓDULO: GERENCIAMENTO DE PROMOÇÕES (Mercado Livre) - VERSÃO OTIMIZADA
-// Baseado no código Python de MonitorPrecosPromocoesAtacado
+// MÓDULO: GERENCIAMENTO DE PROMOÇÕES (Mercado Livre) - VERSÃO COMPLETA
 // ============================================================
 
 (function() {
     'use strict';
 
     // ------------------------------------------------------------
-    // VARIÁVEIS GLOBAIS DO MÓDULO PRINCIPAL
+    // VARIÁVEIS GLOBAIS
     // ------------------------------------------------------------
     let promocoes = [];
     let itensPromocao = [];
@@ -18,21 +17,25 @@
     let hasMoreItens = true;
     let containerPromocoes = null;
 
-    // ------------------------------------------------------------
-    // VARIÁVEIS DO MÓDULO BULK (PROMOÇÕES EM LOTE)
-    // ------------------------------------------------------------
     let todasPromocoes = [];
     let itensPromocaoOrigem = [];
     let itensFiltrados = [];
     let mlbsBloqueados = [];
+    let mlbsBloqueadosAutomaticos = []; // MLBs bloqueados por idade (últimos 40 dias)
+    let mlbsBloqueadosManuais = []; // MLBs bloqueados manualmente pelo usuário
     let bulkSystemContainer = null;
     let isLoadingOrigem = false;
     let totalItensCarregados = 0;
     let metodoUsado = '';
 
-    // Chave para localStorage
+    // Chaves para localStorage
     const STORAGE_KEY = 'mlbs_bloqueados_promocao';
+    const STORAGE_KEY_MANUAL = 'mlbs_bloqueados_manual';
+    const STORAGE_KEY_AUTO = 'mlbs_bloqueados_auto';
     const SELLER_ITEMS_CACHE_KEY = 'seller_items_cache';
+    
+    // Configuração
+    const DIAS_BLOQUEIO_AUTOMATICO = 40; // MLBs criados nos últimos 40 dias são bloqueados
 
     // ============================================================
     // FUNÇÃO DE LOG
@@ -61,6 +64,539 @@
                 console.log(`${prefix} ${timestamp} ${msg}`, data || '');
         }
     }
+
+    // ============================================================
+// FUNÇÃO PARA BUSCAR DATA DE CRIAÇÃO DE UM MLB
+// ============================================================
+async function buscarDataCriacaoMLB(itemId, token) {
+    try {
+        const url = `https://api.mercadolibre.com/items/${itemId}`;
+        const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+        const response = await fetch(proxyUrl);
+        
+        if (response.ok) {
+            const data = await response.json();
+            return data.start_time || data.date_created || null;
+        }
+        return null;
+    } catch (error) {
+        log(`Erro ao buscar data de criação do MLB ${itemId}: ${error.message}`, 'warning');
+        return null;
+    }
+}
+
+// ============================================================
+// FUNÇÃO PARA CALCULAR DIAS ENTRE DUAS DATAS
+// ============================================================
+function calcularDiasEntreDatas(dataInicio, dataFim = new Date()) {
+    const inicio = new Date(dataInicio);
+    const fim = new Date(dataFim);
+    const diffTime = Math.abs(fim - inicio);
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+}
+    // ============================================================
+    // FUNÇÃO PARA VERIFICAR E BLOQUEAR MLBs POR IDADE
+    // ============================================================
+    async function verificarEBloquearMLBsPorIdade(mlbs, token) {
+        const mlbsBloqueadosPorIdade = [];
+        let processados = 0;
+        const total = mlbs.length;
+
+        log(`🔍 Verificando idade de ${total} MLBs (bloqueia com < ${DIAS_BLOQUEIO_AUTOMATICO} dias)...`, 'info');
+
+        // Processar em lotes para não sobrecarregar
+        const batchSize = 10;
+        for (let i = 0; i < mlbs.length; i += batchSize) {
+            const batch = mlbs.slice(i, i + batchSize);
+            
+            const promises = batch.map(async (mlb) => {
+                try {
+                    const dataCriacao = await buscarDataCriacaoMLB(mlb, token);
+                    if (dataCriacao) {
+                        const dias = calcularDiasEntreDatas(dataCriacao);
+                        if (dias < DIAS_BLOQUEIO_AUTOMATICO) {
+                            log(`🔒 MLB ${mlb} bloqueado automaticamente (criado há ${dias} dias)`, 'warning');
+                            return { mlb, dias, dataCriacao };
+                        }
+                    }
+                    return null;
+                } catch (error) {
+                    log(`Erro ao verificar MLB ${mlb}: ${error.message}`, 'warning');
+                    return null;
+                }
+            });
+
+            const resultados = await Promise.all(promises);
+            const validos = resultados.filter(r => r !== null);
+            mlbsBloqueadosPorIdade.push(...validos);
+            
+            processados += batch.length;
+            if (processados % 50 === 0 || processados === total) {
+                log(`📊 Verificados ${processados}/${total} MLBs, ${mlbsBloqueadosPorIdade.length} bloqueados por idade`, 'info');
+            }
+        }
+
+        // Extrair apenas os MLBs
+        const mlbsBloqueados = mlbsBloqueadosPorIdade.map(item => item.mlb);
+        
+        log(`✅ ${mlbsBloqueados.length} MLBs bloqueados automaticamente por idade (< ${DIAS_BLOQUEIO_AUTOMATICO} dias)`, 'success');
+        
+        // Salvar no localStorage
+        localStorage.setItem(STORAGE_KEY_AUTO, JSON.stringify({
+            mlbs: mlbsBloqueados,
+            dataAtualizacao: new Date().toISOString(),
+            diasBloqueio: DIAS_BLOQUEIO_AUTOMATICO
+        }));
+
+        return mlbsBloqueados;
+    }
+
+    // ============================================================
+    // FUNÇÃO PARA CARREGAR MLBs BLOQUEADOS (MANUAIS + AUTOMÁTICOS)
+    // ============================================================
+    async function carregarMLBsBloqueados() {
+        log('Carregando MLBs bloqueados...', 'debug');
+        
+        try {
+            // 1. Carregar MLBs bloqueados manualmente
+            const savedManual = localStorage.getItem(STORAGE_KEY_MANUAL);
+            if (savedManual) {
+                mlbsBloqueadosManuais = JSON.parse(savedManual);
+                log(`${mlbsBloqueadosManuais.length} MLBs bloqueados manualmente carregados`, 'info');
+            } else {
+                mlbsBloqueadosManuais = [];
+            }
+
+            // 2. Carregar MLBs bloqueados automaticamente (cache)
+            const savedAuto = localStorage.getItem(STORAGE_KEY_AUTO);
+            if (savedAuto) {
+                try {
+                    const data = JSON.parse(savedAuto);
+                    const cacheTime = data.dataAtualizacao ? new Date(data.dataAtualizacao).getTime() : 0;
+                    const cacheAge = Date.now() - cacheTime;
+                    
+                    // Cache válido por 1 hora (3600000 ms)
+                    if (cacheAge < 3600000) {
+                        mlbsBloqueadosAutomaticos = data.mlbs || [];
+                        log(`${mlbsBloqueadosAutomaticos.length} MLBs bloqueados automaticamente carregados do cache (${Math.round(cacheAge/60000)} min atrás)`, 'info');
+                    } else {
+                        log('Cache de MLBs automáticos expirado, será recalculado', 'warning');
+                        mlbsBloqueadosAutomaticos = [];
+                    }
+                } catch (e) {
+                    log('Erro ao ler cache automático', 'warning');
+                    mlbsBloqueadosAutomaticos = [];
+                }
+            } else {
+                mlbsBloqueadosAutomaticos = [];
+            }
+
+            // 3. Se não houver cache automático ou estiver expirado, recalcular
+            if (mlbsBloqueadosAutomaticos.length === 0) {
+                // Buscar MLBs da lista atual para verificar idade
+                const tokenData = await window.getValidToken?.();
+                if (tokenData?.access_token) {
+                    const mlbsParaVerificar = await buscarTodosMLBsAtivos(tokenData.access_token);
+                    if (mlbsParaVerificar.length > 0) {
+                        mlbsBloqueadosAutomaticos = await verificarEBloquearMLBsPorIdade(
+                            mlbsParaVerificar.map(item => item.id),
+                            tokenData.access_token
+                        );
+                    }
+                }
+            }
+
+            // 4. Combinar listas (remover duplicatas)
+            const allBlocked = [...new Set([...mlbsBloqueadosManuais, ...mlbsBloqueadosAutomaticos])];
+            mlbsBloqueados = allBlocked;
+
+            // 5. Atualizar interface
+            atualizarInterfaceMLBsBloqueados();
+
+            log(`✅ Total: ${mlbsBloqueados.length} MLBs bloqueados (${mlbsBloqueadosManuais.length} manuais + ${mlbsBloqueadosAutomaticos.length} automáticos)`, 'success');
+
+        } catch (error) {
+            log(`❌ Erro ao carregar MLBs bloqueados: ${error.message}`, 'error');
+            console.error(error);
+            mlbsBloqueados = [];
+            mlbsBloqueadosManuais = [];
+            mlbsBloqueadosAutomaticos = [];
+        }
+    }
+
+    // ============================================================
+// FUNÇÃO PARA BUSCAR TODOS OS MLBs ATIVOS (OTIMIZADA)
+// ============================================================
+async function buscarTodosMLBsAtivos(token) {
+    log('📦 Buscando MLBs ativos para verificação...', 'info');
+    
+    // Verifica cache primeiro
+    const cached = localStorage.getItem(SELLER_ITEMS_CACHE_KEY);
+    if (cached) {
+        try {
+            const data = JSON.parse(cached);
+            const cacheTime = data.timestamp || 0;
+            const cacheAge = Date.now() - cacheTime;
+            if (cacheAge < 1800000) { // 30 minutos
+                log(`📦 Usando cache de MLBs: ${data.items.length} itens`, 'info');
+                return data.items;
+            }
+        } catch (e) {
+            log('Erro ao ler cache', 'warning');
+        }
+    }
+
+    const userId = '415176739';
+    const allItems = [];
+    let offset = 0;
+    const limit = 100;
+    let hasMore = true;
+    let totalProcessados = 0;
+    let page = 1;
+    const MAX_OFFSET = 1000; // Limite máximo da API
+
+    showToast('📦 Buscando lista de anúncios ativos...', 'info');
+
+    while (hasMore && offset <= MAX_OFFSET) {
+        try {
+            const url = `https://api.mercadolibre.com/users/${userId}/items/search?limit=${limit}&offset=${offset}&order_by=id_desc`;
+            log(`Buscando página ${page} (offset: ${offset})...`, 'debug');
+            
+            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+            const response = await fetch(proxyUrl);
+            
+            if (!response.ok) {
+                if (response.status === 400) {
+                    log(`Offset ${offset} retornou 400, finalizando busca`, 'warning');
+                    hasMore = false;
+                    break;
+                }
+                throw new Error(`HTTP ${response.status}`);
+            }
+
+            const data = await response.json();
+            const items = data.results || [];
+            
+            if (items.length === 0) {
+                hasMore = false;
+                break;
+            }
+
+            // Buscar detalhes de cada item para obter o status e data de criação
+            const itemsProcessados = [];
+            for (const itemId of items) {
+                try {
+                    const detailUrl = `https://api.mercadolibre.com/items/${itemId}`;
+                    const detailProxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(detailUrl)}&token=${token}`;
+                    const detailResponse = await fetch(detailProxyUrl);
+                    if (detailResponse.ok) {
+                        const detail = await detailResponse.json();
+                        if (detail.status === 'active') {
+                            itemsProcessados.push({ 
+                                id: itemId, 
+                                title: detail.title || 'Sem título',
+                                start_time: detail.start_time || detail.date_created
+                            });
+                        }
+                    }
+                } catch (err) {
+                    log(`Erro ao buscar detalhe do item ${itemId}: ${err.message}`, 'warning');
+                }
+            }
+            
+            allItems.push(...itemsProcessados);
+            totalProcessados += itemsProcessados.length;
+            log(`Página ${page}: ${itemsProcessados.length} itens ativos (total: ${totalProcessados})`, 'info');
+            
+            // Verifica se tem mais páginas
+            const totalItems = data.paging?.total || 0;
+            if (offset + limit >= totalItems || items.length < limit) {
+                hasMore = false;
+            } else {
+                offset += limit;
+                page++;
+            }
+            
+        } catch (error) {
+            log(`Erro na página ${page}: ${error.message}`, 'error');
+            hasMore = false;
+        }
+    }
+
+    // Salva cache
+    localStorage.setItem(SELLER_ITEMS_CACHE_KEY, JSON.stringify({
+        items: allItems,
+        timestamp: Date.now()
+    }));
+
+    log(`✅ ${allItems.length} MLBs ativos encontrados`, 'success');
+    return allItems;
+}
+
+    // ============================================================
+// FUNÇÃO PARA SALVAR MLBs BLOQUEADOS MANUAIS
+// ============================================================
+function salvarMLBsBloqueadosManuais() {
+    try {
+        const input = document.getElementById('bulkMLBsBloqueados');
+        if (input) {
+            const raw = input.value;
+            const mlbs = raw.split(/[,;\s]+/).filter(m => m.trim().length > 0);
+            mlbsBloqueadosManuais = mlbs.map(m => m.trim().toUpperCase());
+        }
+        
+        localStorage.setItem('mlbs_bloqueados_manual', JSON.stringify(mlbsBloqueadosManuais));
+        
+        // Atualizar lista combinada
+        mlbsBloqueados = [...new Set([...mlbsBloqueadosManuais, ...mlbsBloqueadosAutomaticos])];
+        atualizarInterfaceMLBsBloqueados();
+        
+        showToast(`✅ ${mlbsBloqueadosManuais.length} MLBs bloqueados manuais salvos`, 'success');
+    } catch (error) {
+        log(`❌ Erro ao salvar MLBs bloqueados manuais: ${error.message}`, 'error');
+        showToast('Erro ao salvar MLBs bloqueados', 'error');
+    }
+}
+
+    // ============================================================
+// FUNÇÃO PARA ATUALIZAR INTERFACE DOS MLBs BLOQUEADOS
+// ============================================================
+function atualizarInterfaceMLBsBloqueados() {
+    const input = document.getElementById('bulkMLBsBloqueados');
+    const lista = document.getElementById('bulkMLBsBloqueadosLista');
+
+    if (input) {
+        const manualText = mlbsBloqueadosManuais.join(', ');
+        const autoCount = mlbsBloqueadosAutomaticos.length;
+        
+        if (autoCount > 0) {
+            input.placeholder = `${manualText || 'Nenhum manual'} (${autoCount} automáticos bloqueados)`;
+            input.value = manualText;
+        } else {
+            input.placeholder = 'Ex: MLB123, MLB456, MLB789';
+            input.value = manualText;
+        }
+    }
+
+    if (lista) {
+        lista.innerHTML = '';
+        
+        if (mlbsBloqueados.length === 0) {
+            lista.innerHTML = '<span class="text-muted">Nenhum MLB bloqueado</span>';
+            atualizarContadoresMLBs();
+            return;
+        }
+
+        // Mostrar MLBs manuais com botão de remover
+        mlbsBloqueadosManuais.forEach(mlb => {
+            const tag = document.createElement('span');
+            tag.className = 'badge badge-danger';
+            tag.style.cssText = 'padding: 6px 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 5px; margin: 3px; border-radius: 4px;';
+            tag.innerHTML = `${mlb} <i class="fas fa-times" style="cursor:pointer; font-size: 11px; opacity: 0.7;" onclick="removerMLBBloqueado('${mlb}')" title="Remover da lista"></i>`;
+            lista.appendChild(tag);
+        });
+
+        // Mostrar MLBs automáticos (sem botão de remover)
+        mlbsBloqueadosAutomaticos.forEach(mlb => {
+            if (!mlbsBloqueadosManuais.includes(mlb)) {
+                const tag = document.createElement('span');
+                tag.className = 'badge badge-warning';
+                tag.style.cssText = 'padding: 6px 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 5px; margin: 3px; border-radius: 4px;';
+                tag.innerHTML = `${mlb} <i class="fas fa-clock" style="font-size: 11px; opacity: 0.7;" title="Bloqueado automaticamente (menos de 40 dias)"></i>`;
+                lista.appendChild(tag);
+            }
+        });
+
+        // Legenda
+        const legenda = document.createElement('div');
+        legenda.style.cssText = 'margin-top: 10px; font-size: 12px; color: #6c757d; width: 100%; padding: 8px; background: #f8f9fa; border-radius: 4px;';
+        legenda.innerHTML = `
+            <span class="badge badge-danger" style="margin-right: 5px;">●</span> Manual (clique no X para remover)
+            <span class="badge badge-warning" style="margin-left: 15px; margin-right: 5px;">●</span> Automático (criado há < 40 dias)
+            <span class="badge badge-secondary" style="margin-left: 15px; margin-right: 5px;">●</span> Total: ${mlbsBloqueados.length} bloqueados
+        `;
+        lista.appendChild(legenda);
+    }
+
+    // Atualizar contadores
+    atualizarContadoresMLBs();
+}
+
+    // ============================================================
+    // FUNÇÕES DE MANIPULAÇÃO DE MLBs BLOQUEADOS (PÚBLICAS)
+    // ============================================================
+    
+    window.adicionarMLBBloqueado = function() {
+        const mlb = prompt('Digite o MLB do anúncio que deseja bloquear (ex: MLB1234567890):');
+        if (!mlb) return;
+        const mlbClean = mlb.trim().toUpperCase();
+        
+        if (!mlbsBloqueadosManuais.includes(mlbClean)) {
+            mlbsBloqueadosManuais.push(mlbClean);
+            salvarMLBsBloqueadosManuais();
+            showToast(`✅ MLB ${mlbClean} adicionado à lista de bloqueados`, 'success');
+        } else {
+            showToast('⚠️ Este MLB já está na lista de bloqueados', 'warning');
+        }
+    };
+
+    window.removerMLBBloqueado = function(mlb) {
+        if (!confirm(`Tem certeza que deseja remover ${mlb} da lista de bloqueados?`)) return;
+        
+        mlbsBloqueadosManuais = mlbsBloqueadosManuais.filter(m => m !== mlb);
+        salvarMLBsBloqueadosManuais();
+        showToast(`✅ MLB ${mlb} removido da lista de bloqueados`, 'success');
+    };
+
+    window.limparMLBsBloqueados = function() {
+        if (!confirm('Tem certeza que deseja limpar TODOS os MLB\'s bloqueados (apenas manuais)?')) return;
+        mlbsBloqueadosManuais = [];
+        salvarMLBsBloqueadosManuais();
+        showToast('✅ Todos os MLBs manuais removidos', 'success');
+    };
+
+    window.exportarMLBsBloqueados = function() {
+        if (mlbsBloqueados.length === 0) {
+            showToast('⚠️ Nenhum MLB bloqueado para exportar', 'warning');
+            return;
+        }
+        
+        const texto = mlbsBloqueados.join('\n');
+        const blob = new Blob([texto], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `mlbs_bloqueados_${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        showToast(`📋 ${mlbsBloqueados.length} MLBs bloqueados exportados!`, 'success');
+    };
+
+    window.importarMLBsBloqueados = function() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.txt,.csv';
+        input.onchange = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                const texto = event.target.result;
+                const mlbs = texto.split(/[\n\r,;]+/)
+                    .map(m => m.trim().toUpperCase())
+                    .filter(m => m.length > 0);
+                
+                const novos = mlbs.filter(m => !mlbsBloqueadosManuais.includes(m));
+                if (novos.length > 0) {
+                    mlbsBloqueadosManuais = [...mlbsBloqueadosManuais, ...novos];
+                    salvarMLBsBloqueadosManuais();
+                    showToast(`✅ ${novos.length} MLB's importados!`, 'success');
+                } else {
+                    showToast('⚠️ Nenhum novo MLB para importar', 'warning');
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
+    };
+
+    // ============================================================
+// FUNÇÃO PARA ATUALIZAR MLBS BLOQUEADOS AUTOMATICAMENTE
+// ============================================================
+window.atualizarMLBsBloqueadosAutomaticos = async function() {
+    log('🔄 Atualizando MLBs bloqueados automaticamente...', 'info');
+    showToast('🔄 Buscando MLBs com menos de 40 dias...', 'info');
+    
+    try {
+        const tokenData = await window.getValidToken?.();
+        if (!tokenData?.access_token) {
+            showToast('Token não disponível', 'error');
+            return;
+        }
+
+        // Buscar todos os MLBs ativos
+        showToast('📦 Buscando todos os MLBs ativos...', 'info');
+        const mlbsAtivos = await buscarTodosMLBsAtivos(tokenData.access_token);
+        
+        if (mlbsAtivos.length === 0) {
+            showToast('⚠️ Nenhum MLB ativo encontrado', 'warning');
+            return;
+        }
+
+        showToast(`🔍 Verificando ${mlbsAtivos.length} MLBs (bloqueia com < 40 dias)...`, 'info');
+
+        // Verificar idade de cada MLB
+        const mlbsParaBloquear = [];
+        let processados = 0;
+        const total = mlbsAtivos.length;
+
+        // Processar em lotes
+        const batchSize = 10;
+        for (let i = 0; i < mlbsAtivos.length; i += batchSize) {
+            const batch = mlbsAtivos.slice(i, i + batchSize);
+            
+            const promises = batch.map(async (item) => {
+                try {
+                    // Usar a data que já temos no cache
+                    let dataCriacao = item.start_time;
+                    if (!dataCriacao) {
+                        // Se não tiver, buscar da API
+                        dataCriacao = await buscarDataCriacaoMLB(item.id, tokenData.access_token);
+                    }
+                    
+                    if (dataCriacao) {
+                        const dias = calcularDiasEntreDatas(dataCriacao);
+                        if (dias < 40) {
+                            log(`🔒 MLB ${item.id} bloqueado (criado há ${dias} dias)`, 'warning');
+                            return { mlb: item.id, dias, dataCriacao };
+                        }
+                    }
+                    return null;
+                } catch (error) {
+                    log(`Erro ao verificar MLB ${item.id}: ${error.message}`, 'warning');
+                    return null;
+                }
+            });
+
+            const resultados = await Promise.all(promises);
+            const validos = resultados.filter(r => r !== null);
+            validos.forEach(r => mlbsParaBloquear.push(r.mlb));
+            
+            processados += batch.length;
+            if (processados % 50 === 0 || processados === total) {
+                showToast(`📊 Verificados ${processados}/${total} MLBs, ${mlbsParaBloquear.length} bloqueados`, 'info');
+            }
+        }
+
+        // ATUALIZAR A LISTA (usando atribuição direta, não reatribuição de const)
+        mlbsBloqueadosAutomaticos = mlbsParaBloquear; // Isso funciona se declarado com `let`
+        
+        // Salvar no localStorage
+        localStorage.setItem('mlbs_bloqueados_auto', JSON.stringify({
+            mlbs: mlbsBloqueadosAutomaticos,
+            dataAtualizacao: new Date().toISOString(),
+            diasBloqueio: 40
+        }));
+
+        // Atualizar lista combinada
+        mlbsBloqueados = [...new Set([...mlbsBloqueadosManuais, ...mlbsBloqueadosAutomaticos])];
+        
+        // Atualizar interface
+        atualizarInterfaceMLBsBloqueados();
+        
+        showToast(`✅ ${mlbsBloqueadosAutomaticos.length} MLBs bloqueados automaticamente (menos de 40 dias)`, 'success');
+        
+    } catch (error) {
+        log(`❌ Erro ao atualizar MLBs bloqueados: ${error.message}`, 'error');
+        console.error(error);
+        showToast('Erro ao atualizar MLBs bloqueados', 'error');
+    }
+};
 
     // ============================================================
     // FUNÇÃO PRINCIPAL: ABRIR SISTEMA DE PROMOÇÕES
@@ -970,219 +1506,320 @@
     };
 
     function criarInterfaceBulk() {
-        const div = document.createElement('div');
-        div.id = 'bulkPromotionSystem';
-        div.className = 'container';
-        div.style.display = 'block';
-        div.style.maxWidth = '1200px';
-        div.style.margin = '0 auto';
-        div.style.padding = '0 20px';
+    const div = document.createElement('div');
+    div.id = 'bulkPromotionSystem';
+    div.className = 'container';
+    div.style.display = 'block';
+    div.style.maxWidth = '1200px';
+    div.style.margin = '0 auto';
+    div.style.padding = '0 20px';
 
-        div.innerHTML = `
-            <header class="main-header">
-                <div class="container">
-                    <div class="header-content">
-                        <h1 style="display: flex; align-items: center; gap: 10px;">
-                            <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
-                            <span>Gestão de Promoções em Lote</span>
-                        </h1>
-                        <div class="user-info">
-                            <div class="user-avatar" id="bulkUserAvatar">U</div>
-                            <div>
-                                <div style="font-weight: 600;" id="bulkUserName">Usuário</div>
-                                <div style="font-size: 12px; color: #6c757d;" id="bulkUserRole"></div>
-                                <div class="d-flex gap-2 mt-2">
-                                    <button onclick="fecharGestaoPromocoesLote()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                    <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h2 class="card-title">
-                        <i class="fas fa-cog"></i> Configurar Regras
-                    </h2>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label><i class="fas fa-arrow-right"></i> Promoção de Origem *</label>
-                                <select id="bulkPromocaoOrigem" class="form-control" onchange="onPromocaoOrigemChange()">
-                                    <option value="">Selecione...</option>
-                                </select>
-                                <small class="text-muted">Itens ativos nesta promoção serão analisados</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label><i class="fas fa-arrow-left"></i> Promoção de Destino *</label>
-                                <select id="bulkPromocaoDestino" class="form-control">
-                                    <option value="">Selecione...</option>
-                                </select>
-                                <small class="text-muted">Itens serão ativados nesta promoção</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label><i class="fas fa-balance-scale"></i> Regra de Comparação</label>
-                                <select id="bulkRegraComparacao" class="form-control" onchange="onRegraChange()">
-                                    <option value="valor_maior">Valor final MAIOR que na origem</option>
-                                    <option value="valor_menor">Valor final MENOR que na origem</option>
-                                    <option value="percentual_maior">% desconto MAIOR que na origem</option>
-                                    <option value="percentual_menor">% desconto MENOR que na origem</option>
-                                    <option value="valor_entre">Valor final entre dois valores</option>
-                                    <option value="percentual_entre">% desconto entre dois percentuais</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="bulkCamposExtras" class="row hidden">
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label>Valor Mínimo (R$)</label>
-                                <input type="number" id="bulkValorMin" class="form-control" step="0.01" min="0" placeholder="0,00">
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label>Valor Máximo (R$)</label>
-                                <input type="number" id="bulkValorMax" class="form-control" step="0.01" min="0" placeholder="0,00">
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label>% Mínimo</label>
-                                <input type="number" id="bulkPercentMin" class="form-control" step="0.1" min="0" max="100" placeholder="0">
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="form-group">
-                                <label>% Máximo</label>
-                                <input type="number" id="bulkPercentMax" class="form-control" step="0.1" min="0" max="100" placeholder="0">
+    div.innerHTML = `
+        <header class="main-header">
+            <div class="container">
+                <div class="header-content">
+                    <h1 style="display: flex; align-items: center; gap: 10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                        <span>Gestão de Promoções em Lote</span>
+                    </h1>
+                    <div class="user-info">
+                        <div class="user-avatar" id="bulkUserAvatar">U</div>
+                        <div>
+                            <div style="font-weight: 600;" id="bulkUserName">Usuário</div>
+                            <div style="font-size: 12px; color: #6c757d;" id="bulkUserRole"></div>
+                            <div class="d-flex gap-2 mt-2">
+                                <button onclick="fecharGestaoPromocoesLote()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+        </header>
 
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h2 class="card-title">
-                        <i class="fas fa-ban"></i> MLBs Bloqueados
-                    </h2>
-                    <div>
-                        <button class="btn btn-sm btn-success" onclick="adicionarMLBBloqueado()">
-                            <i class="fas fa-plus"></i> Adicionar
-                        </button>
-                        <button class="btn btn-sm btn-danger" onclick="limparMLBsBloqueados()">
-                            <i class="fas fa-trash"></i> Limpar Todos
-                        </button>
-                        <button class="btn btn-sm btn-primary" onclick="exportarMLBsBloqueados()">
-                            <i class="fas fa-file-export"></i> Exportar
-                        </button>
-                        <button class="btn btn-sm btn-info" onclick="importarMLBsBloqueados()">
-                            <i class="fas fa-file-import"></i> Importar
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="form-group">
-                        <label>Lista de MLB's bloqueados (separados por vírgula ou espaço)</label>
-                        <div class="d-flex gap-2">
-                            <input type="text" id="bulkMLBsBloqueados" class="form-control" 
-                                   placeholder="Ex: MLB123, MLB456, MLB789" 
-                                   onchange="salvarMLBsBloqueados()">
-                            <button class="btn btn-primary btn-sm" onclick="carregarMLBsBloqueados()">
-                                <i class="fas fa-sync-alt"></i>
-                            </button>
-                        </div>
-                        <small class="text-muted">Itens com estes MLB's serão excluídos da ativação em massa</small>
-                    </div>
-                    <div id="bulkMLBsBloqueadosLista" class="mt-2" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
-                </div>
+        <!-- Configurar Regras -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-cog"></i> Configurar Regras
+                </h2>
             </div>
-
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h2 class="card-title">
-                        <i class="fas fa-chart-bar"></i> Análise e Ativação
-                    </h2>
-                    <div>
-                        <button class="btn btn-primary" onclick="analisarItens()">
-                            <i class="fas fa-search"></i> Analisar Itens
-                        </button>
-                        <button class="btn btn-success" onclick="executarAtivacaoEmMassa()" id="btnAtivarMassa" disabled>
-                            <i class="fas fa-play"></i> Ativar em Massa
-                        </button>
-                        <button class="btn btn-info" onclick="exportarAnaliseBulkExcel()">
-                            <i class="fas fa-file-excel"></i> Exportar Análise
-                        </button>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label><i class="fas fa-arrow-right"></i> Promoção de Origem *</label>
+                            <select id="bulkPromocaoOrigem" class="form-control" onchange="onPromocaoOrigemChange()">
+                                <option value="">Selecione...</option>
+                            </select>
+                            <small class="text-muted">Itens ativos nesta promoção serão analisados</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label><i class="fas fa-arrow-left"></i> Promoção de Destino *</label>
+                            <select id="bulkPromocaoDestino" class="form-control">
+                                <option value="">Selecione...</option>
+                            </select>
+                            <small class="text-muted">Itens serão ativados nesta promoção</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label><i class="fas fa-balance-scale"></i> Regra de Comparação</label>
+                            <select id="bulkRegraComparacao" class="form-control" onchange="onRegraChange()">
+                                <option value="valor_maior">Valor final MAIOR que na origem</option>
+                                <option value="valor_menor">Valor final MENOR que na origem</option>
+                                <option value="percentual_maior">% desconto MAIOR que na origem</option>
+                                <option value="percentual_menor">% desconto MENOR que na origem</option>
+                                <option value="valor_entre">Valor final entre dois valores</option>
+                                <option value="percentual_entre">% desconto entre dois percentuais</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
-                <div class="card-body">
-                    <div id="bulkResumo" class="row mb-3 hidden">
-                        <div class="col-md-3">
-                            <div class="card text-center bg-light">
-                                <div class="card-body">
-                                    <h5>Total Analisado</h5>
-                                    <h3 id="bulkTotalItens">0</h3>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card text-center bg-success">
-                                <div class="card-body">
-                                    <h5>Elegíveis</h5>
-                                    <h3 id="bulkElegiveis">0</h3>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card text-center bg-warning">
-                                <div class="card-body">
-                                    <h5>Bloqueados</h5>
-                                    <h3 id="bulkBloqueados">0</h3>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card text-center bg-danger">
-                                <div class="card-body">
-                                    <h5>Não Elegíveis</h5>
-                                    <h3 id="bulkNaoElegiveis">0</h3>
-                                </div>
-                            </div>
+
+                <div id="bulkCamposExtras" class="row hidden">
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label>Valor Mínimo (R$)</label>
+                            <input type="number" id="bulkValorMin" class="form-control" step="0.01" min="0" placeholder="0,00">
                         </div>
                     </div>
-
-                    <div id="bulkTabelaContainer" class="table-responsive hidden">
-                        <table class="table table-striped table-hover" id="bulkItensTable">
-                            <thead>
-                                <tr>
-                                    <th><input type="checkbox" id="bulkSelectAll" onchange="selecionarTodosItens()"></th>
-                                    <th>MLB</th>
-                                    <th>Preço Origem</th>
-                                    <th>% Origem</th>
-                                    <th>Preço Destino</th>
-                                    <th>% Destino</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="bulkItensBody"></tbody>
-                        </table>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label>Valor Máximo (R$)</label>
+                            <input type="number" id="bulkValorMax" class="form-control" step="0.01" min="0" placeholder="0,00">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label>% Mínimo</label>
+                            <input type="number" id="bulkPercentMin" class="form-control" step="0.1" min="0" max="100" placeholder="0">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <label>% Máximo</label>
+                            <input type="number" id="bulkPercentMax" class="form-control" step="0.1" min="0" max="100" placeholder="0">
+                        </div>
                     </div>
                 </div>
             </div>
-        `;
+        </div>
 
-        return div;
+        <!-- MLBs Bloqueados -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-ban"></i> MLBs Bloqueados
+                </h2>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-sm btn-success" onclick="adicionarMLBBloqueado()">
+                        <i class="fas fa-plus"></i> Adicionar
+                    </button>
+                    <button class="btn btn-sm btn-warning" onclick="atualizarMLBsBloqueadosAutomaticos()" title="Buscar MLBs com menos de 40 dias e bloquear automaticamente">
+                        <i class="fas fa-robot"></i> Bloquear Automáticos (40 dias)
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="limparMLBsBloqueados()">
+                        <i class="fas fa-trash"></i> Limpar Manuais
+                    </button>
+                    <button class="btn btn-sm btn-primary" onclick="exportarMLBsBloqueados()">
+                        <i class="fas fa-file-export"></i> Exportar
+                    </button>
+                    <button class="btn btn-sm btn-info" onclick="importarMLBsBloqueados()">
+                        <i class="fas fa-file-import"></i> Importar
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label>Lista de MLB's bloqueados (separados por vírgula ou espaço)</label>
+                    <div class="d-flex gap-2">
+                        <input type="text" id="bulkMLBsBloqueados" class="form-control" 
+                               placeholder="Ex: MLB123, MLB456, MLB789" 
+                               onchange="salvarMLBsBloqueadosManuais()">
+                        <button class="btn btn-primary btn-sm" onclick="carregarMLBsBloqueados()">
+                            <i class="fas fa-sync-alt"></i> Recarregar
+                        </button>
+                    </div>
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle"></i> 
+                        <strong>Clique em "Bloquear Automáticos (40 dias)"</strong> para buscar todos os MLBs ativos e bloquear automaticamente os criados há menos de 40 dias.
+                        <br>
+                        <span class="badge badge-warning" id="contadorAutoMLBs">0</span> automáticos bloqueados.
+                        <span class="badge badge-danger" id="contadorManualMLBs">0</span> manuais bloqueados.
+                    </small>
+                </div>
+                <div id="bulkMLBsBloqueadosLista" class="mt-2" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
+            </div>
+        </div>
+
+        <!-- Análise e Ativação -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-chart-bar"></i> Análise e Ativação
+                </h2>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-primary" onclick="analisarItens()">
+                        <i class="fas fa-search"></i> Analisar Itens
+                    </button>
+                    <button class="btn btn-success" onclick="executarAtivacaoEmMassa()" id="btnAtivarMassa" disabled>
+                        <i class="fas fa-play"></i> Ativar em Massa
+                    </button>
+                    <button class="btn btn-info" onclick="exportarAnaliseBulkExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar Análise
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Resumo -->
+                <div id="bulkResumo" class="row mb-3 hidden">
+                    <div class="col-md-3">
+                        <div class="card text-center bg-light">
+                            <div class="card-body">
+                                <h5>Total Analisado</h5>
+                                <h3 id="bulkTotalItens">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center bg-success">
+                            <div class="card-body">
+                                <h5>Elegíveis</h5>
+                                <h3 id="bulkElegiveis">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center bg-warning">
+                            <div class="card-body">
+                                <h5>Bloqueados</h5>
+                                <h3 id="bulkBloqueados">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center bg-danger">
+                            <div class="card-body">
+                                <h5>Não Elegíveis</h5>
+                                <h3 id="bulkNaoElegiveis">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabela de Itens -->
+                <div id="bulkTabelaContainer" class="table-responsive hidden">
+                    <table class="table table-striped table-hover" id="bulkItensTable">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="bulkSelectAll" onchange="selecionarTodosItens()"></th>
+                                <th>MLB</th>
+                                <th>Preço Origem</th>
+                                <th>% Origem</th>
+                                <th>Preço Destino</th>
+                                <th>% Destino</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bulkItensBody">
+                            <tr>
+                                <td colspan="7" class="text-center py-4 text-muted">
+                                    <i class="fas fa-info-circle"></i> Selecione as promoções e clique em "Analisar Itens"
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    return div;
+}
+
+// ============================================================
+// FUNÇÃO PARA ATUALIZAR CONTADORES
+// ============================================================
+function atualizarContadoresMLBs() {
+    const contadorAuto = document.getElementById('contadorAutoMLBs');
+    const contadorManual = document.getElementById('contadorManualMLBs');
+    
+    if (contadorAuto) {
+        contadorAuto.textContent = mlbsBloqueadosAutomaticos.length;
+        contadorAuto.style.backgroundColor = mlbsBloqueadosAutomaticos.length > 0 ? '#ffc107' : '#6c757d';
+        contadorAuto.style.color = mlbsBloqueadosAutomaticos.length > 0 ? '#212529' : 'white';
     }
+    
+    if (contadorManual) {
+        contadorManual.textContent = mlbsBloqueadosManuais.length;
+        contadorManual.style.backgroundColor = mlbsBloqueadosManuais.length > 0 ? '#dc3545' : '#6c757d';
+    }
+}
+
+// Modificar a função atualizarInterfaceMLBsBloqueados para incluir os contadores
+function atualizarInterfaceMLBsBloqueados() {
+    const input = document.getElementById('bulkMLBsBloqueados');
+    const lista = document.getElementById('bulkMLBsBloqueadosLista');
+
+    if (input) {
+        const manualText = mlbsBloqueadosManuais.join(', ');
+        const autoCount = mlbsBloqueadosAutomaticos.length;
+        
+        if (autoCount > 0) {
+            input.placeholder = `${manualText || 'Nenhum manual'} (${autoCount} automáticos bloqueados)`;
+            input.value = manualText;
+        } else {
+            input.placeholder = 'Ex: MLB123, MLB456, MLB789';
+            input.value = manualText;
+        }
+    }
+
+    if (lista) {
+        lista.innerHTML = '';
+        
+        if (mlbsBloqueados.length === 0) {
+            lista.innerHTML = '<span class="text-muted">Nenhum MLB bloqueado</span>';
+            atualizarContadoresMLBs();
+            return;
+        }
+
+        // Mostrar MLBs manuais com botão de remover
+        mlbsBloqueadosManuais.forEach(mlb => {
+            const tag = document.createElement('span');
+            tag.className = 'badge badge-danger';
+            tag.style.cssText = 'padding: 6px 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 5px; margin: 3px; border-radius: 4px;';
+            tag.innerHTML = `${mlb} <i class="fas fa-times" style="cursor:pointer; font-size: 11px; opacity: 0.7;" onclick="removerMLBBloqueado('${mlb}')" title="Remover da lista"></i>`;
+            lista.appendChild(tag);
+        });
+
+        // Mostrar MLBs automáticos (sem botão de remover)
+        mlbsBloqueadosAutomaticos.forEach(mlb => {
+            if (!mlbsBloqueadosManuais.includes(mlb)) {
+                const tag = document.createElement('span');
+                tag.className = 'badge badge-warning';
+                tag.style.cssText = 'padding: 6px 12px; font-size: 13px; display: inline-flex; align-items: center; gap: 5px; margin: 3px; border-radius: 4px;';
+                tag.innerHTML = `${mlb} <i class="fas fa-clock" style="font-size: 11px; opacity: 0.7;" title="Bloqueado automaticamente (menos de 40 dias)"></i>`;
+                lista.appendChild(tag);
+            }
+        });
+
+        // Legenda
+        const legenda = document.createElement('div');
+        legenda.style.cssText = 'margin-top: 10px; font-size: 12px; color: #6c757d; width: 100%; padding: 8px; background: #f8f9fa; border-radius: 4px;';
+        legenda.innerHTML = `
+            <span class="badge badge-danger" style="margin-right: 5px;">●</span> Manual (clique no X para remover)
+            <span class="badge badge-warning" style="margin-left: 15px; margin-right: 5px;">●</span> Automático (criado há < 40 dias)
+            <span class="badge badge-secondary" style="margin-left: 15px; margin-right: 5px;">●</span> Total: ${mlbsBloqueados.length} bloqueados
+        `;
+        lista.appendChild(legenda);
+    }
+
+    // Atualizar contadores
+    atualizarContadoresMLBs();
+}
 
     // ============================================================
     // FUNÇÕES DO MÓDULO BULK
@@ -1252,23 +1889,65 @@
     }
 
     // ============================================================
-    // MLBs BLOQUEADOS - APENAS LOCALSTORAGE
-    // ============================================================
+// FUNÇÃO PARA CARREGAR MLBs BLOQUEADOS (MANUAIS + AUTOMÁTICOS)
+// ============================================================
+async function carregarMLBsBloqueados() {
+    log('Carregando MLBs bloqueados...', 'debug');
     
-    function carregarMLBsBloqueados() {
-        try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            if (saved) {
-                mlbsBloqueados = JSON.parse(saved);
-            } else {
-                mlbsBloqueados = [];
+    try {
+        // 1. Carregar MLBs bloqueados manualmente
+        const savedManual = localStorage.getItem('mlbs_bloqueados_manual');
+        if (savedManual) {
+            try {
+                mlbsBloqueadosManuais = JSON.parse(savedManual);
+                log(`${mlbsBloqueadosManuais.length} MLBs bloqueados manualmente carregados`, 'info');
+            } catch (e) {
+                mlbsBloqueadosManuais = [];
             }
-            atualizarInterfaceMLBsBloqueados();
-        } catch (e) {
-            console.error('❌ Erro ao carregar MLBs bloqueados:', e);
-            mlbsBloqueados = [];
+        } else {
+            mlbsBloqueadosManuais = [];
         }
+
+        // 2. Carregar MLBs bloqueados automaticamente (cache)
+        const savedAuto = localStorage.getItem('mlbs_bloqueados_auto');
+        if (savedAuto) {
+            try {
+                const data = JSON.parse(savedAuto);
+                const cacheTime = data.dataAtualizacao ? new Date(data.dataAtualizacao).getTime() : 0;
+                const cacheAge = Date.now() - cacheTime;
+                
+                // Cache válido por 1 hora
+                if (cacheAge < 3600000) {
+                    mlbsBloqueadosAutomaticos = data.mlbs || [];
+                    log(`${mlbsBloqueadosAutomaticos.length} MLBs bloqueados automaticamente carregados do cache`, 'info');
+                } else {
+                    log('Cache de MLBs automáticos expirado', 'warning');
+                    mlbsBloqueadosAutomaticos = [];
+                }
+            } catch (e) {
+                log('Erro ao ler cache automático', 'warning');
+                mlbsBloqueadosAutomaticos = [];
+            }
+        } else {
+            mlbsBloqueadosAutomaticos = [];
+        }
+
+        // 3. Combinar listas (remover duplicatas)
+        mlbsBloqueados = [...new Set([...mlbsBloqueadosManuais, ...mlbsBloqueadosAutomaticos])];
+
+        // 4. Atualizar interface
+        atualizarInterfaceMLBsBloqueados();
+
+        log(`✅ Total: ${mlbsBloqueados.length} MLBs bloqueados (${mlbsBloqueadosManuais.length} manuais + ${mlbsBloqueadosAutomaticos.length} automáticos)`, 'success');
+
+    } catch (error) {
+        log(`❌ Erro ao carregar MLBs bloqueados: ${error.message}`, 'error');
+        console.error(error);
+        mlbsBloqueados = [];
+        mlbsBloqueadosManuais = [];
+        mlbsBloqueadosAutomaticos = [];
     }
+}
 
     function salvarMLBsBloqueados() {
         const input = document.getElementById('bulkMLBsBloqueados');
@@ -1967,6 +2646,6 @@
     // INICIALIZAÇÃO
     // ============================================================
     console.log('📢 [PROMOÇÕES] Módulo carregado com sucesso!');
-    console.log('📢 [PROMOÇÕES] Usando estratégia de paginação igual ao Python');
+    console.log(`📢 [PROMOÇÕES] Bloqueio automático: MLBs com < ${DIAS_BLOQUEIO_AUTOMATICO} dias`);
 
 })();
