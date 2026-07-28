@@ -281,6 +281,552 @@ function filtrarProdutosEstoque() {
     renderizarTabelaProdutos(produtosFiltradosAtuais);
 }
 
+// ============================================
+// ADICIONAR NO INÍCIO DO ARQUIVO (APÓS AS CONSTANTES)
+// ============================================
+
+// ===== LISTA DE CATEGORIAS DINÂMICAS =====
+let categoriasDisponiveis = [
+    'Eixos', 'Parafusos', 'Rolamentos', 'Raios', 
+    'Arruelas', 'Porcas', 'CapacetesEPartes', 'outros'
+];
+
+// ===== CARREGAR CATEGORIAS DO SUPABASE =====
+async function carregarCategorias() {
+    try {
+        if (!window.supabaseClient) return;
+        
+        // Busca categorias únicas da tabela de produtos
+        const { data, error } = await window.supabaseClient
+            .from('produtos_estoque')
+            .select('categoria')
+            .not('categoria', 'is', null);
+        
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+            const categoriasUnicas = [...new Set(data.map(p => p.categoria).filter(c => c))];
+            if (categoriasUnicas.length > 0) {
+                categoriasDisponiveis = categoriasUnicas;
+            }
+        }
+        
+        // Também carrega do localStorage para categorias criadas manualmente
+        try {
+            const localCategorias = localStorage.getItem('categorias_personalizadas');
+            if (localCategorias) {
+                const parsed = JSON.parse(localCategorias);
+                parsed.forEach(cat => {
+                    if (!categoriasDisponiveis.includes(cat)) {
+                        categoriasDisponiveis.push(cat);
+                    }
+                });
+            }
+        } catch (e) {}
+        
+        atualizarSelectCategorias();
+        console.log('✅ Categorias carregadas:', categoriasDisponiveis);
+        
+    } catch (error) {
+        console.error('❌ Erro ao carregar categorias:', error);
+    }
+}
+
+// ===== ATUALIZAR SELECT DE CATEGORIAS =====
+function atualizarSelectCategorias() {
+    const selects = [
+        document.getElementById('produtoCategoria'),
+        document.getElementById('filtroCategoriaEstoque')
+    ];
+    
+    selects.forEach(select => {
+        if (!select) return;
+        
+        const valorAtual = select.value;
+        select.innerHTML = '';
+        
+        // Adiciona opção vazia para filtro
+        if (select.id === 'filtroCategoriaEstoque') {
+            const optionVazia = document.createElement('option');
+            optionVazia.value = '';
+            optionVazia.textContent = 'Todas as categorias';
+            select.appendChild(optionVazia);
+        }
+        
+        // Adiciona opção "Nova Categoria" para o modal de produto
+        if (select.id === 'produtoCategoria') {
+            const optionNova = document.createElement('option');
+            optionNova.value = '__NOVA_CATEGORIA__';
+            optionNova.textContent = '➕ Nova Categoria...';
+            optionNova.style.color = '#00ADEE';
+            optionNova.style.fontWeight = 'bold';
+            select.appendChild(optionNova);
+        }
+        
+        // Adiciona categorias disponíveis
+        categoriasDisponiveis.sort().forEach(cat => {
+            const option = document.createElement('option');
+            option.value = cat;
+            option.textContent = cat;
+            select.appendChild(option);
+        });
+        
+        // Restaura o valor selecionado se possível
+        if (valorAtual && categoriasDisponiveis.includes(valorAtual)) {
+            select.value = valorAtual;
+        } else if (select.id === 'filtroCategoriaEstoque' && !valorAtual) {
+            select.value = '';
+        }
+    });
+}
+
+// ===== FUNÇÃO PARA CRIAR NOVA CATEGORIA =====
+function criarNovaCategoria() {
+    const nomeCategoria = prompt('Digite o nome da nova categoria:');
+    if (!nomeCategoria || nomeCategoria.trim() === '') return;
+    
+    const nomeLimpo = nomeCategoria.trim();
+    
+    if (categoriasDisponiveis.includes(nomeLimpo)) {
+        showToast(`⚠️ A categoria "${nomeLimpo}" já existe.`, 'warning');
+        return;
+    }
+    
+    // Adiciona à lista
+    categoriasDisponiveis.push(nomeLimpo);
+    
+    // Salva no localStorage
+    try {
+        const localCategorias = JSON.parse(localStorage.getItem('categorias_personalizadas') || '[]');
+        if (!localCategorias.includes(nomeLimpo)) {
+            localCategorias.push(nomeLimpo);
+            localStorage.setItem('categorias_personalizadas', JSON.stringify(localCategorias));
+        }
+    } catch (e) {}
+    
+    // Atualiza os selects
+    atualizarSelectCategorias();
+    
+    // Seleciona a nova categoria
+    const select = document.getElementById('produtoCategoria');
+    if (select) select.value = nomeLimpo;
+    
+    // Gera campos dinâmicos para a nova categoria
+    gerarCamposDinamicos(nomeLimpo);
+    
+    showToast(`✅ Categoria "${nomeLimpo}" criada com sucesso!`, 'success');
+}
+
+// ============================================
+// VERIFICAÇÃO DE DUPLICIDADE POR PREFIXO
+// ============================================
+function verificarDuplicidadeSKU(sku, idIgnorar = null) {
+    if (!sku || sku.length < 5) {
+        return { duplicado: false, mensagem: 'SKU muito curto (mínimo 5 caracteres)' };
+    }
+    
+    const prefixo = sku.substring(0, 5).toUpperCase();
+    const skuNormalizado = sku.toUpperCase();
+    
+    // Verifica se existe algum produto com o mesmo prefixo
+    const duplicado = produtosEstoque.some(prod => {
+        // Ignora o próprio produto em edição
+        if (idIgnorar && prod.id == idIgnorar) return false;
+        
+        const prodSku = (prod.sku || '').toUpperCase();
+        const prodPrefixo = prodSku.substring(0, 5);
+        
+        // Verifica se o prefixo é igual OU se o SKU é exatamente igual
+        return prodPrefixo === prefixo || prodSku === skuNormalizado;
+    });
+    
+    if (duplicado) {
+        return {
+            duplicado: true,
+            mensagem: `Já existe um produto com o prefixo "${prefixo}" (5 primeiros caracteres). Os SKUs devem ter prefixos únicos para facilitar a identificação.`
+        };
+    }
+    
+    return { duplicado: false };
+}
+
+// ============================================
+// MODIFICAR A FUNÇÃO salvarProdutoEstoque PARA VERIFICAR DUPLICIDADE
+// ============================================
+const _salvarProdutoEstoqueOriginal = salvarProdutoEstoque;
+
+salvarProdutoEstoque = async function() {
+    const id = document.getElementById('produtoId').value;
+    const sku = document.getElementById('produtoSKU').value.trim();
+    
+    if (!sku) {
+        showToast('SKU é obrigatório', 'warning');
+        return;
+    }
+    
+    // ===== VERIFICAÇÃO DE DUPLICIDADE =====
+    const duplicidade = verificarDuplicidadeSKU(sku, id);
+    if (duplicidade.duplicado) {
+        showToast(`❌ ${duplicidade.mensagem}`, 'error');
+        document.getElementById('produtoSKU').focus();
+        document.getElementById('produtoSKU').style.borderColor = '#dc3545';
+        setTimeout(() => {
+            document.getElementById('produtoSKU').style.borderColor = '';
+        }, 3000);
+        return;
+    }
+    
+    // Chama a função original
+    await _salvarProdutoEstoqueOriginal();
+};
+
+// ============================================
+// MODIFICAR A FUNÇÃO abrirModalProdutoEstoque PARA ADICIONAR EVENTO DE NOVA CATEGORIA
+// ============================================
+const _abrirModalProdutoEstoqueOriginal = abrirModalProdutoEstoque;
+
+abrirModalProdutoEstoque = function(produto = null) {
+    _abrirModalProdutoEstoqueOriginal(produto);
+    
+    // Adiciona evento para criar nova categoria
+    setTimeout(() => {
+        const categoriaSelect = document.getElementById('produtoCategoria');
+        if (categoriaSelect) {
+            categoriaSelect.addEventListener('change', function() {
+                if (this.value === '__NOVA_CATEGORIA__') {
+                    criarNovaCategoria();
+                }
+            });
+        }
+    }, 200);
+};
+
+// ============================================
+// MODIFICAR A FUNÇÃO filtrarProdutosEstoque PARA MANTER FILTRO E PÁGINA
+// ============================================
+const _filtrarProdutosEstoqueOriginal = filtrarProdutosEstoque;
+
+function filtrarProdutosEstoque() {
+    const termo = document.getElementById('buscaEstoqueInput').value.toLowerCase().trim();
+    const categoriaSelecionada = document.getElementById('filtroCategoriaEstoque')?.value || '';
+
+    let filtrados = produtosEstoque;
+
+    if (categoriaSelecionada && categoriaSelecionada !== '') {
+        filtrados = filtrados.filter(prod => prod.categoria === categoriaSelecionada);
+    }
+
+    if (termo) {
+        filtrados = filtrados.filter(prod => {
+            if (prod.nome && prod.nome.toLowerCase().includes(termo)) return true;
+            if (prod.sku && prod.sku.toLowerCase().includes(termo)) return true;
+            if (prod.mlb_codes) {
+                let mlbArray = prod.mlb_codes;
+                if (typeof mlbArray === 'string') mlbArray = mlbArray.split(',').map(s => s.trim());
+                if (Array.isArray(mlbArray)) {
+                    return mlbArray.some(code => code.toLowerCase().includes(termo));
+                }
+            }
+            return false;
+        });
+    }
+
+    // ===== MANTÉM A PÁGINA ATUAL SE AINDA FOR VÁLIDA =====
+    const totalPaginas = Math.ceil(filtrados.length / itensPorPaginaEstoque);
+    if (paginaAtualEstoque > totalPaginas) {
+        paginaAtualEstoque = Math.max(1, totalPaginas);
+    }
+    
+    produtosFiltradosAtuais = filtrados;
+    renderizarTabelaProdutos(produtosFiltradosAtuais);
+}
+
+// ============================================
+// MODIFICAR A FUNÇÃO renderizarTabelaProdutos PARA MANTER FILTRO
+// ============================================
+const _renderizarTabelaProdutosOriginal = renderizarTabelaProdutos;
+
+function renderizarTabelaProdutos(produtosParaRenderizar = null) {
+    console.log('🔍 [renderizarTabelaProdutos] Iniciando renderização...');
+    
+    const tbody = document.getElementById('produtosEstoqueBody');
+    if (!tbody) {
+        console.error('❌ Elemento #produtosEstoqueBody não encontrado');
+        return;
+    }
+    
+    // Se não recebeu produtos, usa os filtrados atuais
+    const todosProdutos = produtosParaRenderizar || produtosFiltradosAtuais || produtosEstoque;
+    
+    // Se produtosParaRenderizar foi passado, atualiza produtosFiltradosAtuais
+    if (produtosParaRenderizar) {
+        produtosFiltradosAtuais = produtosParaRenderizar;
+    }
+    
+    if (todosProdutos.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhum produto encontrado.</td></tr>';
+        atualizarPaginacaoEstoque(todosProdutos.length);
+        return;
+    }
+
+    // ===== VERIFICAÇÃO DE USUÁRIOS =====
+    const username = currentUser?.username?.toLowerCase() || '';
+    const isAdmin = usuariosAdmin.includes(username);
+    const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
+    const podeVerCusto = usuariosVerCusto.includes(username) || isAdmin;
+
+    // ===== ORDENAR PRODUTOS =====
+    const produtosOrdenados = [...todosProdutos];
+    const coluna = ordemColunaEstoque.coluna;
+    const direcao = ordemColunaEstoque.direcao;
+    
+    produtosOrdenados.sort((a, b) => {
+        let valorA, valorB;
+        
+        switch(coluna) {
+            case 'id':
+                valorA = a.id || 0;
+                valorB = b.id || 0;
+                break;
+            case 'nome':
+                valorA = (a.nome || '').toLowerCase();
+                valorB = (b.nome || '').toLowerCase();
+                break;
+            case 'sku':
+                valorA = (a.sku || '').toLowerCase();
+                valorB = (b.sku || '').toLowerCase();
+                break;
+            case 'quantidade':
+                valorA = a.quantidade || 0;
+                valorB = b.quantidade || 0;
+                break;
+            case 'preco_custo':
+                valorA = a.ultimo_custo || a.dados_extra?.ultimo_custo || 0;
+                valorB = b.ultimo_custo || b.dados_extra?.ultimo_custo || 0;
+                break;
+            case 'preco_medio':
+                valorA = a.custo_medio || a.dados_extra?.custo_medio || 0;
+                valorB = b.custo_medio || b.dados_extra?.custo_medio || 0;
+                break;
+            case 'categoria':
+                valorA = (a.categoria || '').toLowerCase();
+                valorB = (b.categoria || '').toLowerCase();
+                break;
+            default:
+                valorA = a.id || 0;
+                valorB = b.id || 0;
+        }
+        
+        if (typeof valorA === 'string') {
+            return direcao === 'asc' ? valorA.localeCompare(valorB) : valorB.localeCompare(valorA);
+        } else {
+            return direcao === 'asc' ? (valorA - valorB) : (valorB - valorA);
+        }
+    });
+
+    // Atualizar o cabeçalho da tabela com os ícones de ordenação
+    const thead = document.querySelector('#produtosEstoqueTable thead tr');
+    if (thead) {
+        let headerHtml = `
+            <th data-coluna="id" style="cursor: pointer;" onclick="ordenarEstoquePor('id')">
+                ID <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: ${coluna === 'id' ? '#00ADEE' : '#adb5bd'};"></i>
+            </th>
+            <th data-coluna="nome" style="cursor: pointer;" onclick="ordenarEstoquePor('nome')">
+                Nome / Categoria <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: ${coluna === 'nome' ? '#00ADEE' : '#adb5bd'};"></i>
+            </th>
+            <th data-coluna="sku" style="cursor: pointer;" onclick="ordenarEstoquePor('sku')">
+                SKU <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: ${coluna === 'sku' ? '#00ADEE' : '#adb5bd'};"></i>
+            </th>
+            <th data-coluna="quantidade" style="cursor: pointer;" onclick="ordenarEstoquePor('quantidade')">
+                Quantidade <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: ${coluna === 'quantidade' ? '#00ADEE' : '#adb5bd'};"></i>
+            </th>
+        `;
+        if (podeVerCusto) {
+            headerHtml += `
+                <th data-coluna="preco_custo" style="cursor: pointer;" onclick="ordenarEstoquePor('preco_custo')">
+                    Último Custo <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: ${coluna === 'preco_custo' ? '#00ADEE' : '#adb5bd'};"></i>
+                </th>
+                <th data-coluna="preco_medio" style="cursor: pointer;" onclick="ordenarEstoquePor('preco_medio')">
+                    Custo Médio <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: ${coluna === 'preco_medio' ? '#00ADEE' : '#adb5bd'};"></i>
+                </th>
+            `;
+        }
+        headerHtml += `
+            <th>Sync ML</th>
+            <th>Atributos</th>
+            <th>Ações</th>
+        `;
+        thead.innerHTML = headerHtml;
+    }
+
+    // ===== CALCULA PAGINAÇÃO =====
+    const totalPaginas = Math.ceil(produtosOrdenados.length / itensPorPaginaEstoque);
+    
+    // ===== MANTÉM A PÁGINA ATUAL SE AINDA FOR VÁLIDA =====
+    if (paginaAtualEstoque > totalPaginas) {
+        paginaAtualEstoque = Math.max(1, totalPaginas);
+    }
+    if (paginaAtualEstoque < 1) paginaAtualEstoque = 1;
+    
+    const inicio = (paginaAtualEstoque - 1) * itensPorPaginaEstoque;
+    const fim = Math.min(inicio + itensPorPaginaEstoque, produtosOrdenados.length);
+    const produtosPagina = produtosOrdenados.slice(inicio, fim);
+    
+    tbody.innerHTML = '';
+    
+    produtosPagina.forEach(prod => {
+        // ... (resto do código de renderização do produto permanece igual)
+        const row = document.createElement('tr');
+        let atributosResumo = '';
+        if (prod.dados_extra) {
+            const keys = Object.keys(prod.dados_extra).slice(0, 2);
+            atributosResumo = keys.map(k => `${k}: ${prod.dados_extra[k]}`).join(', ');
+            if (Object.keys(prod.dados_extra).length > 2) atributosResumo += '...';
+        }
+        
+        const mlbCodes = prod.mlb_codes || prod.dados_extra?.mlb_codes;
+        const temMLB = mlbCodes && ((Array.isArray(mlbCodes) && mlbCodes.length > 0) || (typeof mlbCodes === 'string' && mlbCodes.trim() !== ''));
+        
+        const ultimoCusto = prod.ultimo_custo || prod.dados_extra?.ultimo_custo || 0;
+        const custoMedio = prod.custo_medio || prod.dados_extra?.custo_medio || 0;
+        
+        const syncBloqueado = prod.bloquear_sync_ml || prod.dados_extra?.bloquear_sync_ml || false;
+        const syncStatusHtml = syncBloqueado 
+            ? '<span class="sync-status-badge bloqueado"><i class="fas fa-lock"></i> Bloqueado</span>'
+            : '<span class="sync-status-badge ativo"><i class="fas fa-check-circle"></i> Ativo</span>';
+        
+        const isExcesso = verificarExcessoEstoque(prod);
+        const maximoPermitido = calcularEstoqueMaximo(prod);
+        const precoUnitario = prod.preco || 0;
+        
+        let excessoTooltip = '';
+        if (isExcesso) {
+            excessoTooltip = `Preço: R$ ${precoUnitario.toFixed(2)} | Estoque máximo: ${maximoPermitido} | Atual: ${prod.quantidade}`;
+        }
+        
+        let quantidadeHtml = `${prod.quantidade}`;
+        if (isExcesso) {
+            quantidadeHtml += ` <span class="badge badge-danger" title="${excessoTooltip}"><i class="fas fa-exclamation-triangle"></i> EXCESSO (máx: ${maximoPermitido})</span>`;
+        } else if (prod.quantidade <= 5) {
+            quantidadeHtml = `<span class="text-danger fw-bold">${prod.quantidade}</span>`;
+        }
+        
+        const descricaoRegra = getDescricaoRegra(prod);
+        const excessoInfo = isExcesso ? `<br><span class="badge badge-danger mt-1" title="${descricaoRegra}">⚠️ Excesso (máx: ${maximoPermitido})</span>` : '';
+        
+        let botoes = `
+        <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
+        <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
+        <button class="btn btn-sm btn-secondary" onclick="verHistoricoMovimentacoes(${prod.id})" title="Histórico"><i class="fas fa-history"></i></button>
+        <button class="btn btn-sm btn-purple" onclick="abrirModalRegraIndividual('${escapeHtml(prod.sku)}')" title="Regra individual de estoque">
+        <i class="fas fa-sliders-h"></i>
+        </button>
+        `;
+        
+        if (isAdmin) {
+            botoes += `<button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})" title="Excluir"><i class="fas fa-trash"></i></button>`;
+        }
+        
+        if (temMLB && podeModificarSync) {
+            botoes += `<button class="btn btn-sm btn-primary" onclick="sincronizarProdutoML(${prod.id})" title="Sincronizar estoque com ML"><i class="fab fa-mercadolibre"></i></button>`;
+        } else if (temMLB && !podeModificarSync) {
+            botoes += `<button class="btn btn-sm btn-secondary" disabled title="Apenas administradores podem sincronizar"><i class="fab fa-mercadolibre"></i></button>`;
+        }
+        
+        let rowHtml = `
+            <td>${prod.id}</td>
+            <td><strong>${escapeHtml(prod.nome)}</strong><br><small class="text-muted">${escapeHtml(prod.categoria || 'sem categoria')}</small></td>
+            <td>${escapeHtml(prod.sku)}</td>
+            <td>${quantidadeHtml}</td>
+        `;
+        
+        if (podeVerCusto) {
+            rowHtml += `
+                <td>${ultimoCusto > 0 ? `R$ ${parseFloat(ultimoCusto).toFixed(2)}` : '-'}</td>
+                <td>${custoMedio > 0 ? `R$ ${parseFloat(custoMedio).toFixed(2)}` : '-'}</td>
+            `;
+        }
+        
+        rowHtml += `
+            <td>${syncStatusHtml}</td>
+            <td>
+                <span title="${escapeHtml(atributosResumo)}" class="badge bg-info">${Object.keys(prod.dados_extra || {}).length} atributos</span>
+                ${temMLB ? `<span class="badge bg-success"><i class="fab fa-mercadolibre"></i> ${Array.isArray(mlbCodes) ? mlbCodes.length : 1}</span>` : ''}
+                ${excessoInfo}
+            </td>
+            <td><div class="d-flex flex-wrap gap-1">${botoes}</div></td>
+        `;
+        
+        row.innerHTML = rowHtml;
+        tbody.appendChild(row);
+    });
+    
+    atualizarPaginacaoEstoque(produtosOrdenados.length);
+    console.log('✅ [renderizarTabelaProdutos] Renderização concluída!');
+}
+
+// ============================================
+// FUNÇÃO PARA LIMPAR FILTROS MANUALMENTE
+// ============================================
+function limparFiltrosEstoque() {
+    document.getElementById('buscaEstoqueInput').value = '';
+    document.getElementById('filtroCategoriaEstoque').value = '';
+    paginaAtualEstoque = 1;
+    produtosFiltradosAtuais = produtosEstoque;
+    renderizarTabelaProdutos(produtosFiltradosAtuais);
+    showToast('🧹 Filtros limpos!', 'info');
+}
+
+// ============================================
+// ATUALIZAR A INICIALIZAÇÃO
+// ============================================
+document.addEventListener('DOMContentLoaded', () => {
+    const buscaInput = document.getElementById('buscaEstoqueInput');
+    if (buscaInput) {
+        buscaInput.addEventListener('input', filtrarProdutosEstoque);
+    }
+    
+    const categoriaFilter = document.getElementById('filtroCategoriaEstoque');
+    if (categoriaFilter) {
+        categoriaFilter.addEventListener('change', filtrarProdutosEstoque);
+    }
+    
+    configurarEventosKit();
+    
+    paginaAtualEstoque = 1;
+    itensPorPaginaEstoque = 20;
+    produtosFiltradosAtuais = [];
+    
+    // Carregar categorias
+    setTimeout(carregarCategorias, 500);
+    setTimeout(carregarRegrasEstoque, 1000);
+    setTimeout(carregarRegrasIndividuais, 1100);
+    
+    // ===== ADICIONAR BOTÃO "LIMPAR FILTROS" =====
+    const filtersBar = document.querySelector('.card.mb-4 .d-flex.flex-wrap.gap-2.align-items-center');
+    if (filtersBar) {
+        const limparBtn = document.createElement('button');
+        limparBtn.className = 'btn btn-sm btn-outline-secondary';
+        limparBtn.innerHTML = '<i class="fas fa-eraser"></i> Limpar Filtros';
+        limparBtn.onclick = limparFiltrosEstoque;
+        limparBtn.style.marginLeft = 'auto';
+        filtersBar.appendChild(limparBtn);
+    }
+    
+    setTimeout(async () => {
+        if (!window.supabaseClient) return;
+        try {
+            const { error } = await window.supabaseClient
+                .from('produtos_estoque')
+                .select('id')
+                .limit(1);
+            if (error && error.message.includes('does not exist')) {
+                console.warn('Tabela produtos_estoque não existe. Execute o SQL de criação.');
+            }
+        } catch(e) {}
+    }, 2000);
+});
+
 // ===== FUNÇÃO PARA ORDENAR POR COLUNA =====
 function ordenarEstoquePor(coluna) {
     if (ordemColunaEstoque.coluna === coluna) {
@@ -1723,6 +2269,9 @@ function validarMLBCodes(texto) {
     return true;
 }
 
+// ============================================
+// FUNÇÃO CORRIGIDA: salvarProdutoEstoque
+// ============================================
 async function salvarProdutoEstoque() {
     const id = document.getElementById('produtoId').value;
     const nome = document.getElementById('produtoNome').value.trim();
@@ -1735,6 +2284,26 @@ async function salvarProdutoEstoque() {
     const isAdmin = usuariosAdmin.includes(username);
     const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
     
+    // ===== VERIFICAÇÃO DE DUPLICIDADE =====
+    const sku = document.getElementById('produtoSKU').value.trim();
+    
+    if (!sku) {
+        showToast('SKU é obrigatório', 'warning');
+        return;
+    }
+    
+    // Verifica duplicidade por prefixo
+    const duplicidade = verificarDuplicidadeSKU(sku, id);
+    if (duplicidade.duplicado) {
+        showToast(`❌ ${duplicidade.mensagem}`, 'error');
+        document.getElementById('produtoSKU').focus();
+        document.getElementById('produtoSKU').style.borderColor = '#dc3545';
+        setTimeout(() => {
+            document.getElementById('produtoSKU').style.borderColor = '';
+        }, 3000);
+        return;
+    }
+    
     let bloquearSync = false;
     if (podeModificarSync && toggleSync) {
         bloquearSync = toggleSync.checked;
@@ -1745,8 +2314,12 @@ async function salvarProdutoEstoque() {
         }
     }
 
-    if (!nome || !categoria) {
-        if (window.showToast) showToast('Nome e Categoria são obrigatórios', 'warning');
+    if (!nome || !categoria || categoria === '__NOVA_CATEGORIA__') {
+        if (categoria === '__NOVA_CATEGORIA__') {
+            showToast('Selecione uma categoria existente ou crie uma nova usando a opção "➕ Nova Categoria..."', 'warning');
+        } else {
+            showToast('Nome e Categoria são obrigatórios', 'warning');
+        }
         return;
     }
 
@@ -1876,6 +2449,13 @@ async function salvarProdutoEstoque() {
         let errors = [];
 
         for (const item of bulkItems) {
+            // Verifica duplicidade para cada SKU em bulk
+            const duplicidadeBulk = verificarDuplicidadeSKU(item.sku);
+            if (duplicidadeBulk.duplicado) {
+                errors.push(`${item.sku}: ${duplicidadeBulk.mensagem}`);
+                continue;
+            }
+            
             const { data: existing } = await window.supabaseClient
                 .from('produtos_estoque')
                 .select('id')
@@ -1931,11 +2511,6 @@ async function salvarProdutoEstoque() {
         return;
     }
 
-    const sku = document.getElementById('produtoSKU').value.trim();
-    if (!sku) {
-        showToast('SKU é obrigatório', 'warning');
-        return;
-    }
     const quantidade = parseInt(document.getElementById('produtoQuantidade').value) || 0;
 
     let ultimoCusto = 0;
@@ -2014,7 +2589,10 @@ async function salvarProdutoEstoque() {
             await excluirSkusKit(sku);
         }
 
-        if (!entradaEmProcessamento) {
+        // ===== FECHA O MODAL (verificação segura) =====
+        // Verifica se a variável entradaEmProcessamento existe (vem do entradas.js)
+        const temEntradaEmProcessamento = typeof entradaEmProcessamento !== 'undefined' && entradaEmProcessamento;
+        if (!temEntradaEmProcessamento) {
             fecharModalProdutoEstoque();
         }
 
@@ -2205,6 +2783,691 @@ function getNomeUsuario() {
         }
     } catch (e) {}
     return 'Sistema';
+}
+
+// ============================================
+// VER HISTÓRICO DE MOVIMENTAÇÕES COM SALDO, VENDAS E GRÁFICO COMBINADO (SEM SCROLL DUPLO)
+// ============================================
+async function verHistoricoMovimentacoes(produtoId) {
+    const produto = produtosEstoque.find(p => p.id == produtoId);
+    if (!produto) {
+        showToast('Produto não encontrado', 'error');
+        return;
+    }
+    
+    try {
+        // ===== BUSCA MOVIMENTAÇÕES DE ESTOQUE =====
+        const { data: movimentacoes, error: errMov } = await window.supabaseClient
+            .from('estoque_movimentacoes')
+            .select('*')
+            .eq('produto_id', produtoId)
+            .order('data_hora', { ascending: true });
+        if (errMov) throw errMov;
+
+        // ===== BUSCA VENDAS DO PRODUTO =====
+        let vendas = [];
+        try {
+            const sku = produto.sku;
+            const { data: vendasData, error: errVendas } = await window.supabaseClient
+                .from('vendas_ml')
+                .select('*')
+                .order('data_venda', { ascending: true });
+            
+            if (!errVendas && vendasData) {
+                vendas = vendasData.filter(v => {
+                    if (!v.itens || !Array.isArray(v.itens)) return false;
+                    return v.itens.some(item => {
+                        const itemSku = item.sku || item.codigo || item.id || '';
+                        return itemSku.toLowerCase().includes(sku.toLowerCase()) ||
+                               sku.toLowerCase().includes(itemSku.toLowerCase());
+                    });
+                });
+                console.log(`📊 ${vendas.length} vendas encontradas para o produto ${sku}`);
+            }
+        } catch (errVendas) {
+            console.warn('⚠️ Erro ao buscar vendas:', errVendas);
+        }
+        
+        // ===== CALCULA O SALDO ACUMULADO =====
+        let saldoAtual = 0;
+        const movimentacoesComSaldo = (movimentacoes || []).map(mov => {
+            if (mov.tipo === 'entrada') {
+                saldoAtual += mov.quantidade;
+            } else if (mov.tipo === 'saida') {
+                saldoAtual -= mov.quantidade;
+            }
+            saldoAtual = Math.max(0, saldoAtual);
+            
+            return {
+                ...mov,
+                saldo_final: saldoAtual,
+                data_obj: new Date(mov.data_hora),
+                data_formatada: new Date(mov.data_hora).toLocaleString('pt-BR', {
+                    timeZone: 'America/Sao_Paulo',
+                    day: '2-digit',
+                    month: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                })
+            };
+        });
+        
+        // ===== PREPARA DADOS PARA O GRÁFICO COMBINADO =====
+        const labelsSaldo = movimentacoesComSaldo.map(m => m.data_formatada);
+        const saldos = movimentacoesComSaldo.map(m => m.saldo_final);
+        const coresMovimentacao = movimentacoesComSaldo.map(m => m.tipo === 'entrada' ? '#28a745' : '#dc3545');
+        
+        // Dados para o gráfico de vendas (barras)
+        const vendasPorData = {};
+        vendas.forEach(v => {
+            const dataVenda = new Date(v.data_venda).toLocaleString('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+            if (!vendasPorData[dataVenda]) {
+                vendasPorData[dataVenda] = 0;
+            }
+            if (v.itens && Array.isArray(v.itens)) {
+                v.itens.forEach(item => {
+                    const qtd = parseInt(item.quantidade) || 1;
+                    vendasPorData[dataVenda] += qtd;
+                });
+            } else {
+                vendasPorData[dataVenda] += 1;
+            }
+        });
+        
+        const labelsVendas = Object.keys(vendasPorData);
+        const quantidadesVendidas = Object.values(vendasPorData);
+        const totalVendido = quantidadesVendidas.reduce((a, b) => a + b, 0);
+        
+        // Combina os labels para o gráfico
+        const allLabels = [...new Set([...labelsSaldo, ...labelsVendas])].sort();
+        
+        // ===== MONTA O HTML COM GRÁFICO COMBINADO (SEM SCROLL INTERNO) =====
+        let html = `
+            <div style="padding: 5px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                    <h4 style="margin: 0; color: #00ADEE; font-size: 16px;">
+                        <i class="fas fa-history"></i> Histórico de movimentações - ${escapeHtml(produto.nome)}
+                    </h4>
+                    <div style="font-size: 14px; background: #e9ecef; padding: 5px 15px; border-radius: 20px;">
+                        <strong>Saldo Atual:</strong> 
+                        <span style="color: ${produto.quantidade > 0 ? '#28a745' : '#dc3545'}; font-size: 16px;">
+                            ${produto.quantidade} unidades
+                        </span>
+                    </div>
+                </div>
+                
+                <!-- ===== GRÁFICO COMBINADO (SALDO + VENDAS) ===== -->
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #e9ecef;">
+                    <h5 style="margin-bottom: 10px; font-size: 14px;">
+                        <i class="fas fa-chart-line" style="color: #00ADEE;"></i> 
+                        Evolução do Saldo e Vendas
+                        <span style="font-size: 12px; color: #6c757d; font-weight: normal;">
+                            (${movimentacoesComSaldo.length} movimentações • ${vendas.length} vendas)
+                        </span>
+                    </h5>
+                    <div style="position: relative; height: 250px; width: 100%;">
+                        <canvas id="graficoCombinado" style="width: 100% !important; height: 100% !important;"></canvas>
+                    </div>
+                    <div style="display: flex; justify-content: center; gap: 20px; margin-top: 10px; font-size: 11px; flex-wrap: wrap;">
+                        <span><span style="display: inline-block; width: 20px; height: 3px; background: #00ADEE; vertical-align: middle;"></span> Saldo</span>
+                        <span><span style="display: inline-block; width: 12px; height: 12px; background: #28a745; border-radius: 50%; vertical-align: middle;"></span> Entrada</span>
+                        <span><span style="display: inline-block; width: 12px; height: 12px; background: #dc3545; border-radius: 50%; vertical-align: middle;"></span> Saída</span>
+                        <span><span style="display: inline-block; width: 12px; height: 12px; background: #ffc107; border-radius: 3px; vertical-align: middle;"></span> Vendas</span>
+                    </div>
+                </div>
+                
+                <!-- ===== RESULTADO DAS VENDAS ===== -->
+                ${vendas.length > 0 ? `
+                <div style="background: #fff3cd; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #ffc107; font-size: 13px;">
+                    <strong><i class="fas fa-shopping-cart"></i> Resumo de Vendas:</strong>
+                    ${vendas.length} venda(s) • 
+                    <strong>Total vendido:</strong> ${totalVendido} unidades
+                </div>
+                ` : `
+                <div style="background: #f8f9fa; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; border-left: 4px solid #6c757d; font-size: 13px;">
+                    <i class="fas fa-info-circle"></i> Nenhuma venda encontrada para este produto.
+                </div>
+                `}
+                
+                <div style="font-size: 12px; color: #6c757d; margin-bottom: 8px;">
+                    <i class="fas fa-info-circle"></i> 
+                    O saldo final é calculado cumulativamente a partir da primeira movimentação.
+                </div>
+                
+                <div style="overflow-x: auto; max-height: 350px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 6px;">
+                    <table class="table table-striped table-sm" style="font-size: 12px; min-width: 650px; margin-bottom: 0;">
+                        <thead style="background: #f8f9fa; position: sticky; top: 0; z-index: 10;">
+                            <tr>
+                                <th style="min-width: 140px; padding: 6px 8px;">Data/Hora</th>
+                                <th style="min-width: 80px; padding: 6px 8px;">Tipo</th>
+                                <th style="text-align: center; min-width: 70px; padding: 6px 8px;">Quantidade</th>
+                                <th style="min-width: 120px; padding: 6px 8px;">Nº Documento</th>
+                                <th style="min-width: 90px; padding: 6px 8px;">Tipo Entrada</th>
+                                <th style="min-width: 90px; padding: 6px 8px;">Usuário</th>
+                                <th style="text-align: center; min-width: 80px; padding: 6px 8px; background: #e9ecef; font-weight: 700;">
+                                    Saldo Final
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+        
+        // Ordena por data decrescente para exibir do mais recente primeiro
+        movimentacoesComSaldo.slice().reverse().forEach(mov => {
+            const dataHora = new Date(mov.data_hora).toLocaleString('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            let tipoMov = mov.tipo === 'entrada' ? '➕ Entrada' : '➖ Saída';
+            let tipoCor = mov.tipo === 'entrada' ? '#28a745' : '#dc3545';
+            
+            let tipoEntrada = '-';
+            if (mov.tipo_entrada === 'nova') tipoEntrada = 'Nova (Compra)';
+            else if (mov.tipo_entrada === 'devolucao') tipoEntrada = 'Devolução';
+            else if (mov.tipo_entrada === 'reversao') tipoEntrada = '🔄 Reversão';
+            
+            let saldoCor = mov.saldo_final > 0 ? '#28a745' : '#dc3545';
+            let saldoIcon = mov.saldo_final > 0 ? '📦' : '⚪';
+            
+            html += `
+                <tr>
+                    <td style="font-size: 11px; padding: 4px 8px;">${dataHora}</td>
+                    <td style="color: ${tipoCor}; font-weight: 600; padding: 4px 8px;">${tipoMov}</td>
+                    <td style="text-align: center; font-weight: 600; padding: 4px 8px;">${mov.quantidade}</td>
+                    <td style="font-size: 11px; padding: 4px 8px;">${mov.numero_documento || '-'}</td>
+                    <td style="font-size: 11px; padding: 4px 8px;">${tipoEntrada}</td>
+                    <td style="font-size: 11px; padding: 4px 8px;">${mov.usuario || 'Sistema'}</td>
+                    <td style="text-align: center; font-weight: 700; background: #f8f9fa; color: ${saldoCor}; padding: 4px 8px;">
+                        ${saldoIcon} ${mov.saldo_final}
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 2px solid #e9ecef; font-size: 12px; flex-wrap: wrap; gap: 8px;">
+                    <div>
+                        <span class="badge badge-success" style="font-size: 11px;">${movimentacoes.filter(m => m.tipo === 'entrada').length} entradas</span>
+                        <span class="badge badge-danger" style="font-size: 11px;">${movimentacoes.filter(m => m.tipo === 'saida').length} saídas</span>
+                        ${vendas.length > 0 ? `<span class="badge badge-warning" style="font-size: 11px;">${vendas.length} vendas</span>` : ''}
+                        <span class="badge badge-secondary" style="font-size: 11px;">${movimentacoes.length} movimentações</span>
+                    </div>
+                    <div style="background: #e9ecef; padding: 3px 12px; border-radius: 20px; font-size: 13px;">
+                        <strong>Saldo Atual:</strong> 
+                        <span style="color: ${produto.quantidade > 0 ? '#28a745' : '#dc3545'};">
+                            ${produto.quantidade} unidades
+                        </span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // ===== EXIBE O MODAL (COM SCROLL APENAS NO MODAL CONTENT) =====
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.cssText = 'display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); z-index: 2000;';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 95%; max-height: 90vh; overflow-y: auto; padding: 20px; background: white; border-radius: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 2px solid #f1f3f5; padding-bottom: 10px; position: sticky; top: 0; background: white; z-index: 20;">
+                    <h3 style="margin: 0; color: #00ADEE; font-size: 18px;">
+                        <i class="fas fa-history"></i> Histórico de movimentações e vendas
+                    </h3>
+                    <button onclick="this.closest('.modal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">&times;</button>
+                </div>
+                ${html}
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // ===== CRIA O GRÁFICO COMBINADO =====
+        setTimeout(() => {
+            const canvas = document.getElementById('graficoCombinado');
+            if (canvas && typeof Chart !== 'undefined') {
+                const ctx = canvas.getContext('2d');
+                
+                // Prepara os dados para o gráfico
+                const sortedLabels = allLabels;
+                const saldoData = sortedLabels.map(label => {
+                    const mov = movimentacoesComSaldo.find(m => m.data_formatada === label);
+                    return mov ? mov.saldo_final : null;
+                });
+                
+                const vendasData = sortedLabels.map(label => {
+                    return vendasPorData[label] || 0;
+                });
+                
+                // Cria o gráfico combinado (linha + barras)
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: sortedLabels,
+                        datasets: [
+                            {
+                                label: 'Saldo em Estoque',
+                                type: 'line',
+                                data: saldoData,
+                                borderColor: '#00ADEE',
+                                backgroundColor: 'rgba(0, 173, 238, 0.1)',
+                                fill: true,
+                                tension: 0.3,
+                                pointBackgroundColor: coresMovimentacao,
+                                pointBorderColor: coresMovimentacao,
+                                pointRadius: 4,
+                                pointHoverRadius: 7,
+                                borderWidth: 2,
+                                yAxisID: 'y',
+                                order: 1
+                            },
+                            {
+                                label: 'Vendas (unidades)',
+                                type: 'bar',
+                                data: vendasData,
+                                backgroundColor: 'rgba(255, 193, 7, 0.8)',
+                                borderColor: '#ffc107',
+                                borderWidth: 1,
+                                yAxisID: 'y1',
+                                order: 0
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: {
+                                    font: { size: 11, weight: 'bold' },
+                                    boxWidth: 12,
+                                    padding: 8,
+                                    usePointStyle: true,
+                                    pointStyle: 'circle'
+                                }
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(0,0,0,0.85)',
+                                titleColor: '#fff',
+                                bodyColor: '#fff',
+                                cornerRadius: 8,
+                                padding: 10,
+                                callbacks: {
+                                    label: function(context) {
+                                        if (context.dataset.label === 'Saldo em Estoque') {
+                                            return 'Saldo: ' + context.parsed.y + ' unidades';
+                                        } else {
+                                            return 'Vendas: ' + context.parsed.y + ' unidades';
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                position: 'left',
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: Math.ceil(Math.max(...saldos, 1) / 6) || 1,
+                                    font: { size: 10 }
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Saldo',
+                                    font: { size: 11, weight: 'bold' },
+                                    color: '#00ADEE'
+                                },
+                                grid: {
+                                    color: 'rgba(0,0,0,0.05)'
+                                }
+                            },
+                            y1: {
+                                type: 'linear',
+                                position: 'right',
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: Math.ceil(Math.max(...vendasData, 1) / 5) || 1,
+                                    font: { size: 10 }
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Vendas',
+                                    font: { size: 11, weight: 'bold' },
+                                    color: '#ffc107'
+                                },
+                                grid: {
+                                    display: false
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    maxTicksLimit: 12,
+                                    font: { size: 8 },
+                                    maxRotation: 45,
+                                    minRotation: 30
+                                },
+                                grid: {
+                                    display: false
+                                }
+                            }
+                        },
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        }
+                    }
+                });
+            } else {
+                console.warn('⚠️ Chart.js não está disponível ou canvas não encontrado');
+                const canvasContainer = document.querySelector('#graficoCombinado')?.parentElement;
+                if (canvasContainer) {
+                    canvasContainer.innerHTML = `
+                        <div style="text-align: center; padding: 20px; color: #6c757d;">
+                            <i class="fas fa-chart-line fa-2x mb-2" style="opacity: 0.3;"></i>
+                            <p style="font-size: 13px;">Saldo final: ${saldos[saldos.length - 1] || 0} unidades</p>
+                            <p style="font-size: 13px;">Total de vendas: ${vendas.length}</p>
+                        </div>
+                    `;
+                }
+            }
+        }, 500);
+        
+    } catch (error) {
+        console.error('Erro ao carregar histórico:', error);
+        showToast('Erro ao carregar histórico: ' + error.message, 'error');
+    }
+}
+
+// ============================================
+// FUNÇÃO PARA CARREGAR CHART.JS SE NECESSÁRIO
+// ============================================
+function carregarChartJS(callback) {
+    if (typeof Chart !== 'undefined') {
+        callback();
+        return;
+    }
+    
+    console.log('⏳ Carregando Chart.js...');
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
+    script.onload = function() {
+        console.log('✅ Chart.js carregado!');
+        callback();
+    };
+    script.onerror = function() {
+        console.error('❌ Erro ao carregar Chart.js');
+        // Tenta carregar de outro CDN
+        const fallbackScript = document.createElement('script');
+        fallbackScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js';
+        fallbackScript.onload = function() {
+            console.log('✅ Chart.js carregado (fallback)!');
+            callback();
+        };
+        fallbackScript.onerror = function() {
+            console.error('❌ Falha ao carregar Chart.js de ambos CDNs');
+            callback();
+        };
+        document.head.appendChild(fallbackScript);
+    };
+    document.head.appendChild(script);
+}
+
+// ============================================
+// VER HISTÓRICO DE MOVIMENTAÇÕES COM SALDO FINAL E GRÁFICO
+// ============================================
+async function verHistoricoMovimentacoesComGrafico(produtoId) {
+    const produto = produtosEstoque.find(p => p.id == produtoId);
+    if (!produto) {
+        showToast('Produto não encontrado', 'error');
+        return;
+    }
+    
+    try {
+        const { data, error } = await window.supabaseClient
+            .from('estoque_movimentacoes')
+            .select('*')
+            .eq('produto_id', produtoId)
+            .order('data_hora', { ascending: true });
+        if (error) throw error;
+        
+        if (!data || data.length === 0) {
+            showToast(`Nenhuma movimentação registrada para ${produto.nome}`, 'warning');
+            return;
+        }
+        
+        // ===== CALCULA O SALDO ACUMULADO =====
+        let saldoAtual = 0;
+        const movimentacoesComSaldo = data.map(mov => {
+            if (mov.tipo === 'entrada') {
+                saldoAtual += mov.quantidade;
+            } else if (mov.tipo === 'saida') {
+                saldoAtual -= mov.quantidade;
+            }
+            saldoAtual = Math.max(0, saldoAtual);
+            
+            return {
+                ...mov,
+                saldo_final: saldoAtual,
+                data_formatada: new Date(mov.data_hora).toLocaleString('pt-BR', {
+                    timeZone: 'America/Sao_Paulo',
+                    day: '2-digit',
+                    month: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                })
+            };
+        });
+        
+        // ===== PREPARA DADOS PARA O GRÁFICO =====
+        const labels = movimentacoesComSaldo.map(m => m.data_formatada);
+        const saldos = movimentacoesComSaldo.map(m => m.saldo_final);
+        const cores = movimentacoesComSaldo.map(m => m.tipo === 'entrada' ? '#28a745' : '#dc3545');
+        
+        // ===== MONTA O HTML COM GRÁFICO =====
+        let html = `
+            <div style="max-width: 1000px; max-height: 90vh; overflow-y: auto; padding: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h4 style="margin: 0; color: #00ADEE;">
+                        <i class="fas fa-history"></i> Histórico de movimentações - ${escapeHtml(produto.nome)}
+                    </h4>
+                    <div style="font-size: 14px; background: #e9ecef; padding: 5px 15px; border-radius: 20px;">
+                        <strong>Saldo Atual:</strong> 
+                        <span style="color: ${produto.quantidade > 0 ? '#28a745' : '#dc3545'}; font-size: 16px;">
+                            ${produto.quantidade} unidades
+                        </span>
+                    </div>
+                </div>
+                
+                <!-- GRÁFICO DE EVOLUÇÃO DO SALDO -->
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h5 style="margin-bottom: 10px;">
+                        <i class="fas fa-chart-line" style="color: #00ADEE;"></i> 
+                        Evolução do Saldo
+                        <span style="font-size: 12px; color: #6c757d; font-weight: normal;">
+                            (${movimentacoesComSaldo.length} movimentações)
+                        </span>
+                    </h5>
+                    <canvas id="graficoSaldoHistorico" height="200" style="max-height: 200px; width: 100%;"></canvas>
+                </div>
+                
+                <div style="font-size: 13px; color: #6c757d; margin-bottom: 10px;">
+                    <i class="fas fa-info-circle"></i> 
+                    O saldo final é calculado cumulativamente a partir da primeira movimentação.
+                </div>
+                
+                <table class="table table-striped table-sm" style="font-size: 13px;">
+                    <thead style="background: #f8f9fa; position: sticky; top: 0; z-index: 10;">
+                        <tr>
+                            <th style="min-width: 160px;">Data/Hora</th>
+                            <th style="min-width: 90px;">Tipo</th>
+                            <th style="text-align: center; min-width: 80px;">Quantidade</th>
+                            <th style="min-width: 130px;">Nº Documento</th>
+                            <th style="min-width: 100px;">Tipo Entrada</th>
+                            <th style="min-width: 100px;">Usuário</th>
+                            <th style="text-align: center; min-width: 90px; background: #e9ecef; font-weight: 700;">
+                                Saldo Final
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        movimentacoesComSaldo.slice().reverse().forEach(mov => {
+            const dataHora = new Date(mov.data_hora).toLocaleString('pt-BR', {
+                timeZone: 'America/Sao_Paulo',
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            
+            let tipoMov = mov.tipo === 'entrada' ? '➕ Entrada' : '➖ Saída';
+            let tipoCor = mov.tipo === 'entrada' ? '#28a745' : '#dc3545';
+            
+            let tipoEntrada = '-';
+            if (mov.tipo_entrada === 'nova') tipoEntrada = 'Nova (Compra)';
+            else if (mov.tipo_entrada === 'devolucao') tipoEntrada = 'Devolução';
+            else if (mov.tipo_entrada === 'reversao') tipoEntrada = '🔄 Reversão';
+            
+            let saldoCor = mov.saldo_final > 0 ? '#28a745' : '#dc3545';
+            let saldoIcon = mov.saldo_final > 0 ? '📦' : '⚪';
+            
+            html += `
+                <tr>
+                    <td style="font-size: 12px;">${dataHora}</td>
+                    <td style="color: ${tipoCor}; font-weight: 600;">${tipoMov}</td>
+                    <td style="text-align: center; font-weight: 600;">${mov.quantidade}</td>
+                    <td style="font-size: 12px;">${mov.numero_documento || '-'}</td>
+                    <td style="font-size: 12px;">${tipoEntrada}</td>
+                    <td style="font-size: 12px;">${mov.usuario || 'Sistema'}</td>
+                    <td style="text-align: center; font-weight: 700; background: #f8f9fa; color: ${saldoCor};">
+                        ${saldoIcon} ${mov.saldo_final}
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                    </tbody>
+                </table>
+                
+                <div style="display: flex; justify-content: space-between; margin-top: 15px; padding-top: 10px; border-top: 2px solid #e9ecef; font-size: 13px; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <span class="badge badge-success">${data.filter(m => m.tipo === 'entrada').length} entradas</span>
+                        <span class="badge badge-danger">${data.filter(m => m.tipo === 'saida').length} saídas</span>
+                        <span class="badge badge-secondary">${data.length} movimentações</span>
+                    </div>
+                    <div style="background: #e9ecef; padding: 5px 15px; border-radius: 20px;">
+                        <strong>Saldo Atual:</strong> 
+                        <span style="color: ${produto.quantidade > 0 ? '#28a745' : '#dc3545'}; font-size: 16px;">
+                            ${produto.quantidade} unidades
+                        </span>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // ===== EXIBE O MODAL =====
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.style.cssText = 'display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); z-index: 2000;';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 95%; max-height: 90vh; overflow: auto; padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 2px solid #f1f3f5; padding-bottom: 10px;">
+                    <h3 style="margin: 0; color: #00ADEE;">
+                        <i class="fas fa-history"></i> Histórico de movimentações
+                    </h3>
+                    <button onclick="this.closest('.modal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">&times;</button>
+                </div>
+                ${html}
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // ===== CRIA O GRÁFICO =====
+        setTimeout(() => {
+            const canvas = document.getElementById('graficoSaldoHistorico');
+            if (canvas && typeof Chart !== 'undefined') {
+                new Chart(canvas, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Saldo Final',
+                            data: saldos,
+                            borderColor: '#00ADEE',
+                            backgroundColor: 'rgba(0, 173, 238, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            pointBackgroundColor: cores,
+                            pointBorderColor: cores,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                display: true,
+                                position: 'top',
+                                labels: {
+                                    font: { size: 12 }
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return 'Saldo: ' + context.parsed.y + ' unidades';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: Math.ceil(Math.max(...saldos) / 10) || 1
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Unidades em Estoque'
+                                }
+                            },
+                            x: {
+                                ticks: {
+                                    maxTicksLimit: 15,
+                                    font: { size: 9 }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }, 300);
+        
+    } catch (error) {
+        console.error('Erro ao carregar histórico:', error);
+        showToast('Erro ao carregar histórico: ' + error.message, 'error');
+    }
 }
 
 function showMovimentacaoResumo(mensagem) {
