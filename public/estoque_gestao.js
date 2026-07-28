@@ -2096,45 +2096,154 @@ async function confirmarMovimentacaoEstoque() {
     }
 
     const produto = produtosEstoque.find(p => p.id == id);
-    if (!produto) return;
+    if (!produto) {
+        showToast('Produto não encontrado', 'error');
+        return;
+    }
 
     let novaQuantidade = produto.quantidade;
     let tipoEntrada = null;
+    let tipoMovimento = tipo === 'entrada' ? 'ENTRADA' : 'SAÍDA';
     
     if (tipo === 'entrada') {
         novaQuantidade += quantidade;
         tipoEntrada = document.getElementById('movTipoEntrada').value;
+        if (tipoEntrada === 'nova') {
+            tipoMovimento = 'ENTRADA (Compra)';
+        } else if (tipoEntrada === 'devolucao') {
+            tipoMovimento = 'ENTRADA (Devolução)';
+        }
     } else {
         if (produto.quantidade < quantidade) {
-            if (window.showToast) showToast('Estoque insuficiente!', 'error');
+            if (window.showToast) showToast(`Estoque insuficiente! Disponível: ${produto.quantidade}`, 'error');
             return;
         }
         novaQuantidade -= quantidade;
+        tipoMovimento = 'SAÍDA (Venda)';
     }
 
     try {
+        // ===== ATUALIZAR ESTOQUE =====
         const { error } = await window.supabaseClient
             .from('produtos_estoque')
-            .update({ quantidade: novaQuantidade })
+            .update({ 
+                quantidade: novaQuantidade,
+                updated_at: new Date().toISOString()
+            })
             .eq('id', id);
         if (error) throw error;
 
+        // ===== REGISTRAR MOVIMENTAÇÃO =====
         await registrarMovimentacao(id, tipo, quantidade, numeroDocumento, tipoEntrada);
 
-        if (window.showToast) showToast(`Movimentação: ${tipo === 'entrada' ? '+' : '-'}${quantidade}`, 'success');
+        // ===== MOSTRAR RESUMO DA MOVIMENTAÇÃO =====
+        const nomeUsuario = getNomeUsuario();
+        const dataHora = new Date().toLocaleString('pt-BR');
+        
+        // Montar mensagem de resumo
+        let resumoMsg = `
+📦 RESUMO DA MOVIMENTAÇÃO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 Produto: ${produto.nome}
+📌 SKU: ${produto.sku}
+📂 Categoria: ${produto.categoria || 'N/A'}
+
+🔄 Tipo: ${tipoMovimento}
+📄 Documento: ${numeroDocumento}
+🔢 Quantidade: ${quantidade} un
+
+📊 ESTOQUE:
+   Anterior: ${produto.quantidade} un
+   ➡️ Movimentação: ${tipo === 'entrada' ? '+' : '-'}${quantidade} un
+   ✅ Final: ${novaQuantidade} un
+
+👤 Usuário: ${nomeUsuario}
+🕐 Data/Hora: ${dataHora}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        `;
+
+        // Exibir resumo em um modal ou alert
+        if (window.showToast) {
+            showToast(`${tipoMovimento} realizada com sucesso!`, 'success');
+        }
+        
+        // Exibir resumo detalhado (opcional - pode ser um modal)
+        showMovimentacaoResumo(resumoMsg);
+
+        // Fechar modal e recarregar
         fecharModalMovimentacaoEstoque();
         await carregarProdutosEstoque();
 
+        // ===== SINCronizar com ML se tiver MLB e sincronização ativa =====
         const produtoAtualizado = produtosEstoque.find(p => p.id == id);
-        if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes && produtoAtualizado.dados_extra.mlb_codes.length > 0) {
+        const syncBloqueado = produtoAtualizado?.bloquear_sync_ml || produtoAtualizado?.dados_extra?.bloquear_sync_ml || false;
+        
+        if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes && 
+            produtoAtualizado.dados_extra.mlb_codes.length > 0 && !syncBloqueado) {
             setTimeout(() => {
                 sincronizarEstoqueML(produtoAtualizado);
             }, 500);
+        } else if (produtoAtualizado && produtoAtualizado.dados_extra?.mlb_codes && syncBloqueado) {
+            console.log(`🔒 Produto ${produtoAtualizado.sku} com sincronização BLOQUEADA. Não será sincronizado.`);
         }
+
     } catch (error) {
-        console.error(error);
-        if (window.showToast) showToast('Erro ao movimentar', 'error');
+        console.error('Erro ao movimentar:', error);
+        if (window.showToast) showToast(`Erro: ${error.message}`, 'error');
     }
+}
+
+function getNomeUsuario() {
+    if (window.currentUser && window.currentUser.name) {
+        return window.currentUser.name;
+    }
+    try {
+        const userData = localStorage.getItem('wheeltech_user');
+        if (userData) {
+            const user = JSON.parse(userData);
+            if (user.name) return user.name;
+        }
+    } catch (e) {}
+    return 'Sistema';
+}
+
+function showMovimentacaoResumo(mensagem) {
+    // Remove modal de resumo anterior se existir
+    const modalAntigo = document.getElementById('modalResumoMovimentacao');
+    if (modalAntigo) modalAntigo.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = 'modalResumoMovimentacao';
+    modal.className = 'modal';
+    modal.style.cssText = 'display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.6); z-index: 99999;';
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px; background: white; padding: 25px; border-radius: 12px; max-height: 80vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #00ADEE;">
+                    <i class="fas fa-check-circle" style="color: #28a745;"></i> 
+                    Movimentação Confirmada
+                </h3>
+                <button onclick="this.closest('.modal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">&times;</button>
+            </div>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; font-family: monospace; font-size: 13px; white-space: pre-wrap; line-height: 1.6; max-height: 400px; overflow-y: auto;">
+                ${mensagem}
+            </div>
+            <div style="margin-top: 15px; text-align: center;">
+                <button class="btn btn-primary" onclick="this.closest('.modal').remove()" style="padding: 8px 30px;">
+                    <i class="fas fa-check"></i> OK
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Fechar automaticamente após 10 segundos
+    setTimeout(() => {
+        const modalEl = document.getElementById('modalResumoMovimentacao');
+        if (modalEl) modalEl.remove();
+    }, 10000);
 }
 
 function toggleTipoEntradaField() {

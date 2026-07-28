@@ -1621,6 +1621,9 @@ window.atualizarMLBsBloqueadosAutomaticos = async function() {
                     <button class="btn btn-sm btn-warning" onclick="atualizarMLBsBloqueadosAutomaticos()" title="Buscar MLBs com menos de 40 dias e bloquear automaticamente">
                         <i class="fas fa-robot"></i> Bloquear Automáticos (40 dias)
                     </button>
+                    <button class="btn btn-sm btn-danger" onclick="forcarBuscaCompletaMLBs()" title="Forçar busca de TODOS os MLBs ativos">
+                    <i class="fas fa-database"></i> Buscar Todos MLBs
+                    </button>
                     <button class="btn btn-sm btn-danger" onclick="limparMLBsBloqueados()">
                         <i class="fas fa-trash"></i> Limpar Manuais
                     </button>
@@ -1739,6 +1742,178 @@ window.atualizarMLBsBloqueadosAutomaticos = async function() {
 
     return div;
 }
+
+// ============================================================
+// FUNÇÃO PARA FORÇAR BUSCA COMPLETA DE TODOS OS MLBs
+// ============================================================
+window.forcarBuscaCompletaMLBs = async function() {
+    log('🚀 Forçando busca completa de TODOS os MLBs ativos...', 'info');
+    showToast('🔄 Buscando TODOS os MLBs ativos (isso pode demorar alguns minutos)...', 'info');
+    
+    try {
+        const tokenData = await window.getValidToken?.();
+        if (!tokenData?.access_token) {
+            showToast('Token não disponível', 'error');
+            return;
+        }
+
+        // Limpar cache antigo
+        localStorage.removeItem(SELLER_ITEMS_CACHE_KEY);
+        log('🗑️ Cache antigo removido', 'info');
+
+        const userId = '415176739';
+        const allItems = [];
+        let offset = 0;
+        const limit = 100;
+        let hasMore = true;
+        let totalProcessados = 0;
+        let page = 1;
+        let totalEncontrados = 0;
+
+        showToast('📦 Buscando TODOS os anúncios ativos...', 'info');
+
+        // Buscar até não ter mais resultados
+        while (hasMore) {
+            try {
+                const url = `https://api.mercadolibre.com/users/${userId}/items/search?limit=${limit}&offset=${offset}&order_by=id_desc`;
+                log(`Buscando página ${page} (offset: ${offset})...`, 'debug');
+                
+                const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
+                const response = await fetch(proxyUrl);
+                
+                if (!response.ok) {
+                    if (response.status === 400) {
+                        log(`⚠️ Offset ${offset} retornou 400, pode ser o limite máximo da API`, 'warning');
+                        // Se der 400 no offset, pode ser que tenha chegado no limite
+                        // Vamos tentar buscar os itens restantes de outra forma
+                        log('🔄 Tentando buscar itens restantes com limite reduzido...', 'info');
+                        
+                        // Tenta com limit=50 para ver se consegue mais alguns
+                        const retryUrl = `https://api.mercadolibre.com/users/${userId}/items/search?limit=50&offset=${offset}&order_by=id_desc`;
+                        const retryProxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(retryUrl)}&token=${tokenData.access_token}`;
+                        const retryResponse = await fetch(retryProxyUrl);
+                        
+                        if (retryResponse.ok) {
+                            const retryData = await retryResponse.json();
+                            const retryItems = retryData.results || [];
+                            if (retryItems.length > 0) {
+                                // Processar os itens
+                                for (const itemId of retryItems) {
+                                    try {
+                                        const detailUrl = `https://api.mercadolibre.com/items/${itemId}`;
+                                        const detailProxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(detailUrl)}&token=${tokenData.access_token}`;
+                                        const detailResponse = await fetch(detailProxyUrl);
+                                        if (detailResponse.ok) {
+                                            const detail = await detailResponse.json();
+                                            if (detail.status === 'active') {
+                                                allItems.push({ 
+                                                    id: itemId, 
+                                                    title: detail.title || 'Sem título',
+                                                    start_time: detail.start_time || detail.date_created
+                                                });
+                                                totalEncontrados++;
+                                            }
+                                        }
+                                    } catch (err) {
+                                        log(`Erro ao buscar detalhe do item ${itemId}: ${err.message}`, 'warning');
+                                    }
+                                }
+                                log(`Página ${page} (retry): ${retryItems.length} itens encontrados`, 'info');
+                            }
+                        }
+                        hasMore = false;
+                        break;
+                    }
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                const items = data.results || [];
+                const totalItems = data.paging?.total || 0;
+                
+                log(`Página ${page}: ${items.length} itens encontrados (total API: ${totalItems})`, 'info');
+                
+                if (items.length === 0) {
+                    hasMore = false;
+                    break;
+                }
+
+                // Buscar detalhes de cada item para obter o status
+                const itemsProcessados = [];
+                for (const itemId of items) {
+                    try {
+                        const detailUrl = `https://api.mercadolibre.com/items/${itemId}`;
+                        const detailProxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(detailUrl)}&token=${tokenData.access_token}`;
+                        const detailResponse = await fetch(detailProxyUrl);
+                        if (detailResponse.ok) {
+                            const detail = await detailResponse.json();
+                            if (detail.status === 'active') {
+                                itemsProcessados.push({ 
+                                    id: itemId, 
+                                    title: detail.title || 'Sem título',
+                                    start_time: detail.start_time || detail.date_created
+                                });
+                                totalEncontrados++;
+                            }
+                        }
+                    } catch (err) {
+                        log(`Erro ao buscar detalhe do item ${itemId}: ${err.message}`, 'warning');
+                    }
+                }
+                
+                allItems.push(...itemsProcessados);
+                totalProcessados += itemsProcessados.length;
+                log(`Página ${page}: ${itemsProcessados.length} itens ativos (total: ${totalProcessados})`, 'info');
+                
+                showToast(`📊 Página ${page}: ${totalProcessados} itens ativos encontrados...`, 'info');
+                
+                // Verifica se tem mais páginas
+                if (offset + limit >= totalItems || items.length < limit) {
+                    hasMore = false;
+                    log('Todos os anúncios foram processados', 'debug');
+                } else {
+                    offset += limit;
+                    page++;
+                }
+                
+                // Se já tiver processado muitos, mostra progresso
+                if (totalProcessados > 0 && totalProcessados % 500 === 0) {
+                    showToast(`📊 ${totalProcessados} itens ativos encontrados até agora...`, 'info');
+                }
+                
+            } catch (error) {
+                log(`Erro na página ${page}: ${error.message}`, 'error');
+                hasMore = false;
+            }
+        }
+
+        // Salvar cache com todos os itens
+        localStorage.setItem(SELLER_ITEMS_CACHE_KEY, JSON.stringify({
+            items: allItems,
+            timestamp: Date.now()
+        }));
+
+        log(`✅ ${allItems.length} MLBs ativos encontrados (total processado: ${totalProcessados})`, 'success');
+        showToast(`✅ ${allItems.length} MLBs ativos encontrados!`, 'success');
+
+        // Agora verificar os que têm menos de 40 dias
+        if (allItems.length > 0) {
+            showToast(`🔍 Verificando ${allItems.length} MLBs para bloqueio automático...`, 'info');
+            await verificarEBloquearMLBsPorIdade(
+                allItems.map(item => item.id),
+                tokenData.access_token
+            );
+        }
+
+        return allItems;
+
+    } catch (error) {
+        log(`❌ Erro na busca completa: ${error.message}`, 'error');
+        console.error(error);
+        showToast('Erro na busca completa', 'error');
+        return [];
+    }
+};
 
 // ============================================================
 // FUNÇÃO PARA ATUALIZAR CONTADORES
