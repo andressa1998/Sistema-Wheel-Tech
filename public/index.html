@@ -5462,8 +5462,12 @@ body > * {
                 <option value="CapacetesEPartes">Capacetes e Partes</option>
                 <option value="Porcas">Porcas</option>
                 <option value="outros">Outros</option>
-            </select>
+            </select>    
             <input type="text" id="buscaEstoqueInput" class="form-control" placeholder="🔍 Buscar por nome, SKU ou MLB..." style="width: 250px;">
+            <!-- BOTÃO GERENCIAR CATEGORIAS -->
+            <button class="btn btn-purple" onclick="abrirModalGerenciarCategorias()" title="Gerenciar categorias">
+            <i class="fas fa-tags"></i> Categorias
+            </button>
             <button class="btn btn-success" onclick="abrirModalProdutoEstoque()">
                 <i class="fas fa-plus"></i> Novo Produto
             </button>

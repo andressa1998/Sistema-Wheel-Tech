@@ -614,51 +614,41 @@ async function emitirNFEParaVenda(orderId) {
     
     pendingEmitOrderId = orderId;
 
-    // Limpa o formulário do modal
-    const campos = ['clienteNome', 'clienteDocumento', 'clienteEndereco', 'clienteNumero', 'clienteBairro', 'clienteCidade', 'clienteUF', 'clienteCEP'];
-    campos.forEach(id => {
+    // ===== ABRE O MODAL IMEDIATAMENTE (SEM ESPERAR DADOS) =====
+    console.log('📋 Abrindo modal de dados do cliente IMEDIATAMENTE...');
+    abrirModalCliente();
+    
+    // ===== MOSTRA "CARREGANDO" NOS CAMPOS =====
+    const camposLoading = ['clienteNome', 'clienteDocumento', 'clienteEndereco', 'clienteNumero', 'clienteBairro', 'clienteCidade', 'clienteUF', 'clienteCEP'];
+    camposLoading.forEach(id => {
         const el = document.getElementById(id);
         if (el) {
-            if (id === 'clienteNumero') el.value = 'S/N';
-            else el.value = '';
+            el.placeholder = '⏳ Carregando...';
+            el.value = '';
+            el.disabled = true;
         }
     });
+    
+    // Define valor padrão para número
+    const numeroEl = document.getElementById('clienteNumero');
+    if (numeroEl) numeroEl.value = 'S/N';
 
-    function getValue(field) {
-        if (!field) return '';
-        if (typeof field === 'string') return field;
-        if (typeof field === 'object' && field.name) return field.name;
-        return '';
-    }
-
-    function mapearUF(nomeEstado) {
-        if (!nomeEstado) return '';
-        const mapa = {
-            'acre': 'AC', 'alagoas': 'AL', 'amapá': 'AP', 'amazonas': 'AM',
-            'bahia': 'BA', 'ceará': 'CE', 'distrito federal': 'DF', 'espírito santo': 'ES',
-            'goiás': 'GO', 'maranhão': 'MA', 'mato grosso': 'MT', 'mato grosso do sul': 'MS',
-            'minas gerais': 'MG', 'pará': 'PA', 'paraíba': 'PB', 'paraná': 'PR',
-            'pernambuco': 'PE', 'piauí': 'PI', 'rio de janeiro': 'RJ', 'rio grande do norte': 'RN',
-            'rio grande do sul': 'RS', 'rondônia': 'RO', 'roraima': 'RR', 'santa catarina': 'SC',
-            'são paulo': 'SP', 'sergipe': 'SE', 'tocantins': 'TO'
-        };
-        const chave = nomeEstado.toLowerCase().trim();
-        return mapa[chave] || nomeEstado.toUpperCase().substring(0, 2);
-    }
-
+    // ===== BUSCA OS DADOS EM BACKGROUND (MANTENDO TODO O CÓDIGO ORIGINAL) =====
     try {
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
             const tokenData = await window.getValidToken();
             token = tokenData?.access_token;
         }
+        
         if (!token) {
-            showToast('⚠️ Token ML não disponível. Preencha manualmente.', 'warning');
-            abrirModalCliente();
+            console.warn('⚠️ Token ML não disponível.');
+            habilitarCamposCliente();
+            showToast('⚠️ Token ML não disponível. Preencha os dados manualmente.', 'warning');
             return;
         }
 
-        // Buscar dados da ordem
+        // Buscar dados da ordem - MANTENDO TODAS AS TENTATIVAS ORIGINAIS
         const url = `https://api.mercadolibre.com/orders/${orderId}`;
         let venda = null;
         let ultimoErro = null;
@@ -724,19 +714,19 @@ async function emitirNFEParaVenda(orderId) {
 
         if (!venda) {
             showToast(`❌ Não foi possível obter os dados da venda. ${ultimoErro || ''}`, 'error');
-            abrirModalCliente();
+            habilitarCamposCliente();
             return;
         }
 
-        // Verificar FULL
+        // ===== VERIFICAR FULL (MANTIDO) =====
         if (typeof isFullByAnyField === 'function' && isFullByAnyField(venda)) {
             console.log('🚫 Venda FULL – NF-e não permitida.');
             showToast('🚫 Esta venda é FULL e não permite emissão manual de NF-e.', 'warning');
-            abrirModalCliente();
+            habilitarCamposCliente();
             return;
         }
 
-        // Buscar shipment para endereço
+        // ===== BUSCAR SHIPMENT (MANTIDO) =====
         let address = {};
         if (venda.shipping && venda.shipping.id) {
             try {
@@ -761,25 +751,24 @@ async function emitirNFEParaVenda(orderId) {
             address = venda.buyer.address;
         }
 
-        // Preencher nome
+        // ===== PREENCHER NOME (MANTIDO) =====
         const buyer = venda.buyer || {};
         const nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || '';
-        document.getElementById('clienteNome').value = nome;
 
-        // Preencher endereço com conversão de UF
+        // ===== HABILITA E PREENCHE OS CAMPOS =====
+        habilitarCamposCliente();
+        
+        document.getElementById('clienteNome').value = nome;
         document.getElementById('clienteEndereco').value = address.address_line || address.street_name || '';
         document.getElementById('clienteNumero').value = address.street_number || 'S/N';
-        document.getElementById('clienteBairro').value = getValue(address.neighborhood);
-        document.getElementById('clienteCidade').value = getValue(address.city);
-
+        document.getElementById('clienteBairro').value = address.neighborhood?.name || address.neighborhood || '';
+        document.getElementById('clienteCidade').value = address.city?.name || address.city || '';
+        
         // CONVERTER UF PARA SIGLA
-        const ufOriginal = getValue(address.state);
+        const ufOriginal = address.state?.name || address.state || '';
         const ufSigla = mapearUF(ufOriginal);
         document.getElementById('clienteUF').value = ufSigla;
-
         document.getElementById('clienteCEP').value = address.zip_code ? address.zip_code.replace(/\D/g, '') : '';
-
-        // CPF/CNPJ em branco
         document.getElementById('clienteDocumento').value = '';
 
         console.log('📋 Dados preenchidos:', {
@@ -789,7 +778,7 @@ async function emitirNFEParaVenda(orderId) {
             uf: ufSigla
         });
 
-        // Definir CFOP automaticamente no dropdown
+        // ===== DEFINIR CFOP (MANTIDO) =====
         const cfopSelect = document.getElementById('nfeCfop');
         if (cfopSelect) {
             const cfopSugerido = (ufSigla === 'PR') ? '5102' : '6108';
@@ -799,18 +788,30 @@ async function emitirNFEParaVenda(orderId) {
 
         window._mlAccessToken = token;
 
-        // Carregar lista de transportadoras no select
+        // ===== CARREGAR TRANSPORTADORAS (MANTIDO) =====
         await carregarTransportadorasSelect();
 
-        // 🔥 ABRIR O MODAL DO CLIENTE (GARANTIDO)
-        console.log('📋 Abrindo modal de dados do cliente...');
-        abrirModalCliente();
+        console.log('✅ Dados do cliente carregados com sucesso!');
 
     } catch (error) {
         console.error('❌ Erro ao buscar dados da venda:', error);
+        habilitarCamposCliente();
         showToast('❌ Erro ao carregar dados. Preencha manualmente.', 'error');
-        abrirModalCliente();
     }
+}
+
+// ===== FUNÇÃO PARA HABILITAR CAMPOS DO CLIENTE =====
+function habilitarCamposCliente() {
+    const campos = ['clienteNome', 'clienteEndereco', 'clienteNumero', 'clienteBairro', 'clienteCidade', 'clienteUF', 'clienteCEP', 'clienteDocumento'];
+    campos.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.disabled = false;
+            if (el.placeholder === '⏳ Carregando...') {
+                el.placeholder = '';
+            }
+        }
+    });
 }
 
 function abrirModalCliente() {
@@ -819,6 +820,16 @@ function abrirModalCliente() {
         // Garantir que o modal está visível
         modal.classList.remove('hidden');
         modal.style.display = 'flex';
+        modal.style.alignItems = 'center';
+        modal.style.justifyContent = 'center';
+        modal.style.position = 'fixed';
+        modal.style.top = '0';
+        modal.style.left = '0';
+        modal.style.width = '100%';
+        modal.style.height = '100%';
+        modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        modal.style.zIndex = '10000';
+        
         console.log('✅ Modal de dados do cliente aberto');
         
         // Scroll para o modal se necessário
@@ -1031,14 +1042,12 @@ async function confirmarEmissaoNFE() {
     if (!cidade) { showToast('Cidade é obrigatória', 'warning'); return; }
     if (uf.length !== 2) { showToast('UF deve ter 2 letras (ex: SP, RJ, PR)', 'warning'); return; }
 
-    // ===== VALIDAÇÃO DA UF (verificar se é uma UF válida) =====
     const ufValidas = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
     if (!ufValidas.includes(uf)) {
         showToast(`⚠️ UF "${uf}" inválida. Use uma sigla válida (ex: SP, RJ, PR)`, 'warning');
         return;
     }
 
-    // ===== VALIDAÇÃO DO CEP =====
     if (cep && cep.length !== 8) {
         showToast('CEP deve ter 8 dígitos (apenas números)', 'warning');
         return;
@@ -1125,7 +1134,6 @@ async function confirmarEmissaoNFE() {
         };
 
         console.log('📤 Payload CFOP:', cfop, 'UF:', uf);
-        console.log('📤 Cidade:', cidade);
         console.log('📤 Payload completo:', JSON.stringify(payload, null, 2));
 
         const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
@@ -1138,11 +1146,23 @@ async function confirmarEmissaoNFE() {
         if (result.success) {
             showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
             
-            // ===== BAIXAR ESTOQUE DOS PRODUTOS =====
+            // =========================================================
+            // ===== BAIXAR ESTOQUE DOS PRODUTOS (CORRIGIDO) =====
+            // =========================================================
             try {
-                console.log('📦 Baixando estoque dos produtos...');
+                console.log('📦 Baixando estoque dos produtos da venda:', orderId);
                 
-                // ===== FUNÇÃO PARA EXTRAIR SKU E QUANTIDADE DO PREFIXO =====
+                // Buscar a venda no Supabase para obter os SKUs e quantidades
+                const { data: vendaML, error: vendaError } = await window.supabaseClient
+                    .from('vendas_ml')
+                    .select('sku, quantidade, skus_kit, eh_kit, id_venda_ml')
+                    .eq('id_venda_ml', orderId)
+                    .maybeSingle();
+                
+                // Array para armazenar todos os SKUs e quantidades a baixar
+                const itensParaBaixar = [];
+                
+                // Função para extrair SKU real e multiplicador do prefixo
                 function extrairSkuEQuantidade(skuComPrefixo) {
                     if (!skuComPrefixo || skuComPrefixo === 'SEM_SKU' || skuComPrefixo === 'N/A') {
                         return { sku: skuComPrefixo, multiplicador: 1 };
@@ -1157,27 +1177,94 @@ async function confirmarEmissaoNFE() {
                         return { sku: skuReal, multiplicador: prefixo };
                     }
                     
-                    // Se não tiver prefixo, retorna o SKU original
                     return { sku: skuComPrefixo, multiplicador: 1 };
                 }
                 
-                // Buscar a venda no Supabase para obter os SKUs e quantidades
-                const { data: vendaML, error: vendaError } = await window.supabaseClient
-                    .from('vendas_ml')
-                    .select('sku, quantidade, skus_kit, eh_kit')
-                    .eq('id_venda_ml', orderId)
-                    .maybeSingle();
+                // ===== FUNÇÃO PARA BUSCAR PRODUTO POR SKU DE VÁRIAS FORMAS =====
+                async function buscarProdutoPorSku(sku) {
+                    if (!sku) return null;
+                    
+                    const skuLimpo = sku.trim();
+                    const formasBusca = [
+                        skuLimpo,
+                        skuLimpo.replace(/^0+/, ''), // Remove zeros à esquerda
+                        skuLimpo.padStart(6, '0'), // Adiciona zeros à esquerda
+                        skuLimpo.toLowerCase(),
+                        skuLimpo.toUpperCase(),
+                        // Tentar com 2 zeros na frente
+                        skuLimpo.padStart(skuLimpo.length + 2, '0'),
+                        // Tentar com 3 zeros na frente
+                        skuLimpo.padStart(skuLimpo.length + 3, '0'),
+                        // Tentar sem o prefixo de 3 dígitos (se tiver)
+                        skuLimpo.replace(/^\d{3}/, ''),
+                        // Tentar sem zeros à esquerda (se tiver)
+                        skuLimpo.replace(/^0+/, '')
+                    ];
+                    
+                    // Remover duplicatas e valores vazios
+                    const formasUnicas = [...new Set(formasBusca)].filter(s => s && s !== '');
+                    
+                    for (const skuBusca of formasUnicas) {
+                        if (!skuBusca || skuBusca === '') continue;
+                        
+                        try {
+                            const { data: prod, error: prodError } = await window.supabaseClient
+                                .from('produtos_estoque')
+                                .select('id, quantidade, nome, sku')
+                                .eq('sku', skuBusca)
+                                .maybeSingle();
+                            
+                            if (!prodError && prod) {
+                                console.log(`✅ Produto encontrado com SKU "${skuBusca}": ${prod.sku}`);
+                                return prod;
+                            }
+                        } catch (e) {
+                            console.warn(`⚠️ Erro ao buscar SKU ${skuBusca}:`, e);
+                        }
+                    }
+                    
+                    // Tentar busca por ILIKE (parcial) - mais flexível
+                    if (skuLimpo.length > 4) {
+                        try {
+                            // Buscar por partes do SKU
+                            const partes = skuLimpo.split(/[-_]/);
+                            for (const parte of partes) {
+                                if (parte.length > 3) {
+                                    const { data: prods, error: prodsError } = await window.supabaseClient
+                                        .from('produtos_estoque')
+                                        .select('id, quantidade, nome, sku')
+                                        .ilike('sku', `%${parte}%`)
+                                        .limit(3);
+                                    
+                                    if (!prodsError && prods && prods.length > 0) {
+                                        // Verificar se o SKU encontrado é realmente similar
+                                        for (const prod of prods) {
+                                            if (prod.sku.includes(skuLimpo) || skuLimpo.includes(prod.sku)) {
+                                                console.log(`✅ Produto encontrado por ILIKE: ${prod.sku} (buscando por ${skuLimpo})`);
+                                                return prod;
+                                            }
+                                        }
+                                        // Se não encontrou exato, pega o primeiro
+                                        console.log(`✅ Produto encontrado por ILIKE (similar): ${prods[0].sku} (buscando por ${skuLimpo})`);
+                                        return prods[0];
+                                    }
+                                }
+                            }
+                        } catch (e) {
+                            console.warn(`⚠️ Erro ao buscar por ILIKE:`, e);
+                        }
+                    }
+                    
+                    console.warn(`❌ Produto não encontrado para SKU: "${sku}"`);
+                    return null;
+                }
                 
-                if (vendaError) {
-                    console.warn('⚠️ Erro ao buscar venda para baixar estoque:', vendaError);
-                } else if (vendaML) {
-                    // Array para armazenar todos os SKUs e quantidades a baixar
-                    const itensParaBaixar = [];
+                if (vendaML && !vendaError) {
+                    console.log('📦 Venda encontrada no Supabase:', vendaML);
                     
                     if (vendaML.eh_kit && vendaML.skus_kit && vendaML.skus_kit.length > 0) {
                         // É um KIT - baixar cada SKU do kit
                         for (const kitItem of vendaML.skus_kit) {
-                            // Extrair SKU real e multiplicador do prefixo
                             const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(kitItem.sku);
                             const quantidadeKit = kitItem.estoque || 1;
                             const quantidadeTotal = quantidadeKit * (vendaML.quantidade || 1) * multiplicador;
@@ -1190,8 +1277,8 @@ async function confirmarEmissaoNFE() {
                             });
                         }
                         console.log(`📦 KIT detectado: ${vendaML.skus_kit.length} SKUs para baixar`);
-                    } else {
-                        // Produto normal - extrair SKU real e multiplicador
+                    } else if (vendaML.sku) {
+                        // Produto normal
                         const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(vendaML.sku);
                         const quantidadeTotal = (vendaML.quantidade || 1) * multiplicador;
                         
@@ -1201,109 +1288,120 @@ async function confirmarEmissaoNFE() {
                             quantidade: quantidadeTotal,
                             multiplicador: multiplicador
                         });
+                        console.log(`📦 Produto normal: ${vendaML.sku} → ${skuReal} (${quantidadeTotal} un)`);
                     }
-                    
-                    // Baixar cada item do estoque
-                    for (const item of itensParaBaixar) {
-                        if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
-                        
-                        console.log(`📦 Baixando ${item.quantidade} un do SKU: ${item.sku} (original: ${item.skuOriginal}, multiplicador: ${item.multiplicador})`);
-                        
-                        // Buscar produto no estoque
-                        const { data: produto, error: prodError } = await window.supabaseClient
-                            .from('produtos_estoque')
-                            .select('id, quantidade, nome')
-                            .eq('sku', item.sku)
-                            .maybeSingle();
-                        
-                        if (prodError) {
-                            console.warn(`⚠️ Erro ao buscar produto ${item.sku}:`, prodError);
-                            continue;
-                        }
-                        
-                        if (produto) {
-                            const novaQuantidade = Math.max(0, produto.quantidade - item.quantidade);
-                            
-                            const { error: updateError } = await window.supabaseClient
-                                .from('produtos_estoque')
-                                .update({ 
-                                    quantidade: novaQuantidade,
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq('id', produto.id);
-                            
-                            if (updateError) {
-                                console.warn(`⚠️ Erro ao atualizar estoque do SKU ${item.sku}:`, updateError);
-                            } else {
-                                console.log(`✅ Estoque do SKU ${item.sku} (${produto.nome}) atualizado: ${produto.quantidade} → ${novaQuantidade} (baixado ${item.quantidade} un)`);
-                            }
-                        } else {
-                            console.warn(`⚠️ Produto com SKU ${item.sku} não encontrado no estoque`);
-                        }
-                    }
-                    
-                    // Registrar movimentação no histórico
-                    try {
-                        const historicoItems = itensParaBaixar.map(item => ({
-                            sku: item.sku,
-                            quantidade: item.quantidade,
-                            sku_original: item.skuOriginal,
-                            multiplicador: item.multiplicador
-                        }));
-                        
-                        const { error: histError } = await window.supabaseClient
-                            .from('estoque_historico')
-                            .insert({
-                                venda_id: orderId,
-                                tipo: 'saida',
-                                observacao: `NF-e emitida - Venda ${orderId} - Itens: ${JSON.stringify(historicoItems)}`,
-                                criado_por: nome || 'Sistema',
-                                criado_em: new Date().toISOString()
-                            });
-                        
-                        if (histError) {
-                            console.warn('⚠️ Erro ao registrar histórico de estoque:', histError);
-                        } else {
-                            console.log('✅ Histórico de estoque registrado');
-                        }
-                    } catch (histErr) {
-                        console.warn('⚠️ Erro ao registrar histórico:', histErr);
-                    }
-                } else {
-                    // Fallback: usar os produtos do payload
+                }
+                
+                // Se não encontrou no Supabase, usar os produtos do payload
+                if (itensParaBaixar.length === 0) {
                     console.log('📦 Usando fallback: produtos do payload');
                     for (const prod of produtosFinal) {
                         if (!prod.sku || prod.sku === 'SEM_SKU' || prod.sku === 'N/A') continue;
                         
-                        // Extrair SKU real e multiplicador
+                        // Tentar extrair SKU real do código completo
                         const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(prod.sku);
                         const quantidadeTotal = (prod.quantidade || 1) * multiplicador;
                         
-                        console.log(`📦 Baixando ${quantidadeTotal} un do SKU: ${skuReal} (original: ${prod.sku}, multiplicador: ${multiplicador})`);
+                        itensParaBaixar.push({
+                            sku: skuReal,
+                            skuOriginal: prod.sku,
+                            quantidade: quantidadeTotal,
+                            multiplicador: multiplicador
+                        });
+                        console.log(`📦 Produto do payload: ${prod.sku} → ${skuReal} (${quantidadeTotal} un)`);
+                    }
+                }
+                
+                // ===== BAIXAR CADA ITEM DO ESTOQUE =====
+                let itensBaixados = 0;
+                let errosBaixa = [];
+                let itensRegistrados = [];
+                
+                for (const item of itensParaBaixar) {
+                    if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
+                    
+                    console.log(`📦 Baixando ${item.quantidade} un do SKU: ${item.sku} (original: ${item.skuOriginal})`);
+                    
+                    // Buscar produto no estoque com múltiplas tentativas
+                    const produto = await buscarProdutoPorSku(item.sku);
+                    
+                    // Se não encontrou com o SKU real, tentar com o SKU original
+                    let produtoFinal = produto;
+                    if (!produtoFinal && item.skuOriginal && item.skuOriginal !== item.sku) {
+                        console.log(`🔄 Tentando buscar com SKU original: ${item.skuOriginal}`);
+                        produtoFinal = await buscarProdutoPorSku(item.skuOriginal);
+                    }
+                    
+                    if (produtoFinal) {
+                        // Verificar se há estoque suficiente
+                        if (produtoFinal.quantidade < item.quantidade) {
+                            errosBaixa.push(`Estoque insuficiente para ${produtoFinal.nome} (${produtoFinal.sku}): disponível ${produtoFinal.quantidade}, necessário ${item.quantidade}`);
+                            continue;
+                        }
                         
-                        const { data: produto, error: prodError } = await window.supabaseClient
+                        const novaQuantidade = produtoFinal.quantidade - item.quantidade;
+                        
+                        const { error: updateError } = await window.supabaseClient
                             .from('produtos_estoque')
-                            .select('id, quantidade')
-                            .eq('sku', skuReal)
-                            .maybeSingle();
+                            .update({ 
+                                quantidade: novaQuantidade,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', produtoFinal.id);
                         
-                        if (!prodError && produto) {
-                            const novaQuantidade = Math.max(0, produto.quantidade - quantidadeTotal);
-                            await window.supabaseClient
-                                .from('produtos_estoque')
-                                .update({ 
-                                    quantidade: novaQuantidade,
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq('id', produto.id);
-                            console.log(`✅ Estoque do SKU ${skuReal} atualizado: ${produto.quantidade} → ${novaQuantidade}`);
+                        if (updateError) {
+                            errosBaixa.push(`Erro ao atualizar ${produtoFinal.sku}: ${updateError.message}`);
                         } else {
-                            console.warn(`⚠️ Produto com SKU ${skuReal} não encontrado no estoque`);
+                            itensBaixados++;
+                            console.log(`✅ Estoque do SKU ${item.sku} (${produtoFinal.nome}) atualizado: ${produtoFinal.quantidade} → ${novaQuantidade} (baixado ${item.quantidade} un)`);
+                            
+                            itensRegistrados.push({
+                                produto_id: produtoFinal.id,
+                                sku: produtoFinal.sku,
+                                nome: produtoFinal.nome,
+                                quantidade: item.quantidade,
+                                novaQuantidade: novaQuantidade
+                            });
+                        }
+                    } else {
+                        errosBaixa.push(`Produto com SKU "${item.sku}" não encontrado no estoque (original: ${item.skuOriginal})`);
+                    }
+                }
+                
+                // ===== REGISTRAR NO HISTÓRICO DE MOVIMENTAÇÕES =====
+                for (const item of itensRegistrados) {
+                    if (typeof window.registrarMovimentacao === 'function') {
+                        try {
+                            await window.registrarMovimentacao(
+                                item.produto_id,
+                                'saida',
+                                item.quantidade,
+                                `NFE-${orderId}`,
+                                'venda'
+                            );
+                            console.log(`✅ Movimentação registrada para ${item.sku}: -${item.quantidade} (NFE-${orderId})`);
+                        } catch (movError) {
+                            console.warn(`⚠️ Erro ao registrar movimentação para ${item.sku}:`, movError);
                         }
                     }
                 }
                 
+                // ===== ATUALIZAR O ESTOQUE LOCAL =====
+                if (typeof window.carregarProdutosEstoque === 'function') {
+                    await window.carregarProdutosEstoque();
+                }
+                
+                // ===== MOSTRAR RESUMO =====
+                if (itensBaixados > 0) {
+                    showToast(`✅ ${itensBaixados} item(ns) baixados do estoque!`, 'success');
+                }
+                if (errosBaixa.length > 0) {
+                    showToast(`⚠️ ${errosBaixa.length} erro(s) ao baixar estoque: ${errosBaixa.join('; ')}`, 'warning');
+                    console.warn('Erros na baixa de estoque:', errosBaixa);
+                }
+                
                 console.log('✅ Baixa de estoque concluída');
+                
             } catch (stockError) {
                 console.error('❌ Erro ao baixar estoque:', stockError);
                 showToast('⚠️ NF-e emitida, mas houve erro ao baixar o estoque', 'warning');
@@ -1314,11 +1412,11 @@ async function confirmarEmissaoNFE() {
             window.produtosParaEmissao = null;
             await carregarVendasPendentes();
             await carregarNFesEmitidas();
+            
         } else {
             // ===== TRATAMENTO DE ERROS DA SEFAZ =====
             let mensagemErro = result.error || 'Erro desconhecido';
             
-            // Mapear códigos de erro comuns da SEFAZ
             const errosSEFAZ = {
                 '275': 'Código do Município do Destinatário difere da UF do Destinatário. Verifique se a cidade e UF estão corretos.',
                 '245': 'Código do Município do Destinatário não informado.',
@@ -1330,7 +1428,6 @@ async function confirmarEmissaoNFE() {
                 '251': 'Cidade do Destinatário não informada.'
             };
             
-            // Verificar se o erro contém cStat
             const cStatMatch = mensagemErro.match(/cStat=(\d+)/);
             if (cStatMatch) {
                 const cStat = cStatMatch[1];
@@ -1341,10 +1438,8 @@ async function confirmarEmissaoNFE() {
             
             showToast(`❌ Erro: ${mensagemErro}`, 'error');
             
-            // Se for erro de município, reabrir o modal para correção
             if (mensagemErro.includes('Municipio') || mensagemErro.includes('município')) {
                 showToast('⚠️ Verifique a UF e a Cidade. A UF deve corresponder à cidade informada.', 'warning');
-                // Reabrir modal para correção
                 setTimeout(() => {
                     abrirModalCliente();
                 }, 1000);
