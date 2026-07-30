@@ -1,16 +1,17 @@
 // ============================================
-// SALES DASHBOARD - VERSÃO FINAL CORRIGIDA
+// SALES DASHBOARD - VARIÁVEIS GLOBAIS
 // ============================================
 
 let vendasML = [];
 let vendasPaginadas = [];
 let paginaAtual = 1;
-const itensPorPagina = 20;
+let itensPorPagina = 20;
 let vendasFiltradasAtuais = [];
 let filtroAtual = 'todas';
 let periodoAtual = 'todas';
 let filtroConferencia = 'todos';
 let filtroTipoEnvio = 'todos';
+let filtroLiberacao = 'todas';  // 🔥 ADICIONAR ESTA LINHA
 let fotosTemp = [];
 
 // ============================================
@@ -172,33 +173,61 @@ function gerarBadgeConferencia(status, divergente) {
 }
 
 // ============================================
-// CARREGAR VENDAS DO BANCO
+// CARREGAR VENDAS DO BANCO - VERSÃO CORRIGIDA
 // ============================================
 async function carregarVendasDoBanco() {
     try {
-        console.log('📦 Carregando vendas do banco...');
+        console.log('📦 [carregarVendasDoBanco] Iniciando...');
         
+        if (!window.supabaseClient) {
+            console.error('❌ Supabase não inicializado!');
+            return;
+        }
+
         const { data, error } = await supabaseClient
             .from('vendas_ml')
             .select('*')
-            .order('created_at', { ascending: false });
-        
+            .order('created_at', { ascending: false })
+            .limit(200);
+
         if (error) {
             console.error('❌ Erro ao carregar vendas:', error);
             mostrarToast('Erro ao carregar vendas', 'error');
             return;
         }
         
+        // 🔥 ATUALIZAR A VARIÁVEL GLOBAL
         vendasML = data || [];
         console.log(`✅ ${vendasML.length} vendas carregadas do banco`);
         
+        // 🔥 ATUALIZAR ESTATÍSTICAS
         atualizarEstatisticas();
         atualizarContadoresConferencia();
-        aplicarFiltroAtual();
+        
+        // 🔥 APLICAR FILTROS E RENDERIZAR
+        if (typeof aplicarFiltroAtual === 'function') {
+            aplicarFiltroAtual();
+        } else {
+            // Fallback
+            vendasFiltradasAtuais = vendasML;
+            vendasPaginadas = vendasML.slice(0, itensPorPagina);
+            atualizarTabelaVendas();
+        }
+        
+        console.log('✅ [carregarVendasDoBanco] Concluído com', vendasML.length, 'vendas');
         
     } catch (error) {
         console.error('❌ Erro no carregamento:', error);
         mostrarToast('Erro ao carregar vendas do banco', 'error');
+    }
+}
+
+function mudarItensPorPagina() {
+    const select = document.getElementById('itensPorPaginaSelect');
+    if (select) {
+        itensPorPagina = parseInt(select.value);
+        paginaAtual = 1;
+        aplicarFiltroAtual();
     }
 }
 
@@ -1001,18 +1030,37 @@ function atualizarTabelaVendas() {
     const tbody = document.getElementById('salesTableBody');
     const emptyMsg = document.getElementById('salesEmpty');
     
-    if (!tbody) return;
+    console.log('🔍 [atualizarTabelaVendas] INICIANDO');
+    console.log('🔍 tbody encontrado?', !!tbody);
+    console.log('🔍 vendasPaginadas:', vendasPaginadas.length);
+    
+    if (!tbody) {
+        console.error('❌ Elemento #salesTableBody não encontrado!');
+        return;
+    }
     
     tbody.innerHTML = '';
     
     if (vendasPaginadas.length === 0) {
+        console.log('ℹ️ Nenhuma venda para mostrar');
         if (emptyMsg) emptyMsg.classList.remove('hidden');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="9" class="text-center py-5">
+                    <i class="fas fa-inbox fa-3x text-muted" style="opacity:0.3;"></i>
+                    <h5 class="text-muted">Nenhuma venda encontrada</h5>
+                    <p class="text-muted">Clique em "Sincronizar Agora" para buscar vendas do Mercado Livre.</p>
+                </td>
+            </tr>
+        `;
         return;
     }
     
     if (emptyMsg) emptyMsg.classList.add('hidden');
     
-    vendasPaginadas.forEach(venda => {
+    console.log(`📊 Renderizando ${vendasPaginadas.length} vendas...`);
+    
+    vendasPaginadas.forEach((venda, index) => {
         const row = document.createElement('tr');
         row.className = 'venda-item';
         row.dataset.id = venda.id_venda_ml || venda.id;
@@ -1704,12 +1752,17 @@ function aplicarFiltroAtual() {
 }
 
 // ============================================
-// FUNÇÃO MODIFICADA PARA CARREGAR VENDAS DO BANCO
+// CARREGAR VENDAS DO BANCO (COM LOGS)
 // ============================================
 async function carregarVendasDoBanco() {
     try {
-        console.log('📦 Carregando vendas do banco...');
+        console.log('📦 [carregarVendasDoBanco] Iniciando...');
         
+        if (!window.supabaseClient) {
+            console.error('❌ Supabase não inicializado!');
+            return;
+        }
+
         const { data, error } = await supabaseClient
             .from('vendas_ml')
             .select('*')
@@ -1722,18 +1775,21 @@ async function carregarVendasDoBanco() {
         }
         
         vendasML = data || [];
+        console.log(`✅ ${vendasML.length} vendas carregadas do banco`);
         
-        // Filtrar vendas FULL já no carregamento
-        const vendasFull = vendasML.filter(v => {
+        // Verificar se há vendas FULL
+        const fullCount = vendasML.filter(v => {
             const tipo = (v.tipo_envio || '').toUpperCase();
-            return tipo.includes('FULL') || tipo.includes('FULFILLMENT') || tipo === 'FULL';
+            return tipo.includes('FULL') || tipo.includes('FULFILLMENT');
         }).length;
-        
-        console.log(`✅ ${vendasML.length} vendas carregadas do banco (${vendasFull} FULL ocultadas)`);
+        console.log(`📊 ${fullCount} vendas FULL serão ocultadas`);
         
         atualizarEstatisticas();
         atualizarContadoresConferencia();
-        aplicarFiltroAtual(); // Já aplica o filtro FULL automaticamente
+        
+        console.log('🔄 Aplicando filtros...');
+        aplicarFiltroAtual();
+        console.log('✅ carregarVendasDoBanco concluído');
         
     } catch (error) {
         console.error('❌ Erro no carregamento:', error);

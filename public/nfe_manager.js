@@ -1033,7 +1033,7 @@ async function sincronizarVendasComSupabase() {
     }
 }
 // =========================================================
-// CARREGAR VENDAS PENDENTES (SINCRONIZA COM ML E SALVA NO BANCO)
+// CARREGAR VENDAS PENDENTES (COM VERIFICAÇÃO DE TOKEN)
 // =========================================================
 
 async function carregarVendasPendentes() {
@@ -1051,13 +1051,73 @@ async function carregarVendasPendentes() {
     `;
 
     try {
+        // ===== 🔥 VERIFICAR E RENOVAR TOKEN =====
+        console.log('🔑 Verificando token ML...');
+        
         let token = localStorage.getItem('ml_access_token');
-        if (!token && typeof window.getValidToken === 'function') {
-            const tokenData = await window.getValidToken();
-            token = tokenData?.access_token;
+        let tokenValido = false;
+        
+        // Verificar se o token existe
+        if (token) {
+            // Verificar se está expirado
+            const tokenExpiry = localStorage.getItem('ml_token_expiry');
+            if (tokenExpiry) {
+                const expiryDate = new Date(tokenExpiry);
+                const now = new Date();
+                if (expiryDate > now) {
+                    tokenValido = true;
+                    console.log('✅ Token válido (expira em:', expiryDate.toLocaleString(), ')');
+                } else {
+                    console.log('⚠️ Token expirado desde:', expiryDate.toLocaleString());
+                }
+            } else {
+                // Se não tem data de expiração, considerar válido
+                tokenValido = true;
+                console.log('✅ Token presente (sem data de expiração)');
+            }
         }
-        if (!token) throw new Error('Token ML não disponível');
+        
+        // Se não tem token ou está expirado, tentar renovar
+        if (!token || !tokenValido) {
+            console.log('🔄 Token não disponível ou expirado. Tentando renovar...');
+            
+            // REMOVER TOKEN ANTIGO
+            localStorage.removeItem('ml_access_token');
+            localStorage.removeItem('ml_token_expiry');
+            
+            if (typeof window.getValidToken === 'function') {
+                try {
+                    const tokenData = await window.getValidToken();
+                    if (tokenData && tokenData.access_token) {
+                        token = tokenData.access_token;
+                        localStorage.setItem('ml_access_token', token);
+                        if (tokenData.expires_in) {
+                            const expiryDate = new Date();
+                            expiryDate.setSeconds(expiryDate.getSeconds() + tokenData.expires_in);
+                            localStorage.setItem('ml_token_expiry', expiryDate.toISOString());
+                            console.log('✅ Token renovado! Expira em:', expiryDate.toLocaleString());
+                        } else {
+                            console.log('✅ Token renovado! (sem data de expiração)');
+                        }
+                        tokenValido = true;
+                    } else {
+                        throw new Error('Não foi possível obter novo token');
+                    }
+                } catch (e) {
+                    console.error('❌ Erro ao renovar token:', e);
+                    throw new Error('Token ML não disponível. Faça login novamente.');
+                }
+            } else {
+                console.warn('⚠️ função getValidToken não disponível');
+                throw new Error('Token ML não disponível. Faça login novamente.');
+            }
+        }
+        
+        if (!tokenValido || !token) {
+            throw new Error('Token ML não disponível. Faça login novamente.');
+        }
 
+        console.log('✅ Token OK, iniciando sincronização...');
         mostrarBarraProgresso('Sincronizando vendas com o ML...');
 
         // 🔥 REDUZIDO PARA 15 DIAS
@@ -1069,7 +1129,7 @@ async function carregarVendasPendentes() {
         let offset = 0;
         const maxLimit = 50;
         let total = null;
-        const MAX_PAGINAS = 4; // 4 x 50 = 200 vendas
+        const MAX_PAGINAS = 4;
         
         while ((total === null || offset < total) && offset / maxLimit < MAX_PAGINAS) {
             const params = new URLSearchParams({
@@ -1084,8 +1144,56 @@ async function carregarVendasPendentes() {
             const url = `https://api.mercadolibre.com/orders/search?${params}`;
             const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
             
+            console.log(`📡 Buscando pedidos (offset ${offset})...`);
             const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error(`Erro na API: ${response.status}`);
+            
+            if (!response.ok) {
+                // Se for 401, token inválido - tentar renovar novamente
+                if (response.status === 401) {
+                    console.warn('⚠️ Token rejeitado pela API (401). Tentando renovar...');
+                    
+                    // Remover token antigo e renovar
+                    localStorage.removeItem('ml_access_token');
+                    localStorage.removeItem('ml_token_expiry');
+                    
+                    if (typeof window.getValidToken === 'function') {
+                        const tokenData = await window.getValidToken();
+                        if (tokenData && tokenData.access_token) {
+                            token = tokenData.access_token;
+                            localStorage.setItem('ml_access_token', token);
+                            if (tokenData.expires_in) {
+                                const expiryDate = new Date();
+                                expiryDate.setSeconds(expiryDate.getSeconds() + tokenData.expires_in);
+                                localStorage.setItem('ml_token_expiry', expiryDate.toISOString());
+                            }
+                            console.log('✅ Token renovado, tentando novamente...');
+                            
+                            // Tentar novamente com o novo token
+                            const retryParams = new URLSearchParams({
+                                seller: '415176739',
+                                sort: 'date_desc',
+                                'order.status': 'paid',
+                                limit: maxLimit,
+                                offset: offset,
+                                'order.date_created.from': dataInicio.toISOString()
+                            });
+                            const retryUrl = `https://api.mercadolibre.com/orders/search?${retryParams}`;
+                            const retryProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(retryUrl)}&token=${encodeURIComponent(token)}`;
+                            
+                            const retryResponse = await fetch(retryProxyUrl);
+                            if (!retryResponse.ok) throw new Error(`Erro na API: ${retryResponse.status}`);
+                            const retryData = await retryResponse.json();
+                            const retryOrders = retryData.results || [];
+                            if (total === null) total = retryData.paging?.total || 0;
+                            todasVendas = todasVendas.concat(retryOrders);
+                            offset += maxLimit;
+                            continue;
+                        }
+                    }
+                    throw new Error('Token ML inválido. Faça login novamente.');
+                }
+                throw new Error(`Erro na API: ${response.status}`);
+            }
             
             const data = await response.json();
             const orders = data.results || [];
@@ -1168,20 +1276,86 @@ async function carregarVendasPendentes() {
                 showToast(`⚠️ ${vendasComErro} vendas com erro`, 'warning');
             }
         } else {
-            // Se não tem vendas novas, mostrar mensagem
             fecharBarraProgresso();
             showToast('ℹ️ Nenhuma venda nova encontrada.', 'info');
-            // Recarregar do banco
             await carregarVendasDoBanco();
         }
 
     } catch (error) {
         console.error('❌ Erro:', error);
         fecharBarraProgresso();
-        showToast('Erro ao sincronizar: ' + error.message, 'error');
-        // Tentar carregar do banco em caso de erro
+        
+        // Mensagem mais amigável para erro de token
+        if (error.message.includes('401') || error.message.includes('Token')) {
+            showToast('🔑 Token do Mercado Livre expirado. Faça login novamente.', 'error');
+            // Tentar renovar token automaticamente
+            if (typeof window.getValidToken === 'function') {
+                try {
+                    const tokenData = await window.getValidToken();
+                    if (tokenData && tokenData.access_token) {
+                        localStorage.setItem('ml_access_token', tokenData.access_token);
+                        localStorage.removeItem('ml_token_expiry');
+                        showToast('✅ Token renovado! Tente novamente.', 'success');
+                    }
+                } catch (e) {
+                    console.error('❌ Falha ao renovar token:', e);
+                }
+            }
+        } else {
+            showToast('Erro ao sincronizar: ' + error.message, 'error');
+        }
+        
         await carregarVendasDoBanco();
     }
+}
+
+// =========================================================
+// FUNÇÃO PARA OBTER TOKEN MANUALMENTE
+// =========================================================
+
+async function obterTokenManual() {
+    console.log('🔑 Tentando obter token manualmente...');
+    
+    // Tentar via getValidToken
+    if (typeof window.getValidToken === 'function') {
+        try {
+            const tokenData = await window.getValidToken();
+            if (tokenData && tokenData.access_token) {
+                localStorage.setItem('ml_access_token', tokenData.access_token);
+                if (tokenData.expires_in) {
+                    const expiryDate = new Date();
+                    expiryDate.setSeconds(expiryDate.getSeconds() + tokenData.expires_in);
+                    localStorage.setItem('ml_token_expiry', expiryDate.toISOString());
+                }
+                return tokenData.access_token;
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao obter token via getValidToken:', e);
+        }
+    }
+    
+    // Tentar via ml_token_manager
+    if (typeof window.getMlToken === 'function') {
+        try {
+            const token = await window.getMlToken();
+            if (token) {
+                localStorage.setItem('ml_access_token', token);
+                return token;
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao obter token via getMlToken:', e);
+        }
+    }
+    
+    // Verificar se há token no localStorage
+    const token = localStorage.getItem('ml_access_token');
+    if (token) {
+        console.log('✅ Token encontrado no localStorage');
+        return token;
+    }
+    
+    console.error('❌ Nenhum token disponível');
+    return null;
 }
 
 // =========================================================
@@ -3857,7 +4031,7 @@ async function atualizarListaNFE() {
     }
 
     try {
-        // 🔥 CHAMA A FUNÇÃO QUE SINCRONIZA COM O ML
+        // 🔥 CHAMA A FUNÇÃO QUE VERIFICA TOKEN E SINCRONIZA
         await carregarVendasPendentes();
 
     } catch (error) {

@@ -2885,7 +2885,7 @@ window.analisarItens = async function() {
     }
 
     // Renderizar tabela
-    renderizarTabelaItensBulkCorrigida();
+    renderizarTabelaItensBulk();
 
     // ============================================================
     // FINALIZAR - MOSTRAR RESULTADO
@@ -2900,92 +2900,132 @@ window.analisarItens = async function() {
     showToast(`✅ Análise concluída: ${elegiveis} elegíveis, ${bloqueados} bloqueados, ${jaAtivos} já ativos, ${naoElegiveis} não elegíveis`, 'info');
 };
 
-    // ============================================================
-    // RENDERIZAR TABELA DE ITENS BULK (CORRIGIDA)
-    // ============================================================
+// ============================================================
+// RENDERIZAR TABELA DE ITENS BULK - CORRIGIDA
+// ============================================================
+function renderizarTabelaItensBulk() {
+    const tbody = document.getElementById('bulkItensBody');
+    if (!tbody) return;
 
-    function renderizarTabelaItensBulkCorrigida() {
-        const tbody = document.getElementById('bulkItensBody');
-        if (!tbody) return;
+    if (!itensFiltrados || itensFiltrados.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center py-4 text-muted">
+            <i class="fas fa-info-circle"></i> Nenhum item para exibir
+        </td></tr>`;
+        return;
+    }
 
-        if (itensFiltrados.length === 0) {
-            tbody.innerHTML = `<tr>
-                <td colspan="8" class="text-center py-4 text-muted">
-                    <i class="fas fa-info-circle"></i> Nenhum item para exibir
-                </td>
-            </tr>`;
-            return;
+    // Remover duplicatas por MLB
+    const mapaUnico = {};
+    for (const item of itensFiltrados) {
+        const mlb = item.id;
+        if (!mapaUnico[mlb] || (item.elegivel && !mapaUnico[mlb].elegivel)) {
+            mapaUnico[mlb] = item;
+        }
+    }
+    const itensUnicos = Object.values(mapaUnico);
+    
+    // Ordenar: elegíveis primeiro
+    itensUnicos.sort((a, b) => {
+        if (a.elegivel && !b.elegivel) return -1;
+        if (!a.elegivel && b.elegivel) return 1;
+        return 0;
+    });
+
+    tbody.innerHTML = '';
+    
+    itensUnicos.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        const mlb = item.id || 'N/A';
+        
+        // 🔥 VERIFICAR SE OS VALORES EXISTEM
+        const precoOrigem = item.precoOrigem || 0;
+        const percentOrigem = item.percentOrigem || 0;
+        const precoDestino = (item.precoDestino !== null && item.precoDestino !== undefined) ? item.precoDestino : null;
+        const percentDestino = (item.percentDestino !== null && item.percentDestino !== undefined) ? item.percentDestino : null;
+        const statusOrigem = item.statusOrigem || 'unknown';
+        const statusDestino = item.statusDestino || 'N/A';
+        const jaAtivo = item.jaAtivoNoDestino || false;
+        const isCandidate = item.isCandidateNoDestino || false;
+
+        let bgColor = '#fff';
+        let statusText = '';
+        
+        if (item.elegivel) {
+            bgColor = '#d4edda';
+            statusText = '✅ Elegível';
+        } else if (jaAtivo) {
+            bgColor = '#fff3cd';
+            statusText = '⏳ Já ativo no destino';
+        } else if (isCandidate && precoDestino !== null && precoDestino > 0) {
+            bgColor = '#e8f4fd';
+            statusText = '⏳ Candidato';
+        } else if (item.motivo && item.motivo.includes('Inativo')) {
+            bgColor = '#f8d7da';
+            statusText = '❌ Inativo na Origem';
+        } else if (item.motivo && item.motivo.includes('Sem dados')) {
+            bgColor = '#e9ecef';
+            statusText = '❓ Sem dados';
+        } else {
+            bgColor = '#fff3cd';
+            statusText = '❌ Não elegível';
         }
 
-        tbody.innerHTML = '';
-        itensFiltrados.forEach((item, index) => {
-            const tr = document.createElement('tr');
-            const mlb = item.id || item.item_id || 'N/A';
-            const precoOrigem = item.precoOrigemReais || 0;
-            const percentOrigem = item.percentOrigem || 0;
-            const precoDestino = item.precoDestinoReais !== null ? item.precoDestinoReais : null;
-            const percentDestino = item.percentDestino !== null ? item.percentDestino : null;
+        tr.style.backgroundColor = bgColor;
 
-            let statusClass = '';
-            let statusText = '';
-            let bgColor = '';
-            let podeSelecionar = false;
-            
-            if (item.jaAtivo) {
-                statusClass = 'text-success';
-                statusText = '✅ Já ativo';
-                bgColor = '#d1ecf1';
-                podeSelecionar = false;
-            } else if (item.elegivel) {
-                statusClass = 'text-success';
-                statusText = '✅ Elegível';
-                bgColor = '#d4edda';
-                podeSelecionar = true;
-            } else if (item.motivo && item.motivo.includes('Bloqueado')) {
-                statusClass = 'text-danger';
-                statusText = '🚫 Bloqueado';
-                bgColor = '#f8d7da';
-                podeSelecionar = false;
-            } else {
-                statusClass = 'text-warning';
-                statusText = '❌ Não elegível';
-                bgColor = '#fff3cd';
-                podeSelecionar = false;
-            }
+        const statusBadgeOrigem = statusOrigem === 'started' 
+            ? '<span class="badge badge-success">✅ Ativo</span>' 
+            : `<span class="badge badge-secondary">${statusOrigem}</span>`;
 
-            tr.style.backgroundColor = bgColor;
+        const statusBadgeDestino = jaAtivo 
+            ? '<span class="badge badge-success">✅ Ativo</span>'
+            : isCandidate 
+                ? '<span class="badge badge-warning">⏳ Candidato</span>'
+                : `<span class="badge badge-secondary">${statusDestino}</span>`;
 
-            tr.innerHTML = `
-                <td style="text-align: center;">
-                    <input type="checkbox" class="bulk-item-checkbox" data-index="${index}" 
-                        ${podeSelecionar ? 'checked' : 'disabled'} 
-                        ${!podeSelecionar ? 'style="opacity:0.5;"' : ''}>
-                </td>
-                <td><strong>${mlb}</strong></td>
-                <td style="text-align: right;">R$ ${precoOrigem.toFixed(2)}</td>
-                <td style="text-align: center;">${percentOrigem}%</td>
-                <td style="text-align: right; ${precoDestino !== null ? 'color: #28a745; font-weight: 600;' : 'color: #6c757d;'}">
-                    ${precoDestino !== null ? `R$ ${precoDestino.toFixed(2)}` : '-'}
-                </td>
-                <td style="text-align: center;">${percentDestino !== null ? `${percentDestino}%` : '-'}</td>
-                <td style="text-align: center;">
-                    ${item.jaAtivo ? 
-                        '<span class="badge badge-info" style="font-size: 10px;">✅ Ativo</span>' : 
-                        '<span class="badge badge-success" style="font-size: 10px;">✅ Ativo</span>'
-                    }
-                </td>
-                <td class="${statusClass}" style="text-align: center; font-weight: 600; font-size: 12px;">
-                    ${statusText}
-                    ${item.motivo && !item.jaAtivo ? `<small style="display: block; font-size: 10px; font-weight: 400; color: #6c757d; max-width: 200px; word-wrap: break-word;">${item.motivo}</small>` : ''}
-                </td>
-            `;
+        // 🔥 FORMATAR PREÇOS COM VERIFICAÇÃO
+        const precoOrigemStr = (precoOrigem > 0) ? `R$ ${(precoOrigem / 100).toFixed(2)}` : 'R$ 0,00';
+        const precoDestinoStr = (precoDestino !== null && precoDestino > 0) ? `R$ ${(precoDestino / 100).toFixed(2)}` : 'N/A';
+        const percentDestinoStr = (percentDestino !== null) ? `${percentDestino}%` : 'N/A';
 
-            tbody.appendChild(tr);
-        });
+        tr.innerHTML = `
+            <td style="text-align: center; width: 40px;">
+                <input type="checkbox" class="bulk-item-checkbox" data-index="${index}" ${item.elegivel ? 'checked' : 'disabled'}>
+            </td>
+            <td><strong>${mlb}</strong></td>
+            <td style="text-align: center;">${statusBadgeOrigem}</td>
+            <td style="text-align: center;">${statusBadgeDestino}</td>
+            <td style="text-align: right; font-weight: 600;">${precoOrigemStr}</td>
+            <td style="text-align: center;">${percentOrigem}%</td>
+            <td style="text-align: right; ${precoDestino !== null && precoDestino > 0 ? 'color: #28a745; font-weight: 600;' : 'color: #6c757d;'}">
+                ${precoDestinoStr}
+            </td>
+            <td style="text-align: center;">${percentDestinoStr}</td>
+            <td style="text-align: center; font-weight: 600; font-size: 12px;">
+                ${statusText}
+                ${!item.elegivel && item.motivo && !item.motivo.includes('Elegível') ? 
+                    `<br><small style="font-size: 10px; font-weight: 400; color: #6c757d;">${item.motivo}</small>` : ''}
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
 
-        // Atualizar contador de selecionados
-        atualizarBotaoAtivacao();
+    // Atualizar botão
+    const totalSelecionados = document.querySelectorAll('.bulk-item-checkbox:checked').length;
+    const btnAtivar = document.getElementById('btnAtivarMassa');
+    if (btnAtivar) {
+        const elegiveis = itensFiltrados.filter(item => item.elegivel).length;
+        if (totalSelecionados > 0 && elegiveis > 0) {
+            btnAtivar.disabled = false;
+            btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${totalSelecionados} selecionados)`;
+        } else if (elegiveis > 0) {
+            btnAtivar.disabled = false;
+            btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${elegiveis} elegíveis)`;
+        } else {
+            btnAtivar.disabled = true;
+            btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (0 itens)`;
+        }
     }
+}
 
     // ============================================================
     // FUNÇÃO PARA ATUALIZAR O BOTÃO DE ATIVAÇÃO
