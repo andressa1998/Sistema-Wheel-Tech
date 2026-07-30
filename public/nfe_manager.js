@@ -379,37 +379,84 @@ async function abrirModalEdicaoProdutos(orderId) {
 function fecharModalEdicaoProdutos() {
     const modal = document.getElementById('modalEdicaoProdutos');
     if (modal) modal.remove();
+    console.log('✅ Modal de edição removido');
 }
 
+// =========================================================
+// CONFIRMAR PRODUTOS EDITADOS E EMITIR NF-e
+// =========================================================
+
 async function confirmarProdutosEditados() {
+    console.log('🔵 [confirmarProdutosEditados] FUNÇÃO INICIADA');
+    console.log('🔵 vendaIdParaEdicao:', vendaIdParaEdicao);
+    console.log('🔵 produtosEditados:', produtosEditados);
+    
     const vendaId = vendaIdParaEdicao;
     if (!vendaId) {
+        console.log('❌ vendaIdParaEdicao está vazio!');
         showToast('❌ ID da venda não encontrado', 'error');
         return;
     }
 
-    const ncmPromises = produtosEditados.map(p => {
-        if (p.sku && p.sku !== 'SEM_SKU' && p.ncm) {
-            return window.supabaseClient
-                .from('produto_ncm')
-                .upsert({ sku: p.sku, ncm: p.ncm }, { onConflict: 'sku' });
-        }
-        return Promise.resolve();
-    });
-    await Promise.all(ncmPromises);
+    if (!produtosEditados || produtosEditados.length === 0) {
+        console.log('❌ produtosEditados está vazio!');
+        showToast('❌ Nenhum produto para emitir', 'error');
+        return;
+    }
 
-    window.produtosParaEmissao = produtosEditados.map(p => ({
-        nome: p.nome,
-        quantidade: p.quantidade,
-        valor_unitario: p.valor_unitario,
-        sku: p.sku,
-        ncm: p.ncm || '87149990'
-    }));
+    console.log(`✅ Venda ID: ${vendaId}`);
+    console.log(`✅ ${produtosEditados.length} produtos para emitir`);
 
-    fecharModalEdicaoProdutos();
-    console.log('📤 Confirmando produtos e emitindo NF-e para venda:', vendaId);
-    await emitirNFEParaVenda(vendaId);
-    vendaIdParaEdicao = null;
+    try {
+        // ===== SALVAR NCMs NO BANCO =====
+        console.log('💾 Salvando NCMs...');
+        const ncmPromises = produtosEditados.map(p => {
+            if (p.sku && p.sku !== 'SEM_SKU' && p.ncm) {
+                return window.supabaseClient
+                    .from('produto_ncm')
+                    .upsert({ sku: p.sku, ncm: p.ncm }, { onConflict: 'sku' });
+            }
+            return Promise.resolve();
+        });
+        await Promise.all(ncmPromises);
+        console.log('✅ NCMs salvos com sucesso');
+
+        // ===== PREPARAR PRODUTOS PARA EMISSÃO =====
+        window.produtosParaEmissao = produtosEditados.map(p => ({
+            nome: p.nome || 'Produto',
+            quantidade: p.quantidade || 1,
+            valor_unitario: p.valor_unitario || 0,
+            sku: p.sku || 'SEM_SKU',
+            ncm: p.ncm || '87149990'
+        }));
+
+        console.log('📤 Produtos para emissão:', window.produtosParaEmissao);
+
+        // ===== FECHAR MODAL DE EDIÇÃO =====
+        fecharModalEdicaoProdutos();
+        console.log('✅ Modal de edição fechado');
+
+        // ===== 🔥 DEFINIR pendingEmitOrderId =====
+        // IMPORTANTE: Definir antes de chamar emitirNFEParaVenda
+        pendingEmitOrderId = vendaId;
+        console.log(`✅ pendingEmitOrderId DEFINIDO: ${pendingEmitOrderId}`);
+
+        // ===== CHAMAR EMISSÃO =====
+        console.log(`📤 Chamando emitirNFEParaVenda para: ${vendaId}`);
+        await emitirNFEParaVenda(vendaId);
+
+        // ===== LIMPAR =====
+        vendaIdParaEdicao = null;
+        produtosEditados = [];
+        console.log('✅ Processo concluído com sucesso');
+
+    } catch (error) {
+        console.error('❌ Erro em confirmarProdutosEditados:', error);
+        showToast('❌ Erro ao confirmar produtos: ' + error.message, 'error');
+        // Restaurar estado em caso de erro
+        vendaIdParaEdicao = null;
+        produtosEditados = [];
+    }
 }
 
 // ===================== NCM POR SKU =====================
@@ -936,9 +983,8 @@ async function sincronizarVendasComSupabase() {
         throw error;
     }
 }
-
 // =========================================================
-// CARREGAR VENDAS PENDENTES (USANDO TABELA vendas_nfe)
+// CARREGAR VENDAS PENDENTES (OTIMIZADO - APENAS 200 VENDAS)
 // =========================================================
 
 async function carregarVendasPendentes() {
@@ -950,10 +996,10 @@ async function carregarVendasPendentes() {
     try {
         if (window.supabaseClient) {
             const { data, error } = await window.supabaseClient
-                .from('vendas_nfe')  // 🔥 NOVA TABELA
+                .from('vendas_nfe')
                 .select('*')
                 .order('data_venda', { ascending: false })
-                .limit(100);
+                .limit(200);  // 🔥 REDUZIDO PARA 200
 
             if (!error && data && data.length > 0) {
                 vendasDoBanco = data;
@@ -977,7 +1023,7 @@ async function carregarVendasPendentes() {
         `;
     }
 
-    // ===== 2. BUSCAR VENDAS NOVAS =====
+    // ===== 2. BUSCAR VENDAS NOVAS (APENAS 200) =====
     try {
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
@@ -988,7 +1034,8 @@ async function carregarVendasPendentes() {
 
         mostrarBarraProgresso('Atualizando vendas...');
 
-        const diasAtras = 30;
+        // 🔥 REDUZIDO PARA 15 DIAS (mais rápido)
+        const diasAtras = 15;
         const dataInicio = new Date();
         dataInicio.setDate(dataInicio.getDate() - diasAtras);
         
@@ -996,7 +1043,7 @@ async function carregarVendasPendentes() {
         let offset = 0;
         const maxLimit = 50;
         let total = null;
-        const MAX_PAGINAS = 10;
+        const MAX_PAGINAS = 4;  // 🔥 4 páginas = 200 vendas (4 x 50)
         
         while ((total === null || offset < total) && offset / maxLimit < MAX_PAGINAS) {
             const params = new URLSearchParams({
@@ -1019,16 +1066,25 @@ async function carregarVendasPendentes() {
             
             if (total === null) {
                 total = data.paging?.total || 0;
+                console.log(`📦 Total de pedidos no ML: ${total}`);
             }
             
             todasVendas = todasVendas.concat(orders);
             offset += maxLimit;
             
-            const progresso = Math.min(100, Math.round((offset / Math.min(total, maxLimit * MAX_PAGINAS)) * 100));
-            atualizarBarraProgresso(progresso, `Carregando... ${offset} vendas`);
+            const progresso = Math.min(100, Math.round((offset / (maxLimit * MAX_PAGINAS)) * 100));
+            atualizarBarraProgresso(progresso, `Carregando ${offset}/${maxLimit * MAX_PAGINAS}...`);
             
             await new Promise(resolve => setTimeout(resolve, 200));
         }
+        
+        // 🔥 LIMITAR PARA 200 VENDAS
+        if (todasVendas.length > 200) {
+            todasVendas = todasVendas.slice(0, 200);
+            console.log(`📦 Limitado para 200 vendas`);
+        }
+        
+        console.log(`📦 ${todasVendas.length} vendas obtidas do ML`);
 
         if (todasVendas.length > 0) {
             atualizarBarraProgresso(50, 'Processando vendas...');
@@ -1036,24 +1092,30 @@ async function carregarVendasPendentes() {
             let vendasSalvas = 0;
             let vendasComErro = 0;
             
-            for (let i = 0; i < todasVendas.length; i++) {
-                const venda = todasVendas[i];
-                try {
-                    const vendaProcessada = await processarVendaIndividual(venda, token);
-                    if (vendaProcessada) {
-                        // 🔥 SALVAR NA TABELA vendas_nfe
-                        const salvou = await salvarVendaNFE(vendaProcessada);
-                        if (salvou) vendasSalvas++;
-                        else vendasComErro++;
+            // 🔥 PROCESSAR EM LOTE DE 5 PARA NÃO SOBRECARREGAR
+            const BATCH_SIZE = 5;
+            
+            for (let i = 0; i < todasVendas.length; i += BATCH_SIZE) {
+                const batch = todasVendas.slice(i, i + BATCH_SIZE);
+                
+                for (const venda of batch) {
+                    try {
+                        const vendaProcessada = await processarVendaIndividual(venda, token);
+                        if (vendaProcessada) {
+                            const salvou = await salvarVendaNFE(vendaProcessada);
+                            if (salvou) vendasSalvas++;
+                            else vendasComErro++;
+                        }
+                    } catch (e) {
+                        vendasComErro++;
                     }
-                } catch (e) {
-                    vendasComErro++;
                 }
                 
-                if (i % 10 === 0) {
-                    const progresso = 50 + Math.round((i / todasVendas.length) * 45);
-                    atualizarBarraProgresso(progresso, `Processando ${i+1}/${todasVendas.length}...`);
-                }
+                const progresso = 50 + Math.round(((i + batch.length) / todasVendas.length) * 45);
+                atualizarBarraProgresso(progresso, `Processando ${Math.min(i + batch.length, todasVendas.length)}/${todasVendas.length}...`);
+                
+                // Pequena pausa entre lotes
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
 
             // ===== RECARREGAR DA TABELA vendas_nfe =====
@@ -1061,10 +1123,10 @@ async function carregarVendasPendentes() {
             
             if (window.supabaseClient) {
                 const { data, error } = await window.supabaseClient
-                    .from('vendas_nfe')  // 🔥 NOVA TABELA
+                    .from('vendas_nfe')
                     .select('*')
                     .order('data_venda', { ascending: false })
-                    .limit(100);
+                    .limit(200);
                 
                 if (!error && data && data.length > 0) {
                     renderizarTabelaVendas(data);
@@ -1444,22 +1506,31 @@ Verifique o console para mais detalhes.
 console.log('✅ Função debugMercadoPago registrada globalmente');
 
 // =========================================================
-// EMITIR NF-E PARA VENDA
+// EMITIR NF-e PARA VENDA
 // =========================================================
 
 async function emitirNFEParaVenda(orderId) {
-    console.log('🔵 Iniciando emitirNFEParaVenda para:', orderId);
-    
+    console.log('🔵 [emitirNFEParaVenda] FUNÇÃO INICIADA');
+    console.log(`🔵 orderId recebido: ${orderId}`);
+    console.log(`🔵 pendingEmitOrderId ANTES: ${pendingEmitOrderId}`);
+
     if (!orderId || orderId === 'null' || orderId === 'undefined') {
+        console.log('❌ orderId inválido!');
         showToast('❌ ID da venda inválido', 'error');
         return;
     }
-    
-    pendingEmitOrderId = orderId;
 
-    console.log('📋 Abrindo modal de dados do cliente IMEDIATAMENTE...');
+    // 🔥 GARANTIR QUE pendingEmitOrderId ESTÁ DEFINIDO
+    if (!pendingEmitOrderId || pendingEmitOrderId !== orderId) {
+        console.log(`⚠️ pendingEmitOrderId (${pendingEmitOrderId}) não coincide com orderId (${orderId}), corrigindo...`);
+        pendingEmitOrderId = orderId;
+        console.log(`✅ pendingEmitOrderId CORRIGIDO: ${pendingEmitOrderId}`);
+    }
+
+    console.log('📋 Abrindo modal de dados do cliente...');
     abrirModalCliente();
     
+    // ===== MOSTRAR LOADING NOS CAMPOS =====
     const camposLoading = ['clienteNome', 'clienteDocumento', 'clienteEndereco', 'clienteNumero', 'clienteBairro', 'clienteCidade', 'clienteUF', 'clienteCEP'];
     camposLoading.forEach(id => {
         const el = document.getElementById(id);
@@ -1487,79 +1558,41 @@ async function emitirNFEParaVenda(orderId) {
             return;
         }
 
+        // ===== BUSCAR DADOS DA VENDA =====
         const url = `https://api.mercadolibre.com/orders/${orderId}`;
         let venda = null;
-        let ultimoErro = null;
 
         try {
             const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
-            console.log('📤 Chamando Worker:', proxyUrl.substring(0, 100) + '...');
+            console.log('📤 Buscando venda...');
             const response = await fetch(proxyUrl);
             if (response.ok) {
                 venda = await response.json();
-                console.log('✅ Venda obtida via Worker');
+                console.log('✅ Venda obtida com sucesso');
             } else {
-                const errorText = await response.text();
-                ultimoErro = `Worker falhou: ${response.status} - ${errorText}`;
-                console.warn('⚠️', ultimoErro);
+                console.warn(`⚠️ Worker falhou: ${response.status}`);
             }
-        } catch (workerError) {
-            ultimoErro = workerError.message;
-            console.warn('⚠️ Worker falhou:', workerError);
+        } catch (error) {
+            console.warn('⚠️ Erro no worker:', error);
         }
 
         if (!venda) {
-            try {
-                console.log('📤 Tentando fallback via CORS proxy...');
-                const fallbackUrl = `https://cors-anywhere.herokuapp.com/${url}`;
-                const response = await fetch(fallbackUrl, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (response.ok) {
-                    venda = await response.json();
-                    console.log('✅ Venda obtida via CORS proxy');
-                } else {
-                    ultimoErro = `CORS proxy falhou: ${response.status}`;
-                    console.warn('⚠️', ultimoErro);
-                }
-            } catch (fallbackError) {
-                ultimoErro = fallbackError.message;
-                console.warn('⚠️ Fallback falhou:', fallbackError);
-            }
-        }
-
-        if (!venda) {
-            try {
-                console.log('📤 Tentando chamada direta...');
-                const response = await fetch(url, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (response.ok) {
-                    venda = await response.json();
-                    console.log('✅ Venda obtida via chamada direta');
-                } else {
-                    ultimoErro = `Chamada direta falhou: ${response.status}`;
-                    console.warn('⚠️', ultimoErro);
-                }
-            } catch (directError) {
-                ultimoErro = directError.message;
-                console.warn('⚠️ Chamada direta falhou:', directError);
-            }
-        }
-
-        if (!venda) {
-            showToast(`❌ Não foi possível obter os dados da venda. ${ultimoErro || ''}`, 'error');
+            console.warn('⚠️ Não foi possível obter dados da venda, permitindo preenchimento manual');
             habilitarCamposCliente();
+            showToast('⚠️ Preencha os dados manualmente.', 'warning');
             return;
         }
 
+        // ===== VERIFICAR SE É FULL =====
         if (typeof isFullByAnyField === 'function' && isFullByAnyField(venda)) {
             console.log('🚫 Venda FULL – NF-e não permitida.');
             showToast('🚫 Esta venda é FULL e não permite emissão manual de NF-e.', 'warning');
             habilitarCamposCliente();
+            pendingEmitOrderId = null;
             return;
         }
 
+        // ===== EXTRAIR ENDEREÇO =====
         let address = {};
         if (venda.shipping && venda.shipping.id) {
             try {
@@ -1570,12 +1603,10 @@ async function emitirNFEParaVenda(orderId) {
                     const shipment = await shipResponse.json();
                     if (shipment.receiver_address) {
                         address = shipment.receiver_address;
-                    } else if (shipment.shipping_option && shipment.shipping_option.receiver_address) {
-                        address = shipment.shipping_option.receiver_address;
                     }
                 }
-            } catch (shipError) {
-                console.warn('⚠️ Erro ao buscar shipment:', shipError);
+            } catch (error) {
+                console.warn('⚠️ Erro ao buscar shipment:', error);
             }
         }
 
@@ -1583,6 +1614,7 @@ async function emitirNFEParaVenda(orderId) {
             address = venda.buyer.address;
         }
 
+        // ===== PREENCHER CAMPOS =====
         const buyer = venda.buyer || {};
         const nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || '';
 
@@ -1607,17 +1639,19 @@ async function emitirNFEParaVenda(orderId) {
             uf: ufSigla
         });
 
+        // ===== CFOP AUTOMÁTICO =====
         const cfopSelect = document.getElementById('nfeCfop');
         if (cfopSelect) {
             const cfopSugerido = (ufSigla === 'PR') ? '5102' : '6108';
             cfopSelect.value = cfopSugerido;
-            console.log(`🔧 CFOP definido automaticamente: ${cfopSugerido} (UF: ${ufSigla})`);
+            console.log(`🔧 CFOP definido: ${cfopSugerido}`);
         }
 
         window._mlAccessToken = token;
         await carregarTransportadorasSelect();
 
         console.log('✅ Dados do cliente carregados com sucesso!');
+        console.log(`✅ pendingEmitOrderId mantido: ${pendingEmitOrderId}`);
 
     } catch (error) {
         console.error('❌ Erro ao buscar dados da venda:', error);
@@ -1640,8 +1674,20 @@ function habilitarCamposCliente() {
     });
 }
 
+// =========================================================
+// ABRIR MODAL CLIENTE (CORRIGIDO)
+// =========================================================
 function abrirModalCliente() {
-    const modal = document.getElementById('modalDadosClienteNFE');
+    console.log('📋 [abrirModalCliente] Abrindo modal...');
+    
+    let modal = document.getElementById('modalDadosClienteNFE');
+    
+    // Se o modal não existe, criar
+    if (!modal) {
+        console.log('📋 Criando modal de cliente...');
+        modal = criarModalClienteEmergencia();
+    }
+    
     if (modal) {
         modal.classList.remove('hidden');
         modal.style.display = 'flex';
@@ -1654,24 +1700,32 @@ function abrirModalCliente() {
         modal.style.height = '100%';
         modal.style.backgroundColor = 'rgba(0,0,0,0.5)';
         modal.style.zIndex = '10000';
-        
         console.log('✅ Modal de dados do cliente aberto');
         
-        modal.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 🔥 FORÇAR RECRIAÇÃO DOS BOTÕES
+        setTimeout(() => {
+            fixModalButtons();
+        }, 200);
     } else {
-        console.error('❌ Modal modalDadosClienteNFE não encontrado');
+        console.error('❌ Modal não encontrado');
         showToast('Erro: modal não encontrado', 'error');
-        criarModalClienteEmergencia();
     }
 }
 
+// =========================================================
+// CRIAR MODAL CLIENTE EMERGÊNCIA (CORRIGIDO)
+// =========================================================
 function criarModalClienteEmergencia() {
+    // Remover modal antigo se existir
+    const oldModal = document.getElementById('modalDadosClienteNFE');
+    if (oldModal) oldModal.remove();
+    
     const modalHTML = `
-    <div id="modalDadosClienteNFE" class="modal" style="display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.5); z-index: 10000;">
-        <div class="modal-content" style="max-width: 600px; background: white; padding: 25px; border-radius: 8px; max-height: 90vh; overflow-y: auto;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h3><i class="fas fa-user-edit"></i> Dados do Cliente para NF-e</h3>
-                <button onclick="fecharModalDadosClienteNFE()" style="background: none; border: none; font-size: 24px; cursor: pointer;">&times;</button>
+    <div id="modalDadosClienteNFE" class="modal" style="display:none; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:10000; position:fixed; top:0; left:0; width:100%; height:100%;">
+        <div class="modal-content" style="max-width:600px; background:white; padding:25px; border-radius:8px; max-height:90vh; overflow-y:auto; width:95%;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h3 style="margin:0;"><i class="fas fa-user-edit"></i> Dados do Cliente para NF-e</h3>
+                <button onclick="fecharModalDadosClienteNFE()" style="background:none; border:none; font-size:28px; cursor:pointer; color:#6c757d; line-height:1;">&times;</button>
             </div>
             <form id="formDadosClienteNFE">
                 <div class="form-group">
@@ -1744,9 +1798,13 @@ function criarModalClienteEmergencia() {
                         <option value="">Selecione uma transportadora</option>
                     </select>
                 </div>
+                
+                <!-- 🔥 BOTÕES COM IDS FIXOS E EVENTOS DIRETOS -->
                 <div class="d-flex justify-content-end gap-2 mt-3">
-                    <button type="button" class="btn btn-secondary" onclick="fecharModalDadosClienteNFE()">Cancelar</button>
-                    <button type="button" class="btn btn-success" onclick="confirmarEmissaoNFE()">
+                    <button type="button" class="btn btn-secondary" id="cancelarModalNFEBtn">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                    <button type="button" class="btn btn-success" id="confirmarModalNFEBtn">
                         <i class="fas fa-file-invoice"></i> Confirmar e Emitir NF-e
                     </button>
                 </div>
@@ -1754,21 +1812,198 @@ function criarModalClienteEmergencia() {
         </div>
     </div>`;
     
-    const oldModal = document.getElementById('modalDadosClienteNFE');
-    if (oldModal) oldModal.remove();
-    
     const container = document.createElement('div');
     container.innerHTML = modalHTML;
     document.body.appendChild(container.firstElementChild);
     
+    const modal = document.getElementById('modalDadosClienteNFE');
     console.log('✅ Modal de cliente criado em emergência');
-    carregarTransportadorasSelect();
+    
+    // Carregar transportadoras
+    setTimeout(carregarTransportadorasSelect, 300);
+    
+    // 🔥 ANEXAR EVENTOS AOS BOTÕES IMEDIATAMENTE
+    setTimeout(fixModalButtons, 100);
+    
+    return modal;
 }
 
+// =========================================================
+// FIXAR BOTÕES DO MODAL (CORRIGIDO)
+// =========================================================
+function fixModalButtons() {
+    console.log('🔧 [fixModalButtons] Fixando botões do modal...');
+    
+    // Botão Confirmar
+    const btnConfirmar = document.getElementById('confirmarModalNFEBtn');
+    if (btnConfirmar) {
+        // Remover todos os eventos antigos
+        const novoBtn = btnConfirmar.cloneNode(true);
+        btnConfirmar.parentNode.replaceChild(novoBtn, btnConfirmar);
+        
+        // Adicionar evento CORRETO
+        novoBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('🔵 [CONFIRMAR] Botão clicado!');
+            console.log('🔵 pendingEmitOrderId:', pendingEmitOrderId);
+            
+            // Se não tiver orderId, tentar recuperar
+            if (!pendingEmitOrderId) {
+                const btnVenda = document.querySelector('.btn-emitir-nfe[data-venda-id]');
+                if (btnVenda) {
+                    const vendaId = btnVenda.dataset.vendaId || btnVenda.getAttribute('data-venda-id');
+                    if (vendaId) {
+                        pendingEmitOrderId = vendaId;
+                        console.log(`✅ pendingEmitOrderId recuperado: ${pendingEmitOrderId}`);
+                    }
+                }
+            }
+            
+            confirmarEmissaoNFE();
+        });
+        
+        // Também adicionar onclick direto (fallback)
+        novoBtn.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('🔵 [CONFIRMAR] onclick disparado!');
+            confirmarEmissaoNFE();
+        };
+        
+        console.log('✅ Botão Confirmar fixado');
+    } else {
+        console.warn('⚠️ Botão confirmar não encontrado');
+    }
+    
+    // Botão Cancelar
+    const btnCancelar = document.getElementById('cancelarModalNFEBtn');
+    if (btnCancelar) {
+        const novoBtn = btnCancelar.cloneNode(true);
+        btnCancelar.parentNode.replaceChild(novoBtn, btnCancelar);
+        
+        novoBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('🔵 [CANCELAR] Botão clicado!');
+            fecharModalDadosClienteNFE();
+        });
+        
+        novoBtn.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            fecharModalDadosClienteNFE();
+        };
+        
+        console.log('✅ Botão Cancelar fixado');
+    } else {
+        console.warn('⚠️ Botão cancelar não encontrado');
+    }
+}
+
+// =========================================================
+// FECHAR MODAL DADOS CLIENTE (CORRIGIDO)
+// =========================================================
 function fecharModalDadosClienteNFE() {
+    console.log('🔵 [fecharModalDadosClienteNFE] Fechando modal...');
     const modal = document.getElementById('modalDadosClienteNFE');
-    if (modal) modal.classList.add('hidden');
-    pendingEmitOrderId = null;
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.style.display = 'none';
+    }
+    // Não limpar pendingEmitOrderId aqui para permitir reabertura
+    console.log('✅ Modal fechado');
+}
+
+// =========================================================
+// FUNÇÃO DE EMERGÊNCIA - BOTÃO FLUTUANTE
+// =========================================================
+let botaoFlutuante = null;
+
+function criarBotaoFlutuanteEmergencia() {
+    // Remover botão antigo
+    if (botaoFlutuante) {
+        botaoFlutuante.remove();
+        botaoFlutuante = null;
+    }
+    
+    const modal = document.getElementById('modalDadosClienteNFE');
+    if (!modal || modal.style.display !== 'flex') {
+        console.log('ℹ️ Modal não está aberto');
+        return;
+    }
+    
+    botaoFlutuante = document.createElement('div');
+    botaoFlutuante.style.cssText = `
+        position: fixed;
+        bottom: 30px;
+        right: 30px;
+        z-index: 99999;
+        background: linear-gradient(135deg, #28a745, #20c997);
+        color: white;
+        border: none;
+        padding: 15px 30px;
+        border-radius: 50px;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+        box-shadow: 0 4px 15px rgba(40, 167, 69, 0.4);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        animation: pulse 2s infinite;
+    `;
+    
+    botaoFlutuante.innerHTML = `
+        <i class="fas fa-file-invoice"></i>
+        🚀 EMITIR NF-e AGORA
+        <span style="font-size: 10px; background: rgba(255,255,255,0.2); padding: 2px 10px; border-radius: 20px;">
+            ${pendingEmitOrderId || 'SEM ID'}
+        </span>
+    `;
+    
+    botaoFlutuante.onclick = function() {
+        console.log('🔵 [BOTÃO FLUTUANTE] Clicado!');
+        if (!pendingEmitOrderId) {
+            const btnVenda = document.querySelector('.btn-emitir-nfe[data-venda-id]');
+            if (btnVenda) {
+                const vendaId = btnVenda.dataset.vendaId || btnVenda.getAttribute('data-venda-id');
+                if (vendaId) {
+                    pendingEmitOrderId = vendaId;
+                    console.log(`✅ pendingEmitOrderId recuperado: ${pendingEmitOrderId}`);
+                }
+            }
+        }
+        if (!pendingEmitOrderId) {
+            alert('❌ Nenhuma venda selecionada! Clique em "Emitir NF-e" na tabela primeiro.');
+            return;
+        }
+        confirmarEmissaoNFE();
+    };
+    
+    document.body.appendChild(botaoFlutuante);
+    console.log('✅ Botão flutuante criado!');
+}
+
+// Observar quando o modal abre
+const observerModal = new MutationObserver(() => {
+    const modal = document.getElementById('modalDadosClienteNFE');
+    if (modal && modal.style.display === 'flex') {
+        console.log('🔍 Modal detectado, fixando botões...');
+        setTimeout(fixModalButtons, 300);
+        setTimeout(criarBotaoFlutuanteEmergencia, 500);
+    }
+});
+
+// Iniciar observação
+try {
+    observerModal.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['style'],
+        subtree: true
+    });
+} catch (e) {
+    console.warn('⚠️ Erro ao iniciar observer:', e);
 }
 
 // ===================== SALVAR CLIENTE NO BANCO =====================
@@ -1970,13 +2205,46 @@ async function salvarVendaNFE(venda) {
 // =========================================================
 
 async function confirmarEmissaoNFE() {
-    const orderId = pendingEmitOrderId;
+    console.log('🔵 [confirmarEmissaoNFE] FUNÇÃO INICIADA');
+    console.log(`🔵 pendingEmitOrderId: ${pendingEmitOrderId}`);
+    console.log(`🔵 vendaIdParaEdicao: ${vendaIdParaEdicao}`);
+    
+    // 🔥 SE pendingEmitOrderId ESTIVER VAZIO, TENTAR RECUPERAR
+    let orderId = pendingEmitOrderId;
+    
     if (!orderId) {
-        showToast('Nenhuma venda selecionada', 'error');
-        fecharModalDadosClienteNFE();
-        return;
+        console.warn('⚠️ pendingEmitOrderId está vazio! Tentando recuperar...');
+        
+        // Tenta recuperar do vendaIdParaEdicao
+        if (vendaIdParaEdicao) {
+            orderId = vendaIdParaEdicao;
+            pendingEmitOrderId = orderId;
+            console.log(`✅ Recuperado de vendaIdParaEdicao: ${orderId}`);
+        } 
+        // Tenta recuperar do botão da tabela
+        else {
+            const btn = document.querySelector('.btn-emitir-nfe[data-venda-id]');
+            if (btn) {
+                orderId = btn.dataset.vendaId || btn.getAttribute('data-venda-id');
+                if (orderId) {
+                    pendingEmitOrderId = orderId;
+                    console.log(`✅ Recuperado do botão da tabela: ${orderId}`);
+                }
+            }
+        }
+        
+        // Se ainda não tem, mostrar erro
+        if (!orderId) {
+            console.log('❌ Nenhuma venda selecionada');
+            showToast('❌ Nenhuma venda selecionada. Tente novamente.', 'error');
+            fecharModalDadosClienteNFE();
+            return;
+        }
     }
 
+    console.log(`✅ orderId final: ${orderId}`);
+
+    // ===== VALIDAR CAMPOS DO FORMULÁRIO =====
     const nome = document.getElementById('clienteNome').value.trim();
     const documento = document.getElementById('clienteDocumento').value.trim().replace(/\D/g, '');
     const endereco = document.getElementById('clienteEndereco').value.trim();
@@ -1987,39 +2255,61 @@ async function confirmarEmissaoNFE() {
     const cep = document.getElementById('clienteCEP').value.trim().replace(/\D/g, '');
     const transportadoraId = document.getElementById('nfeTransportadora')?.value || null;
 
-    const cfopSelect = document.getElementById('nfeCfop');
-    let cfop = '';
-    if (cfopSelect) {
-        cfop = cfopSelect.value;
-        console.log(`📊 CFOP do dropdown: "${cfop}"`);
-    }
-    if (!cfop) {
-        cfop = (uf === 'PR') ? '5102' : '6108';
-        console.warn(`⚠️ CFOP vazio, usando fallback: ${cfop}`);
-    }
+    console.log('📋 Dados do formulário:');
+    console.log(`   Nome: ${nome}`);
+    console.log(`   Documento: ${documento}`);
+    console.log(`   Endereço: ${endereco}`);
+    console.log(`   Cidade: ${cidade}`);
+    console.log(`   UF: ${uf}`);
 
-    if (!nome) { showToast('Nome é obrigatório', 'warning'); return; }
+    // ===== VALIDAÇÕES =====
+    if (!nome) { 
+        showToast('⚠️ Nome é obrigatório', 'warning'); 
+        document.getElementById('clienteNome').focus();
+        return; 
+    }
+    
     if (!documento || (documento.length !== 11 && documento.length !== 14)) {
-        showToast('CPF/CNPJ inválido (11 ou 14 dígitos)', 'warning');
+        showToast('⚠️ CPF/CNPJ inválido (11 ou 14 dígitos)', 'warning');
+        document.getElementById('clienteDocumento').focus();
         return;
     }
-    if (!endereco) { showToast('Endereço é obrigatório', 'warning'); return; }
-    if (!cidade) { showToast('Cidade é obrigatória', 'warning'); return; }
-    if (uf.length !== 2) { showToast('UF deve ter 2 letras (ex: SP, RJ, PR)', 'warning'); return; }
+    
+    if (!endereco) { 
+        showToast('⚠️ Endereço é obrigatório', 'warning'); 
+        document.getElementById('clienteEndereco').focus();
+        return; 
+    }
+    
+    if (!cidade) { 
+        showToast('⚠️ Cidade é obrigatória', 'warning'); 
+        document.getElementById('clienteCidade').focus();
+        return; 
+    }
+    
+    if (uf.length !== 2) { 
+        showToast('⚠️ UF deve ter 2 letras (ex: SP, RJ, PR)', 'warning'); 
+        document.getElementById('clienteUF').focus();
+        return; 
+    }
 
     const ufValidas = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
     if (!ufValidas.includes(uf)) {
         showToast(`⚠️ UF "${uf}" inválida. Use uma sigla válida (ex: SP, RJ, PR)`, 'warning');
+        document.getElementById('clienteUF').focus();
         return;
     }
 
     if (cep && cep.length !== 8) {
-        showToast('CEP deve ter 8 dígitos (apenas números)', 'warning');
+        showToast('⚠️ CEP deve ter 8 dígitos (apenas números)', 'warning');
+        document.getElementById('clienteCEP').focus();
         return;
     }
 
+    // ===== FECHAR MODAL =====
     fecharModalDadosClienteNFE();
 
+    // ===== BOTÃO DE CARREGAMENTO =====
     const btn = document.querySelector(`#vendasPendentesBody .btn-emitir-nfe[data-venda-id="${orderId}"]`);
     let originalText = '';
     if (btn) {
@@ -2029,15 +2319,14 @@ async function confirmarEmissaoNFE() {
     }
 
     try {
+        // ===== TOKEN =====
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
             const tokenData = await window.getValidToken();
             token = tokenData?.access_token;
         }
 
-        // =========================================================
         // ===== BUSCAR PRODUTOS COM VALORES CORRETOS =====
-        // =========================================================
         let produtos = [];
         
         // Tentar buscar os dados do Mercado Pago primeiro
@@ -2056,7 +2345,6 @@ async function confirmarEmissaoNFE() {
                         const venda = await response.json();
                         const orderItems = venda.order_items || [];
                         
-                        // Calcular o valor unitário distribuindo o valor total do produto entre os itens
                         const totalItems = orderItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
                         const valorPorItem = totalItems > 0 ? dadosPagamento.valor_produto / totalItems : 0;
                         
@@ -2146,6 +2434,19 @@ async function confirmarEmissaoNFE() {
             }
         }
 
+        // ===== CFOP =====
+        const cfopSelect = document.getElementById('nfeCfop');
+        let cfop = '';
+        if (cfopSelect) {
+            cfop = cfopSelect.value;
+            console.log(`📊 CFOP do dropdown: "${cfop}"`);
+        }
+        if (!cfop) {
+            cfop = (uf === 'PR') ? '5102' : '6108';
+            console.warn(`⚠️ CFOP vazio, usando fallback: ${cfop}`);
+        }
+
+        // ===== PRODUTOS FINAIS =====
         const produtosFinal = produtos.map(prod => ({
             nome: prod.nome || 'Produto',
             quantidade: prod.quantidade || 1,
@@ -2159,6 +2460,7 @@ async function confirmarEmissaoNFE() {
 
         const mlToken = window._mlAccessToken || null;
 
+        // ===== PAYLOAD =====
         const payload = {
             venda_id: String(orderId),
             cliente: { 
@@ -2182,6 +2484,7 @@ async function confirmarEmissaoNFE() {
         console.log('📤 Payload CFOP:', cfop, 'UF:', uf);
         console.log('📤 Produtos com valores reais:', JSON.stringify(produtosFinal, null, 2));
 
+        // ===== EMITIR NF-E =====
         const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -2192,316 +2495,177 @@ async function confirmarEmissaoNFE() {
         if (result.success) {
             showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
             
-// =========================================================
-// PARTE DA CONFIRMAÇÃO DE EMISSÃO - BAIXA DE ESTOQUE (CORRIGIDA)
-// =========================================================
-
-try {
-    console.log('📦 Baixando estoque dos produtos da venda:', orderId);
-    
-    let itensParaBaixar = [];
-    
-    for (const prod of produtosFinal) {
-        if (!prod.sku || prod.sku === 'SEM_SKU' || prod.sku === 'N/A') continue;
-        
-        // 🔥 EXTRAI SKU REAL E MULTIPLICADOR (REMOVE 3 DÍGITOS DO PREFIXO)
-        const { sku: skuReal, multiplicador, skuOriginal } = extrairSkuEQuantidade(prod.sku);
-        const quantidadeTotal = (prod.quantidade || 1) * multiplicador;
-        
-        console.log(`📦 ===== PROCESSANDO PRODUTO =====`);
-        console.log(`   Nome: ${prod.nome}`);
-        console.log(`   SKU original da venda: ${skuOriginal}`);
-        console.log(`   SKU real (sem prefixo): ${skuReal}`);
-        console.log(`   Multiplicador (quantidade do prefixo): ${multiplicador}`);
-        console.log(`   Quantidade vendida: ${prod.quantidade}`);
-        console.log(`   Quantidade total a baixar: ${quantidadeTotal}`);
-        
-        itensParaBaixar.push({
-            sku: skuReal,
-            skuOriginal: skuOriginal,
-            quantidade: quantidadeTotal,
-            multiplicador: multiplicador,
-            nome: prod.nome
-        });
-    }
-    
-    // 🔥 SE NÃO TEM ITENS, TENTA BUSCAR DA VENDA NO SUPABASE
-    if (itensParaBaixar.length === 0) {
-        try {
-            const { data: vendaML, error: vendaError } = await window.supabaseClient
-                .from('vendas_ml')
-                .select('sku, quantidade, skus_kit, eh_kit, id_venda_ml')
-                .eq('id_venda_ml', orderId)
-                .maybeSingle();
-            
-            if (!vendaError && vendaML) {
-                console.log('📦 Venda encontrada no Supabase:', vendaML);
+            // ===== BAIXA DE ESTOQUE =====
+            try {
+                console.log('📦 Baixando estoque dos produtos da venda:', orderId);
                 
-                if (vendaML.eh_kit && vendaML.skus_kit && vendaML.skus_kit.length > 0) {
-                    for (const kitItem of vendaML.skus_kit) {
-                        const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(kitItem.sku);
-                        const quantidadeTotal = (kitItem.estoque || 1) * (vendaML.quantidade || 1) * multiplicador;
-                        itensParaBaixar.push({
-                            sku: skuReal,
-                            skuOriginal: kitItem.sku,
-                            quantidade: quantidadeTotal,
-                            multiplicador: multiplicador,
-                            nome: 'Kit item'
-                        });
-                    }
-                } else if (vendaML.sku) {
-                    const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(vendaML.sku);
-                    const quantidadeTotal = (vendaML.quantidade || 1) * multiplicador;
+                let itensParaBaixar = [];
+                
+                for (const prod of produtosFinal) {
+                    if (!prod.sku || prod.sku === 'SEM_SKU' || prod.sku === 'N/A') continue;
+                    
+                    const { sku: skuReal, multiplicador, skuOriginal } = extrairSkuEQuantidade(prod.sku);
+                    const quantidadeTotal = (prod.quantidade || 1) * multiplicador;
+                    
+                    console.log(`📦 ===== PROCESSANDO PRODUTO =====`);
+                    console.log(`   Nome: ${prod.nome}`);
+                    console.log(`   SKU original da venda: ${skuOriginal}`);
+                    console.log(`   SKU real (sem prefixo): ${skuReal}`);
+                    console.log(`   Multiplicador: ${multiplicador}`);
+                    console.log(`   Quantidade vendida: ${prod.quantidade}`);
+                    console.log(`   Quantidade total a baixar: ${quantidadeTotal}`);
+                    
                     itensParaBaixar.push({
                         sku: skuReal,
-                        skuOriginal: vendaML.sku,
+                        skuOriginal: skuOriginal,
                         quantidade: quantidadeTotal,
                         multiplicador: multiplicador,
-                        nome: 'Produto'
+                        nome: prod.nome
                     });
                 }
-            }
-        } catch (e) {
-            console.warn('⚠️ Erro ao buscar venda no Supabase:', e);
-        }
-    }
-    
-    console.log(`📦 ${itensParaBaixar.length} itens para baixar:`, itensParaBaixar);
-    
-    let itensBaixados = 0;
-    let errosBaixa = [];
-    let itensRegistrados = [];
-    let produtosParaSincronizar = [];
-    
-    for (const item of itensParaBaixar) {
-    if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
-    
-    console.log(`📦 Buscando produto para SKU: ${item.sku} (original: ${item.skuOriginal})`);
-    
-    // 🔥 FLAG PARA CONTROLAR SE ENCONTROU
-    let produtoEncontrado = false;
-    let produto = null;
-    
-    // ===== 1ª TENTATIVA: BUSCA PELA BASE DE 8 CARACTERES =====
-    produto = await buscarProdutoPorSku(item.sku);
-    if (produto) {
-        produtoEncontrado = true;
-        console.log(`✅ Produto encontrado pela base: ${produto.sku}`);
-    }
-    
-    // ===== 2ª TENTATIVA: COM SKU ORIGINAL =====
-    if (!produto && item.skuOriginal && item.skuOriginal !== item.sku) {
-        console.log(`🔄 Tentando com SKU original: ${item.skuOriginal}`);
-        produto = await buscarProdutoPorSku(item.skuOriginal);
-        if (produto) {
-            produtoEncontrado = true;
-            console.log(`✅ Produto encontrado pelo SKU original: ${produto.sku}`);
-        }
-    }
-    
-    // ===== 3ª TENTATIVA: REMOVER MAIS 3 DÍGITOS =====
-    if (!produto && item.sku.length > 3) {
-        const skuSemPrefixo = item.sku.replace(/^\d{3}/, '');
-        if (skuSemPrefixo !== item.sku) {
-            console.log(`🔄 Tentando com SKU sem prefixo: ${skuSemPrefixo}`);
-            produto = await buscarProdutoPorSku(skuSemPrefixo);
-            if (produto) {
-                produtoEncontrado = true;
-                console.log(`✅ Produto encontrado sem prefixo: ${produto.sku}`);
-            }
-        }
-    }
-    
-    // ===== 4ª TENTATIVA: BUSCAR POR PARTES DO SKU =====
-    if (!produto) {
-        const matchParte = item.sku.match(/^(\d{5}[A-Z]+)/);
-        if (matchParte) {
-            console.log(`🔄 Tentando com parte do SKU: ${matchParte[1]}`);
-            produto = await buscarProdutoPorSku(matchParte[1]);
-            if (produto) {
-                produtoEncontrado = true;
-                console.log(`✅ Produto encontrado pela parte: ${produto.sku}`);
-            }
-        }
-    }
-    
-    // ===== SE ENCONTROU O PRODUTO, FAZ A BAIXA =====
-    if (produto) {
-        const quantidadeAtual = produto.quantidade || 0;
-        
-        if (quantidadeAtual < item.quantidade) {
-            errosBaixa.push(`Estoque insuficiente para ${produto.nome} (${produto.sku}): ${quantidadeAtual} < ${item.quantidade}`);
-            continue;
-        }
-        
-        const novaQuantidade = quantidadeAtual - item.quantidade;
-        
-        const { error: updateError } = await window.supabaseClient
-            .from('produtos_estoque')
-            .update({ 
-                quantidade: novaQuantidade,
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', produto.id);
-        
-        if (updateError) {
-            errosBaixa.push(`Erro ao atualizar ${produto.sku}: ${updateError.message}`);
-        } else {
-            itensBaixados++;
-            console.log(`✅ Estoque atualizado: ${produto.sku} ${quantidadeAtual} → ${novaQuantidade}`);
-            itensRegistrados.push({
-                produto_id: produto.id,
-                sku: produto.sku,
-                nome: produto.nome,
-                quantidade: item.quantidade,
-                novaQuantidade: novaQuantidade
-            });
-            
-            // 🔥 VERIFICA SE PRECISA SINCRONIZAR COM ML
-            const syncBloqueado = produto.bloquear_sync_ml || produto.dados_extra?.bloquear_sync_ml || false;
-            const mlbCodes = produto.mlb_codes || produto.dados_extra?.mlb_codes;
-            
-            if (mlbCodes && Array.isArray(mlbCodes) && mlbCodes.length > 0 && !syncBloqueado) {
-                produtosParaSincronizar.push({
-                    id: produto.id,
-                    sku: produto.sku,
-                    quantidade: novaQuantidade,
-                    nome: produto.nome
-                });
-                console.log(`📌 Produto ${produto.sku} marcado para sincronização com ML (estoque: ${novaQuantidade})`);
-            } else if (syncBloqueado) {
-                console.log(`🔒 Sincronização com ML bloqueada para ${produto.sku}`);
-            }
-        }
-    } 
-    // ===== SÓ MOSTRA ERRO SE REALMENTE NÃO ENCONTROU =====
-    else {
-        errosBaixa.push(`Produto não encontrado: ${item.sku} (original: ${item.skuOriginal})`);
-        console.warn(`❌ Produto NÃO encontrado após todas as tentativas: ${item.sku}`);
-    }
-}
-    
-    // ===== REGISTRAR MOVIMENTAÇÕES =====
-    for (const item of itensRegistrados) {
-        if (typeof window.registrarMovimentacao === 'function') {
-            try {
-                await window.registrarMovimentacao(
-                    item.produto_id,
-                    'saida',
-                    item.quantidade,
-                    `NFE-${orderId}`,
-                    'venda'
-                );
-                console.log(`✅ Movimentação registrada para ${item.sku}: -${item.quantidade} (NFE-${orderId})`);
-            } catch (movError) {
-                console.warn(`⚠️ Erro ao registrar movimentação para ${item.sku}:`, movError);
-            }
-        }
-    }
-    
-    // ===== RECARREGAR ESTOQUE LOCAL =====
-    if (typeof window.carregarProdutosEstoque === 'function') {
-        await window.carregarProdutosEstoque();
-    }
-    
-    // ===== SINCRONIZAR COM MERCADO LIVRE =====
-    if (produtosParaSincronizar.length > 0) {
-        console.log(`🔄 Iniciando sincronização com ML para ${produtosParaSincronizar.length} produto(s)...`);
-        showToast(`🔄 Sincronizando ${produtosParaSincronizar.length} produto(s) com Mercado Livre...`, 'info');
-        
-        let sincronizados = 0;
-        let falhas = 0;
-        let fullDetectados = [];
-        
-        for (const prod of produtosParaSincronizar) {
-            try {
-                // Busca o produto completo
-                const { data: produtoCompleto, error: prodError } = await window.supabaseClient
-                    .from('produtos_estoque')
-                    .select('*')
-                    .eq('id', prod.id)
-                    .single();
                 
-                if (prodError) {
-                    console.warn(`⚠️ Erro ao buscar produto completo para ${prod.sku}:`, prodError);
-                    falhas++;
-                    continue;
-                }
+                console.log(`📦 ${itensParaBaixar.length} itens para baixar`);
+
+                let itensBaixados = 0;
+                let errosBaixa = [];
+                let itensRegistrados = [];
+                let produtosParaSincronizar = [];
                 
-                if (typeof window.sincronizarEstoqueML === 'function') {
-                    console.log(`🔄 Sincronizando ${prod.sku} (${prod.quantidade} un)...`);
-                    const resultado = await window.sincronizarEstoqueML(produtoCompleto);
-                    if (resultado && resultado.success) {
-                        sincronizados++;
-                        console.log(`✅ ${prod.sku} sincronizado com ML!`);
-                    } else {
-                        const fulls = resultado?.results?.filter(r => r.tipo === 'full_puro' || r.error?.includes('FULL')) || [];
-                        if (fulls.length > 0) {
-                            fullDetectados.push(...fulls.map(r => ({
-                                codigo: r.codigo || r.itemId,
-                                link: r.link || `https://www.mercadolivre.com.br/item/${r.codigo || r.itemId}`,
-                                erro: r.error || 'FULL - atualize manualmente',
-                                estoque: r.estoque || prod.quantidade,
-                                nome: r.nome || prod.nome
-                            })));
-                            console.warn(`⚠️ ${prod.sku} tem ${fulls.length} anúncios FULL que precisam de ajuste manual`);
-                        } else {
-                            falhas++;
-                            console.warn(`⚠️ Falha ao sincronizar ${prod.sku}`);
+                for (const item of itensParaBaixar) {
+                    if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
+                    
+                    console.log(`📦 Buscando produto para SKU: ${item.sku}`);
+                    
+                    let produto = await buscarProdutoPorSku(item.sku);
+                    
+                    if (!produto && item.skuOriginal && item.skuOriginal !== item.sku) {
+                        console.log(`🔄 Tentando com SKU original: ${item.skuOriginal}`);
+                        produto = await buscarProdutoPorSku(item.skuOriginal);
+                    }
+                    
+                    if (!produto && item.sku.length > 3) {
+                        const skuSemPrefixo = item.sku.replace(/^\d{3}/, '');
+                        if (skuSemPrefixo !== item.sku) {
+                            console.log(`🔄 Tentando com SKU sem prefixo: ${skuSemPrefixo}`);
+                            produto = await buscarProdutoPorSku(skuSemPrefixo);
                         }
                     }
-                } else if (typeof window.sincronizarProdutoML === 'function') {
-                    await window.sincronizarProdutoML(prod.id);
-                    sincronizados++;
-                } else {
-                    falhas++;
+                    
+                    if (produto) {
+                        const quantidadeAtual = produto.quantidade || 0;
+                        
+                        if (quantidadeAtual < item.quantidade) {
+                            errosBaixa.push(`Estoque insuficiente para ${produto.nome} (${produto.sku}): ${quantidadeAtual} < ${item.quantidade}`);
+                            continue;
+                        }
+                        
+                        const novaQuantidade = quantidadeAtual - item.quantidade;
+                        
+                        const { error: updateError } = await window.supabaseClient
+                            .from('produtos_estoque')
+                            .update({ 
+                                quantidade: novaQuantidade,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', produto.id);
+                        
+                        if (updateError) {
+                            errosBaixa.push(`Erro ao atualizar ${produto.sku}: ${updateError.message}`);
+                        } else {
+                            itensBaixados++;
+                            console.log(`✅ Estoque atualizado: ${produto.sku} ${quantidadeAtual} → ${novaQuantidade}`);
+                            itensRegistrados.push({
+                                produto_id: produto.id,
+                                sku: produto.sku,
+                                nome: produto.nome,
+                                quantidade: item.quantidade,
+                                novaQuantidade: novaQuantidade
+                            });
+                            
+                            const syncBloqueado = produto.bloquear_sync_ml || produto.dados_extra?.bloquear_sync_ml || false;
+                            const mlbCodes = produto.mlb_codes || produto.dados_extra?.mlb_codes;
+                            
+                            if (mlbCodes && Array.isArray(mlbCodes) && mlbCodes.length > 0 && !syncBloqueado) {
+                                produtosParaSincronizar.push({
+                                    id: produto.id,
+                                    sku: produto.sku,
+                                    quantidade: novaQuantidade,
+                                    nome: produto.nome
+                                });
+                            }
+                        }
+                    } else {
+                        errosBaixa.push(`Produto não encontrado: ${item.sku}`);
+                    }
                 }
                 
-                await new Promise(r => setTimeout(r, 500));
-            } catch (err) {
-                console.error(`❌ Erro ao sincronizar ${prod.sku}:`, err);
-                falhas++;
-            }
-        }
-        
-        if (fullDetectados.length > 0) {
-            setTimeout(() => {
-                if (typeof window.abrirModalFullDetectados === 'function') {
-                    window.abrirModalFullDetectados(fullDetectados);
-                } else {
-                    alert(`🔴 ${fullDetectados.length} anúncio(s) FULL detectados!\nAtualize manualmente no Mercado Livre.`);
+                // Registrar movimentações
+                for (const item of itensRegistrados) {
+                    if (typeof window.registrarMovimentacao === 'function') {
+                        try {
+                            await window.registrarMovimentacao(
+                                item.produto_id,
+                                'saida',
+                                item.quantidade,
+                                `NFE-${orderId}`,
+                                'venda'
+                            );
+                            console.log(`✅ Movimentação registrada para ${item.sku}: -${item.quantidade}`);
+                        } catch (movError) {
+                            console.warn(`⚠️ Erro ao registrar movimentação:`, movError);
+                        }
+                    }
                 }
-            }, 800);
-        }
-        
-        if (sincronizados > 0) {
-            showToast(`✅ ${sincronizados} produto(s) sincronizado(s) com ML!`, 'success');
-        }
-        if (falhas > 0 && fullDetectados.length === 0) {
-            showToast(`⚠️ ${falhas} produto(s) tiveram falha na sincronização.`, 'warning');
-        }
-    }
-    
-    if (itensBaixados > 0) {
-        showToast(`✅ ${itensBaixados} item(ns) baixados do estoque!`, 'success');
-    }
-    if (errosBaixa.length > 0) {
-        showToast(`⚠️ ${errosBaixa.length} erro(s): ${errosBaixa.join('; ')}`, 'warning');
-    }
-    
-    console.log('✅ Baixa de estoque e sincronização ML concluídas');
-    
-} catch (stockError) {
-    console.error('❌ Erro ao baixar estoque:', stockError);
-    showToast('⚠️ NF-e emitida, mas houve erro ao baixar o estoque', 'warning');
-}
+                
+                // Recarregar estoque
+                if (typeof window.carregarProdutosEstoque === 'function') {
+                    await window.carregarProdutosEstoque();
+                }
+                
+                // Sincronizar com ML
+                if (produtosParaSincronizar.length > 0) {
+                    console.log(`🔄 Sincronizando ${produtosParaSincronizar.length} produto(s) com ML...`);
+                    
+                    for (const prod of produtosParaSincronizar) {
+                        try {
+                            const { data: produtoCompleto, error: prodError } = await window.supabaseClient
+                                .from('produtos_estoque')
+                                .select('*')
+                                .eq('id', prod.id)
+                                .single();
+                            
+                            if (!prodError && typeof window.sincronizarEstoqueML === 'function') {
+                                await window.sincronizarEstoqueML(produtoCompleto);
+                                console.log(`✅ ${prod.sku} sincronizado com ML!`);
+                            }
+                        } catch (err) {
+                            console.warn(`⚠️ Erro ao sincronizar ${prod.sku}:`, err);
+                        }
+                    }
+                }
+                
+                if (itensBaixados > 0) {
+                    showToast(`✅ ${itensBaixados} item(ns) baixados do estoque!`, 'success');
+                }
+                if (errosBaixa.length > 0) {
+                    showToast(`⚠️ ${errosBaixa.length} erro(s) na baixa de estoque`, 'warning');
+                }
+                
+            } catch (stockError) {
+                console.error('❌ Erro ao baixar estoque:', stockError);
+                showToast('⚠️ NF-e emitida, mas houve erro ao baixar o estoque', 'warning');
+            }
             
+            // Salvar cliente
             await salvarClienteNoBanco({ nome, documento, endereco, numero, bairro, cidade, uf, cep });
+            
+            // Limpar e recarregar
             window.produtosParaEmissao = null;
             await carregarVendasPendentes();
             await carregarNFesEmitidas();
             
         } else {
+            // ===== ERRO =====
             let mensagemErro = result.error || 'Erro desconhecido';
             
             const errosSEFAZ = {
@@ -2530,10 +2694,13 @@ try {
                 setTimeout(() => abrirModalCliente(), 1000);
             }
         }
+        
     } catch (error) {
         console.error('❌ Erro na emissão:', error);
         showToast(`Erro: ${error.message}`, 'error');
+        
     } finally {
+        // ===== RESTAURAR BOTÃO =====
         if (btn) {
             btn.innerHTML = originalText;
             btn.disabled = false;
@@ -2541,8 +2708,13 @@ try {
         window._mlAccessToken = null;
         window.produtosParaEmissao = null;
         pendingEmitOrderId = null;
+        vendaIdParaEdicao = null;
+        console.log('✅ pendingEmitOrderId limpo');
     }
 }
+
+// Exportar para escopo global
+window.confirmarEmissaoNFE = confirmarEmissaoNFE;
 
 // =========================================================
 // NF-ES EMITIDAS
@@ -3568,40 +3740,10 @@ async function verificarNFEMercadoLivre(orderId) {
     }
 }
 
-// ===== ATUALIZAR LISTA DE VENDAS NA ABA NF-E =====
-async function atualizarListaNFE() {
-    const btn = document.getElementById('btnAtualizarNFE');
-    if (btn) {
-        btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
-        btn.disabled = true;
-    }
 
-    try {
-        // 🔥 SINCRONIZAR COM SUPABASE PRIMEIRO
-        const resultado = await sincronizarVendasComSupabase();
-        
-        if (resultado) {
-            showToast(`✅ ${resultado.vendasSalvas} vendas sincronizadas!`, 'success');
-            if (resultado.vendasComErro > 0) {
-                showToast(`⚠️ ${resultado.vendasComErro} vendas com erro`, 'warning');
-            }
-        }
-
-        // Depois carregar as vendas pendentes
-        await carregarVendasPendentes();
-
-    } catch (error) {
-        console.error('❌ Erro ao sincronizar:', error);
-        showToast('Erro ao sincronizar vendas', 'error');
-    } finally {
-        if (btn) {
-            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Atualizar Lista';
-            btn.disabled = false;
-        }
-    }
-}
-
-// ===================== ATUALIZAR LISTA DE VENDAS NA ABA NF-E =====================
+// =========================================================
+// ATUALIZAR LISTA DE VENDAS NA ABA NF-E
+// =========================================================
 async function atualizarListaNFE() {
     const btn = document.getElementById('btnAtualizarNFE');
     if (btn) {
@@ -3610,21 +3752,13 @@ async function atualizarListaNFE() {
     }
 
     try {
-        if (typeof window.sincronizarVendasMLDashboard === 'function') {
-            await window.sincronizarVendasMLDashboard();
-        } else {
-            if (typeof window.sincronizarVendasComSupabase === 'function') {
-                await window.sincronizarVendasComSupabase();
-            } else {
-                console.warn('⚠️ Nenhuma função de sincronização disponível');
-            }
-        }
-
+        // 🔥 APENAS RECARREGAR AS VENDAS PENDENTES (já faz a sincronização)
         await carregarVendasPendentes();
+        showToast('✅ Lista atualizada!', 'success');
 
     } catch (error) {
         console.error('❌ Erro ao atualizar lista:', error);
-        showToast('Erro ao sincronizar vendas', 'error');
+        showToast('Erro ao atualizar vendas', 'error');
     } finally {
         if (btn) {
             btn.innerHTML = '<i class="fas fa-sync-alt"></i> Atualizar Lista';
@@ -3662,10 +3796,29 @@ window.atualizarListaNFE = atualizarListaNFE;
 
 // ===================== INICIALIZAR EVENT LISTENERS DO MODAL =====================
 document.addEventListener('DOMContentLoaded', function() {
+    // Botões do modal (fallback)
     const confirmarBtn = document.getElementById('confirmarModalNFEBtn');
     const cancelarBtn = document.getElementById('cancelarModalNFEBtn');
-    if (confirmarBtn) confirmarBtn.addEventListener('click', confirmarEmissaoNFE);
-    if (cancelarBtn) cancelarBtn.addEventListener('click', fecharModalDadosClienteNFE);
+    
+    if (confirmarBtn) {
+        confirmarBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('🔵 DOMContentLoaded - Confirmar clicado');
+            confirmarEmissaoNFE();
+        });
+    }
+    
+    if (cancelarBtn) {
+        cancelarBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('🔵 DOMContentLoaded - Cancelar clicado');
+            fecharModalDadosClienteNFE();
+        });
+    }
+    
+    console.log('✅ Event listeners do DOMContentLoaded configurados');
 });
 
 console.log('✅ nfe_manager.js carregado (versão completa com fallback)');
