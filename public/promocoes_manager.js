@@ -224,6 +224,193 @@
     }
 
     // ============================================================
+    // FUNÇÃO PARA BUSCAR PREÇO DE VENDA ATUAL DE UM ITEM
+    // ============================================================
+    async function buscarPrecoVendaItem(itemId, token) {
+        try {
+            const url = `https://api.mercadolibre.com/items/${itemId}/sale_price?context=channel_marketplace`;
+            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+            const response = await fetch(proxyUrl);
+            if (response.ok) {
+                return await response.json();
+            }
+            return null;
+        } catch (error) {
+            log(`Erro ao buscar preço do item ${itemId}: ${error.message}`, 'warning');
+            return null;
+        }
+    }
+
+async function buscarItensPromocaoComPrecos(promotionId, promotionType, token) {
+    const itens = [];
+    let searchAfterLocal = null;
+    let hasMore = true;
+    let page = 1;
+    let totalItensAPI = 0;
+    let startTime = Date.now();
+    
+    log(`🔍 Buscando itens da promoção ${promotionId} (${promotionType})...`, 'info');
+    console.log(`🔄 [${new Date().toLocaleTimeString()}] Iniciando busca na promoção: ${promotionId}`);
+    
+    // Primeiro, tenta obter o total de itens
+    try {
+        let urlTotal = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}/items`;
+        let paramsTotal = {
+            promotion_type: promotionType,
+            app_version: 'v2',
+            limit: 1
+        };
+        const queryStringTotal = Object.keys(paramsTotal)
+            .map(key => `${key}=${encodeURIComponent(paramsTotal[key])}`)
+            .join('&');
+        const fullUrlTotal = `${urlTotal}?${queryStringTotal}`;
+        const proxyUrlTotal = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(fullUrlTotal)}&token=${token}`;
+        const responseTotal = await fetch(proxyUrlTotal);
+        if (responseTotal.ok) {
+            const dataTotal = await responseTotal.json();
+            totalItensAPI = dataTotal.paging?.total || 0;
+            log(`📊 Total de itens na promoção: ${totalItensAPI}`, 'info');
+        }
+    } catch (e) {
+        log('⚠️ Não foi possível obter o total de itens', 'warning');
+    }
+    
+    // Buscar todos os itens em paralelo (páginas)
+    const pagePromises = [];
+    let currentSearchAfter = null;
+    let hasMorePages = true;
+    
+    // Limite de páginas para evitar loop infinito
+    const MAX_PAGES = 50;
+    
+    while (hasMorePages && page <= MAX_PAGES) {
+        try {
+            let url = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}/items`;
+            let params = {
+                promotion_type: promotionType,
+                app_version: 'v2',
+                limit: 50
+            };
+            
+            if (currentSearchAfter) {
+                params.search_after = currentSearchAfter;
+            }
+            
+            const queryString = Object.keys(params)
+                .map(key => `${key}=${encodeURIComponent(params[key])}`)
+                .join('&');
+            const fullUrl = `${url}?${queryString}`;
+            
+            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(fullUrl)}&token=${token}`;
+            
+            // Adicionar a promise à lista para executar em paralelo
+            pagePromises.push(
+                fetch(proxyUrl)
+                    .then(response => response.json())
+                    .then(data => {
+                        const results = data.results || [];
+                        const paging = data.paging || {};
+                        const searchAfterValue = paging.searchAfter;
+                        
+                        return {
+                            results: results,
+                            searchAfter: searchAfterValue,
+                            page: page
+                        };
+                    })
+                    .catch(err => {
+                        console.error(`❌ Erro na página ${page}:`, err);
+                        return { results: [], searchAfter: null, page: page, error: err };
+                    })
+            );
+            
+            // Verificar se há mais páginas
+            if (!currentSearchAfter) {
+                // Na primeira página, precisamos fazer a requisição para saber o searchAfter
+                // Mas como estamos fazendo em paralelo, vamos pegar o searchAfter da resposta
+                // e continuar se houver
+                const tempResponse = await fetch(proxyUrl);
+                if (tempResponse.ok) {
+                    const tempData = await tempResponse.json();
+                    const paging = tempData.paging || {};
+                    const searchAfterValue = paging.searchAfter;
+                    if (searchAfterValue) {
+                        currentSearchAfter = searchAfterValue;
+                        hasMorePages = true;
+                        page++;
+                    } else {
+                        hasMorePages = false;
+                    }
+                } else {
+                    hasMorePages = false;
+                }
+            } else {
+                // Se já temos searchAfter, continuamos
+                // Precisamos saber se a página atual trouxe resultados
+                // Isso será verificado depois
+                page++;
+            }
+            
+            // Limitar o número de páginas para evitar sobrecarga
+            if (page > 20) {
+                log(`⚠️ Limitando a 20 páginas para evitar sobrecarga`, 'warning');
+                hasMorePages = false;
+            }
+            
+        } catch (error) {
+            log(`❌ Erro na página ${page}: ${error.message}`, 'error');
+            hasMorePages = false;
+        }
+    }
+    
+    // Aguardar todas as requisições em paralelo
+    console.log(`⏳ Aguardando ${pagePromises.length} requisições em paralelo...`);
+    const startParallel = Date.now();
+    const allResults = await Promise.all(pagePromises);
+    const elapsedParallel = ((Date.now() - startParallel) / 1000);
+    console.log(`✅ ${pagePromises.length} páginas carregadas em ${elapsedParallel.toFixed(1)}s`);
+    
+    // Processar resultados
+    let totalItems = 0;
+    for (const result of allResults) {
+        if (result.results && result.results.length > 0) {
+            totalItems += result.results.length;
+            
+            // Processar cada item sem buscar preço de venda (otimização)
+            for (const item of result.results) {
+                itens.push({
+                    id: item.id || item.item_id,
+                    status: item.status || 'unknown',
+                    price: item.price || 0,
+                    original_price: item.original_price || 0,
+                    min_discounted_price: item.min_discounted_price || null,
+                    max_discounted_price: item.max_discounted_price || null,
+                    suggested_discounted_price: item.suggested_discounted_price || null,
+                    meli_percentage: item.meli_percentage || 0,
+                    seller_percentage: item.seller_percentage || 0,
+                    boosted_offer: item.boosted_offer || false,
+                    discount_meli_boosted_percentage: item.discount_meli_boosted_percentage || 0,
+                    ref_id: item.ref_id || '',
+                    current_sale_price: null, // Não buscamos para acelerar
+                    current_regular_price: null,
+                });
+            }
+        }
+    }
+    
+    const totalTime = ((Date.now() - startTime) / 1000);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`✅ [${new Date().toLocaleTimeString()}] BUSCA CONCLUÍDA!`);
+    console.log(`   Total de itens: ${itens.length}`);
+    console.log(`   Páginas: ${allResults.length}`);
+    console.log(`   Tempo total: ${totalTime.toFixed(1)}s`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    
+    log(`✅ ${itens.length} itens carregados da promoção ${promotionId} em ${totalTime.toFixed(1)}s`, 'success');
+    return itens;
+}
+
+    // ============================================================
     // FUNÇÃO PARA VERIFICAR E BLOQUEAR MLBs POR IDADE
     // ============================================================
     async function verificarEBloquearMLBsPorIdade(mlbs, token) {
@@ -880,7 +1067,7 @@
                     font-weight: 500;
                     flex-shrink: 0;
                 `;
-                tag.innerHTML = `${mlb} <i class="fas fa-times" style="cursor:pointer; font-size: 9px; opacity: 0.7;" onclick="removerMLBBloqueado('${mlb}')" title="Remover da lista"></i>`;
+                tag.innerHTML = `${mlb} <i class="fas fa-times" style="cursor:pointer; font-size: 9px; opacity: 0.7;" onclick="window.removerMLBBloqueado('${mlb}')" title="Remover da lista"></i>`;
                 container.appendChild(tag);
             });
 
@@ -1113,9 +1300,9 @@
                         <button class="btn btn-info" onclick="abrirGestaoPromocoesLote()">
                             <i class="fas fa-layer-group"></i> Promoções em Lote
                         </button>
-                        <button class="btn btn-success" onclick="executarAtivacaoEmMassa()" id="btnAtivarMassa" disabled>
-                        <i class="fas fa-play"></i> Ativar em Massa
-                    </button>
+                        <button class="btn btn-success" onclick="abrirModalBuscarItem()">
+                            <i class="fas fa-search"></i> Ver promoções de um item
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1714,7 +1901,7 @@
             let acoes = '';
             if (item.status === 'started' || item.status === 'active') {
                 acoes = `
-                    <button class="btn btn-danger btn-sm" onclick="excluirItemPromocao('${item.id}', '${item.ref_id || ''}')" title="Excluir da promoção">
+                    <button class="btn btn-danger btn-sm" onclick="window.excluirItemPromocao('${item.id}', '${item.ref_id || ''}')" title="Excluir da promoção">
                         <i class="fas fa-trash-alt"></i>
                     </button>
                 `;
@@ -1959,7 +2146,7 @@
                         <div class="col-md-4">
                             <div class="form-group">
                                 <label><i class="fas fa-arrow-right"></i> Promoção de Origem *</label>
-                                <select id="bulkPromocaoOrigem" class="form-control" onchange="onPromocaoOrigemChange()">
+                                <select id="bulkPromocaoOrigem" class="form-control" onchange="window.onPromocaoOrigemChange()">
                                     <option value="">Selecione...</option>
                                 </select>
                                 <small class="text-muted">Itens ativos nesta promoção serão analisados</small>
@@ -1977,7 +2164,7 @@
                         <div class="col-md-4">
                             <div class="form-group">
                                 <label><i class="fas fa-balance-scale"></i> Regra de Comparação</label>
-                                <select id="bulkRegraComparacao" class="form-control" onchange="onRegraChange()">
+                                <select id="bulkRegraComparacao" class="form-control" onchange="window.onRegraChange()">
                                     <option value="valor_maior">Valor final MAIOR que na origem</option>
                                     <option value="valor_menor">Valor final MENOR que na origem</option>
                                     <option value="percentual_maior">% desconto MAIOR que na origem</option>
@@ -2025,22 +2212,22 @@
                         <i class="fas fa-ban"></i> MLBs Bloqueados
                     </h2>
                     <div class="d-flex flex-wrap gap-2">
-                        <button class="btn btn-sm btn-success" onclick="adicionarMLBBloqueado()">
+                        <button class="btn btn-sm btn-success" onclick="window.adicionarMLBBloqueado()">
                             <i class="fas fa-plus"></i> Adicionar
                         </button>
-                        <button class="btn btn-sm btn-warning" onclick="atualizarMLBsBloqueadosAutomaticos()" title="Buscar MLBs com menos de 40 dias e bloquear automaticamente">
+                        <button class="btn btn-sm btn-warning" onclick="window.atualizarMLBsBloqueadosAutomaticos()" title="Buscar MLBs com menos de 40 dias e bloquear automaticamente">
                             <i class="fas fa-robot"></i> Bloquear Automáticos (40 dias)
                         </button>
-                        <button class="btn btn-sm btn-danger" onclick="forcarBuscaCompletaMLBs()" title="Forçar busca de TODOS os MLBs ativos">
+                        <button class="btn btn-sm btn-danger" onclick="window.forcarBuscaCompletaMLBs()" title="Forçar busca de TODOS os MLBs ativos">
                             <i class="fas fa-database"></i> Buscar Todos MLBs
                         </button>
-                        <button class="btn btn-sm btn-danger" onclick="limparMLBsBloqueados()">
+                        <button class="btn btn-sm btn-danger" onclick="window.limparMLBsBloqueados()">
                             <i class="fas fa-trash"></i> Limpar Manuais
                         </button>
-                        <button class="btn btn-sm btn-primary" onclick="exportarMLBsBloqueados()">
+                        <button class="btn btn-sm btn-primary" onclick="window.exportarMLBsBloqueados()">
                             <i class="fas fa-file-export"></i> Exportar
                         </button>
-                        <button class="btn btn-sm btn-info" onclick="importarMLBsBloqueados()">
+                        <button class="btn btn-sm btn-info" onclick="window.importarMLBsBloqueados()">
                             <i class="fas fa-file-import"></i> Importar
                         </button>
                     </div>
@@ -2075,13 +2262,13 @@
                         <i class="fas fa-chart-bar"></i> Análise e Ativação
                     </h2>
                     <div class="d-flex flex-wrap gap-2">
-                        <button class="btn btn-primary" onclick="analisarItens()">
+                        <button class="btn btn-primary" onclick="window.analisarItens()">
                             <i class="fas fa-search"></i> Analisar Itens
                         </button>
-                        <button class="btn btn-success" onclick="executarAtivacaoEmMassa()" id="btnAtivarMassa" disabled>
+                        <button class="btn btn-success" onclick="window.executarAtivacaoEmMassa()" id="btnAtivarMassa" disabled>
                             <i class="fas fa-play"></i> Ativar em Massa
                         </button>
-                        <button class="btn btn-info" onclick="exportarAnaliseBulkExcel()">
+                        <button class="btn btn-info" onclick="window.exportarAnaliseBulkExcel()">
                             <i class="fas fa-file-excel"></i> Exportar Análise
                         </button>
                     </div>
@@ -2126,18 +2313,19 @@
                         <table class="table table-striped table-hover" id="bulkItensTable">
                             <thead>
                                 <tr>
-                                    <th><input type="checkbox" id="bulkSelectAll" onchange="selecionarTodosItens()"></th>
+                                    <th><input type="checkbox" id="bulkSelectAll" onchange="window.selecionarTodosItens()"></th>
                                     <th>MLB</th>
                                     <th>Preço Origem</th>
                                     <th>% Origem</th>
                                     <th>Preço Destino</th>
                                     <th>% Destino</th>
-                                    <th>Status</th>
+                                    <th>Status Promoção</th>
+                                    <th>Análise</th>
                                 </tr>
                             </thead>
                             <tbody id="bulkItensBody">
                                 <tr>
-                                    <td colspan="7" class="text-center py-4 text-muted">
+                                    <td colspan="8" class="text-center py-4 text-muted">
                                         <i class="fas fa-info-circle"></i> Selecione a <strong>Promoção de Origem</strong> para carregar os itens
                                     </td>
                                 </tr>
@@ -2168,33 +2356,34 @@
         const origemSelect = document.getElementById('bulkPromocaoOrigem');
         const destinoSelect = document.getElementById('bulkPromocaoDestino');
 
+        // Filtra apenas promoções ativas (started)
+        const promocoesAtivas = todasPromocoes.filter(p => p.status === 'started');
+
         if (origemSelect) {
             origemSelect.innerHTML = '<option value="">Selecione...</option>';
-            todasPromocoes.forEach(p => {
+            promocoesAtivas.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
-                opt.textContent = `${p.name} (${p.type})`;
+                opt.textContent = `${p.name} (${p.type}) ✅ Ativa`;
                 opt.dataset.type = p.type;
+                opt.dataset.status = p.status;
                 origemSelect.appendChild(opt);
             });
         }
 
         if (destinoSelect) {
             destinoSelect.innerHTML = '<option value="">Selecione...</option>';
-            todasPromocoes.forEach(p => {
+            promocoesAtivas.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
-                opt.textContent = `${p.name} (${p.type})`;
+                opt.textContent = `${p.name} (${p.type}) ✅ Ativa`;
                 opt.dataset.type = p.type;
+                opt.dataset.status = p.status;
                 destinoSelect.appendChild(opt);
             });
         }
     }
 
-    // ============================================================
-    // EVENTOS
-    // ============================================================
-    
     window.onPromocaoOrigemChange = async function() {
         const origemSelect = document.getElementById('bulkPromocaoOrigem');
         const destinoSelect = document.getElementById('bulkPromocaoDestino');
@@ -2202,6 +2391,22 @@
 
         const origemId = origemSelect.value;
         const destinoId = destinoSelect.value;
+
+        // Verificar se a origem está ativa
+        const promoOrigem = todasPromocoes.find(p => p.id === origemId);
+        if (promoOrigem && promoOrigem.status !== 'started') {
+            showToast('⚠️ A promoção de origem não está ativa!', 'warning');
+            origemSelect.value = '';
+            return;
+        }
+
+        // Verificar se o destino está ativo
+        const promoDestino = todasPromocoes.find(p => p.id === destinoId);
+        if (promoDestino && promoDestino.status !== 'started') {
+            showToast('⚠️ A promoção de destino não está ativa!', 'warning');
+            destinoSelect.value = '';
+            return;
+        }
 
         if (origemId && destinoId && origemId === destinoId) {
             showToast('⚠️ A promoção de origem e destino não podem ser iguais', 'warning');
@@ -2212,7 +2417,6 @@
         if (origemId) {
             itensPromocaoOrigem = [];
             totalItensCarregados = 0;
-            
             await carregarItensOrigem(origemId);
         }
     };
@@ -2226,359 +2430,387 @@
         extras.classList.toggle('hidden', !isEntre);
     };
 
-    // ============================================================
-    // CARREGAR ITENS DA ORIGEM
-    // ============================================================
-    async function carregarItensOrigem(promotionId) {
-        if (isLoadingOrigem) {
-            showToast('⏳ Já está carregando...', 'info');
+// ============================================================
+// CARREGAR ITENS DA ORIGEM - VERSÃO OTIMIZADA
+// ============================================================
+async function carregarItensOrigem(promotionId) {
+    if (isLoadingOrigem) {
+        showToast('⏳ Já está carregando...', 'info');
+        return;
+    }
+    
+    isLoadingOrigem = true;
+    itensPromocaoOrigem = [];
+    totalItensCarregados = 0;
+    metodoUsado = '';
+    
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`🚀 [${new Date().toLocaleTimeString()}] CARREGANDO ITENS DA ORIGEM`);
+    console.log(`   Promoção ID: ${promotionId}`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    
+    showToast('🔄 Carregando itens da promoção de origem...', 'info');
+
+    try {
+        const tokenData = await window.getValidToken?.();
+        if (!tokenData?.access_token) {
+            console.log(`❌ Token não disponível`);
+            showToast('Token não disponível', 'error');
             return;
         }
-        
-        isLoadingOrigem = true;
-        itensPromocaoOrigem = [];
-        totalItensCarregados = 0;
-        metodoUsado = '';
-        
-        showToast('🔄 Carregando itens da promoção de origem...', 'info');
+        console.log(`✅ Token obtido com sucesso`);
 
-        try {
-            const tokenData = await window.getValidToken?.();
-            if (!tokenData?.access_token) {
-                showToast('Token não disponível', 'error');
-                return;
-            }
-
-            const promo = todasPromocoes.find(p => p.id === promotionId);
-            if (!promo) {
-                showToast('Promoção não encontrada', 'error');
-                return;
-            }
-
-            log(`Tipo da promoção: ${promo.type}`, 'info');
-
-            let url = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}/items`;
-            let params = {
-                promotion_type: promo.type,
-                app_version: 'v2',
-                limit: 50
-            };
-            
-            let searchAfterLocal = null;
-            let hasMore = true;
-            let page = 1;
-
-            while (hasMore) {
-                let paramsPage = { ...params };
-                if (searchAfterLocal) {
-                    paramsPage.search_after = searchAfterLocal;
-                }
-
-                const queryString = Object.keys(paramsPage)
-                    .map(key => `${key}=${encodeURIComponent(paramsPage[key])}`)
-                    .join('&');
-                const fullUrl = `${url}?${queryString}`;
-
-                log(`🔄 Buscando página ${page} em lote...`, 'debug');
-                
-                const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(fullUrl)}&token=${tokenData.access_token}`;
-                const response = await fetch(proxyUrl);
-
-                if (response.ok) {
-                    const data = await response.json();
-                    const novosItens = data.results || [];
-                    itensPromocaoOrigem = itensPromocaoOrigem.concat(novosItens);
-                    totalItensCarregados += novosItens.length;
-                    log(`Página ${page}: ${novosItens.length} itens (total: ${totalItensCarregados})`, 'info');
-                    
-                    const paging = data.paging || {};
-                    const searchAfterValue = paging.searchAfter;
-                    if (searchAfterValue && novosItens.length > 0) {
-                        searchAfterLocal = searchAfterValue;
-                        hasMore = true;
-                        page++;
-                    } else {
-                        hasMore = false;
-                        log('Fim da lista (sem searchAfter)', 'debug');
-                    }
-                    showToast(`📊 Carregados ${totalItensCarregados} itens (página ${page})`, 'info');
-                } else {
-                    const errorText = await response.text();
-                    log(`Falha na página ${page}: ${errorText}`, 'warning');
-                    
-                    log('🔄 Usando método alternativo para buscar itens...', 'info');
-                    metodoUsado = 'alternativo';
-                    showToast('🔄 Buscando itens via método alternativo...', 'info');
-                    
-                    const itensEncontrados = await buscarItensPorAnuncios(promotionId, tokenData.access_token);
-                    itensPromocaoOrigem = itensEncontrados;
-                    totalItensCarregados = itensEncontrados.length;
-                    hasMore = false;
-                    log(`✅ ${totalItensCarregados} itens carregados via método alternativo`, 'success');
-                }
-            }
-
-            if (itensPromocaoOrigem.length === 0) {
-                log('⚠️ Nenhum item encontrado nesta promoção', 'warning');
-                showToast('⚠️ Nenhum item encontrado nesta promoção', 'warning');
-            } else {
-                log(`✅ ${itensPromocaoOrigem.length} itens carregados (método: ${metodoUsado || 'lote'})`, 'success');
-                showToast(`✅ ${itensPromocaoOrigem.length} itens carregados da promoção de origem`, 'success');
-            }
-
-        } catch (error) {
-            log(`❌ Erro ao carregar itens da origem: ${error.message}`, 'error');
-            console.error(error);
-            showToast('Erro ao carregar itens da origem: ' + error.message, 'error');
-            itensPromocaoOrigem = [];
-        } finally {
-            isLoadingOrigem = false;
+        const promo = todasPromocoes.find(p => p.id === promotionId);
+        if (!promo) {
+            console.log(`❌ Promoção não encontrada: ${promotionId}`);
+            showToast('Promoção não encontrada', 'error');
+            return;
         }
-    }
 
-    // ============================================================
-// ANALISAR ITENS (VERSÃO COMPLETA E ATUALIZADA)
+        console.log(`📌 Nome: ${promo.name}`);
+        console.log(`📌 Tipo: ${promo.type}`);
+        
+        log(`📌 Tipo da promoção: ${promo.type}`, 'info');
+        
+        console.log(`🔄 Buscando todos os itens da promoção com preços...`);
+        const startTime = Date.now();
+        
+        // Buscar todos os itens da promoção com preços (otimizado)
+        const itensCompletos = await buscarItensPromocaoComPrecos(promotionId, promo.type, tokenData.access_token);
+        
+        const elapsed = ((Date.now() - startTime) / 1000);
+        console.log(`⏱️ Busca concluída em ${elapsed.toFixed(1)}s`);
+        console.log(`📊 Total de itens encontrados: ${itensCompletos.length}`);
+        
+        // Contar status para estatísticas (mais rápido que iterar de novo)
+        const statusCount = {};
+        itensCompletos.forEach(item => {
+            const status = item.status || 'unknown';
+            statusCount[status] = (statusCount[status] || 0) + 1;
+        });
+        
+        console.log(`📈 Distribuição por status:`);
+        Object.entries(statusCount).forEach(([status, count]) => {
+            const pct = ((count / itensCompletos.length) * 100).toFixed(1);
+            console.log(`   ${status}: ${count} (${pct}%)`);
+        });
+        
+        // FILTRAR APENAS ITENS COM STATUS 'started' (ATIVOS NA PROMOÇÃO)
+        // Usando filter que é mais rápido que loop com push
+        const itensAtivos = itensCompletos.filter(item => 
+            item.status === 'started' && 
+            item.price > 0
+        );
+        
+        const ativos = itensAtivos.length;
+        const candidatos = itensCompletos.filter(item => item.status === 'candidate').length;
+        const pendentes = itensCompletos.filter(item => item.status === 'pending').length;
+        const outros = itensCompletos.length - ativos - candidatos - pendentes;
+        
+        console.log(`📊 RESUMO DA ORIGEM:`);
+        console.log(`   ✅ Ativos (started): ${ativos}`);
+        console.log(`   🔄 Candidatos: ${candidatos}`);
+        console.log(`   ⏳ Pendentes: ${pendentes}`);
+        console.log(`   📦 Outros: ${outros}`);
+        console.log(`   📊 Total: ${itensCompletos.length}`);
+        
+        itensPromocaoOrigem = itensAtivos;
+        totalItensCarregados = ativos;
+
+        if (ativos === 0) {
+            console.log(`⚠️ Nenhum item ATIVO (started) encontrado!`);
+            showToast(`⚠️ Nenhum item ATIVO (started) encontrado. ${candidatos} candidatos disponíveis.`, 'warning');
+        } else {
+            console.log(`✅ ${ativos} itens ATIVOS (started) carregados`);
+            showToast(`✅ ${ativos} itens ATIVOS (started) carregados`, 'success');
+        }
+        
+        console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+    } catch (error) {
+        console.log(`❌ [${new Date().toLocaleTimeString()}] ERRO AO CARREGAR ITENS DA ORIGEM:`);
+        console.log(`   Mensagem: ${error.message}`);
+        console.error(error);
+        log(`❌ Erro ao carregar itens da origem: ${error.message}`, 'error');
+        showToast('Erro ao carregar itens da origem: ' + error.message, 'error');
+        itensPromocaoOrigem = [];
+    } finally {
+        isLoadingOrigem = false;
+        console.log(`✅ Carregamento finalizado`);
+    }
+}
+
+// ============================================================
+// ANALISAR ITENS - VERSÃO OTIMIZADA
 // ============================================================
 window.analisarItens = async function() {
     console.log('═══════════════════════════════════════════════════════════');
-    console.log('🔍 INICIANDO ANÁLISE DE ITENS');
+    console.log(`🔍 [${new Date().toLocaleTimeString()}] INICIANDO ANÁLISE DE ITENS`);
     console.log('═══════════════════════════════════════════════════════════');
+    
+    // ============================================================
+    // MOSTRAR BARRA DE PROGRESSO
+    // ============================================================
+    mostrarBarraProgresso(
+        '🔍 Analisando Itens',
+        'Preparando análise...'
+    );
+    atualizarProgresso(0, 'Iniciando análise...', 'Verificando configurações', '0%');
     
     const origemId = document.getElementById('bulkPromocaoOrigem')?.value;
     const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
     const regra = document.getElementById('bulkRegraComparacao')?.value;
 
-    console.log(`📌 Promoção Origem: ${origemId}`);
-    console.log(`📌 Promoção Destino: ${destinoId}`);
-    console.log(`📌 Regra de Comparação: ${regra}`);
+    console.log(`📌 Promoção Origem ID: ${origemId || 'NÃO SELECIONADO'}`);
+    console.log(`📌 Promoção Destino ID: ${destinoId || 'NÃO SELECIONADO'}`);
+    console.log(`📌 Regra de Comparação: ${regra || 'NÃO SELECIONADA'}`);
+    console.log(`📌 Itens carregados da origem: ${itensPromocaoOrigem.length}`);
 
+    // Validações iniciais
     if (!origemId || !destinoId) {
         console.log('❌ Origem ou destino não selecionados');
+        fecharBarraProgresso();
         showToast('⚠️ Selecione a promoção de origem e destino', 'warning');
         return;
     }
 
     if (origemId === destinoId) {
         console.log('❌ Origem e destino são iguais');
+        fecharBarraProgresso();
         showToast('⚠️ A promoção de origem e destino não podem ser iguais', 'warning');
         return;
     }
 
     if (itensPromocaoOrigem.length === 0) {
         console.log('❌ Nenhum item carregado da origem');
+        fecharBarraProgresso();
         showToast('⚠️ Nenhum item carregado da promoção de origem. Selecione uma promoção de origem primeiro.', 'warning');
         return;
     }
 
     console.log(`📊 ${itensPromocaoOrigem.length} itens carregados da origem`);
-    console.log('───────────────────────────────────────────────────────────');
+
+    atualizarProgresso(10, 'Carregando promoção destino...', `Buscando informações da promoção`, '10%');
 
     const promocaoDestino = todasPromocoes.find(p => p.id === destinoId);
     if (!promocaoDestino) {
         console.log('❌ Promoção de destino não encontrada');
+        fecharBarraProgresso();
         showToast('Promoção de destino não encontrada', 'error');
         return;
     }
+    console.log(`📌 Promoção Destino: ${promocaoDestino.name} (${promocaoDestino.type})`);
 
-    let valorMin = parseFloat(document.getElementById('bulkValorMin')?.value) || null;
-    let valorMax = parseFloat(document.getElementById('bulkValorMax')?.value) || null;
-    let percentMin = parseFloat(document.getElementById('bulkPercentMin')?.value) || null;
-    let percentMax = parseFloat(document.getElementById('bulkPercentMax')?.value) || null;
-
-    console.log(`📌 Filtros adicionais:`);
-    console.log(`   Valor Mínimo: ${valorMin || 'N/A'}`);
-    console.log(`   Valor Máximo: ${valorMax || 'N/A'}`);
-    console.log(`   % Mínimo: ${percentMin || 'N/A'}`);
-    console.log(`   % Máximo: ${percentMax || 'N/A'}`);
-    console.log('───────────────────────────────────────────────────────────');
-
-    // Buscar itens do destino
+    // Buscar itens do destino (TODOS, não só ativos) - OTIMIZADO
     console.log('🔄 Carregando itens da promoção de destino...');
+    
+    atualizarProgresso(20, 'Carregando itens do destino...', `Buscando itens da promoção ${promocaoDestino.name}`, '20%');
     showToast('🔄 Carregando itens da promoção de destino...', 'info');
     
     let itensDestino = [];
+    const startDestino = Date.now();
     try {
         const tokenData = await window.getValidToken?.();
         if (tokenData?.access_token) {
-            // Tenta consulta em lote primeiro
-            let url = `https://api.mercadolibre.com/seller-promotions/promotions/${destinoId}/items`;
-            let params = {
-                promotion_type: promocaoDestino.type,
-                app_version: 'v2',
-                limit: 50
-            };
-            let searchAfterLocal = null;
-            let hasMore = true;
-            let page = 1;
+            atualizarProgresso(25, 'Carregando itens do destino...', 'Aguardando resposta da API...', '25%');
             
-            console.log(`🔄 Buscando itens do destino (tipo: ${promocaoDestino.type})...`);
-            
-            while (hasMore) {
-                let paramsPage = { ...params };
-                if (searchAfterLocal) {
-                    paramsPage.search_after = searchAfterLocal;
-                }
-                const queryString = Object.keys(paramsPage)
-                    .map(key => `${key}=${encodeURIComponent(paramsPage[key])}`)
-                    .join('&');
-                const fullUrl = `${url}?${queryString}`;
-                
-                const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(fullUrl)}&token=${tokenData.access_token}`;
-                const response = await fetch(proxyUrl);
-                if (response.ok) {
-                    const data = await response.json();
-                    const novosItens = data.results || [];
-                    itensDestino = itensDestino.concat(novosItens);
-                    console.log(`   Página ${page}: ${novosItens.length} itens (total: ${itensDestino.length})`);
-                    const paging = data.paging || {};
-                    const searchAfterValue = paging.searchAfter;
-                    if (searchAfterValue && data.results?.length > 0) {
-                        searchAfterLocal = searchAfterValue;
-                        hasMore = true;
-                        page++;
-                    } else {
-                        hasMore = false;
-                    }
-                } else {
-                    console.log(`   ⚠️ Falha na página ${page}`);
-                    hasMore = false;
-                }
-            }
-            
-            // Se não encontrou itens no destino, usa método alternativo
-            if (itensDestino.length === 0) {
-                console.log('🔄 Usando método alternativo para buscar itens do destino');
-                itensDestino = await buscarItensPorAnuncios(destinoId, tokenData.access_token);
-            }
+            // Usar a função otimizada
+            itensDestino = await buscarItensPromocaoComPrecos(
+                destinoId, 
+                promocaoDestino.type, 
+                tokenData.access_token
+            );
         }
     } catch (e) {
-        console.log(`❌ Erro ao carregar itens do destino: ${e.message}`);
-        console.error(e);
+        console.error('❌ Erro ao carregar itens do destino:', e);
     }
-
+    const elapsedDestino = ((Date.now() - startDestino) / 1000);
+    console.log(`⏱️ Destino carregado em ${elapsedDestino.toFixed(1)}s`);
     console.log(`📊 ${itensDestino.length} itens carregados do destino`);
-    console.log('───────────────────────────────────────────────────────────');
 
-    // Criar mapa de preços do destino
-    const mapaDestino = {};
+    atualizarProgresso(35, 'Processando dados do destino...', `${itensDestino.length} itens encontrados`, '35%');
+
+    // Criar mapa de preços do destino por MLB (otimizado com Map)
+    console.log('🔄 Criando mapa de preços do destino...');
+    const mapaDestino = new Map(); // Usar Map é mais rápido para buscas
     itensDestino.forEach(item => {
         const id = item.id || item.item_id;
         if (id) {
-            mapaDestino[id] = {
+            mapaDestino.set(id, {
                 price: item.price || 0,
+                status: item.status || 'unknown',
+                original_price: item.original_price || 0,
                 seller_percentage: item.seller_percentage || 0,
-                original_price: item.original_price || 0
-            };
+                meli_percentage: item.meli_percentage || 0,
+                current_sale_price: item.current_sale_price || null,
+            });
         }
     });
-    console.log(`📊 ${Object.keys(mapaDestino).length} itens mapeados no destino`);
+    console.log(`📊 ${mapaDestino.size} itens mapeados no destino`);
 
+    atualizarProgresso(45, 'Analisando itens...', `Comparando ${itensPromocaoOrigem.length} itens`, '45%');
+
+    // ============================================================
+    // ANALISAR CADA ITEM DA ORIGEM - OTIMIZADO
+    // ============================================================
+    
     itensFiltrados = [];
     let elegiveis = 0;
     let bloqueados = 0;
     let naoElegiveis = 0;
+    let jaAtivos = 0;
+    let processados = 0;
+    const total = itensPromocaoOrigem.length;
+    
+    // Pré-calcular valores para evitar repetição
+    const valorMin = parseFloat(document.getElementById('bulkValorMin')?.value) || null;
+    const valorMax = parseFloat(document.getElementById('bulkValorMax')?.value) || null;
+    const percentMin = parseFloat(document.getElementById('bulkPercentMin')?.value) || null;
+    const percentMax = parseFloat(document.getElementById('bulkPercentMax')?.value) || null;
 
     console.log('───────────────────────────────────────────────────────────');
-    console.log('📊 ANALISANDO ITEM POR ITEM:');
+    console.log('📊 ANALISANDO ITEM POR ITEM (OTIMIZADO):');
     console.log('───────────────────────────────────────────────────────────');
 
-    // Array para armazenar detalhes da análise (para uso futuro)
-    const detalhesAnalise = [];
-
+    // Usar for...of com let para melhor performance
     for (const item of itensPromocaoOrigem) {
-        const itemId = item.id || item.item_id;
-        const mlb = itemId;
+        processados++;
+        
+        // Atualizar progresso a cada 10 itens (menos frequente para melhor performance)
+        if (processados % 10 === 0 || processados === total) {
+            const pct = Math.min(45 + (processados / total) * 40, 85);
+            atualizarProgresso(
+                pct,
+                `Analisando itens (${processados}/${total})`,
+                `${elegiveis} elegíveis, ${bloqueados} bloqueados, ${jaAtivos} já ativos`,
+                `${Math.round(pct)}%`
+            );
+        }
+
+        const mlb = item.id || item.item_id;
         const precoOrigem = item.price || 0;
         const percentOrigem = item.seller_percentage || 0;
-        const destino = mapaDestino[mlb];
-        const precoDestino = destino?.price || null;
-        const percentDestino = destino?.seller_percentage || null;
-
-        // Verificar se está bloqueado (manualmente ou automaticamente)
+        
+        // Verificar se está na lista de bloqueados (usando Set para busca mais rápida)
         if (mlbsBloqueados.includes(mlb)) {
             bloqueados++;
-            const status = '🚫 BLOQUEADO';
-            const motivo = 'MLB na lista de bloqueados';
             itensFiltrados.push({
                 ...item,
                 elegivel: false,
                 motivo: '🚫 Bloqueado',
-                precoDestino,
-                percentDestino,
-                precoOrigem,
-                percentOrigem
+                precoDestino: null,
+                percentDestino: null,
+                statusDestino: null,
+                precoOrigem: precoOrigem,
+                percentOrigem: percentOrigem,
+                jaAtivo: false,
+                elegivelFinal: false
             });
-            detalhesAnalise.push({ mlb, precoOrigem, percentOrigem, precoDestino, percentDestino, status, motivo });
-            console.log(`   ${status} | ${mlb} | Preço: ${precoOrigem} | %: ${percentOrigem} | Motivo: ${motivo}`);
             continue;
         }
 
-        let elegivel = false;
-        let motivo = '';
+        // Verificar se o item já está ativo na promoção de destino (usando Map.get que é mais rápido)
+        const destino = mapaDestino.get(mlb);
+        const statusDestino = destino?.status || null;
+        const precoDestino = destino?.price || null;
+        const percentDestino = destino?.seller_percentage || null;
 
-        // Aplicar regra de comparação
+        // Se já está ativo na destino (started)
+        if (statusDestino === 'started') {
+            jaAtivos++;
+            itensFiltrados.push({
+                ...item,
+                elegivel: false,
+                motivo: '✅ Já está ATIVO',
+                precoDestino: precoDestino,
+                percentDestino: percentDestino,
+                statusDestino: statusDestino,
+                precoOrigem: precoOrigem,
+                percentOrigem: percentOrigem,
+                jaAtivo: true,
+                elegivelFinal: false
+            });
+            continue;
+        }
+
+        // Se não tem preço na destino, não é elegível
+        if (precoDestino === null || precoDestino === 0) {
+            naoElegiveis++;
+            itensFiltrados.push({
+                ...item,
+                elegivel: false,
+                motivo: '❌ Não é candidato',
+                precoDestino: null,
+                percentDestino: null,
+                statusDestino: statusDestino || 'não candidato',
+                precoOrigem: precoOrigem,
+                percentOrigem: percentOrigem,
+                jaAtivo: false,
+                elegivelFinal: false
+            });
+            continue;
+        }
+
+        // ============================================================
+        // APLICAR REGRA DE COMPARAÇÃO - OTIMIZADO
+        // ============================================================
+        
+        let elegivel = false;
+        let regraAplicada = '';
+
+        // Preços em reais (já estão em centavos)
+        const precoOrigemReais = precoOrigem / 100;
+        const precoDestinoReais = precoDestino / 100;
+
+        // Switch otimizado com break
         switch (regra) {
             case 'valor_maior':
-                if (precoDestino !== null && precoDestino > precoOrigem) {
-                    elegivel = true;
-                    motivo = `Preço destino (R$ ${precoDestino}) > origem (R$ ${precoOrigem}) ✅`;
-                } else {
-                    motivo = `Preço destino (${precoDestino !== null ? 'R$ ' + precoDestino : 'N/A'}) NÃO é maior que origem (R$ ${precoOrigem})`;
-                }
+                elegivel = precoDestinoReais > precoOrigemReais;
+                regraAplicada = elegivel ? 
+                    `Preço destino (R$ ${precoDestinoReais.toFixed(2)}) > origem (R$ ${precoOrigemReais.toFixed(2)}) ✅` :
+                    `Preço destino (R$ ${precoDestinoReais.toFixed(2)}) NÃO é maior que origem (R$ ${precoOrigemReais.toFixed(2)})`;
                 break;
 
             case 'valor_menor':
-                if (precoDestino !== null && precoDestino < precoOrigem) {
-                    elegivel = true;
-                    motivo = `Preço destino (R$ ${precoDestino}) < origem (R$ ${precoOrigem}) ✅`;
-                } else {
-                    motivo = `Preço destino (${precoDestino !== null ? 'R$ ' + precoDestino : 'N/A'}) NÃO é menor que origem (R$ ${precoOrigem})`;
-                }
+                elegivel = precoDestinoReais < precoOrigemReais;
+                regraAplicada = elegivel ?
+                    `Preço destino (R$ ${precoDestinoReais.toFixed(2)}) < origem (R$ ${precoOrigemReais.toFixed(2)}) ✅` :
+                    `Preço destino (R$ ${precoDestinoReais.toFixed(2)}) NÃO é menor que origem (R$ ${precoOrigemReais.toFixed(2)})`;
                 break;
 
             case 'percentual_maior':
-                if (percentDestino !== null && percentDestino > percentOrigem) {
-                    elegivel = true;
-                    motivo = `% destino (${percentDestino}%) > origem (${percentOrigem}%) ✅`;
-                } else {
-                    motivo = `% destino (${percentDestino !== null ? percentDestino + '%' : 'N/A'}) NÃO é maior que origem (${percentOrigem}%)`;
-                }
+                elegivel = percentDestino > percentOrigem;
+                regraAplicada = elegivel ?
+                    `% destino (${percentDestino}%) > origem (${percentOrigem}%) ✅` :
+                    `% destino (${percentDestino}%) NÃO é maior que origem (${percentOrigem}%)`;
                 break;
 
             case 'percentual_menor':
-                if (percentDestino !== null && percentDestino < percentOrigem) {
-                    elegivel = true;
-                    motivo = `% destino (${percentDestino}%) < origem (${percentOrigem}%) ✅`;
-                } else {
-                    motivo = `% destino (${percentDestino !== null ? percentDestino + '%' : 'N/A'}) NÃO é menor que origem (${percentOrigem}%)`;
-                }
+                elegivel = percentDestino < percentOrigem;
+                regraAplicada = elegivel ?
+                    `% destino (${percentDestino}%) < origem (${percentOrigem}%) ✅` :
+                    `% destino (${percentDestino}%) NÃO é menor que origem (${percentOrigem}%)`;
                 break;
 
             case 'valor_entre':
-                if (precoDestino !== null && 
-                    (valorMin === null || precoDestino >= valorMin) && 
-                    (valorMax === null || precoDestino <= valorMax)) {
-                    elegivel = true;
-                    motivo = `Preço destino (R$ ${precoDestino}) entre R$ ${valorMin || '∞'} e R$ ${valorMax || '∞'} ✅`;
-                } else {
-                    motivo = `Preço destino (${precoDestino !== null ? 'R$ ' + precoDestino : 'N/A'}) NÃO está entre R$ ${valorMin || '∞'} e R$ ${valorMax || '∞'}`;
-                }
+                elegivel = (valorMin === null || precoDestinoReais >= valorMin) && 
+                           (valorMax === null || precoDestinoReais <= valorMax);
+                regraAplicada = elegivel ?
+                    `Preço destino (R$ ${precoDestinoReais.toFixed(2)}) entre R$ ${valorMin || '∞'} e R$ ${valorMax || '∞'} ✅` :
+                    `Preço destino (R$ ${precoDestinoReais.toFixed(2)}) NÃO está entre R$ ${valorMin || '∞'} e R$ ${valorMax || '∞'}`;
                 break;
 
             case 'percentual_entre':
-                if (percentDestino !== null && 
-                    (percentMin === null || percentDestino >= percentMin) && 
-                    (percentMax === null || percentDestino <= percentMax)) {
-                    elegivel = true;
-                    motivo = `% destino (${percentDestino}%) entre ${percentMin || '∞'}% e ${percentMax || '∞'}% ✅`;
-                } else {
-                    motivo = `% destino (${percentDestino !== null ? percentDestino + '%' : 'N/A'}) NÃO está entre ${percentMin || '∞'}% e ${percentMax || '∞'}%`;
-                }
+                elegivel = (percentMin === null || percentDestino >= percentMin) && 
+                           (percentMax === null || percentDestino <= percentMax);
+                regraAplicada = elegivel ?
+                    `% destino (${percentDestino}%) entre ${percentMin || '∞'}% e ${percentMax || '∞'}% ✅` :
+                    `% destino (${percentDestino}%) NÃO está entre ${percentMin || '∞'}% e ${percentMax || '∞'}%`;
                 break;
 
             default:
                 elegivel = false;
-                motivo = 'Regra não reconhecida';
+                regraAplicada = 'Regra não reconhecida';
         }
 
         if (elegivel) {
@@ -2587,42 +2819,38 @@ window.analisarItens = async function() {
             naoElegiveis++;
         }
 
-        const status = elegivel ? '✅ ELEGÍVEL' : '❌ NÃO ELEGÍVEL';
         itensFiltrados.push({
             ...item,
-            elegivel,
-            motivo: elegivel ? '✅ Elegível' : motivo,
-            precoDestino,
-            percentDestino,
-            precoOrigem,
-            percentOrigem
+            elegivel: elegivel,
+            motivo: elegivel ? `✅ Elegível - ${regraAplicada}` : `❌ Não elegível - ${regraAplicada}`,
+            precoDestino: precoDestino,
+            precoDestinoReais: precoDestinoReais,
+            percentDestino: percentDestino,
+            statusDestino: statusDestino,
+            precoOrigem: precoOrigem,
+            precoOrigemReais: precoOrigemReais,
+            percentOrigem: percentOrigem,
+            jaAtivo: false,
+            elegivelFinal: elegivel,
+            regraAplicada: regraAplicada
         });
-        
-        detalhesAnalise.push({ 
-            mlb, 
-            precoOrigem, 
-            percentOrigem, 
-            precoDestino, 
-            percentDestino, 
-            status, 
-            motivo 
-        });
-        
-        // Log com cores diferentes para facilitar visualização
-        const cor = elegivel ? '🟢' : '🔴';
-        console.log(`   ${cor} ${status} | ${mlb} | Origem: R$ ${precoOrigem} (${percentOrigem}%) | Destino: ${precoDestino !== null ? 'R$ ' + precoDestino : 'N/A'} (${percentDestino !== null ? percentDestino + '%' : 'N/A'})`);
-        if (!elegivel && motivo) {
-            console.log(`      📝 Motivo: ${motivo}`);
-        }
     }
 
+    // ============================================================
+    // RESUMO FINAL
+    // ============================================================
+    
     console.log('───────────────────────────────────────────────────────────');
     console.log('📊 RESUMO DA ANÁLISE:');
     console.log(`   ✅ Elegíveis: ${elegiveis}`);
     console.log(`   🚫 Bloqueados: ${bloqueados}`);
+    console.log(`   ✅ Já ativos na destino: ${jaAtivos}`);
     console.log(`   ❌ Não elegíveis: ${naoElegiveis}`);
     console.log(`   📊 Total analisado: ${itensFiltrados.length}`);
     console.log('═══════════════════════════════════════════════════════════');
+
+    // Atualizar progresso para 95%
+    atualizarProgresso(95, 'Finalizando análise...', `Resumo: ${elegiveis} elegíveis`, '95%');
 
     // Atualizar UI - Resumo
     const resumoDiv = document.getElementById('bulkResumo');
@@ -2631,7 +2859,7 @@ window.analisarItens = async function() {
         document.getElementById('bulkTotalItens').textContent = itensFiltrados.length;
         document.getElementById('bulkElegiveis').textContent = elegiveis;
         document.getElementById('bulkBloqueados').textContent = bloqueados;
-        document.getElementById('bulkNaoElegiveis').textContent = naoElegiveis;
+        document.getElementById('bulkNaoElegiveis').textContent = naoElegiveis + jaAtivos;
     }
 
     // Atualizar UI - Tabela
@@ -2656,450 +2884,515 @@ window.analisarItens = async function() {
         }
     }
 
-    // Renderizar tabela com os itens filtrados
-    renderizarTabelaItensBulk();
+    // Renderizar tabela
+    renderizarTabelaItensBulkCorrigida();
+
+    // ============================================================
+    // FINALIZAR - MOSTRAR RESULTADO
+    // ============================================================
+    atualizarProgresso(100, '✅ Análise concluída!', `${elegiveis} itens elegíveis encontrados`, '✅ Concluído');
+    
+    // Esperar 1 segundo e fechar a barra
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    fecharBarraProgresso();
 
     // Toast com resumo
-    showToast(`✅ Análise concluída: ${elegiveis} elegíveis, ${bloqueados} bloqueados, ${naoElegiveis} não elegíveis`, 'info');
+    showToast(`✅ Análise concluída: ${elegiveis} elegíveis, ${bloqueados} bloqueados, ${jaAtivos} já ativos, ${naoElegiveis} não elegíveis`, 'info');
 };
 
     // ============================================================
-// RENDERIZAR TABELA DE ITENS BULK
-// ============================================================
-function renderizarTabelaItensBulk() {
-    const tbody = document.getElementById('bulkItensBody');
-    if (!tbody) return;
-
-    if (itensFiltrados.length === 0) {
-        tbody.innerHTML = `<tr>
-            <td colspan="7" class="text-center py-4 text-muted">
-                <i class="fas fa-info-circle"></i> Nenhum item para exibir
-            </td>
-        </tr>`;
-        return;
-    }
-
-    tbody.innerHTML = '';
-    itensFiltrados.forEach((item, index) => {
-        const tr = document.createElement('tr');
-        const mlb = item.id || item.item_id || 'N/A';
-        const precoOrigem = item.precoOrigem || 0;
-        const percentOrigem = item.percentOrigem || 0;
-        const precoDestino = item.precoDestino !== null ? item.precoDestino : null;
-        const percentDestino = item.percentDestino !== null ? item.percentDestino : null;
-
-        let statusClass = '';
-        let statusText = '';
-        let bgColor = '';
-        
-        if (item.elegivel) {
-            statusClass = 'text-success';
-            statusText = '✅ Elegível';
-            bgColor = '#d4edda';
-        } else if (item.motivo === '🚫 Bloqueado') {
-            statusClass = 'text-danger';
-            statusText = '🚫 Bloqueado';
-            bgColor = '#f8d7da';
-        } else {
-            statusClass = 'text-warning';
-            statusText = '❌ Não elegível';
-            bgColor = '#fff3cd';
-        }
-
-        tr.style.backgroundColor = bgColor;
-
-        tr.innerHTML = `
-            <td style="text-align: center;">
-                <input type="checkbox" class="bulk-item-checkbox" data-index="${index}" ${item.elegivel ? 'checked' : 'disabled'}>
-            </td>
-            <td><strong>${mlb}</strong></td>
-            <td style="text-align: right;">R$ ${precoOrigem.toFixed(2)}</td>
-            <td style="text-align: center;">${percentOrigem}%</td>
-            <td style="text-align: right; ${precoDestino !== null ? 'color: #28a745; font-weight: 600;' : 'color: #6c757d;'}">
-                ${precoDestino !== null ? `R$ ${precoDestino.toFixed(2)}` : '-'}
-            </td>
-            <td style="text-align: center;">${percentDestino !== null ? `${percentDestino}%` : '-'}</td>
-            <td class="${statusClass}" style="text-align: center; font-weight: 600;">
-                ${statusText}
-                <small style="display: block; font-size: 10px; font-weight: 400; color: #6c757d;">
-                    ${!item.elegivel && item.motivo !== '🚫 Bloqueado' ? item.motivo : ''}
-                </small>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    });
-
-    // Atualizar contador de selecionados
-    const totalSelecionados = document.querySelectorAll('.bulk-item-checkbox:checked').length;
-    const btnAtivar = document.getElementById('btnAtivarMassa');
-    if (btnAtivar && totalSelecionados > 0) {
-        btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${totalSelecionados} itens)`;
-    }
-}
-// ============================================================
-// EXECUTAR ATIVAÇÃO EM MASSA (VERSÃO CORRIGIDA E GLOBAL)
-// ============================================================
-window.executarAtivacaoEmMassa = function() {
-    console.log('═══════════════════════════════════════════════════════════');
-    console.log('🚀 INICIANDO ATIVAÇÃO EM MASSA');
-    console.log('═══════════════════════════════════════════════════════════');
-    
-    // Verificar se o botão está habilitado
-    const btnAtivar = document.getElementById('btnAtivarMassa');
-    if (btnAtivar && btnAtivar.disabled) {
-        console.log('❌ Botão desabilitado - nenhum item elegível selecionado');
-        showToast('⚠️ Selecione pelo menos um item elegível', 'warning');
-        return;
-    }
-
-    const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
-    if (!destinoId) {
-        console.log('❌ Destino não selecionado');
-        showToast('⚠️ Selecione a promoção de destino', 'warning');
-        return;
-    }
-
-    // Pegar itens selecionados
-    const selecionados = [];
-    document.querySelectorAll('.bulk-item-checkbox:checked').forEach(cb => {
-        const index = parseInt(cb.dataset.index);
-        if (!isNaN(index) && itensFiltrados[index]) {
-            selecionados.push(itensFiltrados[index]);
-        }
-    });
-
-    if (selecionados.length === 0) {
-        console.log('❌ Nenhum item selecionado');
-        showToast('⚠️ Nenhum item selecionado para ativação', 'warning');
-        return;
-    }
-
-    console.log(`📌 ${selecionados.length} itens selecionados para ativação`);
-    console.log('───────────────────────────────────────────────────────────');
-    
-    console.log('📊 ITENS SELECIONADOS:');
-    selecionados.forEach((item, index) => {
-        const mlb = item.id || item.item_id || 'N/A';
-        const preco = item.precoDestino || item.price || 0;
-        console.log(`   ${index + 1}. ${mlb} - Preço: R$ ${preco.toFixed(2)}`);
-    });
-    console.log('───────────────────────────────────────────────────────────');
-
-    const destinoPromo = todasPromocoes.find(p => p.id === destinoId);
-    if (!destinoPromo) {
-        console.log('❌ Promoção de destino não encontrada');
-        showToast('Promoção de destino não encontrada', 'error');
-        return;
-    }
-
-    console.log(`📌 Promoção de destino: ${destinoPromo.name} (${destinoPromo.id})`);
-    console.log('───────────────────────────────────────────────────────────');
-
-    // Criar modal de confirmação
-    criarModalConfirmacao(selecionados, destinoPromo);
-};
-
-// ============================================================
-// FUNÇÃO PARA CRIAR MODAL DE CONFIRMAÇÃO
-// ============================================================
-function criarModalConfirmacao(selecionados, destinoPromo) {
-    // Remover modal antigo se existir
-    const modalAntigo = document.getElementById('modalConfirmacaoAtivacao');
-    if (modalAntigo) modalAntigo.remove();
-
-    const modalHTML = `
-        <div id="modalConfirmacaoAtivacao" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 99999; display: flex; align-items: center; justify-content: center;">
-            <div style="background: white; border-radius: 12px; max-width: 750px; width: 95%; max-height: 90vh; overflow-y: auto; padding: 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
-                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e9ecef; padding-bottom: 15px; margin-bottom: 20px;">
-                    <h2 style="margin: 0; color: #dc3545; font-size: 22px;">
-                        <i class="fas fa-exclamation-triangle"></i> Confirmar Ativação
-                    </h2>
-                    <button onclick="fecharModalConfirmacao()" 
-                            style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-
-                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <p style="margin: 5px 0;"><strong><i class="fas fa-tag"></i> Promoção:</strong> ${destinoPromo.name}</p>
-                    <p style="margin: 5px 0;"><strong><i class="fas fa-box"></i> Itens:</strong> ${selecionados.length}</p>
-                    <p style="margin: 5px 0;"><strong><i class="fas fa-calendar"></i> Data:</strong> ${new Date().toLocaleString()}</p>
-                </div>
-
-                <div style="max-height: 250px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 20px;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-                        <thead style="background: #f8f9fa; position: sticky; top: 0;">
-                            <tr>
-                                <th style="padding: 6px 8px; text-align: left; border-bottom: 2px solid #dee2e6;">#</th>
-                                <th style="padding: 6px 8px; text-align: left; border-bottom: 2px solid #dee2e6;">MLB</th>
-                                <th style="padding: 6px 8px; text-align: right; border-bottom: 2px solid #dee2e6;">Preço</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${selecionados.slice(0, 15).map((item, index) => `
-                                <tr style="border-bottom: 1px solid #f1f3f5;">
-                                    <td style="padding: 4px 8px;">${index + 1}</td>
-                                    <td style="padding: 4px 8px; font-weight: 600;">${item.id || item.item_id || 'N/A'}</td>
-                                    <td style="padding: 4px 8px; text-align: right; color: #28a745;">R$ ${(item.precoDestino || item.price || 0).toFixed(2)}</td>
-                                </tr>
-                            `).join('')}
-                            ${selecionados.length > 15 ? `
-                                <tr>
-                                    <td colspan="3" style="padding: 8px; text-align: center; color: #6c757d; font-style: italic;">
-                                        ... e mais ${selecionados.length - 15} itens
-                                    </td>
-                                </tr>
-                            ` : ''}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div style="background: #fff3cd; padding: 12px 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 20px;">
-                    <p style="margin: 0; font-size: 13px;">
-                        <i class="fas fa-info-circle"></i> 
-                        <strong>Atenção:</strong> Esta ação irá ativar os itens na promoção. 
-                        Pode levar alguns minutos.
-                    </p>
-                </div>
-
-                <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 2px solid #e9ecef; padding-top: 20px;">
-                    <button onclick="fecharModalConfirmacao()" 
-                            class="btn btn-secondary" style="padding: 10px 30px; border: none; border-radius: 6px; background: #6c757d; color: white; cursor: pointer; font-size: 14px;">
-                        Cancelar
-                    </button>
-                    <button onclick="window.confirmarAtivacaoMassa()" 
-                            id="btnConfirmarAtivacao"
-                            class="btn btn-success" style="padding: 10px 30px; border: none; border-radius: 6px; background: #28a745; color: white; cursor: pointer; font-size: 14px;">
-                        <i class="fas fa-check"></i> Confirmar Ativação
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-
-    const modalDiv = document.createElement('div');
-    modalDiv.innerHTML = modalHTML;
-    document.body.appendChild(modalDiv.firstElementChild);
-}
-
-// ============================================================
-// FUNÇÃO PARA FECHAR MODAL DE CONFIRMAÇÃO
-// ============================================================
-function fecharModalConfirmacao() {
-    const modal = document.getElementById('modalConfirmacaoAtivacao');
-    if (modal) modal.remove();
-}
-
-// ============================================================
-// FUNÇÃO PARA CONFIRMAR E EXECUTAR A ATIVAÇÃO EM MASSA (GLOBAL)
-// ============================================================
-window.confirmarAtivacaoMassa = async function() {
-    console.log('✅ CONFIRMANDO ATIVAÇÃO EM MASSA');
-    
-    // Fechar modal de confirmação
-    fecharModalConfirmacao();
-
-    // Pegar os itens selecionados novamente
-    const selecionados = [];
-    document.querySelectorAll('.bulk-item-checkbox:checked').forEach(cb => {
-        const index = parseInt(cb.dataset.index);
-        if (!isNaN(index) && itensFiltrados[index]) {
-            selecionados.push(itensFiltrados[index]);
-        }
-    });
-
-    if (selecionados.length === 0) {
-        showToast('⚠️ Nenhum item selecionado para ativação', 'warning');
-        return;
-    }
-
-    const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
-    if (!destinoId) {
-        showToast('⚠️ Selecione a promoção de destino', 'warning');
-        return;
-    }
-
-    const destinoPromo = todasPromocoes.find(p => p.id === destinoId);
-    if (!destinoPromo) {
-        showToast('⚠️ Promoção de destino não encontrada', 'error');
-        return;
-    }
-
+    // RENDERIZAR TABELA DE ITENS BULK (CORRIGIDA)
     // ============================================================
-    // MOSTRAR BARRA DE PROGRESSO
-    // ============================================================
-    mostrarBarraProgresso(
-        `Ativando ${selecionados.length} itens`,
-        `Promoção: ${destinoPromo.name}`
-    );
-    atualizarProgresso(0, 'Preparando ativação...', 'Iniciando processo...', `0 / ${selecionados.length}`);
 
-    try {
-        const tokenData = await window.getValidToken?.();
-        if (!tokenData?.access_token) {
-            showToast('Token não disponível', 'error');
-            fecharBarraProgresso();
+    function renderizarTabelaItensBulkCorrigida() {
+        const tbody = document.getElementById('bulkItensBody');
+        if (!tbody) return;
+
+        if (itensFiltrados.length === 0) {
+            tbody.innerHTML = `<tr>
+                <td colspan="8" class="text-center py-4 text-muted">
+                    <i class="fas fa-info-circle"></i> Nenhum item para exibir
+                </td>
+            </tr>`;
             return;
         }
 
-        let sucessos = 0;
-        let falhas = 0;
-        const falhasLista = [];
+        tbody.innerHTML = '';
+        itensFiltrados.forEach((item, index) => {
+            const tr = document.createElement('tr');
+            const mlb = item.id || item.item_id || 'N/A';
+            const precoOrigem = item.precoOrigemReais || 0;
+            const percentOrigem = item.percentOrigem || 0;
+            const precoDestino = item.precoDestinoReais !== null ? item.precoDestinoReais : null;
+            const percentDestino = item.percentDestino !== null ? item.percentDestino : null;
+
+            let statusClass = '';
+            let statusText = '';
+            let bgColor = '';
+            let podeSelecionar = false;
+            
+            if (item.jaAtivo) {
+                statusClass = 'text-success';
+                statusText = '✅ Já ativo';
+                bgColor = '#d1ecf1';
+                podeSelecionar = false;
+            } else if (item.elegivel) {
+                statusClass = 'text-success';
+                statusText = '✅ Elegível';
+                bgColor = '#d4edda';
+                podeSelecionar = true;
+            } else if (item.motivo && item.motivo.includes('Bloqueado')) {
+                statusClass = 'text-danger';
+                statusText = '🚫 Bloqueado';
+                bgColor = '#f8d7da';
+                podeSelecionar = false;
+            } else {
+                statusClass = 'text-warning';
+                statusText = '❌ Não elegível';
+                bgColor = '#fff3cd';
+                podeSelecionar = false;
+            }
+
+            tr.style.backgroundColor = bgColor;
+
+            tr.innerHTML = `
+                <td style="text-align: center;">
+                    <input type="checkbox" class="bulk-item-checkbox" data-index="${index}" 
+                        ${podeSelecionar ? 'checked' : 'disabled'} 
+                        ${!podeSelecionar ? 'style="opacity:0.5;"' : ''}>
+                </td>
+                <td><strong>${mlb}</strong></td>
+                <td style="text-align: right;">R$ ${precoOrigem.toFixed(2)}</td>
+                <td style="text-align: center;">${percentOrigem}%</td>
+                <td style="text-align: right; ${precoDestino !== null ? 'color: #28a745; font-weight: 600;' : 'color: #6c757d;'}">
+                    ${precoDestino !== null ? `R$ ${precoDestino.toFixed(2)}` : '-'}
+                </td>
+                <td style="text-align: center;">${percentDestino !== null ? `${percentDestino}%` : '-'}</td>
+                <td style="text-align: center;">
+                    ${item.jaAtivo ? 
+                        '<span class="badge badge-info" style="font-size: 10px;">✅ Ativo</span>' : 
+                        '<span class="badge badge-success" style="font-size: 10px;">✅ Ativo</span>'
+                    }
+                </td>
+                <td class="${statusClass}" style="text-align: center; font-weight: 600; font-size: 12px;">
+                    ${statusText}
+                    ${item.motivo && !item.jaAtivo ? `<small style="display: block; font-size: 10px; font-weight: 400; color: #6c757d; max-width: 200px; word-wrap: break-word;">${item.motivo}</small>` : ''}
+                </td>
+            `;
+
+            tbody.appendChild(tr);
+        });
+
+        // Atualizar contador de selecionados
+        atualizarBotaoAtivacao();
+    }
+
+    // ============================================================
+    // FUNÇÃO PARA ATUALIZAR O BOTÃO DE ATIVAÇÃO
+    // ============================================================
+    function atualizarBotaoAtivacao() {
+        const btnAtivar = document.getElementById('btnAtivarMassa');
+        if (!btnAtivar) return;
+
+        const selecionados = document.querySelectorAll('.bulk-item-checkbox:checked').length;
+        const elegiveis = itensFiltrados.filter(item => item.elegivel).length;
+
+        if (selecionados > 0 && elegiveis > 0) {
+            btnAtivar.disabled = false;
+            btnAtivar.style.opacity = '1';
+            btnAtivar.style.cursor = 'pointer';
+            btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${selecionados} selecionados)`;
+        } else {
+            btnAtivar.disabled = true;
+            btnAtivar.style.opacity = '0.5';
+            btnAtivar.style.cursor = 'not-allowed';
+            btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${elegiveis} elegíveis)`;
+        }
+    }
+
+    // ============================================================
+    // ADICIONAR EVENTO PARA ATUALIZAR BOTÃO QUANDO CHECKBOX MUDA
+    // ============================================================
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('bulk-item-checkbox')) {
+            atualizarBotaoAtivacao();
+        }
+    });
+
+    // ============================================================
+    // SELECIONAR TODOS OS ITENS ELEGÍVEIS
+    // ============================================================
+    window.selecionarTodosItens = function() {
+        const selectAll = document.getElementById('bulkSelectAll');
+        if (!selectAll) return;
+        
+        const checkboxes = document.querySelectorAll('.bulk-item-checkbox');
+        checkboxes.forEach(cb => {
+            if (!cb.disabled) {
+                cb.checked = selectAll.checked;
+            }
+        });
+        
+        atualizarBotaoAtivacao();
+    };
+
+    // ============================================================
+    // EXECUTAR ATIVAÇÃO EM MASSA
+    // ============================================================
+    window.executarAtivacaoEmMassa = function() {
+        console.log('🔴🔴🔴 BOTÃO ATIVAR EM MASSA CLICADO! 🔴🔴🔴');
+        console.log('═══════════════════════════════════════════════════════════');
+        console.log('🚀 INICIANDO ATIVAÇÃO EM MASSA');
+        console.log('═══════════════════════════════════════════════════════════');
+        
+        // Verificar se o botão está habilitado
+        const btnAtivar = document.getElementById('btnAtivarMassa');
+        console.log('📌 Botão Ativar:', btnAtivar);
+        if (btnAtivar) {
+            console.log('📌 Botão desabilitado?', btnAtivar.disabled);
+            console.log('📌 Botão texto:', btnAtivar.innerHTML);
+        }
+        
+        if (btnAtivar && btnAtivar.disabled) {
+            console.log('❌ Botão desabilitado - nenhum item elegível selecionado');
+            showToast('⚠️ Selecione pelo menos um item elegível', 'warning');
+            return;
+        }
+
+        const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
+        console.log('📌 Destino ID:', destinoId);
+        
+        if (!destinoId) {
+            console.log('❌ Destino não selecionado');
+            showToast('⚠️ Selecione a promoção de destino', 'warning');
+            return;
+        }
+
+        // Pegar itens selecionados
+        const checkboxes = document.querySelectorAll('.bulk-item-checkbox:checked');
+        console.log('📌 Checkboxes selecionados:', checkboxes.length);
+        
+        const selecionados = [];
+        checkboxes.forEach(cb => {
+            const index = parseInt(cb.dataset.index);
+            console.log('📌 Index do checkbox:', index);
+            if (!isNaN(index) && itensFiltrados[index]) {
+                selecionados.push(itensFiltrados[index]);
+            }
+        });
+
+        console.log('📌 Itens selecionados:', selecionados.length);
+
+        if (selecionados.length === 0) {
+            console.log('❌ Nenhum item selecionado');
+            showToast('⚠️ Nenhum item selecionado para ativação', 'warning');
+            return;
+        }
+
+        console.log(`📌 ${selecionados.length} itens selecionados para ativação`);
+        console.log('───────────────────────────────────────────────────────────');
+        
+        console.log('📊 ITENS SELECIONADOS:');
+        selecionados.forEach((item, index) => {
+            const mlb = item.id || item.item_id || 'N/A';
+            const preco = item.precoDestino || item.price || 0;
+            console.log(`   ${index + 1}. ${mlb} - Preço: R$ ${(preco/100).toFixed(2)}`);
+        });
+        console.log('───────────────────────────────────────────────────────────');
+
+        const destinoPromo = todasPromocoes.find(p => p.id === destinoId);
+        if (!destinoPromo) {
+            console.log('❌ Promoção de destino não encontrada');
+            showToast('Promoção de destino não encontrada', 'error');
+            return;
+        }
+
+        console.log(`📌 Promoção de destino: ${destinoPromo.name} (${destinoPromo.id})`);
+        console.log('───────────────────────────────────────────────────────────');
+
+        // Criar modal de confirmação
+        criarModalConfirmacao(selecionados, destinoPromo);
+    };
+
+    // ============================================================
+    // FUNÇÃO PARA CRIAR MODAL DE CONFIRMAÇÃO
+    // ============================================================
+    function criarModalConfirmacao(selecionados, destinoPromo) {
+        console.log('🔵 Criando modal de confirmação...');
+        
+        // Remover modal antigo se existir
+        const modalAntigo = document.getElementById('modalConfirmacaoAtivacao');
+        if (modalAntigo) modalAntigo.remove();
+
+        const modalHTML = `
+            <div id="modalConfirmacaoAtivacao" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 99999; display: flex; align-items: center; justify-content: center;">
+                <div style="background: white; border-radius: 12px; max-width: 750px; width: 95%; max-height: 90vh; overflow-y: auto; padding: 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e9ecef; padding-bottom: 15px; margin-bottom: 20px;">
+                        <h2 style="margin: 0; color: #dc3545; font-size: 22px;">
+                            <i class="fas fa-exclamation-triangle"></i> Confirmar Ativação
+                        </h2>
+                        <button onclick="fecharModalConfirmacao()" 
+                                style="background: none; border: none; font-size: 24px; cursor: pointer; color: #6c757d;">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                        <p style="margin: 5px 0;"><strong><i class="fas fa-tag"></i> Promoção:</strong> ${destinoPromo.name}</p>
+                        <p style="margin: 5px 0;"><strong><i class="fas fa-box"></i> Itens:</strong> ${selecionados.length}</p>
+                        <p style="margin: 5px 0;"><strong><i class="fas fa-calendar"></i> Data:</strong> ${new Date().toLocaleString()}</p>
+                    </div>
+
+                    <div style="max-height: 250px; overflow-y: auto; border: 1px solid #e9ecef; border-radius: 8px; margin-bottom: 20px;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                            <thead style="background: #f8f9fa; position: sticky; top: 0;">
+                                <tr>
+                                    <th style="padding: 6px 8px; text-align: left; border-bottom: 2px solid #dee2e6;">#</th>
+                                    <th style="padding: 6px 8px; text-align: left; border-bottom: 2px solid #dee2e6;">MLB</th>
+                                    <th style="padding: 6px 8px; text-align: right; border-bottom: 2px solid #dee2e6;">Preço</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${selecionados.slice(0, 15).map((item, index) => {
+                                    const preco = item.precoDestino || item.price || 0;
+                                    return `
+                                    <tr style="border-bottom: 1px solid #f1f3f5;">
+                                        <td style="padding: 4px 8px;">${index + 1}</td>
+                                        <td style="padding: 4px 8px; font-weight: 600;">${item.id || item.item_id || 'N/A'}</td>
+                                        <td style="padding: 4px 8px; text-align: right; color: #28a745;">R$ ${(preco/100).toFixed(2)}</td>
+                                    </tr>
+                                `}).join('')}
+                                ${selecionados.length > 15 ? `
+                                    <tr>
+                                        <td colspan="3" style="padding: 8px; text-align: center; color: #6c757d; font-style: italic;">
+                                            ... e mais ${selecionados.length - 15} itens
+                                        </td>
+                                    </tr>
+                                ` : ''}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div style="background: #fff3cd; padding: 12px 15px; border-radius: 8px; border-left: 4px solid #ffc107; margin-bottom: 20px;">
+                        <p style="margin: 0; font-size: 13px;">
+                            <i class="fas fa-info-circle"></i> 
+                            <strong>Atenção:</strong> Esta ação irá ativar os itens na promoção. 
+                            Pode levar alguns minutos.
+                        </p>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 2px solid #e9ecef; padding-top: 20px;">
+                        <button onclick="fecharModalConfirmacao()" 
+                                class="btn btn-secondary" style="padding: 10px 30px; border: none; border-radius: 6px; background: #6c757d; color: white; cursor: pointer; font-size: 14px;">
+                            Cancelar
+                        </button>
+                        <button onclick="window.confirmarAtivacaoMassa()" 
+                                id="btnConfirmarAtivacao"
+                                class="btn btn-success" style="padding: 10px 30px; border: none; border-radius: 6px; background: #28a745; color: white; cursor: pointer; font-size: 14px;">
+                            <i class="fas fa-check"></i> Confirmar Ativação
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        const modalDiv = document.createElement('div');
+        modalDiv.innerHTML = modalHTML;
+        document.body.appendChild(modalDiv.firstElementChild);
+        console.log('✅ Modal de confirmação criado!');
+    }
+
+    // ============================================================
+    // FUNÇÃO PARA FECHAR MODAL DE CONFIRMAÇÃO
+    // ============================================================
+    function fecharModalConfirmacao() {
+        console.log('🔴 Fechando modal de confirmação');
+        const modal = document.getElementById('modalConfirmacaoAtivacao');
+        if (modal) modal.remove();
+    }
+
+    // ============================================================
+    // FUNÇÃO PARA CONFIRMAR E EXECUTAR A ATIVAÇÃO EM MASSA
+    // ============================================================
+    window.confirmarAtivacaoMassa = async function() {
+        console.log('🟢 CONFIRMANDO ATIVAÇÃO EM MASSA');
+        
+        // Fechar modal de confirmação
+        fecharModalConfirmacao();
+
+        // Pegar os itens selecionados novamente
+        const selecionados = [];
+        document.querySelectorAll('.bulk-item-checkbox:checked').forEach(cb => {
+            const index = parseInt(cb.dataset.index);
+            if (!isNaN(index) && itensFiltrados[index]) {
+                selecionados.push(itensFiltrados[index]);
+            }
+        });
+
+        console.log('📌 Itens confirmados:', selecionados.length);
+
+        if (selecionados.length === 0) {
+            showToast('⚠️ Nenhum item selecionado para ativação', 'warning');
+            return;
+        }
+
+        const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
+        if (!destinoId) {
+            showToast('⚠️ Selecione a promoção de destino', 'warning');
+            return;
+        }
+
+        const destinoPromo = todasPromocoes.find(p => p.id === destinoId);
+        if (!destinoPromo) {
+            showToast('⚠️ Promoção de destino não encontrada', 'error');
+            return;
+        }
 
         console.log('🔄 Iniciando ativação em massa...');
 
-        const batchSize = 20;
-        const totalBatches = Math.ceil(selecionados.length / batchSize);
+        // ============================================================
+        // MOSTRAR BARRA DE PROGRESSO
+        // ============================================================
+        mostrarBarraProgresso(
+            `Ativando ${selecionados.length} itens`,
+            `Promoção: ${destinoPromo.name}`
+        );
+        atualizarProgresso(0, 'Preparando ativação...', 'Iniciando processo...', `0 / ${selecionados.length}`);
 
-        for (let i = 0; i < selecionados.length; i += batchSize) {
-            const batch = selecionados.slice(i, i + batchSize);
-            const batchNum = Math.floor(i / batchSize) + 1;
-            
-            // Atualizar progresso
-            const progresso = (i / selecionados.length) * 100;
-            atualizarProgresso(
-                progresso,
-                `Ativando lote ${batchNum}/${totalBatches}`,
-                `${sucessos} sucessos, ${falhas} falhas`,
-                `${Math.min(i + batch.length, selecionados.length)} / ${selecionados.length} itens`
-            );
-            
-            console.log(`📦 Processando lote ${batchNum}/${totalBatches} (${batch.length} itens)...`);
-            
-            const promises = batch.map(async (item) => {
-                const itemId = item.id || item.item_id;
-                const preco = item.precoDestino || item.price || 0;
+        try {
+            const tokenData = await window.getValidToken?.();
+            if (!tokenData?.access_token) {
+                showToast('Token não disponível', 'error');
+                fecharBarraProgresso();
+                return;
+            }
 
-                if (preco <= 0) {
-                    falhas++;
-                    falhasLista.push(`${itemId} (preço inválido: ${preco})`);
-                    return false;
-                }
+            let sucessos = 0;
+            let falhas = 0;
+            const falhasLista = [];
 
-                const url = `https://api.mercadolibre.com/seller-promotions/offers?app_version=v2`;
-                const body = {
-                    promotion_id: destinoId,
-                    item_id: itemId,
-                    price: Math.round(preco * 100)
-                };
+            console.log('🔄 Iniciando ativação em massa...');
 
-                try {
-                    const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
-                    const response = await fetch(proxyUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body)
-                    });
+            const batchSize = 20;
+            const totalBatches = Math.ceil(selecionados.length / batchSize);
 
-                    if (response.ok) {
-                        sucessos++;
-                        console.log(`   ✅ ${itemId} ativado`);
-                        return true;
-                    } else {
-                        const errorText = await response.text();
-                        console.error(`   ❌ Falha ${itemId}: ${errorText}`);
+            for (let i = 0; i < selecionados.length; i += batchSize) {
+                const batch = selecionados.slice(i, i + batchSize);
+                const batchNum = Math.floor(i / batchSize) + 1;
+                
+                // Atualizar progresso
+                const progresso = (i / selecionados.length) * 100;
+                atualizarProgresso(
+                    progresso,
+                    `Ativando lote ${batchNum}/${totalBatches}`,
+                    `${sucessos} sucessos, ${falhas} falhas`,
+                    `${Math.min(i + batch.length, selecionados.length)} / ${selecionados.length} itens`
+                );
+                
+                console.log(`📦 Processando lote ${batchNum}/${totalBatches} (${batch.length} itens)...`);
+                
+                const promises = batch.map(async (item) => {
+                    const itemId = item.id || item.item_id;
+                    const preco = item.precoDestino || item.price || 0;
+
+                    if (preco <= 0) {
                         falhas++;
-                        falhasLista.push(`${itemId}: ${errorText}`);
+                        falhasLista.push(`${itemId} (preço inválido: ${preco})`);
                         return false;
                     }
-                } catch (err) {
-                    console.error(`   ❌ Erro ${itemId}: ${err.message}`);
-                    falhas++;
-                    falhasLista.push(`${itemId}: ${err.message}`);
-                    return false;
-                }
-            });
 
-            await Promise.all(promises);
-            
-            // Atualizar progresso após o lote
-            const progressoFinal = Math.min(((i + batch.length) / selecionados.length) * 100, 99);
-            atualizarProgresso(
-                progressoFinal,
-                `Ativando lote ${batchNum}/${totalBatches}`,
-                `${sucessos} sucessos, ${falhas} falhas`,
-                `${Math.min(i + batch.length, selecionados.length)} / ${selecionados.length} itens`
-            );
-        }
+                    const url = `https://api.mercadolibre.com/seller-promotions/offers?app_version=v2`;
+                    const body = {
+                        promotion_id: destinoId,
+                        item_id: itemId,
+                        price: Math.round(preco)
+                    };
 
-        // ============================================================
-        // FINALIZAR - MOSTRAR RESULTADO
-        // ============================================================
-        console.log('───────────────────────────────────────────────────────────');
-        console.log(`📊 RESULTADO FINAL:`);
-        console.log(`   ✅ Sucessos: ${sucessos}`);
-        console.log(`   ❌ Falhas: ${falhas}`);
-        if (falhasLista.length > 0) {
-            console.log(`   📝 Falhas:`);
-            falhasLista.slice(0, 10).forEach(f => console.log(`      - ${f}`));
-            if (falhasLista.length > 10) {
-                console.log(`      ... e mais ${falhasLista.length - 10} falhas`);
+                    try {
+                        const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
+                        const response = await fetch(proxyUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        });
+
+                        if (response.ok) {
+                            sucessos++;
+                            console.log(`   ✅ ${itemId} ativado`);
+                            return true;
+                        } else {
+                            const errorText = await response.text();
+                            console.error(`   ❌ Falha ${itemId}: ${errorText}`);
+                            falhas++;
+                            falhasLista.push(`${itemId}: ${errorText}`);
+                            return false;
+                        }
+                    } catch (err) {
+                        console.error(`   ❌ Erro ${itemId}: ${err.message}`);
+                        falhas++;
+                        falhasLista.push(`${itemId}: ${err.message}`);
+                        return false;
+                    }
+                });
+
+                await Promise.all(promises);
+                
+                // Atualizar progresso após o lote
+                const progressoFinal = Math.min(((i + batch.length) / selecionados.length) * 100, 99);
+                atualizarProgresso(
+                    progressoFinal,
+                    `Ativando lote ${batchNum}/${totalBatches}`,
+                    `${sucessos} sucessos, ${falhas} falhas`,
+                    `${Math.min(i + batch.length, selecionados.length)} / ${selecionados.length} itens`
+                );
             }
+
+            // ============================================================
+            // FINALIZAR - MOSTRAR RESULTADO
+            // ============================================================
+            console.log('───────────────────────────────────────────────────────────');
+            console.log(`📊 RESULTADO FINAL:`);
+            console.log(`   ✅ Sucessos: ${sucessos}`);
+            console.log(`   ❌ Falhas: ${falhas}`);
+            if (falhasLista.length > 0) {
+                console.log(`   📝 Falhas:`);
+                falhasLista.slice(0, 10).forEach(f => console.log(`      - ${f}`));
+                if (falhasLista.length > 10) {
+                    console.log(`      ... e mais ${falhasLista.length - 10} falhas`);
+                }
+            }
+            console.log('═══════════════════════════════════════════════════════════');
+
+            // Atualizar barra para 100%
+            atualizarProgresso(
+                100,
+                '✅ Ativação concluída!',
+                `${sucessos} sucessos, ${falhas} falhas`,
+                `${selecionados.length} / ${selecionados.length} itens`
+            );
+
+            // Esperar 2 segundos e fechar a barra
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            fecharBarraProgresso();
+
+            let mensagem = `✅ Ativação concluída! ${sucessos} sucessos, ${falhas} falhas`;
+            if (falhas > 0 && falhasLista.length > 0) {
+                mensagem += `\nFalhas: ${falhasLista.slice(0, 3).join(', ')}${falhasLista.length > 3 ? `... (+${falhasLista.length - 3} mais)` : ''}`;
+            }
+            
+            showToast(mensagem, sucessos > 0 ? 'success' : 'error');
+
+            // Recarregar análise após 3 segundos
+            setTimeout(() => {
+                window.analisarItens();
+            }, 3000);
+
+        } catch (error) {
+            console.error('❌ Erro durante ativação em massa:', error);
+            fecharBarraProgresso();
+            showToast('Erro durante ativação em massa: ' + error.message, 'error');
         }
-        console.log('═══════════════════════════════════════════════════════════');
-
-        // Atualizar barra para 100%
-        atualizarProgresso(
-            100,
-            '✅ Ativação concluída!',
-            `${sucessos} sucessos, ${falhas} falhas`,
-            `${selecionados.length} / ${selecionados.length} itens`
-        );
-
-        // Esperar 2 segundos e fechar a barra
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        fecharBarraProgresso();
-
-        let mensagem = `✅ Ativação concluída! ${sucessos} sucessos, ${falhas} falhas`;
-        if (falhas > 0 && falhasLista.length > 0) {
-            mensagem += `\nFalhas: ${falhasLista.slice(0, 3).join(', ')}${falhasLista.length > 3 ? `... (+${falhasLista.length - 3} mais)` : ''}`;
-        }
-        
-        showToast(mensagem, sucessos > 0 ? 'success' : 'error');
-
-        // Recarregar análise após 3 segundos
-        setTimeout(() => {
-            analisarItens();
-        }, 3000);
-
-    } catch (error) {
-        console.error('❌ Erro durante ativação em massa:', error);
-        fecharBarraProgresso();
-        showToast('Erro durante ativação em massa: ' + error.message, 'error');
-    }
-};
-
-// ============================================================
-// FUNÇÃO PARA ATUALIZAR O BOTÃO DE ATIVAÇÃO
-// ============================================================
-function atualizarBotaoAtivacao() {
-    const btnAtivar = document.getElementById('btnAtivarMassa');
-    if (!btnAtivar) return;
-
-    const selecionados = document.querySelectorAll('.bulk-item-checkbox:checked').length;
-    const elegiveis = itensFiltrados.filter(item => item.elegivel).length;
-
-    if (selecionados > 0 && elegiveis > 0) {
-        btnAtivar.disabled = false;
-        btnAtivar.style.opacity = '1';
-        btnAtivar.style.cursor = 'pointer';
-        btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${selecionados} selecionados)`;
-    } else {
-        btnAtivar.disabled = true;
-        btnAtivar.style.opacity = '0.5';
-        btnAtivar.style.cursor = 'not-allowed';
-        btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${elegiveis} elegíveis)`;
-    }
-}
-
-// ============================================================
-// ADICIONAR EVENTO PARA ATUALIZAR BOTÃO QUANDO CHECKBOX MUDA
-// ============================================================
-document.addEventListener('change', function(e) {
-    if (e.target.classList.contains('bulk-item-checkbox')) {
-        atualizarBotaoAtivacao();
-    }
-});
+    };
 
     // ============================================================
     // EXPORTAR ANÁLISE PARA EXCEL
@@ -3113,21 +3406,26 @@ document.addEventListener('change', function(e) {
         try {
             const dados = itensFiltrados.map(item => ({
                 'MLB': item.id || item.item_id || 'N/A',
-                'Preço Origem': item.precoOrigem || 0,
-                '% Origem': item.percentOrigem || 0,
-                'Preço Destino': item.precoDestino !== null ? item.precoDestino : 'N/A',
-                '% Destino': item.percentDestino !== null ? item.percentDestino : 'N/A',
-                'Status': item.elegivel ? 'Elegível' : (item.motivo === '🚫 Bloqueado' ? 'Bloqueado' : 'Não elegível'),
-                'Motivo': item.motivo || ''
+                'Status Origem': item.status || 'N/A',
+                'Preço Origem (R$)': item.precoOrigemReais || 0,
+                '% Desconto Origem': item.percentOrigem || 0,
+                'Preço Destino (R$)': item.precoDestinoReais !== null ? item.precoDestinoReais : 'N/A',
+                '% Desconto Destino': item.percentDestino !== null ? item.percentDestino : 'N/A',
+                'Status Destino': item.statusDestino || 'N/A',
+                'Já Ativo na Destino': item.jaAtivo ? 'Sim' : 'Não',
+                'Elegível': item.elegivel ? 'Sim' : 'Não',
+                'Motivo': item.motivo || '',
+                'Regra Aplicada': item.regraAplicada || ''
             }));
 
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.json_to_sheet(dados);
-            XLSX.utils.book_append_sheet(wb, ws, 'Análise');
+            XLSX.utils.book_append_sheet(wb, ws, 'Análise Promoções');
             
             const colWidths = [
-                { wch: 18 }, { wch: 15 }, { wch: 12 }, 
-                { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 40 }
+                { wch: 18 }, { wch: 15 }, { wch: 15 }, { wch: 18 },
+                { wch: 18 }, { wch: 18 }, { wch: 15 }, { wch: 20 },
+                { wch: 12 }, { wch: 50 }, { wch: 50 }
             ];
             ws['!cols'] = colWidths;
 

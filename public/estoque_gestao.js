@@ -1540,6 +1540,7 @@ function renderizarGraficoHistorico(dados, nomeProduto) {
 
 // =========================================================
 // REGISTRAR VENDAS DE NF-e NO HISTÓRICO (SEM BAIXAR ESTOQUE)
+// VERSÃO ATUALIZADA - COMPARAÇÃO POR 8 CARACTERES
 // =========================================================
 
 window.registrarVendasNFesEmitidas = async function() {
@@ -1581,52 +1582,116 @@ window.registrarVendasNFesEmitidas = async function() {
         let todosSkusEncontrados = [];
         let todosSkusNaoEncontrados = [];
         
-        // ===== FUNÇÃO PARA EXTRAIR SKU REAL E QUANTIDADE =====
-        function extrairSkusDoCodigo(codigo) {
-            if (!codigo) return [];
+        // ===== FUNÇÃO PARA EXTRAIR OS 8 CARACTERES PRINCIPAIS DO SKU =====
+        function extrairSkuBase(sku) {
+            if (!sku) return '';
             
-            console.log(`🔍 Processando código: "${codigo}"`);
+            let skuLimpo = sku.trim();
             
-            if (codigo.includes('.')) {
-                const partes = codigo.split('.');
-                console.log(`📦 ${partes.length} partes encontradas (separadas por ponto)`);
-                
-                const skusExtraidos = [];
-                for (const parte of partes) {
-                    const match = parte.match(/^(\d{3})(.+)$/);
-                    if (match) {
-                        const quantidadePrefixo = parseInt(match[1]);
-                        const skuReal = match[2];
-                        console.log(`  🔹 Parte: "${parte}" → Prefixo: ${quantidadePrefixo}, SKU Real: "${skuReal}"`);
-                        skusExtraidos.push({
-                            sku: skuReal,
-                            quantidadePorKit: quantidadePrefixo || 1
-                        });
-                    } else {
-                        console.log(`  🔹 Parte sem prefixo: "${parte}"`);
-                        skusExtraidos.push({
-                            sku: parte,
-                            quantidadePorKit: 1
-                        });
-                    }
-                }
-                return skusExtraidos;
+            // Remove o prefixo de 3 dígitos (quantidade) se existir
+            if (/^\d{3}/.test(skuLimpo)) {
+                skuLimpo = skuLimpo.replace(/^\d{3}/, '');
+            }
+            
+            // Retorna apenas os 8 primeiros caracteres
+            return skuLimpo.substring(0, 8).toUpperCase();
+        }
+        
+        // =========================================================
+// FUNÇÃO EXTRAIR SKUS DO CÓDIGO - VERSÃO CORRIGIDA
+// =========================================================
+function extrairSkusDoCodigo(codigo) {
+    if (!codigo) return [];
+    
+    console.log(`🔍 Processando código: "${codigo}"`);
+    
+    if (codigo.includes('.')) {
+        const partes = codigo.split('.');
+        console.log(`📦 ${partes.length} partes encontradas (separadas por ponto)`);
+        
+        const skusExtraidos = [];
+        for (const parte of partes) {
+            let skuReal = parte;
+            let quantidadePrefixo = 1;
+            
+            // 🔥 REMOVE 3 DÍGITOS DO SKU DO ANÚNCIO
+            const match = parte.match(/^(\d{3})(.+)$/);
+            if (match) {
+                quantidadePrefixo = parseInt(match[1]) || 1;
+                skuReal = match[2];
+                console.log(`  🔹 Parte com prefixo: "${parte}" → Prefixo: ${quantidadePrefixo}, SKU Real: "${skuReal}"`);
             } else {
-                const match = codigo.match(/^(\d{3})(.+)$/);
-                if (match) {
-                    const quantidadePrefixo = parseInt(match[1]);
-                    const skuReal = match[2];
-                    console.log(`  🔹 SKU com prefixo: Prefixo: ${quantidadePrefixo}, SKU Real: "${skuReal}"`);
-                    return [{
-                        sku: skuReal,
-                        quantidadePorKit: quantidadePrefixo || 1
-                    }];
-                } else {
-                    return [{
-                        sku: codigo,
-                        quantidadePorKit: 1
-                    }];
-                }
+                console.log(`  🔹 Parte sem prefixo: "${parte}"`);
+                skuReal = parte;
+            }
+            
+            // 🔥 USA extrairSkuBaseSistema (NÃO REMOVE NADA) - porque já removemos o prefixo
+            const skuBase = extrairSkuBaseSistema(skuReal);
+            console.log(`  🔹 Base: "${skuBase}"`);
+            
+            skusExtraidos.push({
+                sku: skuReal,
+                skuBase: skuBase,
+                quantidadePorKit: quantidadePrefixo || 1
+            });
+        }
+        return skusExtraidos;
+    } else {
+        let skuReal = codigo;
+        let quantidadePrefixo = 1;
+        
+        // 🔥 REMOVE 3 DÍGITOS DO SKU DO ANÚNCIO
+        const match = codigo.match(/^(\d{3})(.+)$/);
+        if (match) {
+            quantidadePrefixo = parseInt(match[1]) || 1;
+            skuReal = match[2];
+            console.log(`  🔹 SKU com prefixo: "${codigo}" → Prefixo: ${quantidadePrefixo}, SKU Real: "${skuReal}"`);
+        } else {
+            console.log(`  🔹 SKU sem prefixo: "${codigo}"`);
+            skuReal = codigo;
+        }
+        
+        // 🔥 USA extrairSkuBaseSistema (NÃO REMOVE NADA) - porque já removemos o prefixo
+        const skuBase = extrairSkuBaseSistema(skuReal);
+        console.log(`  🔹 Base: "${skuBase}"`);
+        
+        return [{
+            sku: skuReal,
+            skuBase: skuBase,
+            quantidadePorKit: quantidadePrefixo || 1
+        }];
+    }
+}
+        
+        // ===== BUSCAR PRODUTO POR BASE DE 8 CARACTERES =====
+        async function buscarProdutoPorBase(skuBase) {
+            if (!skuBase) return null;
+            
+            // Busca todos os produtos (cache local)
+            if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
+                const encontrado = produtosEstoque.find(p => {
+                    const baseSistema = extrairSkuBase(p.sku);
+                    return baseSistema === skuBase;
+                });
+                if (encontrado) return encontrado;
+            }
+            
+            // Fallback: busca no Supabase
+            try {
+                const { data: produtos, error: prodsError } = await window.supabaseClient
+                    .from('produtos_estoque')
+                    .select('id, quantidade, nome, sku');
+                
+                if (prodsError) return null;
+                
+                const encontrado = produtos.find(p => {
+                    const baseSistema = extrairSkuBase(p.sku);
+                    return baseSistema === skuBase;
+                });
+                return encontrado || null;
+            } catch (e) {
+                console.warn('⚠️ Erro ao buscar produtos no Supabase:', e);
+                return null;
             }
         }
         
@@ -1672,6 +1737,7 @@ window.registrarVendasNFesEmitidas = async function() {
                                     if (skuInfo.sku && skuInfo.sku !== 'SEM_SKU' && skuInfo.sku !== 'N/A' && skuInfo.sku !== '') {
                                         skusParaProcessar.push({
                                             sku: skuInfo.sku,
+                                            skuBase: skuInfo.skuBase,
                                             quantidade: qCom * skuInfo.quantidadePorKit,
                                             nome: xProd || 'Produto',
                                             codigoOriginal: codigoOriginal
@@ -1701,53 +1767,72 @@ window.registrarVendasNFesEmitidas = async function() {
                 let erros = [];
                 
                 for (const item of skusParaProcessar) {
-                    console.log(`🔍 Buscando SKU: "${item.sku}" no estoque...`);
+                    console.log(`🔍 Buscando SKU: "${item.sku}" (base: "${item.skuBase}") no estoque...`);
                     
                     if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A' || item.sku === '') {
                         erros.push(`SKU vazio para ${item.nome}`);
                         continue;
                     }
                     
-                    const skuLimpo = item.sku.trim();
-                    
-                    // ===== TENTAR DIFERENTES FORMAS DE BUSCAR =====
+                    // ===== 1ª TENTATIVA: BUSCAR PELA BASE DE 8 CARACTERES =====
                     let produto = null;
-                    let formasBusca = [
-                        skuLimpo,
-                        skuLimpo.replace(/^0+/, ''),
-                        skuLimpo.padStart(6, '0'),
-                        skuLimpo.toLowerCase(),
-                        skuLimpo.toUpperCase()
-                    ];
                     
-                    formasBusca = [...new Set(formasBusca)];
-                    
-                    for (const skuBusca of formasBusca) {
-                        if (!skuBusca || skuBusca === '') continue;
-                        
-                        const { data: prod, error: prodError } = await window.supabaseClient
-                            .from('produtos_estoque')
-                            .select('id, quantidade, nome, sku')
-                            .eq('sku', skuBusca)
-                            .maybeSingle();
-                        
-                        if (!prodError && prod) {
-                            produto = prod;
-                            console.log(`✅ Produto encontrado com SKU "${skuBusca}": ${prod.sku}`);
-                            break;
+                    if (item.skuBase) {
+                        produto = await buscarProdutoPorBase(item.skuBase);
+                        if (produto) {
+                            console.log(`✅ Produto encontrado pela BASE de 8 caracteres: "${item.skuBase}" → ${produto.sku}`);
                         }
                     }
                     
-                    if (!produto && skuLimpo.length > 5) {
+                    // ===== 2ª TENTATIVA: BUSCAR DIRETAMENTE PELO SKU COMPLETO =====
+                    if (!produto) {
+                        const skuLimpo = item.sku.trim();
+                        const formasBusca = [
+                            skuLimpo,
+                            skuLimpo.replace(/^0+/, ''),
+                            skuLimpo.padStart(6, '0'),
+                            skuLimpo.toLowerCase(),
+                            skuLimpo.toUpperCase()
+                        ];
+                        
+                        for (const skuBusca of [...new Set(formasBusca)]) {
+                            if (!skuBusca || skuBusca === '') continue;
+                            
+                            const { data: prod, error: prodError } = await window.supabaseClient
+                                .from('produtos_estoque')
+                                .select('id, quantidade, nome, sku')
+                                .eq('sku', skuBusca)
+                                .maybeSingle();
+                            
+                            if (!prodError && prod) {
+                                produto = prod;
+                                console.log(`✅ Produto encontrado com SKU "${skuBusca}": ${prod.sku}`);
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // ===== 3ª TENTATIVA: BUSCA PARCIAL (ILIKE) =====
+                    if (!produto && item.skuBase) {
                         const { data: prods, error: prodsError } = await window.supabaseClient
                             .from('produtos_estoque')
                             .select('id, quantidade, nome, sku')
-                            .ilike('sku', `%${skuLimpo}%`)
-                            .limit(1);
+                            .ilike('sku', `%${item.skuBase}%`)
+                            .limit(5);
                         
                         if (!prodsError && prods && prods.length > 0) {
-                            produto = prods[0];
-                            console.log(`✅ Produto encontrado por ILIKE: ${produto.sku} (buscando por ${skuLimpo})`);
+                            // Verifica qual tem a base correspondente
+                            const encontrado = prods.find(p => {
+                                const baseSistema = extrairSkuBase(p.sku);
+                                return baseSistema === item.skuBase;
+                            });
+                            if (encontrado) {
+                                produto = encontrado;
+                                console.log(`✅ Produto encontrado por ILIKE com base correspondente: ${produto.sku}`);
+                            } else {
+                                produto = prods[0];
+                                console.log(`⚠️ Produto encontrado por ILIKE (possível incompatibilidade): ${produto.sku}`);
+                            }
                         }
                     }
                     
@@ -1757,8 +1842,6 @@ window.registrarVendasNFesEmitidas = async function() {
                         todosSkusEncontrados.push(produto.sku);
                         
                         // ===== REGISTRAR NO HISTÓRICO SEM BAIXAR ESTOQUE =====
-                        // Isso cria uma movimentação de "venda" no histórico, mas NÃO altera o estoque
-                        // O estoque já foi baixado quando a NF-e foi emitida originalmente
                         try {
                             const { error: movError } = await window.supabaseClient
                                 .from('estoque_movimentacoes')
@@ -1770,7 +1853,6 @@ window.registrarVendasNFesEmitidas = async function() {
                                     numero_documento: `NFE-${chave.substring(0, 10)}`,
                                     tipo_entrada: 'venda',
                                     data_hora: nfe.data_emissao || new Date().toISOString(),
-                                    // NÃO INCLUI saldo_apos para não alterar o estoque
                                 }]);
                             
                             if (movError) {
@@ -1784,7 +1866,7 @@ window.registrarVendasNFesEmitidas = async function() {
                             console.warn(`⚠️ Erro ao registrar venda:`, movErr);
                         }
                     } else {
-                        const msg = `SKU "${item.sku}" não encontrado no estoque (original: ${item.codigoOriginal})`;
+                        const msg = `SKU "${item.sku}" (base: "${item.skuBase}") não encontrado no estoque (original: ${item.codigoOriginal})`;
                         erros.push(msg);
                         todosSkusNaoEncontrados.push(item.sku);
                         console.warn(`❌ ${msg}`);
@@ -1852,14 +1934,15 @@ window.registrarVendasNFesEmitidas = async function() {
     }
 };
 
-console.log('✅ Função registrarVendasNFesEmitidas registrada (versão sem baixar estoque)');
+console.log('✅ Função registrarVendasNFesEmitidas registrada (versão com comparação por 8 caracteres)');
 
 // =========================================================
-// REVERTER ESTOQUE DAS NF-e (SEM DEPENDER DE COLUNAS ESPECÍFICAS)
+// REVERTER ESTOQUE DAS NF-e (VERSÃO ATUALIZADA)
+// COMPARAÇÃO POR 8 CARACTERES
 // =========================================================
 
 window.reverterEstoqueNFes = async function() {
-    console.log('🔄 Iniciando reversão de estoque das NF-e...');
+    console.log('🔄 Iniciando reversão de estoque das NF-e (compara por 8 caracteres)...');
     
     try {
         if (!window.supabaseClient) {
@@ -1867,13 +1950,13 @@ window.reverterEstoqueNFes = async function() {
             return;
         }
         
-        if (!confirm('⚠️ Isso vai REVERTER o estoque das NF-e que foram baixadas incorretamente.\n\nDeseja continuar?')) {
+        if (!confirm('⚠️ Isso vai REVERTER o estoque das NF-e que foram baixadas incorretamente.\n\nA comparação será feita pelos 8 primeiros caracteres do SKU.\n\nDeseja continuar?')) {
             return;
         }
         
         showToast('🔄 Revertendo estoque...', 'info');
         
-        // Buscar TODAS as NF-e (vamos identificar manualmente quais têm movimentações)
+        // Buscar TODAS as NF-e
         const { data: nfes, error } = await window.supabaseClient
             .from('nfe_emitidas')
             .select('*')
@@ -1898,46 +1981,101 @@ window.reverterEstoqueNFes = async function() {
         let totalErros = 0;
         let nfesRevertidas = 0;
         let detalhes = [];
+        let produtosRevertidosList = [];
         
-        // ===== FUNÇÃO PARA EXTRAIR SKU REAL E QUANTIDADE =====
-        function extrairSkusDoCodigo(codigo) {
-            if (!codigo) return [];
+        // ===== FUNÇÃO PARA EXTRAIR OS 8 CARACTERES PRINCIPAIS DO SKU =====
+        function extrairSkuBase(sku) {
+            if (!sku) return '';
             
-            if (codigo.includes('.')) {
-                const partes = codigo.split('.');
-                const skusExtraidos = [];
-                for (const parte of partes) {
-                    const match = parte.match(/^(\d{3})(.+)$/);
-                    if (match) {
-                        const quantidadePrefixo = parseInt(match[1]);
-                        const skuReal = match[2];
-                        skusExtraidos.push({
-                            sku: skuReal,
-                            quantidadePorKit: quantidadePrefixo || 1
-                        });
-                    } else {
-                        skusExtraidos.push({
-                            sku: parte,
-                            quantidadePorKit: 1
-                        });
-                    }
-                }
-                return skusExtraidos;
-            } else {
-                const match = codigo.match(/^(\d{3})(.+)$/);
-                if (match) {
-                    return [{
-                        sku: match[2],
-                        quantidadePorKit: parseInt(match[1]) || 1
-                    }];
-                } else {
-                    return [{
-                        sku: codigo,
-                        quantidadePorKit: 1
-                    }];
-                }
+            let skuLimpo = sku.trim();
+            
+            // Remove o prefixo de 3 dígitos (quantidade) se existir
+            if (/^\d{3}/.test(skuLimpo)) {
+                skuLimpo = skuLimpo.replace(/^\d{3}/, '');
             }
+            
+            // Retorna apenas os 8 primeiros caracteres
+            return skuLimpo.substring(0, 8).toUpperCase();
         }
+        
+        function extrairSkusDoCodigo(codigo) {
+    if (!codigo) return [];
+    
+    console.log(`🔍 Processando código: "${codigo}"`);
+    
+    // Remove prefixo de 3 dígitos se existir
+    let skuReal = codigo;
+    let quantidadePrefixo = 1;
+    
+    const match = codigo.match(/^(\d{3})(.+)$/);
+    if (match) {
+        quantidadePrefixo = parseInt(match[1]) || 1;
+        skuReal = match[2];
+        console.log(`  🔹 Prefixo: ${quantidadePrefixo}, SKU Real: "${skuReal}"`);
+    } else {
+        console.log(`  🔹 Sem prefixo: "${codigo}"`);
+        skuReal = codigo;
+    }
+    
+    const skuBase = extrairSkuBase(skuReal);
+    return [{
+        sku: skuReal,
+        skuBase: skuBase,
+        quantidadePorKit: quantidadePrefixo || 1
+    }];
+}
+        
+        // =========================================================
+// FUNÇÃO BUSCAR PRODUTO POR BASE - VERSÃO CORRIGIDA
+// =========================================================
+async function buscarProdutoPorBase(skuBase) {
+    if (!skuBase) return null;
+    
+    console.log(`🔍 Buscando produto com base: "${skuBase}"`);
+    
+    // Busca no cache local
+    if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque) && produtosEstoque.length > 0) {
+        const encontrado = produtosEstoque.find(p => {
+            // 🔥 USA extrairSkuBaseSistema (NÃO REMOVE NADA)
+            const baseSistema = extrairSkuBaseSistema(p.sku);
+            return baseSistema === skuBase;
+        });
+        if (encontrado) {
+            console.log(`✅ Produto encontrado no cache: ${encontrado.sku}`);
+            return encontrado;
+        }
+    }
+    
+    // Fallback: busca no Supabase
+    try {
+        if (!window.supabaseClient) return null;
+        
+        const { data: produtos, error: prodsError } = await window.supabaseClient
+            .from('produtos_estoque')
+            .select('id, quantidade, nome, sku, dados_extra, preco, categoria');
+        
+        if (prodsError) {
+            console.warn('⚠️ Erro ao buscar produtos no Supabase:', prodsError);
+            return null;
+        }
+        
+        const encontrado = produtos.find(p => {
+            const baseSistema = extrairSkuBaseSistema(p.sku);
+            return baseSistema === skuBase;
+        });
+        
+        if (encontrado) {
+            console.log(`✅ Produto encontrado no Supabase: ${encontrado.sku}`);
+            return encontrado;
+        }
+        
+        console.log(`❌ Produto não encontrado para base: "${skuBase}"`);
+        return null;
+    } catch (e) {
+        console.warn('⚠️ Erro ao buscar produtos no Supabase:', e);
+        return null;
+    }
+}
         
         for (const nfe of nfes) {
             try {
@@ -1975,6 +2113,7 @@ window.reverterEstoqueNFes = async function() {
                                     if (skuInfo.sku && skuInfo.sku !== 'SEM_SKU' && skuInfo.sku !== 'N/A' && skuInfo.sku !== '') {
                                         skusParaReverter.push({
                                             sku: skuInfo.sku,
+                                            skuBase: skuInfo.skuBase,
                                             quantidade: qCom * skuInfo.quantidadePorKit
                                         });
                                     }
@@ -2005,6 +2144,7 @@ window.reverterEstoqueNFes = async function() {
                                     if (skuInfo.sku && skuInfo.sku !== 'SEM_SKU') {
                                         skusParaReverter.push({
                                             sku: skuInfo.sku,
+                                            skuBase: skuInfo.skuBase,
                                             quantidade: qtd * skuInfo.quantidadePorKit
                                         });
                                     }
@@ -2030,44 +2170,66 @@ window.reverterEstoqueNFes = async function() {
                 for (const item of skusParaReverter) {
                     if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
                     
-                    const skuLimpo = item.sku.trim();
+                    console.log(`🔍 Buscando SKU: "${item.sku}" (base: "${item.skuBase}") para reverter...`);
                     
-                    // Buscar produto no estoque
+                    // ===== 1ª TENTATIVA: BUSCAR PELA BASE DE 8 CARACTERES =====
                     let produto = null;
-                    let formasBusca = [
-                        skuLimpo,
-                        skuLimpo.replace(/^0+/, ''),
-                        skuLimpo.padStart(6, '0'),
-                        skuLimpo.toLowerCase(),
-                        skuLimpo.toUpperCase()
-                    ];
                     
-                    formasBusca = [...new Set(formasBusca)];
-                    
-                    for (const skuBusca of formasBusca) {
-                        if (!skuBusca || skuBusca === '') continue;
-                        
-                        const { data: prod, error: prodError } = await window.supabaseClient
-                            .from('produtos_estoque')
-                            .select('id, quantidade, nome, sku')
-                            .eq('sku', skuBusca)
-                            .maybeSingle();
-                        
-                        if (!prodError && prod) {
-                            produto = prod;
-                            break;
+                    if (item.skuBase) {
+                        produto = await buscarProdutoPorBase(item.skuBase);
+                        if (produto) {
+                            console.log(`✅ Produto encontrado pela BASE de 8 caracteres: "${item.skuBase}" → ${produto.sku}`);
                         }
                     }
                     
-                    if (!produto && skuLimpo.length > 5) {
-                        const { data: prods } = await window.supabaseClient
+                    // ===== 2ª TENTATIVA: BUSCAR DIRETAMENTE PELO SKU COMPLETO =====
+                    if (!produto) {
+                        const skuLimpo = item.sku.trim();
+                        const formasBusca = [
+                            skuLimpo,
+                            skuLimpo.replace(/^0+/, ''),
+                            skuLimpo.padStart(6, '0'),
+                            skuLimpo.toLowerCase(),
+                            skuLimpo.toUpperCase()
+                        ];
+                        
+                        for (const skuBusca of [...new Set(formasBusca)]) {
+                            if (!skuBusca || skuBusca === '') continue;
+                            
+                            const { data: prod, error: prodError } = await window.supabaseClient
+                                .from('produtos_estoque')
+                                .select('id, quantidade, nome, sku')
+                                .eq('sku', skuBusca)
+                                .maybeSingle();
+                            
+                            if (!prodError && prod) {
+                                produto = prod;
+                                console.log(`✅ Produto encontrado com SKU "${skuBusca}": ${prod.sku}`);
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // ===== 3ª TENTATIVA: BUSCA PARCIAL (ILIKE) =====
+                    if (!produto && item.skuBase) {
+                        const { data: prods, error: prodsError } = await window.supabaseClient
                             .from('produtos_estoque')
                             .select('id, quantidade, nome, sku')
-                            .ilike('sku', `%${skuLimpo}%`)
-                            .limit(1);
+                            .ilike('sku', `%${item.skuBase}%`)
+                            .limit(5);
                         
-                        if (prods && prods.length > 0) {
-                            produto = prods[0];
+                        if (!prodsError && prods && prods.length > 0) {
+                            const encontrado = prods.find(p => {
+                                const baseSistema = extrairSkuBase(p.sku);
+                                return baseSistema === item.skuBase;
+                            });
+                            if (encontrado) {
+                                produto = encontrado;
+                                console.log(`✅ Produto encontrado por ILIKE com base correspondente: ${produto.sku}`);
+                            } else {
+                                produto = prods[0];
+                                console.log(`⚠️ Produto encontrado por ILIKE (possível incompatibilidade): ${produto.sku}`);
+                            }
                         }
                     }
                     
@@ -2086,6 +2248,7 @@ window.reverterEstoqueNFes = async function() {
                         
                         if (updateError) {
                             erros.push(`Erro ao reverter ${produto.sku}: ${updateError.message}`);
+                            console.error(`❌ Erro ao reverter ${produto.sku}:`, updateError);
                         } else {
                             itensRevertidos++;
                             produtosRevertidos.push({
@@ -2093,10 +2256,16 @@ window.reverterEstoqueNFes = async function() {
                                 quantidade: quantidadeReverter,
                                 novaQuantidade: novaQuantidade
                             });
+                            produtosRevertidosList.push({
+                                sku: produto.sku,
+                                quantidade: quantidadeReverter,
+                                nfe: chave.substring(0, 10)
+                            });
                             console.log(`✅ Estoque revertido: ${produto.sku} +${quantidadeReverter} (agora: ${novaQuantidade})`);
                         }
                     } else {
-                        erros.push(`SKU "${item.sku}" não encontrado`);
+                        erros.push(`SKU "${item.sku}" (base: "${item.skuBase}") não encontrado`);
+                        console.warn(`❌ SKU não encontrado: "${item.sku}" (base: "${item.skuBase}")`);
                     }
                 }
                 
@@ -2107,18 +2276,28 @@ window.reverterEstoqueNFes = async function() {
                     // Registrar no histórico a reversão
                     for (const prod of produtosRevertidos) {
                         try {
-                            await window.supabaseClient
-                                .from('estoque_movimentacoes')
-                                .insert([{
-                                    produto_id: (await window.supabaseClient.from('produtos_estoque').select('id').eq('sku', prod.sku).single()).data?.id,
-                                    tipo: 'entrada',
-                                    quantidade: prod.quantidade,
-                                    usuario: 'Sistema (Reversão NF-e)',
-                                    numero_documento: `REV-${chave.substring(0, 10)}`,
-                                    tipo_entrada: 'reversao',
-                                    data_hora: new Date().toISOString()
-                                }]);
-                        } catch (e) {}
+                            const { data: prodData } = await window.supabaseClient
+                                .from('produtos_estoque')
+                                .select('id')
+                                .eq('sku', prod.sku)
+                                .single();
+                            
+                            if (prodData) {
+                                await window.supabaseClient
+                                    .from('estoque_movimentacoes')
+                                    .insert([{
+                                        produto_id: prodData.id,
+                                        tipo: 'entrada',
+                                        quantidade: prod.quantidade,
+                                        usuario: 'Sistema (Reversão NF-e)',
+                                        numero_documento: `REV-${chave.substring(0, 10)}`,
+                                        tipo_entrada: 'reversao',
+                                        data_hora: new Date().toISOString()
+                                    }]);
+                            }
+                        } catch (e) {
+                            console.warn('⚠️ Erro ao registrar movimentação de reversão:', e);
+                        }
                     }
                 }
                 
@@ -2144,13 +2323,23 @@ window.reverterEstoqueNFes = async function() {
         console.log(`✅ Itens revertidos: ${totalRevertido}`);
         console.log(`❌ Erros: ${totalErros}`);
         
+        if (produtosRevertidosList.length > 0) {
+            console.log('📦 Produtos revertidos:');
+            produtosRevertidosList.forEach(p => {
+                console.log(`  - ${p.sku}: +${p.quantidade} (NF: ${p.nfe})`);
+            });
+        }
+        
         let mensagem = `✅ ${totalRevertido} item(ns) revertidos em ${nfesRevertidas} NF-e!`;
         if (totalErros > 0) {
             mensagem += ` ⚠️ ${totalErros} erro(s) encontrados.`;
         }
+        if (totalRevertido === 0) {
+            mensagem = 'ℹ️ Nenhum item foi revertido. Verifique se as NF-e já foram processadas.';
+        }
         showToast(mensagem, totalErros > 0 ? 'warning' : 'success');
         
-        return { totalRevertido, totalErros, nfesRevertidas, detalhes };
+        return { totalRevertido, totalErros, nfesRevertidas, detalhes, produtosRevertidos: produtosRevertidosList };
         
     } catch (error) {
         console.error('❌ Erro ao reverter estoque:', error);
@@ -2159,7 +2348,7 @@ window.reverterEstoqueNFes = async function() {
     }
 };
 
-console.log('✅ Função reverterEstoqueNFes registrada (versão sem colunas específicas)');
+console.log('✅ Função reverterEstoqueNFes registrada (versão com comparação por 8 caracteres)');
 
 // =========================================================
 // REGISTRAR VENDA NO ESTOQUE (CHAMADO PELA EMISSÃO DE NF-E)
@@ -3696,7 +3885,7 @@ function configurarBulkModeEvents() {
 }
 
 // =========================================================
-// SINCRONIZAÇÃO COM MERCADO LIVRE
+// SINCRONIZAR ESTOQUE COM MERCADO LIVRE - VERSÃO CORRIGIDA
 // =========================================================
 
 async function sincronizarEstoqueML(produto) {
@@ -3724,12 +3913,516 @@ async function sincronizarEstoqueML(produto) {
     const marcaProduto = produto.dados_extra?.marca || '';
     const modeloProduto = produto.dados_extra?.modelo || '';
 
-    const skusFilhos = await carregarSkusKit(skuProduto);
-    const isKitPai = skusFilhos && skusFilhos.length > 0;
-
-    if (isKitPai) {
-        console.log(`📦 Produto ${skuProduto} é um KIT pai com ${skusFilhos.length} SKUs filhos`);
+    // ===== FUNÇÃO PARA EXTRAIR OS 8 CARACTERES PRINCIPAIS DO SKU =====
+    function extrairSkuBase(sku) {
+        if (!sku) return '';
+        
+        let skuLimpo = sku.trim();
+        
+        // Remove os 3 primeiros dígitos (prefixo de quantidade do ML)
+        let skuReal = skuLimpo;
+        const match = skuLimpo.match(/^\d{3}(.+)$/);
+        if (match) {
+            skuReal = match[1];
+        }
+        
+        // Retorna os 8 primeiros caracteres
+        return skuReal.substring(0, 8).toUpperCase();
     }
+
+    // =========================================================
+// FUNÇÃO PARA EXTRAIR SKU DA VARIAÇÃO
+// =========================================================
+function extrairSkuDaVariacao(variacao) {
+    if (variacao.seller_custom_field) return variacao.seller_custom_field;
+    if (variacao.attributes && Array.isArray(variacao.attributes)) {
+        const skuAttr = variacao.attributes.find(attr => attr.id === 'SELLER_SKU');
+        if (skuAttr && skuAttr.value_name) return skuAttr.value_name;
+    }
+    if (variacao.sku) return variacao.sku;
+    return null;
+}
+
+// FUNÇÃO PARA EXTRAIR SKU DO ITEM
+// =========================================================
+function extrairSkuDoItem(item) {
+    if (item.seller_custom_field) return item.seller_custom_field;
+    if (item.attributes && Array.isArray(item.attributes)) {
+        const skuAttr = item.attributes.find(attr => attr.id === 'SELLER_SKU');
+        if (skuAttr && skuAttr.value_name) return skuAttr.value_name;
+    }
+    if (item.sku) return item.sku;
+    return null;
+}
+
+    // =========================================================
+// FUNÇÃO ENCONTRAR VARIAÇÃO POR SKU - VERSÃO CORRIGIDA
+// =========================================================
+function encontrarVariacaoPorSKU(item, skuProduto) {
+    if (!item.variations || item.variations.length === 0) return null;
+    
+    // 🔥 USA extrairSkuBaseSistema (NÃO REMOVE NADA)
+    const skuBase = extrairSkuBaseSistema(skuProduto);
+    if (!skuBase) return null;
+    
+    console.log(`🔍 Buscando variação com base: "${skuBase}"`);
+    
+    for (const v of item.variations) {
+        let identificador = extrairSkuDaVariacao(v);
+        if (identificador) {
+            // 🔥 USA extrairSkuBaseAnuncio (REMOVE 3 DÍGITOS)
+            const variacaoBase = extrairSkuBaseAnuncio(identificador);
+            console.log(`   Comparando: "${variacaoBase}" vs "${skuBase}"`);
+            if (variacaoBase === skuBase) {
+                console.log(`✅ Variação encontrada: ${identificador}`);
+                return v;
+            }
+        }
+    }
+    
+    // Fallback: busca por SKU exato (comparação direta)
+    const skuExato = skuProduto ? skuProduto.trim().toUpperCase() : '';
+    if (skuExato) {
+        for (const v of item.variations) {
+            let identificador = extrairSkuDaVariacao(v);
+            if (identificador && identificador.toUpperCase() === skuExato) {
+                console.log(`✅ Variação encontrada por SKU exato: ${identificador}`);
+                return v;
+            }
+        }
+    }
+    
+    console.log(`⚠️ Nenhuma variação encontrada para base: "${skuBase}"`);
+    return null;
+}
+
+    // ===== OBTER SKU DO ANÚNCIO =====
+    function obterSkuAnuncio(item, skuProduto) {
+        let skuAnuncio = null;
+        
+        if (item.variations && item.variations.length > 0) {
+            const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+            if (variacaoAlvo) {
+                skuAnuncio = extrairSkuDaVariacao(variacaoAlvo);
+            } else {
+                for (const v of item.variations) {
+                    const testSku = extrairSkuDaVariacao(v);
+                    if (testSku && testSku.match(/\d/)) {
+                        skuAnuncio = testSku;
+                        break;
+                    }
+                }
+            }
+        } else {
+            skuAnuncio = extrairSkuDoItem(item);
+        }
+        
+        return skuAnuncio;
+    }
+
+// =========================================================
+// FUNÇÃO PARA EXTRAIR BASE DO SKU DO SISTEMA (NÃO REMOVE NADA)
+// =========================================================
+function extrairSkuBaseSistema(sku) {
+    if (!sku) return '';
+    // 🔥 NÃO REMOVE NADA, SÓ PEGA OS 8 PRIMEIROS CARACTERES
+    const base = sku.trim().substring(0, 8).toUpperCase();
+    console.log(`📊 [SISTEMA] SKU: "${sku}" → Base: "${base}"`);
+    return base;
+}
+
+// =========================================================
+// FUNÇÃO PARA EXTRAIR BASE DO SKU DO ANÚNCIO (REMOVE 3 DÍGITOS)
+// =========================================================
+function extrairSkuBaseAnuncio(sku) {
+    if (!sku) return '';
+    
+    let skuLimpo = sku.trim();
+    let skuReal = skuLimpo;
+    
+    // 🔥 REMOVE APENAS OS 3 PRIMEIROS DÍGITOS (prefixo de quantidade do ML)
+    const match = skuLimpo.match(/^\d{3}(.+)$/);
+    if (match) {
+        skuReal = match[1];
+        console.log(`📊 [ANÚNCIO] SKU: "${skuLimpo}" → remove 3 dígitos → "${skuReal}"`);
+    } else {
+        console.log(`📊 [ANÚNCIO] SKU sem prefixo: "${skuLimpo}"`);
+    }
+    
+    // 🔥 EXTRAI OS 8 PRIMEIROS CARACTERES
+    const base = skuReal.substring(0, 8).toUpperCase();
+    console.log(`📊 [ANÚNCIO] Base: "${base}"`);
+    return base;
+}
+
+// =========================================================
+// FUNÇÃO CALCULAR QUANTIDADE COM REGRAS - VERSÃO CORRIGIDA
+// =========================================================
+function calcularQuantidadeComRegras(quantidadeBase, categoria, item, skuProduto, marcaProduto, modeloProduto, produto, skusFilhos, skuAnuncio) {
+    console.log(`📊 [calcularQuantidadeComRegras] SKU: ${skuProduto}, Estoque: ${quantidadeBase}, Categoria: ${categoria}`);
+    console.log(`📊 SKU do anúncio: ${skuAnuncio}`);
+    
+    // 🔥 USA extrairSkuBaseSistema (NÃO REMOVE NADA)
+    const skuBaseSistema = extrairSkuBaseSistema(skuProduto);
+    console.log(`📊 Base do SKU do sistema (8 caracteres): "${skuBaseSistema}"`);
+    
+    let quantidadeFinal = 0;
+    
+    // 🔥 VERIFICA SE É KIT PELO SKU DO ANÚNCIO (tem ponto)
+    const ehKit = skuAnuncio && skuAnuncio.includes('.');
+    console.log(`📊 É um KIT? ${ehKit ? '✅ SIM' : '❌ NÃO'}`);
+    
+    // 🔥 SE FOR KIT (tem ponto no SKU do anúncio)
+    if (ehKit) {
+        console.log(`📊 PROCESSANDO COMO KIT...`);
+        
+        const skusDoKit = skuAnuncio.split('.');
+        console.log(`📊 SKUs do kit:`, skusDoKit);
+        
+        let kitsPossiveis = Infinity;
+        const quantidadesPorKit = [];
+        
+        for (const skuComPrefixo of skusDoKit) {
+            // 🔥 REMOVE 3 DÍGITOS DO SKU DO ANÚNCIO
+            let skuReal = skuComPrefixo;
+            let prefixo = 1;
+            
+            const match = skuComPrefixo.match(/^(\d{3})(.+)$/);
+            if (match) {
+                prefixo = parseInt(match[1]) || 1;
+                skuReal = match[2];
+                console.log(`📊 Produto: "${skuComPrefixo}" → Prefixo: ${prefixo}, SKU Real: "${skuReal}"`);
+            } else {
+                console.log(`📊 Produto sem prefixo: "${skuComPrefixo}"`);
+                skuReal = skuComPrefixo;
+            }
+            
+            // 🔥 USA extrairSkuBaseAnuncio (REMOVE 3 DÍGITOS) - MAS O SKU JÁ FOI LIMPO
+            // Usamos extrairSkuBaseSistema porque já removemos o prefixo
+            const skuBaseReal = extrairSkuBaseSistema(skuReal);
+            console.log(`📊 Base do SKU real (8 caracteres): "${skuBaseReal}"`);
+            
+            // 🔥 COMPARA PELA BASE DE 8 CARACTERES
+            let produtoEstoque = null;
+            if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+                produtoEstoque = produtosEstoque.find(p => {
+                    const baseSistema = extrairSkuBaseSistema(p.sku);
+                    return baseSistema === skuBaseReal;
+                });
+            }
+            
+            if (!produtoEstoque) {
+                console.log(`❌ Produto não encontrado no estoque: ${skuReal} (base: ${skuBaseReal})`);
+                // Tenta buscar pelo SKU completo
+                if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+                    const fallback = produtosEstoque.find(p => p.sku === skuReal);
+                    if (fallback) {
+                        console.log(`✅ Produto encontrado por SKU completo: ${fallback.sku}`);
+                        const kitsDoProduto = Math.floor(fallback.quantidade / prefixo);
+                        quantidadesPorKit.push({
+                            sku: fallback.sku,
+                            estoque: fallback.quantidade,
+                            prefixo: prefixo,
+                            kits: kitsDoProduto
+                        });
+                        if (kitsDoProduto < kitsPossiveis) {
+                            kitsPossiveis = kitsDoProduto;
+                        }
+                        continue;
+                    }
+                }
+                return 0;
+            }
+            
+            console.log(`📊 ${skuReal} → ${produtoEstoque.sku} tem ${produtoEstoque.quantidade} unidades em estoque`);
+            
+            const kitsDoProduto = Math.floor(produtoEstoque.quantidade / prefixo);
+            console.log(`📊 ${produtoEstoque.sku} → ${produtoEstoque.quantidade} / ${prefixo} = ${kitsDoProduto} kits`);
+            
+            quantidadesPorKit.push({
+                sku: produtoEstoque.sku,
+                estoque: produtoEstoque.quantidade,
+                prefixo: prefixo,
+                kits: kitsDoProduto
+            });
+            
+            if (kitsDoProduto < kitsPossiveis) {
+                kitsPossiveis = kitsDoProduto;
+            }
+        }
+        
+        console.log(`📊 Total de kits completos possíveis: ${kitsPossiveis}`);
+        quantidadeFinal = kitsPossiveis;
+        
+        console.log(`📊 RESUMO DO KIT:`);
+        quantidadesPorKit.forEach(q => {
+            console.log(`  - ${q.sku}: ${q.estoque} uni. → ${q.prefixo} por kit → ${q.kits} kits`);
+        });
+        console.log(`  📦 Total de kits completos: ${quantidadeFinal}`);
+    } 
+    // 🔥 PRODUTO NORMAL (sem ponto no SKU)
+    else {
+        console.log(`📊 PRODUTO NORMAL (não é kit)`);
+        
+        // 🔥 REMOVE 3 DÍGITOS DO SKU DO ANÚNCIO
+        let skuReal = skuAnuncio || skuProduto;
+        let prefixo = 1;
+        
+        const match = skuAnuncio ? skuAnuncio.match(/^(\d{3})(.+)$/) : null;
+        if (match) {
+            prefixo = parseInt(match[1]) || 1;
+            skuReal = match[2];
+            console.log(`📊 SKU com prefixo: Prefixo: ${prefixo}, SKU Real: ${skuReal}`);
+        } else {
+            console.log(`📊 Sem prefixo, usando SKU original: ${skuReal}`);
+        }
+        
+        // 🔥 USA extrairSkuBaseSistema (NÃO REMOVE NADA) - porque já removemos o prefixo
+        const skuBaseReal = extrairSkuBaseSistema(skuReal);
+        console.log(`📊 Base do SKU real (8 caracteres): "${skuBaseReal}"`);
+        
+        // 🔥 COMPARA PELA BASE DE 8 CARACTERES
+        let produtoEstoque = null;
+        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+            produtoEstoque = produtosEstoque.find(p => {
+                const baseSistema = extrairSkuBaseSistema(p.sku);
+                return baseSistema === skuBaseReal;
+            });
+        }
+        
+        if (produtoEstoque) {
+            const quantidadeCalculada = Math.floor(produtoEstoque.quantidade / prefixo);
+            console.log(`📊 ${produtoEstoque.sku} → ${produtoEstoque.quantidade} / ${prefixo} = ${quantidadeCalculada}`);
+            quantidadeFinal = quantidadeCalculada;
+        } else {
+            // Tenta buscar pelo SKU completo
+            if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
+                const fallback = produtosEstoque.find(p => p.sku === skuReal);
+                if (fallback) {
+                    console.log(`✅ Produto encontrado por SKU completo: ${fallback.sku}`);
+                    const quantidadeCalculada = Math.floor(fallback.quantidade / prefixo);
+                    quantidadeFinal = quantidadeCalculada;
+                } else {
+                    console.log(`⚠️ Produto não encontrado: ${skuReal} (base: ${skuBaseReal})`);
+                    quantidadeFinal = 0;
+                }
+            } else {
+                console.log(`⚠️ Produto não encontrado: ${skuReal} (base: ${skuBaseReal})`);
+                quantidadeFinal = 0;
+            }
+        }
+    }
+    
+    // ===== OBTER PREÇO DO ANÚNCIO =====
+    let precoAnuncio = 0;
+    if (item.variations && item.variations.length > 0) {
+        const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+        if (variacaoAlvo) {
+            precoAnuncio = variacaoAlvo.price || 0;
+        } else {
+            precoAnuncio = item.variations[0]?.price || item.price || 0;
+        }
+    } else {
+        precoAnuncio = item.price || 0;
+    }
+    console.log(`📊 Preço do anúncio: R$ ${precoAnuncio}`);
+    
+    // ===== CALCULAR ESTOQUE MÁXIMO PERMITIDO PELA REGRA DA CATEGORIA =====
+    const estoqueMaximo = calcularEstoqueMaximo({ 
+        preco: precoAnuncio, 
+        categoria: categoria,
+        sku: skuProduto
+    });
+    console.log(`📊 Estoque máximo permitido (regra do modal): ${estoqueMaximo}`);
+    
+    // ===== APLICAR LIMITE MÁXIMO =====
+    if (quantidadeFinal > estoqueMaximo) {
+        console.log(`📊 Aplicando limite do modal: ${quantidadeFinal} → ${estoqueMaximo}`);
+        quantidadeFinal = estoqueMaximo;
+    }
+    
+    // ===== REGRA ESPECÍFICA PARA RAIOS =====
+    if (categoria === 'Raios') {
+        const regra = obterRegraRaios(marcaProduto, modeloProduto);
+        if (regra && regra.max_kits !== undefined) {
+            console.log(`📊 Aplicando regra de Raios: ${quantidadeFinal} → ${regra.max_kits}`);
+            quantidadeFinal = Math.min(quantidadeFinal, regra.max_kits);
+        }
+    }
+    
+    // ===== GARANTIR QUE RESPEITA O ESTOQUE MÁXIMO =====
+    if (quantidadeFinal > estoqueMaximo) {
+        console.log(`📊 Reforçando limite: ${quantidadeFinal} → ${estoqueMaximo}`);
+        quantidadeFinal = estoqueMaximo;
+    }
+    
+    // ===== GARANTIR QUE NUNCA SEJA NEGATIVO =====
+    quantidadeFinal = Math.max(0, quantidadeFinal);
+    
+    console.log(`✅ Quantidade final: ${quantidadeFinal}`);
+    return quantidadeFinal;
+}
+
+    // ===== ATUALIZAR ESTOQUE FULL COM CONVIVÊNCIA =====
+    async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, token, workerUrl, item) {
+        try {
+            console.log(`📦 [FULL] Atualizando estoque do item ${itemId} para ${quantidade} unidades`);
+            
+            if (!userProductId) {
+                console.warn('⚠️ userProductId vazio, tentando obter do item...');
+                if (item && item.user_product_id) {
+                    userProductId = item.user_product_id;
+                } else {
+                    return { success: false, error: 'user_product_id não disponível' };
+                }
+            }
+            
+            // Método 1: /items/{item_id}/stock
+            try {
+                const stockUrl = `https://api.mercadolibre.com/items/${itemId}/stock`;
+                const stockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`;
+                
+                const getStockRes = await fetch(stockProxy);
+                if (getStockRes.ok) {
+                    const stockData = await getStockRes.json();
+                    const requestBody = { available_quantity: quantidade };
+                    
+                    const updateRes = await fetch(stockProxy, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody)
+                    });
+                    
+                    if (updateRes.status === 200 || updateRes.status === 204) {
+                        console.log(`✅ [FULL] Estoque atualizado para ${quantidade} (${itemId}) via /items/stock`);
+                        return { success: true, method: 'items_stock' };
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Método /items/stock falhou:', e.message);
+            }
+            
+            // Método 2: /user-products/{userProductId}/stock
+            try {
+                const userStockUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock`;
+                const userStockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(userStockUrl)}&token=${encodeURIComponent(token)}`;
+                
+                const getUserStockRes = await fetch(userStockProxy);
+                if (getUserStockRes.ok) {
+                    const stockData = await getUserStockRes.json();
+                    const locations = stockData.locations || [];
+                    const updatedLocations = locations.map(loc => {
+                        if (loc.type === 'seller_warehouse' || loc.type === 'selling_address') {
+                            return { ...loc, quantity: quantidade };
+                        }
+                        return loc;
+                    });
+                    
+                    const requestBody = { locations: updatedLocations };
+                    
+                    const updateRes = await fetch(userStockProxy, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(requestBody)
+                    });
+                    
+                    if (updateRes.status === 200 || updateRes.status === 204) {
+                        console.log(`✅ [FULL] Estoque atualizado via user-products para ${quantidade}`);
+                        return { success: true, method: 'user_products_stock' };
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ Método /user-products/stock falhou:', e.message);
+            }
+            
+            // Método 3: item principal
+            try {
+                const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
+                const itemProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
+                
+                const getItemRes = await fetch(itemProxy);
+                if (!getItemRes.ok) {
+                    return { success: false, error: `GET item ${getItemRes.status}` };
+                }
+                
+                const itemData = await getItemRes.json();
+                const xVersion = getItemRes.headers.get('x-version');
+                
+                const updateBody = { available_quantity: quantidade };
+                const headers = { 'Content-Type': 'application/json' };
+                if (xVersion) headers['x-version'] = xVersion;
+                
+                const putItemRes = await fetch(itemProxy, {
+                    method: 'PUT',
+                    headers: headers,
+                    body: JSON.stringify(updateBody)
+                });
+                
+                if (putItemRes.ok) {
+                    console.log(`✅ [FULL] Item principal atualizado para ${quantidade}`);
+                    return { success: true, method: 'item_principal' };
+                } else {
+                    const errorText = await putItemRes.text();
+                    if (errorText.includes('not_modifiable') || errorText.includes('field_not_updatable')) {
+                        return { 
+                            success: false, 
+                            error: 'FULL - atualize manualmente no ML',
+                            tipo: 'full_puro'
+                        };
+                    }
+                    return { success: false, error: `item ${putItemRes.status}` };
+                }
+            } catch (e) {
+                console.warn('⚠️ Método item principal falhou:', e.message);
+                return { success: false, error: e.message };
+            }
+            
+        } catch (error) {
+            console.error(`❌ [FULL] Erro:`, error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    // ===== OBTER REGRA PARA RAIOS =====
+    function obterRegraRaios(marca, modelo) {
+        const regrasRaiosPorMarca = {
+            "Sapim|Laser": { max_kits: 2 },
+            "Sapim|Leader": { max_kits: 2 },
+            "Sapim|Cx-Ray": { max_kits: 10 },
+            "Sapim|Race": { max_kits: 10 },
+            "Pillar|Butted 1.8 Preto": { max_kits: 2 },
+            "Pillar|Butted 1.8 Vermelho": { max_kits: 2 },
+            "Pillar|Butted 1.7": { max_kits: 2 },
+            "Pillar|Butted 1.5": { max_kits: 2 },
+            "Pillar|Trefilado 1.6": { max_kits: 2 },
+            "Pillar|Achatado": { max_kits: 10 },
+            "Pillar|Reforçado 2.0": { max_kits: 10 },
+            "Dt Swiss|Aero": { max_kits: 2 },
+            "Dt Swiss|Champion Preto": { max_kits: 10 },
+            "Dt Swiss|Champion Prata": { max_kits: 2 },
+            "Dt Swiss|Competition": { max_kits: 10 },
+            "Dt Swiss|Revolution": { max_kits: 10 },
+            "Dt Swiss|Competition Especial": { max_kits: 2 },
+            "Dt Swiss|Aero Comp": { max_kits: 2 },
+            "Mavic": { max_kits: 10 },
+            "Richman": { max_kits: 2 },
+            "Green": { max_kits: 2 },
+            "Crank Brothers": { max_kits: 2 },
+            "VeloForce": { max_kits: 10 },
+            "Zincado": { max_kits: 2 },
+            "Titânio": { max_kits: 2 },
+            "T-Head": { max_kits: 10 }
+        };
+        
+        const chaveExata = `${marca}|${modelo}`;
+        if (regrasRaiosPorMarca[chaveExata]) return regrasRaiosPorMarca[chaveExata];
+        if (regrasRaiosPorMarca[marca]) return regrasRaiosPorMarca[marca];
+        return null;
+    }
+
+    // =========================================================
+    // INÍCIO DO LOOP PRINCIPAL
+    // =========================================================
 
     for (const codigo of codigos) {
         const itemId = codigo.startsWith('MLB') ? codigo : `MLB${codigo}`;
@@ -3742,6 +4435,7 @@ async function sincronizarEstoqueML(produto) {
             if (!getRes.ok) throw new Error(`GET falhou: ${getRes.status}`);
             const item = await getRes.json();
 
+            // Buscar detalhes das variações
             if (item.variations && item.variations.length > 0) {
                 console.log(`📦 Buscando detalhes de ${item.variations.length} variações...`);
                 for (let i = 0; i < item.variations.length; i++) {
@@ -3781,252 +4475,12 @@ async function sincronizarEstoqueML(produto) {
 
             console.log(`📦 Item ${itemId}: isFulfillment=${isFulfillment}, hasSelfService=${hasSelfService}`);
 
-            function obterSkuAnuncio(item, skuProduto) {
-                let skuAnuncio = null;
-                
-                if (item.variations && item.variations.length > 0) {
-                    const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
-                    if (variacaoAlvo) {
-                        skuAnuncio = extrairSkuDaVariacao(variacaoAlvo);
-                    } else {
-                        for (const v of item.variations) {
-                            const testSku = extrairSkuDaVariacao(v);
-                            if (testSku && testSku.match(/\d/)) {
-                                skuAnuncio = testSku;
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    skuAnuncio = extrairSkuDoItem(item);
-                }
-                
-                return skuAnuncio;
-            }
+            const skuAnuncio = obterSkuAnuncio(item, skuProduto);
+            const skusFilhos = await carregarSkusKit(skuProduto);
+            const isKitPai = skusFilhos && skusFilhos.length > 0;
 
-            function extrairSkuDaVariacao(variacao) {
-                if (variacao.seller_custom_field) return variacao.seller_custom_field;
-                if (variacao.attributes && Array.isArray(variacao.attributes)) {
-                    const skuAttr = variacao.attributes.find(attr => attr.id === 'SELLER_SKU');
-                    if (skuAttr && skuAttr.value_name) return skuAttr.value_name;
-                }
-                if (variacao.sku) return variacao.sku;
-                return null;
-            }
-
-            function extrairSkuDoItem(item) {
-                if (item.seller_custom_field) return item.seller_custom_field;
-                if (item.attributes && Array.isArray(item.attributes)) {
-                    const skuAttr = item.attributes.find(attr => attr.id === 'SELLER_SKU');
-                    if (skuAttr && skuAttr.value_name) return skuAttr.value_name;
-                }
-                if (item.sku) return item.sku;
-                return null;
-            }
-
-            function encontrarVariacaoPorSKU(item, skuProduto) {
-                if (!item.variations || item.variations.length === 0) return null;
-                const skuAlvo = (skuProduto || '').toLowerCase().trim();
-                const normalizar = (str) => (str || '').toLowerCase().trim().replace(/^0+/, '');
-                const skuAlvoNorm = normalizar(skuAlvo);
-                for (const v of item.variations) {
-                    let identificador = extrairSkuDaVariacao(v);
-                    if (identificador) {
-                        let idNorm = normalizar(identificador);
-                        if (/^\d{3}/.test(idNorm)) {
-                            const semPrefixo = idNorm.replace(/^\d{3}/, '');
-                            if (semPrefixo === skuAlvoNorm) return v;
-                        }
-                        if (idNorm === skuAlvoNorm) return v;
-                        if (idNorm.includes(skuAlvoNorm) || skuAlvoNorm.includes(idNorm)) return v;
-                    }
-                }
-                return null;
-            }
-
-            function calcularQuantidadeComRegras(quantidadeBase, categoria, item, skuProduto, marcaProduto, modeloProduto, produto, isKitPai, skusFilhos, skuAnuncio) {
-    console.log(`📊 [calcularQuantidadeComRegras] SKU: ${skuProduto}, Estoque: ${quantidadeBase}, Categoria: ${categoria}`);
-    console.log(`📊 SKU do anúncio: ${skuAnuncio}`);
-    
-    let quantidadeFinal = 0;
-    
-    // 🔥 1️⃣ VERIFICAR SE É KIT PELO SKU DO ANÚNCIO (tem ponto)
-    const ehKit = skuAnuncio && skuAnuncio.includes('.');
-    console.log(`📊 É um KIT? ${ehKit ? '✅ SIM' : '❌ NÃO'}`);
-    
-    // 🔥 2️⃣ SE FOR KIT (tem ponto no SKU do anúncio)
-    if (ehKit) {
-        console.log(`📊 PROCESSANDO COMO KIT...`);
-        
-        // Extrair os SKUs individuais do kit (separados por ponto)
-        const skusDoKit = skuAnuncio.split('.');
-        console.log(`📊 SKUs do kit:`, skusDoKit);
-        
-        let kitsPossiveis = Infinity;
-        const quantidadesPorKit = [];
-        
-        for (const skuComPrefixo of skusDoKit) {
-            // Extrair prefixo (quantidade por kit) e SKU real
-            const match = skuComPrefixo.match(/^(\d{3})(.+)$/);
-            if (!match) {
-                console.log(`⚠️ SKU inválido: ${skuComPrefixo}`);
-                return 0;
-            }
-            
-            const prefixo = parseInt(match[1], 10); // Quantidade vendida por kit
-            const skuReal = match[2]; // SKU real do produto
-            console.log(`📊 Produto: ${skuReal}, Prefixo: ${prefixo} (vende ${prefixo} unidade(s) por kit)`);
-            
-            // Buscar o produto no cadastro de estoque pelo SKU real
-            const produtoEstoque = produtosEstoque.find(p => p.sku === skuReal);
-            if (!produtoEstoque) {
-                console.log(`❌ Produto não encontrado no estoque: ${skuReal}`);
-                return 0;
-            }
-            
-            console.log(`📊 ${skuReal} tem ${produtoEstoque.quantidade} unidades em estoque`);
-            
-            // Calcular quantos kits este produto pode fornecer
-            const kitsDoProduto = Math.floor(produtoEstoque.quantidade / prefixo);
-            console.log(`📊 ${skuReal} → ${produtoEstoque.quantidade} / ${prefixo} = ${kitsDoProduto} kits`);
-            
-            quantidadesPorKit.push({
-                sku: skuReal,
-                estoque: produtoEstoque.quantidade,
-                prefixo: prefixo,
-                kits: kitsDoProduto
-            });
-            
-            // O kit inteiro só pode ter a quantidade do produto com menor disponibilidade
-            if (kitsDoProduto < kitsPossiveis) {
-                kitsPossiveis = kitsDoProduto;
-            }
-        }
-        
-        console.log(`📊 Total de kits completos possíveis: ${kitsPossiveis}`);
-        quantidadeFinal = kitsPossiveis;
-        
-        // 🔥 MOSTRAR RESUMO DO KIT
-        console.log(`📊 RESUMO DO KIT:`);
-        quantidadesPorKit.forEach(q => {
-            console.log(`  - ${q.sku}: ${q.estoque} uni. → ${q.prefixo} por kit → ${q.kits} kits`);
-        });
-        console.log(`  📦 Total de kits completos: ${quantidadeFinal}`);
-        
-    } 
-    // 🔥 3️⃣ PRODUTO NORMAL (sem ponto no SKU)
-    else {
-        console.log(`📊 PRODUTO NORMAL (não é kit)`);
-        
-        // Extrair prefixo de quantidade (ex: 00200949...)
-        const match = skuAnuncio ? skuAnuncio.match(/^(\d{3})(.+)$/) : null;
-        if (match) {
-            const prefixo = parseInt(match[1], 10);
-            const skuReal = match[2];
-            console.log(`📊 Prefixo: ${prefixo}, SKU Real: ${skuReal}`);
-            
-            // Buscar o produto no estoque
-            const produtoEstoque = produtosEstoque.find(p => p.sku === skuReal);
-            if (produtoEstoque) {
-                const quantidadeCalculada = Math.floor(produtoEstoque.quantidade / prefixo);
-                console.log(`📊 ${produtoEstoque.quantidade} / ${prefixo} = ${quantidadeCalculada}`);
-                quantidadeFinal = quantidadeCalculada;
-            } else {
-                console.log(`⚠️ Produto não encontrado: ${skuReal}`);
-                quantidadeFinal = 0;
-            }
-        } else {
-            // Produto normal sem prefixo
-            console.log(`📊 Produto sem prefixo, usando estoque real: ${quantidadeBase}`);
-            quantidadeFinal = quantidadeBase;
-        }
-    }
-    
-    // 4️⃣ OBTER PREÇO DO ANÚNCIO
-    let precoAnuncio = 0;
-    if (item.variations && item.variations.length > 0) {
-        const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
-        if (variacaoAlvo) {
-            precoAnuncio = variacaoAlvo.price || 0;
-        } else {
-            precoAnuncio = item.variations[0]?.price || item.price || 0;
-        }
-    } else {
-        precoAnuncio = item.price || 0;
-    }
-    console.log(`📊 Preço do anúncio: R$ ${precoAnuncio}`);
-    
-    // 5️⃣ CALCULAR ESTOQUE MÁXIMO PERMITIDO PELA REGRA DA CATEGORIA
-    const estoqueMaximo = calcularEstoqueMaximo({ 
-        preco: precoAnuncio, 
-        categoria: categoria,
-        sku: skuProduto
-    });
-    console.log(`📊 Estoque máximo permitido (regra do modal): ${estoqueMaximo}`);
-    
-    // 6️⃣ APLICAR LIMITE MÁXIMO (RESPEITAR REGRA DO MODAL)
-    if (quantidadeFinal > estoqueMaximo) {
-        console.log(`📊 Aplicando limite do modal: ${quantidadeFinal} → ${estoqueMaximo}`);
-        quantidadeFinal = estoqueMaximo;
-    }
-    
-    // 7️⃣ REGRA ESPECÍFICA PARA RAIOS (se houver)
-    if (categoria === 'Raios') {
-        const regra = obterRegraRaios(marcaProduto, modeloProduto);
-        if (regra && regra.max_kits !== undefined) {
-            console.log(`📊 Aplicando regra de Raios: ${quantidadeFinal} → ${regra.max_kits}`);
-            quantidadeFinal = Math.min(quantidadeFinal, regra.max_kits);
-        }
-    }
-    
-    // 8️⃣ GARANTIR QUE RESPEITA O ESTOQUE MÁXIMO
-    if (quantidadeFinal > estoqueMaximo) {
-        console.log(`📊 Reforçando limite: ${quantidadeFinal} → ${estoqueMaximo}`);
-        quantidadeFinal = estoqueMaximo;
-    }
-    
-    // 9️⃣ GARANTIR QUE NUNCA SEJA NEGATIVO
-    quantidadeFinal = Math.max(0, quantidadeFinal);
-    
-    console.log(`✅ Quantidade final: ${quantidadeFinal}`);
-    return quantidadeFinal;
-}
-
-            function obterRegraRaios(marca, modelo) {
-                const chaveExata = `${marca}|${modelo}`;
-                const regrasRaiosPorMarca = {
-                    "Sapim|Laser": { max_kits: 2 },
-                    "Sapim|Leader": { max_kits: 2 },
-                    "Sapim|Cx-Ray": {max_kits: 10},
-                    "Sapim|Race": {max_kits: 10},
-                    "Pillar|Butted 1.8 Preto": { max_kits: 2 },
-                    "Pillar|Butted 1.8 Vermelho": { max_kits: 2 },
-                    "Pillar|Butted 1.7": { max_kits: 2 },
-                    "Pillar|Butted 1.5": { max_kits: 2 },
-                    "Pillar|Trefilado 1.6": { max_kits: 2 },
-                    "Pillar|Achatado": { max_kits: 10 },
-                    "Pillar|Reforçado 2.0": { max_kits: 10 },
-                    "Dt Swiss|Aero": { max_kits: 2 },
-                    "Dt Swiss|Champion Preto": { max_kits: 10 },
-                    "Dt Swiss|Champion Prata": { max_kits: 2 },
-                    "Dt Swiss|Competition": { max_kits: 10 },
-                    "Dt Swiss|Revolution": { max_kits: 10 },
-                    "Dt Swiss|Competition Especial": { max_kits: 2 },
-                    "Dt Swiss|Aero Comp": { max_kits: 2 },
-                    "Mavic": { max_kits: 10 },
-                    "Richman": { max_kits: 2 },
-                    "Green": { max_kits: 2 },
-                    "Crank Brothers": { max_kits: 2 },
-                    "VeloForce": {max_kits: 10},
-                    "Zincado": { max_kits: 2 },
-                    "Titânio": { max_kits: 2 },
-                    "T-Head": { max_kits: 10 }
-                };
-                if (regrasRaiosPorMarca[chaveExata]) return regrasRaiosPorMarca[chaveExata];
-                if (regrasRaiosPorMarca[marca]) return regrasRaiosPorMarca[marca];
-                const chaveCoringa = `${marca}|*`;
-                if (regrasRaiosPorMarca[chaveCoringa]) return regrasRaiosPorMarca[chaveCoringa];
-                return null;
+            if (isKitPai) {
+                console.log(`📦 Produto ${skuProduto} é um KIT pai com ${skusFilhos.length} SKUs filhos`);
             }
 
             // ===== FULL COM CONVIVÊNCIA =====
@@ -4035,11 +4489,13 @@ async function sincronizarEstoqueML(produto) {
                 
                 let userProductId = null;
                 
+                // Tenta extrair user_product_id
                 if (item.variations && item.variations.length > 0) {
                     const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
                     if (variacaoAlvo && variacaoAlvo.user_product_id) {
                         userProductId = variacaoAlvo.user_product_id;
-                    } else {
+                    }
+                    if (!userProductId) {
                         for (const v of item.variations) {
                             if (v.user_product_id) {
                                 userProductId = v.user_product_id;
@@ -4057,11 +4513,9 @@ async function sincronizarEstoqueML(produto) {
                     continue;
                 }
 
-                const skuAnuncio = obterSkuAnuncio(item, skuProduto);
-
                 let quantidadeParaEnviar = calcularQuantidadeComRegras(
                     quantidadeReal, categoria, item, skuProduto, 
-                    marcaProduto, modeloProduto, produto, isKitPai, skusFilhos,
+                    marcaProduto, modeloProduto, produto, skusFilhos,
                     skuAnuncio
                 );
 
@@ -4078,18 +4532,11 @@ async function sincronizarEstoqueML(produto) {
                         method: resultado.method || 'full_convivio' 
                     });
                 } else {
-                    const isFullPuro = resultado.error && (
-                        resultado.error.includes('FULL') || 
-                        resultado.error.includes('not_modifiable') ||
-                        resultado.error.includes('field_not_updatable') ||
-                        resultado.tipo === 'full_puro'
-                    );
-                    
                     results.push({ 
                         codigo: itemId, 
                         success: false, 
                         error: resultado.error,
-                        tipo: isFullPuro ? 'full_puro' : 'full_convivio',
+                        tipo: resultado.tipo || 'full_convivio',
                         link: `https://www.mercadolivre.com.br/anuncios/${itemId}/modificar/`,
                         estoque: quantidadeParaEnviar,
                         nome: produto.nome || 'Produto'
@@ -4101,7 +4548,7 @@ async function sincronizarEstoqueML(produto) {
             // ===== FULL PURO =====
             if (isFulfillment && !hasSelfService) {
                 console.log(`📦 Item ${itemId} é FULL PURO (sem convivência)`);
-                const skuAnuncio = obterSkuAnuncio(item, skuProduto);
+                const skuAnuncioLocal = obterSkuAnuncio(item, skuProduto);
                 
                 results.push({ 
                     codigo: itemId, 
@@ -4109,7 +4556,7 @@ async function sincronizarEstoqueML(produto) {
                     error: 'FULL puro - atualize manualmente no ML',
                     tipo: 'full_puro',
                     ignorado: true,
-                    sku: skuAnuncio,
+                    sku: skuAnuncioLocal,
                     link: `https://www.mercadolivre.com.br/item/${itemId}`,
                     estoque: quantidadeReal,
                     nome: produto.nome || 'Produto'
@@ -4126,12 +4573,12 @@ async function sincronizarEstoqueML(produto) {
                 continue;
             }
 
-            const skuAnuncio = obterSkuAnuncio(item, skuProduto);
+            const skuAnuncioLocal = obterSkuAnuncio(item, skuProduto);
 
             let quantidadeParaEnviar = calcularQuantidadeComRegras(
                 quantidadeReal, categoria, item, skuProduto, 
-                marcaProduto, modeloProduto, produto, isKitPai, skusFilhos,
-                skuAnuncio
+                marcaProduto, modeloProduto, produto, skusFilhos,
+                skuAnuncioLocal
             );
 
             if (item.variations && item.variations.length > 0) {
@@ -4200,6 +4647,7 @@ async function sincronizarEstoqueML(produto) {
         }
     }
 
+    // ===== RESULTADOS FINAIS =====
     const sucessos = results.filter(r => r.success).length;
     const falhas = results.filter(r => !r.success).length;
     
@@ -4232,7 +4680,6 @@ async function sincronizarEstoqueML(produto) {
 
     return { success: falhas === 0, results };
 }
-
 // =========================================================
 // MODAL PARA ANÚNCIOS FULL DETECTADOS - VERSÃO MELHORADA
 // =========================================================
@@ -4451,99 +4898,154 @@ function fecharModalFullDetectados() {
     fullConfirmados = new Set();
 }
 
-// =========================================================
-// ATUALIZAR ESTOQUE FULL COM CONVIVÊNCIA
-// =========================================================
-
 async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, token, workerUrl, item) {
     try {
         console.log(`📦 [FULL] Atualizando estoque do item ${itemId} para ${quantidade} unidades`);
+        
+        // 🔥 VERIFICA SE O USER_PRODUCT_ID É VÁLIDO
+        if (!userProductId) {
+            console.warn('⚠️ userProductId vazio, tentando obter do item...');
+            if (item && item.user_product_id) {
+                userProductId = item.user_product_id;
+            } else {
+                return { success: false, error: 'user_product_id não disponível' };
+            }
+        }
         
         // Método 1: /items/{item_id}/stock
         const stockUrl = `https://api.mercadolibre.com/items/${itemId}/stock`;
         const stockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`;
         
-        const getStockRes = await fetch(stockProxy);
-        if (getStockRes.ok) {
-            const stockData = await getStockRes.json();
-            const requestBody = { available_quantity: quantidade };
-            
-            const updateRes = await fetch(stockProxy, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
-            
-            if (updateRes.status === 200 || updateRes.status === 204) {
-                console.log(`✅ [FULL] Estoque atualizado para ${quantidade} (${itemId}) via /items/stock`);
-                return { success: true, method: 'items_stock' };
+        try {
+            const getStockRes = await fetch(stockProxy);
+            if (getStockRes.ok) {
+                const stockData = await getStockRes.json();
+                const requestBody = { available_quantity: quantidade };
+                
+                const updateRes = await fetch(stockProxy, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                if (updateRes.status === 200 || updateRes.status === 204) {
+                    console.log(`✅ [FULL] Estoque atualizado para ${quantidade} (${itemId}) via /items/stock`);
+                    return { success: true, method: 'items_stock' };
+                }
             }
+        } catch (e) {
+            console.warn('⚠️ Método /items/stock falhou:', e.message);
         }
         
         // Método 2: /user-products/{userProductId}/stock
         const userStockUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock`;
         const userStockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(userStockUrl)}&token=${encodeURIComponent(token)}`;
         
-        const getUserStockRes = await fetch(userStockProxy);
-        if (getUserStockRes.ok) {
-            const stockData = await getUserStockRes.json();
-            const locations = stockData.locations || [];
-            const updatedLocations = locations.map(loc => {
-                if (loc.type === 'seller_warehouse' || loc.type === 'selling_address') {
-                    return { ...loc, quantity: quantidade };
+        try {
+            const getUserStockRes = await fetch(userStockProxy);
+            if (getUserStockRes.ok) {
+                const stockData = await getUserStockRes.json();
+                const locations = stockData.locations || [];
+                const updatedLocations = locations.map(loc => {
+                    if (loc.type === 'seller_warehouse' || loc.type === 'selling_address') {
+                        return { ...loc, quantity: quantidade };
+                    }
+                    return loc;
+                });
+                
+                const requestBody = { locations: updatedLocations };
+                
+                const updateRes = await fetch(userStockProxy, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestBody)
+                });
+                
+                if (updateRes.status === 200 || updateRes.status === 204) {
+                    console.log(`✅ [FULL] Estoque atualizado via user-products para ${quantidade}`);
+                    return { success: true, method: 'user_products_stock' };
                 }
-                return loc;
-            });
-            
-            const requestBody = { locations: updatedLocations };
-            
-            const updateRes = await fetch(userStockProxy, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestBody)
-            });
-            
-            if (updateRes.status === 204) {
-                console.log(`✅ [FULL] Estoque atualizado via user-products para ${quantidade}`);
-                return { success: true, method: 'user_products_stock' };
             }
+        } catch (e) {
+            console.warn('⚠️ Método /user-products/stock falhou:', e.message);
         }
         
-        // Método 3: item principal
+        // Método 3: item principal com x-version
         const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
         const itemProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
         
-        const getItemRes = await fetch(itemProxy);
-        if (!getItemRes.ok) {
-            return { success: false, error: `GET item ${getItemRes.status}` };
-        }
-        
-        const itemData = await getItemRes.json();
-        const xVersion = getItemRes.headers.get('x-version');
-        
-        const updateBody = { available_quantity: quantidade };
-        const headers = { 'Content-Type': 'application/json' };
-        if (xVersion) headers['x-version'] = xVersion;
-        
-        const putItemRes = await fetch(itemProxy, {
-            method: 'PUT',
-            headers: headers,
-            body: JSON.stringify(updateBody)
-        });
-        
-        if (putItemRes.ok) {
-            console.log(`✅ [FULL] Item principal atualizado para ${quantidade}`);
-            return { success: true, method: 'item_principal' };
-        } else {
-            const errorText = await putItemRes.text();
-            if (errorText.includes('not_modifiable') || errorText.includes('field_not_updatable')) {
-                return { 
-                    success: false, 
-                    error: 'FULL - atualize manualmente no ML',
-                    tipo: 'full_puro'
-                };
+        try {
+            const getItemRes = await fetch(itemProxy);
+            if (!getItemRes.ok) {
+                return { success: false, error: `GET item ${getItemRes.status}` };
             }
-            return { success: false, error: `item ${putItemRes.status}` };
+            
+            const itemData = await getItemRes.json();
+            const xVersion = getItemRes.headers.get('x-version');
+            
+            // 🔥 VERIFICA SE O ITEM TEM VARIATIONS
+            if (itemData.variations && itemData.variations.length > 0) {
+                // Tenta encontrar a variação correta
+                const skuBase = extrairSkuBase(item.seller_custom_field || '');
+                let variacaoEncontrada = null;
+                
+                for (const v of itemData.variations) {
+                    const vSku = v.seller_custom_field || '';
+                    const vBase = extrairSkuBase(vSku);
+                    if (vBase === skuBase) {
+                        variacaoEncontrada = v;
+                        break;
+                    }
+                }
+                
+                if (variacaoEncontrada) {
+                    const varUpdateUrl = `https://api.mercadolibre.com/items/${itemId}/variations/${variacaoEncontrada.id}`;
+                    const varProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(varUpdateUrl)}&token=${encodeURIComponent(token)}`;
+                    
+                    const varUpdateRes = await fetch(varProxy, {
+                        method: 'PUT',
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            ...(xVersion && { 'x-version': xVersion })
+                        },
+                        body: JSON.stringify({ available_quantity: quantidade })
+                    });
+                    
+                    if (varUpdateRes.ok) {
+                        console.log(`✅ [FULL] Variação ${variacaoEncontrada.id} atualizada para ${quantidade}`);
+                        return { success: true, method: 'variation_update' };
+                    }
+                }
+            }
+            
+            // Atualiza o item principal
+            const updateBody = { available_quantity: quantidade };
+            const headers = { 'Content-Type': 'application/json' };
+            if (xVersion) headers['x-version'] = xVersion;
+            
+            const putItemRes = await fetch(itemProxy, {
+                method: 'PUT',
+                headers: headers,
+                body: JSON.stringify(updateBody)
+            });
+            
+            if (putItemRes.ok) {
+                console.log(`✅ [FULL] Item principal atualizado para ${quantidade}`);
+                return { success: true, method: 'item_principal' };
+            } else {
+                const errorText = await putItemRes.text();
+                if (errorText.includes('not_modifiable') || errorText.includes('field_not_updatable')) {
+                    return { 
+                        success: false, 
+                        error: 'FULL - atualize manualmente no ML',
+                        tipo: 'full_puro'
+                    };
+                }
+                return { success: false, error: `item ${putItemRes.status}` };
+            }
+        } catch (e) {
+            console.warn('⚠️ Método item principal falhou:', e.message);
+            return { success: false, error: e.message };
         }
         
     } catch (error) {
@@ -4702,6 +5204,28 @@ function toggleTipoEntradaField() {
     } else {
         campoTipoEntrada.style.display = 'none';
     }
+}
+
+function extrairSkuBase(sku) {
+    if (!sku) return '';
+    
+    let skuLimpo = sku.trim();
+    let skuReal = skuLimpo;
+    
+    // 🔥 REMOVE APENAS OS 3 PRIMEIROS DÍGITOS (prefixo de quantidade do ML)
+    // O SKU do sistema JÁ NÃO TEM esses 3 dígitos
+    const match = skuLimpo.match(/^\d{3}(.+)$/);
+    if (match) {
+        skuReal = match[1];
+        console.log(`🔍 SKU com prefixo de 3 dígitos: "${skuLimpo}" → real: "${skuReal}"`);
+    } else {
+        console.log(`🔍 SKU sem prefixo (sistema): "${skuLimpo}"`);
+    }
+    
+    // 🔥 EXTRAI OS 8 PRIMEIROS CARACTERES
+    const base = skuReal.substring(0, 8).toUpperCase();
+    console.log(`📊 Base extraída (8 caracteres): "${base}"`);
+    return base;
 }
 
 // =========================================================

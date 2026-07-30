@@ -8455,6 +8455,7 @@ window.abrirSistemaNFE = async function() {
                                 <th>SKU</th>
                                 <th>Valor</th>
                                 <th>Método de Envio</th>
+                                <th>Status NF-e</th>
                                 <th>Ações</th>
                             </tr>
                         </thead>
