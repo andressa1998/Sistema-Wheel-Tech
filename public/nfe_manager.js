@@ -1326,10 +1326,6 @@ function fecharBarraProgresso() {
     }
 }
 
-// =========================================================
-// RENDERIZAR TABELA DE VENDAS (COM VALOR CORRETO)
-// =========================================================
-
 function renderizarTabelaVendas(vendas) {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
@@ -1379,28 +1375,24 @@ function renderizarTabelaVendas(vendas) {
         const dataVenda = v.data_venda || v.date_created ? 
             new Date(v.data_venda || v.date_created).toLocaleDateString('pt-BR') : '-';
         
-        // 🔥 CORREÇÃO: PRIORIZAR valor_produto (valor sem desconto de cupom)
-        // Ordem de prioridade correta:
-        // 1. _valor_produto (vindo do Mercado Pago)
-        // 2. valor_produto (salvo no banco)
-        // 3. total_amount (fallback)
+        // 🔥 CORREÇÃO: PRIORIZAR total_amount (valor total da venda)
         let valorExibir = 0;
         
-        // 🔥 PRIORIDADE 1: valor_produto (sem desconto)
-        if (v._valor_produto && v._valor_produto > 0) {
-            valorExibir = v._valor_produto;
-        } else if (v.valor_produto && v.valor_produto > 0) {
-            valorExibir = v.valor_produto;
-        } 
-        // 🔥 PRIORIDADE 2: total_amount (fallback)
-        else if (v.total_amount && v.total_amount > 0) {
+        // 🔥 PRIORIDADE 1: total_amount (valor total da venda, mais completo)
+        if (v.total_amount && v.total_amount > 0) {
             valorExibir = v.total_amount;
         } else if (v.valor_total && v.valor_total > 0) {
             valorExibir = v.valor_total;
         }
+        // 🔥 PRIORIDADE 2: valor_produto (apenas se não tiver total_amount)
+        else if (v._valor_produto && v._valor_produto > 0) {
+            valorExibir = v._valor_produto;
+        } else if (v.valor_produto && v.valor_produto > 0) {
+            valorExibir = v.valor_produto;
+        }
         
         // 🔥 LOG PARA DEBUG
-        console.log(`📊 Venda ${vendaId}: valor_produto=${v._valor_produto || v.valor_produto || 0}, total_amount=${v.total_amount || v.valor_total || 0}, exibindo=${valorExibir}`);
+        console.log(`📊 Venda ${vendaId}: total_amount=${v.total_amount || v.valor_total || 0}, valor_produto=${v._valor_produto || v.valor_produto || 0}, exibindo=${valorExibir}`);
 
         const clienteExibir = v.cliente || v.buyer_nickname || v.buyer?.nickname || 'N/I';
         const skuExibir = v.sku || v.sku_original || v.order_items?.[0]?.item?.seller_sku || 'N/A';
