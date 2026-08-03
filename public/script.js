@@ -246,6 +246,7 @@ const SYSTEM_USERS = [
     { username: 'bruna', password: '270194', name: 'Bruna', avatar: 'B', role: 'Assistente' },
     { username: 'mirella', password: '220922', name: 'Mirella', avatar: 'M', role: 'Assistente 2' },
     { username: 'thalyta', password: '300377', name: 'Thalyta', avatar: 'T', role: 'Assistente 3' },
+    { username: 'suelen', password: '148596', name: 'Suelen', avatar: 'S', role: 'Assistente 4' },
     { username: 'leticia', password: '181094', name: 'Leticia', avatar: 'L', role: 'Administrador' },
     { username: 'andressamiotto', password: '241101', name: 'Andressa', avatar: 'A', role: 'Administrador' }
 ];

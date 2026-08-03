@@ -10,11 +10,11 @@ let fullCalendarLoaded = false;
 // ===== VARIÁVEIS PARA ESCALA DE SÁBADOS =====
 // Lista fixa de colaboradores (atualizada com os nomes da imagem)
 const COLABORADORES_FIXOS = [
-    'Elaine',
     'Arthur',
     'Bruna',
     'Thalyta',
     'Leticia',
+    'Suelen',
     'Mirella'
 ];
 let escalaMensal = {};          // { "2025-06-07": ["Elaine", "Arthur"], ... }
