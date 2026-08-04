@@ -69,41 +69,37 @@ let fretesDadosCompletos = [];
 let fretesFiltrados = [];
 
 // ============================================
-// FUNÇÃO PARA DETECTAR VENDAS FULL - MESMA LÓGICA DO SALES_DASHBOARD
+// FUNÇÃO PARA DETECTAR VENDAS FULL
 // ============================================
 function isFullByAnyField(item) {
-    // 1. Verificar campo tipo_envio (igual ao sales_dashboard)
     const tipoEnvio = (item.tipo_envio || item.meio_envio || '').toUpperCase();
-    if (tipoEnvio.includes('FULL') || 
-        tipoEnvio.includes('FULFILLMENT') || 
-        tipoEnvio === 'FULL') {
+    if (tipoEnvio.includes('FULL') || tipoEnvio.includes('FULFILLMENT') || tipoEnvio === 'FULL') {
         return true;
     }
     
-    // 2. Verificar informacoes_envio (igual ao sales_dashboard)
     if (item.informacoes_envio) {
         try {
             const infoEnvio = typeof item.informacoes_envio === 'string' 
                 ? JSON.parse(item.informacoes_envio) 
                 : item.informacoes_envio;
-            const tipoLogistico = (infoEnvio.tipo || '').toUpperCase();
-            if (tipoLogistico.includes('FULL') || 
-                tipoLogistico.includes('FULFILLMENT') || 
-                tipoLogistico === 'FULL') {
+            const tipoLogistico = (infoEnvio.tipo || infoEnvio.logistic_type || '').toUpperCase();
+            if (tipoLogistico.includes('FULL') || tipoLogistico.includes('FULFILLMENT') || tipoLogistico === 'FULL') {
+                return true;
+            }
+            const fulfillment = (infoEnvio.fulfillment || '').toUpperCase();
+            if (fulfillment.includes('FULL') || fulfillment.includes('FULFILLMENT')) {
                 return true;
             }
         } catch (e) {}
     }
     
-    // 3. Verificar tags (igual ao sales_dashboard)
     if (item.tags && Array.isArray(item.tags)) {
-        const tags = item.tags.map(t => t.toUpperCase());
+        const tags = item.tags.map(t => String(t).toUpperCase());
         if (tags.some(t => t.includes('FULL') || t.includes('FULFILLMENT'))) {
             return true;
         }
     }
     
-    // 4. Verificar campos adicionais (fallback)
     const searchFields = [
         item.titulo || '',
         item.mlb || '',
@@ -274,7 +270,7 @@ async function isShipmentFULL(shipmentId, token) {
 }
 
 // ============================================
-// EXTRAIR FRETE DA VENDA - CORRIGIDA (AGORA ASYNC)
+// EXTRAIR FRETE DA VENDA
 // ============================================
 async function extrairFreteDaVenda(order, token) {
     console.log(`🔍 Extraindo frete da venda ${order.id}...`);
@@ -282,36 +278,46 @@ async function extrairFreteDaVenda(order, token) {
     let freteCobrado = 0;
     let fonte = 'nenhuma';
     
-    // 1. PRIORIDADE MÁXIMA: receiver_cost do order.shipping (valor cobrado do cliente)
     if (order.shipping && order.shipping.receiver_cost !== undefined && order.shipping.receiver_cost !== null) {
-        freteCobrado = parseFloat(order.shipping.receiver_cost) || 0;
-        fonte = 'order.shipping.receiver_cost';
-        console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
-        return { frete: freteCobrado, fonte };
-    }
-    
-    // 2. Tentar receiver_cost do shipping_option
-    if (order.shipping && order.shipping.shipping_option && order.shipping.shipping_option.receiver_cost !== undefined) {
-        freteCobrado = parseFloat(order.shipping.shipping_option.receiver_cost) || 0;
-        fonte = 'shipping_option.receiver_cost';
-        if (freteCobrado > 0) {
+        const valor = parseFloat(order.shipping.receiver_cost);
+        if (!isNaN(valor) && valor > 0) {
+            freteCobrado = valor;
+            fonte = 'order.shipping.receiver_cost';
             console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
             return { frete: freteCobrado, fonte };
         }
     }
     
-    // 3. Tentar cost do order.shipping (custo do ML, pode ser diferente do cobrado)
-    if (order.shipping && order.shipping.cost !== undefined && order.shipping.cost !== null) {
-        const cost = parseFloat(order.shipping.cost) || 0;
-        if (cost > 0) {
-            freteCobrado = cost;
-            fonte = 'order.shipping.cost (fallback)';
-            console.log(`⚠️ Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
-            return { frete: freteCobrado, fonte };
+    if (order.shipping && order.shipping.shipping_option) {
+        if (order.shipping.shipping_option.receiver_cost !== undefined && order.shipping.shipping_option.receiver_cost !== null) {
+            const valor = parseFloat(order.shipping.shipping_option.receiver_cost);
+            if (!isNaN(valor) && valor > 0) {
+                freteCobrado = valor;
+                fonte = 'shipping_option.receiver_cost';
+                console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
+                return { frete: freteCobrado, fonte };
+            }
+        }
+        if (order.shipping.shipping_option.list_cost !== undefined && order.shipping.shipping_option.list_cost !== null) {
+            const valor = parseFloat(order.shipping.shipping_option.list_cost);
+            if (!isNaN(valor) && valor > 0) {
+                freteCobrado = valor;
+                fonte = 'shipping_option.list_cost';
+                console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
+                return { frete: freteCobrado, fonte };
+            }
+        }
+        if (order.shipping.shipping_option.cost !== undefined && order.shipping.shipping_option.cost !== null) {
+            const valor = parseFloat(order.shipping.shipping_option.cost);
+            if (!isNaN(valor) && valor > 0 && freteCobrado === 0) {
+                freteCobrado = valor;
+                fonte = 'shipping_option.cost';
+                console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
+                return { frete: freteCobrado, fonte };
+            }
         }
     }
     
-    // 4. Buscar shipment completo (se disponível)
     if (order.shipping && order.shipping.id && token) {
         try {
             console.log(`🔄 Buscando shipment ${order.shipping.id} para obter frete...`);
@@ -321,46 +327,75 @@ async function extrairFreteDaVenda(order, token) {
             const response = await fetch(shipProxy);
             if (response.ok) {
                 const shipData = await response.json();
+                console.log(`📦 Shipment ${order.shipping.id} recebido:`, {
+                    receiver_cost: shipData.receiver_cost,
+                    cost: shipData.cost,
+                    list_cost: shipData.list_cost,
+                    shipping_option: shipData.shipping_option ? {
+                        receiver_cost: shipData.shipping_option.receiver_cost,
+                        list_cost: shipData.shipping_option.list_cost,
+                        cost: shipData.shipping_option.cost
+                    } : null
+                });
                 
-                // 4a. receiver_cost do shipment (MAIS CONFIÁVEL)
                 if (shipData.receiver_cost !== undefined && shipData.receiver_cost !== null) {
-                    const receiverCost = parseFloat(shipData.receiver_cost) || 0;
-                    if (receiverCost > 0) {
-                        freteCobrado = receiverCost;
+                    const valor = parseFloat(shipData.receiver_cost);
+                    if (!isNaN(valor) && valor > 0) {
+                        freteCobrado = valor;
                         fonte = 'shipment.receiver_cost';
                         console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
                         return { frete: freteCobrado, fonte };
                     }
                 }
                 
-                // 4b. cost do shipment
-                if (shipData.cost !== undefined && shipData.cost !== null) {
-                    const cost = parseFloat(shipData.cost) || 0;
-                    if (cost > 0 && freteCobrado === 0) {
-                        freteCobrado = cost;
-                        fonte = 'shipment.cost (fallback)';
-                        console.log(`⚠️ Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
+                if (shipData.list_cost !== undefined && shipData.list_cost !== null) {
+                    const valor = parseFloat(shipData.list_cost);
+                    if (!isNaN(valor) && valor > 0 && freteCobrado === 0) {
+                        freteCobrado = valor;
+                        fonte = 'shipment.list_cost';
+                        console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
                         return { frete: freteCobrado, fonte };
                     }
                 }
                 
-                // 4c. shipping_option.cost
-                if (shipData.shipping_option && shipData.shipping_option.cost !== undefined) {
-                    const cost = parseFloat(shipData.shipping_option.cost) || 0;
-                    if (cost > 0 && freteCobrado === 0) {
-                        freteCobrado = cost;
-                        fonte = 'shipment.shipping_option.cost';
-                        console.log(`⚠️ Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
+                if (shipData.cost !== undefined && shipData.cost !== null) {
+                    const valor = parseFloat(shipData.cost);
+                    if (!isNaN(valor) && valor > 0 && freteCobrado === 0) {
+                        freteCobrado = valor;
+                        fonte = 'shipment.cost';
+                        console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
                         return { frete: freteCobrado, fonte };
                     }
                 }
+                
+                if (shipData.shipping_option) {
+                    if (shipData.shipping_option.receiver_cost !== undefined && shipData.shipping_option.receiver_cost !== null) {
+                        const valor = parseFloat(shipData.shipping_option.receiver_cost);
+                        if (!isNaN(valor) && valor > 0 && freteCobrado === 0) {
+                            freteCobrado = valor;
+                            fonte = 'shipment.shipping_option.receiver_cost';
+                            console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
+                            return { frete: freteCobrado, fonte };
+                        }
+                    }
+                    if (shipData.shipping_option.list_cost !== undefined && shipData.shipping_option.list_cost !== null) {
+                        const valor = parseFloat(shipData.shipping_option.list_cost);
+                        if (!isNaN(valor) && valor > 0 && freteCobrado === 0) {
+                            freteCobrado = valor;
+                            fonte = 'shipment.shipping_option.list_cost';
+                            console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
+                            return { frete: freteCobrado, fonte };
+                        }
+                    }
+                }
+            } else {
+                console.warn(`⚠️ Falha ao buscar shipment ${order.shipping.id}: ${response.status}`);
             }
         } catch (e) {
             console.warn(`Erro ao buscar shipment ${order.shipping.id}:`, e.message);
         }
     }
     
-    // 5. Tentar calcular por diferença (último recurso)
     if (freteCobrado === 0 && order.total_amount && order.order_items) {
         let itemTotal = 0;
         for (const item of order.order_items) {
@@ -370,7 +405,7 @@ async function extrairFreteDaVenda(order, token) {
         if (diff > 0.01) {
             freteCobrado = diff;
             fonte = 'diferença (total - itens)';
-            console.log(`⚠️ Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
+            console.log(`💰 Frete via ${fonte}: R$ ${freteCobrado.toFixed(2)}`);
             return { frete: freteCobrado, fonte };
         }
     }
@@ -380,15 +415,21 @@ async function extrairFreteDaVenda(order, token) {
 }
 
 // ============================================
-// BUSCAR FRETES (SINCRONIZAÇÃO)
+// BUSCAR FRETES (CORRIGIDA - COM CHUNKS E TRATAMENTO DE ERRO)
 // ============================================
 async function buscarFretes() {
-    console.log('🔍 Iniciando sincronização de fretes...');
+    console.log('🔍 Iniciando sincronização de fretes (manual)...');
     const tbody = document.getElementById('shippingSimpleBody');
     const contagem = document.getElementById('contagemFretes');
     const btn = document.getElementById('btnBuscarFretes');
 
     if (!tbody) return;
+
+    if (typeof calcularFreteEsperado === 'undefined') {
+        console.error('❌ Função calcularFreteEsperado não definida!');
+        showToast('❌ Erro: função de cálculo de frete não disponível', 'error');
+        return;
+    }
 
     if (btn) {
         btn.disabled = true;
@@ -399,38 +440,52 @@ async function buscarFretes() {
     if (contagem) contagem.textContent = 'Sincronizando...';
 
     try {
-        const resultado = await buscarFretesML(50);
+        const resultado = await buscarFretesML(200);
 
-        if (!resultado || !resultado.vendas) {
+        if (!resultado) {
             throw new Error('Nenhum resultado retornado');
         }
 
-        console.log(`📦 ${resultado.vendas.length} vendas retornadas da busca de frete`);
-
-        if (resultado.vendas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="15" class="text-center">Nenhuma venda encontrada.</td></tr>';
-            if (contagem) contagem.textContent = '0 registros';
-            showToast('Nenhuma venda encontrada', 'info');
+        if (!resultado.vendas || resultado.vendas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="15" class="text-center">✅ Nenhuma venda nova encontrada para análise.</td></tr>';
+            if (contagem) contagem.textContent = '0 novas';
+            showToast('Nenhuma venda nova encontrada', 'info');
+            await carregarFretesSalvos();
             return;
         }
 
+        console.log(`📦 ${resultado.vendas.length} novas vendas para processar`);
+
         const registrosParaInserir = [];
-        const idsIncorretos = [];
         let totalFullIgnorados = 0;
         let totalCorretosIgnorados = 0;
+        let totalIncorretos = 0;
+        let totalErroCalculo = 0;
+
+        // Processar em lotes menores para não sobrecarregar
+        const BATCH_SIZE = 100;
+        let processados = 0;
 
         for (const venda of resultado.vendas) {
+            processados++;
+            
+            // Mostrar progresso a cada 100 vendas
+            if (processados % 100 === 0) {
+                console.log(`📊 Processando ${processados}/${resultado.vendas.length} vendas...`);
+                tbody.innerHTML = `<tr><td colspan="15" class="text-center"><div class="spinner"></div> Processando ${processados}/${resultado.vendas.length} vendas...</td></tr>`;
+            }
+
             const idVenda = venda.id_venda_ml || venda.id;
             if (!idVenda) continue;
 
-            // ===== VERIFICAÇÃO DUPLA DE FULL =====
-            const isFull = venda.tipo_envio === 'FULL' || 
-                           venda.tipo_envio === 'FULFILLMENT' ||
-                           isFullByAnyField(venda);
+            const isFull = isFullByAnyField(venda);
+            const tipoEnvio = (venda.tipo_envio || '').toUpperCase();
+            const isFullByTipo = tipoEnvio.includes('FULL') || 
+                                 tipoEnvio.includes('FULFILLMENT') || 
+                                 tipoEnvio === 'FULL';
             
-            if (isFull) {
+            if (isFull || isFullByTipo) {
                 totalFullIgnorados++;
-                console.log(`⏭️ Venda ${idVenda} é FULL, ignorando`);
                 continue;
             }
 
@@ -441,7 +496,6 @@ async function buscarFretes() {
             const mlb = venda.mlb_id || 'N/A';
             const valorProduto = venda.valor_total || 0;
 
-            // Se frete cobrado for 0, não é relevante
             if (freteCobrado === 0) {
                 totalCorretosIgnorados++;
                 continue;
@@ -456,64 +510,116 @@ async function buscarFretes() {
                 peso = medidas.peso_kg || 0.3;
             }
 
-            const freteEsperado = calcularFreteEsperado(valorProduto, peso);
+            let freteEsperado = null;
+            try {
+                freteEsperado = calcularFreteEsperado(valorProduto, peso);
+            } catch (calcError) {
+                console.warn(`Erro ao calcular frete para ${idVenda}:`, calcError.message);
+                totalErroCalculo++;
+                continue;
+            }
+            
             const isIncorreto = freteEsperado !== null && Math.abs(freteCobrado - freteEsperado) > 0.01;
 
             if (isIncorreto) {
                 const pesoVolumetrico = calcularPesoVolumetrico(comprimento, largura, altura);
-                idsIncorretos.push(idVenda);
+                totalIncorretos++;
                 
                 registrosParaInserir.push({
                     id: idVenda,
-                    titulo: titulo,
-                    mlb: mlb,
-                    sku: sku,
-                    valor_produto: valorProduto,
-                    quantidade: quantidade,
-                    frete_cobrado: freteCobrado,
-                    frete_esperado: freteEsperado,
-                    frete_por_unidade: freteCobrado / (quantidade || 1),
+                    titulo: titulo || 'Sem título',
+                    mlb: mlb || 'N/A',
+                    sku: sku || 'N/A',
+                    valor_produto: parseFloat(valorProduto) || 0,
+                    quantidade: parseInt(quantidade) || 1,
+                    frete_cobrado: parseFloat(freteCobrado) || 0,
+                    frete_esperado: freteEsperado !== null ? parseFloat(freteEsperado) : null,
+                    frete_por_unidade: parseFloat(freteCobrado / (quantidade || 1)) || 0,
                     data_venda: venda.data_venda || new Date().toISOString(),
                     tipo_envio: venda.tipo_envio || 'N/I',
-                    peso_estimado: peso,
-                    comprimento_cm: comprimento,
-                    largura_cm: largura,
-                    altura_cm: altura,
-                    peso_volumetrico: pesoVolumetrico,
+                    peso_estimado: parseFloat(peso) || 0.3,
+                    comprimento_cm: parseFloat(comprimento) || 22,
+                    largura_cm: parseFloat(largura) || 16,
+                    altura_cm: parseFloat(altura) || 1,
+                    peso_volumetrico: parseFloat(pesoVolumetrico) || 0,
+                    informacoes_envio: venda.informacoes_envio || null,
+                    tags: venda.tags || [],
                     updated_at: new Date().toISOString()
                 });
             } else {
                 totalCorretosIgnorados++;
             }
-
-            await new Promise(resolve => setTimeout(resolve, 50));
         }
 
-        console.log(`📊 Resumo: ${registrosParaInserir.length} incorretos para salvar, ${totalCorretosIgnorados} corretos ignorados, ${totalFullIgnorados} FULL ignorados`);
+        console.log(`📊 Resumo: ${totalIncorretos} incorretos, ${totalCorretosIgnorados} corretos ignorados, ${totalFullIgnorados} FULL ignorados, ${totalErroCalculo} erro no cálculo`);
 
         if (registrosParaInserir.length === 0) {
-            let msg = `Nenhum frete incorreto encontrado.`;
+            let msg = `Nenhum frete incorreto encontrado nas novas vendas.`;
             if (totalCorretosIgnorados > 0) msg += ` ${totalCorretosIgnorados} corretos ignorados.`;
             if (totalFullIgnorados > 0) msg += ` ${totalFullIgnorados} FULL ignorados.`;
             tbody.innerHTML = `<tr><td colspan="15" class="text-center">${msg}</td></tr>`;
             if (contagem) contagem.textContent = '0 incorretos';
             showToast(msg, 'info');
+            await carregarFretesSalvos();
             return;
         }
 
-        await window.supabaseClient
-            .from('fretes_ml')
-            .upsert(registrosParaInserir, { onConflict: 'id', ignoreDuplicates: false });
+        // ===== INSERIR EM CHUNKS PARA EVITAR ERRO 400 =====
+        const CHUNK_SIZE = 100;
+        let inseridos = 0;
+        
+        for (let i = 0; i < registrosParaInserir.length; i += CHUNK_SIZE) {
+            const chunk = registrosParaInserir.slice(i, i + CHUNK_SIZE);
+            console.log(`📤 Inserindo lote ${Math.floor(i / CHUNK_SIZE) + 1} (${chunk.length} registros)...`);
+            
+            tbody.innerHTML = `<tr><td colspan="15" class="text-center"><div class="spinner"></div> Salvando lote ${Math.floor(i / CHUNK_SIZE) + 1} de ${Math.ceil(registrosParaInserir.length / CHUNK_SIZE)}...</td></tr>`;
+            
+            try {
+                const { data, error } = await window.supabaseClient
+                    .from('fretes_ml')
+                    .upsert(chunk, { onConflict: 'id', ignoreDuplicates: false });
+                
+                if (error) {
+                    console.error(`❌ Erro no lote ${Math.floor(i / CHUNK_SIZE) + 1}:`, error);
+                    
+                    // Tentar inserir um por um para identificar o problema
+                    console.log('🔄 Tentando inserção individual...');
+                    for (const registro of chunk) {
+                        try {
+                            const { error: singleError } = await window.supabaseClient
+                                .from('fretes_ml')
+                                .upsert(registro, { onConflict: 'id' });
+                            
+                            if (singleError) {
+                                console.error(`❌ Erro no registro ${registro.id}:`, singleError);
+                            } else {
+                                inseridos++;
+                            }
+                        } catch (e) {
+                            console.error(`❌ Erro no registro ${registro.id}:`, e);
+                        }
+                    }
+                } else {
+                    inseridos += chunk.length;
+                    console.log(`✅ Lote ${Math.floor(i / CHUNK_SIZE) + 1} inserido com sucesso`);
+                }
+            } catch (e) {
+                console.error(`❌ Erro no lote ${Math.floor(i / CHUNK_SIZE) + 1}:`, e);
+            }
+            
+            // Pequena pausa entre lotes
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
 
-        console.log(`✅ ${registrosParaInserir.length} fretes incorretos salvos`);
+        console.log(`✅ ${inseridos} novos fretes incorretos salvos`);
         await carregarFretesSalvos();
 
         if (contagem) {
             const { count } = await window.supabaseClient.from('fretes_ml').select('id', { count: 'exact', head: true });
-            contagem.textContent = `${count || 0} incorretos (${registrosParaInserir.length} novos)`;
+            contagem.textContent = `${count || 0} incorretos`;
         }
 
-        showToast(`✅ ${registrosParaInserir.length} fretes incorretos salvos`, 'success');
+        showToast(`✅ ${inseridos} novos fretes incorretos salvos (${totalFullIgnorados} FULL ignorados)`, 'success');
 
     } catch (error) {
         console.error('❌ Erro na sincronização de fretes:', error);
@@ -529,10 +635,10 @@ async function buscarFretes() {
 }
 
 // ============================================
-// CARREGAR FRETES SALVOS (CORRIGIDA - FILTRO FULL IGUAL AO SALES_DASHBOARD)
+// CARREGAR FRETES SALVOS (VERSÃO CORRIGIDA)
 // ============================================
 async function carregarFretesSalvos() {
-    console.log('📂 Carregando fretes salvos (apenas incorretos)...');
+    console.log('📂 Carregando fretes salvos do banco...');
     const tbody = document.getElementById('shippingSimpleBody');
     const contagem = document.getElementById('contagemFretes');
     if (!tbody) return;
@@ -547,7 +653,6 @@ async function carregarFretesSalvos() {
 
         if (error) throw error;
 
-        // Buscar reclamações
         let reclamacoes = [];
         try {
             const { data: reclData, error: reclError } = await window.supabaseClient
@@ -572,34 +677,26 @@ async function carregarFretesSalvos() {
             });
         }
 
-        // ===== FILTRO IGUAL AO SALES_DASHBOARD =====
         let dados = (data || []).filter(item => {
-            // 1. Verifica se é FULL usando a mesma lógica do sales_dashboard
             if (isFullByAnyField(item)) {
-                console.log(`⏭️ Item ${item.id} é FULL, ignorando (filtro isFullByAnyField)`);
                 return false;
             }
             
-            // 2. Verificar tipo_envio diretamente (por segurança)
             const tipoEnvio = (item.tipo_envio || '').toUpperCase();
             if (tipoEnvio.includes('FULL') || 
                 tipoEnvio.includes('FULFILLMENT') || 
                 tipoEnvio === 'FULL') {
-                console.log(`⏭️ Item ${item.id} é FULL (tipo_envio: ${tipoEnvio})`);
                 return false;
             }
             
-            // 3. Verificar se tem frete > 0
             if (!item.frete_cobrado || item.frete_cobrado <= 0) {
                 return false;
             }
             
-            // 4. Verificar se frete esperado é calculável
             const peso = item.peso_estimado || 0.3;
             const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
             if (freteEsperado === null) return false;
             
-            // 5. Verificar se é incorreto (diferença > 0.01)
             return Math.abs(item.frete_cobrado - freteEsperado) > 0.01;
         });
 
@@ -624,7 +721,6 @@ async function carregarFretesSalvos() {
 
         fretesFiltrados = [...fretesDadosCompletos];
 
-        // Aplicar filtro de status se não for 'todos'
         if (filtroStatusReclamacao !== 'todos') {
             fretesFiltrados = fretesFiltrados.filter(item => {
                 if (filtroStatusReclamacao === 'aberto') {
@@ -655,9 +751,9 @@ async function carregarFretesSalvos() {
             contagemReclamacoes.textContent = `${totalReclamacoes} reclamações`;
         }
 
+        // ===== FORÇAR PÁGINA 1 E RENDERIZAR =====
         fretesPaginaAtual = 1;
         renderizarPaginaFretes();
-        atualizarInfoPagina();
 
     } catch (error) {
         console.error('❌ Erro ao carregar fretes:', error);
@@ -669,23 +765,57 @@ async function carregarFretesSalvos() {
 }
 
 // ============================================
-// RENDERIZAR PÁGINA DE FRETES
+// RENDERIZAR PÁGINA DE FRETES (VERSÃO CORRIGIDA)
 // ============================================
 function renderizarPaginaFretes() {
+    console.log('📄 ===== RENDERIZANDO PÁGINA =====');
+    console.log('📄 Página atual:', fretesPaginaAtual);
+    console.log('📄 Itens por página:', fretesPorPagina);
+    console.log('📄 Total de itens:', fretesFiltrados.length);
+    
     const tbody = document.getElementById('shippingSimpleBody');
-    if (!tbody) return;
-
-    const inicio = (fretesPaginaAtual - 1) * fretesPorPagina;
-    const fim = Math.min(inicio + fretesPorPagina, fretesFiltrados.length);
-    const paginaDados = fretesFiltrados.slice(inicio, fim);
-
-    if (paginaDados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="15" class="text-center py-5">Nenhum dado encontrado.</td></tr>';
+    if (!tbody) {
+        console.error('❌ Tbody não encontrado');
         return;
     }
 
-    tbody.innerHTML = '';
+    const totalItens = fretesFiltrados.length;
+    
+    if (totalItens === 0) {
+        tbody.innerHTML = '<tr><td colspan="15" class="text-center py-5">Nenhum dado encontrado.</td></tr>';
+        atualizarInfoPagina();
+        return;
+    }
 
+    // Calcular total de páginas
+    const totalPaginas = Math.ceil(totalItens / fretesPorPagina);
+    console.log('📄 Total de páginas:', totalPaginas);
+    
+    // Garantir que a página atual está dentro dos limites
+    if (fretesPaginaAtual < 1) fretesPaginaAtual = 1;
+    if (fretesPaginaAtual > totalPaginas) fretesPaginaAtual = totalPaginas;
+    console.log('📄 Página após validação:', fretesPaginaAtual);
+    
+    // Calcular índices corretamente
+    const inicio = (fretesPaginaAtual - 1) * fretesPorPagina;
+    const fim = Math.min(inicio + fretesPorPagina, totalItens);
+    
+    console.log(`📄 Índices: inicio=${inicio}, fim=${fim}`);
+    console.log(`📄 Pegando itens de ${inicio} até ${fim}`);
+    
+    // Pegar os itens da página atual
+    const paginaDados = fretesFiltrados.slice(inicio, fim);
+    console.log(`📄 Itens na página: ${paginaDados.length}`);
+
+    if (paginaDados.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="15" class="text-center py-5">Nenhum dado nesta página.</td></tr>';
+        atualizarInfoPagina();
+        return;
+    }
+
+    // Renderizar linhas
+    tbody.innerHTML = '';
+    
     paginaDados.forEach((item) => {
         const row = document.createElement('tr');
         
@@ -744,7 +874,6 @@ function renderizarPaginaFretes() {
         }
 
         const dataVenda = item.data_venda ? new Date(item.data_venda).toLocaleDateString('pt-BR') : '-';
-
         const freteCobradoDisplay = freteCobrado > 0 ? `R$ ${freteCobrado.toFixed(2)}` : 'R$ 0,00';
         const skuDisplay = sku && sku !== 'N/A' ? sku : 'N/A';
 
@@ -847,6 +976,7 @@ function renderizarPaginaFretes() {
         }
     });
 
+    // Atualizar informações da página
     atualizarInfoPagina();
 }
 
@@ -934,7 +1064,7 @@ async function salvarMedidasERecalcular(row, vendaId, sku) {
 }
 
 // ============================================
-// FILTRAR RECLAMAÇÕES (FUNÇÃO GLOBAL)
+// FILTRAR RECLAMAÇÕES
 // ============================================
 function filtrarReclamacoes(status) {
     console.log(`📌 Filtrando reclamações por: ${status}`);
@@ -956,40 +1086,172 @@ function filtrarReclamacoes(status) {
 }
 
 // ============================================
-// ATUALIZAR INFORMAÇÕES DA PÁGINA
+// ATUALIZAR INFORMAÇÕES DA PÁGINA (VERSÃO CORRIGIDA)
 // ============================================
 function atualizarInfoPagina() {
     const total = fretesFiltrados.length;
+    
+    if (total === 0) {
+        const infoEl = document.getElementById('infoFretes');
+        if (infoEl) infoEl.textContent = 'Nenhum registro';
+        
+        const btnAnterior = document.getElementById('btnFretesAnterior');
+        const btnProxima = document.getElementById('btnFretesProxima');
+        const paginaDisplay = document.getElementById('paginaAtualDisplay');
+        
+        if (btnAnterior) {
+            btnAnterior.disabled = true;
+            btnAnterior.style.opacity = '0.5';
+        }
+        if (btnProxima) {
+            btnProxima.disabled = true;
+            btnProxima.style.opacity = '0.5';
+        }
+        if (paginaDisplay) {
+            paginaDisplay.textContent = 'Página 0 de 0';
+        }
+        return;
+    }
+    
+    const totalPaginas = Math.ceil(total / fretesPorPagina);
+    
+    // Garantir que a página atual está dentro dos limites
+    if (fretesPaginaAtual < 1) fretesPaginaAtual = 1;
+    if (fretesPaginaAtual > totalPaginas) fretesPaginaAtual = totalPaginas;
+    
     const inicio = (fretesPaginaAtual - 1) * fretesPorPagina + 1;
     const fim = Math.min(inicio + fretesPorPagina - 1, total);
 
+    // Atualizar texto de informação
     const infoEl = document.getElementById('infoFretes');
     if (infoEl) {
-        infoEl.textContent = total > 0 ? `Mostrando ${inicio}-${fim} de ${total}` : 'Nenhum registro';
+        infoEl.textContent = `Mostrando ${inicio}-${fim} de ${total}`;
     }
 
+    // Atualizar display da página
+    const paginaDisplay = document.getElementById('paginaAtualDisplay');
+    if (paginaDisplay) {
+        paginaDisplay.textContent = `Página ${fretesPaginaAtual} de ${totalPaginas}`;
+    }
+
+    // Atualizar botões
     const btnAnterior = document.getElementById('btnFretesAnterior');
     const btnProxima = document.getElementById('btnFretesProxima');
-    if (btnAnterior) btnAnterior.disabled = fretesPaginaAtual <= 1;
-    if (btnProxima) btnProxima.disabled = fim >= total;
+    
+    if (btnAnterior) {
+        btnAnterior.disabled = fretesPaginaAtual <= 1;
+        btnAnterior.style.opacity = fretesPaginaAtual <= 1 ? '0.5' : '1';
+        btnAnterior.style.cursor = fretesPaginaAtual <= 1 ? 'not-allowed' : 'pointer';
+    }
+    
+    if (btnProxima) {
+        btnProxima.disabled = fretesPaginaAtual >= totalPaginas;
+        btnProxima.style.opacity = fretesPaginaAtual >= totalPaginas ? '0.5' : '1';
+        btnProxima.style.cursor = fretesPaginaAtual >= totalPaginas ? 'not-allowed' : 'pointer';
+    }
+    
+    console.log(`📄 Página ${fretesPaginaAtual}/${totalPaginas} - Itens ${inicio}-${fim} de ${total}`);
 }
 
 // ============================================
-// NAVEGAÇÃO DA PÁGINA
+// NAVEGAÇÃO DA PÁGINA (VERSÃO CORRIGIDA - SEM DUPLICAÇÃO)
 // ============================================
 function paginaFretesAnterior() {
+    console.log('⬅️ Botão Anterior clicado. Página atual:', fretesPaginaAtual);
+    
     if (fretesPaginaAtual > 1) {
         fretesPaginaAtual--;
+        console.log('📄 Nova página:', fretesPaginaAtual);
         renderizarPaginaFretes();
+    } else {
+        console.log('⚠️ Já está na primeira página');
     }
 }
 
 function paginaFretesProxima() {
-    const totalPaginas = Math.ceil(fretesFiltrados.length / fretesPorPagina);
+    console.log('➡️ Botão Próximo clicado. Página atual:', fretesPaginaAtual);
+    
+    const totalPaginas = Math.max(1, Math.ceil(fretesFiltrados.length / fretesPorPagina));
+    console.log('📄 Total de páginas:', totalPaginas);
+    
     if (fretesPaginaAtual < totalPaginas) {
         fretesPaginaAtual++;
+        console.log('📄 Nova página:', fretesPaginaAtual);
         renderizarPaginaFretes();
+    } else {
+        console.log('⚠️ Já está na última página');
+        showToast('Você já está na última página', 'info');
     }
+}
+
+// ============================================
+// DEBUG DA PAGINAÇÃO
+// ============================================
+function debugPaginacao() {
+    console.log('🔍 ===== DEBUG PAGINAÇÃO =====');
+    console.log('📊 fretesFiltrados.length:', fretesFiltrados.length);
+    console.log('📊 fretesPorPagina:', fretesPorPagina);
+    console.log('📊 fretesPaginaAtual:', fretesPaginaAtual);
+    console.log('📊 totalPaginas:', Math.ceil(fretesFiltrados.length / fretesPorPagina));
+    console.log('📊 inicio:', (fretesPaginaAtual - 1) * fretesPorPagina);
+    console.log('📊 fim:', Math.min((fretesPaginaAtual) * fretesPorPagina, fretesFiltrados.length));
+    
+    if (fretesFiltrados.length > 0) {
+        const primeiro = fretesFiltrados[(fretesPaginaAtual - 1) * fretesPorPagina];
+        const ultimoIndex = Math.min((fretesPaginaAtual) * fretesPorPagina - 1, fretesFiltrados.length - 1);
+        const ultimo = fretesFiltrados[ultimoIndex];
+        console.log('📊 Primeiro ID:', primeiro?.id);
+        console.log('📊 Último ID:', ultimo?.id);
+    }
+    console.log('🔍 ===== FIM DEBUG =====');
+}
+
+// ============================================
+// IR PARA UMA PÁGINA ESPECÍFICA (OPCIONAL)
+// ============================================
+function irParaPaginaFretes(pagina) {
+    const totalPaginas = Math.max(1, Math.ceil(fretesFiltrados.length / fretesPorPagina));
+    if (pagina >= 1 && pagina <= totalPaginas) {
+        fretesPaginaAtual = pagina;
+        renderizarPaginaFretes();
+        const table = document.getElementById('shippingSimpleTable');
+        if (table) {
+            table.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }
+}
+
+// ============================================
+// GERAR NÚMEROS DE PÁGINA (OPCIONAL)
+// ============================================
+function gerarNumerosPagina() {
+    const container = document.getElementById('paginacaoNumeros');
+    if (!container) return;
+    
+    const totalPaginas = Math.max(1, Math.ceil(fretesFiltrados.length / fretesPorPagina));
+    const paginaAtual = fretesPaginaAtual;
+    
+    let html = '';
+    const maxBotoes = 7;
+    let inicio = Math.max(1, paginaAtual - 3);
+    let fim = Math.min(totalPaginas, inicio + maxBotoes - 1);
+    
+    if (fim - inicio < maxBotoes - 1) {
+        inicio = Math.max(1, fim - maxBotoes + 1);
+    }
+    
+    for (let i = inicio; i <= fim; i++) {
+        const isAtiva = i === paginaAtual;
+        html += `
+            <button class="btn btn-sm ${isAtiva ? 'btn-primary' : 'btn-outline-secondary'}" 
+                    onclick="irParaPaginaFretes(${i})"
+                    style="min-width: 35px;">
+                ${i}
+            </button>
+        `;
+    }
+    
+    container.innerHTML = html;
 }
 
 // ============================================
@@ -1779,169 +2041,6 @@ async function editarReclamacao(id) {
 }
 
 // ============================================
-// BUSCAR FRETES (SINCRONIZAÇÃO) - CORRIGIDA
-// ============================================
-async function buscarFretes() {
-    console.log('🔍 Iniciando sincronização de fretes...');
-    const tbody = document.getElementById('shippingSimpleBody');
-    const contagem = document.getElementById('contagemFretes');
-    const btn = document.getElementById('btnBuscarFretes');
-
-    if (!tbody) return;
-
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
-    }
-
-    tbody.innerHTML = '<tr><td colspan="15" class="text-center"><div class="spinner"></div> Buscando vendas para análise de frete...</td></tr>';
-    if (contagem) contagem.textContent = 'Sincronizando...';
-
-    try {
-        // Buscar mais pedidos (200 para garantir desde junho)
-        const resultado = await buscarFretesML(200);
-
-        if (!resultado || !resultado.vendas) {
-            throw new Error('Nenhum resultado retornado');
-        }
-
-        console.log(`📦 ${resultado.vendas.length} vendas retornadas da busca de frete`);
-
-        if (resultado.vendas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="15" class="text-center">Nenhuma venda encontrada.</td></tr>';
-            if (contagem) contagem.textContent = '0 registros';
-            showToast('Nenhuma venda encontrada', 'info');
-            return;
-        }
-
-        // Limpar dados antigos antes de inserir novos
-        console.log('🗑️ Removendo dados antigos...');
-        await window.supabaseClient
-            .from('fretes_ml')
-            .delete()
-            .neq('id', '0'); // Deleta todos
-
-        const registrosParaInserir = [];
-        let totalFullIgnorados = 0;
-        let totalCorretosIgnorados = 0;
-        let totalIncorretos = 0;
-
-        for (const venda of resultado.vendas) {
-            const idVenda = venda.id_venda_ml || venda.id;
-            if (!idVenda) continue;
-
-            // ===== VERIFICAÇÃO DE FULL - MESMA LÓGICA DO SALES_DASHBOARD =====
-            const isFull = isFullByAnyField(venda);
-            
-            // Verificação adicional por tipo_envio
-            const tipoEnvio = (venda.tipo_envio || '').toUpperCase();
-            const isFullByTipo = tipoEnvio.includes('FULL') || 
-                                 tipoEnvio.includes('FULFILLMENT') || 
-                                 tipoEnvio === 'FULL';
-            
-            if (isFull || isFullByTipo) {
-                totalFullIgnorados++;
-                console.log(`⏭️ Venda ${idVenda} é FULL, ignorando`);
-                continue;
-            }
-
-            const freteCobrado = venda.frete_cobrado || 0;
-            const quantidade = venda.quantidade || 1;
-            const sku = venda.sku || 'N/A';
-            const titulo = venda.titulo || 'Sem título';
-            const mlb = venda.mlb_id || 'N/A';
-            const valorProduto = venda.valor_total || 0;
-
-            // Se frete cobrado for 0, não é relevante
-            if (freteCobrado === 0) {
-                totalCorretosIgnorados++;
-                continue;
-            }
-
-            let medidas = await buscarMedidasPorSKU(sku);
-            let comprimento = 22, largura = 16, altura = 1, peso = 0.3;
-            if (medidas) {
-                comprimento = medidas.comprimento_cm || 22;
-                largura = medidas.largura_cm || 16;
-                altura = medidas.altura_cm || 1;
-                peso = medidas.peso_kg || 0.3;
-            }
-
-            const freteEsperado = calcularFreteEsperado(valorProduto, peso);
-            const isIncorreto = freteEsperado !== null && Math.abs(freteCobrado - freteEsperado) > 0.01;
-
-            if (isIncorreto) {
-                const pesoVolumetrico = calcularPesoVolumetrico(comprimento, largura, altura);
-                totalIncorretos++;
-                
-                registrosParaInserir.push({
-                    id: idVenda,
-                    titulo: titulo,
-                    mlb: mlb,
-                    sku: sku,
-                    valor_produto: valorProduto,
-                    quantidade: quantidade,
-                    frete_cobrado: freteCobrado,
-                    frete_esperado: freteEsperado,
-                    frete_por_unidade: freteCobrado / (quantidade || 1),
-                    data_venda: venda.data_venda || new Date().toISOString(),
-                    tipo_envio: venda.tipo_envio || 'N/I',
-                    peso_estimado: peso,
-                    comprimento_cm: comprimento,
-                    largura_cm: largura,
-                    altura_cm: altura,
-                    peso_volumetrico: pesoVolumetrico,
-                    informacoes_envio: venda.informacoes_envio || null,
-                    tags: venda.tags || [],
-                    updated_at: new Date().toISOString()
-                });
-            } else {
-                totalCorretosIgnorados++;
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 50));
-        }
-
-        console.log(`📊 Resumo: ${totalIncorretos} incorretos, ${totalCorretosIgnorados} corretos ignorados, ${totalFullIgnorados} FULL ignorados`);
-
-        if (registrosParaInserir.length === 0) {
-            let msg = `Nenhum frete incorreto encontrado.`;
-            if (totalCorretosIgnorados > 0) msg += ` ${totalCorretosIgnorados} corretos ignorados.`;
-            if (totalFullIgnorados > 0) msg += ` ${totalFullIgnorados} FULL ignorados.`;
-            tbody.innerHTML = `<tr><td colspan="15" class="text-center">${msg}</td></tr>`;
-            if (contagem) contagem.textContent = '0 incorretos';
-            showToast(msg, 'info');
-            return;
-        }
-
-        await window.supabaseClient
-            .from('fretes_ml')
-            .upsert(registrosParaInserir, { onConflict: 'id', ignoreDuplicates: false });
-
-        console.log(`✅ ${registrosParaInserir.length} fretes incorretos salvos`);
-        await carregarFretesSalvos();
-
-        if (contagem) {
-            const { count } = await window.supabaseClient.from('fretes_ml').select('id', { count: 'exact', head: true });
-            contagem.textContent = `${count || 0} incorretos`;
-        }
-
-        showToast(`✅ ${registrosParaInserir.length} fretes incorretos salvos (${totalFullIgnorados} FULL ignorados)`, 'success');
-
-    } catch (error) {
-        console.error('❌ Erro na sincronização de fretes:', error);
-        tbody.innerHTML = `<tr><td colspan="15" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
-        if (contagem) contagem.textContent = 'Erro';
-        showToast('Erro ao sincronizar: ' + error.message, 'error');
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Buscar Fretes';
-        }
-    }
-}
-
-// ============================================
 // FUNÇÃO AUXILIAR: VERIFICAR SE SHIPMENT É FULL
 // ============================================
 async function isShipmentFULL(shipmentId, token) {
@@ -1974,10 +2073,10 @@ async function isShipmentFULL(shipmentId, token) {
 }
 
 // ============================================
-// FUNÇÃO PRINCIPAL: BUSCAR FRETES DO ML (CORRIGIDA)
+// BUSCAR FRETES DO ML (ÚLTIMOS 30 DIAS)
 // ============================================
-async function buscarFretesML(limit = 100) {
-    console.log('🔍 Buscando fretes específicos do Mercado Livre...');
+async function buscarFretesML(limit = 200) {
+    console.log('🔍 Buscando fretes específicos do Mercado Livre (últimos 30 dias)...');
     
     try {
         let token = null;
@@ -1997,18 +2096,37 @@ async function buscarFretesML(limit = 100) {
             throw new Error('Token ML não disponível. Faça login no Mercado Livre primeiro.');
         }
 
-        // Data de início: 1 de junho de 2026
-        const dataInicio = new Date(2026, 5, 1);
+        const dataInicio = new Date();
+        dataInicio.setDate(dataInicio.getDate() - 30);
         const dataFim = new Date();
         
         console.log(`📅 Buscando pedidos de ${dataInicio.toLocaleDateString('pt-BR')} até ${dataFim.toLocaleDateString('pt-BR')}`);
+        
+        let idsSalvos = new Set();
+        try {
+            const { data: salvos, error: salvosError } = await window.supabaseClient
+                .from('fretes_ml')
+                .select('id')
+                .limit(10000);
+            
+            if (!salvosError && salvos) {
+                idsSalvos = new Set(salvos.map(item => item.id));
+                console.log(`📋 ${idsSalvos.size} registros já salvos no banco`);
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao buscar IDs salvos:', e.message);
+        }
         
         let todasVendas = [];
         let offset = 0;
         let total = null;
         const maxLimit = 50;
+        let vendasNovas = 0;
+        let vendasJaSalvas = 0;
+        let paginasBuscadas = 0;
+        const MAX_PAGINAS = 20;
         
-        while (total === null || offset < total) {
+        while ((total === null || offset < total) && paginasBuscadas < MAX_PAGINAS) {
             const params = new URLSearchParams({
                 seller: '415176739',
                 sort: 'date_desc',
@@ -2042,146 +2160,160 @@ async function buscarFretesML(limit = 100) {
                 console.log(`📦 Total de pedidos encontrados: ${total}`);
             }
             
-            console.log(`📦 ${orders.length} pedidos na página ${Math.floor(offset / maxLimit) + 1}`);
+            paginasBuscadas++;
+            console.log(`📦 ${orders.length} pedidos na página ${paginasBuscadas}`);
             
-            todasVendas = todasVendas.concat(orders);
+            const novasVendas = orders.filter(order => {
+                const idVenda = order.id?.toString();
+                return idVenda && !idsSalvos.has(idVenda);
+            });
+            
+            vendasNovas += novasVendas.length;
+            vendasJaSalvas += orders.length - novasVendas.length;
+            
+            console.log(`📊 ${novasVendas.length} novas, ${orders.length - novasVendas.length} já salvas`);
+            
+            todasVendas = todasVendas.concat(novasVendas);
             offset += maxLimit;
             
-            await new Promise(resolve => setTimeout(resolve, 300));
+            if (novasVendas.length === 0 && offset > maxLimit) {
+                console.log('🛑 Nenhuma venda nova encontrada, interrompendo busca...');
+                break;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
         
-        console.log(`📦 Total de ${todasVendas.length} pedidos coletados`);
+        console.log(`📦 Total de ${todasVendas.length} novas vendas coletadas (${vendasJaSalvas} já estavam salvas)`);
+        
+        if (todasVendas.length === 0) {
+            console.log('ℹ️ Nenhuma venda nova para processar');
+            return { vendas: [] };
+        }
         
         const vendasProcessadas = [];
-        let contador = 0;
         let totalFullIgnorados = 0;
         let totalSemFrete = 0;
         let totalComFrete = 0;
+        let totalErro = 0;
+        const BATCH_SIZE = 50;
         
-        for (const order of todasVendas) {
-            contador++;
-            try {
-                // ===== EXTRAIR INFORMAÇÕES DE ENVIO (para usar no filtro FULL) =====
-                const shippingMode = order.shipping?.mode || '';
-                const logisticType = order.shipping?.logistic_type || '';
-                const tags = order.tags || [];
-                const fulfillment = order.shipping?.fulfillment || '';
-                const shippingOption = order.shipping?.shipping_option || {};
-                
-                // Construir objeto informacoes_envio (igual ao sales_dashboard)
-                const informacoesEnvio = {
-                    tipo: shippingMode,
-                    logistic_type: logisticType,
-                    fulfillment: fulfillment,
-                    id: order.shipping?.id || null,
-                    receiver_cost: order.shipping?.receiver_cost || null,
-                    cost: order.shipping?.cost || null
-                };
-                
-                // ===== VERIFICAÇÃO DE FULL - MESMA LÓGICA DO SALES_DASHBOARD =====
-                // Primeiro, criar um objeto compatível com isFullByAnyField
-                const itemParaTeste = {
-                    tipo_envio: shippingMode,
-                    informacoes_envio: informacoesEnvio,
-                    tags: tags,
-                    titulo: order.order_items?.[0]?.item?.title || '',
-                    id: order.id
-                };
-                
-                // Verificar se é FULL usando a mesma lógica do sales_dashboard
-                const isFull = isFullByAnyField(itemParaTeste);
-                
-                // Verificação adicional por campos específicos
-                const isFullByShipping = 
-                    shippingMode?.toLowerCase().includes('full') ||
-                    shippingMode?.toLowerCase().includes('fulfillment') ||
-                    logisticType?.toLowerCase().includes('full') ||
-                    logisticType?.toLowerCase().includes('fulfillment') ||
-                    fulfillment?.toLowerCase().includes('full') ||
-                    tags.some(t => t.toLowerCase().includes('full')) ||
-                    tags.some(t => t.toLowerCase().includes('fulfillment')) ||
-                    shippingOption?.fulfillment?.toLowerCase().includes('full') ||
-                    shippingOption?.logistic_type?.toLowerCase().includes('full');
-                
-                if (isFull || isFullByShipping) {
-                    totalFullIgnorados++;
-                    console.log(`⏭️ Pedido ${order.id} é FULL, ignorando`);
-                    continue;
-                }
-
-                // Buscar item para obter SKU e título
-                const itemId = order.order_items?.[0]?.item?.id;
-                let titulo = 'Sem título';
-                let sku = 'N/A';
-                let mlbId = 'N/A';
-                let valorTotal = 0;
-                
-                if (order.order_items && order.order_items.length > 0) {
-                    valorTotal = order.order_items.reduce((sum, item) => {
-                        return sum + (item.unit_price || 0) * (item.quantity || 0);
-                    }, 0);
-                }
-                
-                if (itemId) {
-                    try {
-                        const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
-                        const itemProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
-                        const itemResp = await fetch(itemProxy);
-                        if (itemResp.ok) {
-                            const itemData = await itemResp.json();
-                            titulo = itemData.title || titulo;
-                            sku = itemData.seller_sku || 
-                                  itemData.seller_custom_field || 
-                                  itemData.attributes?.find(a => a.id === 'SELLER_SKU')?.value_name ||
-                                  itemData.attributes?.find(a => a.id === 'SELLER_CUSTOM_FIELD')?.value_name ||
-                                  'N/A';
-                            mlbId = itemId;
-                        }
-                    } catch (e) {
-                        console.warn(`Erro ao buscar item ${itemId}:`, e.message);
+        for (let i = 0; i < todasVendas.length; i += BATCH_SIZE) {
+            const batch = todasVendas.slice(i, i + BATCH_SIZE);
+            console.log(`📦 Processando lote ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(todasVendas.length / BATCH_SIZE)}...`);
+            
+            for (const order of batch) {
+                try {
+                    const shippingMode = order.shipping?.mode || '';
+                    const logisticType = order.shipping?.logistic_type || '';
+                    const tags = order.tags || [];
+                    const fulfillment = order.shipping?.fulfillment || '';
+                    
+                    const informacoesEnvio = {
+                        tipo: shippingMode,
+                        logistic_type: logisticType,
+                        fulfillment: fulfillment,
+                        id: order.shipping?.id || null,
+                        receiver_cost: order.shipping?.receiver_cost || null,
+                        cost: order.shipping?.cost || null
+                    };
+                    
+                    const itemParaTeste = {
+                        tipo_envio: shippingMode,
+                        informacoes_envio: informacoesEnvio,
+                        tags: tags,
+                        titulo: order.order_items?.[0]?.item?.title || '',
+                        id: order.id
+                    };
+                    
+                    const isFull = isFullByAnyField(itemParaTeste);
+                    
+                    const isFullByShipping = 
+                        shippingMode?.toLowerCase().includes('full') ||
+                        shippingMode?.toLowerCase().includes('fulfillment') ||
+                        logisticType?.toLowerCase().includes('full') ||
+                        logisticType?.toLowerCase().includes('fulfillment') ||
+                        fulfillment?.toLowerCase().includes('full') ||
+                        tags.some(t => t.toLowerCase().includes('full')) ||
+                        tags.some(t => t.toLowerCase().includes('fulfillment'));
+                    
+                    if (isFull || isFullByShipping) {
+                        totalFullIgnorados++;
+                        continue;
                     }
+
+                    const itemId = order.order_items?.[0]?.item?.id;
+                    let titulo = 'Sem título';
+                    let sku = 'N/A';
+                    let mlbId = 'N/A';
+                    let valorTotal = 0;
+                    
+                    if (order.order_items && order.order_items.length > 0) {
+                        valorTotal = order.order_items.reduce((sum, item) => {
+                            return sum + (item.unit_price || 0) * (item.quantity || 0);
+                        }, 0);
+                    }
+                    
+                    if (itemId) {
+                        try {
+                            const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
+                            const itemProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
+                            const itemResp = await fetch(itemProxy);
+                            if (itemResp.ok) {
+                                const itemData = await itemResp.json();
+                                titulo = itemData.title || titulo;
+                                sku = itemData.seller_sku || 
+                                      itemData.seller_custom_field || 
+                                      itemData.attributes?.find(a => a.id === 'SELLER_SKU')?.value_name ||
+                                      itemData.attributes?.find(a => a.id === 'SELLER_CUSTOM_FIELD')?.value_name ||
+                                      'N/A';
+                                mlbId = itemId;
+                            }
+                        } catch (e) {
+                            console.warn(`Erro ao buscar item ${itemId}:`, e.message);
+                        }
+                    }
+
+                    const resultadoFrete = await extrairFreteDaVenda(order, token);
+                    const freteCobrado = resultadoFrete.frete;
+
+                    if (freteCobrado === 0) {
+                        totalSemFrete++;
+                        continue;
+                    }
+
+                    totalComFrete++;
+
+                    vendasProcessadas.push({
+                        id_venda_ml: order.id.toString(),
+                        id: order.id.toString(),
+                        titulo: titulo,
+                        sku: sku,
+                        mlb_id: mlbId,
+                        valor_total: valorTotal,
+                        data_venda: order.date_created || new Date().toISOString(),
+                        tipo_envio: shippingMode || 'N/I',
+                        status: order.status,
+                        frete_cobrado: freteCobrado,
+                        quantidade: order.order_items?.[0]?.quantity || 1,
+                        fonte_frete: resultadoFrete.fonte,
+                        informacoes_envio: informacoesEnvio,
+                        tags: tags,
+                        is_full: false
+                    });
+                    
+                } catch (e) {
+                    console.warn(`Erro ao processar pedido ${order.id}:`, e.message);
+                    totalErro++;
                 }
-
-                // ===== EXTRAIR FRETE CORRETAMENTE =====
-                const resultadoFrete = await extrairFreteDaVenda(order, token);
-                const freteCobrado = resultadoFrete.frete;
-                const fonte = resultadoFrete.fonte;
-
-                if (freteCobrado === 0) {
-                    totalSemFrete++;
-                    continue;
-                }
-
-                totalComFrete++;
-                console.log(`📊 Venda ${order.id}: Frete=R$ ${freteCobrado.toFixed(2)} (${fonte}), Valor=R$ ${valorTotal.toFixed(2)}`);
-
-                vendasProcessadas.push({
-                    id_venda_ml: order.id.toString(),
-                    id: order.id.toString(),
-                    titulo: titulo,
-                    sku: sku,
-                    mlb_id: mlbId,
-                    valor_total: valorTotal,
-                    data_venda: order.date_created || new Date().toISOString(),
-                    tipo_envio: shippingMode || 'N/I',
-                    status: order.status,
-                    frete_cobrado: freteCobrado,
-                    quantidade: order.order_items?.[0]?.quantity || 1,
-                    fonte_frete: fonte,
-                    informacoes_envio: informacoesEnvio,
-                    tags: tags,
-                    is_full: false
-                });
-                
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-            } catch (e) {
-                console.warn(`Erro ao processar pedido ${order.id}:`, e.message);
             }
+            
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
         
-        console.log(`✅ ${vendasProcessadas.length} vendas processadas`);
-        console.log(`📊 Resumo: ${totalFullIgnorados} FULL ignorados, ${totalSemFrete} sem frete, ${totalComFrete} com frete`);
+        console.log(`✅ ${vendasProcessadas.length} novas vendas processadas`);
+        console.log(`📊 Resumo: ${totalFullIgnorados} FULL ignorados, ${totalSemFrete} sem frete, ${totalComFrete} com frete, ${totalErro} com erro`);
+        
         return { vendas: vendasProcessadas };
         
     } catch (error) {
@@ -2191,65 +2323,75 @@ async function buscarFretesML(limit = 100) {
 }
 
 // ============================================
-// BUSCAR FRETES (SINCRONIZAÇÃO) - CORRIGIDA
+// SINCRONIZAR FRETES (MANUAL - CLIQUE NO BOTÃO)
 // ============================================
 async function buscarFretes() {
-    console.log('🔍 Iniciando sincronização de fretes...');
+    console.log('🔍 Iniciando sincronização de fretes (últimos 30 dias)...');
     const tbody = document.getElementById('shippingSimpleBody');
     const contagem = document.getElementById('contagemFretes');
     const btn = document.getElementById('btnBuscarFretes');
 
     if (!tbody) return;
 
+    if (typeof calcularFreteEsperado === 'undefined') {
+        console.error('❌ Função calcularFreteEsperado não definida!');
+        showToast('❌ Erro: função de cálculo de frete não disponível', 'error');
+        return;
+    }
+
     if (btn) {
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
     }
 
-    tbody.innerHTML = '<tr><td colspan="15" class="text-center"><div class="spinner"></div> Buscando vendas para análise de frete...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="15" class="text-center"><div class="spinner"></div> Buscando vendas dos últimos 30 dias...</td></tr>';
     if (contagem) contagem.textContent = 'Sincronizando...';
 
     try {
-        // Buscar mais pedidos (200 para garantir todos desde junho)
         const resultado = await buscarFretesML(200);
 
-        if (!resultado || !resultado.vendas) {
+        if (!resultado) {
             throw new Error('Nenhum resultado retornado');
         }
 
-        console.log(`📦 ${resultado.vendas.length} vendas retornadas da busca de frete`);
-
-        if (resultado.vendas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="15" class="text-center">Nenhuma venda encontrada.</td></tr>';
-            if (contagem) contagem.textContent = '0 registros';
-            showToast('Nenhuma venda encontrada', 'info');
+        if (!resultado.vendas || resultado.vendas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="15" class="text-center">✅ Nenhuma venda nova encontrada nos últimos 30 dias.</td></tr>';
+            if (contagem) contagem.textContent = '0 novas';
+            showToast('Nenhuma venda nova encontrada', 'info');
+            await carregarFretesSalvos();
             return;
         }
 
-        // Limpar dados antigos antes de inserir novos
-        console.log('🗑️ Removendo dados antigos...');
-        await window.supabaseClient
-            .from('fretes_ml')
-            .delete()
-            .neq('id', '0'); // Deleta todos
+        console.log(`📦 ${resultado.vendas.length} novas vendas para processar`);
 
         const registrosParaInserir = [];
         let totalFullIgnorados = 0;
         let totalCorretosIgnorados = 0;
         let totalIncorretos = 0;
+        let totalErroCalculo = 0;
+
+        let processados = 0;
+        const totalVendas = resultado.vendas.length;
 
         for (const venda of resultado.vendas) {
+            processados++;
+            
+            if (processados % 50 === 0 || processados === totalVendas) {
+                const percentual = Math.round((processados / totalVendas) * 100);
+                tbody.innerHTML = `<tr><td colspan="15" class="text-center"><div class="spinner"></div> Analisando vendas: ${percentual}% (${processados}/${totalVendas})...</td></tr>`;
+            }
+
             const idVenda = venda.id_venda_ml || venda.id;
             if (!idVenda) continue;
 
-            // ===== VERIFICAÇÃO DUPLA DE FULL =====
-            const isFull = venda.tipo_envio === 'FULL' || 
-                           venda.tipo_envio === 'FULFILLMENT' ||
-                           isFullByAnyField(venda);
+            const isFull = isFullByAnyField(venda);
+            const tipoEnvio = (venda.tipo_envio || '').toUpperCase();
+            const isFullByTipo = tipoEnvio.includes('FULL') || 
+                                 tipoEnvio.includes('FULFILLMENT') || 
+                                 tipoEnvio === 'FULL';
             
-            if (isFull) {
+            if (isFull || isFullByTipo) {
                 totalFullIgnorados++;
-                console.log(`⏭️ Venda ${idVenda} é FULL, ignorando`);
                 continue;
             }
 
@@ -2260,7 +2402,6 @@ async function buscarFretes() {
             const mlb = venda.mlb_id || 'N/A';
             const valorProduto = venda.valor_total || 0;
 
-            // Se frete cobrado for 0, não é relevante
             if (freteCobrado === 0) {
                 totalCorretosIgnorados++;
                 continue;
@@ -2275,7 +2416,15 @@ async function buscarFretes() {
                 peso = medidas.peso_kg || 0.3;
             }
 
-            const freteEsperado = calcularFreteEsperado(valorProduto, peso);
+            let freteEsperado = null;
+            try {
+                freteEsperado = calcularFreteEsperado(valorProduto, peso);
+            } catch (calcError) {
+                console.warn(`Erro ao calcular frete para ${idVenda}:`, calcError.message);
+                totalErroCalculo++;
+                continue;
+            }
+            
             const isIncorreto = freteEsperado !== null && Math.abs(freteCobrado - freteEsperado) > 0.01;
 
             if (isIncorreto) {
@@ -2284,31 +2433,31 @@ async function buscarFretes() {
                 
                 registrosParaInserir.push({
                     id: idVenda,
-                    titulo: titulo,
-                    mlb: mlb,
-                    sku: sku,
-                    valor_produto: valorProduto,
-                    quantidade: quantidade,
-                    frete_cobrado: freteCobrado,
-                    frete_esperado: freteEsperado,
-                    frete_por_unidade: freteCobrado / (quantidade || 1),
+                    titulo: titulo || 'Sem título',
+                    mlb: mlb || 'N/A',
+                    sku: sku || 'N/A',
+                    valor_produto: parseFloat(valorProduto) || 0,
+                    quantidade: parseInt(quantidade) || 1,
+                    frete_cobrado: parseFloat(freteCobrado) || 0,
+                    frete_esperado: freteEsperado !== null ? parseFloat(freteEsperado) : null,
+                    frete_por_unidade: parseFloat(freteCobrado / (quantidade || 1)) || 0,
                     data_venda: venda.data_venda || new Date().toISOString(),
                     tipo_envio: venda.tipo_envio || 'N/I',
-                    peso_estimado: peso,
-                    comprimento_cm: comprimento,
-                    largura_cm: largura,
-                    altura_cm: altura,
-                    peso_volumetrico: pesoVolumetrico,
+                    peso_estimado: parseFloat(peso) || 0.3,
+                    comprimento_cm: parseFloat(comprimento) || 22,
+                    largura_cm: parseFloat(largura) || 16,
+                    altura_cm: parseFloat(altura) || 1,
+                    peso_volumetrico: parseFloat(pesoVolumetrico) || 0,
+                    informacoes_envio: venda.informacoes_envio || null,
+                    tags: venda.tags || [],
                     updated_at: new Date().toISOString()
                 });
             } else {
                 totalCorretosIgnorados++;
             }
-
-            await new Promise(resolve => setTimeout(resolve, 50));
         }
 
-        console.log(`📊 Resumo: ${totalIncorretos} incorretos, ${totalCorretosIgnorados} corretos ignorados, ${totalFullIgnorados} FULL ignorados`);
+        console.log(`📊 Resumo: ${totalIncorretos} incorretos, ${totalCorretosIgnorados} corretos, ${totalFullIgnorados} FULL, ${totalErroCalculo} erros`);
 
         if (registrosParaInserir.length === 0) {
             let msg = `Nenhum frete incorreto encontrado.`;
@@ -2317,14 +2466,48 @@ async function buscarFretes() {
             tbody.innerHTML = `<tr><td colspan="15" class="text-center">${msg}</td></tr>`;
             if (contagem) contagem.textContent = '0 incorretos';
             showToast(msg, 'info');
+            await carregarFretesSalvos();
             return;
         }
 
-        await window.supabaseClient
-            .from('fretes_ml')
-            .upsert(registrosParaInserir, { onConflict: 'id', ignoreDuplicates: false });
+        const CHUNK_SIZE = 100;
+        let inseridos = 0;
+        const totalChunks = Math.ceil(registrosParaInserir.length / CHUNK_SIZE);
+        
+        for (let i = 0; i < registrosParaInserir.length; i += CHUNK_SIZE) {
+            const chunk = registrosParaInserir.slice(i, i + CHUNK_SIZE);
+            const chunkNum = Math.floor(i / CHUNK_SIZE) + 1;
+            
+            tbody.innerHTML = `<tr><td colspan="15" class="text-center"><div class="spinner"></div> Salvando ${chunkNum}/${totalChunks} (${chunk.length} registros)...</td></tr>`;
+            
+            try {
+                const { error } = await window.supabaseClient
+                    .from('fretes_ml')
+                    .upsert(chunk, { onConflict: 'id' });
+                
+                if (error) {
+                    console.error(`❌ Erro no lote ${chunkNum}:`, error);
+                    for (const registro of chunk) {
+                        try {
+                            await window.supabaseClient
+                                .from('fretes_ml')
+                                .upsert(registro, { onConflict: 'id' });
+                            inseridos++;
+                        } catch (e) {
+                            console.error(`❌ Erro no registro ${registro.id}:`, e);
+                        }
+                    }
+                } else {
+                    inseridos += chunk.length;
+                }
+            } catch (e) {
+                console.error(`❌ Erro no lote ${chunkNum}:`, e);
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
 
-        console.log(`✅ ${registrosParaInserir.length} fretes incorretos salvos`);
+        console.log(`✅ ${inseridos} novos fretes incorretos salvos`);
         await carregarFretesSalvos();
 
         if (contagem) {
@@ -2332,7 +2515,7 @@ async function buscarFretes() {
             contagem.textContent = `${count || 0} incorretos`;
         }
 
-        showToast(`✅ ${registrosParaInserir.length} fretes incorretos salvos (${totalFullIgnorados} FULL ignorados)`, 'success');
+        showToast(`✅ ${inseridos} novos fretes incorretos salvos (últimos 30 dias)`, 'success');
 
     } catch (error) {
         console.error('❌ Erro na sincronização de fretes:', error);
@@ -2817,54 +3000,82 @@ function atualizarGraficosRelatorioCompleto(fretes, reclamacoes) {
 }
 
 // ============================================
-// EXPORTAR RELATÓRIO PARA EXCEL
+// EXPORTAR RELATÓRIO PARA EXCEL (CORRIGIDA)
 // ============================================
 function exportarRelatorioCompletoExcel() {
-    const tbody = document.getElementById('relatorioReclamacoesBody');
-    const rows = tbody.querySelectorAll('tr');
+    console.log('📊 Exportando relatório para Excel...');
     
-    if (rows.length === 0 || (rows.length === 1 && rows[0].querySelector('td[colspan]'))) {
-        showToast('Nenhum dado para exportar', 'warning');
-        return;
-    }
-    
-    const dados = [
-        ['Venda', 'Data', 'Nº Reclamação', 'Nº Operação', 'Nº Transação', 'Valor', 'Motivo', 'Status', 'Protocolos', 'Criado por', 'Atualizado por', 'Data Alteração']
-    ];
-    
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 12) {
-            dados.push([
-                cells[0].textContent,
-                cells[1].textContent,
-                cells[2].textContent,
-                cells[3].textContent,
-                cells[4].textContent,
-                cells[5].textContent,
-                cells[6].textContent,
-                cells[7].textContent,
-                cells[8].textContent,
-                cells[9].textContent,
-                cells[10].textContent,
-                cells[11].textContent
-            ]);
+    try {
+        // Verificar se a biblioteca XLSX está disponível
+        if (typeof XLSX === 'undefined') {
+            showToast('❌ Biblioteca XLSX não carregada. Tente recarregar a página.', 'error');
+            console.error('XLSX não definido');
+            return;
         }
-    });
-    
-    const ws = XLSX.utils.aoa_to_sheet(dados);
-    ws['!cols'] = [
-        { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 },
-        { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 15 },
-        { wch: 15 }, { wch: 20 }
-    ];
-    
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Reclamacoes_Frete');
-    
-    const nomeArquivo = `relatorio_reclamacoes_frete_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, nomeArquivo);
-    showToast('✅ Relatório exportado com sucesso!', 'success');
+
+        const tbody = document.getElementById('relatorioReclamacoesBody');
+        if (!tbody) {
+            showToast('❌ Tabela não encontrada', 'error');
+            return;
+        }
+
+        const rows = tbody.querySelectorAll('tr');
+        
+        if (rows.length === 0 || (rows.length === 1 && rows[0].querySelector('td[colspan]'))) {
+            showToast('Nenhum dado para exportar', 'warning');
+            return;
+        }
+
+        // Cabeçalhos
+        const headers = [
+            'Venda', 'Data', 'Nº Reclamação', 'Nº Operação', 
+            'Nº Transação', 'Valor', 'Motivo', 'Status', 
+            'Protocolos', 'Criado por', 'Atualizado por', 'Data Alteração'
+        ];
+        
+        const dados = [headers];
+        
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length >= 12) {
+                const rowData = [];
+                cells.forEach(cell => {
+                    // Limpar conteúdo (remover tags HTML, espaços extras)
+                    let text = cell.textContent || '';
+                    text = text.replace(/\s+/g, ' ').trim();
+                    rowData.push(text);
+                });
+                dados.push(rowData);
+            }
+        });
+
+        // Criar workbook
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(dados);
+        
+        // Definir largura das colunas
+        ws['!cols'] = [
+            { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, 
+            { wch: 18 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, 
+            { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 20 }
+        ];
+        
+        XLSX.utils.book_append_sheet(wb, ws, 'Reclamacoes_Frete');
+        
+        // Nome do arquivo com data
+        const dataAtual = new Date().toISOString().split('T')[0];
+        const nomeArquivo = `relatorio_reclamacoes_frete_${dataAtual}.xlsx`;
+        
+        // Salvar arquivo
+        XLSX.writeFile(wb, nomeArquivo);
+        
+        showToast(`✅ Relatório exportado com sucesso! (${dados.length - 1} registros)`, 'success');
+        console.log(`✅ Arquivo "${nomeArquivo}" salvo com ${dados.length - 1} registros`);
+        
+    } catch (error) {
+        console.error('❌ Erro ao exportar relatório:', error);
+        showToast('Erro ao exportar: ' + error.message, 'error');
+    }
 }
 
 // ============================================
@@ -2994,6 +3205,27 @@ function imprimirRelatorioCompleto() {
     
     printWindow.document.close();
 }
+// ============================================
+// CALCULAR FRETE ESPERADO
+// ============================================
+function calcularFreteEsperado(valorProduto, peso) {
+    const pesoArredondado = Math.round(peso * 100) / 100;
+    const valor = parseFloat(valorProduto);
+    
+    if (isNaN(valor) || isNaN(pesoArredondado) || pesoArredondado <= 0) {
+        return null;
+    }
+
+    for (const faixa of SHIPPING_COST_TABLE) {
+        if (pesoArredondado >= faixa.weightMin && pesoArredondado <= faixa.weightMax) {
+            if (valor >= faixa.priceMin && valor <= faixa.priceMax) {
+                return faixa.cost;
+            }
+        }
+    }
+    
+    return null;
+}
 
 // ============================================
 // CARREGAR USUÁRIOS PARA FILTRO
@@ -3023,32 +3255,67 @@ async function carregarUsuariosFiltro() {
 }
 
 // ============================================
-// INICIALIZAÇÃO
+// INICIALIZAÇÃO - SEM DUPLICAÇÃO DE EVENTOS
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Inicializando sistema de reclamações de frete...');
     
-    // Criar modal de reclamação
-    criarModalReclamacaoCompleta();
-    
-    // Configurar botão de buscar fretes
+    // ===== CONFIGURAR BOTÃO DE BUSCAR =====
     const btnBuscar = document.getElementById('btnBuscarFretes');
     if (btnBuscar) {
-        btnBuscar.addEventListener('click', buscarFretes);
+        // Remover todos os listeners antigos
+        const newBtn = btnBuscar.cloneNode(true);
+        btnBuscar.parentNode.replaceChild(newBtn, btnBuscar);
+        newBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            buscarFretes();
+        });
     }
     
-    // Configurar botões de paginação
+    // ===== CONFIGURAR BOTÃO ANTERIOR =====
     const btnAnterior = document.getElementById('btnFretesAnterior');
-    const btnProxima = document.getElementById('btnFretesProxima');
-    if (btnAnterior) btnAnterior.addEventListener('click', paginaFretesAnterior);
-    if (btnProxima) btnProxima.addEventListener('click', paginaFretesProxima);
+    if (btnAnterior) {
+        // Remover todos os listeners antigos e o onclick inline
+        btnAnterior.removeAttribute('onclick');
+        const newAnterior = btnAnterior.cloneNode(true);
+        btnAnterior.parentNode.replaceChild(newAnterior, btnAnterior);
+        newAnterior.addEventListener('click', function(e) {
+            e.preventDefault();
+            paginaFretesAnterior();
+        });
+    }
     
-    // Carregar dados iniciais
+    // ===== CONFIGURAR BOTÃO PRÓXIMO =====
+    const btnProxima = document.getElementById('btnFretesProxima');
+    if (btnProxima) {
+        // Remover todos os listeners antigos e o onclick inline
+        btnProxima.removeAttribute('onclick');
+        const newProxima = btnProxima.cloneNode(true);
+        btnProxima.parentNode.replaceChild(newProxima, btnProxima);
+        newProxima.addEventListener('click', function(e) {
+            e.preventDefault();
+            paginaFretesProxima();
+        });
+    }
+    
+    // ===== CONFIGURAR BOTÕES DE FILTRO =====
+    document.querySelectorAll('.btn-filtro-reclamacao').forEach(btn => {
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        newBtn.addEventListener('click', function() {
+            const status = this.dataset.status;
+            if (status) {
+                filtrarReclamacoes(status);
+            }
+        });
+    });
+    
+    // Carregar dados salvos
     if (document.getElementById('shippingSimpleBody')) {
         setTimeout(carregarFretesSalvos, 200);
     }
     
-    console.log('✅ shipping_simple.js v4.6 carregado - Sistema completo de reclamações de frete');
+    console.log('✅ shipping_simple.js v4.7 carregado');
 });
 
 // ============================================
