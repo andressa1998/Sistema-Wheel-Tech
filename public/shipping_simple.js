@@ -2966,80 +2966,68 @@ function atualizarGraficosRelatorioCompleto(fretes, reclamacoes) {
 }
 
 // ============================================
-// EXPORTAR RELATÓRIO PARA EXCEL (CORRIGIDA)
+// EXPORTAR DADOS DA TABELA PRINCIPAL PARA EXCEL
 // ============================================
 function exportarRelatorioCompletoExcel() {
-    console.log('📊 Exportando relatório para Excel...');
+    console.log('📊 Exportando tabela de fretes para Excel...');
     
     try {
-        // Verificar se a biblioteca XLSX está disponível
         if (typeof XLSX === 'undefined') {
             showToast('❌ Biblioteca XLSX não carregada. Tente recarregar a página.', 'error');
             console.error('XLSX não definido');
             return;
         }
 
-        const tbody = document.getElementById('relatorioReclamacoesBody');
-        if (!tbody) {
+        // Pegar a tabela principal
+        const table = document.getElementById('shippingSimpleTable');
+        if (!table) {
             showToast('❌ Tabela não encontrada', 'error');
             return;
         }
 
-        const rows = tbody.querySelectorAll('tr');
-        
-        if (rows.length === 0 || (rows.length === 1 && rows[0].querySelector('td[colspan]'))) {
+        // Verificar se a tabela tem dados
+        const tbody = table.querySelector('tbody');
+        if (!tbody || tbody.querySelectorAll('tr').length === 0) {
             showToast('Nenhum dado para exportar', 'warning');
             return;
         }
 
-        // Cabeçalhos
-        const headers = [
-            'Venda', 'Data', 'Nº Reclamação', 'Nº Operação', 
-            'Nº Transação', 'Valor', 'Motivo', 'Status', 
-            'Protocolos', 'Criado por', 'Atualizado por', 'Data Alteração'
-        ];
+        // Converter tabela para sheet
+        const ws = XLSX.utils.table_to_sheet(table, { raw: true });
         
-        const dados = [headers];
-        
-        rows.forEach(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length >= 12) {
-                const rowData = [];
-                cells.forEach(cell => {
-                    // Limpar conteúdo (remover tags HTML, espaços extras)
-                    let text = cell.textContent || '';
-                    text = text.replace(/\s+/g, ' ').trim();
-                    rowData.push(text);
-                });
-                dados.push(rowData);
-            }
-        });
-
-        // Criar workbook
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.aoa_to_sheet(dados);
-        
-        // Definir largura das colunas
+        // Ajustar largura das colunas
         ws['!cols'] = [
-            { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, 
-            { wch: 18 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, 
-            { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 20 }
+            { wch: 22 },  // Venda
+            { wch: 45 },  // Título
+            { wch: 20 },  // SKU
+            { wch: 18 },  // MLB
+            { wch: 12 },  // Valor
+            { wch: 8 },   // Qtd
+            { wch: 16 },  // Frete Cobrado
+            { wch: 16 },  // Frete Esperado
+            { wch: 25 },  // Status
+            { wch: 12 },  // Peso
+            { wch: 25 },  // Dimensões
+            { wch: 12 },  // Foto
+            { wch: 25 },  // Ações
+            { wch: 14 },  // Data Venda
+            { wch: 16 }   // Tipo Envio
         ];
         
-        XLSX.utils.book_append_sheet(wb, ws, 'Reclamacoes_Frete');
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Fretes');
         
-        // Nome do arquivo com data
         const dataAtual = new Date().toISOString().split('T')[0];
-        const nomeArquivo = `relatorio_reclamacoes_frete_${dataAtual}.xlsx`;
+        const nomeArquivo = `fretes_${dataAtual}.xlsx`;
         
-        // Salvar arquivo
         XLSX.writeFile(wb, nomeArquivo);
         
-        showToast(`✅ Relatório exportado com sucesso! (${dados.length - 1} registros)`, 'success');
-        console.log(`✅ Arquivo "${nomeArquivo}" salvo com ${dados.length - 1} registros`);
+        const rowCount = tbody.querySelectorAll('tr').length;
+        showToast(`✅ ${rowCount} registros exportados com sucesso!`, 'success');
+        console.log(`✅ Arquivo "${nomeArquivo}" salvo com ${rowCount} registros`);
         
     } catch (error) {
-        console.error('❌ Erro ao exportar relatório:', error);
+        console.error('❌ Erro ao exportar:', error);
         showToast('Erro ao exportar: ' + error.message, 'error');
     }
 }
