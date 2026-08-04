@@ -63,7 +63,7 @@ function mapearUF(nomeEstado) {
 }
 
 // =========================================================
-// FUNÇÃO PARA BUSCAR VALOR EXATO DO MERCADO PAGO
+// FUNÇÃO PARA BUSCAR VALOR EXATO DO MERCADO PAGO (CORRIGIDA)
 // =========================================================
 
 async function buscarValorExatoPagamento(orderId) {
@@ -92,6 +92,10 @@ async function buscarValorExatoPagamento(orderId) {
         const orderData = await orderResponse.json();
         console.log('📦 Dados da venda:', orderData);
         
+        // 🔥 PEGAR O VALOR DA VENDA (total_amount)
+        let valorVenda = parseFloat(orderData.total_amount || 0);
+        console.log(`💰 Valor da venda (total_amount): R$ ${valorVenda.toFixed(2)}`);
+        
         let paymentId = null;
         if (orderData.payments && orderData.payments.length > 0) {
             paymentId = orderData.payments[0].id;
@@ -103,7 +107,14 @@ async function buscarValorExatoPagamento(orderId) {
         
         if (!paymentId) {
             console.warn(`⚠️ Não foi possível encontrar o ID do pagamento para venda ${orderId}`);
-            return null;
+            return {
+                valor_produto: valorVenda,
+                valor_frete: 0,
+                total_pago: valorVenda,
+                payment_id: null,
+                desconto_cupom: 0,
+                fonte: 'venda'
+            };
         }
         
         console.log(`💳 ID do pagamento: ${paymentId}`);
@@ -114,7 +125,14 @@ async function buscarValorExatoPagamento(orderId) {
         
         if (!paymentResponse.ok) {
             console.warn(`⚠️ Erro ao buscar pagamento ${paymentId}: ${paymentResponse.status}`);
-            return null;
+            return {
+                valor_produto: valorVenda,
+                valor_frete: 0,
+                total_pago: valorVenda,
+                payment_id: paymentId,
+                desconto_cupom: 0,
+                fonte: 'venda'
+            };
         }
         
         const paymentData = await paymentResponse.json();
@@ -124,7 +142,7 @@ async function buscarValorExatoPagamento(orderId) {
         let descontoCupom = parseFloat(paymentData.coupon_amount || 0);
         let valorFrete = 0;
         
-        let valorProduto = totalPago - descontoCupom;
+        let valorProdutoMP = totalPago - descontoCupom;
         
         if (paymentData.additional_info?.shipments?.shipping_amount) {
             valorFrete = parseFloat(paymentData.additional_info.shipments.shipping_amount) || 0;
@@ -135,22 +153,32 @@ async function buscarValorExatoPagamento(orderId) {
         }
         
         const totalSemFrete = totalPago - valorFrete;
-        if (valorProduto > totalSemFrete) {
-            valorProduto = totalSemFrete;
+        if (valorProdutoMP > totalSemFrete) {
+            valorProdutoMP = totalSemFrete;
         }
         
-        console.log(`💰 VALORES EXATOS (Mercado Pago):`);
+        console.log(`💰 VALORES (Mercado Pago):`);
         console.log(`   💳 Total pago: R$ ${totalPago.toFixed(2)}`);
         console.log(`   🎫 Desconto cupom: R$ ${descontoCupom.toFixed(2)}`);
         console.log(`   📦 Valor do frete: R$ ${valorFrete.toFixed(2)}`);
-        console.log(`   ✅ Valor do produto: R$ ${valorProduto.toFixed(2)}`);
+        console.log(`   ✅ Valor do produto (MP): R$ ${valorProdutoMP.toFixed(2)}`);
+        console.log(`   📊 Valor da venda (total_amount): R$ ${valorVenda.toFixed(2)}`);
+        
+        // 🔥 PEGAR O MENOR VALOR ENTRE O DA VENDA E O DO MERCADO PAGO
+        let valorProdutoFinal = Math.min(valorProdutoMP, valorVenda);
+        let fonte = valorProdutoMP <= valorVenda ? 'mercado_pago' : 'venda';
+        
+        console.log(`✅ VALOR FINAL (menor): R$ ${valorProdutoFinal.toFixed(2)} (fonte: ${fonte})`);
         
         return {
-            valor_produto: valorProduto,
+            valor_produto: valorProdutoFinal,
             valor_frete: valorFrete,
             total_pago: totalPago,
             payment_id: paymentId,
-            desconto_cupom: descontoCupom
+            desconto_cupom: descontoCupom,
+            fonte: fonte,
+            valor_venda: valorVenda,
+            valor_mp: valorProdutoMP
         };
         
     } catch (error) {
@@ -955,7 +983,7 @@ console.log('  await listarNFesParaCancelarSistema()             - Listar NF-es 
 console.log('  await removerNFESistema("CHAVE_DA_NFE")           - Remover apenas o registro');
 
 // =========================================================
-// EDIÇÃO DE PRODUTOS
+// EDIÇÃO DE PRODUTOS (CORRIGIDO - MENOR VALOR)
 // =========================================================
 
 async function abrirModalEdicaoProdutos(orderId) {
@@ -988,22 +1016,31 @@ async function abrirModalEdicaoProdutos(orderId) {
             return;
         }
 
+        // 🔥 CALCULAR O VALOR TOTAL DOS PRODUTOS USANDO O MENOR VALOR
         let valorTotalProduto = 0;
         let quantidadeTotal = 0;
         
+        // Primeiro, calcular a quantidade total
+        for (const item of items) {
+            quantidadeTotal += item.quantity || 1;
+        }
+        
+        // 🔥 USAR O MENOR VALOR ENTRE O DA VENDA E O DO MERCADO PAGO
         if (dadosPagamento && dadosPagamento.valor_produto > 0) {
+            // O valor já vem com o menor entre MP e venda
             valorTotalProduto = dadosPagamento.valor_produto;
-            for (const item of items) {
-                quantidadeTotal += item.quantity || 1;
-            }
-            console.log(`💰 Valor total do produto (Mercado Pago): R$ ${valorTotalProduto.toFixed(2)}`);
+            console.log(`💰 Valor total do produto (MENOR valor): R$ ${valorTotalProduto.toFixed(2)}`);
+            console.log(`   Fonte: ${dadosPagamento.fonte || 'desconhecido'}`);
+            console.log(`   Valor venda: R$ ${dadosPagamento.valor_venda?.toFixed(2) || 'N/A'}`);
+            console.log(`   Valor MP: R$ ${dadosPagamento.valor_mp?.toFixed(2) || 'N/A'}`);
         } else {
+            // Fallback: calcular a partir dos itens
             for (const item of items) {
                 const valorUnitario = item.unit_price || 0;
                 const quantidade = item.quantity || 1;
                 valorTotalProduto += valorUnitario * quantidade;
-                quantidadeTotal += quantidade;
             }
+            console.log(`📦 Usando fallback: valor total = R$ ${valorTotalProduto.toFixed(2)}`);
         }
 
         let ncmPorSku = {};
@@ -1026,10 +1063,16 @@ async function abrirModalEdicaoProdutos(orderId) {
             
             let valorUnitario = 0;
             if (quantidadeTotal > 0 && valorTotalProduto > 0) {
+                // Distribuir o valor total proporcionalmente pela quantidade
                 valorUnitario = (valorTotalProduto / quantidadeTotal);
             } else {
                 valorUnitario = item.unit_price || 0;
             }
+            
+            console.log(`📊 Produto ${index + 1}: ${item.item.title}`);
+            console.log(`   Quantidade: ${quantidade}`);
+            console.log(`   Valor unitário calculado: R$ ${valorUnitario.toFixed(2)}`);
+            console.log(`   SKU: ${sku}`);
             
             return {
                 nome: item.item.title,
@@ -1041,15 +1084,19 @@ async function abrirModalEdicaoProdutos(orderId) {
             };
         });
 
+        // Ajuste para garantir que o total bate
         const totalCalculado = produtosEditados.reduce((acc, p) => acc + (p.valor_unitario * p.quantidade), 0);
         if (Math.abs(totalCalculado - valorTotalProduto) > 0.01 && valorTotalProduto > 0) {
             const diff = valorTotalProduto - totalCalculado;
             if (produtosEditados.length > 0) {
                 const ultimoItem = produtosEditados[produtosEditados.length - 1];
                 ultimoItem.valor_unitario += diff / ultimoItem.quantidade;
+                console.log(`🔄 Ajuste aplicado no último item: +R$ ${(diff / ultimoItem.quantidade).toFixed(2)}`);
             }
         }
 
+        // ... resto do código do modal permanece igual ...
+        
         const modalHTML = `
         <div id="modalEdicaoProdutos" class="modal" style="display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:9999;">
             <div class="modal-content" style="max-width:900px; width:95%; max-height:90vh; overflow-y:auto; background:white; padding:25px; border-radius:8px;">
@@ -1057,7 +1104,10 @@ async function abrirModalEdicaoProdutos(orderId) {
                     <h3 style="margin:0;"><i class="fas fa-edit"></i> Editar Produtos</h3>
                     <button onclick="fecharModalEdicaoProdutos()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
                 </div>
-                <p style="color:#6c757d; margin-bottom:15px;">Ajuste a quantidade, valor unitário e NCM de cada produto. O total será recalculado.</p>
+                <p style="color:#6c757d; margin-bottom:15px;">
+                    Ajuste a quantidade, valor unitário e NCM de cada produto. 
+                    <br><strong>Valor total: R$ ${valorTotalProduto.toFixed(2)}</strong> (${dadosPagamento?.fonte === 'mercado_pago' ? 'Valor do Mercado Pago' : 'Valor da venda'} - menor valor)
+                </p>
                 <div class="table-responsive">
                     <table class="table table-striped">
                         <thead>
@@ -2141,7 +2191,7 @@ window.handleVerNFEClick = handleVerNFEClick;
 window.handleCancelarNFEClick = handleCancelarNFEClick;
 
 // =========================================================
-// EMITIR NF-e PARA VENDA
+// EMITIR NF-e PARA VENDA (CORRIGIDO - ENDEREÇO SEM REPETIÇÃO)
 // =========================================================
 
 async function emitirNFEParaVenda(orderId) {
@@ -2221,6 +2271,7 @@ async function emitirNFEParaVenda(orderId) {
                     const shipment = await shipResponse.json();
                     if (shipment.receiver_address) {
                         address = shipment.receiver_address;
+                        console.log('📦 Endereço do shipment:', address);
                     }
                 }
             } catch (error) {
@@ -2238,8 +2289,24 @@ async function emitirNFEParaVenda(orderId) {
         habilitarCamposCliente();
         
         document.getElementById('clienteNome').value = nome;
-        document.getElementById('clienteEndereco').value = address.address_line || address.street_name || '';
-        document.getElementById('clienteNumero').value = address.street_number || 'S/N';
+        
+        // 🔥 CORREÇÃO: Endereço sem repetir o número
+        let logradouro = address.address_line || address.street_name || '';
+        let numero = address.street_number || 'S/N';
+        
+        // 🔥 Se o logradouro já contém o número, remove para não duplicar
+        if (logradouro && numero && numero !== 'S/N') {
+            // Remove o número do final do logradouro se estiver repetido
+            const numeroPattern = new RegExp(`\\s*[,.]?\\s*${numero}\\s*$`);
+            logradouro = logradouro.replace(numeroPattern, '');
+            // Remove vírgulas extras no final
+            logradouro = logradouro.replace(/,\s*$/, '');
+        }
+        
+        console.log(`📋 Logradouro: "${logradouro}", Número: "${numero}"`);
+        
+        document.getElementById('clienteEndereco').value = logradouro;
+        document.getElementById('clienteNumero').value = numero;
         document.getElementById('clienteBairro').value = address.neighborhood?.name || address.neighborhood || '';
         document.getElementById('clienteCidade').value = address.city?.name || address.city || '';
         
@@ -2248,6 +2315,14 @@ async function emitirNFEParaVenda(orderId) {
         document.getElementById('clienteUF').value = ufSigla;
         document.getElementById('clienteCEP').value = address.zip_code ? address.zip_code.replace(/\D/g, '') : '';
         document.getElementById('clienteDocumento').value = '';
+
+        console.log('📋 Dados preenchidos:', {
+            nome,
+            endereco: document.getElementById('clienteEndereco').value,
+            numero: document.getElementById('clienteNumero').value,
+            cidade: document.getElementById('clienteCidade').value,
+            uf: ufSigla
+        });
 
         const cfopSelect = document.getElementById('nfeCfop');
         if (cfopSelect) {
