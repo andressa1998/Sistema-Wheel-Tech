@@ -69,27 +69,60 @@ let fretesDadosCompletos = [];
 let fretesFiltrados = [];
 
 // ============================================
-// FUNÇÕES AUXILIARES
+// FUNÇÃO PARA DETECTAR VENDAS FULL - MESMA LÓGICA DO SALES_DASHBOARD
 // ============================================
 function isFullByAnyField(item) {
-    const text = `${item.titulo || ''} ${item.mlb || ''} ${item.id || ''} ${item.tipo_envio || ''} ${item.sku || ''}`.toLowerCase();
-    const fullKeywords = ['full', 'fulfillment', 'fulfilment'];
-    return fullKeywords.some(keyword => text.includes(keyword));
-}
-
-function calcularFreteEsperado(valorProduto, peso) {
-    const pesoArredondado = Math.round(peso * 100) / 100;
-    const valor = parseFloat(valorProduto);
-    if (isNaN(valor) || isNaN(pesoArredondado) || pesoArredondado <= 0) return null;
-
-    for (const faixa of SHIPPING_COST_TABLE) {
-        if (pesoArredondado >= faixa.weightMin && pesoArredondado <= faixa.weightMax) {
-            if (valor >= faixa.priceMin && valor <= faixa.priceMax) {
-                return faixa.cost;
+    // 1. Verificar campo tipo_envio (igual ao sales_dashboard)
+    const tipoEnvio = (item.tipo_envio || item.meio_envio || '').toUpperCase();
+    if (tipoEnvio.includes('FULL') || 
+        tipoEnvio.includes('FULFILLMENT') || 
+        tipoEnvio === 'FULL') {
+        return true;
+    }
+    
+    // 2. Verificar informacoes_envio (igual ao sales_dashboard)
+    if (item.informacoes_envio) {
+        try {
+            const infoEnvio = typeof item.informacoes_envio === 'string' 
+                ? JSON.parse(item.informacoes_envio) 
+                : item.informacoes_envio;
+            const tipoLogistico = (infoEnvio.tipo || '').toUpperCase();
+            if (tipoLogistico.includes('FULL') || 
+                tipoLogistico.includes('FULFILLMENT') || 
+                tipoLogistico === 'FULL') {
+                return true;
             }
+        } catch (e) {}
+    }
+    
+    // 3. Verificar tags (igual ao sales_dashboard)
+    if (item.tags && Array.isArray(item.tags)) {
+        const tags = item.tags.map(t => t.toUpperCase());
+        if (tags.some(t => t.includes('FULL') || t.includes('FULFILLMENT'))) {
+            return true;
         }
     }
-    return null;
+    
+    // 4. Verificar campos adicionais (fallback)
+    const searchFields = [
+        item.titulo || '',
+        item.mlb || '',
+        item.id || '',
+        item.sku || '',
+        item.shipping_mode || '',
+        item.tipo_entrega || '',
+        item.logistic_type || ''
+    ];
+    
+    const fullKeywords = ['full', 'fulfillment', 'fulfilment'];
+    for (const field of searchFields) {
+        const fieldLower = String(field).toLowerCase();
+        if (fullKeywords.some(keyword => fieldLower.includes(keyword))) {
+            return true;
+        }
+    }
+    
+    return false;
 }
 
 function calcularPesoVolumetrico(comprimento, largura, altura) {
@@ -496,7 +529,7 @@ async function buscarFretes() {
 }
 
 // ============================================
-// CARREGAR FRETES SALVOS
+// CARREGAR FRETES SALVOS (CORRIGIDA - FILTRO FULL IGUAL AO SALES_DASHBOARD)
 // ============================================
 async function carregarFretesSalvos() {
     console.log('📂 Carregando fretes salvos (apenas incorretos)...');
@@ -539,16 +572,27 @@ async function carregarFretesSalvos() {
             });
         }
 
-        // ===== FILTRO MAIS ROBUSTO PARA FULL =====
+        // ===== FILTRO IGUAL AO SALES_DASHBOARD =====
         let dados = (data || []).filter(item => {
-            // 1. Verificar tipo_envio
-            if (item.tipo_envio === 'FULL' || item.tipo_envio === 'FULFILLMENT') return false;
+            // 1. Verifica se é FULL usando a mesma lógica do sales_dashboard
+            if (isFullByAnyField(item)) {
+                console.log(`⏭️ Item ${item.id} é FULL, ignorando (filtro isFullByAnyField)`);
+                return false;
+            }
             
-            // 2. Verificar se contém FULL no texto
-            if (isFullByAnyField(item)) return false;
+            // 2. Verificar tipo_envio diretamente (por segurança)
+            const tipoEnvio = (item.tipo_envio || '').toUpperCase();
+            if (tipoEnvio.includes('FULL') || 
+                tipoEnvio.includes('FULFILLMENT') || 
+                tipoEnvio === 'FULL') {
+                console.log(`⏭️ Item ${item.id} é FULL (tipo_envio: ${tipoEnvio})`);
+                return false;
+            }
             
             // 3. Verificar se tem frete > 0
-            if (!item.frete_cobrado || item.frete_cobrado <= 0) return false;
+            if (!item.frete_cobrado || item.frete_cobrado <= 0) {
+                return false;
+            }
             
             // 4. Verificar se frete esperado é calculável
             const peso = item.peso_estimado || 0.3;
@@ -1735,6 +1779,201 @@ async function editarReclamacao(id) {
 }
 
 // ============================================
+// BUSCAR FRETES (SINCRONIZAÇÃO) - CORRIGIDA
+// ============================================
+async function buscarFretes() {
+    console.log('🔍 Iniciando sincronização de fretes...');
+    const tbody = document.getElementById('shippingSimpleBody');
+    const contagem = document.getElementById('contagemFretes');
+    const btn = document.getElementById('btnBuscarFretes');
+
+    if (!tbody) return;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Sincronizando...';
+    }
+
+    tbody.innerHTML = '<tr><td colspan="15" class="text-center"><div class="spinner"></div> Buscando vendas para análise de frete...</td></tr>';
+    if (contagem) contagem.textContent = 'Sincronizando...';
+
+    try {
+        // Buscar mais pedidos (200 para garantir desde junho)
+        const resultado = await buscarFretesML(200);
+
+        if (!resultado || !resultado.vendas) {
+            throw new Error('Nenhum resultado retornado');
+        }
+
+        console.log(`📦 ${resultado.vendas.length} vendas retornadas da busca de frete`);
+
+        if (resultado.vendas.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="15" class="text-center">Nenhuma venda encontrada.</td></tr>';
+            if (contagem) contagem.textContent = '0 registros';
+            showToast('Nenhuma venda encontrada', 'info');
+            return;
+        }
+
+        // Limpar dados antigos antes de inserir novos
+        console.log('🗑️ Removendo dados antigos...');
+        await window.supabaseClient
+            .from('fretes_ml')
+            .delete()
+            .neq('id', '0'); // Deleta todos
+
+        const registrosParaInserir = [];
+        let totalFullIgnorados = 0;
+        let totalCorretosIgnorados = 0;
+        let totalIncorretos = 0;
+
+        for (const venda of resultado.vendas) {
+            const idVenda = venda.id_venda_ml || venda.id;
+            if (!idVenda) continue;
+
+            // ===== VERIFICAÇÃO DE FULL - MESMA LÓGICA DO SALES_DASHBOARD =====
+            const isFull = isFullByAnyField(venda);
+            
+            // Verificação adicional por tipo_envio
+            const tipoEnvio = (venda.tipo_envio || '').toUpperCase();
+            const isFullByTipo = tipoEnvio.includes('FULL') || 
+                                 tipoEnvio.includes('FULFILLMENT') || 
+                                 tipoEnvio === 'FULL';
+            
+            if (isFull || isFullByTipo) {
+                totalFullIgnorados++;
+                console.log(`⏭️ Venda ${idVenda} é FULL, ignorando`);
+                continue;
+            }
+
+            const freteCobrado = venda.frete_cobrado || 0;
+            const quantidade = venda.quantidade || 1;
+            const sku = venda.sku || 'N/A';
+            const titulo = venda.titulo || 'Sem título';
+            const mlb = venda.mlb_id || 'N/A';
+            const valorProduto = venda.valor_total || 0;
+
+            // Se frete cobrado for 0, não é relevante
+            if (freteCobrado === 0) {
+                totalCorretosIgnorados++;
+                continue;
+            }
+
+            let medidas = await buscarMedidasPorSKU(sku);
+            let comprimento = 22, largura = 16, altura = 1, peso = 0.3;
+            if (medidas) {
+                comprimento = medidas.comprimento_cm || 22;
+                largura = medidas.largura_cm || 16;
+                altura = medidas.altura_cm || 1;
+                peso = medidas.peso_kg || 0.3;
+            }
+
+            const freteEsperado = calcularFreteEsperado(valorProduto, peso);
+            const isIncorreto = freteEsperado !== null && Math.abs(freteCobrado - freteEsperado) > 0.01;
+
+            if (isIncorreto) {
+                const pesoVolumetrico = calcularPesoVolumetrico(comprimento, largura, altura);
+                totalIncorretos++;
+                
+                registrosParaInserir.push({
+                    id: idVenda,
+                    titulo: titulo,
+                    mlb: mlb,
+                    sku: sku,
+                    valor_produto: valorProduto,
+                    quantidade: quantidade,
+                    frete_cobrado: freteCobrado,
+                    frete_esperado: freteEsperado,
+                    frete_por_unidade: freteCobrado / (quantidade || 1),
+                    data_venda: venda.data_venda || new Date().toISOString(),
+                    tipo_envio: venda.tipo_envio || 'N/I',
+                    peso_estimado: peso,
+                    comprimento_cm: comprimento,
+                    largura_cm: largura,
+                    altura_cm: altura,
+                    peso_volumetrico: pesoVolumetrico,
+                    informacoes_envio: venda.informacoes_envio || null,
+                    tags: venda.tags || [],
+                    updated_at: new Date().toISOString()
+                });
+            } else {
+                totalCorretosIgnorados++;
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+
+        console.log(`📊 Resumo: ${totalIncorretos} incorretos, ${totalCorretosIgnorados} corretos ignorados, ${totalFullIgnorados} FULL ignorados`);
+
+        if (registrosParaInserir.length === 0) {
+            let msg = `Nenhum frete incorreto encontrado.`;
+            if (totalCorretosIgnorados > 0) msg += ` ${totalCorretosIgnorados} corretos ignorados.`;
+            if (totalFullIgnorados > 0) msg += ` ${totalFullIgnorados} FULL ignorados.`;
+            tbody.innerHTML = `<tr><td colspan="15" class="text-center">${msg}</td></tr>`;
+            if (contagem) contagem.textContent = '0 incorretos';
+            showToast(msg, 'info');
+            return;
+        }
+
+        await window.supabaseClient
+            .from('fretes_ml')
+            .upsert(registrosParaInserir, { onConflict: 'id', ignoreDuplicates: false });
+
+        console.log(`✅ ${registrosParaInserir.length} fretes incorretos salvos`);
+        await carregarFretesSalvos();
+
+        if (contagem) {
+            const { count } = await window.supabaseClient.from('fretes_ml').select('id', { count: 'exact', head: true });
+            contagem.textContent = `${count || 0} incorretos`;
+        }
+
+        showToast(`✅ ${registrosParaInserir.length} fretes incorretos salvos (${totalFullIgnorados} FULL ignorados)`, 'success');
+
+    } catch (error) {
+        console.error('❌ Erro na sincronização de fretes:', error);
+        tbody.innerHTML = `<tr><td colspan="15" class="text-center text-danger">Erro: ${error.message}</td></tr>`;
+        if (contagem) contagem.textContent = 'Erro';
+        showToast('Erro ao sincronizar: ' + error.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Buscar Fretes';
+        }
+    }
+}
+
+// ============================================
+// FUNÇÃO AUXILIAR: VERIFICAR SE SHIPMENT É FULL
+// ============================================
+async function isShipmentFULL(shipmentId, token) {
+    try {
+        const shipUrl = `https://api.mercadolibre.com/shipments/${shipmentId}`;
+        const shipProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${encodeURIComponent(token)}`;
+        const shipResp = await fetch(shipProxy);
+        if (shipResp.ok) {
+            const shipData = await shipResp.json();
+            const logisticType = shipData.logistic_type || '';
+            const tags = shipData.tags || [];
+            const shippingMode = shipData.mode || '';
+            
+            const isFull = logisticType.toLowerCase().includes('full') ||
+                   logisticType.toLowerCase().includes('fulfillment') ||
+                   tags.some(t => t.toLowerCase().includes('full')) ||
+                   tags.some(t => t.toLowerCase().includes('fulfillment')) ||
+                   shippingMode.toLowerCase().includes('full');
+            
+            if (isFull) {
+                console.log(`🔍 Shipment ${shipmentId} identificado como FULL`);
+            }
+            return isFull;
+        }
+        return false;
+    } catch (e) {
+        console.warn(`Erro ao verificar shipment ${shipmentId}:`, e.message);
+        return false;
+    }
+}
+
+// ============================================
 // FUNÇÃO PRINCIPAL: BUSCAR FRETES DO ML (CORRIGIDA)
 // ============================================
 async function buscarFretesML(limit = 100) {
@@ -1822,26 +2061,51 @@ async function buscarFretesML(limit = 100) {
         for (const order of todasVendas) {
             contador++;
             try {
-                // Verificar se é FULL
+                // ===== EXTRAIR INFORMAÇÕES DE ENVIO (para usar no filtro FULL) =====
                 const shippingMode = order.shipping?.mode || '';
                 const logisticType = order.shipping?.logistic_type || '';
                 const tags = order.tags || [];
                 const fulfillment = order.shipping?.fulfillment || '';
                 const shippingOption = order.shipping?.shipping_option || {};
                 
-                const isFull = 
+                // Construir objeto informacoes_envio (igual ao sales_dashboard)
+                const informacoesEnvio = {
+                    tipo: shippingMode,
+                    logistic_type: logisticType,
+                    fulfillment: fulfillment,
+                    id: order.shipping?.id || null,
+                    receiver_cost: order.shipping?.receiver_cost || null,
+                    cost: order.shipping?.cost || null
+                };
+                
+                // ===== VERIFICAÇÃO DE FULL - MESMA LÓGICA DO SALES_DASHBOARD =====
+                // Primeiro, criar um objeto compatível com isFullByAnyField
+                const itemParaTeste = {
+                    tipo_envio: shippingMode,
+                    informacoes_envio: informacoesEnvio,
+                    tags: tags,
+                    titulo: order.order_items?.[0]?.item?.title || '',
+                    id: order.id
+                };
+                
+                // Verificar se é FULL usando a mesma lógica do sales_dashboard
+                const isFull = isFullByAnyField(itemParaTeste);
+                
+                // Verificação adicional por campos específicos
+                const isFullByShipping = 
                     shippingMode?.toLowerCase().includes('full') ||
+                    shippingMode?.toLowerCase().includes('fulfillment') ||
                     logisticType?.toLowerCase().includes('full') ||
                     logisticType?.toLowerCase().includes('fulfillment') ||
                     fulfillment?.toLowerCase().includes('full') ||
                     tags.some(t => t.toLowerCase().includes('full')) ||
                     tags.some(t => t.toLowerCase().includes('fulfillment')) ||
                     shippingOption?.fulfillment?.toLowerCase().includes('full') ||
-                    shippingOption?.logistic_type?.toLowerCase().includes('full') ||
-                    (order.shipping?.id && await isShipmentFULL(order.shipping.id, token));
+                    shippingOption?.logistic_type?.toLowerCase().includes('full');
                 
-                if (isFull) {
+                if (isFull || isFullByShipping) {
                     totalFullIgnorados++;
+                    console.log(`⏭️ Pedido ${order.id} é FULL, ignorando`);
                     continue;
                 }
 
@@ -1904,6 +2168,8 @@ async function buscarFretesML(limit = 100) {
                     frete_cobrado: freteCobrado,
                     quantidade: order.order_items?.[0]?.quantity || 1,
                     fonte_frete: fonte,
+                    informacoes_envio: informacoesEnvio,
+                    tags: tags,
                     is_full: false
                 });
                 
@@ -1921,38 +2187,6 @@ async function buscarFretesML(limit = 100) {
     } catch (error) {
         console.error('❌ Erro ao buscar fretes do ML:', error);
         throw error;
-    }
-}
-
-// ============================================
-// FUNÇÃO AUXILIAR: VERIFICAR SE SHIPMENT É FULL
-// ============================================
-async function isShipmentFULL(shipmentId, token) {
-    try {
-        const shipUrl = `https://api.mercadolibre.com/shipments/${shipmentId}`;
-        const shipProxy = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${encodeURIComponent(token)}`;
-        const shipResp = await fetch(shipProxy);
-        if (shipResp.ok) {
-            const shipData = await shipResp.json();
-            const logisticType = shipData.logistic_type || '';
-            const tags = shipData.tags || [];
-            const shippingMode = shipData.mode || '';
-            
-            const isFull = logisticType.toLowerCase().includes('full') ||
-                   logisticType.toLowerCase().includes('fulfillment') ||
-                   tags.some(t => t.toLowerCase().includes('full')) ||
-                   tags.some(t => t.toLowerCase().includes('fulfillment')) ||
-                   shippingMode.toLowerCase().includes('full');
-            
-            if (isFull) {
-                console.log(`🔍 Shipment ${shipmentId} identificado como FULL`);
-            }
-            return isFull;
-        }
-        return false;
-    } catch (e) {
-        console.warn(`Erro ao verificar shipment ${shipmentId}:`, e.message);
-        return false;
     }
 }
 

@@ -1233,7 +1233,7 @@ async function salvarNCMporSKU(sku, ncm) {
 }
 
 // =========================================================
-// FUNÇÕES AUXILIARES
+// FUNÇÃO PARA EXTRAIR SKU E QUANTIDADE DO PREFIXO
 // =========================================================
 
 function extrairSkuEQuantidade(skuComPrefixo) {
@@ -1241,6 +1241,7 @@ function extrairSkuEQuantidade(skuComPrefixo) {
         return { sku: skuComPrefixo, multiplicador: 1 };
     }
     
+    // Verifica se tem prefixo numérico de 3 dígitos no início
     const match = skuComPrefixo.match(/^(\d{3})(.+)$/);
     if (match) {
         const prefixo = parseInt(match[1]);
@@ -1249,9 +1250,9 @@ function extrairSkuEQuantidade(skuComPrefixo) {
             skuReal = skuReal.substring(1);
         }
         return { 
-            sku: skuReal,
+            sku: skuReal, 
             multiplicador: prefixo,
-            skuOriginal: skuComPrefixo
+            skuOriginal: skuComPrefixo 
         };
     }
     
@@ -1858,7 +1859,7 @@ async function carregarVendasPendentes() {
 }
 
 // =========================================================
-// 🔥 FUNÇÃO PARA SINCRONIZAR COM ML APÓS BAIXA DE ESTOQUE
+// 🔥 FUNÇÃO PARA SINCRONIZAR ESTOQUE COM ML (VERSÃO MELHORADA)
 // =========================================================
 
 async function sincronizarEstoqueComML(vendaId) {
@@ -1876,41 +1877,79 @@ async function sincronizarEstoqueComML(vendaId) {
             return false;
         }
 
-        // Buscar produtos da venda no Supabase
-        const { data: vendaML, error: vendaError } = await window.supabaseClient
+        // ===== 1. TENTAR BUSCAR A VENDA NO SUPABASE =====
+        let vendaML = null;
+        let itensParaSincronizar = [];
+        
+        // Tentar na tabela vendas_ml
+        const { data: venda1, error: error1 } = await window.supabaseClient
             .from('vendas_ml')
-            .select('sku, quantidade, skus_kit, eh_kit')
+            .select('sku, quantidade, skus_kit, eh_kit, produtos')
             .eq('id_venda_ml', String(vendaId))
             .maybeSingle();
         
-        if (vendaError || !vendaML) {
-            console.warn('⚠️ Venda não encontrada para sincronização');
-            return false;
+        if (!error1 && venda1) {
+            vendaML = venda1;
+            console.log('✅ Venda encontrada na tabela vendas_ml');
+        } else {
+            // Tentar na tabela vendas_nfe
+            const { data: venda2, error: error2 } = await window.supabaseClient
+                .from('vendas_nfe')
+                .select('sku, quantidade, skus_kit, eh_kit, items_json')
+                .eq('id_venda_ml', String(vendaId))
+                .maybeSingle();
+            
+            if (!error2 && venda2) {
+                vendaML = venda2;
+                console.log('✅ Venda encontrada na tabela vendas_nfe');
+            }
         }
-
-        // Buscar os SKUs e quantidades
-        const itensParaSincronizar = [];
         
-        if (vendaML.eh_kit && vendaML.skus_kit && vendaML.skus_kit.length > 0) {
-            for (const kitItem of vendaML.skus_kit) {
-                const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(kitItem.sku);
-                const quantidadeKit = kitItem.estoque || 1;
-                const quantidadeTotal = quantidadeKit * (vendaML.quantidade || 1) * multiplicador;
+        // ===== 2. EXTRAIR SKUs DA VENDA =====
+        if (vendaML) {
+            if (vendaML.eh_kit && vendaML.skus_kit && vendaML.skus_kit.length > 0) {
+                for (const kitItem of vendaML.skus_kit) {
+                    const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(kitItem.sku);
+                    const quantidadeKit = kitItem.estoque || 1;
+                    const quantidadeTotal = quantidadeKit * (vendaML.quantidade || 1) * multiplicador;
+                    itensParaSincronizar.push({
+                        sku: skuReal,
+                        quantidade: quantidadeTotal
+                    });
+                }
+                console.log(`📦 KIT detectado: ${vendaML.skus_kit.length} SKUs para sincronizar`);
+            } else {
+                const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(vendaML.sku);
+                const quantidadeTotal = (vendaML.quantidade || 1) * multiplicador;
                 itensParaSincronizar.push({
                     sku: skuReal,
                     quantidade: quantidadeTotal
                 });
             }
-        } else {
-            const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(vendaML.sku);
-            const quantidadeTotal = (vendaML.quantidade || 1) * multiplicador;
-            itensParaSincronizar.push({
-                sku: skuReal,
-                quantidade: quantidadeTotal
-            });
         }
-
-        // Sincronizar cada item com o ML
+        
+        // ===== 3. FALLBACK: USAR OS PRODUTOS DA EMISSÃO =====
+        if (itensParaSincronizar.length === 0 && window.produtosParaEmissao && window.produtosParaEmissao.length > 0) {
+            console.log('📦 Usando produtos da emissão para sincronização (fallback)');
+            
+            for (const prod of window.produtosParaEmissao) {
+                if (!prod.sku || prod.sku === 'SEM_SKU' || prod.sku === 'N/A') continue;
+                const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(prod.sku);
+                const quantidadeTotal = (prod.quantidade || 1) * multiplicador;
+                itensParaSincronizar.push({
+                    sku: skuReal,
+                    quantidade: quantidadeTotal
+                });
+            }
+        }
+        
+        // ===== 4. SE NÃO TEM NENHUM ITEM, RETORNAR =====
+        if (itensParaSincronizar.length === 0) {
+            console.warn('⚠️ Nenhum SKU encontrado para sincronizar');
+            return false;
+        }
+        
+        // ===== 5. BUSCAR OS PRODUTOS NO ESTOQUE E SINCRONIZAR =====
         let itensSincronizados = 0;
         
         for (const item of itensParaSincronizar) {
@@ -1921,7 +1960,7 @@ async function sincronizarEstoqueComML(vendaId) {
             // Buscar o produto no estoque
             const { data: produto, error: prodError } = await window.supabaseClient
                 .from('produtos_estoque')
-                .select('id, quantidade, mlb_codes, sku')
+                .select('id, quantidade, mlb_codes, sku, nome')
                 .eq('sku', item.sku)
                 .maybeSingle();
             
@@ -1930,46 +1969,74 @@ async function sincronizarEstoqueComML(vendaId) {
                 continue;
             }
 
-            // Buscar o ML_B_CODE do produto
-            let mlbCode = null;
-            if (produto.mlb_codes && typeof produto.mlb_codes === 'object') {
-                mlbCode = produto.mlb_codes[0] || null;
-            }
-            
-            if (!mlbCode) {
-                console.warn(`⚠️ ML_B_CODE não encontrado para SKU ${item.sku}`);
+            // Verificar se tem sincronização bloqueada
+            const syncBloqueado = produto.bloquear_sync_ml || false;
+            if (syncBloqueado) {
+                console.log(`🔒 Sincronização bloqueada para ${item.sku}`);
                 continue;
             }
 
-            try {
-                // Atualizar estoque no ML
-                const updateUrl = `https://api.mercadolibre.com/items/${mlbCode}`;
-                const updatePayload = {
-                    available_quantity: produto.quantidade
-                };
-                
-                const updateProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(updateUrl)}&token=${encodeURIComponent(token)}&method=PUT`;
-                const updateResponse = await fetch(updateProxyUrl, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(updatePayload)
-                });
-                
-                if (updateResponse.ok) {
-                    itensSincronizados++;
-                    console.log(`✅ Estoque do SKU ${item.sku} sincronizado com ML: ${produto.quantidade}`);
-                } else {
-                    const errorText = await updateResponse.text();
-                    console.warn(`⚠️ Erro ao sincronizar SKU ${item.sku}: ${errorText}`);
+            // Extrair MLB Codes
+            let mlbCodes = null;
+            if (produto.mlb_codes) {
+                if (Array.isArray(produto.mlb_codes) && produto.mlb_codes.length > 0) {
+                    mlbCodes = produto.mlb_codes;
+                } else if (typeof produto.mlb_codes === 'string') {
+                    try {
+                        const parsed = JSON.parse(produto.mlb_codes);
+                        mlbCodes = Array.isArray(parsed) ? parsed : [parsed];
+                    } catch (e) {
+                        mlbCodes = produto.mlb_codes.split(',').map(s => s.trim()).filter(s => s);
+                    }
+                } else if (typeof produto.mlb_codes === 'object') {
+                    const values = Object.values(produto.mlb_codes);
+                    mlbCodes = values.length > 0 ? values : null;
                 }
-            } catch (e) {
-                console.warn(`⚠️ Erro ao sincronizar SKU ${item.sku}:`, e);
+            }
+            
+            if (!mlbCodes || mlbCodes.length === 0) {
+                console.warn(`⚠️ MLB Codes não encontrados para SKU ${item.sku}`);
+                continue;
+            }
+
+            // Sincronizar cada MLB Code
+            for (const mlbCode of mlbCodes) {
+                if (!mlbCode) continue;
+                
+                const itemId = mlbCode.startsWith('MLB') ? mlbCode : `MLB${mlbCode}`;
+                
+                try {
+                    // Atualizar estoque no ML
+                    const updateUrl = `https://api.mercadolibre.com/items/${itemId}`;
+                    const updatePayload = {
+                        available_quantity: produto.quantidade
+                    };
+                    
+                    const updateProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(updateUrl)}&token=${encodeURIComponent(token)}&method=PUT`;
+                    const updateResponse = await fetch(updateProxyUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updatePayload)
+                    });
+                    
+                    if (updateResponse.ok) {
+                        itensSincronizados++;
+                        console.log(`✅ Estoque do SKU ${item.sku} (${itemId}) sincronizado com ML: ${produto.quantidade}`);
+                    } else {
+                        const errorText = await updateResponse.text();
+                        console.warn(`⚠️ Erro ao sincronizar SKU ${item.sku} (${itemId}): ${errorText}`);
+                    }
+                } catch (e) {
+                    console.warn(`⚠️ Erro ao sincronizar SKU ${item.sku}:`, e);
+                }
             }
         }
 
         if (itensSincronizados > 0) {
             console.log(`✅ ${itensSincronizados} item(ns) sincronizados com ML`);
             showToast(`✅ ${itensSincronizados} item(ns) sincronizados com ML!`, 'success');
+        } else {
+            console.warn('⚠️ Nenhum item foi sincronizado com ML');
         }
 
         return itensSincronizados > 0;

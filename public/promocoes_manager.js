@@ -379,9 +379,6 @@
         }
     }
 
-// ============================================================
-// FUNÇÃO: ANALISAR ITENS - BUSCANDO PREÇO CORRETO NO DESTINO
-// ============================================================
 window.analisarItens = async function() {
     const origemId = document.getElementById('bulkPromocaoOrigem')?.value;
     const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
@@ -414,7 +411,7 @@ window.analisarItens = async function() {
 
     try {
         // ============================================================
-        // PASSO 1: Buscar MLBs ATIVOS na origem (status=started)
+        // PASSO 1: Buscar ATIVOS na origem (status=started)
         // ============================================================
         atualizarProgresso(20, 'Buscando ativos na origem...', `Promoção: ${promoOrigem.name}`, '20%');
         
@@ -435,7 +432,7 @@ window.analisarItens = async function() {
         log(`📊 ${setAtivosOrigem.size} MLBs ativos na origem`, 'info');
         
         // ============================================================
-        // PASSO 2: Buscar MLBs CANDIDATOS no destino (status=candidate)
+        // PASSO 2: Buscar CANDIDATOS no destino (status=candidate)
         // ============================================================
         atualizarProgresso(40, 'Buscando candidatos no destino...', `Promoção: ${promoDestino.name}`, '40%');
         
@@ -446,125 +443,138 @@ window.analisarItens = async function() {
             tokenData.access_token
         );
         
-        if (candidatosDestino.length === 0) {
-            showToast('⚠️ Nenhum item candidato no destino', 'warning');
-            fecharBarraProgresso();
-            return;
-        }
-        
         const setCandidatosDestino = new Set(candidatosDestino.map(item => item.id));
         log(`📊 ${setCandidatosDestino.size} MLBs candidatos no destino`, 'info');
         
         // ============================================================
-        // PASSO 3: Encontrar a INTERSEÇÃO
+        // PASSO 3: Buscar PROGRAMADOS no destino (status=pending)
         // ============================================================
-        atualizarProgresso(60, 'Encontrando interseção e preços...', 'Consultando API...', '60%');
+        atualizarProgresso(60, 'Buscando programados no destino...', `Promoção: ${promoDestino.name}`, '60%');
         
-        const interseccao = [];
-        let processados = 0;
-        const total = ativosOrigem.length;
-        let comPreco = 0;
-        let semPreco = 0;
+        const programadosDestino = await buscarItensPromocaoPorStatus(
+            destinoId, 
+            promoDestino.type, 
+            'pending', 
+            tokenData.access_token
+        );
         
-        // Processar em lotes
-        const batchSize = 5;
-        for (let i = 0; i < ativosOrigem.length; i += batchSize) {
-            const batch = ativosOrigem.slice(i, i + batchSize);
-            
-            const promises = batch.map(async (item) => {
-                const mlb = item.id;
-                
-                // Verificar se está na interseção
-                if (!setCandidatosDestino.has(mlb)) {
-                    return null;
-                }
-                
-                // Buscar o preço na promoção destino
-                const precoDestino = await buscarPrecoItemNaPromocao(mlb, destinoId, tokenData.access_token);
-                
-                const itemDestino = candidatosDestino.find(c => c.id === mlb);
-                
-                let precoFinal = 0;
-                let statusDestino = itemDestino ? itemDestino.status : 'candidate';
-                
-                if (precoDestino) {
-                    precoFinal = precoDestino.price || 0;
-                    statusDestino = precoDestino.status || statusDestino;
-                    
-                    // Se ainda for 0, tentar usar o preço original como fallback
-                    if (precoFinal === 0 && precoDestino.original_price > 0) {
-                        precoFinal = precoDestino.original_price * 0.95; // 5% de desconto padrão
-                    }
-                }
-                
-                if (precoFinal > 0) comPreco++;
-                else semPreco++;
-                
-                return {
-                    mlb: mlb,
-                    precoOrigem: item.price || 0,
-                    precoDestino: precoFinal,
-                    precoOriginalDestino: precoDestino ? precoDestino.original_price : 0,
-                    percentOrigem: item.seller_percentage || 0,
-                    percentDestino: precoDestino ? precoDestino.seller_percentage : 0,
-                    statusOrigem: item.status || 'started',
-                    statusDestino: statusDestino,
-                    temPreco: precoFinal > 0
-                };
-            });
-            
-            const resultados = await Promise.all(promises);
-            const validos = resultados.filter(r => r !== null);
-            interseccao.push(...validos);
-            
-            processados += batch.length;
-            const pct = 60 + (processados / total) * 30;
-            atualizarProgresso(
-                Math.min(pct, 90),
-                `Processando ${processados}/${total}`,
-                `${interseccao.length} encontrados (${comPreco} com preço)`,
-                `${Math.round(pct)}%`
-            );
+        const setProgramadosDestino = new Set(programadosDestino.map(item => item.id));
+        log(`📊 ${setProgramadosDestino.size} MLBs programados no destino`, 'info');
+        
+        // ============================================================
+        // PASSO 4: Unir candidatos + programados
+        // ============================================================
+        const setDestino = new Set([...setCandidatosDestino, ...setProgramadosDestino]);
+        log(`📊 Total no destino (candidatos + programados): ${setDestino.size}`, 'info');
+        
+        // Criar mapa com os dados de destino
+        const mapDestino = new Map();
+        for (const item of candidatosDestino) {
+            mapDestino.set(item.id, { ...item, tipo: 'candidato' });
+        }
+        for (const item of programadosDestino) {
+            if (mapDestino.has(item.id)) {
+                // Se já existe como candidato, mantém (candidato tem prioridade)
+                continue;
+            }
+            mapDestino.set(item.id, { ...item, tipo: 'programado' });
         }
         
         // ============================================================
-        // PASSO 4: Mostrar resultado
+        // PASSO 5: Encontrar a INTERSEÇÃO
         // ============================================================
-        log(`📊 INTERSEÇÃO: ${interseccao.length} MLBs`, 'success');
-        log(`   ✅ Com preço no destino: ${comPreco}`, 'success');
-        log(`   ⚠️ Sem preço no destino: ${semPreco}`, 'warning');
+        atualizarProgresso(80, 'Encontrando interseção...', 'Processando...', '80%');
         
-        if (interseccao.length > 0) {
-            log(`📝 Exemplos com preços:`, 'debug');
-            const comPrecoExemplos = interseccao.filter(item => item.temPreco).slice(0, 5);
-            comPrecoExemplos.forEach(item => {
-                log(`  - ${item.mlb}: Origem R$ ${item.precoOrigem.toFixed(2)} → Destino R$ ${item.precoDestino.toFixed(2)}`, 'debug');
-            });
+        const interseccao = [];
+        let candidatosCount = 0;
+        let programadosCount = 0;
+        let totalProcessados = 0;
+        const totalAtivos = ativosOrigem.length;
+        
+        for (const item of ativosOrigem) {
+            totalProcessados++;
             
-            if (comPrecoExemplos.length === 0) {
-                log(`⚠️ NENHUM item com preço no destino!`, 'warning');
-                log(`📝 Tentando buscar preços alternativos...`, 'info');
-                
-                // Tentar buscar novamente para alguns itens com método alternativo
-                for (const item of interseccao.slice(0, 10)) {
-                    try {
-                        const url = `https://api.mercadolibre.com/items/${item.mlb}`;
-                        const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
-                        const response = await fetch(proxyUrl);
-                        if (response.ok) {
-                            const data = await response.json();
-                            // Usar o preço do item como fallback
-                            if (data.price && data.price > 0) {
-                                item.precoDestino = data.price;
-                                item.temPreco = true;
-                                log(`  ✅ ${item.mlb} → Preço alternativo: R$ ${data.price.toFixed(2)}`, 'debug');
-                            }
-                        }
-                    } catch (e) {
-                        // Ignorar erros
-                    }
-                }
+            if (totalProcessados % 10 === 0 || totalProcessados === totalAtivos) {
+                const pct = 80 + (totalProcessados / totalAtivos) * 15;
+                atualizarProgresso(
+                    Math.min(pct, 95),
+                    `Processando ${totalProcessados}/${totalAtivos}`,
+                    `${interseccao.length} encontrados`,
+                    `${Math.round(pct)}%`
+                );
             }
+            
+            const mlb = item.id;
+            
+            // Verificar se está no destino (candidato ou programado)
+            if (!setDestino.has(mlb)) {
+                continue;
+            }
+            
+            const dadosDestino = mapDestino.get(mlb);
+            if (!dadosDestino) continue;
+            
+            // Buscar preço detalhado
+            const precoDetalhado = await buscarPrecoNaPromocaoDestino(mlb, destinoId, tokenData.access_token);
+            
+            let precoDestino = dadosDestino.price || 0;
+            let precoOriginalDestino = dadosDestino.original_price || 0;
+            let percentDestino = dadosDestino.seller_percentage || 0;
+            let statusDestino = dadosDestino.status || 'unknown';
+            let tipo = dadosDestino.tipo || 'candidato';
+            
+            // Se o preço detalhado tiver informações melhores
+            if (precoDetalhado) {
+                if (precoDetalhado.price > 0) precoDestino = precoDetalhado.price;
+                if (precoDetalhado.original_price > 0) precoOriginalDestino = precoDetalhado.original_price;
+                if (precoDetalhado.seller_percentage > 0) percentDestino = precoDetalhado.seller_percentage;
+                if (precoDetalhado.status) statusDestino = precoDetalhado.status;
+            }
+            
+            // Contar
+            if (tipo === 'candidato') candidatosCount++;
+            else if (tipo === 'programado') programadosCount++;
+            
+            // Se ainda não tem preço, tentar usar o preço original com desconto padrão
+            if (precoDestino === 0 && precoOriginalDestino > 0) {
+                precoDestino = precoOriginalDestino * 0.9;
+            }
+            
+            const statusLabel = tipo === 'candidato' ? '📌 Candidato' : '⏳ Programada';
+            
+            interseccao.push({
+                mlb: mlb,
+                precoOrigem: item.price || 0,
+                precoDestino: precoDestino,
+                precoOriginalDestino: precoOriginalDestino,
+                percentOrigem: item.seller_percentage || 0,
+                percentDestino: percentDestino,
+                statusOrigem: item.status || 'started',
+                statusDestino: statusDestino,
+                statusLabel: statusLabel,
+                tipo: tipo
+            });
+        }
+        
+        // ============================================================
+        // PASSO 6: Mostrar resultado
+        // ============================================================
+        log('═══════════════════════════════════════════════════════════', 'info');
+        log('📊 RESULTADO DA ANÁLISE:', 'info');
+        log(`   📦 Ativos na ORIGEM: ${ativosOrigem.length}`, 'info');
+        log(`   📦 Candidatos no DESTINO: ${setCandidatosDestino.size}`, 'info');
+        log(`   📦 Programados no DESTINO: ${setProgramadosDestino.size}`, 'info');
+        log(`   🔄 INTERSEÇÃO TOTAL: ${interseccao.length}`, 'success');
+        log(`   📌 Candidatos: ${candidatosCount}`, 'info');
+        log(`   ⏳ Programados: ${programadosCount}`, 'info');
+        log('═══════════════════════════════════════════════════════════', 'info');
+        
+        // Log dos primeiros itens
+        if (interseccao.length > 0) {
+            log(`📝 Primeiros 5 itens da interseção:`, 'debug');
+            interseccao.slice(0, 5).forEach(item => {
+                log(`  - ${item.mlb}: Origem R$ ${item.precoOrigem.toFixed(2)} → Destino R$ ${item.precoDestino.toFixed(2)} (${item.statusLabel})`, 'debug');
+            });
         }
         
         atualizarProgresso(100, '✅ Concluído!', `${interseccao.length} MLBs na interseção`, '✅');
@@ -589,7 +599,7 @@ window.analisarItens = async function() {
         setTimeout(fecharBarraProgresso, 1500);
         
         if (interseccao.length > 0) {
-            showToast(`✅ ${interseccao.length} MLBs encontrados (${comPreco} com preço)`, 'success');
+            showToast(`✅ ${interseccao.length} MLBs (${candidatosCount} candidatos, ${programadosCount} programados)`, 'success');
         } else {
             showToast('⚠️ Nenhum MLB encontrado na interseção', 'warning');
         }
@@ -619,6 +629,20 @@ function renderizarTabelaInterseccao(itens) {
     itens.forEach((item, index) => {
         const tr = document.createElement('tr');
         
+        let bgColor = '#ffffff';
+        let statusColor = '#6c757d';
+        let statusText = item.statusLabel || 'Desconhecido';
+        
+        if (item.tipo === 'programado') {
+            bgColor = '#fff3cd';
+            statusColor = '#856404';
+        } else if (item.tipo === 'candidato') {
+            bgColor = '#d4edda';
+            statusColor = '#155724';
+        }
+        
+        tr.style.backgroundColor = bgColor;
+        
         tr.innerHTML = `
             <td style="text-align:center;">
                 <input type="checkbox" class="bulk-item-checkbox" data-index="${index}" checked>
@@ -632,18 +656,92 @@ function renderizarTabelaInterseccao(itens) {
                 R$ ${(item.precoDestino || 0).toFixed(2)}
             </td>
             <td style="text-align:center;">${(item.percentDestino || 0)}%</td>
-            <td style="text-align:center; font-size:12px; font-weight:600; color:#28a745;">
-                ✅ Ativo na origem + Candidato no destino
-                ${item.statusDestino ? `<br><small style="color:#6c757d;">Status: ${item.statusDestino}</small>` : ''}
+            <td style="text-align:center; font-size:12px; font-weight:600; color:${statusColor};">
+                ${statusText}
+                <br><small style="color:#6c757d;">✅ Ativo na origem</small>
             </td>
         `;
         
         tbody.appendChild(tr);
     });
     
-    // Marcar todos como selecionados
     document.querySelectorAll('.bulk-item-checkbox').forEach(cb => cb.checked = true);
     atualizarBotaoAtivacao();
+}
+
+// ============================================================
+// FUNÇÃO: BUSCAR TODOS OS ITENS DA PROMOÇÃO (SEM FILTRO DE STATUS)
+// ============================================================
+async function buscarTodosItensPromocao(promotionId, promotionType, token) {
+    log(`🔄 Buscando TODOS os itens da promoção ${promotionId}...`, 'info');
+    const itens = [];
+    let searchAfter = null;
+    let hasMore = true;
+    
+    while (hasMore) {
+        try {
+            let url = `https://api.mercadolibre.com/seller-promotions/promotions/${promotionId}/items`;
+            let params = {
+                promotion_type: promotionType,
+                app_version: 'v2',
+                limit: 50
+            };
+            
+            if (searchAfter) {
+                params.search_after = searchAfter;
+            }
+            
+            const queryString = Object.keys(params)
+                .map(key => `${key}=${encodeURIComponent(params[key])}`)
+                .join('&');
+            const fullUrl = `${url}?${queryString}`;
+            
+            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(fullUrl)}&token=${token}`;
+            
+            const response = await fetch(proxyUrl);
+            
+            if (response.ok) {
+                const data = await response.json();
+                const results = data.results || [];
+                
+                for (const item of results) {
+                    const itemId = item.id || item.item_id;
+                    if (itemId) {
+                        itens.push({
+                            id: itemId,
+                            status: item.status || 'unknown',
+                            price: item.price || 0,
+                            original_price: item.original_price || 0,
+                            seller_percentage: item.seller_percentage || 0
+                        });
+                    }
+                }
+                
+                const paging = data.paging || {};
+                if (paging.searchAfter) {
+                    searchAfter = paging.searchAfter;
+                } else {
+                    hasMore = false;
+                }
+            } else {
+                hasMore = false;
+            }
+        } catch (error) {
+            log(`❌ Erro: ${error.message}`, 'error');
+            hasMore = false;
+        }
+    }
+    
+    // Estatísticas por status
+    const statusCount = {};
+    itens.forEach(item => {
+        statusCount[item.status] = (statusCount[item.status] || 0) + 1;
+    });
+    
+    log(`✅ ${itens.length} itens carregados`, 'success');
+    log(`📊 Distribuição por status: ${JSON.stringify(statusCount)}`, 'info');
+    
+    return itens;
 }
 
 // ============================================================
@@ -736,6 +834,36 @@ async function buscarPromocoesDoItem(itemId, token) {
 }
 
 // ============================================================
+// FUNÇÃO: BUSCAR ITENS DA PROMOÇÃO POR STATUS (MÚLTIPLOS)
+// ============================================================
+async function buscarItensPromocaoPorMultiplosStatus(promotionId, promotionType, statusList, token) {
+    log(`🔄 Buscando itens com status [${statusList.join(', ')}] da promoção ${promotionId}...`, 'info');
+    const todosItens = [];
+    const itensMap = new Map();
+    
+    for (const status of statusList) {
+        const itens = await buscarItensPromocaoPorStatus(promotionId, promotionType, status, token);
+        for (const item of itens) {
+            // Se o item já existe, manter o status mais relevante (started > pending > candidate)
+            if (!itensMap.has(item.id)) {
+                itensMap.set(item.id, item);
+            } else {
+                const existing = itensMap.get(item.id);
+                // Prioridade: started > pending > candidate
+                const priority = { 'started': 3, 'pending': 2, 'candidate': 1 };
+                if (priority[item.status] > priority[existing.status]) {
+                    itensMap.set(item.id, item);
+                }
+            }
+        }
+    }
+    
+    const resultado = Array.from(itensMap.values());
+    log(`✅ ${resultado.length} itens únicos com status [${statusList.join(', ')}]`, 'success');
+    return resultado;
+}
+
+// ============================================================
 // FUNÇÃO: BUSCAR ITENS DA PROMOÇÃO POR STATUS
 // ============================================================
 async function buscarItensPromocaoPorStatus(promotionId, promotionType, status, token) {
@@ -750,9 +878,13 @@ async function buscarItensPromocaoPorStatus(promotionId, promotionType, status, 
             let params = {
                 promotion_type: promotionType,
                 app_version: 'v2',
-                status: status,
                 limit: 50
             };
+            
+            // Só adiciona o filtro de status se não for 'todos'
+            if (status !== 'todos') {
+                params.status = status;
+            }
             
             if (searchAfter) {
                 params.search_after = searchAfter;
@@ -791,6 +923,11 @@ async function buscarItensPromocaoPorStatus(promotionId, promotionType, status, 
                     hasMore = false;
                 }
             } else {
+                // Se falhar com filtro de status, tentar sem filtro
+                if (status !== 'todos') {
+                    log(`⚠️ Falha com status "${status}", tentando sem filtro...`, 'warning');
+                    return await buscarItensPromocaoPorStatus(promotionId, promotionType, 'todos', token);
+                }
                 hasMore = false;
             }
         } catch (error) {
@@ -890,6 +1027,64 @@ async function buscarCandidatosPromocao(candidateId, token) {
         return null;
     } catch (error) {
         log(`❌ Erro ao buscar candidato: ${error.message}`, 'error');
+        return null;
+    }
+}
+
+// ============================================================
+// FUNÇÃO: BUSCAR PREÇO NA PROMOÇÃO DESTINO
+// ============================================================
+async function buscarPrecoNaPromocaoDestino(itemId, promotionId, token) {
+    try {
+        // Primeiro tenta pela API de promoções do item
+        const url = `https://api.mercadolibre.com/seller-promotions/items/${itemId}?app_version=v2`;
+        const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+        const response = await fetch(proxyUrl);
+        
+        if (response.ok) {
+            const data = await response.json();
+            // Procurar a promoção específica
+            const promocao = data.find(p => p.id === promotionId);
+            if (promocao) {
+                // Se o status é 'started' ou 'pending' ou 'candidate', pega o price
+                let preco = promocao.price || 0;
+                
+                // Se price for 0, tenta suggested_discounted_price
+                if (preco === 0 && promocao.suggested_discounted_price) {
+                    preco = promocao.suggested_discounted_price;
+                }
+                
+                // Se ainda for 0, tenta min_discounted_price
+                if (preco === 0 && promocao.min_discounted_price) {
+                    preco = promocao.min_discounted_price;
+                }
+                
+                return {
+                    price: preco,
+                    original_price: promocao.original_price || 0,
+                    seller_percentage: promocao.seller_percentage || 0,
+                    status: promocao.status || 'unknown'
+                };
+            }
+        }
+        
+        // Fallback: tentar buscar o preço do item normalmente
+        const urlItem = `https://api.mercadolibre.com/items/${itemId}`;
+        const proxyUrlItem = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(urlItem)}&token=${token}`;
+        const responseItem = await fetch(proxyUrlItem);
+        if (responseItem.ok) {
+            const data = await responseItem.json();
+            return {
+                price: data.price || 0,
+                original_price: data.original_price || 0,
+                seller_percentage: 0,
+                status: 'fallback'
+            };
+        }
+        
+        return null;
+    } catch (error) {
+        log(`⚠️ Erro ao buscar preço do item ${itemId}: ${error.message}`, 'warning');
         return null;
     }
 }
