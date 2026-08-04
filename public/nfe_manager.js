@@ -160,6 +160,801 @@ async function buscarValorExatoPagamento(orderId) {
 }
 
 // =========================================================
+// 🔥 FUNÇÃO PARA CANCELAR NF-e (SISTEMA + SEFAZ)
+// =========================================================
+
+async function cancelarNFESistema(chaveAcesso) {
+    console.log('🔵 [cancelarNFESistema] FUNÇÃO INICIADA');
+    
+    if (!chaveAcesso) {
+        chaveAcesso = prompt('Digite a chave da NF-e (44 dígitos) que deseja cancelar:');
+        if (!chaveAcesso) {
+            showToast('❌ Operação cancelada', 'warning');
+            return;
+        }
+    }
+
+    try {
+        // ===== 1. BUSCAR A NF-e NO BANCO =====
+        const listResponse = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
+        const listData = await listResponse.json();
+        
+        if (!listData.success || !listData.notas) {
+            showToast('❌ Erro ao listar NF-es', 'error');
+            return;
+        }
+        
+        const nfe = listData.notas.find(n => 
+            (n.chave_acesso || n.chave) === chaveAcesso
+        );
+        
+        if (!nfe) {
+            showToast(`❌ NF-e com chave ${chaveAcesso} não encontrada`, 'error');
+            return;
+        }
+
+        const vendaId = nfe.venda_id || nfe.venda_id_ml || nfe.id_venda || 'N/A';
+        const cliente = nfe.cliente_nome || nfe.cliente?.nome || 'N/A';
+        const valor = nfe.valor_total ? parseFloat(nfe.valor_total).toFixed(2) : 'N/A';
+        const dataEmissao = nfe.data_emissao ? new Date(nfe.data_emissao).toLocaleString('pt-BR') : 'N/A';
+        const protocolo = nfe.protocolo || 'Não informado';
+        
+        // ===== 2. VERIFICAR SE JÁ ESTÁ CANCELADA =====
+        if (nfe.cancelada) {
+            showToast('⚠️ Esta NF-e já está cancelada', 'warning');
+            const confirmar = confirm(
+                `⚠️ NF-e já está cancelada!\n\n` +
+                `Venda: ${vendaId}\n` +
+                `Cliente: ${cliente}\n\n` +
+                `Deseja remover o registro do sistema mesmo assim?`
+            );
+            if (confirmar) {
+                await removerNFESistema(chaveAcesso);
+                await carregarNFesEmitidas();
+                await carregarVendasPendentes();
+            }
+            return;
+        }
+
+        // ===== 3. CONFIRMAR CANCELAMENTO (SISTEMA + SEFAZ) =====
+        const mensagem = `
+📋 CONFIRMAR CANCELAMENTO DA NF-e:
+
+🔑 Chave: ${chaveAcesso}
+🆔 Venda: ${vendaId}
+👤 Cliente: ${cliente}
+💰 Valor: R$ ${valor}
+📅 Data Emissão: ${dataEmissao}
+📋 Protocolo: ${protocolo}
+
+⚠️ ATENÇÃO:
+- O cancelamento será feito na SEFAZ E no sistema
+- A NF-e será CANCELADA na SEFAZ (IRREVERSÍVEL!)
+- O XML será invalidado
+- O estoque será restaurado
+- A venda voltará a ficar pendente
+
+Deseja realmente CANCELAR esta NF-e?
+        `;
+        
+        if (!confirm(mensagem)) {
+            showToast('❌ Cancelamento cancelado', 'warning');
+            return;
+        }
+
+        // ===== 4. JUSTIFICATIVA =====
+        const justificativa = prompt(
+            'Digite a justificativa para o cancelamento:\n' +
+            '(Ex: Erro no preenchimento, Cliente desistiu, etc.)\n\n' +
+            '⚠️ Esta justificativa será enviada para a SEFAZ'
+        );
+        
+        if (!justificativa) {
+            showToast('❌ Justificativa obrigatória', 'warning');
+            return;
+        }
+
+        // ===== 5. MOSTRAR LOADING =====
+        showToast(`🔄 Cancelando NF-e na SEFAZ...`, 'info');
+        
+        const btn = document.querySelector(`button[onclick*="cancelarNFESistema('${chaveAcesso}')"]`);
+        let originalText = '';
+        if (btn) {
+            originalText = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner"></span> Cancelando na SEFAZ...';
+            btn.disabled = true;
+        }
+
+        try {
+            // ===== 6. CANCELAR NA SEFAZ (VIA API) =====
+            const response = await fetch(`${window.API_BASE_URL}/nfe/cancelar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    chaveAcesso, 
+                    justificativa 
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (!result.success) {
+                // ===== ERRO NO CANCELAMENTO DA SEFAZ =====
+                let mensagemErro = result.error || 'Erro desconhecido';
+                
+                // Verificar erros comuns da SEFAZ
+                const errosSEFAZ = {
+                    '101': 'NF-e já está cancelada',
+                    '102': 'NF-e não autorizada, não pode ser cancelada',
+                    '103': 'Prazo para cancelamento expirado (24h)',
+                    '104': 'Justificativa inválida ou muito curta',
+                    '105': 'Usuário não autorizado a cancelar',
+                    '106': 'NF-e com manifestação do destinatário, não pode cancelar',
+                    '107': 'Erro interno na SEFAZ'
+                };
+                
+                const cStatMatch = mensagemErro.match(/cStat=(\d+)/);
+                if (cStatMatch) {
+                    const cStat = cStatMatch[1];
+                    if (errosSEFAZ[cStat]) {
+                        mensagemErro = `${mensagemErro}\n\n💡 ${errosSEFAZ[cStat]}`;
+                    }
+                }
+                
+                showToast(`❌ Erro ao cancelar na SEFAZ: ${mensagemErro}`, 'error');
+                
+                // Se for erro de prazo expirado, oferecer alternativa
+                if (mensagemErro.includes('prazo') || mensagemErro.includes('24h') || mensagemErro.includes('103')) {
+                    const alternativa = confirm(
+                        `❌ ${mensagemErro}\n\n` +
+                        `O prazo para cancelamento na SEFAZ expirou (24h).\n\n` +
+                        `Deseja apenas remover o registro do sistema?\n` +
+                        `(A NF-e continuará válida na SEFAZ)`
+                    );
+                    if (alternativa) {
+                        await removerNFESistema(chaveAcesso);
+                        await carregarNFesEmitidas();
+                        await carregarVendasPendentes();
+                        showToast('✅ Registro removido do sistema', 'success');
+                    }
+                }
+                return;
+            }
+            
+            // ===== 7. CANCELAMENTO NA SEFAZ BEM SUCEDIDO =====
+            console.log('✅ NF-e cancelada na SEFAZ:', result);
+            showToast('✅ NF-e cancelada na SEFAZ com sucesso!', 'success');
+            
+            // ===== 8. REMOVER DO SISTEMA =====
+            await removerNFESistema(chaveAcesso);
+            
+            // ===== 9. RESTAURAR ESTOQUE =====
+            if (vendaId && vendaId !== 'N/A') {
+                await restaurarEstoqueSistema(vendaId);
+            }
+            
+            // ===== 10. REGISTRAR HISTÓRICO =====
+            await registrarHistoricoSistema(vendaId, chaveAcesso, justificativa);
+            
+            // ===== 11. RECARREGAR LISTAS =====
+            await carregarNFesEmitidas();
+            await carregarVendasPendentes();
+            
+            // ===== 12. NOTIFICAR USUÁRIO =====
+            alert(`
+✅ NF-e CANCELADA COM SUCESSO!
+
+📋 Venda: ${vendaId}
+🔑 Chave: ${chaveAcesso}
+📝 Justificativa: ${justificativa}
+
+✅ Cancelada na SEFAZ
+✅ Removida do sistema
+✅ Estoque restaurado
+✅ Venda voltou para pendentes
+
+A NF-e foi invalidada na SEFAZ e o comprador foi notificado.
+            `);
+            
+        } catch (error) {
+            console.error('❌ Erro no cancelamento:', error);
+            showToast(`❌ Erro: ${error.message}`, 'error');
+        } finally {
+            if (btn) {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro:', error);
+        showToast(`❌ Erro: ${error.message}`, 'error');
+    }
+}
+
+// =========================================================
+// 🔥 FUNÇÃO PARA REMOVER NF-e DO SISTEMA
+// =========================================================
+
+async function removerNFESistema(chaveAcesso) {
+    try {
+        // Buscar a NF-e para pegar o venda_id antes de remover
+        const { data: nfe, error: buscaError } = await window.supabaseClient
+            .from('nfe_emitidas')
+            .select('venda_id, chave_acesso')
+            .eq('chave_acesso', chaveAcesso)
+            .maybeSingle();
+        
+        if (buscaError) {
+            console.warn('⚠️ Erro ao buscar NF-e:', buscaError);
+        }
+        
+        // Remover da tabela nfe_emitidas
+        const { error } = await window.supabaseClient
+            .from('nfe_emitidas')
+            .delete()
+            .eq('chave_acesso', chaveAcesso);
+        
+        if (error) {
+            // Tenta remover pela chave (campo alternativo)
+            const { error: error2 } = await window.supabaseClient
+                .from('nfe_emitidas')
+                .delete()
+                .eq('chave', chaveAcesso);
+            if (error2) {
+                console.error('❌ Erro ao remover NF-e:', error2);
+                throw new Error(`Erro ao remover NF-e: ${error2.message}`);
+            }
+        }
+        
+        console.log(`✅ NF-e ${chaveAcesso} removida do sistema`);
+        
+        // Atualizar status da venda se tiver venda_id
+        if (nfe && nfe.venda_id) {
+            await atualizarStatusVendaSistema(nfe.venda_id);
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Erro ao remover NF-e:', error);
+        throw error;
+    }
+}
+
+// =========================================================
+// 🔥 FUNÇÃO PARA ATUALIZAR STATUS DA VENDA NO SISTEMA
+// =========================================================
+
+async function atualizarStatusVendaSistema(vendaId) {
+    try {
+        if (!vendaId || vendaId === 'N/A') return;
+        
+        // Verificar quais colunas existem na tabela
+        // Algumas tabelas podem não ter certas colunas
+        const updateData = {
+            nfe_emitida: false,
+            status_sistema: 'pendente',
+            updated_at: new Date().toISOString()
+        };
+        
+        // Tentar atualizar apenas colunas que existem
+        const { error } = await window.supabaseClient
+            .from('vendas_ml')
+            .update(updateData)
+            .eq('id_venda_ml', String(vendaId));
+        
+        if (error) {
+            // Se der erro, tentar apenas com as colunas básicas
+            if (error.message && error.message.includes('status_nfe')) {
+                console.log('ℹ️ Coluna status_nfe não existe, tentando sem ela...');
+                const { error: error2 } = await window.supabaseClient
+                    .from('vendas_ml')
+                    .update({ 
+                        nfe_emitida: false,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id_venda_ml', String(vendaId));
+                
+                if (error2) {
+                    console.warn('⚠️ Erro ao atualizar status da venda:', error2);
+                } else {
+                    console.log(`✅ Status da venda ${vendaId} atualizado (sem status_nfe)`);
+                }
+            } else {
+                console.warn('⚠️ Erro ao atualizar status da venda:', error);
+            }
+        } else {
+            console.log(`✅ Status da venda ${vendaId} atualizado para pendente`);
+        }
+        
+        // Também tentar atualizar na tabela vendas_nfe se existir
+        try {
+            await window.supabaseClient
+                .from('vendas_nfe')
+                .update({ 
+                    nfe_emitida: false,
+                    updated_at: new Date().toISOString()
+                })
+                .eq('id_venda_ml', String(vendaId));
+        } catch (e) {
+            // Tabela pode não existir, ignorar
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao atualizar status da venda:', error);
+    }
+}
+
+// =========================================================
+// 🔥 FUNÇÃO PARA RESTAURAR ESTOQUE (SISTEMA)
+// =========================================================
+
+async function restaurarEstoqueSistema(vendaId) {
+    try {
+        console.log(`📦 Restaurando estoque para venda ${vendaId}...`);
+        
+        if (!vendaId || vendaId === 'N/A') {
+            console.warn('⚠️ Venda ID inválido para restaurar estoque');
+            return;
+        }
+        
+        // Buscar a venda no Supabase - tentar em várias tabelas
+        let vendaML = null;
+        let vendaError = null;
+        
+        // Tentar na tabela vendas_ml
+        const { data: venda1, error: error1 } = await window.supabaseClient
+            .from('vendas_ml')
+            .select('sku, quantidade, skus_kit, eh_kit, produtos')
+            .eq('id_venda_ml', String(vendaId))
+            .maybeSingle();
+        
+        if (!error1 && venda1) {
+            vendaML = venda1;
+            console.log('✅ Venda encontrada na tabela vendas_ml');
+        } else {
+            // Tentar na tabela vendas_nfe
+            const { data: venda2, error: error2 } = await window.supabaseClient
+                .from('vendas_nfe')
+                .select('sku, quantidade, skus_kit, eh_kit, items_json')
+                .eq('id_venda_ml', String(vendaId))
+                .maybeSingle();
+            
+            if (!error2 && venda2) {
+                vendaML = venda2;
+                console.log('✅ Venda encontrada na tabela vendas_nfe');
+            } else {
+                // Tentar buscar na tabela principal de vendas
+                const { data: venda3, error: error3 } = await window.supabaseClient
+                    .from('vendas')
+                    .select('sku, quantidade, items')
+                    .eq('id_venda_ml', String(vendaId))
+                    .maybeSingle();
+                
+                if (!error3 && venda3) {
+                    vendaML = venda3;
+                    console.log('✅ Venda encontrada na tabela vendas');
+                }
+            }
+        }
+        
+        if (!vendaML) {
+            console.warn(`⚠️ Venda ${vendaId} não encontrada para restaurar estoque`);
+            // Tentar restaurar usando os produtos da NF-e
+            await restaurarEstoquePorNFE(vendaId);
+            return;
+        }
+        
+        const itensParaRestaurar = [];
+        
+        // Se for KIT
+        if (vendaML.eh_kit && vendaML.skus_kit && vendaML.skus_kit.length > 0) {
+            for (const kitItem of vendaML.skus_kit) {
+                const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(kitItem.sku);
+                const quantidadeKit = kitItem.estoque || 1;
+                const quantidadeTotal = quantidadeKit * (vendaML.quantidade || 1) * multiplicador;
+                itensParaRestaurar.push({
+                    sku: skuReal,
+                    skuOriginal: kitItem.sku,
+                    quantidade: quantidadeTotal
+                });
+            }
+            console.log(`📦 KIT detectado: ${vendaML.skus_kit.length} SKUs para restaurar`);
+        } else {
+            // Produto normal
+            const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(vendaML.sku);
+            const quantidadeTotal = (vendaML.quantidade || 1) * multiplicador;
+            itensParaRestaurar.push({
+                sku: skuReal,
+                skuOriginal: vendaML.sku,
+                quantidade: quantidadeTotal
+            });
+        }
+        
+        // Restaurar cada item
+        let itensRestaurados = 0;
+        
+        for (const item of itensParaRestaurar) {
+            if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
+            
+            console.log(`📦 Restaurando ${item.quantidade} un do SKU: ${item.sku}`);
+            
+            const { data: produto, error: prodError } = await window.supabaseClient
+                .from('produtos_estoque')
+                .select('id, quantidade, nome')
+                .eq('sku', item.sku)
+                .maybeSingle();
+            
+            if (prodError) {
+                console.warn(`⚠️ Erro ao buscar ${item.sku}:`, prodError);
+                continue;
+            }
+            
+            if (produto) {
+                const novaQuantidade = produto.quantidade + item.quantidade;
+                
+                const { error: updateError } = await window.supabaseClient
+                    .from('produtos_estoque')
+                    .update({ 
+                        quantidade: novaQuantidade,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', produto.id);
+                
+                if (updateError) {
+                    console.warn(`⚠️ Erro ao atualizar ${item.sku}:`, updateError);
+                } else {
+                    itensRestaurados++;
+                    console.log(`✅ Estoque do SKU ${item.sku} restaurado: ${produto.quantidade} → ${novaQuantidade}`);
+                }
+            } else {
+                console.warn(`⚠️ Produto não encontrado: ${item.sku}`);
+            }
+        }
+        
+        // Recarregar estoque
+        if (typeof window.carregarProdutosEstoque === 'function') {
+            await window.carregarProdutosEstoque();
+        }
+        
+        if (itensRestaurados > 0) {
+            console.log(`✅ ${itensRestaurados} item(ns) restaurados ao estoque`);
+            showToast(`✅ ${itensRestaurados} item(ns) restaurados ao estoque!`, 'success');
+        }
+        
+        return { itensRestaurados };
+        
+    } catch (error) {
+        console.error('❌ Erro ao restaurar estoque:', error);
+        return { itensRestaurados: 0 };
+    }
+}
+
+// =========================================================
+// 🔥 FUNÇÃO PARA RESTAURAR ESTOQUE USANDO A NF-e
+// =========================================================
+
+async function restaurarEstoquePorNFE(vendaId) {
+    try {
+        console.log(`📦 Tentando restaurar estoque usando a NF-e da venda ${vendaId}...`);
+        
+        // Buscar a NF-e
+        const listResponse = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
+        const listData = await listResponse.json();
+        
+        if (!listData.success || !listData.notas) {
+            console.warn('⚠️ Erro ao listar NF-es');
+            return;
+        }
+        
+        const nfe = listData.notas.find(n => 
+            String(n.venda_id) === String(vendaId) || 
+            String(n.venda_id_ml) === String(vendaId) ||
+            String(n.id_venda) === String(vendaId)
+        );
+        
+        if (!nfe) {
+            console.warn(`⚠️ NF-e não encontrada para venda ${vendaId}`);
+            return;
+        }
+        
+        // Extrair produtos do XML
+        if (nfe.xml_assinado) {
+            try {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(nfe.xml_assinado, 'application/xml');
+                const dets = xmlDoc.querySelectorAll('det');
+                
+                let itensRestaurados = 0;
+                
+                for (const det of dets) {
+                    const prod = det.querySelector('prod');
+                    if (!prod) continue;
+                    
+                    const cProd = prod.querySelector('cProd')?.textContent || '';
+                    const xProd = prod.querySelector('xProd')?.textContent || '';
+                    const qtd = parseFloat(prod.querySelector('qCom')?.textContent || '0');
+                    const sku = cProd || xProd || 'SEM_SKU';
+                    
+                    if (qtd <= 0 || sku === 'SEM_SKU') continue;
+                    
+                    console.log(`📦 Restaurando ${qtd} un do SKU: ${sku}`);
+                    
+                    const { data: produto, error: prodError } = await window.supabaseClient
+                        .from('produtos_estoque')
+                        .select('id, quantidade')
+                        .eq('sku', sku)
+                        .maybeSingle();
+                    
+                    if (!prodError && produto) {
+                        const novaQuantidade = produto.quantidade + qtd;
+                        await window.supabaseClient
+                            .from('produtos_estoque')
+                            .update({ 
+                                quantidade: novaQuantidade,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', produto.id);
+                        itensRestaurados++;
+                        console.log(`✅ Estoque do SKU ${sku} restaurado: ${produto.quantidade} → ${novaQuantidade}`);
+                    }
+                }
+                
+                if (itensRestaurados > 0) {
+                    showToast(`✅ ${itensRestaurados} item(ns) restaurados do estoque!`, 'success');
+                }
+                
+                return { itensRestaurados };
+                
+            } catch (e) {
+                console.warn('⚠️ Erro ao extrair produtos do XML:', e);
+            }
+        }
+        
+        return { itensRestaurados: 0 };
+        
+    } catch (error) {
+        console.error('❌ Erro ao restaurar estoque por NF-e:', error);
+        return { itensRestaurados: 0 };
+    }
+}
+
+// =========================================================
+// 🔥 FUNÇÃO PARA REGISTRAR HISTÓRICO DE CANCELAMENTO
+// =========================================================
+
+async function registrarHistoricoSistema(vendaId, chaveAcesso, justificativa) {
+    try {
+        // Verificar se a tabela existe antes de inserir
+        try {
+            // Tentar inserir na tabela nfe_historico
+            const { error } = await window.supabaseClient
+                .from('nfe_historico')
+                .insert({
+                    chave_acesso: chaveAcesso,
+                    venda_id: vendaId,
+                    acao: 'cancelamento_sistema',
+                    justificativa: justificativa || 'Cancelado pelo usuário',
+                    criado_em: new Date().toISOString()
+                });
+            
+            if (error) {
+                // Se a tabela não existir, tentar criar ou ignorar
+                if (error.code === 'PGRST204' || error.message?.includes('relation')) {
+                    console.log('ℹ️ Tabela nfe_historico não existe, ignorando histórico');
+                } else {
+                    console.warn('⚠️ Erro ao registrar histórico:', error);
+                }
+            } else {
+                console.log('✅ Histórico de cancelamento registrado');
+            }
+        } catch (e) {
+            // Tabela pode não existir
+            console.log('ℹ️ Tabela nfe_historico não disponível');
+        }
+        
+        // Também registrar no histórico de estoque se possível
+        try {
+            if (vendaId && vendaId !== 'N/A') {
+                await window.supabaseClient
+                    .from('estoque_historico')
+                    .insert({
+                        venda_id: vendaId,
+                        tipo: 'cancelamento',
+                        observacao: `Cancelamento de NF-e no sistema - Chave: ${chaveAcesso}`,
+                        criado_por: 'Sistema (Cancelamento)',
+                        criado_em: new Date().toISOString()
+                    });
+                console.log('✅ Histórico de estoque registrado');
+            }
+        } catch (e) {
+            // Tabela pode não existir
+        }
+        
+    } catch (error) {
+        console.warn('⚠️ Erro ao registrar histórico:', error);
+    }
+}
+
+// =========================================================
+// 🔥 FUNÇÃO PARA LISTAR NF-ES E PERMITIR CANCELAR NO SISTEMA
+// =========================================================
+
+async function listarNFesParaCancelarSistema() {
+    try {
+        const response = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
+        const data = await response.json();
+        
+        if (!data.success || !data.notas) {
+            showToast('❌ Erro ao listar NF-es', 'error');
+            return;
+        }
+        
+        const nfes = data.notas;
+        
+        if (nfes.length === 0) {
+            showToast('📋 Nenhuma NF-e encontrada', 'warning');
+            return;
+        }
+        
+        let html = `
+        <div style="max-height: 500px; overflow-y: auto;">
+            <p style="color: #dc3545; font-weight: bold; margin-bottom: 10px;">
+                ⚠️ Cancelar NF-e na SEFAZ e no Sistema
+            </p>
+            <table style="width:100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                    <tr style="background: #f8f9fa; position: sticky; top: 0;">
+                        <th style="padding: 8px; border: 1px solid #ddd;">Venda</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Cliente</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Valor</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Data</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Status</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        
+        for (const nfe of nfes) {
+            const chave = nfe.chave_acesso || nfe.chave || 'N/A';
+            const vendaId = nfe.venda_id || nfe.venda_id_ml || nfe.id_venda || 'N/A';
+            const cliente = nfe.cliente_nome || nfe.cliente?.nome || 'N/A';
+            const valor = nfe.valor_total ? parseFloat(nfe.valor_total).toFixed(2) : 'N/A';
+            const dataEmissao = nfe.data_emissao ? new Date(nfe.data_emissao).toLocaleDateString('pt-BR') : 'N/A';
+            const cancelada = nfe.cancelada ? '✅ Cancelada' : '⏳ Ativa';
+            const corStatus = nfe.cancelada ? '#28a745' : '#ffc107';
+            
+            // Verificar se está dentro do prazo de 24h
+            let prazoInfo = '';
+            let corPrazo = '#28a745';
+            if (nfe.data_emissao && !nfe.cancelada) {
+                const dataEmissaoDate = new Date(nfe.data_emissao);
+                const agora = new Date();
+                const diffHoras = (agora - dataEmissaoDate) / (1000 * 60 * 60);
+                if (diffHoras > 24) {
+                    prazoInfo = ' ⚠️ Prazo expirado';
+                    corPrazo = '#dc3545';
+                } else {
+                    prazoInfo = ` ✅ ${Math.round(24 - diffHoras)}h restantes`;
+                }
+            }
+            
+            html += `
+                <tr style="border-bottom: 1px solid #eee;">
+                    <td style="padding: 6px; border: 1px solid #ddd;"><strong>${vendaId}</strong></td>
+                    <td style="padding: 6px; border: 1px solid #ddd;">${cliente}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd;">R$ ${valor}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd;">${dataEmissao}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd;">
+                        <span style="color: ${corStatus}; font-weight: bold;">${cancelada}</span>
+                        <span style="color: ${corPrazo}; font-size: 10px;">${prazoInfo}</span>
+                    </td>
+                    <td style="padding: 6px; border: 1px solid #ddd;">
+                        ${!nfe.cancelada ? `
+                            <button onclick="cancelarNFESistema('${chave}')" 
+                                    style="padding: 4px 10px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                <i class="fas fa-times"></i> Cancelar
+                            </button>
+                        ` : `
+                            <button onclick="removerNFESistema('${chave}')" 
+                                    style="padding: 4px 10px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                <i class="fas fa-trash"></i> Remover
+                            </button>
+                        `}
+                    </td>
+                </tr>
+            `;
+        }
+        
+        html += `
+                </tbody>
+            </table>
+        </div>
+        <div style="margin-top: 10px; text-align: center; font-size: 12px; color: #6c757d;">
+            ⚠️ O cancelamento é IRREVERSÍVEL e será feito na SEFAZ!
+        </div>
+        <div style="margin-top: 10px; text-align: center;">
+            <button onclick="fecharModalDialog()" style="padding: 8px 20px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Fechar
+            </button>
+        </div>
+        `;
+        
+        showModalDialog('📋 Cancelar NF-e (SEFAZ + Sistema)', html);
+        
+    } catch (error) {
+        console.error('❌ Erro:', error);
+        showToast(`❌ Erro: ${error.message}`, 'error');
+    }
+}
+
+// =========================================================
+// 🔥 FUNÇÃO PARA CANCELAR NF-e PELO ID DA VENDA (SISTEMA)
+// =========================================================
+
+async function cancelarNFEporVendaSistema(vendaId) {
+    if (!vendaId) {
+        vendaId = prompt('Digite o ID da venda:');
+        if (!vendaId) return;
+    }
+    
+    try {
+        // Buscar a NF-e pela venda
+        const listResponse = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
+        const listData = await listResponse.json();
+        
+        if (!listData.success || !listData.notas) {
+            showToast('❌ Erro ao listar NF-es', 'error');
+            return;
+        }
+        
+        const nfe = listData.notas.find(n => 
+            String(n.venda_id) === String(vendaId) || 
+            String(n.venda_id_ml) === String(vendaId) ||
+            String(n.id_venda) === String(vendaId)
+        );
+        
+        if (!nfe) {
+            showToast(`❌ NF-e não encontrada para venda ${vendaId}`, 'error');
+            return;
+        }
+        
+        const chave = nfe.chave_acesso || nfe.chave;
+        
+        if (!chave) {
+            showToast('❌ Chave da NF-e não encontrada', 'error');
+            return;
+        }
+        
+        await cancelarNFESistema(chave);
+        
+    } catch (error) {
+        console.error('❌ Erro:', error);
+        showToast(`❌ Erro: ${error.message}`, 'error');
+    }
+}
+
+// =========================================================
+// EXPORTAR FUNÇÕES
+// =========================================================
+
+window.cancelarNFESistema = cancelarNFESistema;
+window.removerNFESistema = removerNFESistema;
+window.atualizarStatusVendaSistema = atualizarStatusVendaSistema;
+window.restaurarEstoqueSistema = restaurarEstoqueSistema;
+window.listarNFesParaCancelarSistema = listarNFesParaCancelarSistema;
+window.cancelarNFEporVendaSistema = cancelarNFEporVendaSistema;
+
+console.log('✅ Funções de cancelamento de NF-e (SISTEMA) carregadas!');
+console.log('📋 Comandos disponíveis:');
+console.log('  await cancelarNFESistema("CHAVE_DA_NFE")           - Cancelar NF-e no sistema');
+console.log('  await cancelarNFEporVendaSistema("ID_DA_VENDA")   - Cancelar pelo ID da venda');
+console.log('  await listarNFesParaCancelarSistema()             - Listar NF-es e cancelar');
+console.log('  await removerNFESistema("CHAVE_DA_NFE")           - Remover apenas o registro');
+
+// =========================================================
 // EDIÇÃO DE PRODUTOS
 // =========================================================
 
@@ -616,14 +1411,119 @@ async function mostrarAbaNFE(aba) {
 }
 
 // =========================================================
-// CARREGAR VENDAS PENDENTES (CORRIGIDO - VALOR DO PRODUTO)
+// HANDLERS PARA OS BOTÕES DA TABELA
+// =========================================================
+
+// Handler para emitir NF-e
+function handleEmitirNFEClick(event) {
+    const vendaId = event.currentTarget.dataset.vendaId;
+    if (!vendaId) {
+        showToast('❌ ID da venda não encontrado', 'error');
+        return;
+    }
+    abrirModalEdicaoProdutos(vendaId);
+}
+
+// Handler para ver NF-e
+async function handleVerNFEClick(event) {
+    const vendaId = event.currentTarget.dataset.vendaId;
+    if (!vendaId) {
+        showToast('❌ ID da venda não encontrado', 'error');
+        return;
+    }
+    
+    try {
+        // Buscar a NF-e pela venda
+        const listResponse = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
+        const listData = await listResponse.json();
+        
+        if (!listData.success || !listData.notas) {
+            showToast('❌ Erro ao listar NF-es', 'error');
+            return;
+        }
+        
+        const nfe = listData.notas.find(n => 
+            String(n.venda_id) === String(vendaId) || 
+            String(n.venda_id_ml) === String(vendaId) ||
+            String(n.id_venda) === String(vendaId)
+        );
+        
+        if (!nfe) {
+            showToast(`❌ NF-e não encontrada para venda ${vendaId}`, 'error');
+            return;
+        }
+        
+        const chave = nfe.chave_acesso || nfe.chave;
+        if (chave) {
+            await visualizarNFE(chave);
+        } else {
+            showToast('❌ Chave da NF-e não encontrada', 'error');
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao ver NF-e:', error);
+        showToast(`❌ Erro: ${error.message}`, 'error');
+    }
+}
+
+// Handler para cancelar NF-e
+async function handleCancelarNFEClick(event) {
+    const vendaId = event.currentTarget.dataset.vendaId;
+    if (!vendaId) {
+        showToast('❌ ID da venda não encontrado', 'error');
+        return;
+    }
+    
+    try {
+        // Buscar a NF-e pela venda
+        const listResponse = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
+        const listData = await listResponse.json();
+        
+        if (!listData.success || !listData.notas) {
+            showToast('❌ Erro ao listar NF-es', 'error');
+            return;
+        }
+        
+        const nfe = listData.notas.find(n => 
+            String(n.venda_id) === String(vendaId) || 
+            String(n.venda_id_ml) === String(vendaId) ||
+            String(n.id_venda) === String(vendaId)
+        );
+        
+        if (!nfe) {
+            showToast(`❌ NF-e não encontrada para venda ${vendaId}`, 'error');
+            return;
+        }
+        
+        const chave = nfe.chave_acesso || nfe.chave;
+        if (chave) {
+            await cancelarNFESistema(chave);
+        } else {
+            showToast('❌ Chave da NF-e não encontrada', 'error');
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao cancelar NF-e:', error);
+        showToast(`❌ Erro: ${error.message}`, 'error');
+    }
+}
+
+// =========================================================
+// EXPORTAR HANDLERS GLOBALMENTE
+// =========================================================
+
+window.handleEmitirNFEClick = handleEmitirNFEClick;
+window.handleVerNFEClick = handleVerNFEClick;
+window.handleCancelarNFEClick = handleCancelarNFEClick;
+
+// =========================================================
+// CARREGAR VENDAS PENDENTES (CORRIGIDO - VERIFICA NF-e NO ML)
 // =========================================================
 
 async function carregarVendasPendentes() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
 
-    // Mostrar loading
     tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4"><div class="spinner"></div> Carregando vendas...</td></tr>`;
 
     try {
@@ -634,21 +1534,99 @@ async function carregarVendasPendentes() {
         }
         if (!token) throw new Error('Token ML não disponível');
 
-        // Buscar IDs com NF-e já emitidas (tabela nfe_emitidas)
-        let idsComNFE = new Set();
+        // ===== 1. BUSCAR IDs COM NF-e NO MERCADO LIVRE =====
+        console.log('🔍 Buscando vendas com NF-e no Mercado Livre...');
+        let idsComNFE_ML = new Set();
+        
+        try {
+            // Buscar invoices do seller
+            const invoicesUrl = `https://api.mercadolibre.com/users/415176739/invoices`;
+            const invoicesProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(invoicesUrl)}&token=${encodeURIComponent(token)}`;
+            const invoicesResponse = await fetch(invoicesProxyUrl);
+            
+            if (invoicesResponse.ok) {
+                const invoicesData = await invoicesResponse.json();
+                console.log('📋 Resposta das invoices:', invoicesData);
+                
+                // 🔥 VERIFICAR O FORMATO DA RESPOSTA
+                let invoices = [];
+                if (Array.isArray(invoicesData)) {
+                    invoices = invoicesData;
+                } else if (invoicesData.results && Array.isArray(invoicesData.results)) {
+                    invoices = invoicesData.results;
+                } else if (invoicesData.invoices && Array.isArray(invoicesData.invoices)) {
+                    invoices = invoicesData.invoices;
+                } else if (typeof invoicesData === 'object') {
+                    // Pode ser um objeto com as invoices
+                    for (const key in invoicesData) {
+                        if (Array.isArray(invoicesData[key])) {
+                            invoices = invoicesData[key];
+                            break;
+                        }
+                    }
+                }
+                
+                console.log(`📋 ${invoices.length} invoices encontradas`);
+                
+                for (const invoice of invoices) {
+                    // Tentar extrair order_id de várias formas
+                    let orderId = null;
+                    
+                    if (invoice.order_id) {
+                        orderId = String(invoice.order_id);
+                    } else if (invoice.external_order_id) {
+                        orderId = String(invoice.external_order_id);
+                    } else if (invoice.order) {
+                        orderId = String(invoice.order);
+                    } else if (invoice.pack_id) {
+                        // Se tiver pack_id, buscar o order_id associado
+                        try {
+                            const packUrl = `https://api.mercadolibre.com/packs/${invoice.pack_id}`;
+                            const packProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(packUrl)}&token=${encodeURIComponent(token)}`;
+                            const packResponse = await fetch(packProxyUrl);
+                            if (packResponse.ok) {
+                                const packData = await packResponse.json();
+                                if (packData.orders && packData.orders.length > 0) {
+                                    orderId = String(packData.orders[0]);
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                    
+                    if (orderId) {
+                        idsComNFE_ML.add(orderId);
+                        console.log(`✅ Venda ${orderId} tem NF-e no ML`);
+                    }
+                }
+                
+                console.log(`📋 ${idsComNFE_ML.size} vendas com NF-e no ML`);
+            } else {
+                console.warn(`⚠️ Erro ao buscar invoices: ${invoicesResponse.status}`);
+                // Tentar método alternativo - buscar invoice por venda individualmente não é viável
+            }
+        } catch (e) {
+            console.warn('⚠️ Erro ao buscar invoices do ML:', e);
+        }
+
+        // ===== 2. BUSCAR IDs COM NF-e NO SUPABASE =====
+        let idsComNFE_Supabase = new Set();
         try {
             const { data: nfes, error } = await window.supabaseClient
                 .from('nfe_emitidas')
                 .select('venda_id');
             if (!error && nfes) {
-                idsComNFE = new Set(nfes.map(n => String(n.venda_id)).filter(id => id !== 'null' && id !== null));
-                console.log(`📋 ${idsComNFE.size} vendas com NF-e emitida`);
+                idsComNFE_Supabase = new Set(nfes.map(n => String(n.venda_id)).filter(id => id !== 'null' && id !== null));
+                console.log(`📋 ${idsComNFE_Supabase.size} vendas com NF-e no Supabase`);
             }
         } catch (e) {
             console.warn('⚠️ Erro ao consultar nfe_emitidas:', e);
         }
 
-        // Buscar vendas do ML (últimos 15 dias, até 200 vendas)
+        // ===== 3. UNIR OS DOIS CONJUNTOS =====
+        const idsComNFE = new Set([...idsComNFE_ML, ...idsComNFE_Supabase]);
+        console.log(`📋 Total de ${idsComNFE.size} vendas com NF-e (ML + Supabase)`);
+
+        // ===== 4. BUSCAR VENDAS DO ML =====
         const diasAtras = 15;
         const dataInicio = new Date();
         dataInicio.setDate(dataInicio.getDate() - diasAtras);
@@ -701,19 +1679,16 @@ async function carregarVendasPendentes() {
             return;
         }
 
-        // Processar cada venda
+        // ===== 5. PROCESSAR CADA VENDA =====
         const vendasProcessadas = [];
 
         for (const venda of todasVendas) {
             const idVenda = String(venda.id);
             
-            // 🔥 PULAR vendas que já têm NF-e emitida
-            if (idsComNFE.has(idVenda)) {
-                console.log(`⏭️ Venda ${idVenda} já tem NF-e, ignorando`);
-                continue;
-            }
-
-            // Buscar shipment para logistic_type
+            // 🔥 VERIFICAR SE JÁ TEM NF-e
+            const temNFE = idsComNFE.has(idVenda);
+            
+            // Buscar shipment
             let logisticType = '';
             let shippingMode = '';
             
@@ -732,7 +1707,7 @@ async function carregarVendasPendentes() {
                 }
             }
 
-            // Verificar se é FULL
+            // Verificar FULL
             const isFull = 
                 logisticType.toLowerCase() === 'fulfillment' ||
                 logisticType.toLowerCase().includes('full') ||
@@ -740,11 +1715,10 @@ async function carregarVendasPendentes() {
                 shippingMode.toLowerCase().includes('full') ||
                 (venda.tags || []).some(t => t.toLowerCase() === 'fulfillment');
 
-            // 🔥 BUSCAR VALOR EXATO DO MERCADO PAGO
+            // Buscar valor
             let valorProduto = 0;
             let valorFrete = 0;
             let totalPago = 0;
-            let descontoCupom = 0;
             
             try {
                 const dadosPagamento = await buscarValorExatoPagamento(idVenda);
@@ -752,20 +1726,16 @@ async function carregarVendasPendentes() {
                     valorProduto = dadosPagamento.valor_produto || 0;
                     valorFrete = dadosPagamento.valor_frete || 0;
                     totalPago = dadosPagamento.total_pago || 0;
-                    descontoCupom = dadosPagamento.desconto_cupom || 0;
-                    console.log(`💰 Venda ${idVenda}: Produto=R$ ${valorProduto.toFixed(2)}, Frete=R$ ${valorFrete.toFixed(2)}, Total=R$ ${totalPago.toFixed(2)}`);
                 }
             } catch (e) {
                 console.warn(`⚠️ Erro ao buscar pagamento para ${idVenda}:`, e);
             }
 
-            // Fallback: se não conseguiu buscar do MP, usar total_amount - shipping.cost
             if (valorProduto === 0 && venda.total_amount) {
                 const custoFrete = venda.shipping?.cost || 0;
                 valorProduto = Math.max(0, (venda.total_amount || 0) - custoFrete);
                 totalPago = venda.total_amount || 0;
                 valorFrete = custoFrete;
-                console.log(`📦 Venda ${idVenda} (fallback): Produto=R$ ${valorProduto.toFixed(2)}, Frete=R$ ${valorFrete.toFixed(2)}`);
             }
 
             vendasProcessadas.push({
@@ -773,23 +1743,23 @@ async function carregarVendasPendentes() {
                 _logistic_type: logisticType,
                 _shipping_mode: shippingMode,
                 _is_full: isFull,
-                _valor_produto: valorProduto,      // 🔥 VALOR DO PRODUTO (SEM FRETE)
-                _valor_frete: valorFrete,           // 🔥 VALOR DO FRETE
-                _total_pago: totalPago,             // 🔥 TOTAL PAGO (COM FRETE)
-                _desconto_cupom: descontoCupom
+                _tem_nfe: temNFE,
+                _valor_produto: valorProduto,
+                _valor_frete: valorFrete,
+                _total_pago: totalPago
             });
         }
 
-        console.log(`📊 Vendas processadas: ${vendasProcessadas.length} (${todasVendas.length - vendasProcessadas.length} ignoradas)`);
+        console.log(`📊 Vendas processadas: ${vendasProcessadas.length}`);
 
         if (vendasProcessadas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4">Todas as vendas já possuem NF-e</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4">Nenhuma venda encontrada</td></tr>';
             return;
         }
 
         vendasPendentes = vendasProcessadas;
 
-        // ===== FUNÇÃO PARA GERAR BADGE DE ENVIO =====
+        // ===== 6. RENDERIZAR TABELA =====
         function gerarBadgeEnvio(venda) {
             const logisticType = venda._logistic_type || '';
             const shippingMode = venda._shipping_mode || '';
@@ -818,25 +1788,31 @@ async function carregarVendasPendentes() {
             return '<span class="badge badge-secondary" style="padding: 4px 10px;">N/I</span>';
         }
 
-        // Renderizar tabela
         tbody.innerHTML = vendasProcessadas.map(v => {
             const vendaId = v.id;
             const dataVenda = v.date_created ? new Date(v.date_created).toLocaleDateString('pt-BR') : '-';
             const cliente = v.buyer?.nickname || 'N/I';
             const sku = v.order_items?.[0]?.item?.seller_sku || 'N/A';
-            
-            // 🔥 USAR O VALOR DO PRODUTO (SEM FRETE) - CORRIGIDO!
-            const valorExibir = v._valor_produto || 0;
-            
-            // 🔥 Se for FULL, mostrar badge e NÃO mostrar botão de emitir
-            const isFull = v._is_full || false;
+            const valorExibir = v._valor_produto || v.total_amount || 0;
             
             let statusNFE = '';
             let botaoEmitir = '';
-            
+            const isFull = v._is_full || false;
+            const temNFE = v._tem_nfe || false;
+
             if (isFull) {
-                statusNFE = '<span class="badge badge-danger" style="background: #dc3545; color: white; padding: 4px 10px;">🚫 NF-e automática</span>';
-                botaoEmitir = '<span class="text-muted" style="font-size: 12px;"><i class="fas fa-lock"></i> NF-e gerada pelo ML</span>';
+                statusNFE = '<span class="badge badge-danger" style="background: #dc3545; color: white; padding: 4px 10px;">🚫 NF-e gerada pelo ML</span>';
+                botaoEmitir = '<span class="text-muted" style="font-size: 12px;"><i class="fas fa-lock"></i> Automática</span>';
+            } else if (temNFE) {
+                statusNFE = '<span class="badge badge-success" style="background: #28a745; color: white; padding: 4px 10px;">✅ NF-e Emitida</span>';
+                botaoEmitir = `
+                    <button class="btn btn-sm btn-warning btn-ver-nfe" data-venda-id="${vendaId}" style="margin-right: 4px;">
+                        <i class="fas fa-eye"></i> Ver
+                    </button>
+                    <button class="btn btn-sm btn-danger btn-cancelar-nfe" data-venda-id="${vendaId}">
+                        <i class="fas fa-times"></i> Cancelar
+                    </button>
+                `;
             } else {
                 statusNFE = '<span class="badge badge-warning">⏳ Pendente</span>';
                 botaoEmitir = `
@@ -844,11 +1820,6 @@ async function carregarVendasPendentes() {
                         <i class="fas fa-file-invoice"></i> Emitir NF-e
                     </button>
                 `;
-            }
-
-            // 🔥 DEBUG: Mostrar no console os valores para verificar
-            if (v._valor_produto > 0) {
-                console.log(`📊 Tabela - Venda ${vendaId}: Produto=R$ ${v._valor_produto.toFixed(2)}, Total=R$ ${v._total_pago?.toFixed(2) || 'N/A'}`);
             }
 
             return `
@@ -864,10 +1835,20 @@ async function carregarVendasPendentes() {
             </tr>`;
         }).join('');
 
-        // Adicionar event listeners apenas para botões de emitir
+        // ===== 7. ADICIONAR EVENT LISTENERS =====
         document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
-            btn.removeEventListener('click', handleEmitirNFEClick);
-            btn.addEventListener('click', handleEmitirNFEClick);
+            btn.removeEventListener('click', window.handleEmitirNFEClick);
+            btn.addEventListener('click', window.handleEmitirNFEClick);
+        });
+
+        document.querySelectorAll('#vendasPendentesBody .btn-ver-nfe').forEach(btn => {
+            btn.removeEventListener('click', window.handleVerNFEClick);
+            btn.addEventListener('click', window.handleVerNFEClick);
+        });
+
+        document.querySelectorAll('#vendasPendentesBody .btn-cancelar-nfe').forEach(btn => {
+            btn.removeEventListener('click', window.handleCancelarNFEClick);
+            btn.addEventListener('click', window.handleCancelarNFEClick);
         });
 
     } catch (error) {
@@ -876,14 +1857,221 @@ async function carregarVendasPendentes() {
     }
 }
 
-function handleEmitirNFEClick(event) {
+// =========================================================
+// 🔥 FUNÇÃO PARA SINCRONIZAR COM ML APÓS BAIXA DE ESTOQUE
+// =========================================================
+
+async function sincronizarEstoqueComML(vendaId) {
+    try {
+        console.log(`🔄 Sincronizando estoque com ML para venda ${vendaId}...`);
+        
+        let token = localStorage.getItem('ml_access_token');
+        if (!token && typeof window.getValidToken === 'function') {
+            const tokenData = await window.getValidToken();
+            token = tokenData?.access_token;
+        }
+        
+        if (!token) {
+            console.warn('⚠️ Token ML não disponível para sincronização');
+            return false;
+        }
+
+        // Buscar produtos da venda no Supabase
+        const { data: vendaML, error: vendaError } = await window.supabaseClient
+            .from('vendas_ml')
+            .select('sku, quantidade, skus_kit, eh_kit')
+            .eq('id_venda_ml', String(vendaId))
+            .maybeSingle();
+        
+        if (vendaError || !vendaML) {
+            console.warn('⚠️ Venda não encontrada para sincronização');
+            return false;
+        }
+
+        // Buscar os SKUs e quantidades
+        const itensParaSincronizar = [];
+        
+        if (vendaML.eh_kit && vendaML.skus_kit && vendaML.skus_kit.length > 0) {
+            for (const kitItem of vendaML.skus_kit) {
+                const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(kitItem.sku);
+                const quantidadeKit = kitItem.estoque || 1;
+                const quantidadeTotal = quantidadeKit * (vendaML.quantidade || 1) * multiplicador;
+                itensParaSincronizar.push({
+                    sku: skuReal,
+                    quantidade: quantidadeTotal
+                });
+            }
+        } else {
+            const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(vendaML.sku);
+            const quantidadeTotal = (vendaML.quantidade || 1) * multiplicador;
+            itensParaSincronizar.push({
+                sku: skuReal,
+                quantidade: quantidadeTotal
+            });
+        }
+
+        // Sincronizar cada item com o ML
+        let itensSincronizados = 0;
+        
+        for (const item of itensParaSincronizar) {
+            if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
+            
+            console.log(`🔄 Sincronizando SKU ${item.sku} com ML...`);
+            
+            // Buscar o produto no estoque
+            const { data: produto, error: prodError } = await window.supabaseClient
+                .from('produtos_estoque')
+                .select('id, quantidade, mlb_codes, sku')
+                .eq('sku', item.sku)
+                .maybeSingle();
+            
+            if (prodError || !produto) {
+                console.warn(`⚠️ Produto ${item.sku} não encontrado no estoque`);
+                continue;
+            }
+
+            // Buscar o ML_B_CODE do produto
+            let mlbCode = null;
+            if (produto.mlb_codes && typeof produto.mlb_codes === 'object') {
+                mlbCode = produto.mlb_codes[0] || null;
+            }
+            
+            if (!mlbCode) {
+                console.warn(`⚠️ ML_B_CODE não encontrado para SKU ${item.sku}`);
+                continue;
+            }
+
+            try {
+                // Atualizar estoque no ML
+                const updateUrl = `https://api.mercadolibre.com/items/${mlbCode}`;
+                const updatePayload = {
+                    available_quantity: produto.quantidade
+                };
+                
+                const updateProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(updateUrl)}&token=${encodeURIComponent(token)}&method=PUT`;
+                const updateResponse = await fetch(updateProxyUrl, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updatePayload)
+                });
+                
+                if (updateResponse.ok) {
+                    itensSincronizados++;
+                    console.log(`✅ Estoque do SKU ${item.sku} sincronizado com ML: ${produto.quantidade}`);
+                } else {
+                    const errorText = await updateResponse.text();
+                    console.warn(`⚠️ Erro ao sincronizar SKU ${item.sku}: ${errorText}`);
+                }
+            } catch (e) {
+                console.warn(`⚠️ Erro ao sincronizar SKU ${item.sku}:`, e);
+            }
+        }
+
+        if (itensSincronizados > 0) {
+            console.log(`✅ ${itensSincronizados} item(ns) sincronizados com ML`);
+            showToast(`✅ ${itensSincronizados} item(ns) sincronizados com ML!`, 'success');
+        }
+
+        return itensSincronizados > 0;
+
+    } catch (error) {
+        console.error('❌ Erro ao sincronizar estoque com ML:', error);
+        return false;
+    }
+}
+
+async function handleVerNFEClick(event) {
     const vendaId = event.currentTarget.dataset.vendaId;
     if (!vendaId) {
         showToast('❌ ID da venda não encontrado', 'error');
         return;
     }
-    abrirModalEdicaoProdutos(vendaId);
+    
+    try {
+        // Buscar a NF-e pela venda
+        const listResponse = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
+        const listData = await listResponse.json();
+        
+        if (!listData.success || !listData.notas) {
+            showToast('❌ Erro ao listar NF-es', 'error');
+            return;
+        }
+        
+        const nfe = listData.notas.find(n => 
+            String(n.venda_id) === String(vendaId) || 
+            String(n.venda_id_ml) === String(vendaId) ||
+            String(n.id_venda) === String(vendaId)
+        );
+        
+        if (!nfe) {
+            showToast(`❌ NF-e não encontrada para venda ${vendaId}`, 'error');
+            return;
+        }
+        
+        const chave = nfe.chave_acesso || nfe.chave;
+        if (chave) {
+            await visualizarNFE(chave);
+        } else {
+            showToast('❌ Chave da NF-e não encontrada', 'error');
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao ver NF-e:', error);
+        showToast(`❌ Erro: ${error.message}`, 'error');
+    }
 }
+
+// =========================================================
+// HANDLER PARA CANCELAR NF-e
+// =========================================================
+
+async function handleCancelarNFEClick(event) {
+    const vendaId = event.currentTarget.dataset.vendaId;
+    if (!vendaId) {
+        showToast('❌ ID da venda não encontrado', 'error');
+        return;
+    }
+    
+    try {
+        // Buscar a NF-e pela venda
+        const listResponse = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
+        const listData = await listResponse.json();
+        
+        if (!listData.success || !listData.notas) {
+            showToast('❌ Erro ao listar NF-es', 'error');
+            return;
+        }
+        
+        const nfe = listData.notas.find(n => 
+            String(n.venda_id) === String(vendaId) || 
+            String(n.venda_id_ml) === String(vendaId) ||
+            String(n.id_venda) === String(vendaId)
+        );
+        
+        if (!nfe) {
+            showToast(`❌ NF-e não encontrada para venda ${vendaId}`, 'error');
+            return;
+        }
+        
+        const chave = nfe.chave_acesso || nfe.chave;
+        if (chave) {
+            await cancelarNFESistema(chave);
+        } else {
+            showToast('❌ Chave da NF-e não encontrada', 'error');
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao cancelar NF-e:', error);
+        showToast(`❌ Erro: ${error.message}`, 'error');
+    }
+}
+
+// =========================================================
+// EXPORTAR HANDLERS
+// =========================================================
+
+window.handleVerNFEClick = handleVerNFEClick;
+window.handleCancelarNFEClick = handleCancelarNFEClick;
 
 // =========================================================
 // EMITIR NF-e PARA VENDA
@@ -1226,7 +2414,7 @@ async function salvarClienteNoBanco(dadosCliente) {
 }
 
 // =========================================================
-// CONFIRMAR EMISSÃO NF-E (CORRIGIDO)
+// CONFIRMAR EMISSÃO NF-E (COMPLETA COM SINCRONIZAÇÃO ML)
 // =========================================================
 
 async function confirmarEmissaoNFE() {
@@ -1361,6 +2549,9 @@ async function confirmarEmissaoNFE() {
             ml_access_token: mlToken
         };
 
+        console.log('📤 Payload para emissão:', JSON.stringify(payload, null, 2));
+
+        // ===== EMITIR NF-E =====
         const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1370,6 +2561,54 @@ async function confirmarEmissaoNFE() {
 
         if (result.success) {
             showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
+            console.log('✅ NF-e emitida com sucesso:', result);
+            
+            // ===== SALVAR NA TABELA nfe_emitidas =====
+            try {
+                const chaveAcesso = result.chave_acesso || result.chave;
+                if (chaveAcesso) {
+                    // Verificar se já existe
+                    const { data: existing } = await window.supabaseClient
+                        .from('nfe_emitidas')
+                        .select('id')
+                        .eq('chave_acesso', chaveAcesso)
+                        .maybeSingle();
+                    
+                    if (!existing) {
+                        await window.supabaseClient
+                            .from('nfe_emitidas')
+                            .insert({
+                                chave_acesso: chaveAcesso,
+                                venda_id: orderId,
+                                protocolo: result.protocolo,
+                                data_emissao: new Date().toISOString(),
+                                cliente_nome: nome,
+                                valor_total: produtosFinal.reduce((acc, p) => acc + (p.valor_unitario * p.quantidade), 0),
+                                xml_assinado: result.xml || null,
+                                cancelada: false
+                            });
+                        console.log('✅ NF-e salva na tabela nfe_emitidas');
+                    }
+                }
+            } catch (saveError) {
+                console.warn('⚠️ Erro ao salvar NF-e no banco:', saveError);
+            }
+            
+            // ===== ATUALIZAR STATUS DA VENDA =====
+            try {
+                await window.supabaseClient
+                    .from('vendas_ml')
+                    .update({ 
+                        nfe_emitida: true,
+                        status_nfe: 'emitida',
+                        status_sistema: 'finalizada',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id_venda_ml', String(orderId));
+                console.log('✅ Status da venda atualizado');
+            } catch (statusError) {
+                console.warn('⚠️ Erro ao atualizar status da venda:', statusError);
+            }
             
             // ===== ENVIAR XML PARA O ML =====
             try {
@@ -1412,13 +2651,14 @@ async function confirmarEmissaoNFE() {
             }
             
             // ===== BAIXAR ESTOQUE =====
+            let itensBaixados = 0;
             try {
                 console.log('📦 Baixando estoque...');
                 
                 const { data: vendaML, error: vendaError } = await window.supabaseClient
                     .from('vendas_ml')
                     .select('sku, quantidade, skus_kit, eh_kit')
-                    .eq('id_venda_ml', orderId)
+                    .eq('id_venda_ml', String(orderId))
                     .maybeSingle();
                 
                 const itensParaBaixar = [];
@@ -1435,6 +2675,7 @@ async function confirmarEmissaoNFE() {
                                 quantidade: quantidadeTotal
                             });
                         }
+                        console.log(`📦 KIT detectado: ${vendaML.skus_kit.length} SKUs para baixar`);
                     } else {
                         const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(vendaML.sku);
                         const quantidadeTotal = (vendaML.quantidade || 1) * multiplicador;
@@ -1459,8 +2700,6 @@ async function confirmarEmissaoNFE() {
                     }
                 }
                 
-                let itensBaixados = 0;
-                
                 for (const item of itensParaBaixar) {
                     if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
                     
@@ -1483,6 +2722,23 @@ async function confirmarEmissaoNFE() {
                         
                         itensBaixados++;
                         console.log(`✅ Estoque do SKU ${item.sku} atualizado: ${produto.quantidade} → ${novaQuantidade}`);
+                        
+                        // Registrar movimentação
+                        if (typeof window.registrarMovimentacao === 'function') {
+                            try {
+                                await window.registrarMovimentacao(
+                                    produto.id,
+                                    'saida',
+                                    item.quantidade,
+                                    `NFE-${orderId}`,
+                                    'venda'
+                                );
+                            } catch (movError) {
+                                console.warn(`⚠️ Erro ao registrar movimentação:`, movError);
+                            }
+                        }
+                    } else {
+                        console.warn(`⚠️ Produto não encontrado: ${item.sku}`);
                     }
                 }
                 
@@ -1490,28 +2746,92 @@ async function confirmarEmissaoNFE() {
                     showToast(`✅ ${itensBaixados} item(ns) baixados do estoque!`, 'success');
                 }
                 
+                // Recarregar estoque
                 if (typeof window.carregarProdutosEstoque === 'function') {
                     await window.carregarProdutosEstoque();
                 }
                 
             } catch (stockError) {
                 console.error('❌ Erro ao baixar estoque:', stockError);
+                showToast('⚠️ NF-e emitida, mas houve erro ao baixar o estoque', 'warning');
             }
             
-            // Salvar cliente
+            // =========================================================
+            // 🔥 SINCRONIZAR ESTOQUE COM ML APÓS A BAIXA
+            // =========================================================
+            try {
+                console.log('🔄 Sincronizando estoque com ML...');
+                const sincronizado = await sincronizarEstoqueComML(orderId);
+                if (sincronizado) {
+                    console.log('✅ Estoque sincronizado com ML com sucesso!');
+                } else {
+                    console.warn('⚠️ Falha na sincronização com ML');
+                }
+            } catch (syncError) {
+                console.error('❌ Erro na sincronização com ML:', syncError);
+                showToast('⚠️ NF-e emitida, mas erro na sincronização com ML', 'warning');
+            }
+            
+            // ===== SALVAR CLIENTE =====
             await salvarClienteNoBanco({ nome, documento, endereco, numero, bairro, cidade, uf, cep });
             
-            // Limpar e recarregar
+            // ===== REGISTRAR NO HISTÓRICO =====
+            try {
+                await window.supabaseClient
+                    .from('estoque_historico')
+                    .insert({
+                        venda_id: orderId,
+                        tipo: 'venda',
+                        observacao: `NF-e emitida - Venda ${orderId} - Cliente: ${nome}`,
+                        criado_por: nome || 'Sistema',
+                        criado_em: new Date().toISOString()
+                    });
+                console.log('✅ Histórico registrado');
+            } catch (histError) {
+                console.warn('⚠️ Erro ao registrar histórico:', histError);
+            }
+            
+            // ===== LIMPAR E RECARREGAR =====
             window.produtosParaEmissao = null;
             window._mlAccessToken = null;
             pendingEmitOrderId = null;
+            vendaIdParaEdicao = null;
             
             await carregarVendasPendentes();
             await carregarNFesEmitidas();
             
+            showToast('✅ Processo concluído com sucesso!', 'success');
+            
         } else {
+            // ===== ERRO NA EMISSÃO =====
             let mensagemErro = result.error || 'Erro desconhecido';
+            
+            // Mapear erros da SEFAZ
+            const errosSEFAZ = {
+                '275': 'Código do Município do Destinatário difere da UF do Destinatário.',
+                '245': 'Código do Município do Destinatário não informado.',
+                '246': 'Código do Município do Destinatário inválido.',
+                '247': 'UF do Destinatário inválida.',
+                '248': 'CEP do Destinatário inválido.',
+                '249': 'Endereço do Destinatário não informado.',
+                '250': 'Bairro do Destinatário não informado.',
+                '251': 'Cidade do Destinatário não informada.'
+            };
+            
+            const cStatMatch = mensagemErro.match(/cStat=(\d+)/);
+            if (cStatMatch) {
+                const cStat = cStatMatch[1];
+                if (errosSEFAZ[cStat]) {
+                    mensagemErro = `${mensagemErro}\n\n💡 ${errosSEFAZ[cStat]}`;
+                }
+            }
+            
             showToast(`❌ Erro: ${mensagemErro}`, 'error');
+            
+            if (mensagemErro.includes('Municipio') || mensagemErro.includes('município')) {
+                showToast('⚠️ Verifique a UF e a Cidade.', 'warning');
+                setTimeout(() => abrirModalCliente(), 1000);
+            }
         }
         
     } catch (error) {
@@ -2518,6 +3838,7 @@ window.atualizarListaNFE = atualizarListaNFE;
 window.enviarXMLparaMercadoLivre = enviarXMLparaMercadoLivre;
 window.buscarValorExatoPagamento = buscarValorExatoPagamento;
 window.baixarXMLCompletoML = baixarXMLCompletoML;
+window.sincronizarEstoqueComML = sincronizarEstoqueComML;
 
 // ===================== INICIALIZAR =====================
 document.addEventListener('DOMContentLoaded', function() {
