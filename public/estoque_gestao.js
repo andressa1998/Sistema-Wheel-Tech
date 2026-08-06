@@ -2986,7 +2986,7 @@ const camposPorCategoria = {
     Parafusos: [
         { nome: "tamanhocabeça", label: "Diâmetro Cabeça", tipo: "text", obrigatorio: true, placeholder: "Ex: M6" },
         { nome: "tamanhorosca", label: "Tamanho Rosca", tipo: "text", placeholder: "Ex: 30mm" },
-        { nome: "material", label: "Material", tipo: "text", opcoes: ["Titânio", "Aço"] },
+        { nome: "material", label: "Material", tipo: "text", placeholder: "Ex: Titânio" },
         { nome: "tipochave", label: "Tipo de Chave", tipo: "text", placeholder: "Ex: Allen" },
         { nome: "cabeça", label: "Cabeça", tipo: "select", opcoes: ["Abaulada", "Reta", "Enflexada", "Cônica"] },
         { nome: "cor", label: "Cor", tipo: "select", opcoes: ["Preto", "Dourado", "Rainbow", "Natural", "Verde", "Cinza", "Multicolor"] },
