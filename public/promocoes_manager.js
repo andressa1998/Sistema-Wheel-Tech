@@ -909,12 +909,13 @@ async function buscarTodosItensPromocao(promotionId, promotionType, token) {
                         if (originalPrice > 1000) originalPrice = originalPrice / 100;
                         
                         itens.push({
-                            id: itemId,
-                            status: item.status || 'unknown',
-                            price: price,
-                            original_price: originalPrice,
-                            seller_percentage: item.seller_percentage || 0
-                        });
+                        id: itemId,
+                        status: item.status,
+                        price: price,
+                        original_price: originalPrice,
+                        seller_percentage: item.seller_percentage,
+                        offer_id: item.offer_id || item.id  // 👈 ADICIONE ISSO
+                    });
                     }
                 }
                 
@@ -1634,226 +1635,117 @@ function atualizarBotaoAtivacao() {
         atualizarBotaoAtivacao();
     };
 
-    // ============================================================
-// FUNÇÃO: EXECUTAR ATIVAÇÃO EM MASSA (CORRIGIDA)
-// ============================================================
 window.executarAtivacaoEmMassa = async function() {
     log('🚀 EXECUTANDO ATIVAÇÃO EM MASSA', 'info');
     log('═══════════════════════════════════════════════════════════', 'info');
-    
-    // ============================================================
-    // PASSO 1: Buscar os itens selecionados na tabela
-    // ============================================================
+
+    // 1. Buscar os itens selecionados
     const selecionados = [];
     const checkboxes = document.querySelectorAll('.bulk-item-checkbox:checked');
-    
-    log(`📊 ${checkboxes.length} checkboxes marcados`, 'debug');
-    
-    // Verificar se há checkboxes marcados
+
     if (checkboxes.length === 0) {
-        log('⚠️ Nenhum checkbox marcado', 'warning');
-        showToast('⚠️ Nenhum item selecionado. Marque os itens que deseja ativar.', 'warning');
+        showToast('⚠️ Nenhum item selecionado.', 'warning');
         return;
     }
-    
-    // Para cada checkbox marcado, buscar o índice e pegar o item correspondente
+
     checkboxes.forEach(cb => {
         const index = parseInt(cb.dataset.index);
         if (!isNaN(index) && itensAnalisados && itensAnalisados[index]) {
             const item = itensAnalisados[index];
-            // Verificar se o item não está bloqueado e não é 'started'
             const isBloqueado = mlbsBloqueados.includes(item.mlb);
             if (!isBloqueado && item.tipo !== 'started') {
                 selecionados.push(item);
-                log(`   ✅ ${item.mlb} selecionado`, 'debug');
-            } else {
-                log(`   ⚠️ ${item.mlb} ignorado (bloqueado ou já ativo)`, 'warning');
             }
-        } else {
-            log(`   ⚠️ Índice ${index} inválido ou item não encontrado`, 'warning');
         }
     });
-    
-    log(`📊 ${selecionados.length} itens elegíveis selecionados`, 'info');
-    
+
     if (selecionados.length === 0) {
-        log('⚠️ Nenhum item elegível selecionado', 'warning');
-        showToast('⚠️ Nenhum item elegível selecionado. Verifique se os itens não estão bloqueados ou já ativos.', 'warning');
+        showToast('⚠️ Nenhum item elegível selecionado.', 'warning');
         return;
     }
-    
-    // ============================================================
-    // PASSO 2: Verificar destino e token
-    // ============================================================
+
+    // 2. Verificar destino e token
     const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
     if (!destinoId) {
-        log('⚠️ Destino não selecionado', 'warning');
         showToast('⚠️ Selecione a promoção de destino', 'warning');
         return;
     }
-    
+
     const tokenData = await window.getValidToken?.();
     if (!tokenData?.access_token) {
-        log('❌ Token não disponível', 'error');
         showToast('❌ Token não disponível', 'error');
         return;
     }
-    
-    // ============================================================
-    // PASSO 3: Confirmar com o usuário
-    // ============================================================
-    const confirmMsg = `Tem certeza que deseja ativar ${selecionados.length} itens na promoção?\n\n` +
-        `Itens:\n` +
-        selecionados.slice(0, 10).map(item => `  • ${item.mlb} - R$ ${(item.precoDestino || 0).toFixed(2)}`).join('\n') +
-        (selecionados.length > 10 ? `\n  ... e mais ${selecionados.length - 10} itens` : '');
-    
-    if (!confirm(confirmMsg)) {
-        log('Ativação cancelada pelo usuário', 'info');
+
+    // 3. Confirmar com o usuário
+    if (!confirm(`Ativar ${selecionados.length} itens na promoção?`)) {
         return;
     }
-    
-    // ============================================================
-    // PASSO 4: Executar ativação
-    // ============================================================
-    mostrarBarraProgresso(
-        `Ativando ${selecionados.length} itens...`,
-        'Aguarde enquanto os itens são ativados'
-    );
-    
-    try {
-        let sucessos = 0;
-        let falhas = 0;
-        const falhasLista = [];
-        const sucessosLista = [];
-        
-        const batchSize = 5; // Reduzido para não sobrecarregar
-        const totalBatches = Math.ceil(selecionados.length / batchSize);
-        log(`Processando em ${totalBatches} lotes de ${batchSize}`, 'info');
-        
-        for (let i = 0; i < selecionados.length; i += batchSize) {
-            const batch = selecionados.slice(i, i + batchSize);
-            const batchNum = Math.floor(i / batchSize) + 1;
+
+    // 4. Executar ativação
+    mostrarBarraProgresso(`Ativando ${selecionados.length} itens...`, 'Aguarde...');
+
+    let sucessos = 0;
+    let falhas = 0;
+    const falhasLista = [];
+
+    for (let i = 0; i < selecionados.length; i++) {
+        const item = selecionados[i];
+        const mlb = item.mlb;
+        const preco = item.precoDestino;
+
+        try {
+            // 🔥 ENDPOINT CORRETO: ativar a oferta pelo ID
+            const url = `https://api.mercadolibre.com/seller-promotions/offers/${item.offer_id}/status?app_version=v2`;
             
-            const pct = (i / selecionados.length) * 100;
-            atualizarProgresso(
-                pct,
-                `Lote ${batchNum}/${totalBatches}`,
-                `${sucessos} sucessos, ${falhas} falhas`,
-                `${i + batch.length} / ${selecionados.length}`
-            );
-            
-            log(`📦 Processando lote ${batchNum}/${totalBatches} (${batch.length} itens)...`, 'info');
-            
-            const promises = batch.map(async (item) => {
-                const mlb = item.mlb;
-                const preco = item.precoDestino;
-                
-                if (!mlb || !preco || preco <= 0) {
-                    falhas++;
-                    falhasLista.push(`${mlb || 'desconhecido'}: preço inválido (${preco})`);
-                    log(`   ❌ ${mlb}: preço inválido (${preco})`, 'warning');
-                    return false;
-                }
-                
-                try {
-                    // URL para ativar na promoção
-                    const url = `https://api.mercadolibre.com/seller-promotions/offers?app_version=v2`;
-                    const body = {
-                        promotion_id: destinoId,
-                        item_id: mlb,
-                        price: Math.round(preco * 100) // Converter para centavos
-                    };
-                    
-                    log(`   🔄 Ativando ${mlb} por R$ ${preco.toFixed(2)}...`, 'debug');
-                    
-                    const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
-                    const response = await fetch(proxyUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body)
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        sucessos++;
-                        sucessosLista.push(mlb);
-                        log(`   ✅ ${mlb} ativado com sucesso!`, 'success');
-                        return true;
-                    } else {
-                        let errorText = await response.text();
-                        // Tentar extrair mensagem de erro da resposta
-                        try {
-                            const errorJson = JSON.parse(errorText);
-                            errorText = errorJson.message || errorText;
-                        } catch (e) {}
-                        
-                        falhas++;
-                        falhasLista.push(`${mlb}: ${errorText}`);
-                        log(`   ❌ ${mlb} falhou: ${errorText}`, 'warning');
-                        return false;
-                    }
-                } catch (err) {
-                    falhas++;
-                    falhasLista.push(`${mlb}: ${err.message}`);
-                    log(`   ❌ ${mlb} erro: ${err.message}`, 'warning');
-                    return false;
-                }
+            const body = {
+                status: "started"
+            };
+
+            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
+
+            const response = await fetch(proxyUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
             });
-            
-            await Promise.all(promises);
-            log(`Lote ${batchNum} concluído: ${sucessos} sucessos, ${falhas} falhas`, 'info');
-        }
-        
-        // ============================================================
-        // PASSO 5: Mostrar resultado final
-        // ============================================================
-        log('═══════════════════════════════════════════════════════════', 'info');
-        log('📊 RESULTADO DA ATIVAÇÃO:', 'info');
-        log(`   ✅ Sucessos: ${sucessos}`, 'success');
-        log(`   ❌ Falhas: ${falhas}`, 'warning');
-        
-        if (sucessosLista.length > 0) {
-            log(`   📝 Ativados com sucesso:`, 'debug');
-            sucessosLista.slice(0, 10).forEach(m => log(`      ✅ ${m}`, 'debug'));
-            if (sucessosLista.length > 10) {
-                log(`      ... e mais ${sucessosLista.length - 10}`, 'debug');
+
+            if (response.ok) {
+                sucessos++;
+                log(`✅ ${mlb} ativado com sucesso!`, 'success');
+            } else {
+                const errorText = await response.text();
+                falhas++;
+                falhasLista.push(`${mlb}: ${errorText}`);
+                log(`❌ ${mlb} falhou: ${errorText}`, 'warning');
             }
+        } catch (err) {
+            falhas++;
+            falhasLista.push(`${mlb}: ${err.message}`);
+            log(`❌ ${mlb} erro: ${err.message}`, 'warning');
         }
-        
-        if (falhasLista.length > 0) {
-            log(`   📝 Falhas detalhadas:`, 'debug');
-            falhasLista.slice(0, 5).forEach(f => log(`      ❌ ${f}`, 'debug'));
-            if (falhasLista.length > 5) {
-                log(`      ... e mais ${falhasLista.length - 5} falhas`, 'debug');
-            }
-        }
-        log('═══════════════════════════════════════════════════════════', 'info');
-        
-        atualizarProgresso(100, '✅ Ativação concluída!', `${sucessos} sucessos, ${falhas} falhas`, '✅');
-        
-        setTimeout(fecharBarraProgresso, 2000);
-        
-        // Mostrar toast com resultado
-        if (sucessos > 0 && falhas === 0) {
-            showToast(`✅ Todos os ${sucessos} itens foram ativados com sucesso!`, 'success');
-        } else if (sucessos > 0 && falhas > 0) {
-            showToast(`⚠️ ${sucessos} ativados, ${falhas} falhas. Verifique o console para detalhes.`, 'warning');
-        } else {
-            showToast(`❌ Nenhum item foi ativado. ${falhas} falhas.`, 'error');
-        }
-        
-        // Recarregar análise após 3 segundos
-        log('🔄 Recarregando análise em 3 segundos...', 'info');
-        setTimeout(() => {
-            window.analisarItens();
-        }, 3000);
-        
-    } catch (error) {
-        log(`❌ Erro na ativação: ${error.message}`, 'error');
-        console.error(error);
-        fecharBarraProgresso();
-        showToast('Erro na ativação: ' + error.message, 'error');
+
+        // Atualizar progresso
+        const pct = ((i + 1) / selecionados.length) * 100;
+        atualizarProgresso(pct, `Processando ${i+1}/${selecionados.length}`, `${sucessos} sucessos, ${falhas} falhas`, `${Math.round(pct)}%`);
     }
+
+    // 5. Resultado final
+    log(`✅ Sucessos: ${sucessos}`, 'success');
+    log(`❌ Falhas: ${falhas}`, 'warning');
+
+    setTimeout(fecharBarraProgresso, 2000);
+
+    if (sucessos > 0 && falhas === 0) {
+        showToast(`✅ Todos os ${sucessos} itens foram ativados!`, 'success');
+    } else if (sucessos > 0 && falhas > 0) {
+        showToast(`⚠️ ${sucessos} ativados, ${falhas} falhas.`, 'warning');
+    } else {
+        showToast(`❌ Nenhum item ativado. ${falhas} falhas.`, 'error');
+    }
+
+    // Recarregar análise
+    setTimeout(() => window.analisarItens(), 3000);
 };
 
     // ============================================================

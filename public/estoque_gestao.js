@@ -26,6 +26,9 @@ const usuariosAdmin = ['andressamiotto', 'ronald', 'leticia'];
 // ===== USUÁRIOS AUTORIZADOS A MODIFICAR REGRAS =====
 const usuariosRegraEstoque = ['andressamiotto', 'ronald', 'bruna', 'arthur'];
 
+// ===== USUÁRIOS QUE PODEM GERENCIAR CATEGORIAS (BRUNA E ARTHUR INCLUÍDOS) =====
+const usuariosGerenciarCategorias = ['andressamiotto', 'ronald', 'leticia', 'bruna', 'arthur'];
+
 // =========================================================
 // REGRAS DE ESTOQUE CONDICIONAIS (VALOR DO ANÚNCIO + QUANTIDADE)
 // =========================================================
@@ -201,10 +204,10 @@ async function carregarCategoriasCustomizadas() {
 // ===== ABRIR MODAL DE CATEGORIAS =====
 function abrirModalCategorias() {
     const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username);
+    const isAuthorized = usuariosGerenciarCategorias.includes(username);
     
-    if (!isAdmin) {
-        showToast('⚠️ Apenas administradores podem gerenciar categorias.', 'warning');
+    if (!isAuthorized) {
+        showToast('⚠️ Apenas usuários autorizados podem gerenciar categorias.', 'warning');
         return;
     }
     
@@ -5382,10 +5385,7 @@ function exportarEstoqueExcel() {
     showToast(`✅ ${produtos.length} produtos exportados com sucesso!`, 'success');
 }
 
-// =========================================================
-// MODAL DE REGRAS
-// =========================================================
-
+// ===== MODAL DE REGRAS =====
 function abrirModalRegrasEstoque() {
     const username = currentUser?.username?.toLowerCase() || '';
     const isAuthorized = usuariosRegraEstoque.includes(username) || usuariosAdmin.includes(username);
@@ -5995,9 +5995,10 @@ function abrirModalProdutoEstoque(produto = null) {
     const syncStatusLabel = document.getElementById('mlSyncStatusLabel');
 
     const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username);
+    const isAdmin = usuariosAdmin.includes(username); // NÃO ALTERADO
     const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
     const podeVerCusto = usuariosVerCusto.includes(username) || isAdmin;
+    const podeGerenciarCategorias = usuariosGerenciarCategorias.includes(username);
 
     if (toggleSync) {
         if (!podeModificarSync) {
@@ -6308,10 +6309,6 @@ window.confirmarFullDetectado = confirmarFullDetectado;
 window.fecharModalFullDetectados = fecharModalFullDetectados;
 window.atualizarProgressoFull = atualizarProgressoFull;
 
-// =========================================================
-// FUNÇÕES DE CATEGORIAS DINÂMICAS - CRIAR CATEGORIA COM CAMPOS PERSONALIZADOS
-// =========================================================
-
 // ===== ADICIONAR BOTÃO "CRIAR CATEGORIA" NA TELA =====
 function adicionarBotaoCriarCategoria() {
     console.log('🔧 [adicionarBotaoCriarCategoria] Tentando adicionar botão...');
@@ -6324,12 +6321,23 @@ function adicionarBotaoCriarCategoria() {
     
     if (document.getElementById('btnCriarCategoria')) return;
     
+    const username = currentUser?.username?.toLowerCase() || '';
+    const isAuthorized = usuariosGerenciarCategorias.includes(username);
+    
     const btn = document.createElement('button');
     btn.id = 'btnCriarCategoria';
     btn.className = 'btn btn-purple';
     btn.innerHTML = '<i class="fas fa-plus-circle"></i> Criar Categoria';
     btn.title = 'Criar nova categoria personalizada com campos específicos';
     btn.onclick = abrirModalCriarCategoria;
+    
+    // Se não for autorizado, desabilitar (mas ainda mostra o botão)
+    if (!isAuthorized) {
+        btn.disabled = true;
+        btn.title = '🔒 Apenas usuários autorizados podem criar categorias';
+        btn.style.opacity = '0.6';
+        btn.style.cursor = 'not-allowed';
+    }
     
     const novoProdutoBtn = filtrosContainer.querySelector('.btn-success');
     if (novoProdutoBtn) {
@@ -6343,10 +6351,10 @@ function adicionarBotaoCriarCategoria() {
 // ===== ABRIR MODAL DE CRIAÇÃO DE CATEGORIA =====
 function abrirModalCriarCategoria() {
     const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username);
+    const isAuthorized = usuariosGerenciarCategorias.includes(username);
     
-    if (!isAdmin) {
-        showToast('⚠️ Apenas administradores podem criar categorias.', 'warning');
+    if (!isAuthorized) {
+        showToast('⚠️ Apenas usuários autorizados podem criar categorias.', 'warning');
         return;
     }
     
@@ -6675,10 +6683,10 @@ function salvarNovaCategoria() {
 // ===== EDITAR CATEGORIA EXISTENTE =====
 function editarCategoriaCustomizada(nome) {
     const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username);
+    const isAuthorized = usuariosGerenciarCategorias.includes(username);
     
-    if (!isAdmin) {
-        showToast('⚠️ Apenas administradores podem editar categorias.', 'warning');
+    if (!isAuthorized) {
+        showToast('⚠️ Apenas usuários autorizados podem editar categorias.', 'warning');
         return;
     }
     
@@ -6860,10 +6868,10 @@ function abrirModalGerenciarCategorias() {
     console.log('📂 [abrirModalGerenciarCategorias] Abrindo modal...');
     
     const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username);
+    const isAuthorized = usuariosGerenciarCategorias.includes(username);
     
-    if (!isAdmin) {
-        showToast('⚠️ Apenas administradores podem gerenciar categorias.', 'warning');
+    if (!isAuthorized) {
+        showToast('⚠️ Apenas usuários autorizados podem gerenciar categorias.', 'warning');
         return;
     }
     
@@ -6948,7 +6956,7 @@ function preencherListaCategoriasGerenciamento() {
     if (!container) return;
     
     const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username);
+    const isAuthorized = usuariosGerenciarCategorias.includes(username);
     
     const todasCategorias = {
         ...camposPorCategoria,
@@ -7005,7 +7013,7 @@ function preencherListaCategoriasGerenciamento() {
                             ${isCustom ? '<span style="background: #6f42c1; color: white; font-size: 9px; padding: 2px 10px; border-radius: 12px;">Customizada</span>' : '<span style="background: #6c757d; color: white; font-size: 9px; padding: 2px 10px; border-radius: 12px;">Padrão</span>'}
                         </div>
                     </div>
-                    ${isCustom && isAdmin ? `
+                    ${isCustom && isAuthorized ? `
                         <div style="display: flex; gap: 5px; flex-shrink: 0; margin-left: 10px;">
                             <button class="btn btn-sm" style="background: #6f42c1; color: white; font-size: 11px; padding: 4px 12px; border: none; border-radius: 4px; cursor: pointer;" 
                                     onclick="editarCategoriaCustomizada('${nome}')" title="Editar categoria">

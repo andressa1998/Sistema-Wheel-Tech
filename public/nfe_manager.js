@@ -187,6 +187,802 @@ async function buscarValorExatoPagamento(orderId) {
     }
 }
 
+function extrairMultiplosSkus(skuCompleto) {
+    if (!skuCompleto || skuCompleto === 'SEM_SKU' || skuCompleto === 'N/A') {
+        return [{ sku: skuCompleto, multiplicador: 1, quantidade: 1 }];
+    }
+
+    // Verifica se tem múltiplos SKUs separados por ponto (.)
+    if (skuCompleto.includes('.')) {
+        const partes = skuCompleto.split('.');
+        const skusExtraidos = [];
+        
+        for (const parte of partes) {
+            const { sku, multiplicador } = extrairSkuEQuantidade(parte.trim());
+            skusExtraidos.push({
+                sku: sku,
+                multiplicador: multiplicador || 1,
+                skuOriginal: parte.trim()
+            });
+        }
+        
+        console.log(`📦 Múltiplos SKUs detectados: ${skusExtraidos.length} SKUs`, skusExtraidos);
+        return skusExtraidos;
+    }
+
+    // SKU único
+    const { sku, multiplicador } = extrairSkuEQuantidade(skuCompleto);
+    return [{ sku, multiplicador, skuOriginal: skuCompleto }];
+}
+
+// =========================================================
+// FUNÇÃO PARA AGRUPAR VENDAS DO MESMO COMPRADOR
+// =========================================================
+
+async function buscarVendasAgrupadasPorComprador(periodoDias = 7) {
+    console.log('🔍 Buscando vendas para agrupar por comprador...');
+    
+    let token = localStorage.getItem('ml_access_token');
+    if (!token && typeof window.getValidToken === 'function') {
+        const tokenData = await window.getValidToken();
+        token = tokenData?.access_token;
+    }
+    if (!token) {
+        console.warn('⚠️ Token ML não disponível');
+        return [];
+    }
+
+    const dataInicio = new Date();
+    dataInicio.setDate(dataInicio.getDate() - periodoDias);
+
+    try {
+        // Buscar todas as vendas pagas do período
+        const params = new URLSearchParams({
+            seller: '415176739',
+            sort: 'date_desc',
+            'order.status': 'paid',
+            limit: 200,
+            'order.date_created.from': dataInicio.toISOString()
+        });
+
+        const url = `https://api.mercadolibre.com/orders/search?${params}`;
+        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error(`Erro na API: ${response.status}`);
+
+        const data = await response.json();
+        const orders = data.results || [];
+
+        console.log(`📦 ${orders.length} vendas encontradas no período`);
+
+        // Agrupar por comprador
+        const gruposPorComprador = {};
+
+        for (const venda of orders) {
+            const buyerId = venda.buyer?.id;
+            if (!buyerId) continue;
+
+            // Verificar se já tem NF-e (pular se já tiver)
+            const temNFE = await verificarSeTemNFE(venda.id);
+            if (temNFE) continue;
+
+            // Verificar se é FULL
+            const isFull = isFullByAnyField(venda);
+            if (isFull) continue;
+
+            const chave = String(buyerId);
+            
+            if (!gruposPorComprador[chave]) {
+                gruposPorComprador[chave] = {
+                    buyer: venda.buyer,
+                    vendas: [],
+                    total_produtos: [],
+                    valor_total: 0,
+                    data_mais_antiga: venda.date_created,
+                    data_mais_recente: venda.date_created
+                };
+            }
+
+            // Processar os itens da venda
+            const itens = venda.order_items || [];
+            for (const item of itens) {
+                const skuOriginal = item.item?.seller_sku || 'SEM_SKU';
+                const quantidade = item.quantity || 1;
+                const valorUnitario = item.unit_price || 0;
+                const nomeProduto = item.item?.title || 'Produto';
+                
+                // Extrair múltiplos SKUs
+                const skus = extrairMultiplosSkus(skuOriginal);
+                
+                gruposPorComprador[chave].vendas.push({
+                    venda_id: venda.id,
+                    item: item,
+                    sku_original: skuOriginal,
+                    skus: skus,
+                    quantidade: quantidade,
+                    valor_unitario: valorUnitario,
+                    nome_produto: nomeProduto,
+                    data: venda.date_created
+                });
+
+                // Adicionar ao total de produtos do grupo
+                for (const skuInfo of skus) {
+                    const qtdTotal = quantidade * skuInfo.multiplicador;
+                    gruposPorComprador[chave].total_produtos.push({
+                        sku: skuInfo.sku,
+                        sku_original: skuInfo.skuOriginal,
+                        quantidade: qtdTotal,
+                        valor_unitario: valorUnitario,
+                        nome: nomeProduto,
+                        venda_id: venda.id
+                    });
+                }
+
+                gruposPorComprador[chave].valor_total += valorUnitario * quantidade;
+            }
+
+            // Atualizar datas
+            if (new Date(venda.date_created) < new Date(gruposPorComprador[chave].data_mais_antiga)) {
+                gruposPorComprador[chave].data_mais_antiga = venda.date_created;
+            }
+            if (new Date(venda.date_created) > new Date(gruposPorComprador[chave].data_mais_recente)) {
+                gruposPorComprador[chave].data_mais_recente = venda.date_created;
+            }
+        }
+
+        // Filtrar grupos com mais de uma venda
+        const gruposComMultiplasVendas = Object.values(gruposPorComprador)
+            .filter(grupo => grupo.vendas.length > 1);
+
+        console.log(`📊 ${gruposComMultiplasVendas.length} compradores com múltiplas vendas`);
+        
+        // Ordenar por valor total
+        gruposComMultiplasVendas.sort((a, b) => b.valor_total - a.valor_total);
+
+        return gruposComMultiplasVendas;
+
+    } catch (error) {
+        console.error('❌ Erro ao buscar vendas agrupadas:', error);
+        return [];
+    }
+}
+
+// =========================================================
+// VERIFICAR SE VENDA JÁ TEM NF-e
+// =========================================================
+
+async function verificarSeTemNFE(orderId) {
+    try {
+        // Verificar no Supabase
+        if (window.supabaseClient) {
+            const { data, error } = await window.supabaseClient
+                .from('nfe_emitidas')
+                .select('id')
+                .eq('venda_id', String(orderId))
+                .maybeSingle();
+
+            if (!error && data) {
+                return true;
+            }
+        }
+
+        // Verificar via API
+        const response = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
+        const data = await response.json();
+        
+        if (data.success && data.notas) {
+            return data.notas.some(n => 
+                String(n.venda_id) === String(orderId) || 
+                String(n.venda_id_ml) === String(orderId)
+            );
+        }
+
+        return false;
+    } catch (error) {
+        console.warn('⚠️ Erro ao verificar NF-e:', error);
+        return false;
+    }
+}
+
+// =========================================================
+// FUNÇÃO PARA BAIXAR ESTOQUE DE MÚLTIPLOS SKUS
+// =========================================================
+
+async function baixarEstoqueMultiplosSkus(orderId, itens) {
+    console.log(`📦 Baixando estoque para venda ${orderId} com ${itens.length} itens...`);
+    
+    let itensBaixados = 0;
+    const detalhesBaixa = [];
+
+    for (const item of itens) {
+        // Extrair múltiplos SKUs
+        const skus = extrairMultiplosSkus(item.sku_original || item.sku);
+        
+        for (const skuInfo of skus) {
+            if (!skuInfo.sku || skuInfo.sku === 'SEM_SKU' || skuInfo.sku === 'N/A') continue;
+            
+            const quantidadeTotal = (item.quantidade || 1) * (skuInfo.multiplicador || 1);
+            
+            console.log(`📦 Baixando ${quantidadeTotal} un do SKU: ${skuInfo.sku}`);
+            
+            try {
+                const { data: produto, error: prodError } = await window.supabaseClient
+                    .from('produtos_estoque')
+                    .select('id, quantidade, nome')
+                    .eq('sku', skuInfo.sku)
+                    .maybeSingle();
+
+                if (prodError) {
+                    console.warn(`⚠️ Erro ao buscar ${skuInfo.sku}:`, prodError);
+                    continue;
+                }
+
+                if (produto) {
+                    const novaQuantidade = Math.max(0, produto.quantidade - quantidadeTotal);
+                    
+                    await window.supabaseClient
+                        .from('produtos_estoque')
+                        .update({ 
+                            quantidade: novaQuantidade,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', produto.id);
+
+                    itensBaixados++;
+                    detalhesBaixa.push({
+                        sku: skuInfo.sku,
+                        quantidade: quantidadeTotal,
+                        nome: produto.nome,
+                        estoque_anterior: produto.quantidade,
+                        estoque_atual: novaQuantidade
+                    });
+                    
+                    console.log(`✅ Estoque do SKU ${skuInfo.sku} atualizado: ${produto.quantidade} → ${novaQuantidade}`);
+                } else {
+                    console.warn(`⚠️ Produto não encontrado: ${skuInfo.sku}`);
+                }
+            } catch (error) {
+                console.error(`❌ Erro ao baixar ${skuInfo.sku}:`, error);
+            }
+        }
+    }
+
+    return { itensBaixados, detalhesBaixa };
+}
+
+// =========================================================
+// FUNÇÃO PARA REGISTRAR HISTÓRICO DE VENDA COM MÚLTIPLOS SKUS
+// =========================================================
+
+async function registrarHistoricoVendaComSkus(orderId, itens, cliente) {
+    try {
+        console.log(`📝 Registrando histórico da venda ${orderId}...`);
+        
+        const historicoItens = [];
+
+        for (const item of itens) {
+            const skus = extrairMultiplosSkus(item.sku_original || item.sku);
+            
+            for (const skuInfo of skus) {
+                if (!skuInfo.sku || skuInfo.sku === 'SEM_SKU' || skuInfo.sku === 'N/A') continue;
+                
+                const quantidadeTotal = (item.quantidade || 1) * (skuInfo.multiplicador || 1);
+                
+                historicoItens.push({
+                    venda_id: String(orderId),
+                    sku: skuInfo.sku,
+                    sku_original: skuInfo.skuOriginal,
+                    quantidade: quantidadeTotal,
+                    valor_unitario: item.valor_unitario || 0,
+                    nome_produto: item.nome_produto || item.nome || 'Produto',
+                    cliente_nome: cliente?.nome || 'N/A',
+                    cliente_documento: cliente?.documento || 'N/A',
+                    data_venda: new Date().toISOString(),
+                    tipo: 'venda_nfe',
+                    criado_em: new Date().toISOString()
+                });
+            }
+        }
+
+        if (historicoItens.length > 0) {
+            // Tentar salvar no histórico
+            if (window.supabaseClient) {
+                const { error } = await window.supabaseClient
+                    .from('historico_vendas')
+                    .insert(historicoItens);
+
+                if (error) {
+                    console.warn('⚠️ Erro ao salvar histórico:', error);
+                } else {
+                    console.log(`✅ ${historicoItens.length} itens salvos no histórico`);
+                }
+            }
+        }
+
+        return historicoItens;
+
+    } catch (error) {
+        console.error('❌ Erro ao registrar histórico:', error);
+        return [];
+    }
+}
+
+// =========================================================
+// FUNÇÃO PARA EMITIR NF-e AGRUPADA (VÁRIAS VENDAS DO MESMO COMPRADOR)
+// =========================================================
+
+async function emitirNFEAgregada(grupo) {
+    console.log('🔵 [emitirNFEAgregada] FUNÇÃO INICIADA');
+    
+    if (!grupo || !grupo.vendas || grupo.vendas.length === 0) {
+        showToast('❌ Grupo de vendas vazio', 'error');
+        return;
+    }
+
+    const primeiroVendaId = grupo.vendas[0]?.venda_id;
+    if (!primeiroVendaId) {
+        showToast('❌ ID da venda não encontrado', 'error');
+        return;
+    }
+
+    // Mostrar modal de dados do cliente
+    pendingEmitOrderId = primeiroVendaId;
+    window._grupoVendasParaEmissao = grupo;
+    
+    abrirModalCliente();
+
+    try {
+        let token = localStorage.getItem('ml_access_token');
+        if (!token && typeof window.getValidToken === 'function') {
+            const tokenData = await window.getValidToken();
+            token = tokenData?.access_token;
+        }
+
+        if (!token) {
+            habilitarCamposCliente();
+            showToast('⚠️ Token ML não disponível. Preencha os dados manualmente.', 'warning');
+            return;
+        }
+
+        // Buscar dados do comprador da primeira venda
+        const url = `https://api.mercadolibre.com/orders/${primeiroVendaId}`;
+        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+
+        const response = await fetch(proxyUrl);
+        if (response.ok) {
+            const venda = await response.json();
+            const buyer = venda.buyer || {};
+            const nome = `${buyer.first_name || ''} ${buyer.last_name || ''}`.trim() || buyer.nickname || '';
+
+            // Buscar endereço
+            let address = {};
+            if (venda.shipping && venda.shipping.id) {
+                try {
+                    const shipUrl = `https://api.mercadolibre.com/shipments/${venda.shipping.id}`;
+                    const shipProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${encodeURIComponent(token)}`;
+                    const shipResponse = await fetch(shipProxyUrl);
+                    if (shipResponse.ok) {
+                        const shipment = await shipResponse.json();
+                        if (shipment.receiver_address) {
+                            address = shipment.receiver_address;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('⚠️ Erro ao buscar shipment:', e);
+                }
+            }
+
+            if (!address.address_line && !address.street_name && venda.buyer?.address) {
+                address = venda.buyer.address;
+            }
+
+            habilitarCamposCliente();
+            
+            document.getElementById('clienteNome').value = nome;
+            
+            let logradouro = address.address_line || address.street_name || '';
+            let numero = address.street_number || 'S/N';
+            
+            if (logradouro && numero && numero !== 'S/N') {
+                const numeroPattern = new RegExp(`\\s*[,.]?\\s*${numero}\\s*$`);
+                logradouro = logradouro.replace(numeroPattern, '');
+                logradouro = logradouro.replace(/,\s*$/, '');
+            }
+            
+            document.getElementById('clienteEndereco').value = logradouro;
+            document.getElementById('clienteNumero').value = numero;
+            document.getElementById('clienteBairro').value = address.neighborhood?.name || address.neighborhood || '';
+            document.getElementById('clienteCidade').value = address.city?.name || address.city || '';
+            
+            const ufOriginal = address.state?.name || address.state || '';
+            const ufSigla = mapearUF(ufOriginal);
+            document.getElementById('clienteUF').value = ufSigla;
+            document.getElementById('clienteCEP').value = address.zip_code ? address.zip_code.replace(/\D/g, '') : '';
+
+            // Mostrar informações do grupo
+            const infoHtml = `
+                <div style="background: #e3f2fd; padding: 12px; border-radius: 6px; margin-bottom: 15px; border-left: 4px solid #00ADEE;">
+                    <strong><i class="fas fa-copy"></i> Vendas agrupadas (${grupo.vendas.length} vendas):</strong>
+                    <ul style="margin: 8px 0 0 0; padding-left: 20px; font-size: 13px;">
+                        ${grupo.vendas.map(v => `<li>Venda #${v.venda_id} - ${v.nome_produto} (${v.quantidade}x) - R$ ${(v.valor_unitario * v.quantidade).toFixed(2)}</li>`).join('')}
+                    </ul>
+                    <div style="margin-top: 8px; font-weight: bold; color: #00ADEE;">
+                        Total: R$ ${grupo.valor_total.toFixed(2)}
+                    </div>
+                    <div style="font-size: 12px; color: #6c757d; margin-top: 4px;">
+                        ${grupo.vendas.length} vendas do mesmo comprador
+                    </div>
+                </div>
+            `;
+
+            // Adicionar info após o título do modal
+            const modalContent = document.querySelector('#modalDadosClienteNFE .modal-content');
+            if (modalContent) {
+                const existingInfo = modalContent.querySelector('.grupo-vendas-info');
+                if (existingInfo) existingInfo.remove();
+                
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'grupo-vendas-info';
+                infoDiv.innerHTML = infoHtml;
+                modalContent.insertBefore(infoDiv, modalContent.querySelector('form'));
+            }
+        }
+
+        window._mlAccessToken = token;
+        await carregarTransportadorasSelect();
+
+    } catch (error) {
+        console.error('❌ Erro ao buscar dados do comprador:', error);
+        habilitarCamposCliente();
+        showToast('❌ Erro ao carregar dados. Preencha manualmente.', 'error');
+    }
+}
+
+// =========================================================
+// FUNÇÃO PARA EMITIR NF-e AGRUPADA - CONFIRMAÇÃO
+// =========================================================
+
+async function confirmarEmissaoNFEAgregada() {
+    console.log('🔵 [confirmarEmissaoNFEAgregada] FUNÇÃO INICIADA');
+    
+    const grupo = window._grupoVendasParaEmissao;
+    if (!grupo || !grupo.vendas || grupo.vendas.length === 0) {
+        showToast('❌ Nenhum grupo de vendas selecionado', 'error');
+        return;
+    }
+
+    // Capturar dados do cliente
+    const nome = document.getElementById('clienteNome').value.trim();
+    const documento = document.getElementById('clienteDocumento').value.trim().replace(/\D/g, '');
+    const endereco = document.getElementById('clienteEndereco').value.trim();
+    const numero = document.getElementById('clienteNumero').value.trim() || 'S/N';
+    const bairro = document.getElementById('clienteBairro').value.trim() || '';
+    const cidade = document.getElementById('clienteCidade').value.trim();
+    const uf = document.getElementById('clienteUF').value.trim().toUpperCase();
+    const cep = document.getElementById('clienteCEP').value.trim().replace(/\D/g, '');
+    const transportadoraId = document.getElementById('nfeTransportadora')?.value || null;
+
+    const cfopSelect = document.getElementById('nfeCfop');
+    let cfop = cfopSelect ? cfopSelect.value : '';
+    if (!cfop) {
+        cfop = (uf === 'PR') ? '5102' : '6108';
+    }
+
+    // Validações
+    if (!nome) { showToast('⚠️ Nome é obrigatório', 'warning'); return; }
+    if (!documento || (documento.length !== 11 && documento.length !== 14)) {
+        showToast('⚠️ CPF/CNPJ inválido (11 ou 14 dígitos)', 'warning');
+        return;
+    }
+    if (!endereco) { showToast('⚠️ Endereço é obrigatório', 'warning'); return; }
+    if (!cidade) { showToast('⚠️ Cidade é obrigatória', 'warning'); return; }
+    if (uf.length !== 2) { showToast('⚠️ UF deve ter 2 letras', 'warning'); return; }
+
+    fecharModalDadosClienteNFE();
+
+    // Loading nos botões
+    const botoes = document.querySelectorAll(`.btn-emitir-nfe-agrupado`);
+    botoes.forEach(btn => {
+        btn.innerHTML = '<span class="spinner"></span> Emitindo...';
+        btn.disabled = true;
+    });
+
+    try {
+        let token = localStorage.getItem('ml_access_token');
+        if (!token && typeof window.getValidToken === 'function') {
+            const tokenData = await window.getValidToken();
+            token = tokenData?.access_token;
+        }
+
+        // Preparar produtos de todas as vendas
+        const todosProdutos = [];
+        const vendasIds = [];
+
+        for (const venda of grupo.vendas) {
+            vendasIds.push(venda.venda_id);
+            
+            // Extrair SKUs
+            const skus = extrairMultiplosSkus(venda.sku_original);
+            
+            for (const skuInfo of skus) {
+                const quantidadeTotal = venda.quantidade * (skuInfo.multiplicador || 1);
+                
+                // Buscar NCM do SKU
+                let ncm = '87149990';
+                if (skuInfo.sku && skuInfo.sku !== 'SEM_SKU') {
+                    const ncmSalvo = await buscarNCMporSKU(skuInfo.sku);
+                    if (ncmSalvo) ncm = ncmSalvo;
+                }
+
+                todosProdutos.push({
+                    nome: venda.nome_produto || 'Produto',
+                    quantidade: quantidadeTotal,
+                    valor_unitario: venda.valor_unitario || 0,
+                    sku: skuInfo.sku || 'SEM_SKU',
+                    sku_original: skuInfo.skuOriginal || venda.sku_original,
+                    ncm: ncm,
+                    venda_id: venda.venda_id
+                });
+            }
+        }
+
+        // Agrupar produtos por SKU para somar quantidades
+        const produtosAgrupados = {};
+        for (const prod of todosProdutos) {
+            const chave = prod.sku;
+            if (!produtosAgrupados[chave]) {
+                produtosAgrupados[chave] = {
+                    ...prod,
+                    quantidade: 0,
+                    vendas_ids: []
+                };
+            }
+            produtosAgrupados[chave].quantidade += prod.quantidade;
+            if (!produtosAgrupados[chave].vendas_ids.includes(prod.venda_id)) {
+                produtosAgrupados[chave].vendas_ids.push(prod.venda_id);
+            }
+        }
+
+        const produtosFinal = Object.values(produtosAgrupados);
+
+        console.log(`📦 Produtos agrupados: ${produtosFinal.length} SKUs`);
+        console.log(`📦 Vendas incluídas: ${vendasIds.join(', ')}`);
+
+        const mlToken = window._mlAccessToken || token;
+
+        const payload = {
+            venda_id: vendasIds.join('_'), // ID composto para identificar o grupo
+            vendas_ids: vendasIds,
+            cliente: { nome, documento, endereco, numero, bairro, cidade, uf, cep },
+            produtos: produtosFinal,
+            cfop: cfop,
+            natureza_operacao: 'VENDA',
+            modalidade_frete: transportadoraId ? '0' : '9',
+            transportadora_id: transportadoraId,
+            ml_access_token: mlToken,
+            is_agrupada: true
+        };
+
+        console.log('📤 Payload para emissão agrupada:', JSON.stringify(payload, null, 2));
+
+        // ===== EMITIR NF-E =====
+        const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await emitResponse.json();
+
+        if (result.success) {
+            showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
+            console.log('✅ NF-e emitida com sucesso:', result);
+
+            // ===== SALVAR NA TABELA nfe_emitidas =====
+            const chaveAcesso = result.chave_acesso || result.chave;
+            if (chaveAcesso) {
+                for (const vendaId of vendasIds) {
+                    try {
+                        const { data: existing } = await window.supabaseClient
+                            .from('nfe_emitidas')
+                            .select('id')
+                            .eq('chave_acesso', chaveAcesso)
+                            .eq('venda_id', vendaId)
+                            .maybeSingle();
+
+                        if (!existing) {
+                            await window.supabaseClient
+                                .from('nfe_emitidas')
+                                .insert({
+                                    chave_acesso: chaveAcesso,
+                                    venda_id: vendaId,
+                                    protocolo: result.protocolo,
+                                    data_emissao: new Date().toISOString(),
+                                    cliente_nome: nome,
+                                    valor_total: produtosFinal.reduce((acc, p) => acc + (p.valor_unitario * p.quantidade), 0),
+                                    xml_assinado: result.xml || null,
+                                    cancelada: false,
+                                    eh_agrupada: true,
+                                    vendas_agrupadas: vendasIds
+                                });
+                            console.log(`✅ NF-e salva para venda ${vendaId}`);
+                        }
+                    } catch (saveError) {
+                        console.warn(`⚠️ Erro ao salvar NF-e para venda ${vendaId}:`, saveError);
+                    }
+
+                    // Atualizar status da venda
+                    try {
+                        await window.supabaseClient
+                            .from('vendas_ml')
+                            .update({ 
+                                nfe_emitida: true,
+                                status_nfe: 'emitida',
+                                status_sistema: 'finalizada',
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id_venda_ml', String(vendaId));
+                    } catch (statusError) {
+                        console.warn(`⚠️ Erro ao atualizar status da venda ${vendaId}:`, statusError);
+                    }
+                }
+            }
+
+            // ===== BAIXAR ESTOQUE =====
+            let totalItensBaixados = 0;
+            for (const venda of grupo.vendas) {
+                const resultadoBaixa = await baixarEstoqueMultiplosSkus(venda.venda_id, [venda]);
+                totalItensBaixados += resultadoBaixa.itensBaixados;
+            }
+            showToast(`✅ ${totalItensBaixados} itens baixados do estoque!`, 'success');
+
+            // ===== REGISTRAR HISTÓRICO =====
+            for (const venda of grupo.vendas) {
+                await registrarHistoricoVendaComSkus(venda.venda_id, [venda], { nome, documento });
+            }
+
+            // ===== SALVAR CLIENTE =====
+            await salvarClienteNoBanco({ nome, documento, endereco, numero, bairro, cidade, uf, cep });
+
+            // ===== LIMPAR E RECARREGAR =====
+            window._grupoVendasParaEmissao = null;
+            window._mlAccessToken = null;
+            pendingEmitOrderId = null;
+
+            await carregarVendasPendentes();
+            await carregarNFesEmitidas();
+
+            showToast(`✅ NF-e agrupada emitida com sucesso! (${vendasIds.length} vendas)`, 'success');
+
+        } else {
+            showToast(`❌ Erro: ${result.error || 'Erro desconhecido'}`, 'error');
+        }
+
+    } catch (error) {
+        console.error('❌ Erro na emissão agrupada:', error);
+        showToast(`❌ Erro: ${error.message}`, 'error');
+    } finally {
+        botoes.forEach(btn => {
+            btn.innerHTML = '<i class="fas fa-file-invoice"></i> Emitir NF-e Agrupada';
+            btn.disabled = false;
+        });
+    }
+}
+
+// =========================================================
+// FUNÇÃO PARA MOSTRAR GRUPOS DE VENDAS NA INTERFACE
+// =========================================================
+
+async function mostrarGruposVendas() {
+    console.log('📋 Mostrando grupos de vendas para agrupamento...');
+    
+    const grupos = await buscarVendasAgrupadasPorComprador(7);
+    
+    if (grupos.length === 0) {
+        showToast('📋 Nenhum comprador com múltiplas vendas nos últimos 7 dias', 'info');
+        return;
+    }
+
+    let html = `
+        <div style="max-height: 500px; overflow-y: auto;">
+            <p style="color: #28a745; font-weight: bold; margin-bottom: 10px;">
+                <i class="fas fa-copy"></i> ${grupos.length} compradores com múltiplas vendas (últimos 7 dias)
+            </p>
+            <table style="width:100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                    <tr style="background: #f8f9fa; position: sticky; top: 0;">
+                        <th style="padding: 8px; border: 1px solid #ddd;">Comprador</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Vendas</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Itens</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Total</th>
+                        <th style="padding: 8px; border: 1px solid #ddd;">Ação</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+
+    for (const grupo of grupos) {
+        const nomeComprador = grupo.buyer?.nickname || grupo.buyer?.first_name || 'Comprador';
+        const totalItens = grupo.total_produtos.reduce((acc, p) => acc + p.quantidade, 0);
+        
+        html += `
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px; border: 1px solid #ddd;">
+                    <strong>${nomeComprador}</strong>
+                    <br><small style="color: #6c757d;">${grupo.buyer?.id || ''}</small>
+                </td>
+                <td style="padding: 8px; border: 1px solid #ddd;">
+                    ${grupo.vendas.length} vendas
+                    <br><small style="color: #6c757d;">
+                        ${new Date(grupo.data_mais_antiga).toLocaleDateString('pt-BR')} a 
+                        ${new Date(grupo.data_mais_recente).toLocaleDateString('pt-BR')}
+                    </small>
+                </td>
+                <td style="padding: 8px; border: 1px solid #ddd;">
+                    ${totalItens} itens
+                    <br><small style="color: #6c757d;">
+                        ${grupo.total_produtos.map(p => `${p.sku}(${p.quantidade})`).join(', ')}
+                    </small>
+                </td>
+                <td style="padding: 8px; border: 1px solid #ddd; font-weight: bold; color: #00ADEE;">
+                    R$ ${grupo.valor_total.toFixed(2)}
+                </td>
+                <td style="padding: 8px; border: 1px solid #ddd;">
+                    <button class="btn btn-sm btn-success btn-emitir-nfe-agrupado" 
+                            onclick="emitirNFEAgregada(window._gruposVendas[${grupos.indexOf(grupo)}])"
+                            data-vendas="${grupo.vendas.map(v => v.venda_id).join(',')}">
+                        <i class="fas fa-file-invoice"></i> Emitir NF-e
+                    </button>
+                </td>
+            </tr>
+        `;
+    }
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+        <div style="margin-top: 10px; text-align: center;">
+            <button onclick="fecharModalDialog()" style="padding: 8px 20px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Fechar
+            </button>
+        </div>
+    `;
+
+    // Armazenar grupos para acesso no onclick
+    window._gruposVendas = grupos;
+
+    showModalDialog('📋 Vendas Agrupadas por Comprador', html);
+
+    // Adicionar event listeners para os botões
+    document.querySelectorAll('.btn-emitir-nfe-agrupado').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            // O onclick já está configurado
+        });
+    });
+}
+
+// =========================================================
+// BOTÃO PARA MOSTRAR GRUPOS NA INTERFACE
+// =========================================================
+
+function adicionarBotaoAgruparVendas() {
+    const container = document.querySelector('#abaVendas .card-header .d-flex');
+    if (!container) return;
+
+    // Verificar se o botão já existe
+    if (document.getElementById('btnAgruparVendas')) return;
+
+    const btn = document.createElement('button');
+    btn.id = 'btnAgruparVendas';
+    btn.className = 'btn btn-purple btn-sm';
+    btn.innerHTML = '<i class="fas fa-copy"></i> Agrupar Vendas';
+    btn.title = 'Agrupar vendas do mesmo comprador para emitir uma única NF-e';
+    btn.onclick = mostrarGruposVendas;
+
+    container.appendChild(btn);
+}
+
 // =========================================================
 // 🔥 FUNÇÃO PARA CANCELAR NF-e (SISTEMA + SEFAZ)
 // =========================================================
@@ -916,6 +1712,34 @@ async function listarNFesParaCancelarSistema() {
         console.error('❌ Erro:', error);
         showToast(`❌ Erro: ${error.message}`, 'error');
     }
+}
+
+// Função para mostrar modal de diálogo
+function showModalDialog(title, content) {
+    // Remove modal existente
+    const existingModal = document.getElementById('modalDialog');
+    if (existingModal) existingModal.remove();
+
+    const modalHTML = `
+        <div id="modalDialog" class="modal" style="display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:10001; position:fixed; top:0; left:0; width:100%; height:100%;">
+            <div class="modal-content" style="max-width:600px; background:white; padding:25px; border-radius:8px; max-height:90vh; overflow-y:auto; width:95%;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h3 style="margin:0;">${title}</h3>
+                    <button onclick="fecharModalDialog()" style="background:none; border:none; font-size:24px; cursor:pointer; color:#6c757d;">&times;</button>
+                </div>
+                <div>${content}</div>
+            </div>
+        </div>
+    `;
+
+    const container = document.createElement('div');
+    container.innerHTML = modalHTML;
+    document.body.appendChild(container.firstElementChild);
+}
+
+function fecharModalDialog() {
+    const modal = document.getElementById('modalDialog');
+    if (modal) modal.remove();
 }
 
 // =========================================================
@@ -2520,40 +3344,288 @@ function fecharModalDadosClienteNFE() {
     }
 }
 
-// =========================================================
-// SALVAR CLIENTE NO BANCO
-// =========================================================
+// Substitua a função salvarClienteNoBanco no arquivo nfe_manager.js
 
 async function salvarClienteNoBanco(dadosCliente) {
     try {
-        const responseBusca = await fetch(`${window.API_BASE_URL}/nfe/clientes?documento=${dadosCliente.documento}`);
-        if (responseBusca.ok) {
-            const data = await responseBusca.json();
-            if (data.clientes && data.clientes.length > 0) {
-                return;
+        console.log('💾 Salvando cliente no banco:', dadosCliente);
+        
+        // Verificar se o Supabase está disponível
+        if (!window.supabaseClient) {
+            console.warn('⚠️ Supabase não disponível. Tabela clientes_nfe não será atualizada.');
+            return;
+        }
+
+        // Verificar se o cliente já existe pelo documento
+        const documento = dadosCliente.documento?.replace(/\D/g, '') || '';
+        if (!documento) {
+            console.warn('⚠️ Documento vazio, não é possível salvar cliente');
+            return;
+        }
+
+        // Tentar buscar cliente existente
+        const { data: existente, error: buscaError } = await window.supabaseClient
+            .from('clientes_nfe')
+            .select('id, nome, documento, logradouro, numero, bairro, cidade, uf, cep')
+            .eq('documento', documento)
+            .maybeSingle();
+
+        if (buscaError) {
+            console.warn('⚠️ Erro ao buscar cliente existente:', buscaError);
+            // Tentar criar mesmo assim
+        }
+
+        // Dados para salvar
+        const dadosParaSalvar = {
+            nome: dadosCliente.nome || '',
+            documento: documento,
+            logradouro: dadosCliente.endereco || dadosCliente.logradouro || '',
+            numero: dadosCliente.numero || 'S/N',
+            bairro: dadosCliente.bairro || '',
+            cidade: dadosCliente.cidade || '',
+            uf: dadosCliente.uf || '',
+            cep: dadosCliente.cep || '',
+            updated_at: new Date().toISOString()
+        };
+
+        let resultado;
+
+        if (existente) {
+            // Atualizar cliente existente
+            console.log(`📝 Atualizando cliente existente ID: ${existente.id}`);
+            const { data, error } = await window.supabaseClient
+                .from('clientes_nfe')
+                .update(dadosParaSalvar)
+                .eq('id', existente.id)
+                .select();
+
+            if (error) {
+                console.error('❌ Erro ao atualizar cliente:', error);
+                throw error;
+            }
+            resultado = data;
+            console.log('✅ Cliente atualizado com sucesso!');
+        } else {
+            // Inserir novo cliente
+            console.log('📝 Inserindo novo cliente');
+            dadosParaSalvar.created_at = new Date().toISOString();
+            
+            const { data, error } = await window.supabaseClient
+                .from('clientes_nfe')
+                .insert(dadosParaSalvar)
+                .select();
+
+            if (error) {
+                console.error('❌ Erro ao inserir cliente:', error);
+                throw error;
+            }
+            resultado = data;
+            console.log('✅ Cliente inserido com sucesso!');
+        }
+
+        // Se a tabela clientes_nfe não existir, tenta criar via fallback
+        if (resultado === undefined || !resultado || (Array.isArray(resultado) && resultado.length === 0)) {
+            console.warn('⚠️ Tabela clientes_nfe pode não existir. Tentando fallback...');
+            await salvarClienteFallback(dadosCliente);
+        }
+
+        return resultado;
+
+    } catch (error) {
+        console.error('❌ Erro ao salvar cliente:', error);
+        
+        // Tentar fallback
+        try {
+            await salvarClienteFallback(dadosCliente);
+        } catch (fallbackError) {
+            console.error('❌ Fallback também falhou:', fallbackError);
+        }
+    }
+}
+
+// Função de fallback - tenta salvar na tabela clientes ou vendas_ml
+async function salvarClienteFallback(dadosCliente) {
+    console.log('🔄 Tentando salvar cliente via fallback...');
+    
+    try {
+        // Tenta salvar na tabela clientes (se existir)
+        const { error } = await window.supabaseClient
+            .from('clientes')
+            .upsert({
+                documento: dadosCliente.documento?.replace(/\D/g, '') || '',
+                nome: dadosCliente.nome || '',
+                endereco: dadosCliente.endereco || dadosCliente.logradouro || '',
+                cidade: dadosCliente.cidade || '',
+                uf: dadosCliente.uf || '',
+                cep: dadosCliente.cep || '',
+                updated_at: new Date().toISOString()
+            }, { onConflict: 'documento' });
+
+        if (error) {
+            console.warn('⚠️ Fallback na tabela clientes falhou:', error);
+        } else {
+            console.log('✅ Cliente salvo via fallback (tabela clientes)');
+        }
+    } catch (e) {
+        console.warn('⚠️ Fallback completo falhou:', e);
+    }
+}
+
+// Função para listar clientes (usada na aba de clientes)
+async function carregarClientes() {
+    const tbody = document.getElementById('clientesBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+    
+    try {
+        // Tentar buscar da tabela clientes_nfe
+        let clientes = [];
+        
+        if (window.supabaseClient) {
+            const { data, error } = await window.supabaseClient
+                .from('clientes_nfe')
+                .select('id, nome, documento, logradouro, numero, bairro, cidade, uf, cep')
+                .order('nome', { ascending: true });
+
+            if (!error && data) {
+                clientes = data;
+            } else {
+                console.warn('⚠️ Erro ao buscar clientes_nfe:', error);
+                // Tentar fallback na tabela clientes
+                const { data: fallbackData, error: fallbackError } = await window.supabaseClient
+                    .from('clientes')
+                    .select('id, nome, documento, endereco as logradouro, cidade, uf')
+                    .order('nome', { ascending: true });
+                
+                if (!fallbackError && fallbackData) {
+                    clientes = fallbackData;
+                }
             }
         }
 
-        const payload = {
-            nome: dadosCliente.nome,
-            documento: dadosCliente.documento,
-            logradouro: dadosCliente.endereco,
-            numero: dadosCliente.numero,
-            bairro: dadosCliente.bairro,
-            cidade: dadosCliente.cidade,
-            uf: dadosCliente.uf,
-            cep: dadosCliente.cep
-        };
+        if (!clientes || clientes.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhum cliente cadastrado</td></tr>';
+            return;
+        }
 
-        await fetch(`${window.API_BASE_URL}/nfe/clientes`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        tbody.innerHTML = clientes.map(c => `
+            <tr>
+                <td>${c.nome || '-'}</td>
+                <td>${c.documento || '-'}</td>
+                <td>${c.logradouro || ''}, ${c.numero || 'S/N'} - ${c.cidade || ''} ${c.uf || ''}</td>
+                <td>
+                    <button class="btn btn-sm btn-info" onclick="visualizarCliente('${c.id}')" title="Ver detalhes">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="excluirCliente('${c.id}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+
+        // Atualizar select de clientes na emissão avulsa
+        const select = document.getElementById('avulsaClienteId');
+        if (select) {
+            select.innerHTML = '<option value="">Selecione</option>' + 
+                clientes.map(c => `<option value="${c.id}">${c.nome} (${c.documento})</option>`).join('');
+        }
+
     } catch (error) {
-        console.error('❌ Erro ao salvar cliente:', error);
+        console.error('❌ Erro ao carregar clientes:', error);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar clientes</td></tr>';
     }
 }
+
+// Função para excluir cliente
+async function excluirCliente(id) {
+    if (!confirm('Excluir este cliente?')) return;
+    
+    try {
+        let error = null;
+        
+        if (window.supabaseClient) {
+            // Tentar excluir da tabela clientes_nfe
+            const { error: err1 } = await window.supabaseClient
+                .from('clientes_nfe')
+                .delete()
+                .eq('id', id);
+            
+            if (err1) {
+                // Tentar excluir da tabela clientes
+                const { error: err2 } = await window.supabaseClient
+                    .from('clientes')
+                    .delete()
+                    .eq('id', id);
+                error = err2;
+            } else {
+                error = null;
+            }
+        }
+
+        if (error) {
+            showToast('Erro ao excluir cliente', 'error');
+        } else {
+            showToast('Cliente excluído com sucesso', 'success');
+            await carregarClientes();
+        }
+    } catch (error) {
+        showToast('Erro ao excluir cliente', 'error');
+    }
+}
+
+// Função para visualizar cliente
+window.visualizarCliente = async function(id) {
+    try {
+        let cliente = null;
+        
+        if (window.supabaseClient) {
+            // Tentar buscar da tabela clientes_nfe
+            const { data, error } = await window.supabaseClient
+                .from('clientes_nfe')
+                .select('*')
+                .eq('id', id)
+                .maybeSingle();
+            
+            if (!error && data) {
+                cliente = data;
+            } else {
+                // Tentar buscar da tabela clientes
+                const { data: fallbackData, error: fallbackError } = await window.supabaseClient
+                    .from('clientes')
+                    .select('*')
+                    .eq('id', id)
+                    .maybeSingle();
+                
+                if (!fallbackError && fallbackData) {
+                    cliente = fallbackData;
+                }
+            }
+        }
+
+        if (!cliente) {
+            showToast('Cliente não encontrado', 'error');
+            return;
+        }
+
+        const modalContent = `
+            <div style="padding: 10px;">
+                <h4>${cliente.nome || 'Sem nome'}</h4>
+                <p><strong>Documento:</strong> ${cliente.documento || '-'}</p>
+                <p><strong>Endereço:</strong> ${cliente.logradouro || ''}, ${cliente.numero || 'S/N'} - ${cliente.bairro || ''}</p>
+                <p><strong>Cidade/UF:</strong> ${cliente.cidade || ''} / ${cliente.uf || ''}</p>
+                <p><strong>CEP:</strong> ${cliente.cep || ''}</p>
+                <p><strong>Última atualização:</strong> ${cliente.updated_at ? new Date(cliente.updated_at).toLocaleString('pt-BR') : '-'}</p>
+            </div>
+        `;
+
+        showModalDialog('Detalhes do Cliente', modalContent);
+    } catch (error) {
+        console.error('Erro ao buscar cliente:', error);
+        showToast('Erro ao carregar dados do cliente', 'error');
+    }
+};
 
 // =========================================================
 // CONFIRMAR EMISSÃO NF-E (COMPLETA COM SINCRONIZAÇÃO ML)
@@ -3981,6 +5053,18 @@ window.enviarXMLparaMercadoLivre = enviarXMLparaMercadoLivre;
 window.buscarValorExatoPagamento = buscarValorExatoPagamento;
 window.baixarXMLCompletoML = baixarXMLCompletoML;
 window.sincronizarEstoqueComML = sincronizarEstoqueComML;
+window.showModalDialog = showModalDialog;
+window.fecharModalDialog = fecharModalDialog;
+window.carregarClientes = carregarClientes;
+window.excluirCliente = excluirCliente;
+window.mostrarGruposVendas = mostrarGruposVendas;
+window.emitirNFEAgregada = emitirNFEAgregada;
+window.confirmarEmissaoNFEAgregada = confirmarEmissaoNFEAgregada;
+window.buscarVendasAgrupadasPorComprador = buscarVendasAgrupadasPorComprador;
+window.extrairMultiplosSkus = extrairMultiplosSkus;
+window.baixarEstoqueMultiplosSkus = baixarEstoqueMultiplosSkus;
+window.registrarHistoricoVendaComSkus = registrarHistoricoVendaComSkus;
+
 
 // ===================== INICIALIZAR =====================
 document.addEventListener('DOMContentLoaded', function() {
@@ -4002,8 +5086,15 @@ document.addEventListener('DOMContentLoaded', function() {
             fecharModalDadosClienteNFE();
         });
     }
+
+    setTimeout(adicionarBotaoAgruparVendas, 1000);
     
     console.log('✅ Event listeners configurados');
 });
 
 console.log('✅ nfe_manager.js carregado');
+console.log('✅ nfe_manager.js carregado com suporte a agrupamento e múltiplos SKUs!');
+console.log('📋 Comandos disponíveis:');
+console.log('  await mostrarGruposVendas() - Mostra compradores com múltiplas vendas');
+console.log('  await emitirNFEAgregada(grupo) - Emite NF-e agrupada');
+console.log('  extrairMultiplosSkus("001SKU1.001SKU2") - Extrai múltiplos SKUs');
