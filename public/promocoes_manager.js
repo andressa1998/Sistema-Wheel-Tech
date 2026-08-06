@@ -436,6 +436,9 @@ function aplicarRegraFiltro(item, regra) {
         }
     }
 
+// ============================================================
+// FUNÇÃO: ANALISAR ITENS (COMPLETA E ATUALIZADA)
+// ============================================================
 window.analisarItens = async function() {
     const origemId = document.getElementById('bulkPromocaoOrigem')?.value;
     const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
@@ -503,8 +506,12 @@ window.analisarItens = async function() {
         
         const mapAtivosOrigem = new Map();
         ativosOrigem.forEach(item => {
+            // Garantir que o preço está em reais
+            let price = item.price || 0;
+            if (price > 1000) price = price / 100;
+            
             mapAtivosOrigem.set(item.id, {
-                price: item.price || 0,
+                price: price,
                 seller_percentage: item.seller_percentage || 0,
                 status: item.status || 'started'
             });
@@ -532,11 +539,15 @@ window.analisarItens = async function() {
             const mlb = item.id;
             const status = item.status || 'unknown';
             
+            // Garantir que o preço está em reais
+            let price = item.price || 0;
+            let originalPrice = item.original_price || 0;
+            
             mapDestino.set(mlb, {
                 id: mlb,
                 status: status,
-                price: item.price || 0,
-                original_price: item.original_price || 0,
+                price: price,
+                original_price: originalPrice,
                 seller_percentage: item.seller_percentage || 0
             });
             
@@ -557,7 +568,7 @@ window.analisarItens = async function() {
         
         const interseccaoBruta = [];
         let totalProcessados = 0;
-        const totalAtivos = ativosOrigem.length;
+        const totalAtivosOrigem = ativosOrigem.length;
         
         let countStarted = 0;
         let countCandidate = 0;
@@ -567,16 +578,17 @@ window.analisarItens = async function() {
         for (const [mlb, dadosOrigem] of mapAtivosOrigem) {
             totalProcessados++;
             
-            if (totalProcessados % 50 === 0 || totalProcessados === totalAtivos) {
-                const pct = 60 + (totalProcessados / totalAtivos) * 30;
+            if (totalProcessados % 50 === 0 || totalProcessados === totalAtivosOrigem) {
+                const pct = 60 + (totalProcessados / totalAtivosOrigem) * 30;
                 atualizarProgresso(
                     Math.min(pct, 90),
-                    `Processando ${totalProcessados}/${totalAtivos}`,
+                    `Processando ${totalProcessados}/${totalAtivosOrigem}`,
                     `${interseccaoBruta.length} encontrados`,
                     `${Math.round(pct)}%`
                 );
             }
             
+            // Verificar se está no destino
             if (!mapDestino.has(mlb)) continue;
             
             const dadosDestino = mapDestino.get(mlb);
@@ -584,6 +596,7 @@ window.analisarItens = async function() {
             
             const statusDestino = dadosDestino.status || 'unknown';
             
+            // Mapear status para exibição
             let statusLabel = '';
             let statusClass = '';
             
@@ -610,21 +623,43 @@ window.analisarItens = async function() {
                     break;
             }
             
-            let precoDestino = dadosDestino.price || 0;
-            let precoOriginalDestino = dadosDestino.original_price || 0;
-            let percentDestino = dadosDestino.seller_percentage || 0;
+            // ============================================================
+            // BUSCAR PREÇO DO DESTINO - SEMPRE USAR A FUNÇÃO DETALHADA
+            // ============================================================
+            let precoDestino = 0;
+            let precoOriginalDestino = 0;
+            let percentDestino = 0;
             
             try {
-            const precoDetalhado = await buscarPrecoNaPromocaoDestino(mlb, destinoId, tokenData.access_token);
-            if (precoDetalhado && precoDetalhado.price > 0) {
-                precoDestino = precoDetalhado.price;
-                precoOriginalDestino = precoDetalhado.original_price || 0;
-                percentDestino = precoDetalhado.seller_percentage || 0;
-                log(`✅ Preço detalhado para ${mlb}: R$ ${precoDestino.toFixed(2)} (${percentDestino}%)`, 'debug');
-            }
-                } catch (err) {
-                    log(`⚠️ Erro ao buscar preço detalhado para ${mlb}: ${err.message}`, 'warning');
+                const precoDetalhado = await buscarPrecoNaPromocaoDestino(mlb, destinoId, tokenData.access_token);
+                if (precoDetalhado && precoDetalhado.price > 0) {
+                    precoDestino = precoDetalhado.price;
+                    precoOriginalDestino = precoDetalhado.original_price || 0;
+                    percentDestino = precoDetalhado.seller_percentage || 0;
+                    
+                    // LOG ESPECÍFICO PARA DEBUG - MLB1950680845
+                    if (mlb === 'MLB1950680845') {
+                        log(`🎯 MLB1950680845 - Preço Destino: R$ ${precoDestino.toFixed(2)}`, 'success');
+                        log(`🎯 MLB1950680845 - Dados completos:`, 'debug', precoDetalhado);
+                    }
+                } else {
+                    // Fallback: usar o preço da lista
+                    precoDestino = dadosDestino.price || 0;
+                    precoOriginalDestino = dadosDestino.original_price || 0;
+                    percentDestino = dadosDestino.seller_percentage || 0;
+                    
+                    // Se ainda for 0, tentar usar original com desconto padrão
+                    if (precoDestino === 0 && precoOriginalDestino > 0) {
+                        precoDestino = precoOriginalDestino * 0.9;
+                    }
                 }
+            } catch (err) {
+                log(`⚠️ Erro ao buscar preço detalhado para ${mlb}: ${err.message}`, 'warning');
+                // Fallback
+                precoDestino = dadosDestino.price || 0;
+                precoOriginalDestino = dadosDestino.original_price || 0;
+                percentDestino = dadosDestino.seller_percentage || 0;
+            }
             
             const item = {
                 mlb: mlb,
@@ -640,6 +675,16 @@ window.analisarItens = async function() {
                 tipo: statusDestino,
                 diferenca: precoDestino - (dadosOrigem.price || 0)
             };
+            
+            // LOG PARA DEBUG - mostra o preço que está sendo usado
+            if (mlb === 'MLB5949881892') {
+                log(`🔍 DEBUG MLB5949881892:`, 'debug');
+                log(`   Preço Origem: R$ ${dadosOrigem.price}`, 'debug');
+                log(`   Preço Destino (da lista): R$ ${dadosDestino.price}`, 'debug');
+                log(`   Preço Destino (detalhado): R$ ${precoDestino}`, 'debug');
+                log(`   Preço Original Destino: R$ ${precoOriginalDestino}`, 'debug');
+                log(`   Status Destino: ${statusDestino}`, 'debug');
+            }
             
             interseccaoBruta.push(item);
         }
@@ -674,7 +719,7 @@ window.analisarItens = async function() {
         log('═══════════════════════════════════════════════════════════', 'info');
         
         atualizarProgresso(100, '✅ Concluído!', `${interseccaoFiltrada.length} MLBs após filtro`, '✅');
-
+        
         // ============================================================
         // PASSO 6: Armazenar os itens filtrados globalmente
         // ============================================================
@@ -683,19 +728,20 @@ window.analisarItens = async function() {
         
         // Renderizar tabela com os itens filtrados
         renderizarTabelaInterseccao(interseccaoFiltrada);
-
+        
         // Atualizar resumo
         const totalElegiveis = interseccaoFiltrada.filter(i => i.tipo === 'candidate' || i.tipo === 'pending').length;
+        const totalAtivos = interseccaoFiltrada.filter(i => i.tipo === 'started').length;
         const totalBloqueados = interseccaoFiltrada.filter(i => i.tipo === 'unknown' || !i.tipo).length;
         
         document.getElementById('bulkTotalItens').textContent = interseccaoFiltrada.length;
-        document.getElementById('bulkElegiveis').textContent = interseccaoFiltrada.filter(i => i.tipo !== 'started').length;
-        document.getElementById('bulkBloqueados').textContent = interseccaoFiltrada.filter(i => i.tipo === 'unknown' || !i.tipo).length;
-        document.getElementById('bulkJaAtivos').textContent = interseccaoFiltrada.filter(i => i.tipo === 'started').length;
+        document.getElementById('bulkElegiveis').textContent = totalElegiveis;
+        document.getElementById('bulkBloqueados').textContent = totalBloqueados;
+        document.getElementById('bulkJaAtivos').textContent = totalAtivos;
         
         document.getElementById('bulkResumo').classList.remove('hidden');
         document.getElementById('bulkTabelaContainer').classList.remove('hidden');
-
+        
         // Atualizar botão de ativação
         const btnAtivar = document.getElementById('btnAtivarMassa');
         if (btnAtivar) {
@@ -705,9 +751,10 @@ window.analisarItens = async function() {
             btnAtivar.disabled = selecionaveis === 0;
             btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${selecionaveis})`;
         }
-
+        
         setTimeout(fecharBarraProgresso, 1500);
         
+        // Mostrar toast com resultado
         if (interseccaoFiltrada.length > 0) {
             const ativos = interseccaoFiltrada.filter(i => i.tipo === 'started').length;
             const candidatos = interseccaoFiltrada.filter(i => i.tipo === 'candidate').length;
@@ -1195,125 +1242,164 @@ async function buscarCandidatosPromocao(candidateId, token) {
 }
 
 // ============================================================
-// FUNÇÃO: BUSCAR PREÇO NA PROMOÇÃO DESTINO (CORRIGIDA)
+// FUNÇÃO: BUSCAR PREÇO NA PROMOÇÃO DESTINO (COM LOGS DETALHADOS)
 // ============================================================
 async function buscarPrecoNaPromocaoDestino(itemId, promotionId, token) {
+    log(`🔍 Buscando preço para ${itemId} na promoção ${promotionId}`, 'info');
+    
     try {
         // Buscar todas as promoções do item
         const url = `https://api.mercadolibre.com/seller-promotions/items/${itemId}?app_version=v2`;
         const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
         const response = await fetch(proxyUrl);
         
-        if (response.ok) {
-            const data = await response.json();
-            
-            // Procurar a promoção específica pelo ID
-            const promocao = data.find(p => p.id === promotionId);
-            
-            if (promocao) {
-                log(`🔍 Promoção encontrada para ${itemId}:`, 'debug');
-                log(`   ID: ${promocao.id}`, 'debug');
-                log(`   Status: ${promocao.status}`, 'debug');
-                log(`   Price: ${promocao.price}`, 'debug');
-                log(`   Original Price: ${promocao.original_price}`, 'debug');
-                log(`   Seller Percentage: ${promocao.seller_percentage}%`, 'debug');
-                
-                // ============================================================
-                // CORREÇÃO: O preço final da promoção é o campo 'price'
-                // ============================================================
-                let precoFinal = 0;
-                let precoOriginal = 0;
-                let percentual = 0;
-                
-                // Verificar se o price está em centavos ou reais
-                const priceValue = promocao.price || 0;
-                const originalValue = promocao.original_price || 0;
-                
-                // IMPORTANTE: A API do ML retorna o preço em centavos
-                // Se for > 1000, está em centavos
-                if (priceValue > 1000) {
-                    precoFinal = priceValue / 100;
-                } else {
-                    precoFinal = priceValue;
-                }
-                
-                if (originalValue > 1000) {
-                    precoOriginal = originalValue / 100;
-                } else {
-                    precoOriginal = originalValue;
-                }
-                
-                // Se o preço final for 0, tentar calcular a partir do original com desconto
-                if (precoFinal === 0 && precoOriginal > 0 && promocao.seller_percentage > 0) {
-                    precoFinal = precoOriginal * (1 - (promocao.seller_percentage / 100));
-                }
-                
-                // Se ainda for 0, tentar usar o price direto
-                if (precoFinal === 0 && priceValue > 0) {
-                    precoFinal = priceValue;
-                }
-                
-                // Percentual do vendedor
-                percentual = promocao.seller_percentage || 0;
-                
-                log(`   ✅ Preço Final: R$ ${precoFinal.toFixed(2)}`, 'debug');
-                log(`   ✅ Preço Original: R$ ${precoOriginal.toFixed(2)}`, 'debug');
-                log(`   ✅ Percentual: ${percentual}%`, 'debug');
-                
-                return {
-                    price: precoFinal,
-                    original_price: precoOriginal,
-                    seller_percentage: percentual,
-                    status: promocao.status || 'unknown'
-                };
-            }
-            
-            // Se não encontrou a promoção específica, procurar pelo nome
-            // (fallback para quando o ID não corresponde)
-            log(`⚠️ Promoção ${promotionId} não encontrada diretamente, procurando por nome...`, 'warning');
-            
-            // Procurar promoções que contenham "Dia dos Pais" ou "8.8"
-            for (const p of data) {
-                const nome = p.name || '';
-                if (nome.includes('Dia dos Pais') || nome.includes('8.8') || nome.includes('8,8')) {
-                    log(`   🔍 Encontrada promoção similar: ${nome}`, 'debug');
-                    log(`   ID: ${p.id}`, 'debug');
-                    log(`   Status: ${p.status}`, 'debug');
-                    log(`   Price: ${p.price}`, 'debug');
-                    log(`   Original Price: ${p.original_price}`, 'debug');
-                    log(`   Seller Percentage: ${p.seller_percentage}%`, 'debug');
-                    
-                    let precoFinal = p.price || 0;
-                    let precoOriginal = p.original_price || 0;
-                    
-                    if (precoFinal > 1000) precoFinal = precoFinal / 100;
-                    if (precoOriginal > 1000) precoOriginal = precoOriginal / 100;
-                    
-                    if (precoFinal === 0 && precoOriginal > 0 && p.seller_percentage > 0) {
-                        precoFinal = precoOriginal * (1 - (p.seller_percentage / 100));
-                    }
-                    
-                    return {
-                        price: precoFinal,
-                        original_price: precoOriginal,
-                        seller_percentage: p.seller_percentage || 0,
-                        status: p.status || 'unknown'
-                    };
-                }
-            }
+        if (!response.ok) {
+            log(`❌ Erro na API: ${response.status}`, 'error');
+            return null;
         }
         
-        // Fallback: tentar buscar o preço do item
-        log(`⚠️ Fallback: buscando preço do item ${itemId}`, 'warning');
+        const data = await response.json();
+        log(`📦 Dados recebidos para ${itemId}: ${JSON.stringify(data).length} caracteres`, 'debug');
+        
+        // ============================================================
+        // MÉTODO 1: Procurar a promoção específica pelo ID
+        // ============================================================
+        let promocao = data.find(p => p.id === promotionId);
+        
+        if (promocao) {
+            log(`✅ Promoção encontrada pelo ID: ${promocao.id}`, 'success');
+            log(`   Nome: ${promocao.name || 'Sem nome'}`, 'debug');
+            log(`   Status: ${promocao.status}`, 'debug');
+            log(`   Price (bruto): ${promocao.price}`, 'debug');
+            log(`   Original Price: ${promocao.original_price}`, 'debug');
+            log(`   Seller Percentage: ${promocao.seller_percentage}%`, 'debug');
+            log(`   Meli Percentage: ${promocao.meli_percentage}%`, 'debug');
+            
+            // Extrair o preço final
+            let precoFinal = 0;
+            let precoOriginal = 0;
+            let percentual = 0;
+            
+            // O preço final da promoção é o campo 'price'
+            // A API retorna em centavos (ex: 18000 = R$ 180,00)
+            const priceValue = promocao.price || 0;
+            const originalValue = promocao.original_price || 0;
+            
+            // Converter de centavos para reais
+            precoFinal = priceValue / 100;
+            precoOriginal = originalValue / 100;
+            percentual = promocao.seller_percentage || 0;
+            
+            log(`   ✅ Preço Final (convertido): R$ ${precoFinal.toFixed(2)}`, 'success');
+            log(`   ✅ Preço Original (convertido): R$ ${precoOriginal.toFixed(2)}`, 'debug');
+            
+            return {
+                price: precoFinal,
+                original_price: precoOriginal,
+                seller_percentage: percentual,
+                status: promocao.status || 'unknown'
+            };
+        }
+        
+        // ============================================================
+        // MÉTODO 2: Se não encontrou pelo ID, listar todas as promoções disponíveis
+        // ============================================================
+        log(`⚠️ Promoção ${promotionId} não encontrada pelo ID`, 'warning');
+        log(`📋 Promoções disponíveis para ${itemId}:`, 'info');
+        
+        data.forEach((p, index) => {
+            log(`   ${index + 1}. ID: ${p.id} | Nome: ${p.name || 'Sem nome'} | Status: ${p.status} | Price: ${p.price}`, 'debug');
+        });
+        
+        // ============================================================
+        // MÉTODO 3: Procurar pela promoção de destino (DEAL ou MARKETPLACE_CAMPAIGN)
+        // ============================================================
+        log(`🔍 Procurando promoção do tipo DEAL ou MARKETPLACE_CAMPAIGN...`, 'info');
+        
+        // Primeiro, tentar encontrar pelo nome (mais confiável)
+        const promocoesDeal = data.filter(p => 
+            p.type === 'DEAL' || 
+            p.type === 'MARKETPLACE_CAMPAIGN' ||
+            p.name?.includes('Dia dos Pais') ||
+            p.name?.includes('8.8') ||
+            p.name?.includes('8,8')
+        );
+        
+        if (promocoesDeal.length > 0) {
+            // Pegar a primeira promoção DEAL encontrada
+            const pDeal = promocoesDeal[0];
+            log(`✅ Promoção DEAL encontrada: ${pDeal.name} (${pDeal.id})`, 'success');
+            log(`   Status: ${pDeal.status}`, 'debug');
+            log(`   Price: ${pDeal.price}`, 'debug');
+            
+            let precoFinal = pDeal.price || 0;
+            let precoOriginal = pDeal.original_price || 0;
+            let percentual = pDeal.seller_percentage || 0;
+            
+            // Converter de centavos para reais
+            precoFinal = precoFinal / 100;
+            precoOriginal = precoOriginal / 100;
+            
+            log(`   ✅ Preço Final (DEAL): R$ ${precoFinal.toFixed(2)}`, 'success');
+            
+            return {
+                price: precoFinal,
+                original_price: precoOriginal,
+                seller_percentage: percentual,
+                status: pDeal.status || 'unknown'
+            };
+        }
+        
+        // ============================================================
+        // MÉTODO 4: Procurar qualquer promoção com status 'started' ou 'candidate'
+        // ============================================================
+        log(`🔍 Procurando qualquer promoção ativa...`, 'info');
+        
+        const promocoesAtivas = data.filter(p => 
+            p.status === 'started' || 
+            p.status === 'candidate' || 
+            p.status === 'pending'
+        );
+        
+        if (promocoesAtivas.length > 0) {
+            // Pegar a primeira promoção ativa
+            const pAtiva = promocoesAtivas[0];
+            log(`✅ Promoção ativa encontrada: ${pAtiva.name} (${pAtiva.id})`, 'success');
+            log(`   Status: ${pAtiva.status}`, 'debug');
+            log(`   Price: ${pAtiva.price}`, 'debug');
+            
+            let precoFinal = pAtiva.price || 0;
+            let precoOriginal = pAtiva.original_price || 0;
+            let percentual = pAtiva.seller_percentage || 0;
+            
+            // Converter de centavos para reais
+            precoFinal = precoFinal / 100;
+            precoOriginal = precoOriginal / 100;
+            
+            log(`   ✅ Preço Final (ativa): R$ ${precoFinal.toFixed(2)}`, 'success');
+            
+            return {
+                price: precoFinal,
+                original_price: precoOriginal,
+                seller_percentage: percentual,
+                status: pAtiva.status || 'unknown'
+            };
+        }
+        
+        // ============================================================
+        // MÉTODO 5: Fallback - usar o preço do item
+        // ============================================================
+        log(`⚠️ Nenhuma promoção encontrada, usando fallback`, 'warning');
         const urlItem = `https://api.mercadolibre.com/items/${itemId}`;
         const proxyUrlItem = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(urlItem)}&token=${token}`;
         const responseItem = await fetch(proxyUrlItem);
         
         if (responseItem.ok) {
-            const data = await responseItem.json();
+            const dataItem = await responseItem.json();
+            log(`📦 Preço do item: R$ ${dataItem.price}`, 'debug');
             return {
-                price: data.price || 0,
-                original_price: data.original_price || 0,
+                price: dataItem.price || 0,
+                original_price: dataItem.original_price || 0,
                 seller_percentage: 0,
                 status: 'fallback'
             };
@@ -1322,7 +1408,8 @@ async function buscarPrecoNaPromocaoDestino(itemId, promotionId, token) {
         return null;
         
     } catch (error) {
-        log(`⚠️ Erro ao buscar preço do item ${itemId}: ${error.message}`, 'warning');
+        log(`❌ Erro ao buscar preço do item ${itemId}: ${error.message}`, 'error');
+        console.error(error);
         return null;
     }
 }

@@ -2987,8 +2987,9 @@ const camposPorCategoria = {
         { nome: "tamanhocabeça", label: "Diâmetro Cabeça", tipo: "text", obrigatorio: true, placeholder: "Ex: M6" },
         { nome: "tamanhorosca", label: "Tamanho Rosca", tipo: "text", placeholder: "Ex: 30mm" },
         { nome: "material", label: "Material", tipo: "text", opcoes: ["Titânio", "Aço"] },
+        { nome: "tipochave", label: "Tipo de Chave", tipo: "text", placeholder: "Ex: Allen" },
         { nome: "cabeça", label: "Cabeça", tipo: "select", opcoes: ["Abaulada", "Reta", "Enflexada", "Cônica"] },
-        { nome: "cor", label: "Cor", tipo: "select", opcoes: ["Preto", "Dourado", "Rainbow", "Natural"] },
+        { nome: "cor", label: "Cor", tipo: "select", opcoes: ["Preto", "Dourado", "Rainbow", "Natural", "Verde", "Cinza", "Multicolor"] },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
     Rolamentos: [
