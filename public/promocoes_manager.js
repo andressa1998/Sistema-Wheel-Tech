@@ -109,191 +109,248 @@
     };
 
     // ============================================================
-    // CRIAÇÃO DA INTERFACE
+// CRIAÇÃO DA INTERFACE COMPLETA
+// ============================================================
+function criarInterfaceBulk() {
+    log('Criando interface...', 'debug');
+    const div = document.createElement('div');
+    div.id = 'bulkPromotionSystem';
+    div.className = 'container';
+    div.style.cssText = 'display:block; max-width:1400px; margin:0 auto; padding:0 20px;';
+
+    div.innerHTML = `
+        <header class="main-header">
+            <div class="container">
+                <div class="header-content">
+                    <h1 style="display:flex; align-items:center; gap:10px;">
+                        <img src="logo.png" alt="Wheel Tech" style="height:35px; width:auto;">
+                        <span>Gestão de Promoções em Lote</span>
+                    </h1>
+                    <div class="user-info">
+                        <div class="user-avatar" id="bulkUserAvatar">U</div>
+                        <div>
+                            <div style="font-weight:600;" id="bulkUserName">Usuário</div>
+                            <div style="font-size:12px; color:#6c757d;" id="bulkUserRole"></div>
+                            <div class="d-flex gap-2 mt-2">
+                                <button onclick="fecharGestaoPromocoesLote()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- CONFIGURAR ANÁLISE -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-cog"></i> Configurar Análise
+                </h2>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label><i class="fas fa-arrow-right"></i> Promoção de Origem *</label>
+                            <select id="bulkPromocaoOrigem" class="form-control">
+                                <option value="">Selecione...</option>
+                            </select>
+                            <small class="text-muted">Itens ativos nesta promoção serão analisados</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label><i class="fas fa-arrow-left"></i> Promoção de Destino *</label>
+                            <select id="bulkPromocaoDestino" class="form-control">
+                                <option value="">Selecione...</option>
+                            </select>
+                            <small class="text-muted">Itens serão ativados nesta promoção</small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <label><i class="fas fa-rule"></i> Regra de Filtro *</label>
+                            <select id="bulkRegraFiltro" class="form-control">
+                                <option value="todos">📋 Todos os MLBs (sem filtro)</option>
+                                <option value="destino_maior">📈 Destino > Origem (preço final maior)</option>
+                                <option value="destino_menor">📉 Destino < Origem (preço final menor)</option>
+                                <option value="destino_igual">📊 Destino = Origem (preços iguais)</option>
+                                <option value="destino_maior_igual">📈 Destino ≥ Origem (maior ou igual)</option>
+                                <option value="destino_menor_igual">📉 Destino ≤ Origem (menor ou igual)</option>
+                                <option value="diferenca_minima">💰 Diferença mínima (R$ 5,00)</option>
+                                <option value="diferenca_maxima">💰 Diferença máxima (R$ 20,00)</option>
+                            </select>
+                            <small class="text-muted">Filtra os MLBs com base na comparação de preços</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-md-12">
+                        <button class="btn btn-primary btn-block" onclick="analisarItens()" style="width:100%;">
+                            <i class="fas fa-search"></i> Analisar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MLBs BLOQUEADOS -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-ban"></i> MLBs Bloqueados
+                </h2>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-sm btn-success" onclick="adicionarMLBBloqueado()">
+                        <i class="fas fa-plus"></i> Adicionar
+                    </button>
+                    <button class="btn btn-sm btn-danger" onclick="limparMLBsBloqueados()">
+                        <i class="fas fa-trash"></i> Limpar Todos
+                    </button>
+                    <button class="btn btn-sm btn-primary" onclick="exportarMLBsBloqueados()">
+                        <i class="fas fa-file-export"></i> Exportar
+                    </button>
+                    <button class="btn btn-sm btn-info" onclick="importarMLBsBloqueados()">
+                        <i class="fas fa-file-import"></i> Importar
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label>MLB's bloqueados (separados por espaço)</label>
+                    <input type="text" id="bulkMLBsBloqueados" class="form-control" 
+                        placeholder="Ex: MLB123 MLB456 MLB789" 
+                        onchange="salvarMLBsBloqueadosManuais()">
+                    <small class="text-muted">
+                        <span class="badge badge-danger" id="contadorMLBs">0</span> MLBs bloqueados
+                    </small>
+                </div>
+                <div id="bulkMLBsBloqueadosLista" class="mt-2" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
+            </div>
+        </div>
+
+        <!-- RESULTADO DA ANÁLISE -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h2 class="card-title">
+                    <i class="fas fa-chart-bar"></i> Resultado da Análise
+                </h2>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-success" onclick="executarAtivacaoEmMassa()" id="btnAtivarMassa" disabled>
+                        <i class="fas fa-play"></i> Ativar em Massa (0)
+                    </button>
+                    <button class="btn btn-info" onclick="exportarAnaliseExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Resumo -->
+                <div id="bulkResumo" class="row mb-3 hidden">
+                    <div class="col-md-3">
+                        <div class="card text-center bg-light">
+                            <div class="card-body">
+                                <h5>Total Analisado</h5>
+                                <h3 id="bulkTotalItens">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center bg-success text-white">
+                            <div class="card-body">
+                                <h5>✅ Elegíveis</h5>
+                                <h3 id="bulkElegiveis">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center bg-danger text-white">
+                            <div class="card-body">
+                                <h5>🚫 Bloqueados</h5>
+                                <h3 id="bulkBloqueados">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center bg-warning">
+                            <div class="card-body">
+                                <h5>⏳ Já Ativos</h5>
+                                <h3 id="bulkJaAtivos">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabela -->
+                <div id="bulkTabelaContainer" class="table-responsive hidden">
+                    <table class="table table-striped table-hover" id="bulkItensTable">
+                        <thead>
+                            <tr>
+                                <th style="width:40px;"><input type="checkbox" id="bulkSelectAll" onchange="selecionarTodosItens()"></th>
+                                <th>MLB</th>
+                                <th style="text-align:right;">Preço Final Origem</th>
+                                <th style="text-align:center;">% Origem</th>
+                                <th style="text-align:right;">Preço Final Destino</th>
+                                <th style="text-align:center;">% Destino</th>
+                                <th style="text-align:center;">Diferença</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bulkItensBody">
+                            <tr>
+                                <td colspan="8" class="text-center py-4 text-muted">
+                                    <i class="fas fa-info-circle"></i> Selecione as promoções e clique em "Analisar"
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    `;
+
+    log('Interface criada', 'success');
+    return div;
+}
+
     // ============================================================
-    function criarInterfaceBulk() {
-        log('Criando interface...', 'debug');
-        const div = document.createElement('div');
-        div.id = 'bulkPromotionSystem';
-        div.className = 'container';
-        div.style.cssText = 'display:block; max-width:1400px; margin:0 auto; padding:0 20px;';
-
-        div.innerHTML = `
-            <header class="main-header">
-                <div class="container">
-                    <div class="header-content">
-                        <h1 style="display:flex; align-items:center; gap:10px;">
-                            <img src="logo.png" alt="Wheel Tech" style="height:35px; width:auto;">
-                            <span>Gestão de Promoções em Lote</span>
-                        </h1>
-                        <div class="user-info">
-                            <div class="user-avatar" id="bulkUserAvatar">U</div>
-                            <div>
-                                <div style="font-weight:600;" id="bulkUserName">Usuário</div>
-                                <div style="font-size:12px; color:#6c757d;" id="bulkUserRole"></div>
-                                <div class="d-flex gap-2 mt-2">
-                                    <button onclick="fecharGestaoPromocoesLote()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                    <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-            <!-- CONFIGURAR REGRAS -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h2 class="card-title">
-                        <i class="fas fa-cog"></i> Configurar Análise
-                    </h2>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-5">
-                            <div class="form-group">
-                                <label><i class="fas fa-arrow-right"></i> Promoção de Origem *</label>
-                                <select id="bulkPromocaoOrigem" class="form-control">
-                                    <option value="">Selecione...</option>
-                                </select>
-                                <small class="text-muted">Itens ativos nesta promoção serão analisados</small>
-                            </div>
-                        </div>
-                        <div class="col-md-5">
-                            <div class="form-group">
-                                <label><i class="fas fa-arrow-left"></i> Promoção de Destino *</label>
-                                <select id="bulkPromocaoDestino" class="form-control">
-                                    <option value="">Selecione...</option>
-                                </select>
-                                <small class="text-muted">Itens serão ativados nesta promoção</small>
-                            </div>
-                        </div>
-                        <div class="col-md-2" style="display:flex; align-items:flex-end;">
-                            <button class="btn btn-primary btn-block" onclick="analisarItens()" style="width:100%;">
-                                <i class="fas fa-search"></i> Analisar
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- MLBs BLOQUEADOS -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h2 class="card-title">
-                        <i class="fas fa-ban"></i> MLBs Bloqueados
-                    </h2>
-                    <div class="d-flex flex-wrap gap-2">
-                        <button class="btn btn-sm btn-success" onclick="adicionarMLBBloqueado()">
-                            <i class="fas fa-plus"></i> Adicionar
-                        </button>
-                        <button class="btn btn-sm btn-danger" onclick="limparMLBsBloqueados()">
-                            <i class="fas fa-trash"></i> Limpar Todos
-                        </button>
-                        <button class="btn btn-sm btn-primary" onclick="exportarMLBsBloqueados()">
-                            <i class="fas fa-file-export"></i> Exportar
-                        </button>
-                        <button class="btn btn-sm btn-info" onclick="importarMLBsBloqueados()">
-                            <i class="fas fa-file-import"></i> Importar
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="form-group">
-                        <label>MLB's bloqueados (separados por espaço)</label>
-                        <input type="text" id="bulkMLBsBloqueados" class="form-control" 
-                            placeholder="Ex: MLB123 MLB456 MLB789" 
-                            onchange="salvarMLBsBloqueadosManuais()">
-                        <small class="text-muted">
-                            <span class="badge badge-danger" id="contadorMLBs">0</span> MLBs bloqueados
-                        </small>
-                    </div>
-                    <div id="bulkMLBsBloqueadosLista" class="mt-2" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
-                </div>
-            </div>
-
-            <!-- RESULTADO DA ANÁLISE -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h2 class="card-title">
-                        <i class="fas fa-chart-bar"></i> Resultado da Análise
-                    </h2>
-                    <div class="d-flex flex-wrap gap-2">
-                        <button class="btn btn-success" onclick="executarAtivacaoEmMassa()" id="btnAtivarMassa" disabled>
-                            <i class="fas fa-play"></i> Ativar em Massa (0)
-                        </button>
-                        <button class="btn btn-info" onclick="exportarAnaliseExcel()">
-                            <i class="fas fa-file-excel"></i> Exportar
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <!-- Resumo -->
-                    <div id="bulkResumo" class="row mb-3 hidden">
-                        <div class="col-md-3">
-                            <div class="card text-center bg-light">
-                                <div class="card-body">
-                                    <h5>Total Analisado</h5>
-                                    <h3 id="bulkTotalItens">0</h3>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card text-center bg-success text-white">
-                                <div class="card-body">
-                                    <h5>✅ Elegíveis</h5>
-                                    <h3 id="bulkElegiveis">0</h3>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card text-center bg-danger text-white">
-                                <div class="card-body">
-                                    <h5>🚫 Bloqueados</h5>
-                                    <h3 id="bulkBloqueados">0</h3>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card text-center bg-warning">
-                                <div class="card-body">
-                                    <h5>⏳ Já Ativos</h5>
-                                    <h3 id="bulkJaAtivos">0</h3>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Tabela -->
-                    <div id="bulkTabelaContainer" class="table-responsive hidden">
-                        <table class="table table-striped table-hover" id="bulkItensTable">
-                            <thead>
-                                <tr>
-                                    <th style="width:40px;"><input type="checkbox" id="bulkSelectAll" onchange="selecionarTodosItens()"></th>
-                                    <th>MLB</th>
-                                    <th style="text-align:right;">Preço Final Origem</th>
-                                    <th style="text-align:center;">% Origem</th>
-                                    <th style="text-align:right;">Preço Final Destino</th>
-                                    <th style="text-align:center;">% Destino</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="bulkItensBody">
-                                <tr>
-                                    <td colspan="7" class="text-center py-4 text-muted">
-                                        <i class="fas fa-info-circle"></i> Selecione as promoções e clique em "Analisar"
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        log('Interface criada', 'success');
-        return div;
+// FUNÇÃO: APLICAR REGRA DE FILTRO
+// ============================================================
+function aplicarRegraFiltro(item, regra) {
+    const precoOrigem = item.precoOrigem || 0;
+    const precoDestino = item.precoDestino || 0;
+    const diferenca = precoDestino - precoOrigem;
+    
+    switch(regra) {
+        case 'todos':
+            return true;
+            
+        case 'destino_maior':
+            return precoDestino > precoOrigem;
+            
+        case 'destino_menor':
+            return precoDestino < precoOrigem;
+            
+        case 'destino_igual':
+            return Math.abs(precoDestino - precoOrigem) < 0.01;
+            
+        case 'destino_maior_igual':
+            return precoDestino >= precoOrigem;
+            
+        case 'destino_menor_igual':
+            return precoDestino <= precoOrigem;
+            
+        case 'diferenca_minima':
+            return diferenca >= 5.00;
+            
+        case 'diferenca_maxima':
+            return diferenca <= 20.00;
+            
+        default:
+            return true;
     }
+}
 
     // ============================================================
     // FUNÇÃO: CARREGAR PROMOÇÕES
@@ -382,6 +439,7 @@
 window.analisarItens = async function() {
     const origemId = document.getElementById('bulkPromocaoOrigem')?.value;
     const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
+    const regra = document.getElementById('bulkRegraFiltro')?.value || 'todos';
     
     if (!origemId || !destinoId) {
         showToast('⚠️ Selecione a promoção de origem e destino', 'warning');
@@ -407,13 +465,28 @@ window.analisarItens = async function() {
         return;
     }
 
-    mostrarBarraProgresso('Buscando interseção...', 'Carregando dados...');
+    // Nome da regra para exibição
+    const regraLabels = {
+        'todos': 'Todos os MLBs',
+        'destino_maior': 'Destino > Origem',
+        'destino_menor': 'Destino < Origem',
+        'destino_igual': 'Destino = Origem',
+        'destino_maior_igual': 'Destino ≥ Origem',
+        'destino_menor_igual': 'Destino ≤ Origem',
+        'diferenca_minima': 'Diferença ≥ R$ 5,00',
+        'diferenca_maxima': 'Diferença ≤ R$ 20,00'
+    };
+    
+    const nomeRegra = regraLabels[regra] || 'Todos os MLBs';
+    log(`📋 Regra selecionada: ${nomeRegra}`, 'info');
+
+    mostrarBarraProgresso('Buscando interseção...', `Regra: ${nomeRegra}`);
 
     try {
         // ============================================================
         // PASSO 1: Buscar ATIVOS na origem (status=started)
         // ============================================================
-        atualizarProgresso(20, 'Buscando ativos na origem...', `Promoção: ${promoOrigem.name}`, '20%');
+        atualizarProgresso(15, 'Buscando ativos na origem...', `Promoção: ${promoOrigem.name}`, '15%');
         
         const ativosOrigem = await buscarItensPromocaoPorStatus(
             origemId, 
@@ -428,180 +501,220 @@ window.analisarItens = async function() {
             return;
         }
         
-        const setAtivosOrigem = new Set(ativosOrigem.map(item => item.id));
-        log(`📊 ${setAtivosOrigem.size} MLBs ativos na origem`, 'info');
+        const mapAtivosOrigem = new Map();
+        ativosOrigem.forEach(item => {
+            mapAtivosOrigem.set(item.id, {
+                price: item.price || 0,
+                seller_percentage: item.seller_percentage || 0,
+                status: item.status || 'started'
+            });
+        });
+        
+        log(`📊 ${mapAtivosOrigem.size} MLBs ativos na origem`, 'info');
         
         // ============================================================
-        // PASSO 2: Buscar CANDIDATOS no destino (status=candidate)
+        // PASSO 2: Buscar TODOS os itens do destino
         // ============================================================
-        atualizarProgresso(40, 'Buscando candidatos no destino...', `Promoção: ${promoDestino.name}`, '40%');
+        atualizarProgresso(35, 'Buscando todos os itens do destino...', `Promoção: ${promoDestino.name}`, '35%');
         
-        const candidatosDestino = await buscarItensPromocaoPorStatus(
+        const todosItensDestino = await buscarTodosItensPromocao(
             destinoId, 
             promoDestino.type, 
-            'candidate', 
             tokenData.access_token
         );
         
-        const setCandidatosDestino = new Set(candidatosDestino.map(item => item.id));
-        log(`📊 ${setCandidatosDestino.size} MLBs candidatos no destino`, 'info');
-        
-        // ============================================================
-        // PASSO 3: Buscar PROGRAMADOS no destino (status=pending)
-        // ============================================================
-        atualizarProgresso(60, 'Buscando programados no destino...', `Promoção: ${promoDestino.name}`, '60%');
-        
-        const programadosDestino = await buscarItensPromocaoPorStatus(
-            destinoId, 
-            promoDestino.type, 
-            'pending', 
-            tokenData.access_token
-        );
-        
-        const setProgramadosDestino = new Set(programadosDestino.map(item => item.id));
-        log(`📊 ${setProgramadosDestino.size} MLBs programados no destino`, 'info');
-        
-        // ============================================================
-        // PASSO 4: Unir candidatos + programados
-        // ============================================================
-        const setDestino = new Set([...setCandidatosDestino, ...setProgramadosDestino]);
-        log(`📊 Total no destino (candidatos + programados): ${setDestino.size}`, 'info');
-        
-        // Criar mapa com os dados de destino
         const mapDestino = new Map();
-        for (const item of candidatosDestino) {
-            mapDestino.set(item.id, { ...item, tipo: 'candidato' });
-        }
-        for (const item of programadosDestino) {
-            if (mapDestino.has(item.id)) {
-                // Se já existe como candidato, mantém (candidato tem prioridade)
-                continue;
-            }
-            mapDestino.set(item.id, { ...item, tipo: 'programado' });
+        const itensStarted = [];
+        const itensCandidate = [];
+        const itensPending = [];
+        
+        for (const item of todosItensDestino) {
+            const mlb = item.id;
+            const status = item.status || 'unknown';
+            
+            mapDestino.set(mlb, {
+                id: mlb,
+                status: status,
+                price: item.price || 0,
+                original_price: item.original_price || 0,
+                seller_percentage: item.seller_percentage || 0
+            });
+            
+            if (status === 'started') itensStarted.push(item);
+            else if (status === 'candidate') itensCandidate.push(item);
+            else if (status === 'pending') itensPending.push(item);
         }
         
-        // ============================================================
-        // PASSO 5: Encontrar a INTERSEÇÃO
-        // ============================================================
-        atualizarProgresso(80, 'Encontrando interseção...', 'Processando...', '80%');
+        log(`📊 Destino - Ativos (started): ${itensStarted.length}`, 'info');
+        log(`📊 Destino - Candidatos (candidate): ${itensCandidate.length}`, 'info');
+        log(`📊 Destino - Programados (pending): ${itensPending.length}`, 'info');
+        log(`📊 Total de itens únicos no destino: ${mapDestino.size}`, 'info');
         
-        const interseccao = [];
-        let candidatosCount = 0;
-        let programadosCount = 0;
+        // ============================================================
+        // PASSO 3: Encontrar a INTERSEÇÃO
+        // ============================================================
+        atualizarProgresso(60, 'Encontrando interseção...', 'Processando...', '60%');
+        
+        const interseccaoBruta = [];
         let totalProcessados = 0;
         const totalAtivos = ativosOrigem.length;
         
-        for (const item of ativosOrigem) {
+        let countStarted = 0;
+        let countCandidate = 0;
+        let countPending = 0;
+        let countDesconhecido = 0;
+        
+        for (const [mlb, dadosOrigem] of mapAtivosOrigem) {
             totalProcessados++;
             
-            if (totalProcessados % 10 === 0 || totalProcessados === totalAtivos) {
-                const pct = 80 + (totalProcessados / totalAtivos) * 15;
+            if (totalProcessados % 50 === 0 || totalProcessados === totalAtivos) {
+                const pct = 60 + (totalProcessados / totalAtivos) * 30;
                 atualizarProgresso(
-                    Math.min(pct, 95),
+                    Math.min(pct, 90),
                     `Processando ${totalProcessados}/${totalAtivos}`,
-                    `${interseccao.length} encontrados`,
+                    `${interseccaoBruta.length} encontrados`,
                     `${Math.round(pct)}%`
                 );
             }
             
-            const mlb = item.id;
-            
-            // Verificar se está no destino (candidato ou programado)
-            if (!setDestino.has(mlb)) {
-                continue;
-            }
+            if (!mapDestino.has(mlb)) continue;
             
             const dadosDestino = mapDestino.get(mlb);
             if (!dadosDestino) continue;
             
-            // Buscar preço detalhado
-            const precoDetalhado = await buscarPrecoNaPromocaoDestino(mlb, destinoId, tokenData.access_token);
+            const statusDestino = dadosDestino.status || 'unknown';
+            
+            let statusLabel = '';
+            let statusClass = '';
+            
+            switch(statusDestino) {
+                case 'started':
+                    statusLabel = '✅ Ativo';
+                    statusClass = 'text-success';
+                    countStarted++;
+                    break;
+                case 'candidate':
+                    statusLabel = '📌 Candidato';
+                    statusClass = 'text-primary';
+                    countCandidate++;
+                    break;
+                case 'pending':
+                    statusLabel = '⏳ Programado';
+                    statusClass = 'text-warning';
+                    countPending++;
+                    break;
+                default:
+                    statusLabel = `❓ ${statusDestino}`;
+                    statusClass = 'text-muted';
+                    countDesconhecido++;
+                    break;
+            }
             
             let precoDestino = dadosDestino.price || 0;
             let precoOriginalDestino = dadosDestino.original_price || 0;
             let percentDestino = dadosDestino.seller_percentage || 0;
-            let statusDestino = dadosDestino.status || 'unknown';
-            let tipo = dadosDestino.tipo || 'candidato';
             
-            // Se o preço detalhado tiver informações melhores
-            if (precoDetalhado) {
-                if (precoDetalhado.price > 0) precoDestino = precoDetalhado.price;
-                if (precoDetalhado.original_price > 0) precoOriginalDestino = precoDetalhado.original_price;
-                if (precoDetalhado.seller_percentage > 0) percentDestino = precoDetalhado.seller_percentage;
-                if (precoDetalhado.status) statusDestino = precoDetalhado.status;
+            try {
+            const precoDetalhado = await buscarPrecoNaPromocaoDestino(mlb, destinoId, tokenData.access_token);
+            if (precoDetalhado && precoDetalhado.price > 0) {
+                precoDestino = precoDetalhado.price;
+                precoOriginalDestino = precoDetalhado.original_price || 0;
+                percentDestino = precoDetalhado.seller_percentage || 0;
+                log(`✅ Preço detalhado para ${mlb}: R$ ${precoDestino.toFixed(2)} (${percentDestino}%)`, 'debug');
             }
+                } catch (err) {
+                    log(`⚠️ Erro ao buscar preço detalhado para ${mlb}: ${err.message}`, 'warning');
+                }
             
-            // Contar
-            if (tipo === 'candidato') candidatosCount++;
-            else if (tipo === 'programado') programadosCount++;
-            
-            // Se ainda não tem preço, tentar usar o preço original com desconto padrão
-            if (precoDestino === 0 && precoOriginalDestino > 0) {
-                precoDestino = precoOriginalDestino * 0.9;
-            }
-            
-            const statusLabel = tipo === 'candidato' ? '📌 Candidato' : '⏳ Programada';
-            
-            interseccao.push({
+            const item = {
                 mlb: mlb,
-                precoOrigem: item.price || 0,
+                precoOrigem: dadosOrigem.price || 0,
                 precoDestino: precoDestino,
                 precoOriginalDestino: precoOriginalDestino,
-                percentOrigem: item.seller_percentage || 0,
+                percentOrigem: dadosOrigem.seller_percentage || 0,
                 percentDestino: percentDestino,
-                statusOrigem: item.status || 'started',
+                statusOrigem: dadosOrigem.status || 'started',
                 statusDestino: statusDestino,
                 statusLabel: statusLabel,
-                tipo: tipo
-            });
+                statusClass: statusClass,
+                tipo: statusDestino,
+                diferenca: precoDestino - (dadosOrigem.price || 0)
+            };
+            
+            interseccaoBruta.push(item);
         }
         
         // ============================================================
-        // PASSO 6: Mostrar resultado
+        // PASSO 4: APLICAR REGRA DE FILTRO
+        // ============================================================
+        atualizarProgresso(92, 'Aplicando regra de filtro...', nomeRegra, '92%');
+        
+        const interseccaoFiltrada = interseccaoBruta.filter(item => {
+            return aplicarRegraFiltro(item, regra);
+        });
+        
+        log(`📊 Antes do filtro: ${interseccaoBruta.length} itens`, 'info');
+        log(`📊 Depois do filtro (${nomeRegra}): ${interseccaoFiltrada.length} itens`, 'info');
+        
+        // ============================================================
+        // PASSO 5: Mostrar resultado
         // ============================================================
         log('═══════════════════════════════════════════════════════════', 'info');
         log('📊 RESULTADO DA ANÁLISE:', 'info');
         log(`   📦 Ativos na ORIGEM: ${ativosOrigem.length}`, 'info');
-        log(`   📦 Candidatos no DESTINO: ${setCandidatosDestino.size}`, 'info');
-        log(`   📦 Programados no DESTINO: ${setProgramadosDestino.size}`, 'info');
-        log(`   🔄 INTERSEÇÃO TOTAL: ${interseccao.length}`, 'success');
-        log(`   📌 Candidatos: ${candidatosCount}`, 'info');
-        log(`   ⏳ Programados: ${programadosCount}`, 'info');
+        log(`   📦 Total no DESTINO: ${mapDestino.size}`, 'info');
+        log(`   📦 Ativos (started): ${itensStarted.length}`, 'info');
+        log(`   📦 Candidatos (candidate): ${itensCandidate.length}`, 'info');
+        log(`   📦 Programados (pending): ${itensPending.length}`, 'info');
+        log(`   🔄 INTERSEÇÃO TOTAL: ${interseccaoBruta.length}`, 'info');
+        log(`   🎯 APÓS FILTRO (${nomeRegra}): ${interseccaoFiltrada.length}`, 'success');
+        log(`   ✅ Ativos na interseção: ${countStarted}`, 'success');
+        log(`   📌 Candidatos na interseção: ${countCandidate}`, 'info');
+        log(`   ⏳ Programados na interseção: ${countPending}`, 'info');
         log('═══════════════════════════════════════════════════════════', 'info');
         
-        // Log dos primeiros itens
-        if (interseccao.length > 0) {
-            log(`📝 Primeiros 5 itens da interseção:`, 'debug');
-            interseccao.slice(0, 5).forEach(item => {
-                log(`  - ${item.mlb}: Origem R$ ${item.precoOrigem.toFixed(2)} → Destino R$ ${item.precoDestino.toFixed(2)} (${item.statusLabel})`, 'debug');
-            });
-        }
+        atualizarProgresso(100, '✅ Concluído!', `${interseccaoFiltrada.length} MLBs após filtro`, '✅');
+
+        // ============================================================
+        // PASSO 6: Armazenar os itens filtrados globalmente
+        // ============================================================
+        itensAnalisados = interseccaoFiltrada;
+        log(`📦 ${itensAnalisados.length} itens armazenados para ativação`, 'info');
         
-        atualizarProgresso(100, '✅ Concluído!', `${interseccao.length} MLBs na interseção`, '✅');
+        // Renderizar tabela com os itens filtrados
+        renderizarTabelaInterseccao(interseccaoFiltrada);
+
+        // Atualizar resumo
+        const totalElegiveis = interseccaoFiltrada.filter(i => i.tipo === 'candidate' || i.tipo === 'pending').length;
+        const totalBloqueados = interseccaoFiltrada.filter(i => i.tipo === 'unknown' || !i.tipo).length;
         
-        // Renderizar tabela
-        renderizarTabelaInterseccao(interseccao);
-        
-        document.getElementById('bulkTotalItens').textContent = interseccao.length;
-        document.getElementById('bulkElegiveis').textContent = interseccao.length;
-        document.getElementById('bulkBloqueados').textContent = 0;
-        document.getElementById('bulkJaAtivos').textContent = 0;
+        document.getElementById('bulkTotalItens').textContent = interseccaoFiltrada.length;
+        document.getElementById('bulkElegiveis').textContent = interseccaoFiltrada.filter(i => i.tipo !== 'started').length;
+        document.getElementById('bulkBloqueados').textContent = interseccaoFiltrada.filter(i => i.tipo === 'unknown' || !i.tipo).length;
+        document.getElementById('bulkJaAtivos').textContent = interseccaoFiltrada.filter(i => i.tipo === 'started').length;
         
         document.getElementById('bulkResumo').classList.remove('hidden');
         document.getElementById('bulkTabelaContainer').classList.remove('hidden');
-        
+
+        // Atualizar botão de ativação
         const btnAtivar = document.getElementById('btnAtivarMassa');
         if (btnAtivar) {
-            btnAtivar.disabled = interseccao.length === 0;
-            btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar Todos (${interseccao.length})`;
+            const selecionaveis = interseccaoFiltrada.filter(item => 
+                item.tipo !== 'started' && !mlbsBloqueados.includes(item.mlb)
+            ).length;
+            btnAtivar.disabled = selecionaveis === 0;
+            btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${selecionaveis})`;
         }
-        
+
         setTimeout(fecharBarraProgresso, 1500);
         
-        if (interseccao.length > 0) {
-            showToast(`✅ ${interseccao.length} MLBs (${candidatosCount} candidatos, ${programadosCount} programados)`, 'success');
+        if (interseccaoFiltrada.length > 0) {
+            const ativos = interseccaoFiltrada.filter(i => i.tipo === 'started').length;
+            const candidatos = interseccaoFiltrada.filter(i => i.tipo === 'candidate').length;
+            const programados = interseccaoFiltrada.filter(i => i.tipo === 'pending').length;
+            showToast(`✅ ${interseccaoFiltrada.length} MLBs (${ativos} ativos, ${candidatos} candidatos, ${programados} programados) - Regra: ${nomeRegra}`, 'success');
         } else {
-            showToast('⚠️ Nenhum MLB encontrado na interseção', 'warning');
+            showToast(`⚠️ Nenhum MLB encontrado com a regra: ${nomeRegra}`, 'warning');
         }
 
     } catch (error) {
@@ -620,7 +733,7 @@ function renderizarTabelaInterseccao(itens) {
     if (!tbody) return;
     
     if (!itens || itens.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">Nenhum MLB encontrado na interseção</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">Nenhum MLB encontrado com a regra selecionada</td></tr>`;
         return;
     }
     
@@ -633,19 +746,46 @@ function renderizarTabelaInterseccao(itens) {
         let statusColor = '#6c757d';
         let statusText = item.statusLabel || 'Desconhecido';
         
-        if (item.tipo === 'programado') {
-            bgColor = '#fff3cd';
-            statusColor = '#856404';
-        } else if (item.tipo === 'candidato') {
-            bgColor = '#d4edda';
-            statusColor = '#155724';
+        switch(item.tipo) {
+            case 'started':
+                bgColor = '#d4edda';
+                statusColor = '#155724';
+                break;
+            case 'pending':
+                bgColor = '#fff3cd';
+                statusColor = '#856404';
+                break;
+            case 'candidate':
+                bgColor = '#d1ecf1';
+                statusColor = '#0c5460';
+                break;
+            default:
+                bgColor = '#f8d7da';
+                statusColor = '#721c24';
+                break;
         }
         
         tr.style.backgroundColor = bgColor;
         
+        const isBloqueado = mlbsBloqueados.includes(item.mlb);
+        if (isBloqueado) {
+            tr.style.opacity = '0.6';
+        }
+        
+        const podeSelecionar = !isBloqueado && item.tipo !== 'started';
+        
+        // Calcular diferença
+        const diferenca = (item.precoDestino || 0) - (item.precoOrigem || 0);
+        const diffColor = diferenca > 0 ? '#28a745' : (diferenca < 0 ? '#dc3545' : '#6c757d');
+        const diffLabel = diferenca > 0 ? `+R$ ${diferenca.toFixed(2)}` : (diferenca < 0 ? `-R$ ${Math.abs(diferenca).toFixed(2)}` : 'R$ 0,00');
+        
         tr.innerHTML = `
             <td style="text-align:center;">
-                <input type="checkbox" class="bulk-item-checkbox" data-index="${index}" checked>
+                <input type="checkbox" class="bulk-item-checkbox" data-index="${index}" 
+                    ${podeSelecionar ? 'checked' : 'disabled'} 
+                    ${!podeSelecionar ? 'style="opacity:0.5;"' : ''}
+                    onchange="atualizarBotaoAtivacao()">
+                ${isBloqueado ? ' <i class="fas fa-ban text-danger" title="MLB bloqueado"></i>' : ''}
             </td>
             <td><strong>${item.mlb || 'N/A'}</strong></td>
             <td style="text-align:right; font-weight:600; color:#007bff;">
@@ -656,27 +796,33 @@ function renderizarTabelaInterseccao(itens) {
                 R$ ${(item.precoDestino || 0).toFixed(2)}
             </td>
             <td style="text-align:center;">${(item.percentDestino || 0)}%</td>
+            <td style="text-align:center; font-size:12px; font-weight:600; color:${diffColor};">
+                ${diffLabel}
+            </td>
             <td style="text-align:center; font-size:12px; font-weight:600; color:${statusColor};">
                 ${statusText}
-                <br><small style="color:#6c757d;">✅ Ativo na origem</small>
+                ${item.tipo === 'started' ? '<br><small style="color:#28a745;">✅ Já ativo</small>' : ''}
+                ${item.tipo === 'candidate' ? '<br><small style="color:#0c5460;">📌 Pode ativar</small>' : ''}
+                ${item.tipo === 'pending' ? '<br><small style="color:#856404;">⏳ Programado</small>' : ''}
             </td>
         `;
         
         tbody.appendChild(tr);
     });
     
-    document.querySelectorAll('.bulk-item-checkbox').forEach(cb => cb.checked = true);
+    document.querySelectorAll('.bulk-item-checkbox:not(:disabled)').forEach(cb => cb.checked = true);
     atualizarBotaoAtivacao();
 }
 
 // ============================================================
-// FUNÇÃO: BUSCAR TODOS OS ITENS DA PROMOÇÃO (SEM FILTRO DE STATUS)
+// FUNÇÃO: BUSCAR TODOS OS ITENS DA PROMOÇÃO (COM CORREÇÃO DE PREÇO)
 // ============================================================
 async function buscarTodosItensPromocao(promotionId, promotionType, token) {
     log(`🔄 Buscando TODOS os itens da promoção ${promotionId}...`, 'info');
     const itens = [];
     let searchAfter = null;
     let hasMore = true;
+    let pagina = 1;
     
     while (hasMore) {
         try {
@@ -707,11 +853,19 @@ async function buscarTodosItensPromocao(promotionId, promotionType, token) {
                 for (const item of results) {
                     const itemId = item.id || item.item_id;
                     if (itemId) {
+                        // CORREÇÃO: Verificar se o preço está em centavos
+                        let price = item.price || 0;
+                        let originalPrice = item.original_price || 0;
+                        
+                        // Se o preço for > 1000, provavelmente está em centavos
+                        if (price > 1000) price = price / 100;
+                        if (originalPrice > 1000) originalPrice = originalPrice / 100;
+                        
                         itens.push({
                             id: itemId,
                             status: item.status || 'unknown',
-                            price: item.price || 0,
-                            original_price: item.original_price || 0,
+                            price: price,
+                            original_price: originalPrice,
                             seller_percentage: item.seller_percentage || 0
                         });
                     }
@@ -720,6 +874,7 @@ async function buscarTodosItensPromocao(promotionId, promotionType, token) {
                 const paging = data.paging || {};
                 if (paging.searchAfter) {
                     searchAfter = paging.searchAfter;
+                    pagina++;
                 } else {
                     hasMore = false;
                 }
@@ -740,6 +895,14 @@ async function buscarTodosItensPromocao(promotionId, promotionType, token) {
     
     log(`✅ ${itens.length} itens carregados`, 'success');
     log(`📊 Distribuição por status: ${JSON.stringify(statusCount)}`, 'info');
+    
+    // Mostrar alguns exemplos de preços
+    if (itens.length > 0) {
+        log(`📝 Exemplos de preços (primeiros 3):`, 'debug');
+        itens.slice(0, 3).forEach(item => {
+            log(`   ${item.id}: R$ ${item.price.toFixed(2)} (${item.status})`, 'debug');
+        });
+    }
     
     return itens;
 }
@@ -1032,46 +1195,120 @@ async function buscarCandidatosPromocao(candidateId, token) {
 }
 
 // ============================================================
-// FUNÇÃO: BUSCAR PREÇO NA PROMOÇÃO DESTINO
+// FUNÇÃO: BUSCAR PREÇO NA PROMOÇÃO DESTINO (CORRIGIDA)
 // ============================================================
 async function buscarPrecoNaPromocaoDestino(itemId, promotionId, token) {
     try {
-        // Primeiro tenta pela API de promoções do item
+        // Buscar todas as promoções do item
         const url = `https://api.mercadolibre.com/seller-promotions/items/${itemId}?app_version=v2`;
         const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
         const response = await fetch(proxyUrl);
         
         if (response.ok) {
             const data = await response.json();
-            // Procurar a promoção específica
+            
+            // Procurar a promoção específica pelo ID
             const promocao = data.find(p => p.id === promotionId);
+            
             if (promocao) {
-                // Se o status é 'started' ou 'pending' ou 'candidate', pega o price
-                let preco = promocao.price || 0;
+                log(`🔍 Promoção encontrada para ${itemId}:`, 'debug');
+                log(`   ID: ${promocao.id}`, 'debug');
+                log(`   Status: ${promocao.status}`, 'debug');
+                log(`   Price: ${promocao.price}`, 'debug');
+                log(`   Original Price: ${promocao.original_price}`, 'debug');
+                log(`   Seller Percentage: ${promocao.seller_percentage}%`, 'debug');
                 
-                // Se price for 0, tenta suggested_discounted_price
-                if (preco === 0 && promocao.suggested_discounted_price) {
-                    preco = promocao.suggested_discounted_price;
+                // ============================================================
+                // CORREÇÃO: O preço final da promoção é o campo 'price'
+                // ============================================================
+                let precoFinal = 0;
+                let precoOriginal = 0;
+                let percentual = 0;
+                
+                // Verificar se o price está em centavos ou reais
+                const priceValue = promocao.price || 0;
+                const originalValue = promocao.original_price || 0;
+                
+                // IMPORTANTE: A API do ML retorna o preço em centavos
+                // Se for > 1000, está em centavos
+                if (priceValue > 1000) {
+                    precoFinal = priceValue / 100;
+                } else {
+                    precoFinal = priceValue;
                 }
                 
-                // Se ainda for 0, tenta min_discounted_price
-                if (preco === 0 && promocao.min_discounted_price) {
-                    preco = promocao.min_discounted_price;
+                if (originalValue > 1000) {
+                    precoOriginal = originalValue / 100;
+                } else {
+                    precoOriginal = originalValue;
                 }
+                
+                // Se o preço final for 0, tentar calcular a partir do original com desconto
+                if (precoFinal === 0 && precoOriginal > 0 && promocao.seller_percentage > 0) {
+                    precoFinal = precoOriginal * (1 - (promocao.seller_percentage / 100));
+                }
+                
+                // Se ainda for 0, tentar usar o price direto
+                if (precoFinal === 0 && priceValue > 0) {
+                    precoFinal = priceValue;
+                }
+                
+                // Percentual do vendedor
+                percentual = promocao.seller_percentage || 0;
+                
+                log(`   ✅ Preço Final: R$ ${precoFinal.toFixed(2)}`, 'debug');
+                log(`   ✅ Preço Original: R$ ${precoOriginal.toFixed(2)}`, 'debug');
+                log(`   ✅ Percentual: ${percentual}%`, 'debug');
                 
                 return {
-                    price: preco,
-                    original_price: promocao.original_price || 0,
-                    seller_percentage: promocao.seller_percentage || 0,
+                    price: precoFinal,
+                    original_price: precoOriginal,
+                    seller_percentage: percentual,
                     status: promocao.status || 'unknown'
                 };
             }
+            
+            // Se não encontrou a promoção específica, procurar pelo nome
+            // (fallback para quando o ID não corresponde)
+            log(`⚠️ Promoção ${promotionId} não encontrada diretamente, procurando por nome...`, 'warning');
+            
+            // Procurar promoções que contenham "Dia dos Pais" ou "8.8"
+            for (const p of data) {
+                const nome = p.name || '';
+                if (nome.includes('Dia dos Pais') || nome.includes('8.8') || nome.includes('8,8')) {
+                    log(`   🔍 Encontrada promoção similar: ${nome}`, 'debug');
+                    log(`   ID: ${p.id}`, 'debug');
+                    log(`   Status: ${p.status}`, 'debug');
+                    log(`   Price: ${p.price}`, 'debug');
+                    log(`   Original Price: ${p.original_price}`, 'debug');
+                    log(`   Seller Percentage: ${p.seller_percentage}%`, 'debug');
+                    
+                    let precoFinal = p.price || 0;
+                    let precoOriginal = p.original_price || 0;
+                    
+                    if (precoFinal > 1000) precoFinal = precoFinal / 100;
+                    if (precoOriginal > 1000) precoOriginal = precoOriginal / 100;
+                    
+                    if (precoFinal === 0 && precoOriginal > 0 && p.seller_percentage > 0) {
+                        precoFinal = precoOriginal * (1 - (p.seller_percentage / 100));
+                    }
+                    
+                    return {
+                        price: precoFinal,
+                        original_price: precoOriginal,
+                        seller_percentage: p.seller_percentage || 0,
+                        status: p.status || 'unknown'
+                    };
+                }
+            }
         }
         
-        // Fallback: tentar buscar o preço do item normalmente
+        // Fallback: tentar buscar o preço do item
+        log(`⚠️ Fallback: buscando preço do item ${itemId}`, 'warning');
         const urlItem = `https://api.mercadolibre.com/items/${itemId}`;
         const proxyUrlItem = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(urlItem)}&token=${token}`;
         const responseItem = await fetch(proxyUrlItem);
+        
         if (responseItem.ok) {
             const data = await responseItem.json();
             return {
@@ -1083,6 +1320,7 @@ async function buscarPrecoNaPromocaoDestino(itemId, promotionId, token) {
         }
         
         return null;
+        
     } catch (error) {
         log(`⚠️ Erro ao buscar preço do item ${itemId}: ${error.message}`, 'warning');
         return null;
@@ -1265,21 +1503,30 @@ function renderizarTabelaAnalise(itens) {
     atualizarBotaoAtivacao();
 }
 
-    // ============================================================
+// ============================================================
 // FUNÇÃO: ATUALIZAR BOTÃO DE ATIVAÇÃO
 // ============================================================
 function atualizarBotaoAtivacao() {
     const btnAtivar = document.getElementById('btnAtivarMassa');
     if (!btnAtivar) return;
     
-    const selecionados = document.querySelectorAll('.bulk-item-checkbox:checked').length;
+    // Contar apenas checkboxes habilitados e marcados
+    const checkboxes = document.querySelectorAll('.bulk-item-checkbox:checked:not(:disabled)');
+    const selecionados = checkboxes.length;
+    
+    // Também verificar se há itens analisados
+    const totalItens = itensAnalisados ? itensAnalisados.length : 0;
+    
+    log(`🔍 Atualizando botão: ${selecionados} selecionados de ${totalItens}`, 'debug');
     
     if (selecionados > 0) {
         btnAtivar.disabled = false;
         btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (${selecionados})`;
+        btnAtivar.title = `Ativar ${selecionados} itens selecionados`;
     } else {
         btnAtivar.disabled = true;
         btnAtivar.innerHTML = `<i class="fas fa-play"></i> Ativar em Massa (0)`;
+        btnAtivar.title = 'Selecione pelo menos um item para ativar';
     }
 }
 
@@ -1301,155 +1548,226 @@ function atualizarBotaoAtivacao() {
     };
 
     // ============================================================
-    // FUNÇÃO: EXECUTAR ATIVAÇÃO EM MASSA
+// FUNÇÃO: EXECUTAR ATIVAÇÃO EM MASSA (CORRIGIDA)
+// ============================================================
+window.executarAtivacaoEmMassa = async function() {
+    log('🚀 EXECUTANDO ATIVAÇÃO EM MASSA', 'info');
+    log('═══════════════════════════════════════════════════════════', 'info');
+    
     // ============================================================
-    window.executarAtivacaoEmMassa = async function() {
-        log('🚀 EXECUTANDO ATIVAÇÃO EM MASSA', 'info');
-        log('═══════════════════════════════════════════════════════════', 'info');
-        
-        const selecionados = [];
-        document.querySelectorAll('.bulk-item-checkbox:checked').forEach(cb => {
-            const index = parseInt(cb.dataset.index);
-            if (!isNaN(index) && itensAnalisados[index]) {
-                selecionados.push(itensAnalisados[index]);
+    // PASSO 1: Buscar os itens selecionados na tabela
+    // ============================================================
+    const selecionados = [];
+    const checkboxes = document.querySelectorAll('.bulk-item-checkbox:checked');
+    
+    log(`📊 ${checkboxes.length} checkboxes marcados`, 'debug');
+    
+    // Verificar se há checkboxes marcados
+    if (checkboxes.length === 0) {
+        log('⚠️ Nenhum checkbox marcado', 'warning');
+        showToast('⚠️ Nenhum item selecionado. Marque os itens que deseja ativar.', 'warning');
+        return;
+    }
+    
+    // Para cada checkbox marcado, buscar o índice e pegar o item correspondente
+    checkboxes.forEach(cb => {
+        const index = parseInt(cb.dataset.index);
+        if (!isNaN(index) && itensAnalisados && itensAnalisados[index]) {
+            const item = itensAnalisados[index];
+            // Verificar se o item não está bloqueado e não é 'started'
+            const isBloqueado = mlbsBloqueados.includes(item.mlb);
+            if (!isBloqueado && item.tipo !== 'started') {
+                selecionados.push(item);
+                log(`   ✅ ${item.mlb} selecionado`, 'debug');
+            } else {
+                log(`   ⚠️ ${item.mlb} ignorado (bloqueado ou já ativo)`, 'warning');
             }
-        });
-        
-        log(`📊 ${selecionados.length} itens selecionados`, 'info');
-        
-        if (selecionados.length === 0) {
-            log('⚠️ Nenhum item selecionado', 'warning');
-            showToast('⚠️ Nenhum item selecionado', 'warning');
-            return;
+        } else {
+            log(`   ⚠️ Índice ${index} inválido ou item não encontrado`, 'warning');
         }
+    });
+    
+    log(`📊 ${selecionados.length} itens elegíveis selecionados`, 'info');
+    
+    if (selecionados.length === 0) {
+        log('⚠️ Nenhum item elegível selecionado', 'warning');
+        showToast('⚠️ Nenhum item elegível selecionado. Verifique se os itens não estão bloqueados ou já ativos.', 'warning');
+        return;
+    }
+    
+    // ============================================================
+    // PASSO 2: Verificar destino e token
+    // ============================================================
+    const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
+    if (!destinoId) {
+        log('⚠️ Destino não selecionado', 'warning');
+        showToast('⚠️ Selecione a promoção de destino', 'warning');
+        return;
+    }
+    
+    const tokenData = await window.getValidToken?.();
+    if (!tokenData?.access_token) {
+        log('❌ Token não disponível', 'error');
+        showToast('❌ Token não disponível', 'error');
+        return;
+    }
+    
+    // ============================================================
+    // PASSO 3: Confirmar com o usuário
+    // ============================================================
+    const confirmMsg = `Tem certeza que deseja ativar ${selecionados.length} itens na promoção?\n\n` +
+        `Itens:\n` +
+        selecionados.slice(0, 10).map(item => `  • ${item.mlb} - R$ ${(item.precoDestino || 0).toFixed(2)}`).join('\n') +
+        (selecionados.length > 10 ? `\n  ... e mais ${selecionados.length - 10} itens` : '');
+    
+    if (!confirm(confirmMsg)) {
+        log('Ativação cancelada pelo usuário', 'info');
+        return;
+    }
+    
+    // ============================================================
+    // PASSO 4: Executar ativação
+    // ============================================================
+    mostrarBarraProgresso(
+        `Ativando ${selecionados.length} itens...`,
+        'Aguarde enquanto os itens são ativados'
+    );
+    
+    try {
+        let sucessos = 0;
+        let falhas = 0;
+        const falhasLista = [];
+        const sucessosLista = [];
         
-        const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
-        if (!destinoId) {
-            log('⚠️ Destino não selecionado', 'warning');
-            showToast('⚠️ Selecione a promoção de destino', 'warning');
-            return;
-        }
+        const batchSize = 5; // Reduzido para não sobrecarregar
+        const totalBatches = Math.ceil(selecionados.length / batchSize);
+        log(`Processando em ${totalBatches} lotes de ${batchSize}`, 'info');
         
-        // Confirmar
-        if (!confirm(`Tem certeza que deseja ativar ${selecionados.length} itens na promoção?`)) {
-            log('Ativação cancelada pelo usuário', 'info');
-            return;
-        }
-        
-        const tokenData = await window.getValidToken?.();
-        if (!tokenData?.access_token) {
-            log('❌ Token não disponível', 'error');
-            showToast('❌ Token não disponível', 'error');
-            return;
-        }
-        
-        mostrarBarraProgresso(
-            `Ativando ${selecionados.length} itens...`,
-            'Aguarde enquanto os itens são ativados'
-        );
-        
-        try {
-            let sucessos = 0;
-            let falhas = 0;
-            const falhasLista = [];
+        for (let i = 0; i < selecionados.length; i += batchSize) {
+            const batch = selecionados.slice(i, i + batchSize);
+            const batchNum = Math.floor(i / batchSize) + 1;
             
-            const batchSize = 10;
-            const totalBatches = Math.ceil(selecionados.length / batchSize);
-            log(`Processando em ${totalBatches} lotes de ${batchSize}`, 'info');
+            const pct = (i / selecionados.length) * 100;
+            atualizarProgresso(
+                pct,
+                `Lote ${batchNum}/${totalBatches}`,
+                `${sucessos} sucessos, ${falhas} falhas`,
+                `${i + batch.length} / ${selecionados.length}`
+            );
             
-            for (let i = 0; i < selecionados.length; i += batchSize) {
-                const batch = selecionados.slice(i, i + batchSize);
-                const batchNum = Math.floor(i / batchSize) + 1;
+            log(`📦 Processando lote ${batchNum}/${totalBatches} (${batch.length} itens)...`, 'info');
+            
+            const promises = batch.map(async (item) => {
+                const mlb = item.mlb;
+                const preco = item.precoDestino;
                 
-                const pct = (i / selecionados.length) * 100;
-                atualizarProgresso(
-                    pct,
-                    `Lote ${batchNum}/${totalBatches}`,
-                    `${sucessos} sucessos, ${falhas} falhas`,
-                    `${i + batch.length} / ${selecionados.length}`
-                );
+                if (!mlb || !preco || preco <= 0) {
+                    falhas++;
+                    falhasLista.push(`${mlb || 'desconhecido'}: preço inválido (${preco})`);
+                    log(`   ❌ ${mlb}: preço inválido (${preco})`, 'warning');
+                    return false;
+                }
                 
-                log(`📦 Processando lote ${batchNum}/${totalBatches} (${batch.length} itens)...`, 'info');
-                
-                const promises = batch.map(async (item) => {
-                    const mlb = item.mlb;
-                    const preco = item.precoDestino;
-                    
-                    if (!mlb || !preco) {
-                        falhas++;
-                        falhasLista.push(`${mlb || 'desconhecido'}: preço inválido`);
-                        return false;
-                    }
-                    
+                try {
+                    // URL para ativar na promoção
                     const url = `https://api.mercadolibre.com/seller-promotions/offers?app_version=v2`;
                     const body = {
                         promotion_id: destinoId,
                         item_id: mlb,
-                        price: Math.round(preco * 100)
+                        price: Math.round(preco * 100) // Converter para centavos
                     };
                     
-                    try {
-                        const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
-                        const response = await fetch(proxyUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(body)
-                        });
+                    log(`   🔄 Ativando ${mlb} por R$ ${preco.toFixed(2)}...`, 'debug');
+                    
+                    const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
+                    const response = await fetch(proxyUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body)
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        sucessos++;
+                        sucessosLista.push(mlb);
+                        log(`   ✅ ${mlb} ativado com sucesso!`, 'success');
+                        return true;
+                    } else {
+                        let errorText = await response.text();
+                        // Tentar extrair mensagem de erro da resposta
+                        try {
+                            const errorJson = JSON.parse(errorText);
+                            errorText = errorJson.message || errorText;
+                        } catch (e) {}
                         
-                        if (response.ok) {
-                            sucessos++;
-                            log(`   ✅ ${mlb} ativado`, 'debug');
-                            return true;
-                        } else {
-                            const errorText = await response.text();
-                            falhas++;
-                            falhasLista.push(`${mlb}: ${errorText}`);
-                            log(`   ❌ ${mlb} falhou: ${errorText}`, 'warning');
-                            return false;
-                        }
-                    } catch (err) {
                         falhas++;
-                        falhasLista.push(`${mlb}: ${err.message}`);
-                        log(`   ❌ ${mlb} erro: ${err.message}`, 'warning');
+                        falhasLista.push(`${mlb}: ${errorText}`);
+                        log(`   ❌ ${mlb} falhou: ${errorText}`, 'warning');
                         return false;
                     }
-                });
-                
-                await Promise.all(promises);
-                log(`Lote ${batchNum} concluído: ${sucessos} sucessos, ${falhas} falhas`, 'info');
-            }
-            
-            // Log do resultado final
-            log('═══════════════════════════════════════════════════════════', 'info');
-            log('📊 RESULTADO DA ATIVAÇÃO:', 'info');
-            log(`   ✅ Sucessos: ${sucessos}`, 'success');
-            log(`   ❌ Falhas: ${falhas}`, 'warning');
-            if (falhasLista.length > 0) {
-                log(`   📝 Falhas detalhadas:`, 'debug');
-                falhasLista.slice(0, 5).forEach(f => log(`      - ${f}`, 'debug'));
-                if (falhasLista.length > 5) {
-                    log(`      ... e mais ${falhasLista.length - 5} falhas`, 'debug');
+                } catch (err) {
+                    falhas++;
+                    falhasLista.push(`${mlb}: ${err.message}`);
+                    log(`   ❌ ${mlb} erro: ${err.message}`, 'warning');
+                    return false;
                 }
-            }
-            log('═══════════════════════════════════════════════════════════', 'info');
+            });
             
-            atualizarProgresso(100, '✅ Ativação concluída!', `${sucessos} sucessos, ${falhas} falhas`, '✅');
-            
-            setTimeout(fecharBarraProgresso, 1500);
-            
-            showToast(`✅ Ativação: ${sucessos} sucessos, ${falhas} falhas`, sucessos > 0 ? 'success' : 'error');
-            
-            // Recarregar análise
-            log('🔄 Recarregando análise...', 'info');
-            setTimeout(window.analisarItens, 2000);
-            
-        } catch (error) {
-            log(`❌ Erro na ativação: ${error.message}`, 'error');
-            console.error(error);
-            fecharBarraProgresso();
-            showToast('Erro na ativação: ' + error.message, 'error');
+            await Promise.all(promises);
+            log(`Lote ${batchNum} concluído: ${sucessos} sucessos, ${falhas} falhas`, 'info');
         }
-    };
+        
+        // ============================================================
+        // PASSO 5: Mostrar resultado final
+        // ============================================================
+        log('═══════════════════════════════════════════════════════════', 'info');
+        log('📊 RESULTADO DA ATIVAÇÃO:', 'info');
+        log(`   ✅ Sucessos: ${sucessos}`, 'success');
+        log(`   ❌ Falhas: ${falhas}`, 'warning');
+        
+        if (sucessosLista.length > 0) {
+            log(`   📝 Ativados com sucesso:`, 'debug');
+            sucessosLista.slice(0, 10).forEach(m => log(`      ✅ ${m}`, 'debug'));
+            if (sucessosLista.length > 10) {
+                log(`      ... e mais ${sucessosLista.length - 10}`, 'debug');
+            }
+        }
+        
+        if (falhasLista.length > 0) {
+            log(`   📝 Falhas detalhadas:`, 'debug');
+            falhasLista.slice(0, 5).forEach(f => log(`      ❌ ${f}`, 'debug'));
+            if (falhasLista.length > 5) {
+                log(`      ... e mais ${falhasLista.length - 5} falhas`, 'debug');
+            }
+        }
+        log('═══════════════════════════════════════════════════════════', 'info');
+        
+        atualizarProgresso(100, '✅ Ativação concluída!', `${sucessos} sucessos, ${falhas} falhas`, '✅');
+        
+        setTimeout(fecharBarraProgresso, 2000);
+        
+        // Mostrar toast com resultado
+        if (sucessos > 0 && falhas === 0) {
+            showToast(`✅ Todos os ${sucessos} itens foram ativados com sucesso!`, 'success');
+        } else if (sucessos > 0 && falhas > 0) {
+            showToast(`⚠️ ${sucessos} ativados, ${falhas} falhas. Verifique o console para detalhes.`, 'warning');
+        } else {
+            showToast(`❌ Nenhum item foi ativado. ${falhas} falhas.`, 'error');
+        }
+        
+        // Recarregar análise após 3 segundos
+        log('🔄 Recarregando análise em 3 segundos...', 'info');
+        setTimeout(() => {
+            window.analisarItens();
+        }, 3000);
+        
+    } catch (error) {
+        log(`❌ Erro na ativação: ${error.message}`, 'error');
+        console.error(error);
+        fecharBarraProgresso();
+        showToast('Erro na ativação: ' + error.message, 'error');
+    }
+};
 
     // ============================================================
     // FUNÇÃO: EXPORTAR ANÁLISE

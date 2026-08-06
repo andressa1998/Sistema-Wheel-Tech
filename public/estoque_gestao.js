@@ -2735,7 +2735,8 @@ async function salvarProdutoEstoque() {
         });
     }
 
-    // Bulk mode para Raios
+        // Bulk mode para Raios
+    // ===== BULK MODE PARA RAIOS =====
     const bulkPanel = document.getElementById('bulkModePanel');
     const isBulkMode = (categoria === 'Raios' && !id && bulkPanel && bulkPanel.style.display === 'block');
 
@@ -2780,12 +2781,26 @@ async function salvarProdutoEstoque() {
             return;
         }
 
-        if (!confirm(`Criar ${bulkItems.length} produto(s)?`)) return;
+        if (!confirm(`Criar ${bulkItems.length} produto(s) com as mesmas informações de marca/modelo/cabeça?`)) return;
 
         let created = 0;
         let errors = [];
 
+        // ===== PEGAR MLB CODES DO CAMPO =====
+        const mlbField = document.getElementById('campo_mlb_codes');
+        let mlbCodes = [];
+        if (mlbField && mlbField.value.trim()) {
+            const mlbText = mlbField.value.trim();
+            if (!validarMLBCodes(mlbText)) {
+                showToast(`Formato inválido para MLB Codes. Use: "MLB1496273494, MLB4220545731"`, 'error');
+                mlbField.focus();
+                return;
+            }
+            mlbCodes = mlbText.split(',').map(v => v.trim()).filter(v => v);
+        }
+
         for (const item of bulkItems) {
+            // Verificar se já existe no banco
             const { data: existing } = await window.supabaseClient
                 .from('produtos_estoque')
                 .select('id')
@@ -2797,8 +2812,14 @@ async function salvarProdutoEstoque() {
                 continue;
             }
 
+            // Criar uma cópia dos dados extra para este item
             const produtoDadosExtra = { ...dadosExtra };
             produtoDadosExtra.tamanhoraio = item.tamanho;
+            
+            // Adicionar MLB codes
+            if (mlbCodes.length > 0) {
+                produtoDadosExtra.mlb_codes = mlbCodes;
+            }
             
             if (podeModificarSync) {
                 produtoDadosExtra.bloquear_sync_ml = bloquearSync;
@@ -2826,15 +2847,18 @@ async function salvarProdutoEstoque() {
                 if (error) throw error;
                 created++;
                 if (item.quantidade > 0) {
-                    await registrarMovimentacao(data[0].id, 'entrada', item.quantidade, 'Criação em massa', 'nova');
+                    await registrarMovimentacao(data[0].id, 'entrada', item.quantidade, 'Criação em massa - Raios', 'nova');
                 }
             } catch (err) {
                 errors.push(`${item.sku}: ${err.message}`);
             }
         }
 
-        if (created > 0) showToast(`✅ ${created} produto(s) criado(s)!`, 'success');
-        if (errors.length) showToast(`⚠️ Erros: ${errors.join(', ')}`, 'error');
+        let msg = `✅ ${created} produto(s) criado(s)!`;
+        if (errors.length) {
+            msg += ` ⚠️ Erros: ${errors.join(', ')}`;
+        }
+        showToast(msg, errors.length > 0 ? 'warning' : 'success');
 
         fecharModalProdutoEstoque();
         await carregarProdutosEstoque();
@@ -3001,10 +3025,6 @@ const camposPorCategoria = {
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ]
 };
-
-// =========================================================
-// FUNÇÃO PARA GERAR CAMPOS DINÂMICOS (USANDO CATEGORIAS CUSTOMIZADAS)
-// =========================================================
 
 function gerarCamposDinamicos(categoria) {
     const container = document.getElementById('camposDinamicos');
@@ -3191,7 +3211,7 @@ function gerarCamposDinamicos(categoria) {
         }
     }
 
-    // Configurar bulk mode para Raios
+    // ===== CONFIGURAR BULK MODE PARA RAIOS =====
     const bulkSection = document.getElementById('bulkAddSection');
     const kitContainer = document.getElementById('kitComposicaoContainer');
     const isEditing = document.getElementById('produtoId').value !== '';
@@ -3201,11 +3221,23 @@ function gerarCamposDinamicos(categoria) {
         configurarEventosKit();
     }
 
+    // Se for categoria Raios e NÃO for edição, mostrar o bulk
     if (categoria === 'Raios' && !isEditing) {
-        if (bulkSection) bulkSection.style.display = 'block';
-        configurarBulkModeEvents();
+        if (bulkSection) {
+            bulkSection.style.display = 'block';
+            configurarBulkModeEvents();
+        }
     } else {
         if (bulkSection) bulkSection.style.display = 'none';
+    }
+}
+
+// ===== FUNÇÃO PARA LIMPAR LINHAS DO BULK =====
+function limparBulkRows() {
+    if (!confirm('Remover todos os tamanhos do modo múltiplo?')) return;
+    const tbody = document.getElementById('bulkTamanhosBody');
+    if (tbody) {
+        tbody.innerHTML = '';
     }
 }
 
@@ -3810,10 +3842,6 @@ function extrairUnidadesPorKit(skuAnuncio) {
     return 1;
 }
 
-// =========================================================
-// BULK MODE PARA RAIOS
-// =========================================================
-
 function configurarBulkModeEvents() {
     const toggleBtn = document.getElementById('toggleBulkModeBtn');
     const panel = document.getElementById('bulkModePanel');
@@ -3823,9 +3851,11 @@ function configurarBulkModeEvents() {
     const simpleQuantidade = document.getElementById('produtoQuantidade');
     const mainSkuField = document.getElementById('produtoSKU');
     const mainSkuContainer = mainSkuField?.closest('.form-group');
+    const mlbField = document.getElementById('campo_mlb_codes');
 
     if (!toggleBtn || !panel) return;
 
+    // Remove eventos antigos clonando
     const newToggle = toggleBtn.cloneNode(true);
     toggleBtn.parentNode.replaceChild(newToggle, toggleBtn);
 
@@ -3850,24 +3880,64 @@ function configurarBulkModeEvents() {
     newToggle.onclick = () => {
         const isActive = panel.style.display !== 'none';
         if (!isActive) {
+            // Ativar bulk mode
             panel.style.display = 'block';
             newToggle.innerHTML = '<i class="fas fa-times-circle"></i> Desativar modo múltiplo';
-            if (simpleTamanho) simpleTamanho.closest('.campo-dinamico').style.display = 'none';
-            if (simpleQuantidade) simpleQuantidade.closest('.form-group').style.display = 'none';
+            
+            // Ocultar campos individuais
+            if (simpleTamanho) {
+                const parent = simpleTamanho.closest('.campo-dinamico');
+                if (parent) parent.style.display = 'none';
+            }
+            if (simpleQuantidade) {
+                const parent = simpleQuantidade.closest('.form-group');
+                if (parent) parent.style.display = 'none';
+            }
             if (mainSkuContainer) {
                 mainSkuContainer.style.display = 'none';
-                mainSkuField.required = false;
+                if (mainSkuField) mainSkuField.required = false;
             }
+            
+            // Mostrar aviso sobre MLB codes
+            if (mlbField) {
+                const helpText = mlbField.closest('.form-group')?.querySelector('small');
+                if (helpText) {
+                    helpText.innerHTML = '<i class="fas fa-info-circle"></i> Os MLB codes serão aplicados a TODOS os produtos criados em massa.';
+                    helpText.style.color = '#6f42c1';
+                    helpText.style.fontWeight = '500';
+                }
+            }
+            
+            // Adicionar primeira linha se vazio
             if (tbody.children.length === 0) adicionarNovaLinha();
         } else {
+            // Desativar bulk mode
             panel.style.display = 'none';
             newToggle.innerHTML = '<i class="fas fa-plus-circle"></i> Ativar modo múltiplo';
-            if (simpleTamanho) simpleTamanho.closest('.campo-dinamico').style.display = '';
-            if (simpleQuantidade) simpleQuantidade.closest('.form-group').style.display = '';
+            
+            // Reexibir campos individuais
+            if (simpleTamanho) {
+                const parent = simpleTamanho.closest('.campo-dinamico');
+                if (parent) parent.style.display = '';
+            }
+            if (simpleQuantidade) {
+                const parent = simpleQuantidade.closest('.form-group');
+                if (parent) parent.style.display = '';
+            }
             if (mainSkuContainer) {
                 mainSkuContainer.style.display = '';
                 const isEditing = document.getElementById('produtoId').value !== '';
-                if (!isEditing) mainSkuField.required = true;
+                if (!isEditing && mainSkuField) mainSkuField.required = true;
+            }
+            
+            // Restaurar ajuda do MLB
+            if (mlbField) {
+                const helpText = mlbField.closest('.form-group')?.querySelector('small');
+                if (helpText) {
+                    helpText.innerHTML = '<i class="fas fa-info-circle"></i> MLB separados por vírgula (ex: MLB123, MLB456)';
+                    helpText.style.color = '';
+                    helpText.style.fontWeight = '';
+                }
             }
         }
     };
