@@ -955,6 +955,37 @@ async function buscarTodosItensPromocao(promotionId, promotionType, token) {
     return itens;
 }
 
+async function buscarOfferIdDoItem(itemId, promotionId, token) {
+    try {
+        const url = `https://api.mercadolibre.com/seller-promotions/items/${itemId}?app_version=v2`;
+        const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+        const response = await fetch(proxyUrl);
+        
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Procura a promoção específica
+            for (const promocao of data) {
+                if (promocao.id === promotionId) {
+                    // Retorna o offer_id da promoção
+                    return promocao.offer_id || null;
+                }
+            }
+            
+            // Se não encontrou a promoção específica, procura por tipo DEAL
+            for (const promocao of data) {
+                if (promocao.type === 'DEAL' || promocao.type === 'MARKETPLACE_CAMPAIGN') {
+                    return promocao.offer_id || null;
+                }
+            }
+        }
+        return null;
+    } catch (error) {
+        log(`❌ Erro ao buscar offer_id para ${itemId}: ${error.message}`, 'warning');
+        return null;
+    }
+}
+
 // ============================================================
 // FUNÇÃO: BUSCAR ITENS DA PROMOÇÃO (SEM DIVISÃO POR 100)
 // ============================================================
@@ -1074,9 +1105,6 @@ async function buscarItensPromocaoPorMultiplosStatus(promotionId, promotionType,
     return resultado;
 }
 
-// ============================================================
-// FUNÇÃO: BUSCAR ITENS DA PROMOÇÃO POR STATUS
-// ============================================================
 async function buscarItensPromocaoPorStatus(promotionId, promotionType, status, token) {
     log(`🔄 Buscando itens com status "${status}" da promoção ${promotionId}...`, 'info');
     const itens = [];
@@ -1092,7 +1120,6 @@ async function buscarItensPromocaoPorStatus(promotionId, promotionType, status, 
                 limit: 50
             };
             
-            // Só adiciona o filtro de status se não for 'todos'
             if (status !== 'todos') {
                 params.status = status;
             }
@@ -1122,7 +1149,8 @@ async function buscarItensPromocaoPorStatus(promotionId, promotionType, status, 
                             status: item.status || 'unknown',
                             price: item.price || 0,
                             original_price: item.original_price || 0,
-                            seller_percentage: item.seller_percentage || 0
+                            seller_percentage: item.seller_percentage || 0,
+                            offer_id: item.offer_id || null  // 👈 ADICIONAR ESTA LINHA
                         });
                     }
                 }
@@ -1134,7 +1162,6 @@ async function buscarItensPromocaoPorStatus(promotionId, promotionType, status, 
                     hasMore = false;
                 }
             } else {
-                // Se falhar com filtro de status, tentar sem filtro
                 if (status !== 'todos') {
                     log(`⚠️ Falha com status "${status}", tentando sem filtro...`, 'warning');
                     return await buscarItensPromocaoPorStatus(promotionId, promotionType, 'todos', token);
@@ -1692,17 +1719,43 @@ window.executarAtivacaoEmMassa = async function() {
     for (let i = 0; i < selecionados.length; i++) {
         const item = selecionados[i];
         const mlb = item.mlb;
-        const preco = item.precoDestino;
+        
+        // Verifica se tem offer_id
+        let offerId = item.offer_id;
+        
+        // Se não tem offer_id, tenta buscar novamente
+        if (!offerId) {
+            log(`🔍 Buscando offer_id para ${mlb}...`, 'info');
+            try {
+                offerId = await buscarOfferIdDoItem(mlb, destinoId, tokenData.access_token);
+                if (offerId) {
+                    log(`✅ Offer ID encontrado para ${mlb}: ${offerId}`, 'success');
+                } else {
+                    log(`❌ Offer ID não encontrado para ${mlb}`, 'warning');
+                }
+            } catch (err) {
+                log(`❌ Erro ao buscar offer_id: ${err.message}`, 'error');
+            }
+        }
+
+        if (!offerId) {
+            falhas++;
+            falhasLista.push(`${mlb}: offer_id não encontrado`);
+            log(`❌ ${mlb} não pode ser ativado: offer_id não encontrado`, 'warning');
+            continue;
+        }
 
         try {
             // 🔥 ENDPOINT CORRETO: ativar a oferta pelo ID
-            const url = `https://api.mercadolibre.com/seller-promotions/offers/${item.offer_id}/status?app_version=v2`;
+            const url = `https://api.mercadolibre.com/seller-promotions/offers/${offerId}/status?app_version=v2`;
             
             const body = {
                 status: "started"
             };
 
             const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
+
+            log(`🔄 Ativando ${mlb} com offer_id ${offerId}...`, 'debug');
 
             const response = await fetch(proxyUrl, {
                 method: 'POST',
