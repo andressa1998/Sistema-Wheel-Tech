@@ -628,28 +628,61 @@ function filtrarProdutosEstoque() {
 }
 
 // =========================================================
-// APLICAR FILTROS E ORDENAÇÃO
+// APLICAR FILTROS E ORDENAÇÃO - COM PESQUISA EM ATRIBUTOS
 // =========================================================
 
 function aplicarFiltrosEOrdenacao() {
     let filtrados = produtosEstoque;
 
+    // Filtro por categoria
     if (estadoFiltrosEstoque.categoria && estadoFiltrosEstoque.categoria !== '') {
         filtrados = filtrados.filter(prod => prod.categoria === estadoFiltrosEstoque.categoria);
     }
 
+    // Filtro por termo de busca (incluindo atributos específicos)
     if (estadoFiltrosEstoque.termo) {
-        const termo = estadoFiltrosEstoque.termo;
+        const termo = estadoFiltrosEstoque.termo.toLowerCase();
+        
         filtrados = filtrados.filter(prod => {
+            // ===== BUSCA EM CAMPOS PADRÃO =====
             if (prod.nome && prod.nome.toLowerCase().includes(termo)) return true;
             if (prod.sku && prod.sku.toLowerCase().includes(termo)) return true;
+            if (prod.categoria && prod.categoria.toLowerCase().includes(termo)) return true;
+            
+            // ===== BUSCA EM MLB CODES =====
             if (prod.mlb_codes) {
                 let mlbArray = prod.mlb_codes;
                 if (typeof mlbArray === 'string') mlbArray = mlbArray.split(',').map(s => s.trim());
                 if (Array.isArray(mlbArray)) {
-                    return mlbArray.some(code => code.toLowerCase().includes(termo));
+                    if (mlbArray.some(code => code.toLowerCase().includes(termo))) return true;
                 }
             }
+            
+            // ===== BUSCA EM ATRIBUTOS ESPECÍFICOS (dados_extra) =====
+            if (prod.dados_extra && typeof prod.dados_extra === 'object') {
+                for (const [chave, valor] of Object.entries(prod.dados_extra)) {
+                    // Ignorar campos especiais
+                    if (chave === 'mlb_codes' || chave === 'historico_custos' || chave === 'bloquear_sync_ml') continue;
+                    
+                    // Se o valor é string e contém o termo
+                    if (typeof valor === 'string' && valor.toLowerCase().includes(termo)) return true;
+                    
+                    // Se o valor é número, converter para string e verificar
+                    if (typeof valor === 'number' && String(valor).includes(termo)) return true;
+                    
+                    // Se o valor é array (ex: opções de seleção múltipla)
+                    if (Array.isArray(valor)) {
+                        if (valor.some(item => typeof item === 'string' && item.toLowerCase().includes(termo))) return true;
+                    }
+                    
+                    // Se o valor é objeto (caso aninhado)
+                    if (typeof valor === 'object' && valor !== null) {
+                        const valorString = JSON.stringify(valor).toLowerCase();
+                        if (valorString.includes(termo)) return true;
+                    }
+                }
+            }
+            
             return false;
         });
     }
@@ -2999,7 +3032,7 @@ const camposPorCategoria = {
         { nome: "diametroint", label: "Diâmetro Interno", tipo: "text", placeholder: "Ex: 15 ou 15,5", obrigatorio: true, validacao: "numero_virgula" },
         { nome: "diametroext", label: "Diâmetro Externo", tipo: "text", placeholder: "Ex: 26 ou 26,5", obrigatorio: true, validacao: "numero_virgula" },
         { nome: "largura", label: "Largura", tipo: "number", placeholder: "Ex: 7", obrigatorio: true },
-        { nome: "aplicaçao", label: "Aplicação", tipo: "select", opcoes: ["Cubo/Caixa de Direção", "Movimento Central", "Outros"] },
+        { nome: "aplicaçao", label: "Aplicação", tipo: "select", opcoes: ["Caixa de Direção", "Cubo/Movimento Central", "Outros"] },
         { nome: "marca", label: "Marca", tipo: "text", placeholder: "Enduro" },
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
