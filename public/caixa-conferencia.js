@@ -216,7 +216,7 @@ window.carregarCaixaDia = async function() {
                     saldo_anterior: saldoAnteriorValor,
                     total_entradas: 0,
                     total_saidas: 0,
-                    saldo_final: saldoAnteriorValor,
+                    saldo_final: saldoAnteriorValor, // Inicia com o saldo anterior
                     fechado_operador: false,
                     conferido_admin: false,
                     created_at: new Date().toISOString()
@@ -255,14 +255,94 @@ window.carregarCaixaDia = async function() {
         
         lancamentosCaixa = lancamentosData || [];
         
-        // PASSO 4: Atualizar título
+        // PASSO 4: CALCULAR TOTAIS CORRETAMENTE A PARTIR DOS LANÇAMENTOS
+        let totalEntradas = 0;
+        let totalSaidas = 0;
+        
+        lancamentosCaixa.forEach(lancamento => {
+            if (lancamento.tipo === 'entrada') {
+                totalEntradas += parseFloat(lancamento.valor || 0);
+            } else if (lancamento.tipo === 'saida') {
+                totalSaidas += parseFloat(lancamento.valor || 0);
+            }
+        });
+        
+        // Calcular o saldo do dia (movimentações)
+        const saldoMovimentacao = totalEntradas - totalSaidas;
+        
+        // Calcular o saldo final CORRETO: saldo_anterior + movimentações do dia
+        const saldoFinalCalculado = (caixaData.saldo_anterior || 0) + saldoMovimentacao;
+        
+        console.log('📊 Cálculo do saldo:');
+        console.log('  Saldo anterior:', caixaData.saldo_anterior);
+        console.log('  Total entradas:', totalEntradas);
+        console.log('  Total saídas:', totalSaidas);
+        console.log('  Movimentação:', saldoMovimentacao);
+        console.log('  Saldo final calculado:', saldoFinalCalculado);
+        console.log('  Saldo final no banco:', caixaData.saldo_final);
+        
+        // PASSO 5: VERIFICAR E CORRIGIR DIVERGÊNCIAS NO SALDO
+        const diferencaSaldo = Math.abs(caixaData.saldo_final - saldoFinalCalculado);
+        
+        // Se houver diferença de mais de 1 centavo, corrigir
+        if (diferencaSaldo > 0.01 && !caixaData.fechado_operador) {
+            console.warn('⚠️ Divergência detectada no saldo_final! Corrigindo...');
+            console.warn(`  Banco: R$ ${caixaData.saldo_final.toFixed(2)}`);
+            console.warn(`  Calculado: R$ ${saldoFinalCalculado.toFixed(2)}`);
+            console.warn(`  Diferença: R$ ${(caixaData.saldo_final - saldoFinalCalculado).toFixed(2)}`);
+            
+            // Atualizar o banco com o valor correto
+            const { error: updateError } = await supabaseClient
+                .from('caixa')
+                .update({
+                    total_entradas: totalEntradas,
+                    total_saidas: totalSaidas,
+                    saldo_final: saldoFinalCalculado
+                })
+                .eq('data', dataCaixaAtual);
+            
+            if (updateError) {
+                console.error('❌ Erro ao corrigir saldo_final:', updateError);
+            } else {
+                // Atualizar o objeto local
+                caixaData.total_entradas = totalEntradas;
+                caixaData.total_saidas = totalSaidas;
+                caixaData.saldo_final = saldoFinalCalculado;
+                console.log('✅ Saldo_final corrigido com sucesso!');
+            }
+        } else if (diferencaSaldo > 0.01 && caixaData.fechado_operador) {
+            console.warn('⚠️ Caixa está FECHADO, mas o saldo_final está divergente!');
+            console.warn('  Banco:', caixaData.saldo_final);
+            console.warn('  Calculado:', saldoFinalCalculado);
+            showToast('⚠️ Atenção! Há divergência no saldo final do caixa fechado.', 'warning');
+        } else {
+            // Se não houver divergência, apenas garantir que os totais estão corretos
+            if (caixaData.total_entradas !== totalEntradas || caixaData.total_saidas !== totalSaidas) {
+                const { error: updateError } = await supabaseClient
+                    .from('caixa')
+                    .update({
+                        total_entradas: totalEntradas,
+                        total_saidas: totalSaidas,
+                        saldo_final: saldoFinalCalculado
+                    })
+                    .eq('data', dataCaixaAtual);
+                
+                if (!updateError) {
+                    caixaData.total_entradas = totalEntradas;
+                    caixaData.total_saidas = totalSaidas;
+                    caixaData.saldo_final = saldoFinalCalculado;
+                }
+            }
+        }
+        
+        // PASSO 6: Atualizar título
         const caixaDateTitle = document.getElementById('caixaDateTitle');
         if (caixaDateTitle) {
             const [ano, mes, dia] = dataCaixaAtual.split('-');
             caixaDateTitle.textContent = `Caixa Wheel Tech - ${dia}/${mes}/${ano}`;
         }
         
-        // PASSO 5: Atualizar interface
+        // PASSO 7: Atualizar interface
         atualizarPainelCaixa();
         renderLancamentosTable();
         
@@ -907,38 +987,78 @@ window.salvarLancamento = async function() {
     }
 };
 
-// ===== FUNÇÃO PARA ATUALIZAR TOTAIS DO CAIXA =====
+// ===== FUNÇÃO PARA ATUALIZAR TOTAIS DO CAIXA (CORRIGIDA) =====
 async function atualizarTotaisCaixa() {
-    let totalEntradas = 0;
-    let totalSaidas = 0;
-    
-    lancamentosCaixa.forEach(l => {
-        if (l.tipo === 'entrada') totalEntradas += parseFloat(l.valor);
-        else totalSaidas += parseFloat(l.valor);
-    });
-    
-    const saldoCalculado = totalEntradas - totalSaidas;
-    const saldoAcumulado = (caixaData?.saldo_anterior || 0) + saldoCalculado;
-    
-    const { error } = await supabaseClient
-        .from('caixa')
-        .update({
-            total_entradas: totalEntradas,
-            total_saidas: totalSaidas,
-            saldo_final: saldoAcumulado
-        })
-        .eq('data', dataCaixaAtual);
-    
-    if (error) throw error;
-    
-    // Recarregar caixa para garantir dados atualizados
-    const { data } = await supabaseClient
-        .from('caixa')
-        .select('*')
-        .eq('data', dataCaixaAtual)
-        .single();
-    
-    caixaData = data;
+    try {
+        // 1. Calcular totais a partir dos lançamentos
+        let totalEntradas = 0;
+        let totalSaidas = 0;
+        
+        lancamentosCaixa.forEach(l => {
+            if (l.tipo === 'entrada') {
+                totalEntradas += parseFloat(l.valor) || 0;
+            } else if (l.tipo === 'saida') {
+                totalSaidas += parseFloat(l.valor) || 0;
+            }
+        });
+        
+        // 2. Calcular saldo do dia (apenas movimentações)
+        const saldoMovimentacao = totalEntradas - totalSaidas;
+        
+        // 3. Buscar o saldo_anterior correto do banco
+        const { data: caixaAtual, error } = await supabaseClient
+            .from('caixa')
+            .select('saldo_anterior')
+            .eq('data', dataCaixaAtual)
+            .single();
+        
+        if (error) {
+            console.error('❌ Erro ao buscar saldo anterior:', error);
+            return;
+        }
+        
+        const saldoAnterior = caixaAtual?.saldo_anterior || 0;
+        
+        // 4. Calcular saldo final: saldo_anterior + movimentações do dia
+        const saldoFinal = saldoAnterior + saldoMovimentacao;
+        
+        console.log('📊 Atualizando totais:');
+        console.log('  Saldo anterior:', saldoAnterior);
+        console.log('  Total entradas:', totalEntradas);
+        console.log('  Total saídas:', totalSaidas);
+        console.log('  Saldo final calculado:', saldoFinal);
+        
+        // 5. Atualizar no banco
+        const { error: updateError } = await supabaseClient
+            .from('caixa')
+            .update({
+                total_entradas: totalEntradas,
+                total_saidas: totalSaidas,
+                saldo_final: saldoFinal
+            })
+            .eq('data', dataCaixaAtual);
+        
+        if (updateError) {
+            console.error('❌ Erro ao atualizar caixa:', updateError);
+            throw updateError;
+        }
+        
+        // 6. Atualizar caixaData local
+        if (caixaData) {
+            caixaData.total_entradas = totalEntradas;
+            caixaData.total_saidas = totalSaidas;
+            caixaData.saldo_final = saldoFinal;
+        }
+        
+        // 7. Forçar recarregamento do painel
+        atualizarPainelCaixa();
+        
+        console.log('✅ Totais atualizados com sucesso!');
+        
+    } catch (error) {
+        console.error('❌ Erro ao atualizar totais:', error);
+        showToast('❌ Erro ao atualizar totais: ' + error.message, 'error');
+    }
 }
 
 // ===== FUNÇÃO PARA FECHAR CAIXA (OPERADOR) - VERSÃO FINAL SEM INFORMAÇÕES =====
