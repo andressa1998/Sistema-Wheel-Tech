@@ -69,6 +69,16 @@ let fretesDadosCompletos = [];
 let fretesFiltrados = [];
 
 // ============================================
+// DIMENSÕES PADRÃO (22x16x1cm)
+// ============================================
+const DEFAULT_DIMENSIONS = {
+    comprimento: 22,
+    largura: 16,
+    altura: 1
+};
+
+
+// ============================================
 // FUNÇÃO PARA DETECTAR VENDAS FULL (VERSÃO COMPLETA)
 // ============================================
 function isFullByAnyField(item) {
@@ -217,7 +227,7 @@ function showToast(mensagem, tipo = 'info') {
 }
 
 // ============================================
-// BUSCAR MEDIDAS SALVAS POR SKU
+// BUSCAR MEDIDAS SALVAS POR SKU (ATUALIZADO)
 // ============================================
 async function buscarMedidasPorSKU(sku) {
     if (!sku || sku === 'N/A' || sku === 'SEM SKU') return null;
@@ -233,6 +243,21 @@ async function buscarMedidasPorSKU(sku) {
         console.warn(`Erro ao buscar medidas para SKU ${sku}:`, error.message);
         return null;
     }
+}
+
+// ============================================
+// OBTER DIMENSÕES COM PADRÃO (22x16x1)
+// ============================================
+function obterDimensoesComPadrao(medidasSalvas) {
+    if (medidasSalvas && medidasSalvas.comprimento_cm && medidasSalvas.largura_cm && medidasSalvas.altura_cm) {
+        return {
+            comprimento: medidasSalvas.comprimento_cm,
+            largura: medidasSalvas.largura_cm,
+            altura: medidasSalvas.altura_cm
+        };
+    }
+    // Retorna o padrão 22x16x1
+    return { ...DEFAULT_DIMENSIONS };
 }
 
 // ============================================
@@ -679,14 +704,10 @@ async function carregarFretesSalvos() {
 }
 
 // ============================================
-// RENDERIZAR PÁGINA DE FRETES (VERSÃO CORRIGIDA)
+// RENDERIZAR PÁGINA DE FRETES - CAMPOS MAIORES
 // ============================================
 function renderizarPaginaFretes() {
     console.log('📄 ===== RENDERIZANDO PÁGINA =====');
-    console.log('📄 Página atual:', fretesPaginaAtual);
-    console.log('📄 Itens por página:', fretesPorPagina);
-    console.log('📄 Total de itens:', fretesFiltrados.length);
-    
     const tbody = document.getElementById('shippingSimpleBody');
     if (!tbody) {
         console.error('❌ Tbody não encontrado');
@@ -701,25 +722,13 @@ function renderizarPaginaFretes() {
         return;
     }
 
-    // Calcular total de páginas
     const totalPaginas = Math.ceil(totalItens / fretesPorPagina);
-    console.log('📄 Total de páginas:', totalPaginas);
-    
-    // Garantir que a página atual está dentro dos limites
     if (fretesPaginaAtual < 1) fretesPaginaAtual = 1;
     if (fretesPaginaAtual > totalPaginas) fretesPaginaAtual = totalPaginas;
-    console.log('📄 Página após validação:', fretesPaginaAtual);
     
-    // Calcular índices corretamente
     const inicio = (fretesPaginaAtual - 1) * fretesPorPagina;
     const fim = Math.min(inicio + fretesPorPagina, totalItens);
-    
-    console.log(`📄 Índices: inicio=${inicio}, fim=${fim}`);
-    console.log(`📄 Pegando itens de ${inicio} até ${fim}`);
-    
-    // Pegar os itens da página atual
     const paginaDados = fretesFiltrados.slice(inicio, fim);
-    console.log(`📄 Itens na página: ${paginaDados.length}`);
 
     if (paginaDados.length === 0) {
         tbody.innerHTML = '<tr><td colspan="15" class="text-center py-5">Nenhum dado nesta página.</td></tr>';
@@ -727,16 +736,27 @@ function renderizarPaginaFretes() {
         return;
     }
 
-    // Renderizar linhas
     tbody.innerHTML = '';
     
     paginaDados.forEach((item) => {
         const row = document.createElement('tr');
         
+        // ===== DIMENSÕES: PADRÃO 22x16x1 =====
+        let comprimento = DEFAULT_DIMENSIONS.comprimento; // 22
+        let largura = DEFAULT_DIMENSIONS.largura;        // 16
+        let altura = DEFAULT_DIMENSIONS.altura;          // 1
+        
+        if (item.comprimento_cm && item.comprimento_cm > 0) {
+            comprimento = item.comprimento_cm;
+        }
+        if (item.largura_cm && item.largura_cm > 0) {
+            largura = item.largura_cm;
+        }
+        if (item.altura_cm && item.altura_cm > 0) {
+            altura = item.altura_cm;
+        }
+        
         const peso = item.peso_estimado || 0.3;
-        const comprimento = item.comprimento_cm || 22;
-        const largura = item.largura_cm || 16;
-        const altura = item.altura_cm || 1;
         const valorProduto = item.valor_produto || 0;
         const freteCobrado = item.frete_cobrado || 0;
         const quantidade = item.quantidade || 1;
@@ -808,36 +828,42 @@ function renderizarPaginaFretes() {
             <td style="min-width:65px;">
                 <input type="number" class="form-control form-control-sm peso-input" 
                        value="${peso}" step="0.01" min="0" 
-                       data-venda-id="${item.id}" style="width:60px; font-size:10px; padding:2px 4px;">
+                       data-venda-id="${item.id}" style="width:70px; font-size:12px; padding:4px 6px;">
             </td>
-            <td style="min-width:160px;">
-                <div style="display:flex; gap:2px; flex-wrap:wrap; align-items:center;">
-                    <input type="number" class="form-control form-control-sm medida-input" 
-                           value="${comprimento}" step="0.1" min="0" 
-                           data-venda-id="${item.id}" data-medida="comprimento" style="width:40px; font-size:10px; padding:2px 4px;" placeholder="C">
-                    <span style="font-size:9px;">x</span>
-                    <input type="number" class="form-control form-control-sm medida-input" 
-                           value="${largura}" step="0.1" min="0" 
-                           data-venda-id="${item.id}" data-medida="largura" style="width:40px; font-size:10px; padding:2px 4px;" placeholder="L">
-                    <span style="font-size:9px;">x</span>
-                    <input type="number" class="form-control form-control-sm medida-input" 
-                           value="${altura}" step="0.1" min="0" 
-                           data-venda-id="${item.id}" data-medida="altura" style="width:40px; font-size:10px; padding:2px 4px;" placeholder="A">
+            <td style="min-width:220px; padding: 4px 8px;">
+                <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center;">
+                    <input type="text" class="form-control form-control-sm medida-input" 
+                           value="${comprimento}" 
+                           data-venda-id="${item.id}" data-medida="comprimento" 
+                           style="width:50px; font-size:13px; padding:4px 6px; text-align:center; height:32px;" 
+                           placeholder="C" maxlength="6">
+                    <span style="font-size:12px; font-weight:bold;">x</span>
+                    <input type="text" class="form-control form-control-sm medida-input" 
+                           value="${largura}" 
+                           data-venda-id="${item.id}" data-medida="largura" 
+                           style="width:50px; font-size:13px; padding:4px 6px; text-align:center; height:32px;" 
+                           placeholder="L" maxlength="6">
+                    <span style="font-size:12px; font-weight:bold;">x</span>
+                    <input type="text" class="form-control form-control-sm medida-input" 
+                           value="${altura}" 
+                           data-venda-id="${item.id}" data-medida="altura" 
+                           style="width:50px; font-size:13px; padding:4px 6px; text-align:center; height:32px;" 
+                           placeholder="A" maxlength="6">
                     <button class="btn btn-sm btn-success btn-salvar-medidas" 
                             data-venda-id="${item.id}" 
                             data-sku="${sku}"
-                            style="padding:1px 5px; font-size:10px;">
+                            style="padding:4px 8px; font-size:11px; height:32px;">
                         <i class="fas fa-save"></i>
                     </button>
                 </div>
-                <div style="font-size:8px; color:#6c757d; margin-top:2px;">
-                    Vol: <span class="peso-volumetrico-display">${pesoVol.toFixed(3)}</span> m³
+                <div style="font-size:9px; color:#6c757d; margin-top:3px;">
+                    Vol: <span class="peso-volumetrico-display">${pesoVol.toFixed(4)}</span> m³
                 </div>
             </td>
             <td style="min-width:70px; text-align:center;">
                 <div style="display:flex; flex-direction:column; align-items:center; gap:2px;">
                     ${fotoThumb}
-                    <button class="btn btn-sm btn-outline-secondary" onclick="abrirEditorFoto('${item.id}', '${sku}')" title="Editar foto" style="padding:1px 5px; font-size:9px;">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="abrirEditorFoto('${item.id}', '${sku}')" title="Editar foto" style="padding:2px 8px; font-size:9px;">
                         <i class="fas fa-camera"></i>
                     </button>
                 </div>
@@ -849,11 +875,11 @@ function renderizarPaginaFretes() {
                         data-frete-cobrado="${freteCobrado}"
                         data-frete-esperado="${freteEsperado !== null ? freteEsperado : 0}"
                         ${item.temReclamacaoAberta ? 'disabled' : ''}
-                        style="padding:2px 6px; font-size:10px; width:100%;">
+                        style="padding:4px 6px; font-size:10px; width:100%;">
                     <i class="fas fa-comment-dots"></i> Reclamar
                 </button>
                 ${item.temReclamacaoAberta || item.temReclamacaoRejeitada || item.temReclamacaoResolvida ? 
-                    `<button class="btn btn-sm btn-info btn-ver-reclamacao" data-venda-id="${item.id}" title="Ver reclamações" style="padding:2px 6px; font-size:10px; width:100%; margin-top:2px;">
+                    `<button class="btn btn-sm btn-info btn-ver-reclamacao" data-venda-id="${item.id}" title="Ver reclamações" style="padding:4px 6px; font-size:10px; width:100%; margin-top:2px;">
                         <i class="fas fa-eye"></i> Ver
                     </button>` : ''}
             </td>
@@ -870,6 +896,19 @@ function renderizarPaginaFretes() {
                 salvarMedidasERecalcular(row, this.dataset.vendaId, this.dataset.sku);
             });
         }
+
+        // Enter key para salvar
+        const medidasInputs = row.querySelectorAll('.medida-input');
+        medidasInputs.forEach(input => {
+            input.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    const btnSalvar = this.closest('tr').querySelector('.btn-salvar-medidas');
+                    if (btnSalvar) {
+                        btnSalvar.click();
+                    }
+                }
+            });
+        });
 
         const btnReclamar = row.querySelector('.btn-reclamar');
         if (btnReclamar) {
@@ -890,12 +929,25 @@ function renderizarPaginaFretes() {
         }
     });
 
-    // Atualizar informações da página
     atualizarInfoPagina();
 }
 
+// Adicione esta função para validar os campos de dimensão
+function validarMedida(valor, nome) {
+    const num = parseFloat(valor);
+    if (isNaN(num) || num <= 0) {
+        showToast(`Por favor, insira um valor válido para ${nome}`, 'warning');
+        return false;
+    }
+    if (num > 999) {
+        showToast(`Valor muito alto para ${nome}`, 'warning');
+        return false;
+    }
+    return true;
+}
+
 // ============================================
-// SALVAR MEDIDAS E RECALCULAR
+// SALVAR MEDIDAS E RECALCULAR (ATUALIZADO)
 // ============================================
 async function salvarMedidasERecalcular(row, vendaId, sku) {
     try {
@@ -904,19 +956,24 @@ async function salvarMedidasERecalcular(row, vendaId, sku) {
         const altInput = row.querySelector('.medida-input[data-medida="altura"]');
         const pesoInput = row.querySelector('.peso-input');
         
-        const comprimento = parseFloat(compInput?.value) || 22;
-        const largura = parseFloat(largInput?.value) || 16;
-        const altura = parseFloat(altInput?.value) || 1;
+        const comprimento = parseFloat(compInput?.value) || DEFAULT_DIMENSIONS.comprimento;
+        const largura = parseFloat(largInput?.value) || DEFAULT_DIMENSIONS.largura;
+        const altura = parseFloat(altInput?.value) || DEFAULT_DIMENSIONS.altura;
         const peso = parseFloat(pesoInput?.value) || 0.3;
 
+        // Validar se as medidas são válidas
         if (comprimento <= 0 || largura <= 0 || altura <= 0 || peso <= 0) {
             showToast('Medidas e peso devem ser maiores que zero', 'warning');
             return;
         }
 
+        // Salvar no banco vinculado ao SKU
         await salvarMedidasSKU(sku, comprimento, largura, altura, peso);
 
+        // Calcular peso volumétrico
         const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
+        
+        // Atualizar no banco de fretes
         await window.supabaseClient
             .from('fretes_ml')
             .update({
@@ -929,6 +986,7 @@ async function salvarMedidasERecalcular(row, vendaId, sku) {
             })
             .eq('id', vendaId);
 
+        // Atualizar a linha da tabela
         const valorCell = row.querySelector('td:nth-child(5)');
         const valorText = valorCell?.textContent.replace('R$ ', '').replace(',', '.') || '0';
         const valorProduto = parseFloat(valorText) || 0;
@@ -950,6 +1008,7 @@ async function salvarMedidasERecalcular(row, vendaId, sku) {
             if (diffAbs < 0.01) {
                 statusClass = 'success';
                 statusText = '✅ Correto';
+                // Se corrigiu, remove da lista de incorretos
                 await window.supabaseClient.from('fretes_ml').delete().eq('id', vendaId);
                 showToast(`✅ Frete corrigido! Registro removido.`, 'success');
                 await carregarFretesSalvos();
@@ -969,7 +1028,7 @@ async function salvarMedidasERecalcular(row, vendaId, sku) {
             volDisplay.textContent = pesoVol.toFixed(3);
         }
 
-        showToast(`✅ Medidas salvas para ${sku}!`, 'success');
+        showToast(`✅ Medidas salvas para ${sku}! (${comprimento}x${largura}x${altura}cm)`, 'success');
 
     } catch (error) {
         console.error('Erro ao salvar medidas:', error);
@@ -2966,10 +3025,10 @@ function atualizarGraficosRelatorioCompleto(fretes, reclamacoes) {
 }
 
 // ============================================
-// EXPORTAR DADOS DA TABELA PRINCIPAL PARA EXCEL
+// EXPORTAR DADOS COMPLETOS (ATUALIZADO)
 // ============================================
 function exportarRelatorioCompletoExcel() {
-    console.log('📊 Exportando tabela de fretes para Excel...');
+    console.log('📊 Exportando TODOS os dados de fretes para Excel...');
     
     try {
         if (typeof XLSX === 'undefined') {
@@ -2978,53 +3037,122 @@ function exportarRelatorioCompletoExcel() {
             return;
         }
 
-        // Pegar a tabela principal
-        const table = document.getElementById('shippingSimpleTable');
-        if (!table) {
-            showToast('❌ Tabela não encontrada', 'error');
-            return;
-        }
-
-        // Verificar se a tabela tem dados
-        const tbody = table.querySelector('tbody');
-        if (!tbody || tbody.querySelectorAll('tr').length === 0) {
+        const dadosParaExportar = fretesFiltrados;
+        
+        if (!dadosParaExportar || dadosParaExportar.length === 0) {
             showToast('Nenhum dado para exportar', 'warning');
             return;
         }
 
-        // Converter tabela para sheet
-        const ws = XLSX.utils.table_to_sheet(table, { raw: true });
-        
-        // Ajustar largura das colunas
-        ws['!cols'] = [
-            { wch: 22 },  // Venda
-            { wch: 45 },  // Título
-            { wch: 20 },  // SKU
-            { wch: 18 },  // MLB
-            { wch: 12 },  // Valor
-            { wch: 8 },   // Qtd
-            { wch: 16 },  // Frete Cobrado
-            { wch: 16 },  // Frete Esperado
-            { wch: 25 },  // Status
-            { wch: 12 },  // Peso
-            { wch: 25 },  // Dimensões
-            { wch: 12 },  // Foto
-            { wch: 25 },  // Ações
-            { wch: 14 },  // Data Venda
-            { wch: 16 }   // Tipo Envio
-        ];
-        
+        console.log(`📊 Exportando ${dadosParaExportar.length} registros completos`);
+
+        const dadosFormatados = dadosParaExportar.map(item => {
+            // USAR DIMENSÕES SALVAS OU PADRÃO 22x16x1
+            let comprimento = DEFAULT_DIMENSIONS.comprimento;
+            let largura = DEFAULT_DIMENSIONS.largura;
+            let altura = DEFAULT_DIMENSIONS.altura;
+            
+            // Se tiver medidas salvas no item, usa elas
+            if (item.comprimento_cm && item.largura_cm && item.altura_cm) {
+                comprimento = item.comprimento_cm;
+                largura = item.largura_cm;
+                altura = item.altura_cm;
+            }
+            
+            const peso = item.peso_estimado || 0.3;
+            const freteEsperado = calcularFreteEsperado(item.valor_produto, peso);
+            const diferenca = (item.frete_cobrado || 0) - (freteEsperado || 0);
+            
+            let status = 'Não calculado';
+            if (freteEsperado !== null) {
+                const diffAbs = Math.abs(diferenca);
+                if (diffAbs < 0.01) {
+                    status = '✅ Correto';
+                } else if (diferenca > 0) {
+                    status = `❌ Acima (R$ ${diferenca.toFixed(2)})`;
+                } else {
+                    status = `⚠️ Abaixo (R$ ${Math.abs(diferenca).toFixed(2)})`;
+                }
+            }
+
+            let reclamacaoStatus = 'Nenhuma';
+            if (item.temReclamacaoAberta) reclamacaoStatus = 'Em andamento';
+            else if (item.temReclamacaoRejeitada) reclamacaoStatus = 'Rejeitada';
+            else if (item.temReclamacaoResolvida) reclamacaoStatus = 'Resolvida';
+
+            const pesoVol = calcularPesoVolumetrico(comprimento, largura, altura);
+
+            return {
+                'Venda': item.id || '',
+                'Título': item.titulo || 'Sem título',
+                'SKU': item.sku || 'N/A',
+                'MLB': item.mlb || 'N/A',
+                'Valor (R$)': parseFloat(item.valor_produto || 0).toFixed(2),
+                'Quantidade': item.quantidade || 1,
+                'Frete Cobrado (R$)': parseFloat(item.frete_cobrado || 0).toFixed(2),
+                'Frete Esperado (R$)': freteEsperado !== null ? freteEsperado.toFixed(2) : 'N/A',
+                'Diferença (R$)': diferenca !== 0 ? diferenca.toFixed(2) : '0,00',
+                'Status': status,
+                'Reclamação': reclamacaoStatus,
+                'Peso (kg)': peso.toFixed(3),
+                'Dimensões (CxLxA)': `${comprimento}x${largura}x${altura}cm`,
+                'Peso Volumétrico (m³)': pesoVol.toFixed(4),
+                'Data Venda': item.data_venda ? new Date(item.data_venda).toLocaleDateString('pt-BR') : '-',
+                'Tipo Envio': item.tipo_envio || 'N/I',
+                'Fonte Frete': item.fonte_frete || 'N/A',
+                'Nº Reclamação': item.ultimaReclamacao?.numero_reclamacao || '',
+                'Nº Operação': item.ultimaReclamacao?.numero_operacao || '',
+                'Protocolos': item.ultimaReclamacao?.protocolos?.join('; ') || ''
+            };
+        });
+
+        const ws = XLSX.utils.json_to_sheet(dadosFormatados);
+        const colWidths = [];
+        const maxCols = dadosFormatados.length > 0 ? Object.keys(dadosFormatados[0]).length : 0;
+        for (let i = 0; i < maxCols; i++) {
+            colWidths.push({ wch: 20 });
+        }
+        ws['!cols'] = colWidths;
+
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'Fretes');
-        
+
+        // Resumo
+        const resumoData = [
+            ['RELATÓRIO DE FRETES INCORRETOS'],
+            [''],
+            ['Total de registros', dadosFormatados.length],
+            ['Data de exportação', new Date().toLocaleString('pt-BR')],
+            ['Dimensão padrão', '22x16x1cm'],
+            [''],
+            ['RESUMO POR STATUS'],
+            ['Status', 'Quantidade']
+        ];
+
+        let totalAcima = 0, totalAbaixo = 0, totalCorreto = 0;
+        dadosFormatados.forEach(item => {
+            const status = item['Status'] || '';
+            if (status.includes('Acima')) totalAcima++;
+            else if (status.includes('Abaixo')) totalAbaixo++;
+            else if (status.includes('Correto')) totalCorreto++;
+        });
+
+        resumoData.push(['✅ Correto', totalCorreto]);
+        resumoData.push(['❌ Acima', totalAcima]);
+        resumoData.push(['⚠️ Abaixo', totalAbaixo]);
+        resumoData.push(['Total', totalCorreto + totalAcima + totalAbaixo]);
+
+        const wsResumo = XLSX.utils.aoa_to_sheet(resumoData);
+        wsResumo['!cols'] = [{ wch: 30 }, { wch: 15 }];
+        XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+
         const dataAtual = new Date().toISOString().split('T')[0];
-        const nomeArquivo = `fretes_${dataAtual}.xlsx`;
+        const nomeArquivo = `fretes_completos_${dataAtual}.xlsx`;
         
         XLSX.writeFile(wb, nomeArquivo);
         
-        const rowCount = tbody.querySelectorAll('tr').length;
-        showToast(`✅ ${rowCount} registros exportados com sucesso!`, 'success');
-        console.log(`✅ Arquivo "${nomeArquivo}" salvo com ${rowCount} registros`);
+        showToast(`✅ ${dadosFormatados.length} registros exportados com sucesso!`, 'success');
+        console.log(`✅ Arquivo "${nomeArquivo}" salvo com ${dadosFormatados.length} registros`);
         
     } catch (error) {
         console.error('❌ Erro ao exportar:', error);
