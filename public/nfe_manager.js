@@ -68,7 +68,22 @@ function mapearUF(nomeEstado) {
 
 async function buscarValorExatoPagamento(orderId) {
     try {
-        console.log(`🔍 Buscando valor exato do pagamento para venda ${orderId}...`);
+        orderId =
+            normalizarOrderIdML(
+                orderId
+            );
+            if (!orderId) {
+
+            console.warn(
+                '⚠️ ID da venda inválido para buscar pagamento'
+            );
+
+            return null;
+        }
+
+        console.log(
+            `🔍 Buscando valor exato do pagamento para venda ${orderId}...`
+        );
         
         let token = localStorage.getItem('ml_access_token');
         if (!token && typeof window.getValidToken === 'function') {
@@ -2285,6 +2300,1740 @@ async function abrirModalEdicaoProdutos(orderId) {
     }
 }
 
+function extrairDataEnvioML(venda) {
+
+    if (!venda) {
+        return null;
+    }
+
+    const info =
+        parseInformacoesEnvioNFE(
+            venda
+        );
+
+    // =====================================================
+    // PRINCIPAL
+    // SLA DO MERCADO LIVRE
+    // =====================================================
+
+    const expectedDate =
+        normalizarDataEnvioML(
+            info?.sla
+                ?.expected_date
+        );
+
+    // =====================================================
+    // DATA DE LIBERAÇÃO
+    //
+    // IMPORTANTE PARA:
+    // venda feita em 01/08
+    // mas liberada para despacho em 12/08.
+    // =====================================================
+
+    const dataLiberacao =
+        normalizarDataEnvioML(
+            venda.data_liberacao ||
+            info.data_liberacao
+        );
+
+    const statusLiberacao =
+        String(
+            venda.status_liberacao ||
+            info.status_liberacao ||
+            ''
+        )
+            .toLowerCase();
+
+    if (
+        dataLiberacao &&
+        (
+            !expectedDate ||
+
+            (
+                [
+                    'liberado',
+                    'agendado',
+                    'pendente'
+                ].includes(
+                    statusLiberacao
+                ) &&
+                dataLiberacao >=
+                    expectedDate
+            )
+        )
+    ) {
+
+        return dataLiberacao;
+    }
+
+    if (expectedDate) {
+        return expectedDate;
+    }
+
+    // =====================================================
+    // DATA JÁ PROCESSADA
+    // =====================================================
+
+    const processada =
+        normalizarDataEnvioML(
+            venda._data_envio
+        );
+
+    if (processada) {
+        return processada;
+    }
+
+    // =====================================================
+    // FALLBACKS
+    // =====================================================
+
+    const candidatos = [
+
+        info?.lead_time
+            ?.estimated_handling_limit
+            ?.date,
+
+        info?.shipping_option
+            ?.estimated_handling_limit
+            ?.date,
+
+        info
+            ?.estimated_handling_limit
+            ?.date,
+
+        info?.lead_time
+            ?.handling_time
+            ?.limit
+            ?.date
+
+    ];
+
+    for (
+        const candidato
+        of candidatos
+    ) {
+
+        const data =
+            normalizarDataEnvioML(
+                candidato
+            );
+
+        if (data) {
+            return data;
+        }
+    }
+
+    return null;
+}
+
+function extrairPrazoEnvioCompletoML(
+    venda
+) {
+
+    if (!venda) {
+        return null;
+    }
+
+    const info =
+        parseInformacoesEnvioNFE(
+            venda
+        );
+
+    const candidatos = [
+
+        info?.sla
+            ?.expected_date,
+
+        venda.data_liberacao,
+
+        info.data_liberacao,
+
+        info?.lead_time
+            ?.estimated_handling_limit
+            ?.date,
+
+        info?.shipping_option
+            ?.estimated_handling_limit
+            ?.date,
+
+        info
+            ?.estimated_handling_limit
+            ?.date,
+
+        venda._prazo_envio
+    ];
+
+    for (
+        const candidato
+        of candidatos
+    ) {
+
+        if (candidato) {
+            return candidato;
+        }
+    }
+
+    return null;
+}
+
+// =========================================================
+// VENDA PERTENCE À DATA SELECIONADA?
+// =========================================================
+
+function vendaPertenceDataSelecionadaNFE(
+    venda,
+    dataSelecionada
+) {
+
+    if (!dataSelecionada) {
+        return true;
+    }
+
+    const isFull =
+        detectarVendaFullNFE(
+            venda
+        );
+
+    // =====================================================
+    // FULL
+    //
+    // FULL não tem prazo de despacho do vendedor.
+    // Para não desaparecer da tabela, usamos a data
+    // em que a venda caiu.
+    // =====================================================
+
+    if (isFull) {
+
+        return (
+            obterDataVendaNFE(
+                venda
+            ) ===
+            dataSelecionada
+        );
+    }
+
+    // =====================================================
+    // NORMAL
+    // =====================================================
+
+    return (
+        extrairDataEnvioML(
+            venda
+        ) ===
+        dataSelecionada
+    );
+}
+
+async function carregarIdsNFEAtivas() {
+
+    const ids =
+        new Set();
+
+    // =====================================================
+    // 1. BACKEND
+    // =====================================================
+
+    try {
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/listar-nfes`,
+                {
+                    cache:
+                        'no-store'
+                }
+            );
+
+        if (
+            response.ok
+        ) {
+
+            const data =
+                await response.json();
+
+            const notas =
+                Array.isArray(
+                    data?.notas
+                )
+                    ? data.notas
+                    : [];
+
+            notas.forEach(
+                nfe => {
+
+                    if (
+                        nfe?.cancelada
+                    ) {
+                        return;
+                    }
+
+                    const id =
+                        normalizarOrderIdML(
+                            nfe?.venda_id ||
+                            nfe?.venda_id_ml ||
+                            nfe?.id_venda
+                        );
+
+                    if (id) {
+                        ids.add(
+                            id
+                        );
+                    }
+                }
+            );
+        }
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro ao consultar NF-es no backend:',
+            error
+        );
+    }
+
+    // =====================================================
+    // 2. SUPABASE
+    // =====================================================
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'nfe_emitidas'
+                )
+                .select(
+                    'venda_id, cancelada'
+                );
+
+        if (
+            !error &&
+            Array.isArray(
+                data
+            )
+        ) {
+
+            data.forEach(
+                nfe => {
+
+                    if (
+                        nfe?.cancelada
+                    ) {
+                        return;
+                    }
+
+                    const id =
+                        normalizarOrderIdML(
+                            nfe.venda_id
+                        );
+
+                    if (id) {
+                        ids.add(
+                            id
+                        );
+                    }
+                }
+            );
+        }
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro ao consultar nfe_emitidas:',
+            error
+        );
+    }
+
+    console.log(
+        `🧾 ${ids.size} venda(s) identificadas com NF-e`
+    );
+
+    return ids;
+}
+
+function mesclarVendasFonteNFE(
+    vendasBanco = [],
+    vendasRecentes = []
+) {
+
+    const mapa =
+        new Map();
+
+    const aplicar =
+        (
+            venda,
+            recente = false
+        ) => {
+
+            if (!venda) {
+                return;
+            }
+
+            const id =
+                normalizarOrderIdML(
+                    venda.id_venda_ml ||
+                    venda.id
+                );
+
+            if (!id) {
+                return;
+            }
+
+            const anterior =
+                mapa.get(id) ||
+                {};
+
+            const infoAnterior =
+                parseInformacoesEnvioNFE(
+                    anterior
+                );
+
+            const infoNovo =
+                parseInformacoesEnvioNFE(
+                    venda
+                );
+
+            // =================================================
+            // NÃO DEIXAR DADOS NOVOS APAGAREM O SLA ANTIGO
+            // E VICE-VERSA
+            // =================================================
+
+            const infoMesclado = {
+
+                ...infoAnterior,
+                ...infoNovo,
+
+                id:
+                    infoNovo.id ||
+                    infoAnterior.id ||
+                    venda.id_envio ||
+                    anterior.id_envio ||
+                    null,
+
+                tipo:
+                    infoNovo.tipo ||
+                    infoAnterior.tipo ||
+                    venda.tipo_envio ||
+                    anterior.tipo_envio ||
+                    null,
+
+                sla:
+                    infoNovo.sla ||
+                    infoAnterior.sla ||
+                    null,
+
+                lead_time:
+                    infoNovo.lead_time ||
+                    infoAnterior.lead_time ||
+                    null
+            };
+
+            const combinado = {
+
+                ...anterior,
+                ...venda,
+
+                id:
+                    id,
+
+                id_venda_ml:
+                    id,
+
+                informacoes_envio:
+                    infoMesclado,
+
+                nfe_emitida:
+                    Boolean(
+                        anterior
+                            .nfe_emitida ||
+                        venda
+                            .nfe_emitida
+                    ),
+
+                _fonte_recente:
+                    recente ||
+                    anterior
+                        ._fonte_recente ||
+                    false
+            };
+
+            mapa.set(
+                id,
+                combinado
+            );
+        };
+
+    vendasBanco.forEach(
+        venda =>
+            aplicar(
+                venda,
+                false
+            )
+    );
+
+    vendasRecentes.forEach(
+        venda =>
+            aplicar(
+                venda,
+                true
+            )
+    );
+
+    return [
+        ...mapa.values()
+    ];
+}
+
+async function buscarVendasAtualizadasRecentementeNFE(
+    dataReferencia = null,
+    diasJanela = 4,
+    maximo = 150
+) {
+
+    const token =
+        await obterTokenMLNFE();
+
+    if (!token) {
+
+        console.warn(
+            '⚠️ Token ML não disponível'
+        );
+
+        return [];
+    }
+
+    const dataBase =
+        dataReferencia
+            ? new Date(
+                `${dataReferencia}T12:00:00`
+            )
+            : new Date();
+
+    const inicio =
+        new Date(
+            dataBase
+        );
+
+    inicio.setDate(
+        inicio.getDate() -
+        diasJanela
+    );
+
+    inicio.setHours(
+        0,
+        0,
+        0,
+        0
+    );
+
+    const vendas =
+        [];
+
+    const LIMIT =
+        50;
+
+    let offset =
+        0;
+
+    let total =
+        null;
+
+    try {
+
+        while (
+            vendas.length <
+                maximo &&
+            (
+                total === null ||
+                offset < total
+            )
+        ) {
+
+            const params =
+                new URLSearchParams({
+                    seller:
+                        '415176739',
+
+                    'order.status':
+                        'paid',
+
+                    'order.date_last_updated.from':
+                        inicio.toISOString(),
+
+                    sort:
+                        'date_desc',
+
+                    limit:
+                        String(
+                            LIMIT
+                        ),
+
+                    offset:
+                        String(
+                            offset
+                        )
+                });
+
+            const url =
+                `https://api.mercadolibre.com/orders/search?${params.toString()}`;
+
+            const proxyUrl =
+                `${window.WORKER_URL}/api/ml/proxy?url=` +
+                `${encodeURIComponent(url)}` +
+                `&token=${encodeURIComponent(token)}`;
+
+            const response =
+                await fetch(
+                    proxyUrl,
+                    {
+                        cache:
+                            'no-store'
+                    }
+                );
+
+            if (
+                !response.ok
+            ) {
+
+                console.warn(
+                    `⚠️ Busca de orders atualizadas: HTTP ${response.status}`
+                );
+
+                break;
+            }
+
+            const payload =
+                await response.json();
+
+            const resultados =
+                Array.isArray(
+                    payload?.results
+                )
+                    ? payload.results
+                    : [];
+
+            if (
+                total ===
+                null
+            ) {
+
+                total =
+                    Number(
+                        payload
+                            ?.paging
+                            ?.total ||
+                        resultados
+                            .length ||
+                        0
+                    );
+            }
+
+            vendas.push(
+                ...resultados
+            );
+
+            offset +=
+                LIMIT;
+
+            if (
+                resultados.length <
+                LIMIT
+            ) {
+
+                break;
+            }
+        }
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro ao buscar orders atualizadas:',
+            error
+        );
+
+        return [];
+    }
+
+    // =====================================================
+    // BUSCAR SLA DAS ORDERS
+    // =====================================================
+
+    const lista =
+        vendas.slice(
+            0,
+            maximo
+        );
+
+    const enriquecidas =
+        [];
+
+    const TAMANHO_LOTE =
+        10;
+
+    for (
+        let i = 0;
+        i < lista.length;
+        i += TAMANHO_LOTE
+    ) {
+
+        const lote =
+            lista.slice(
+                i,
+                i +
+                    TAMANHO_LOTE
+            );
+
+        const resultados =
+            await Promise.all(
+
+                lote.map(
+                    async venda => {
+
+                        const idVenda =
+                            normalizarOrderIdML(
+                                venda.id
+                            );
+
+                        const shipmentId =
+                            venda.shipping
+                                ?.id ||
+                            null;
+
+                        if (
+                            !shipmentId
+                        ) {
+
+                            return {
+
+                                ...venda,
+
+                                id:
+                                    idVenda,
+
+                                id_venda_ml:
+                                    idVenda
+                            };
+                        }
+
+                        let sla =
+                            null;
+
+                        try {
+
+                            const slaUrl =
+                                `https://api.mercadolibre.com/shipments/${shipmentId}/sla`;
+
+                            const slaProxy =
+                                `${window.WORKER_URL}/api/ml/proxy?url=` +
+                                `${encodeURIComponent(slaUrl)}` +
+                                `&token=${encodeURIComponent(token)}`;
+
+                            const slaResponse =
+                                await fetch(
+                                    slaProxy,
+                                    {
+                                        cache:
+                                            'no-store'
+                                    }
+                                );
+
+                            if (
+                                slaResponse.ok
+                            ) {
+
+                                sla =
+                                    await slaResponse
+                                        .json();
+                            }
+
+                        } catch (
+                            error
+                        ) {
+
+                            console.debug(
+                                `ℹ️ SLA indisponível para ${shipmentId}`
+                            );
+                        }
+
+                        return {
+
+                            ...venda,
+
+                            id:
+                                idVenda,
+
+                            id_venda_ml:
+                                idVenda,
+
+                            id_envio:
+                                shipmentId,
+
+                            informacoes_envio: {
+
+                                id:
+                                    shipmentId,
+
+                                sla:
+                                    sla
+                            }
+                        };
+                    }
+                )
+            );
+
+        enriquecidas.push(
+            ...resultados.filter(
+                Boolean
+            )
+        );
+    }
+
+    console.log(
+        `🕒 ${enriquecidas.length} order(s) atualizadas recentemente`
+    );
+
+    return enriquecidas;
+}
+
+async function carregarVendasFonteBancoML() {
+
+    if (
+        !window
+            .supabaseClient
+    ) {
+        return [];
+    }
+
+    const vendas =
+        [];
+
+    const POR_PAGINA =
+        1000;
+
+    const MAXIMO =
+        5000;
+
+    try {
+
+        for (
+            let inicio = 0;
+            inicio < MAXIMO;
+            inicio += POR_PAGINA
+        ) {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_ml'
+                    )
+                    .select('*')
+                    .order(
+                        'data_venda',
+                        {
+                            ascending:
+                                false
+                        }
+                    )
+                    .range(
+                        inicio,
+                        inicio +
+                            POR_PAGINA -
+                            1
+                    );
+
+            if (error) {
+                throw error;
+            }
+
+            if (
+                !Array.isArray(
+                    data
+                ) ||
+                data.length ===
+                    0
+            ) {
+                break;
+            }
+
+            vendas.push(
+                ...data
+            );
+
+            if (
+                data.length <
+                POR_PAGINA
+            ) {
+                break;
+            }
+        }
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro ao carregar vendas_ml:',
+            error
+        );
+    }
+
+    console.log(
+        `📚 ${vendas.length} venda(s) carregadas de vendas_ml`
+    );
+
+    return vendas;
+}
+
+// =========================================================
+// TOKEN ML
+// =========================================================
+
+async function obterTokenMLNFE() {
+
+    let token =
+        localStorage.getItem(
+            'ml_access_token'
+        );
+
+    if (
+        !token &&
+        typeof window
+            .getValidToken ===
+        'function'
+    ) {
+
+        try {
+
+            const tokenData =
+                await window
+                    .getValidToken();
+
+            token =
+                tokenData
+                    ?.access_token ||
+                null;
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Erro ao renovar token ML:',
+                error
+            );
+        }
+    }
+
+    return token || null;
+}
+
+function obterDataHojeLocal() {
+
+    const agora =
+        new Date();
+
+    const ano =
+        agora.getFullYear();
+
+    const mes =
+        String(
+            agora.getMonth() + 1
+        ).padStart(
+            2,
+            '0'
+        );
+
+    const dia =
+        String(
+            agora.getDate()
+        ).padStart(
+            2,
+            '0'
+        );
+
+    return `${ano}-${mes}-${dia}`;
+}
+
+function formatarDataNFE(data) {
+
+    if (!data) {
+        return '-';
+    }
+
+    const normalizada =
+        normalizarDataEnvioML(
+            data
+        );
+
+    if (!normalizada) {
+        return '-';
+    }
+
+    const [
+        ano,
+        mes,
+        dia
+    ] =
+        normalizada.split('-');
+
+    return `${dia}/${mes}/${ano}`;
+}
+
+function escaparHTMLNFE(valor) {
+
+    return String(
+        valor ??
+        ''
+    )
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+// =========================================================
+// IDENTIFICAR FULL
+// =========================================================
+
+function detectarVendaFullNFE(venda) {
+
+    if (!venda) {
+        return false;
+    }
+
+    if (
+        venda._is_full ===
+        true
+    ) {
+        return true;
+    }
+
+    const info =
+        parseInformacoesEnvioNFE(
+            venda
+        );
+
+    const textos = [
+        venda._logistic_type,
+        venda._shipping_mode,
+        venda.tipo_envio,
+        venda.meio_envio,
+        info.tipo,
+        venda.shipping?.logistic_type,
+        venda.shipping?.shipping_mode,
+        venda.shipping?.logistic?.type,
+        venda.shipping?.logistic?.mode,
+        ...(Array.isArray(venda.tags)
+            ? venda.tags
+            : [])
+    ];
+
+    const texto =
+        textos
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+
+    return (
+        texto.includes(
+            'fulfillment'
+        ) ||
+        texto.includes(
+            'full'
+        )
+    );
+}
+
+function garantirControlesVendasNFE() {
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
+
+    if (!tbody) {
+        return;
+    }
+
+    const tabela =
+        tbody.closest(
+            'table'
+        );
+
+    if (!tabela) {
+        return;
+    }
+
+    // =====================================================
+    // CABEÇALHO
+    // =====================================================
+
+    const header =
+        tabela.querySelector(
+            'thead tr'
+        );
+
+    if (header) {
+
+        header.innerHTML = `
+            <th>Venda</th>
+            <th>Envio</th>
+            <th>Cliente</th>
+            <th>SKU</th>
+            <th>Valor</th>
+            <th>Modalidade</th>
+            <th>NF-e</th>
+            <th>Estoque</th>
+            <th>Ações</th>
+        `;
+    }
+
+    if (
+        document.getElementById(
+            'controlesVendasNFE'
+        )
+    ) {
+
+        return;
+    }
+
+    const container =
+        document.createElement(
+            'div'
+        );
+
+    container.id =
+        'controlesVendasNFE';
+
+    container.style.cssText = `
+        display:flex;
+        align-items:flex-end;
+        gap:10px;
+        flex-wrap:wrap;
+        padding:12px;
+        margin-bottom:12px;
+        background:#f8f9fa;
+        border:1px solid #e2e6ea;
+        border-radius:8px;
+    `;
+
+    container.innerHTML = `
+
+        <div>
+
+            <label
+                style="
+                    display:block;
+                    font-weight:600;
+                    margin-bottom:4px;
+                "
+            >
+                Data de envio
+            </label>
+
+            <input
+                type="date"
+                id="filtroDataEnvioNFE"
+                class="form-control"
+                style="width:175px;"
+            >
+
+        </div>
+
+
+        <button
+            type="button"
+            class="btn btn-primary"
+            id="btnAtualizarDataNFE"
+        >
+            <i class="fas fa-sync-alt"></i>
+            Atualizar esta data
+        </button>
+
+
+        <button
+            type="button"
+            class="btn btn-secondary"
+            id="btnTodasVendasNFE"
+        >
+            <i class="fas fa-list"></i>
+            Todas salvas
+        </button>
+
+
+        <span
+            id="statusAtualizacaoNFE"
+            style="
+                color:#6c757d;
+                font-size:13px;
+            "
+        ></span>
+    `;
+
+    const wrapper =
+        tabela.parentElement;
+
+    wrapper.parentElement
+        .insertBefore(
+            container,
+            wrapper
+        );
+
+    const input =
+        document.getElementById(
+            'filtroDataEnvioNFE'
+        );
+
+    input.value =
+        obterDataHojeLocal();
+
+    input.addEventListener(
+        'change',
+        async () => {
+
+            window
+                ._nfeFiltroTodas =
+                false;
+
+            await atualizarVendasDataSelecionada();
+        }
+    );
+
+    document
+        .getElementById(
+            'btnAtualizarDataNFE'
+        )
+        ?.addEventListener(
+            'click',
+            atualizarVendasDataSelecionada
+        );
+
+    document
+        .getElementById(
+            'btnTodasVendasNFE'
+        )
+        ?.addEventListener(
+            'click',
+            mostrarTodasVendasCacheNFE
+        );
+}
+
+async function mostrarTodasVendasCacheNFE() {
+
+    window
+        ._nfeFiltroTodas =
+        true;
+
+    const status =
+        document.getElementById(
+            'statusAtualizacaoNFE'
+        );
+
+    if (status) {
+
+        status.textContent =
+            'Exibindo todas as vendas salvas';
+    }
+
+    const vendas =
+        await carregarVendasCacheNFE(
+            null
+        );
+
+    renderizarVendasNFETabela(
+        vendas
+    );
+}
+
+async function atualizarVendasDataSelecionada() {
+
+    window
+        ._nfeFiltroTodas =
+        false;
+
+    const input =
+        document.getElementById(
+            'filtroDataEnvioNFE'
+        );
+
+    const data =
+        input?.value ||
+        obterDataHojeLocal();
+
+    const status =
+        document.getElementById(
+            'statusAtualizacaoNFE'
+        );
+
+    const btn =
+        document.getElementById(
+            'btnAtualizarDataNFE'
+        );
+
+    const textoOriginal =
+        btn?.innerHTML ||
+        '';
+
+    try {
+
+        if (status) {
+
+            status.textContent =
+                'Atualizando vendas...';
+        }
+
+        if (btn) {
+
+            btn.disabled =
+                true;
+
+            btn.innerHTML =
+                '<span class="spinner"></span> Atualizando...';
+        }
+
+        // =====================================================
+        // MOSTRAR CACHE IMEDIATAMENTE
+        // =====================================================
+
+        const cache =
+            await carregarVendasCacheNFE(
+                data
+            );
+
+        renderizarVendasNFETabela(
+            cache
+        );
+
+        // =====================================================
+        // SINCRONIZAR
+        // =====================================================
+
+        await sincronizarVendasPendentesML(
+            data,
+            true
+        );
+
+        // =====================================================
+        // RECARREGAR CACHE
+        // =====================================================
+
+        const atualizado =
+            await carregarVendasCacheNFE(
+                data
+            );
+
+        renderizarVendasNFETabela(
+            atualizado
+        );
+
+        localStorage.setItem(
+            `nfe_sync_${data}`,
+            String(
+                Date.now()
+            )
+        );
+
+        if (status) {
+
+            status.textContent =
+                `Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`;
+        }
+
+        showToast(
+            `✅ ${atualizado.length} venda(s) com envio em ${formatarDataNFE(data)}`,
+            'success'
+        );
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro atualizando vendas:',
+            error
+        );
+
+        if (status) {
+
+            status.textContent =
+                'Erro na atualização';
+        }
+
+        showToast(
+            `❌ Erro ao atualizar vendas: ${error.message}`,
+            'error'
+        );
+
+    } finally {
+
+        if (btn) {
+
+            btn.disabled =
+                false;
+
+            btn.innerHTML =
+                textoOriginal ||
+                '<i class="fas fa-sync-alt"></i> Atualizar esta data';
+        }
+    }
+}
+
+
+function inicializarFiltroDataNFE() {
+
+    garantirControlesVendasNFE();
+
+    const input =
+        document.getElementById(
+            'filtroDataEnvioNFE'
+        );
+
+    if (
+        input &&
+        !input.value
+    ) {
+
+        input.value =
+            obterDataHojeLocal();
+    }
+}
+
+// =========================================================
+// NORMALIZAR DATA
+// =========================================================
+
+function normalizarDataEnvioML(valor) {
+
+    if (!valor) {
+        return null;
+    }
+
+    const match =
+        String(valor).match(
+            /(\d{4}-\d{2}-\d{2})/
+        );
+
+    return match
+        ? match[1]
+        : null;
+}
+
+async function verificarEstoqueVenda(
+    venda
+) {
+
+    try {
+
+        const itensParaVerificar =
+            [];
+
+        // =====================================================
+        // KIT JÁ CONFIGURADO NA ABA VENDAS ML
+        // =====================================================
+
+        if (
+            venda.eh_kit &&
+            Array.isArray(
+                venda.skus_kit
+            ) &&
+            venda.skus_kit.length >
+                0
+        ) {
+
+            for (
+                const item
+                of venda.skus_kit
+            ) {
+
+                const {
+                    sku,
+                    multiplicador
+                } =
+                    extrairSkuEQuantidade(
+                        item.sku
+                    );
+
+                itensParaVerificar.push({
+
+                    sku,
+
+                    sku_original:
+                        item.sku,
+
+                    quantidade_venda:
+                        (
+                            Number(
+                                item.estoque ||
+                                1
+                            ) *
+                            Number(
+                                venda.quantidade ||
+                                1
+                            ) *
+                            Number(
+                                multiplicador ||
+                                1
+                            )
+                        )
+                });
+            }
+
+        // =====================================================
+        // FORMATO DA ABA VENDAS ML
+        // =====================================================
+
+        } else if (
+            venda.sku
+        ) {
+
+            const {
+                sku,
+                multiplicador
+            } =
+                extrairSkuEQuantidade(
+                    venda.sku
+                );
+
+            itensParaVerificar.push({
+
+                sku,
+
+                sku_original:
+                    venda.sku,
+
+                quantidade_venda:
+                    Number(
+                        venda.quantidade ||
+                        venda.quantity ||
+                        1
+                    ) *
+                    Number(
+                        multiplicador ||
+                        1
+                    )
+            });
+
+        // =====================================================
+        // FALLBACK: ORDER ORIGINAL
+        // =====================================================
+
+        } else if (
+            Array.isArray(
+                venda.order_items
+            )
+        ) {
+
+            for (
+                const item
+                of venda.order_items
+            ) {
+
+                const skuOriginal =
+                    item.item
+                        ?.seller_sku;
+
+                if (!skuOriginal) {
+
+                    itensParaVerificar.push({
+
+                        sku:
+                            'SEM_SKU',
+
+                        quantidade_venda:
+                            item.quantity ||
+                            1
+                    });
+
+                    continue;
+                }
+
+                const {
+                    sku,
+                    multiplicador
+                } =
+                    extrairSkuEQuantidade(
+                        skuOriginal
+                    );
+
+                itensParaVerificar.push({
+
+                    sku,
+
+                    sku_original:
+                        skuOriginal,
+
+                    quantidade_venda:
+                        Number(
+                            item.quantity ||
+                            1
+                        ) *
+                        Number(
+                            multiplicador ||
+                            1
+                        )
+                });
+            }
+        }
+
+        if (
+            itensParaVerificar.length ===
+            0
+        ) {
+
+            return {
+
+                status:
+                    'sem_cadastro',
+
+                produtos:
+                    []
+            };
+        }
+
+        // =====================================================
+        // CONSULTAR CADASTRO
+        // =====================================================
+
+        const resultado =
+            [];
+
+        for (
+            const item
+            of itensParaVerificar
+        ) {
+
+            if (
+                !item.sku ||
+                item.sku ===
+                'SEM_SKU'
+            ) {
+
+                resultado.push({
+
+                    ...item,
+
+                    encontrado:
+                        false,
+
+                    motivo:
+                        'Venda sem SKU'
+                });
+
+                continue;
+            }
+
+            const {
+                data:
+                    produto,
+
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .select(
+                        'id, sku, nome, quantidade'
+                    )
+                    .eq(
+                        'sku',
+                        item.sku
+                    )
+                    .maybeSingle();
+
+            if (
+                error ||
+                !produto
+            ) {
+
+                resultado.push({
+
+                    ...item,
+
+                    encontrado:
+                        false,
+
+                    motivo:
+                        'SKU não cadastrado'
+                });
+
+                continue;
+            }
+
+            resultado.push({
+
+                ...item,
+
+                encontrado:
+                    true,
+
+                produto_id:
+                    produto.id,
+
+                nome:
+                    produto.nome,
+
+                estoque_atual:
+                    Number(
+                        produto.quantidade ||
+                        0
+                    )
+            });
+        }
+
+        const todosEncontrados =
+            resultado.length >
+                0 &&
+            resultado.every(
+                produto =>
+                    produto.encontrado
+            );
+
+        return {
+
+            status:
+                todosEncontrados
+                    ? 'disponivel'
+                    : 'sem_cadastro',
+
+            produtos:
+                resultado
+        };
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro ao verificar estoque:',
+            error
+        );
+
+        return {
+
+            status:
+                'erro',
+
+            produtos:
+                []
+        };
+    }
+}
+
 function fecharModalEdicaoProdutos() {
     const modal =
         document.getElementById(
@@ -2666,44 +4415,158 @@ async function enviarXMLparaMercadoLivre(orderId, xmlContent, token) {
     }
 }
 
-// =========================================================
-// ABAS
-// =========================================================
+async function mostrarAbaNFE(
+    aba
+) {
 
-async function mostrarAbaNFE(aba) {
-    const abaVendas = document.getElementById('abaVendas');
-    const abaEmitidas = document.getElementById('abaEmitidas');
-    const abaAvulsa = document.getElementById('abaAvulsa');
-    const abaTransportadoras = document.getElementById('abaTransportadoras');
-    const abaClientes = document.getElementById('abaClientes');
-    
-    if (abaVendas) abaVendas.classList.add('hidden');
-    if (abaEmitidas) abaEmitidas.classList.add('hidden');
-    if (abaAvulsa) abaAvulsa.classList.add('hidden');
-    if (abaTransportadoras) abaTransportadoras.classList.add('hidden');
-    if (abaClientes) abaClientes.classList.add('hidden');
-    
-    const target = document.getElementById(`aba${aba.charAt(0).toUpperCase() + aba.slice(1)}`);
-    if (target) target.classList.remove('hidden');
-    
-    const botoes = ['Vendas', 'Emitidas', 'Avulsa', 'Transportadoras', 'Clientes'];
-    botoes.forEach(btn => {
-        const el = document.getElementById(`tab${btn}Btn`);
-        if (el) {
-            if (btn.toLowerCase() === aba) {
-                el.classList.remove('btn-outline-primary');
-                el.classList.add('btn-primary');
+    const abaVendas =
+        document.getElementById(
+            'abaVendas'
+        );
+
+    const abaEmitidas =
+        document.getElementById(
+            'abaEmitidas'
+        );
+
+    const abaAvulsa =
+        document.getElementById(
+            'abaAvulsa'
+        );
+
+    const abaTransportadoras =
+        document.getElementById(
+            'abaTransportadoras'
+        );
+
+    const abaClientes =
+        document.getElementById(
+            'abaClientes'
+        );
+
+    if (abaVendas) {
+        abaVendas.classList.add(
+            'hidden'
+        );
+    }
+
+    if (abaEmitidas) {
+        abaEmitidas.classList.add(
+            'hidden'
+        );
+    }
+
+    if (abaAvulsa) {
+        abaAvulsa.classList.add(
+            'hidden'
+        );
+    }
+
+    if (abaTransportadoras) {
+        abaTransportadoras.classList.add(
+            'hidden'
+        );
+    }
+
+    if (abaClientes) {
+        abaClientes.classList.add(
+            'hidden'
+        );
+    }
+
+    const target =
+        document.getElementById(
+            `aba${aba.charAt(0).toUpperCase() + aba.slice(1)}`
+        );
+
+    if (target) {
+
+        target.classList.remove(
+            'hidden'
+        );
+    }
+
+    const botoes = [
+        'Vendas',
+        'Emitidas',
+        'Avulsa',
+        'Transportadoras',
+        'Clientes'
+    ];
+
+    botoes.forEach(
+        btn => {
+
+            const el =
+                document.getElementById(
+                    `tab${btn}Btn`
+                );
+
+            if (!el) {
+                return;
+            }
+
+            if (
+                btn.toLowerCase() ===
+                aba
+            ) {
+
+                el.classList.remove(
+                    'btn-outline-primary'
+                );
+
+                el.classList.add(
+                    'btn-primary'
+                );
+
             } else {
-                el.classList.remove('btn-primary');
-                el.classList.add('btn-outline-primary');
+
+                el.classList.remove(
+                    'btn-primary'
+                );
+
+                el.classList.add(
+                    'btn-outline-primary'
+                );
             }
         }
-    });
-    
-    if (aba === 'vendas') await carregarVendasPendentes();
-    if (aba === 'emitidas') await carregarNFesEmitidas();
-    if (aba === 'transportadoras') await carregarTransportadoras();
-    if (aba === 'clientes') await carregarClientes();
+    );
+
+    if (
+        aba ===
+        'vendas'
+    ) {
+
+        inicializarFiltroDataNFE();
+
+        await carregarVendasPendentes(
+            false
+        );
+    }
+
+    if (
+        aba ===
+        'emitidas'
+    ) {
+
+        await carregarNFesEmitidas();
+    }
+
+    if (
+        aba ===
+        'transportadoras'
+    ) {
+
+        await carregarTransportadoras();
+    }
+
+    if (
+        aba ===
+        'clientes'
+    ) {
+
+        await carregarClientes();
+    }
 }
 
 // =========================================================
@@ -2812,29 +4675,43 @@ window.handleEmitirNFEClick = handleEmitirNFEClick;
 window.handleVerNFEClick = handleVerNFEClick;
 window.handleCancelarNFEClick = handleCancelarNFEClick;
 
-// =========================================================
-// CARREGAR VENDAS PENDENTES (CORRIGIDO - VERIFICA NF-e NO ML)
-// =========================================================
-
-function renderizarVendasNFETabela(vendas) {
+function renderizarVendasNFETabela(
+    vendas
+) {
 
     const tbody =
         document.getElementById(
             'vendasPendentesBody'
         );
 
-    if (!tbody) return;
+    if (!tbody) {
+        return;
+    }
+
+    garantirControlesVendasNFE();
+
+    // =====================================================
+    // SEM VENDAS
+    // =====================================================
 
     if (
-        !Array.isArray(vendas) ||
-        vendas.length === 0
+        !Array.isArray(
+            vendas
+        ) ||
+        vendas.length ===
+            0
     ) {
+
+        vendasPendentes =
+            [];
 
         tbody.innerHTML = `
             <tr>
-                <td colspan="8"
-                    class="text-center py-4">
-                    Nenhuma venda encontrada
+                <td
+                    colspan="9"
+                    class="text-center py-4"
+                >
+                    Nenhuma venda encontrada para esta data.
                 </td>
             </tr>
         `;
@@ -2842,310 +4719,638 @@ function renderizarVendasNFETabela(vendas) {
         return;
     }
 
-    vendasPendentes = vendas;
+    vendasPendentes =
+        vendas;
 
-    function gerarBadgeEnvio(venda) {
+    // =====================================================
+    // BADGE DE ENVIO
+    // =====================================================
 
-        const logisticType =
-            venda._logistic_type || '';
+    const badgeEnvio =
+        venda => {
 
-        const shippingMode =
-            venda._shipping_mode || '';
+            const tipo =
+                `${venda._logistic_type || ''} ${venda._shipping_mode || ''} ${venda.tipo_envio || ''}`
+                    .toUpperCase();
 
-        const tipo =
-            (
-                logisticType +
-                ' ' +
-                shippingMode
-            ).toUpperCase();
+            if (
+                venda._is_full ||
+                tipo.includes(
+                    'FULL'
+                ) ||
+                tipo.includes(
+                    'FULFILLMENT'
+                )
+            ) {
 
-        if (
-            tipo.includes('FULL') ||
-            tipo.includes('FULFILLMENT')
-        ) {
-
-            return `
-                <span
-                    class="badge badge-danger"
-                    style="
-                        background:#dc3545;
-                        color:white;
-                        padding:4px 10px;
-                    "
-                >
-                    <i class="fas fa-warehouse"></i>
-                    FULL
-                </span>
-            `;
-        }
-
-        if (
-            tipo.includes('DROP_OFF') ||
-            tipo.includes('SELF_SERVICE') ||
-            tipo.includes('FLEX')
-        ) {
-
-            return `
-                <span
-                    class="badge"
-                    style="
-                        background:#fd7e14;
-                        color:white;
-                        padding:4px 10px;
-                    "
-                >
-                    <i class="fas fa-motorcycle"></i>
-                    FLEX
-                </span>
-            `;
-        }
-
-        if (
-            tipo.includes('CROSS_DOCKING') ||
-            tipo.includes('ME2') ||
-            tipo.includes('MERCADO_ENVIOS')
-        ) {
-
-            return `
-                <span
-                    class="badge"
-                    style="
-                        background:#17a2b8;
-                        color:white;
-                        padding:4px 10px;
-                    "
-                >
-                    <i class="fas fa-truck"></i>
-                    ME
-                </span>
-            `;
-        }
-
-        if (
-            tipo &&
-            tipo !== 'N/I'
-        ) {
-
-            return `
-                <span
-                    class="badge"
-                    style="
-                        background:#6c757d;
-                        color:white;
-                        padding:4px 10px;
-                    "
-                >
-                    ${tipo}
-                </span>
-            `;
-        }
-
-        if (venda.shipping?.id) {
-
-            return `
-                <span
-                    class="badge"
-                    style="
-                        background:#ffc107;
-                        color:#212529;
-                        padding:4px 10px;
-                    "
-                >
-                    PENDENTE
-                </span>
-            `;
-        }
-
-        return `
-            <span class="badge badge-secondary">
-                N/I
-            </span>
-        `;
-    }
-
-    tbody.innerHTML =
-        vendas.map(v => {
-
-            const vendaId =
-                v.id;
-
-            const dataVenda =
-                v.date_created
-                    ? new Date(
-                        v.date_created
-                    ).toLocaleDateString(
-                        'pt-BR'
-                    )
-                    : '-';
-
-            const cliente =
-                v.buyer?.nickname ||
-                'N/I';
-
-            const sku =
-                v.order_items?.[0]
-                    ?.item
-                    ?.seller_sku ||
-                'N/A';
-
-            const valorExibir =
-                v._valor_produto ||
-                v.total_amount ||
-                0;
-
-            const isFull =
-                v._is_full ||
-                false;
-
-            const temNFE =
-                v._tem_nfe ||
-                false;
-
-            let statusNFE = '';
-            let botaoEmitir = '';
-
-            if (isFull) {
-
-                statusNFE = `
+                return `
                     <span
-                        class="badge badge-danger"
                         style="
                             background:#dc3545;
                             color:white;
-                            padding:4px 10px;
+                            padding:4px 8px;
+                            border-radius:5px;
+                            font-size:11px;
                         "
                     >
-                        🚫 NF-e gerada pelo ML
+                        <i class="fas fa-warehouse"></i>
+                        FULL
                     </span>
                 `;
+            }
 
-                botaoEmitir = `
+            if (
+                tipo.includes(
+                    'FLEX'
+                ) ||
+                tipo.includes(
+                    'SELF_SERVICE'
+                ) ||
+                tipo.includes(
+                    'DROP_OFF'
+                )
+            ) {
+
+                return `
                     <span
-                        class="text-muted"
-                        style="font-size:12px;"
-                    >
-                        <i class="fas fa-lock"></i>
-                        Automática
-                    </span>
-                `;
-
-            } else if (temNFE) {
-
-                statusNFE = `
-                    <span
-                        class="badge badge-success"
                         style="
-                            background:#28a745;
+                            background:#fd7e14;
                             color:white;
-                            padding:4px 10px;
+                            padding:4px 8px;
+                            border-radius:5px;
+                            font-size:11px;
                         "
                     >
-                        ✅ NF-e Emitida
+                        <i class="fas fa-motorcycle"></i>
+                        FLEX
                     </span>
                 `;
+            }
 
-                botaoEmitir = `
-                    <button
-                        class="
-                            btn
-                            btn-sm
-                            btn-warning
-                            btn-ver-nfe
+            if (
+                tipo.includes(
+                    'CROSS_DOCKING'
+                ) ||
+                tipo.includes(
+                    'MERCADO'
+                ) ||
+                tipo.includes(
+                    'ME2'
+                )
+            ) {
+
+                return `
+                    <span
+                        style="
+                            background:#17a2b8;
+                            color:white;
+                            padding:4px 8px;
+                            border-radius:5px;
+                            font-size:11px;
                         "
-                        data-venda-id="${vendaId}"
-                        style="margin-right:4px;"
                     >
-                        <i class="fas fa-eye"></i>
-                        Ver
-                    </button>
-
-                    <button
-                        class="
-                            btn
-                            btn-sm
-                            btn-danger
-                            btn-cancelar-nfe
-                        "
-                        data-venda-id="${vendaId}"
-                    >
-                        <i class="fas fa-times"></i>
-                        Cancelar
-                    </button>
-                `;
-
-            } else {
-
-                statusNFE = `
-                    <span class="badge badge-warning">
-                        ⏳ Pendente
+                        <i class="fas fa-truck"></i>
+                        ME
                     </span>
-                `;
-
-                botaoEmitir = `
-                    <button
-                        class="
-                            btn
-                            btn-sm
-                            btn-success
-                            btn-emitir-nfe
-                        "
-                        data-venda-id="${vendaId}"
-                    >
-                        <i class="fas fa-file-invoice"></i>
-                        Emitir NF-e
-                    </button>
                 `;
             }
 
             return `
-                <tr>
-
-                    <td>
-                        <strong>
-                            ${vendaId}
-                        </strong>
-                    </td>
-
-                    <td>
-                        ${dataVenda}
-                    </td>
-
-                    <td>
-                        ${cliente}
-                    </td>
-
-                    <td>
-                        <code
-                            style="font-size:11px;"
-                        >
-                            ${sku}
-                        </code>
-                    </td>
-
-                    <td>
-                        <strong>
-                            R$
-                            ${parseFloat(
-                                valorExibir || 0
-                            ).toFixed(2)}
-                        </strong>
-                    </td>
-
-                    <td>
-                        ${gerarBadgeEnvio(v)}
-                    </td>
-
-                    <td>
-                        ${statusNFE}
-                    </td>
-
-                    <td>
-                        ${botaoEmitir}
-                    </td>
-
-                </tr>
+                <span
+                    style="
+                        background:#6c757d;
+                        color:white;
+                        padding:4px 8px;
+                        border-radius:5px;
+                        font-size:11px;
+                    "
+                >
+                    ${escaparHTMLNFE(
+                        tipo ||
+                        'N/I'
+                    )}
+                </span>
             `;
-        }).join('');
+        };
+
+    // =====================================================
+    // ESTOQUE
+    // =====================================================
+
+    const htmlEstoque =
+        venda => {
+
+            const vendaId =
+                normalizarOrderIdML(
+                    venda.id_venda_ml ||
+                    venda.id
+                );
+
+            if (
+                venda._is_full
+            ) {
+
+                return `
+                    <span
+                        style="
+                            background:#e9ecef;
+                            padding:4px 7px;
+                            border-radius:5px;
+                            font-size:11px;
+                        "
+                    >
+                        <i class="fas fa-warehouse"></i>
+                        Estoque FULL
+                    </span>
+                `;
+            }
+
+            if (
+                venda
+                    ._estoque_baixado
+            ) {
+
+                return `
+                    <span
+                        style="
+                            background:#28a745;
+                            color:white;
+                            padding:4px 8px;
+                            border-radius:5px;
+                            font-size:11px;
+                        "
+                    >
+                        <i class="fas fa-check"></i>
+                        Estoque baixado
+                    </span>
+                `;
+            }
+
+            const status =
+                venda._estoque_status ||
+                'nao_verificado';
+
+            if (
+                status ===
+                'disponivel'
+            ) {
+
+                return `
+                    <div>
+
+                        <div
+                            style="
+                                color:#28a745;
+                                font-size:11px;
+                                font-weight:600;
+                            "
+                        >
+                            <i class="fas fa-check-circle"></i>
+                            Produto cadastrado
+                        </div>
+
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-primary"
+                            style="margin-top:4px;"
+                            onclick="darBaixaEstoqueVenda('${escaparHTMLNFE(vendaId)}')"
+                        >
+                            <i class="fas fa-minus-circle"></i>
+                            Dar baixa
+                        </button>
+
+                    </div>
+                `;
+            }
+
+            if (
+                status ===
+                'baixado_sync_pendente'
+            ) {
+
+                return `
+                    <div>
+
+                        <span
+                            style="
+                                color:#856404;
+                                font-size:11px;
+                            "
+                        >
+                            ⚠️ Baixado, sync ML pendente
+                        </span>
+
+                        <br>
+
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-warning"
+                            style="margin-top:4px;"
+                            onclick="sincronizarEstoqueVendaManual('${escaparHTMLNFE(vendaId)}')"
+                        >
+                            Sincronizar ML
+                        </button>
+
+                    </div>
+                `;
+            }
+
+            if (
+                status ===
+                'sem_cadastro'
+            ) {
+
+                return `
+                    <span
+                        style="
+                            color:#dc3545;
+                            font-size:11px;
+                            font-weight:600;
+                        "
+                    >
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Não cadastrado
+                    </span>
+                `;
+            }
+
+            if (
+                status ===
+                'processando'
+            ) {
+
+                return `
+                    <span
+                        style="
+                            color:#6c757d;
+                            font-size:11px;
+                        "
+                    >
+                        <i class="fas fa-spinner fa-spin"></i>
+                        Processando
+                    </span>
+                `;
+            }
+
+            return `
+                <span
+                    style="
+                        color:#6c757d;
+                        font-size:11px;
+                    "
+                >
+                    Não verificado
+                </span>
+            `;
+        };
+
+    // =====================================================
+    // LINHAS
+    // =====================================================
+
+    tbody.innerHTML =
+        vendas.map(
+            venda => {
+
+                const vendaId =
+                    normalizarOrderIdML(
+                        venda.id_venda_ml ||
+                        venda.id
+                    );
+
+                const isFull =
+                    Boolean(
+                        venda._is_full
+                    );
+
+                const temNfe =
+                    Boolean(
+                        venda._tem_nfe
+                    );
+
+                // =================================================
+                // DATA
+                // =================================================
+
+                let dataEnvio =
+                    isFull
+                        ? obterDataVendaNFE(
+                            venda
+                        )
+                        : venda._data_envio;
+
+                let tituloData =
+                    isFull
+                        ? 'Venda FULL'
+                        : 'Despachar';
+
+                let hora =
+                    '';
+
+                if (
+                    !isFull &&
+                    venda._prazo_envio
+                ) {
+
+                    try {
+
+                        hora =
+                            new Date(
+                                venda
+                                    ._prazo_envio
+                            )
+                                .toLocaleTimeString(
+                                    'pt-BR',
+                                    {
+                                        hour:
+                                            '2-digit',
+                                        minute:
+                                            '2-digit'
+                                    }
+                                );
+
+                    } catch (
+                        error
+                    ) {}
+                }
+
+                // =================================================
+                // CLIENTE
+                // =================================================
+
+                const cliente =
+                    venda.cliente ||
+
+                    venda.buyer
+                        ?.nickname ||
+
+                    `${venda.buyer?.first_name || ''} ${venda.buyer?.last_name || ''}`
+                        .trim() ||
+
+                    'N/I';
+
+                // =================================================
+                // SKU
+                // =================================================
+
+                let skus =
+                    [];
+
+                if (
+                    venda.eh_kit &&
+                    Array.isArray(
+                        venda.skus_kit
+                    )
+                ) {
+
+                    skus =
+                        venda.skus_kit
+                            .map(
+                                item =>
+                                    item.sku
+                            )
+                            .filter(Boolean);
+
+                } else if (
+                    Array.isArray(
+                        venda.order_items
+                    )
+                ) {
+
+                    skus =
+                        venda.order_items
+                            .map(
+                                item =>
+                                    item.item
+                                        ?.seller_sku
+                            )
+                            .filter(Boolean);
+
+                } else if (
+                    venda.sku
+                ) {
+
+                    skus = [
+                        venda.sku
+                    ];
+                }
+
+                if (
+                    skus.length ===
+                    0
+                ) {
+
+                    skus = [
+                        'SEM_SKU'
+                    ];
+                }
+
+                const skuHtml =
+                    skus
+                        .map(
+                            sku =>
+                                `<div><code>${escaparHTMLNFE(sku)}</code></div>`
+                        )
+                        .join('');
+
+                // =================================================
+                // VALOR
+                // =================================================
+
+                const valor =
+                    Number(
+                        venda._valor_produto ??
+                        venda.valor_total ??
+                        venda.total_amount ??
+                        0
+                    );
+
+                // =================================================
+                // NF-E
+                // =================================================
+
+                let statusNFE;
+                let acoes;
+
+                if (
+                    isFull
+                ) {
+
+                    statusNFE = `
+                        <span
+                            style="
+                                background:#dc3545;
+                                color:white;
+                                padding:4px 8px;
+                                border-radius:5px;
+                                font-size:11px;
+                                white-space:nowrap;
+                            "
+                        >
+                            <i class="fas fa-warehouse"></i>
+                            NF-e ML
+                        </span>
+                    `;
+
+                    acoes = `
+                        <span
+                            style="
+                                color:#6c757d;
+                                font-size:11px;
+                            "
+                        >
+                            Automática
+                        </span>
+                    `;
+
+                } else if (
+                    temNfe
+                ) {
+
+                    statusNFE = `
+                        <span
+                            style="
+                                background:#28a745;
+                                color:white;
+                                padding:4px 8px;
+                                border-radius:5px;
+                                font-size:11px;
+                            "
+                        >
+                            <i class="fas fa-check"></i>
+                            Emitida
+                        </span>
+                    `;
+
+                    acoes = `
+
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-warning btn-ver-nfe"
+                            data-venda-id="${escaparHTMLNFE(vendaId)}"
+                        >
+                            <i class="fas fa-eye"></i>
+                            Ver
+                        </button>
+
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-danger btn-cancelar-nfe"
+                            data-venda-id="${escaparHTMLNFE(vendaId)}"
+                        >
+                            <i class="fas fa-times"></i>
+                            Cancelar
+                        </button>
+                    `;
+
+                } else {
+
+                    statusNFE = `
+                        <span
+                            style="
+                                background:#ffc107;
+                                color:#212529;
+                                padding:4px 8px;
+                                border-radius:5px;
+                                font-size:11px;
+                            "
+                        >
+                            <i class="fas fa-clock"></i>
+                            Pendente
+                        </span>
+                    `;
+
+                    acoes = `
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-success btn-emitir-nfe"
+                            data-venda-id="${escaparHTMLNFE(vendaId)}"
+                        >
+                            <i class="fas fa-file-invoice"></i>
+                            Emitir NF-e
+                        </button>
+                    `;
+                }
+
+                return `
+
+                    <tr>
+
+                        <td>
+                            <strong>
+                                ${escaparHTMLNFE(vendaId)}
+                            </strong>
+                        </td>
+
+
+                        <td>
+
+                            <strong>
+                                ${formatarDataNFE(dataEnvio)}
+                            </strong>
+
+                            <div
+                                style="
+                                    color:#6c757d;
+                                    font-size:10px;
+                                "
+                            >
+                                ${tituloData}
+                                ${
+                                    hora
+                                        ? ` até ${escaparHTMLNFE(hora)}`
+                                        : ''
+                                }
+                            </div>
+
+                        </td>
+
+
+                        <td>
+                            ${escaparHTMLNFE(cliente)}
+                        </td>
+
+
+                        <td>
+                            ${skuHtml}
+                        </td>
+
+
+                        <td>
+                            <strong>
+                                R$ ${valor.toFixed(2)}
+                            </strong>
+                        </td>
+
+
+                        <td>
+                            ${badgeEnvio(venda)}
+                        </td>
+
+
+                        <td>
+                            ${statusNFE}
+                        </td>
+
+
+                        <td>
+                            ${htmlEstoque(venda)}
+                        </td>
+
+
+                        <td
+                            style="
+                                white-space:nowrap;
+                            "
+                        >
+                            ${acoes}
+                        </td>
+
+                    </tr>
+                `;
+            }
+        )
+        .join('');
 
     // =====================================================
     // EVENTOS
@@ -3155,37 +5360,860 @@ function renderizarVendasNFETabela(vendas) {
         .querySelectorAll(
             '#vendasPendentesBody .btn-emitir-nfe'
         )
-        .forEach(btn => {
+        .forEach(
+            btn => {
 
-            btn.addEventListener(
-                'click',
-                window.handleEmitirNFEClick
-            );
-        });
+                btn.removeEventListener(
+                    'click',
+                    window
+                        .handleEmitirNFEClick
+                );
+
+                btn.addEventListener(
+                    'click',
+                    window
+                        .handleEmitirNFEClick
+                );
+            }
+        );
 
     document
         .querySelectorAll(
             '#vendasPendentesBody .btn-ver-nfe'
         )
-        .forEach(btn => {
+        .forEach(
+            btn => {
 
-            btn.addEventListener(
-                'click',
-                window.handleVerNFEClick
-            );
-        });
+                btn.removeEventListener(
+                    'click',
+                    window
+                        .handleVerNFEClick
+                );
+
+                btn.addEventListener(
+                    'click',
+                    window
+                        .handleVerNFEClick
+                );
+            }
+        );
 
     document
         .querySelectorAll(
             '#vendasPendentesBody .btn-cancelar-nfe'
         )
-        .forEach(btn => {
+        .forEach(
+            btn => {
 
-            btn.addEventListener(
-                'click',
-                window.handleCancelarNFEClick
+                btn.removeEventListener(
+                    'click',
+                    window
+                        .handleCancelarNFEClick
+                );
+
+                btn.addEventListener(
+                    'click',
+                    window
+                        .handleCancelarNFEClick
+                );
+            }
+        );
+}
+
+async function sincronizarEstoqueVendaManual(
+    vendaId
+) {
+
+    try {
+
+        showToast(
+            '🔄 Sincronizando estoque com o Mercado Livre...',
+            'info'
+        );
+
+        const sucesso =
+            await sincronizarEstoqueComML(
+                String(vendaId)
             );
-        });
+
+        if (!sucesso) {
+
+            showToast(
+                '⚠️ Ainda não foi possível sincronizar o estoque.',
+                'warning'
+            );
+
+            return;
+        }
+
+        await window
+            .supabaseClient
+            .from(
+                'vendas_nfe_cache'
+            )
+            .update({
+
+                estoque_status:
+                    'baixado'
+
+            })
+            .eq(
+                'id_venda_ml',
+                String(vendaId)
+            );
+
+        showToast(
+            '✅ Estoque sincronizado com o ML!',
+            'success'
+        );
+
+        const data =
+            document.getElementById(
+                'filtroDataEnvioNFE'
+            )?.value ||
+            obterDataHojeLocal();
+
+        const vendas =
+            await carregarVendasCacheNFE(
+                window._nfeFiltroTodas
+                    ? null
+                    : data
+            );
+
+        renderizarVendasNFETabela(
+            vendas
+        );
+
+    } catch (error) {
+
+        console.error(
+            error
+        );
+
+        showToast(
+            '❌ Erro ao sincronizar estoque',
+            'error'
+        );
+    }
+}
+
+async function garantirBaixaEstoqueVenda(
+    vendaId,
+    origem = 'manual'
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+    if (!vendaId) {
+
+        return {
+            success: false,
+            error: 'ID da venda inválido'
+        };
+    }
+
+    console.log(
+        `📦 Verificando baixa de estoque da venda ${vendaId} - origem: ${origem}`
+    );
+
+    try {
+
+        // =====================================================
+        // 1. BUSCAR ESTADO ATUAL
+        // =====================================================
+
+        const {
+            data: vendaCache,
+            error: erroVenda
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .select(`
+                    id_venda_ml,
+                    is_full,
+                    estoque_baixado,
+                    estoque_status,
+                    estoque_baixado_em,
+                    estoque_detalhes
+                `)
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                )
+                .maybeSingle();
+
+        if (
+            erroVenda ||
+            !vendaCache
+        ) {
+
+            console.warn(
+                `⚠️ Venda ${vendaId} não encontrada no cache`,
+                erroVenda
+            );
+
+            return {
+                success: false,
+                error: 'Venda não encontrada no cache'
+            };
+        }
+
+        // =====================================================
+        // 2. FULL
+        // =====================================================
+
+        if (
+            vendaCache.is_full
+        ) {
+
+            console.log(
+                `ℹ️ Venda ${vendaId} é FULL. Estoque local não será baixado.`
+            );
+
+            return {
+                success: true,
+                full: true,
+                skipped: true
+            };
+        }
+
+        // =====================================================
+        // 3. JÁ FOI BAIXADO
+        //
+        // ESTA É A PROTEÇÃO PRINCIPAL.
+        // =====================================================
+
+        if (
+            vendaCache.estoque_baixado
+        ) {
+
+            console.log(
+                `✅ Venda ${vendaId} já teve estoque baixado. Nada será feito novamente.`
+            );
+
+            return {
+                success: true,
+                already: true,
+                skipped: true
+            };
+        }
+
+        // =====================================================
+        // 4. VERIFICAR PRODUTOS
+        // =====================================================
+
+        const detalhes =
+            Array.isArray(
+                vendaCache.estoque_detalhes
+            )
+                ? vendaCache.estoque_detalhes
+                : [];
+
+        if (
+            detalhes.length ===
+            0
+        ) {
+
+            console.warn(
+                `⚠️ Venda ${vendaId} ainda não possui detalhes de estoque`
+            );
+
+            return {
+                success: false,
+                error: 'Produtos da venda ainda não foram verificados no estoque'
+            };
+        }
+
+        const produtoNaoEncontrado =
+            detalhes.find(
+                item =>
+                    !item.encontrado
+            );
+
+        if (
+            produtoNaoEncontrado
+        ) {
+
+            console.warn(
+                `⚠️ SKU não cadastrado: ${produtoNaoEncontrado.sku}`
+            );
+
+            return {
+                success: false,
+                semCadastro: true,
+                error:
+                    `SKU ${produtoNaoEncontrado.sku || 'SEM_SKU'} não cadastrado`
+            };
+        }
+
+        // =====================================================
+        // 5. MARCAR COMO PROCESSANDO
+        // =====================================================
+
+        await window
+            .supabaseClient
+            .from(
+                'vendas_nfe_cache'
+            )
+            .update({
+                estoque_status:
+                    'processando'
+            })
+            .eq(
+                'id_venda_ml',
+                vendaId
+            )
+            .eq(
+                'estoque_baixado',
+                false
+            );
+
+        // =====================================================
+        // 6. BAIXA ATÔMICA
+        //
+        // A PRÓPRIA RPC VERIFICA NOVAMENTE
+        // estoque_baixado.
+        //
+        // Mesmo com dois cliques/requisições,
+        // não haverá dupla baixa.
+        // =====================================================
+
+        const {
+            data: resultado,
+            error: erroBaixa
+        } =
+            await window
+                .supabaseClient
+                .rpc(
+                    'dar_baixa_estoque_venda_nfe',
+                    {
+                        p_venda_id:
+                            vendaId
+                    }
+                );
+
+        if (
+            erroBaixa
+        ) {
+
+            throw erroBaixa;
+        }
+
+        // =====================================================
+        // RPC AVISOU QUE JÁ ESTAVA BAIXADO
+        // =====================================================
+
+        if (
+            resultado?.already
+        ) {
+
+            console.log(
+                `✅ Venda ${vendaId} já havia sido baixada pela RPC`
+            );
+
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .update({
+                    estoque_baixado:
+                        true,
+
+                    estoque_status:
+                        'baixado'
+                })
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                );
+
+            return {
+                success: true,
+                already: true
+            };
+        }
+
+        if (
+            !resultado?.success
+        ) {
+
+            throw new Error(
+                resultado?.error ||
+                'Erro desconhecido na baixa de estoque'
+            );
+        }
+
+        console.log(
+            `✅ Baixa local realizada para venda ${vendaId}`,
+            resultado
+        );
+
+        // =====================================================
+        // 7. REGISTRAR HISTÓRICO
+        // =====================================================
+
+        try {
+
+            await window
+                .supabaseClient
+                .from(
+                    'estoque_historico'
+                )
+                .insert({
+
+                    venda_id:
+                        vendaId,
+
+                    tipo:
+                        'venda',
+
+                    observacao:
+                        origem === 'nfe'
+                            ? `Baixa automática de estoque após emissão da NF-e - Venda ${vendaId}`
+                            : `Baixa manual de estoque - Venda ${vendaId}`,
+
+                    criado_por:
+                        origem === 'nfe'
+                            ? 'Emissão NF-e'
+                            : 'Sistema NF-e',
+
+                    criado_em:
+                        new Date()
+                            .toISOString()
+                });
+
+        } catch (
+            histError
+        ) {
+
+            console.warn(
+                '⚠️ Erro ao registrar histórico da baixa:',
+                histError
+            );
+        }
+
+        // =====================================================
+        // 8. SINCRONIZAR ESTOQUE COM MERCADO LIVRE
+        // =====================================================
+
+        let sincronizado =
+            false;
+
+        try {
+
+            sincronizado =
+                await sincronizarEstoqueComML(
+                    vendaId
+                );
+
+        } catch (
+            syncError
+        ) {
+
+            console.error(
+                `⚠️ Estoque local baixado, mas erro na sincronização ML da venda ${vendaId}:`,
+                syncError
+            );
+        }
+
+        // =====================================================
+        // 9. ATUALIZAR STATUS FINAL
+        // =====================================================
+
+        if (
+            sincronizado
+        ) {
+
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .update({
+
+                    estoque_baixado:
+                        true,
+
+                    estoque_status:
+                        'baixado',
+
+                    estoque_baixado_em:
+                        new Date()
+                            .toISOString()
+
+                })
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                );
+
+            console.log(
+                `✅ Venda ${vendaId}: estoque baixado e ML sincronizado`
+            );
+
+        } else {
+
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .update({
+
+                    estoque_baixado:
+                        true,
+
+                    estoque_status:
+                        'baixado_sync_pendente',
+
+                    estoque_baixado_em:
+                        new Date()
+                            .toISOString()
+
+                })
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                );
+
+            console.warn(
+                `⚠️ Venda ${vendaId}: estoque baixado, mas sincronização ML pendente`
+            );
+        }
+
+        return {
+
+            success:
+                true,
+
+            already:
+                false,
+
+            sincronizado:
+                sincronizado,
+
+            resultado:
+                resultado
+        };
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            `❌ Erro ao baixar estoque da venda ${vendaId}:`,
+            error
+        );
+
+        // Só marcar erro se ainda não tiver sido baixado
+        try {
+
+            const {
+                data: estadoAtual
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .select(
+                        'estoque_baixado'
+                    )
+                    .eq(
+                        'id_venda_ml',
+                        vendaId
+                    )
+                    .maybeSingle();
+
+            if (
+                !estadoAtual
+                    ?.estoque_baixado
+            ) {
+
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .update({
+                        estoque_status:
+                            'erro'
+                    })
+                    .eq(
+                        'id_venda_ml',
+                        vendaId
+                    );
+            }
+
+        } catch (
+            errorStatus
+        ) {}
+
+        return {
+
+            success:
+                false,
+
+            error:
+                error.message
+        };
+    }
+}
+
+async function darBaixaEstoqueVenda(
+    vendaId
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+    if (!vendaId) {
+
+        showToast(
+            '❌ ID da venda inválido',
+            'error'
+        );
+
+        return;
+    }
+
+    // =====================================================
+    // EVITAR CLIQUE DUPLO
+    // =====================================================
+
+    if (
+        window
+            ._baixaEstoqueEmAndamento ===
+        vendaId
+    ) {
+
+        showToast(
+            '⚠️ A baixa desta venda já está sendo processada.',
+            'warning'
+        );
+
+        return;
+    }
+
+    // =====================================================
+    // VERIFICAR ANTES DE PERGUNTAR
+    // =====================================================
+
+    try {
+
+        const {
+            data: cache,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .select(`
+                    estoque_baixado,
+                    estoque_status,
+                    is_full
+                `)
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                )
+                .maybeSingle();
+
+        if (
+            error ||
+            !cache
+        ) {
+
+            showToast(
+                '❌ Venda não encontrada no cache',
+                'error'
+            );
+
+            return;
+        }
+
+        if (
+            cache.is_full
+        ) {
+
+            showToast(
+                'ℹ️ Venda FULL não utiliza baixa do estoque local.',
+                'info'
+            );
+
+            return;
+        }
+
+        if (
+            cache.estoque_baixado
+        ) {
+
+            showToast(
+                '✅ O estoque desta venda já foi baixado.',
+                'success'
+            );
+
+            // Atualiza tela para remover botão antigo
+            await atualizarTabelaVendasNFEPosEstoque();
+
+            return;
+        }
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            error
+        );
+    }
+
+    // =====================================================
+    // CONFIRMAÇÃO MANUAL
+    // =====================================================
+
+    const confirmar =
+        confirm(
+
+            `Confirma a baixa do estoque da venda ${vendaId}?\n\n` +
+
+            `Esta operação será realizada somente uma vez.\n` +
+
+            `Depois disso, emitir a NF-e NÃO baixará novamente.`
+        );
+
+    if (!confirmar) {
+
+        return;
+    }
+
+    window
+        ._baixaEstoqueEmAndamento =
+        vendaId;
+
+    try {
+
+        const resultado =
+            await garantirBaixaEstoqueVenda(
+                vendaId,
+                'manual'
+            );
+
+        if (
+            resultado.success
+        ) {
+
+            if (
+                resultado.already
+            ) {
+
+                showToast(
+                    '✅ O estoque desta venda já havia sido baixado.',
+                    'success'
+                );
+
+            } else if (
+                resultado.sincronizado
+            ) {
+
+                showToast(
+                    '✅ Estoque baixado e sincronizado com o Mercado Livre!',
+                    'success'
+                );
+
+            } else {
+
+                showToast(
+                    '⚠️ Estoque baixado. A sincronização com o Mercado Livre ficou pendente.',
+                    'warning'
+                );
+            }
+
+        } else {
+
+            showToast(
+                `❌ ${resultado.error || 'Erro ao baixar estoque'}`,
+                resultado.semCadastro
+                    ? 'warning'
+                    : 'error'
+            );
+        }
+
+        await atualizarTabelaVendasNFEPosEstoque();
+
+        if (
+            typeof window
+                .carregarProdutosEstoque ===
+            'function'
+        ) {
+
+            try {
+
+                await window
+                    .carregarProdutosEstoque();
+
+            } catch (
+                error
+            ) {}
+        }
+
+    } finally {
+
+        if (
+            window
+                ._baixaEstoqueEmAndamento ===
+            vendaId
+        ) {
+
+            window
+                ._baixaEstoqueEmAndamento =
+                null;
+        }
+    }
+}
+
+async function atualizarTabelaVendasNFEPosEstoque() {
+
+    try {
+
+        const data =
+            document.getElementById(
+                'filtroDataEnvioNFE'
+            )?.value ||
+            obterDataHojeLocal();
+
+        const vendas =
+            await carregarVendasCacheNFE(
+
+                window._nfeFiltroTodas
+                    ? null
+                    : data
+            );
+
+        renderizarVendasNFETabela(
+            vendas
+        );
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro ao atualizar tabela após baixa:',
+            error
+        );
+    }
 }
 
 async function salvarVendasCacheNFE(
@@ -3193,95 +6221,498 @@ async function salvarVendasCacheNFE(
 ) {
 
     if (
-        !Array.isArray(vendas) ||
-        vendas.length === 0
+        !Array.isArray(
+            vendas
+        ) ||
+        vendas.length ===
+            0
     ) {
+
         return;
     }
 
     try {
 
         console.log(
-            `💾 Salvando ${vendas.length} vendas no cache...`
+            `💾 Salvando ${vendas.length} venda(s) no cache NF-e`
+        );
+
+        const ids =
+            [
+                ...new Set(
+
+                    vendas
+                        .map(
+                            venda =>
+                                normalizarOrderIdML(
+                                    venda.id_venda_ml ||
+                                    venda.id
+                                )
+                        )
+                        .filter(Boolean)
+                )
+            ];
+
+        if (
+            ids.length ===
+            0
+        ) {
+
+            return;
+        }
+
+        // =====================================================
+        // ESTADO ANTERIOR
+        // =====================================================
+
+        let existentes =
+            [];
+
+        try {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .select(`
+                        id_venda_ml,
+                        tem_nfe,
+                        estoque_baixado,
+                        estoque_status,
+                        estoque_baixado_em,
+                        estoque_detalhes
+                    `)
+                    .in(
+                        'id_venda_ml',
+                        ids
+                    );
+
+            if (!error) {
+
+                existentes =
+                    data || [];
+            }
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Erro lendo cache anterior:',
+                error
+            );
+        }
+
+        const mapaAnterior =
+            new Map();
+
+        existentes.forEach(
+            registro => {
+
+                mapaAnterior.set(
+                    normalizarOrderIdML(
+                        registro
+                            .id_venda_ml
+                    ),
+                    registro
+                );
+            }
         );
 
         const registros =
-            vendas.map(venda => {
+            [];
 
-                const sku =
-                    venda.order_items?.[0]
-                        ?.item
-                        ?.seller_sku ||
-                    'N/A';
+        for (
+            const venda
+            of vendas
+        ) {
 
-                const cliente =
-                    venda.buyer
-                        ?.nickname ||
-                    'N/I';
+            const idVenda =
+                normalizarOrderIdML(
+                    venda.id_venda_ml ||
+                    venda.id
+                );
 
-                return {
+            if (!idVenda) {
+                continue;
+            }
 
-                    id_venda_ml:
-                        String(
-                            venda.id
-                        ),
+            const anterior =
+                mapaAnterior.get(
+                    idVenda
+                ) ||
+                {};
 
-                    data_venda:
-                        venda.date_created ||
-                        null,
+            const info =
+                parseInformacoesEnvioNFE(
+                    venda
+                );
 
+            const isFull =
+                detectarVendaFullNFE(
+                    venda
+                );
+
+            const dataEnvio =
+                isFull
+                    ? null
+                    : (
+                        venda._data_envio ||
+                        extrairDataEnvioML(
+                            venda
+                        )
+                    );
+
+            const prazoEnvio =
+                isFull
+                    ? null
+                    : (
+                        venda._prazo_envio ||
+                        extrairPrazoEnvioCompletoML(
+                            venda
+                        )
+                    );
+
+            // =================================================
+            // CLIENTE
+            // =================================================
+
+            const cliente =
+                venda.cliente ||
+
+                venda.buyer
+                    ?.nickname ||
+
+                `${venda.buyer?.first_name || ''} ${venda.buyer?.last_name || ''}`
+                    .trim() ||
+
+                'N/I';
+
+            // =================================================
+            // SKU
+            // =================================================
+
+            const sku =
+                venda.sku ||
+                venda.item_sku ||
+                venda.codigo ||
+                venda.order_items
+                    ?.[0]
+                    ?.item
+                    ?.seller_sku ||
+                'SEM_SKU';
+
+            // =================================================
+            // SHIPMENT
+            // =================================================
+
+            const shipmentId =
+                venda.id_envio ||
+                venda.shipping
+                    ?.id ||
+                info.id ||
+                null;
+
+            // =================================================
+            // VALORES
+            // =================================================
+
+            const valorProduto =
+                Number(
+                    venda._valor_produto ??
+                    venda.valor_produto ??
+                    venda.valor_total ??
+                    venda.total_amount ??
+                    0
+                );
+
+            const valorFrete =
+                Number(
+                    venda._valor_frete ??
+                    venda.valor_frete ??
+                    0
+                );
+
+            const totalPago =
+                Number(
+                    venda._total_pago ??
+                    venda.total_pago ??
+                    venda.valor_total ??
+                    venda.total_amount ??
+                    valorProduto ??
+                    0
+                );
+
+            // =================================================
+            // ENVIO
+            // =================================================
+
+            const logisticType =
+                venda._logistic_type ||
+                venda.tipo_envio ||
+                info.tipo ||
+                venda.meio_envio ||
+                (
+                    isFull
+                        ? 'FULL'
+                        : 'N/I'
+                );
+
+            const shippingMode =
+                venda._shipping_mode ||
+                info.tipo ||
+                logisticType ||
+                '';
+
+            // =================================================
+            // NF-E
+            // =================================================
+
+            let temNfe =
+                Boolean(
+                    anterior
+                        .tem_nfe
+                );
+
+            if (
+                typeof venda
+                    ._tem_nfe ===
+                'boolean'
+            ) {
+
+                temNfe =
+                    venda
+                        ._tem_nfe;
+            }
+
+            if (
+                venda.nfe_emitida ===
+                true
+            ) {
+
+                temNfe =
+                    true;
+            }
+
+            // FULL = NF-e automática do ML
+            if (isFull) {
+
+                temNfe =
+                    true;
+            }
+
+            // =================================================
+            // ESTOQUE
+            //
+            // REGRA CRÍTICA:
+            //
+            // estoque_baixado TRUE nunca volta a FALSE.
+            // =================================================
+
+            const estoqueJaBaixado =
+                Boolean(
+                    anterior
+                        .estoque_baixado ||
+                    venda
+                        ._estoque_baixado
+                );
+
+            let estoqueStatus;
+            let estoqueDetalhes;
+            let estoqueBaixadoEm;
+
+            if (
+                estoqueJaBaixado
+            ) {
+
+                estoqueStatus =
+                    anterior
+                        .estoque_status ||
+                    venda
+                        ._estoque_status ||
+                    'baixado';
+
+                estoqueDetalhes =
+                    anterior
+                        .estoque_detalhes ||
+                    venda
+                        ._estoque_detalhes ||
+                    [];
+
+                estoqueBaixadoEm =
+                    anterior
+                        .estoque_baixado_em ||
+                    venda
+                        ._estoque_baixado_em ||
+                    null;
+
+            } else {
+
+                estoqueStatus =
+                    isFull
+                        ? 'full'
+                        : (
+                            venda
+                                ._estoque_status ||
+                            anterior
+                                .estoque_status ||
+                            'nao_verificado'
+                        );
+
+                estoqueDetalhes =
+                    venda
+                        ._estoque_detalhes ||
+                    anterior
+                        .estoque_detalhes ||
+                    [];
+
+                estoqueBaixadoEm =
+                    null;
+            }
+
+            const dataVenda =
+                venda.data_venda ||
+                venda.date_created ||
+                venda.created_at ||
+                null;
+
+            // =================================================
+            // JSON COMPLETO
+            // =================================================
+
+            const vendaJson = {
+
+                ...venda,
+
+                id:
+                    idVenda,
+
+                id_venda_ml:
+                    idVenda,
+
+                _data_envio:
+                    dataEnvio,
+
+                _prazo_envio:
+                    prazoEnvio,
+
+                _logistic_type:
+                    logisticType,
+
+                _shipping_mode:
+                    shippingMode,
+
+                _is_full:
+                    isFull,
+
+                _tem_nfe:
+                    temNfe,
+
+                _valor_produto:
+                    valorProduto,
+
+                _valor_frete:
+                    valorFrete,
+
+                _total_pago:
+                    totalPago,
+
+                _estoque_status:
+                    estoqueStatus,
+
+                _estoque_baixado:
+                    estoqueJaBaixado,
+
+                _estoque_baixado_em:
+                    estoqueBaixadoEm,
+
+                _estoque_detalhes:
+                    estoqueDetalhes
+            };
+
+            registros.push({
+
+                id_venda_ml:
+                    idVenda,
+
+                data_venda:
+                    dataVenda,
+
+                shipment_id:
+                    shipmentId
+                        ? String(
+                            shipmentId
+                        )
+                        : null,
+
+                data_envio:
+                    dataEnvio ||
+                    null,
+
+                prazo_envio:
+                    prazoEnvio ||
+                    null,
+
+                cliente:
                     cliente,
 
+                sku:
                     sku,
 
-                    valor_produto:
-                        Number(
-                            venda._valor_produto ||
-                            venda.total_amount ||
-                            0
-                        ),
+                valor_produto:
+                    valorProduto,
 
-                    valor_frete:
-                        Number(
-                            venda._valor_frete ||
-                            0
-                        ),
+                valor_frete:
+                    valorFrete,
 
-                    total_pago:
-                        Number(
-                            venda._total_pago ||
-                            venda.total_amount ||
-                            0
-                        ),
+                total_pago:
+                    totalPago,
 
-                    logistic_type:
-                        venda._logistic_type ||
-                        '',
+                logistic_type:
+                    logisticType,
 
-                    shipping_mode:
-                        venda._shipping_mode ||
-                        '',
+                shipping_mode:
+                    shippingMode,
 
-                    is_full:
-                        Boolean(
-                            venda._is_full
-                        ),
+                is_full:
+                    isFull,
 
-                    tem_nfe:
-                        Boolean(
-                            venda._tem_nfe
-                        ),
+                tem_nfe:
+                    temNfe,
 
-                    // Guarda a venda para
-                    // podermos reconstruir a tela
-                    venda_json:
-                        venda,
+                estoque_baixado:
+                    estoqueJaBaixado,
 
-                    atualizado_em:
-                        new Date()
-                            .toISOString()
-                };
+                estoque_status:
+                    estoqueStatus,
+
+                estoque_baixado_em:
+                    estoqueBaixadoEm,
+
+                estoque_detalhes:
+                    estoqueDetalhes,
+
+                venda_json:
+                    vendaJson,
+
+                atualizado_em:
+                    new Date()
+                        .toISOString()
             });
+        }
+
+        if (
+            registros.length ===
+            0
+        ) {
+
+            return;
+        }
 
         const {
             error
@@ -3300,30 +6731,29 @@ async function salvarVendasCacheNFE(
                 );
 
         if (error) {
-
             throw error;
         }
 
         console.log(
-            `✅ ${registros.length} vendas salvas no cache`
+            `✅ ${registros.length} venda(s) gravadas no cache`
         );
 
-    } catch (error) {
+    } catch (
+        error
+    ) {
 
         console.error(
-            '❌ Erro ao salvar cache de vendas:',
+            '❌ Erro salvando cache NF-e:',
             error
         );
     }
 }
 
-async function carregarVendasCacheNFE() {
+async function carregarVendasCacheNFE(
+    dataEnvio = null
+) {
 
     try {
-
-        console.log(
-            '⚡ Carregando vendas salvas no banco...'
-        );
 
         const {
             data,
@@ -3342,118 +6772,218 @@ async function carregarVendasCacheNFE() {
                             false
                     }
                 )
-                .limit(200);
+                .limit(
+                    2000
+                );
 
         if (error) {
-
             throw error;
         }
 
-        if (
-            !data ||
-            data.length === 0
-        ) {
+        let registros =
+            Array.isArray(data)
+                ? data
+                : [];
 
-            console.log(
-                'ℹ️ Cache de vendas ainda está vazio'
-            );
+        // =====================================================
+        // FILTRO
+        // =====================================================
 
-            return [];
+        if (dataEnvio) {
+
+            registros =
+                registros.filter(
+                    registro => {
+
+                        // =========================================
+                        // FULL
+                        // =========================================
+
+                        if (
+                            registro
+                                .is_full
+                        ) {
+
+                            return (
+                                normalizarDataEnvioML(
+                                    registro
+                                        .data_venda
+                                ) ===
+                                dataEnvio
+                            );
+                        }
+
+                        // =========================================
+                        // ENVIO NORMAL
+                        // =========================================
+
+                        return (
+                            normalizarDataEnvioML(
+                                registro
+                                    .data_envio
+                            ) ===
+                            dataEnvio
+                        );
+                    }
+                );
         }
 
-        const vendas =
-            data.map(registro => {
+        return registros.map(
+            registro => {
 
-                // Preferir venda_json,
-                // pois mantém todos os
-                // dados originais do ML.
-                const venda =
-                    registro.venda_json ||
+                let venda =
+                    registro
+                        .venda_json ||
                     {};
+
+                if (
+                    typeof venda ===
+                    'string'
+                ) {
+
+                    try {
+
+                        venda =
+                            JSON.parse(
+                                venda
+                            );
+
+                    } catch (
+                        error
+                    ) {
+
+                        venda =
+                            {};
+                    }
+                }
 
                 return {
 
                     ...venda,
 
                     id:
-                        String(
-                            registro.id_venda_ml
+                        normalizarOrderIdML(
+                            registro
+                                .id_venda_ml
+                        ),
+
+                    id_venda_ml:
+                        normalizarOrderIdML(
+                            registro
+                                .id_venda_ml
                         ),
 
                     date_created:
-                        registro.data_venda,
+                        registro
+                            .data_venda ||
+                        venda
+                            .date_created,
+
+                    data_venda:
+                        registro
+                            .data_venda ||
+                        venda
+                            .data_venda,
+
+                    cliente:
+                        registro
+                            .cliente ||
+                        venda
+                            .cliente,
 
                     buyer:
-                        venda.buyer || {
+                        venda.buyer ||
+                        {
                             nickname:
-                                registro.cliente
+                                registro
+                                    .cliente
                         },
 
-                    order_items:
-                        venda.order_items || [
-                            {
-                                item: {
-                                    seller_sku:
-                                        registro.sku
-                                }
-                            }
-                        ],
+                    _data_envio:
+                        registro
+                            .data_envio,
 
-                    total_amount:
-                        Number(
-                            registro.total_pago ||
-                            registro.valor_produto ||
-                            0
-                        ),
+                    _prazo_envio:
+                        registro
+                            .prazo_envio,
 
                     _valor_produto:
                         Number(
-                            registro.valor_produto ||
+                            registro
+                                .valor_produto ||
                             0
                         ),
 
                     _valor_frete:
                         Number(
-                            registro.valor_frete ||
+                            registro
+                                .valor_frete ||
                             0
                         ),
 
                     _total_pago:
                         Number(
-                            registro.total_pago ||
+                            registro
+                                .total_pago ||
                             0
                         ),
 
                     _logistic_type:
-                        registro.logistic_type ||
+                        registro
+                            .logistic_type ||
+                        venda
+                            ._logistic_type ||
                         '',
 
                     _shipping_mode:
-                        registro.shipping_mode ||
+                        registro
+                            .shipping_mode ||
+                        venda
+                            ._shipping_mode ||
                         '',
 
                     _is_full:
                         Boolean(
-                            registro.is_full
+                            registro
+                                .is_full
                         ),
 
                     _tem_nfe:
                         Boolean(
-                            registro.tem_nfe
-                        )
-                };
-            });
+                            registro
+                                .tem_nfe
+                        ),
 
-        console.log(
-            `⚡ ${vendas.length} vendas carregadas do banco`
+                    _estoque_status:
+                        registro
+                            .estoque_status ||
+                        'nao_verificado',
+
+                    _estoque_baixado:
+                        Boolean(
+                            registro
+                                .estoque_baixado
+                        ),
+
+                    _estoque_baixado_em:
+                        registro
+                            .estoque_baixado_em ||
+                        null,
+
+                    _estoque_detalhes:
+                        registro
+                            .estoque_detalhes ||
+                        []
+                };
+            }
         );
 
-        return vendas;
-
-    } catch (error) {
+    } catch (
+        error
+    ) {
 
         console.error(
-            '❌ Erro ao carregar cache de vendas:',
+            '❌ Erro ao carregar cache NF-e:',
             error
         );
 
@@ -3461,287 +6991,757 @@ async function carregarVendasCacheNFE() {
     }
 }
 
-    async function sincronizarVendasPendentesML() {
-    const tbody = document.getElementById('vendasPendentesBody');
-    if (!tbody) return;
+async function processarListaVendasNFE(
+    lista,
+    idsComNFE
+) {
 
-    console.log(
-    '🔄 Atualizando vendas com Mercado Livre em segundo plano...'
-    );
+    const processadas =
+        [];
+
+    const TAMANHO_LOTE =
+        8;
+
+    for (
+        let i = 0;
+        i < lista.length;
+        i += TAMANHO_LOTE
+    ) {
+
+        const lote =
+            lista.slice(
+                i,
+                i +
+                    TAMANHO_LOTE
+            );
+
+        const resultados =
+            await Promise.all(
+
+                lote.map(
+                    venda =>
+                        processarVendaParaNFE(
+                            venda,
+                            idsComNFE
+                        )
+                )
+            );
+
+        processadas.push(
+            ...resultados.filter(
+                Boolean
+            )
+        );
+    }
+
+    return processadas;
+}
+
+async function processarVendaParaNFE(
+    venda,
+    idsComNFE
+) {
+
+    const idVenda =
+        normalizarOrderIdML(
+            venda.id_venda_ml ||
+            venda.id
+        );
+
+    if (!idVenda) {
+        return null;
+    }
+
+    const isFull =
+        detectarVendaFullNFE(
+            venda
+        );
+
+    const info =
+        parseInformacoesEnvioNFE(
+            venda
+        );
+
+    const tipoEnvio =
+        venda.tipo_envio ||
+        venda._logistic_type ||
+        info.tipo ||
+        (
+            isFull
+                ? 'FULL'
+                : 'N/I'
+        );
+
+    // =====================================================
+    // FULL
+    // =====================================================
+
+    if (isFull) {
+
+        const valor =
+            Number(
+                venda.valor_total ??
+                venda.total_amount ??
+                venda._valor_produto ??
+                0
+            );
+
+        return {
+
+            ...venda,
+
+            id:
+                idVenda,
+
+            id_venda_ml:
+                idVenda,
+
+            _logistic_type:
+                tipoEnvio ||
+                'FULL',
+
+            _shipping_mode:
+                info.tipo ||
+                tipoEnvio ||
+                'FULL',
+
+            _is_full:
+                true,
+
+            // FULL = NF-e automática ML
+            _tem_nfe:
+                true,
+
+            _data_envio:
+                null,
+
+            _prazo_envio:
+                null,
+
+            _valor_produto:
+                valor,
+
+            _valor_frete:
+                0,
+
+            _total_pago:
+                valor,
+
+            _estoque_status:
+                'full',
+
+            _estoque_detalhes:
+                []
+        };
+    }
+
+    // =====================================================
+    // VALOR
+    // =====================================================
+
+    let valorProduto =
+        Number(
+            venda.valor_total ??
+            venda.total_amount ??
+            venda._valor_produto ??
+            0
+        );
+
+    let valorFrete =
+        Number(
+            venda._valor_frete ??
+            0
+        );
+
+    let totalPago =
+        valorProduto;
 
     try {
-        let token = localStorage.getItem('ml_access_token');
-        if (!token && typeof window.getValidToken === 'function') {
-            const tokenData = await window.getValidToken();
-            token = tokenData?.access_token;
-        }
-        if (!token) throw new Error('Token ML não disponível');
 
-        // ===== 1. BUSCAR IDs COM NF-e NO MERCADO LIVRE =====
-        console.log('🔍 Buscando vendas com NF-e no Mercado Livre...');
-        let idsComNFE_ML = new Set();
-        
-        try {
-            // Buscar invoices do seller
-            const invoicesUrl = `https://api.mercadolibre.com/users/415176739/invoices`;
-            const invoicesProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(invoicesUrl)}&token=${encodeURIComponent(token)}`;
-            const invoicesResponse = await fetch(invoicesProxyUrl);
-            
-            if (invoicesResponse.ok) {
-                const invoicesData = await invoicesResponse.json();
-                console.log('📋 Resposta das invoices:', invoicesData);
-                
-                // 🔥 VERIFICAR O FORMATO DA RESPOSTA
-                let invoices = [];
-                if (Array.isArray(invoicesData)) {
-                    invoices = invoicesData;
-                } else if (invoicesData.results && Array.isArray(invoicesData.results)) {
-                    invoices = invoicesData.results;
-                } else if (invoicesData.invoices && Array.isArray(invoicesData.invoices)) {
-                    invoices = invoicesData.invoices;
-                } else if (typeof invoicesData === 'object') {
-                    // Pode ser um objeto com as invoices
-                    for (const key in invoicesData) {
-                        if (Array.isArray(invoicesData[key])) {
-                            invoices = invoicesData[key];
-                            break;
+        // =================================================
+        // CONTINUA USANDO A FUNÇÃO DO MERCADO PAGO
+        //
+        // portanto mantém:
+        //
+        // Mercado Pago
+        // x
+        // total_amount
+        //
+        // e usa o menor conforme sua função existente.
+        // =================================================
+
+        const pagamento =
+            await buscarValorExatoPagamento(
+                idVenda
+            );
+
+        if (pagamento) {
+
+            valorProduto =
+                Number(
+                    pagamento
+                        .valor_produto ??
+                    valorProduto
+                );
+
+            valorFrete =
+                Number(
+                    pagamento
+                        .valor_frete ??
+                    0
+                );
+
+            totalPago =
+                Number(
+                    pagamento
+                        .total_pago ??
+                    valorProduto
+                );
+        }
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            `⚠️ Pagamento da venda ${idVenda}:`,
+            error
+        );
+    }
+
+    // =====================================================
+    // ESTOQUE
+    // =====================================================
+
+    let estoque = {
+
+        status:
+            'nao_verificado',
+
+        produtos:
+            []
+    };
+
+    try {
+
+        estoque =
+            await verificarEstoqueVenda(
+                venda
+            );
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            `⚠️ Estoque da venda ${idVenda}:`,
+            error
+        );
+    }
+
+    // =====================================================
+    // PRODUTO
+    // =====================================================
+
+    const sku =
+        venda.sku ||
+        venda.codigo ||
+        venda.item_sku ||
+        venda.order_items
+            ?.[0]
+            ?.item
+            ?.seller_sku ||
+        'SEM_SKU';
+
+    const quantidade =
+        Number(
+            venda.quantidade ||
+            venda.quantity ||
+            venda.order_items
+                ?.[0]
+                ?.quantity ||
+            1
+        );
+
+    const titulo =
+        venda.titulo ||
+        venda.title ||
+        venda.order_items
+            ?.[0]
+            ?.item
+            ?.title ||
+        'Produto';
+
+    const cliente =
+        venda.cliente ||
+        venda.buyer
+            ?.nickname ||
+        'N/I';
+
+    return {
+
+        ...venda,
+
+        id:
+            idVenda,
+
+        id_venda_ml:
+            idVenda,
+
+        buyer:
+            venda.buyer ||
+            {
+                nickname:
+                    cliente
+            },
+
+        order_items:
+            (
+                Array.isArray(
+                    venda.order_items
+                ) &&
+                venda.order_items
+                    .length
+            )
+                ? venda.order_items
+                : [
+                    {
+                        quantity:
+                            quantidade,
+
+                        unit_price:
+                            quantidade >
+                            0
+                                ? valorProduto /
+                                    quantidade
+                                : valorProduto,
+
+                        item: {
+                            title:
+                                titulo,
+                            seller_sku:
+                                sku
                         }
                     }
-                }
-                
-                console.log(`📋 ${invoices.length} invoices encontradas`);
-                
-                for (const invoice of invoices) {
-                    // Tentar extrair order_id de várias formas
-                    let orderId = null;
-                    
-                    if (invoice.order_id) {
-                        orderId = String(invoice.order_id);
-                    } else if (invoice.external_order_id) {
-                        orderId = String(invoice.external_order_id);
-                    } else if (invoice.order) {
-                        orderId = String(invoice.order);
-                    } else if (invoice.pack_id) {
-                        // Se tiver pack_id, buscar o order_id associado
-                        try {
-                            const packUrl = `https://api.mercadolibre.com/packs/${invoice.pack_id}`;
-                            const packProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(packUrl)}&token=${encodeURIComponent(token)}`;
-                            const packResponse = await fetch(packProxyUrl);
-                            if (packResponse.ok) {
-                                const packData = await packResponse.json();
-                                if (packData.orders && packData.orders.length > 0) {
-                                    orderId = String(packData.orders[0]);
-                                }
-                            }
-                        } catch (e) {}
+                ],
+
+        shipping:
+            venda.shipping ||
+            {
+                id:
+                    venda.id_envio ||
+                    info.id ||
+                    null
+            },
+
+        total_amount:
+            totalPago,
+
+        _data_envio:
+            extrairDataEnvioML(
+                venda
+            ),
+
+        _prazo_envio:
+            extrairPrazoEnvioCompletoML(
+                venda
+            ),
+
+        _logistic_type:
+            tipoEnvio,
+
+        _shipping_mode:
+            info.tipo ||
+            tipoEnvio,
+
+        _is_full:
+            false,
+
+        _tem_nfe:
+            idsComNFE.has(
+                idVenda
+            ) ||
+            venda.nfe_emitida ===
+                true,
+
+        _valor_produto:
+            valorProduto,
+
+        _valor_frete:
+            valorFrete,
+
+        _total_pago:
+            totalPago,
+
+        _estoque_status:
+            estoque.status,
+
+        _estoque_detalhes:
+            estoque.produtos
+    };
+}
+
+async function sincronizarVendasPendentesML(
+    dataEnvio = null,
+    atualizacaoRapida = false
+) {
+
+    console.log(
+        '🔄 Sincronizando vendas NF-e',
+        {
+            dataEnvio,
+            atualizacaoRapida
+        }
+    );
+
+    // =====================================================
+    // TRÊS FONTES AO MESMO TEMPO
+    // =====================================================
+
+    const [
+        idsComNFE,
+        vendasBanco,
+        vendasAtualizadas
+    ] =
+        await Promise.all([
+
+            carregarIdsNFEAtivas(),
+
+            carregarVendasFonteBancoML(),
+
+            // =================================================
+            // É ISTO QUE ENCONTRA VENDA ANTIGA ALTERADA HOJE
+            // =================================================
+
+            buscarVendasAtualizadasRecentementeNFE(
+
+                dataEnvio,
+
+                atualizacaoRapida
+                    ? 4
+                    : 15,
+
+                atualizacaoRapida
+                    ? 150
+                    : 300
+            )
+        ]);
+
+    // =====================================================
+    // BANCO + ORDERS ATUALIZADAS
+    // =====================================================
+
+    const vendasBancoAtualizadas =
+        mesclarVendasFonteNFE(
+            vendasBanco,
+            vendasAtualizadas
+        );
+
+    // =====================================================
+    // PREPARAR CANDIDATAS
+    // =====================================================
+
+    const prepararCandidatas =
+        fonte => {
+
+            let lista =
+                fonte.map(
+                    venda => {
+
+                        const idVenda =
+                            normalizarOrderIdML(
+                                venda.id_venda_ml ||
+                                venda.id
+                            );
+
+                        const isFull =
+                            detectarVendaFullNFE(
+                                venda
+                            );
+
+                        return {
+
+                            ...venda,
+
+                            id:
+                                idVenda,
+
+                            id_venda_ml:
+                                idVenda,
+
+                            _is_full:
+                                isFull,
+
+                            _data_envio:
+                                isFull
+                                    ? null
+                                    : extrairDataEnvioML(
+                                        venda
+                                    ),
+
+                            _prazo_envio:
+                                isFull
+                                    ? null
+                                    : extrairPrazoEnvioCompletoML(
+                                        venda
+                                    ),
+
+                            _tem_nfe:
+                                isFull
+                                    ? true
+                                    : (
+                                        idsComNFE.has(
+                                            idVenda
+                                        ) ||
+                                        venda.nfe_emitida ===
+                                            true
+                                    )
+                        };
                     }
-                    
-                    if (orderId) {
-                        idsComNFE_ML.add(orderId);
-                        console.log(`✅ Venda ${orderId} tem NF-e no ML`);
-                    }
-                }
-                
-                console.log(`📋 ${idsComNFE_ML.size} vendas com NF-e no ML`);
-            } else {
-                console.warn(`⚠️ Erro ao buscar invoices: ${invoicesResponse.status}`);
-                // Tentar método alternativo - buscar invoice por venda individualmente não é viável
-            }
-        } catch (e) {
-            console.warn('⚠️ Erro ao buscar invoices do ML:', e);
-        }
+                );
 
-        // ===== 2. BUSCAR IDs COM NF-e NO SUPABASE =====
-        let idsComNFE_Supabase = new Set();
-        try {
-            const { data: nfes, error } = await window.supabaseClient
-                .from('nfe_emitidas')
-                .select('venda_id');
-            if (!error && nfes) {
-                idsComNFE_Supabase = new Set(nfes.map(n => String(n.venda_id)).filter(id => id !== 'null' && id !== null));
-                console.log(`📋 ${idsComNFE_Supabase.size} vendas com NF-e no Supabase`);
-            }
-        } catch (e) {
-            console.warn('⚠️ Erro ao consultar nfe_emitidas:', e);
-        }
+            if (
+                dataEnvio
+            ) {
 
-        // ===== 3. UNIR OS DOIS CONJUNTOS =====
-        const idsComNFE = new Set([...idsComNFE_ML, ...idsComNFE_Supabase]);
-        console.log(`📋 Total de ${idsComNFE.size} vendas com NF-e (ML + Supabase)`);
-
-        // ===== 4. BUSCAR VENDAS DO ML =====
-        const diasAtras = 15;
-        const dataInicio = new Date();
-        dataInicio.setDate(dataInicio.getDate() - diasAtras);
-        
-        let todasVendas = [];
-        let offset = 0;
-        const maxLimit = 50;
-        let total = null;
-        const MAX_PAGINAS = 4;
-        
-        while ((total === null || offset < total) && offset / maxLimit < MAX_PAGINAS) {
-            const params = new URLSearchParams({
-                seller: '415176739',
-                sort: 'date_desc',
-                'order.status': 'paid',
-                limit: maxLimit,
-                offset: offset,
-                'order.date_created.from': dataInicio.toISOString()
-            });
-            
-            const url = `https://api.mercadolibre.com/orders/search?${params}`;
-            const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
-            
-            const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error(`Erro na API: ${response.status}`);
-            
-            const data = await response.json();
-            const orders = data.results || [];
-            
-            if (total === null) {
-                total = data.paging?.total || 0;
-                console.log(`📦 Total de pedidos no ML: ${total}`);
-            }
-            
-            todasVendas = todasVendas.concat(orders);
-            offset += maxLimit;
-            
-            if (todasVendas.length >= 200) {
-                console.log(`⏹️ Limite de 200 vendas atingido`);
-                break;
-            }
-            
-            await new Promise(resolve => setTimeout(resolve, 200));
-        }
-        
-        console.log(`📦 ${todasVendas.length} vendas obtidas do ML`);
-
-        if (todasVendas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4">Nenhuma venda encontrada</td></tr>';
-            return;
-        }
-
-        // ===== 5. PROCESSAR CADA VENDA =====
-        const vendasProcessadas = [];
-
-        for (const venda of todasVendas) {
-            const idVenda = String(venda.id);
-            
-            // 🔥 VERIFICAR SE JÁ TEM NF-e
-            const temNFE = idsComNFE.has(idVenda);
-            
-            // Buscar shipment
-            let logisticType = '';
-            let shippingMode = '';
-            
-            if (venda.shipping?.id) {
-                try {
-                    const shipUrl = `https://api.mercadolibre.com/shipments/${venda.shipping.id}`;
-                    const shipProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(shipUrl)}&token=${encodeURIComponent(token)}`;
-                    const shipResponse = await fetch(shipProxyUrl);
-                    if (shipResponse.ok) {
-                        const shipment = await shipResponse.json();
-                        logisticType = shipment.logistic_type || '';
-                        shippingMode = shipment.shipping_mode || '';
-                    }
-                } catch (e) {
-                    console.warn(`⚠️ Erro ao buscar shipment ${venda.shipping.id}:`, e);
-                }
+                lista =
+                    lista.filter(
+                        venda =>
+                            vendaPertenceDataSelecionadaNFE(
+                                venda,
+                                dataEnvio
+                            )
+                    );
             }
 
-            // Verificar FULL
-            const isFull = 
-                logisticType.toLowerCase() === 'fulfillment' ||
-                logisticType.toLowerCase().includes('full') ||
-                shippingMode.toLowerCase() === 'fulfillment' ||
-                shippingMode.toLowerCase().includes('full') ||
-                (venda.tags || []).some(t => t.toLowerCase() === 'fulfillment');
+            return lista;
+        };
 
-            // Buscar valor
-            let valorProduto = 0;
-            let valorFrete = 0;
-            let totalPago = 0;
-            
-            try {
-                const dadosPagamento = await buscarValorExatoPagamento(idVenda);
-                if (dadosPagamento) {
-                    valorProduto = dadosPagamento.valor_produto || 0;
-                    valorFrete = dadosPagamento.valor_frete || 0;
-                    totalPago = dadosPagamento.total_pago || 0;
-                }
-            } catch (e) {
-                console.warn(`⚠️ Erro ao buscar pagamento para ${idVenda}:`, e);
-            }
+    // =====================================================
+    // PRIMEIRO BANCO + ORDERS ATUALIZADAS
+    // =====================================================
 
-            if (valorProduto === 0 && venda.total_amount) {
-                const custoFrete = venda.shipping?.cost || 0;
-                valorProduto = Math.max(0, (venda.total_amount || 0) - custoFrete);
-                totalPago = venda.total_amount || 0;
-                valorFrete = custoFrete;
-            }
+    let candidatasBanco =
+        prepararCandidatas(
+            vendasBancoAtualizadas
+        );
 
-            vendasProcessadas.push({
-                ...venda,
-                _logistic_type: logisticType,
-                _shipping_mode: shippingMode,
-                _is_full: isFull,
-                _tem_nfe: temNFE,
-                _valor_produto: valorProduto,
-                _valor_frete: valorFrete,
-                _total_pago: totalPago
-            });
-        }
+    if (
+        !dataEnvio
+    ) {
 
-        console.log(`📊 Vendas processadas: ${vendasProcessadas.length}`);
+        candidatasBanco =
+            candidatasBanco.slice(
+                0,
+                atualizacaoRapida
+                    ? 250
+                    : 500
+            );
+    }
 
-        if (vendasProcessadas.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4">Nenhuma venda encontrada</td></tr>';
-            return;
-        }
+    console.log(
+        `📅 ${candidatasBanco.length} venda(s) candidata(s) para ${dataEnvio || 'todas as datas'}`
+    );
 
-        vendasPendentes = vendasProcessadas;
+    const processadasBanco =
+        await processarListaVendasNFE(
+            candidatasBanco,
+            idsComNFE
+        );
 
-        // =====================================================
-        // SALVAR RESULTADO NO BANCO
-        // =====================================================
+    if (
+        processadasBanco.length
+    ) {
 
         await salvarVendasCacheNFE(
-            vendasProcessadas
+            processadasBanco
         );
+    }
 
-        // =====================================================
-        // ATUALIZAR TELA
-        // =====================================================
+    // =====================================================
+    // JÁ ATUALIZAR TELA
+    // =====================================================
+
+    if (
+        dataEnvio ||
+        window._nfeFiltroTodas
+    ) {
+
+        const tela =
+            await carregarVendasCacheNFE(
+                dataEnvio ||
+                null
+            );
 
         renderizarVendasNFETabela(
-            vendasProcessadas
+            tela
+        );
+    }
+
+    const idsJaProcessados =
+        new Set(
+
+            processadasBanco
+                .map(
+                    venda =>
+                        normalizarOrderIdML(
+                            venda.id_venda_ml ||
+                            venda.id
+                        )
+                )
+                .filter(Boolean)
         );
 
-        // ===== 7. ADICIONAR EVENT LISTENERS =====
-        document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
-            btn.removeEventListener('click', window.handleEmitirNFEClick);
-            btn.addEventListener('click', window.handleEmitirNFEClick);
-        });
+    // =====================================================
+    // BUSCAR VENDA NOVA
+    //
+    // ainda mantemos buscarVendasML()
+    // porque ela traz toda a estrutura detalhada
+    // usada na aba Vendas ML.
+    // =====================================================
 
-        document.querySelectorAll('#vendasPendentesBody .btn-ver-nfe').forEach(btn => {
-            btn.removeEventListener('click', window.handleVerNFEClick);
-            btn.addEventListener('click', window.handleVerNFEClick);
-        });
+    let vendasRecentes =
+        [];
 
-        document.querySelectorAll('#vendasPendentesBody .btn-cancelar-nfe').forEach(btn => {
-            btn.removeEventListener('click', window.handleCancelarNFEClick);
-            btn.addEventListener('click', window.handleCancelarNFEClick);
-        });
+    try {
 
-    } catch (error) {
-        console.error('❌ Erro ao carregar vendas pendentes:', error);
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">Erro: ${error.message}</td></tr>`;
+        if (
+            typeof window
+                .buscarVendasML ===
+            'function'
+        ) {
+
+            const limite =
+                atualizacaoRapida
+                    ? 50
+                    : 200;
+
+            const resultado =
+                await window
+                    .buscarVendasML(
+                        limite
+                    );
+
+            if (
+                resultado?.success &&
+                Array.isArray(
+                    resultado.vendas
+                )
+            ) {
+
+                vendasRecentes =
+                    resultado.vendas;
+            }
+        }
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ buscarVendasML falhou:',
+            error
+        );
     }
+
+    // =====================================================
+    // MESCLAR TUDO
+    // =====================================================
+
+    const mescladas =
+        mesclarVendasFonteNFE(
+            vendasBancoAtualizadas,
+            vendasRecentes
+        );
+
+    let candidatasRecentes =
+        prepararCandidatas(
+            mescladas
+        )
+            .filter(
+                venda => {
+
+                    const id =
+                        normalizarOrderIdML(
+                            venda.id_venda_ml ||
+                            venda.id
+                        );
+
+                    return (
+                        !idsJaProcessados
+                            .has(id)
+                    );
+                }
+            );
+
+    if (
+        !dataEnvio
+    ) {
+
+        candidatasRecentes =
+            candidatasRecentes.slice(
+                0,
+                atualizacaoRapida
+                    ? 250
+                    : 500
+            );
+    }
+
+    const processadasRecentes =
+        await processarListaVendasNFE(
+            candidatasRecentes,
+            idsComNFE
+        );
+
+    if (
+        processadasRecentes
+            .length
+    ) {
+
+        await salvarVendasCacheNFE(
+            processadasRecentes
+        );
+    }
+
+    // =====================================================
+    // TELA FINAL
+    // =====================================================
+
+    if (
+        dataEnvio ||
+        window._nfeFiltroTodas
+    ) {
+
+        const telaFinal =
+            await carregarVendasCacheNFE(
+                dataEnvio ||
+                null
+            );
+
+        renderizarVendasNFETabela(
+            telaFinal
+        );
+    }
+
+    const total =
+        processadasBanco
+            .length +
+        processadasRecentes
+            .length;
+
+    console.log(
+        `✅ Sincronização NF-e concluída: ${total} venda(s)`
+    );
+
+    return [
+        ...processadasBanco,
+        ...processadasRecentes
+    ];
 }
 
 async function carregarVendasPendentes(
-    forcarAtualizacao = false
+    forcarAtualizacao = false,
+    dataForcada = null
 ) {
 
     const tbody =
@@ -3749,330 +7749,676 @@ async function carregarVendasPendentes(
             'vendasPendentesBody'
         );
 
-    if (!tbody) return;
+    if (!tbody) {
+        return;
+    }
+
+    inicializarFiltroDataNFE();
+
+    const input =
+        document.getElementById(
+            'filtroDataEnvioNFE'
+        );
+
+    const dataSelecionada =
+        dataForcada ||
+        input?.value ||
+        obterDataHojeLocal();
 
     // =====================================================
-    // 1. CARREGAR BANCO PRIMEIRO
+    // 1. CACHE PRIMEIRO
     // =====================================================
 
     const vendasCache =
-        await carregarVendasCacheNFE();
+        window._nfeFiltroTodas
+            ? await carregarVendasCacheNFE(
+                null
+            )
+            : await carregarVendasCacheNFE(
+                dataSelecionada
+            );
 
-    if (
-        vendasCache.length > 0
-    ) {
-
-        // Mostra imediatamente
-        renderizarVendasNFETabela(
-            vendasCache
-        );
-
-        console.log(
-            '⚡ Tabela exibida usando cache'
-        );
-
-    } else {
-
-        tbody.innerHTML = `
-            <tr>
-                <td
-                    colspan="8"
-                    class="text-center py-4"
-                >
-                    <div class="spinner"></div>
-
-                    Primeira sincronização
-                    com Mercado Livre...
-                </td>
-            </tr>
-        `;
-    }
+    renderizarVendasNFETabela(
+        vendasCache
+    );
 
     // =====================================================
-    // 2. EVITAR DUAS SINCRONIZAÇÕES
+    // EVITAR DUPLICIDADE
     // =====================================================
 
     if (
-        window._sincronizacaoVendasNFEEmAndamento
+        window
+            ._sincronizacaoVendasNFEEmAndamento
     ) {
-
-        console.log(
-            'ℹ️ Sincronização de vendas já está acontecendo'
-        );
 
         return;
     }
 
-    // =====================================================
-    // 3. VERIFICAR QUANDO SINCRONIZOU
-    // =====================================================
+    const chaveSync =
+        `nfe_sync_${dataSelecionada}`;
 
     const ultimaSync =
         Number(
             localStorage.getItem(
-                'nfe_ultima_sincronizacao'
-            ) || 0
+                chaveSync
+            ) ||
+            0
         );
-
-    const agora =
-        Date.now();
-
-    // Atualizar automaticamente
-    // a cada 10 minutos.
-    const intervalo =
-        10 * 60 * 1000;
 
     const precisaAtualizar =
         forcarAtualizacao ||
-        vendasCache.length === 0 ||
+
+        vendasCache.length ===
+            0 ||
+
         (
-            agora -
+            Date.now() -
             ultimaSync >
-            intervalo
+            2 *
+            60 *
+            1000
         );
 
-    if (!precisaAtualizar) {
+    if (
+        precisaAtualizar
+    ) {
 
-        console.log(
-            '✅ Cache ainda recente. Não precisa consultar ML.'
-        );
+        window
+            ._sincronizacaoVendasNFEEmAndamento =
+            true;
 
-        return;
+        const processo =
+            sincronizarVendasPendentesML(
+                dataSelecionada,
+                true
+            )
+
+                .then(
+                    () => {
+
+                        localStorage.setItem(
+                            chaveSync,
+                            String(
+                                Date.now()
+                            )
+                        );
+                    }
+                )
+
+                .catch(
+                    error => {
+
+                        console.error(
+                            '❌ Atualização rápida:',
+                            error
+                        );
+                    }
+                )
+
+                .finally(
+                    () => {
+
+                        window
+                            ._sincronizacaoVendasNFEEmAndamento =
+                            false;
+                    }
+                );
+
+        if (
+            forcarAtualizacao
+        ) {
+
+            await processo;
+        }
     }
 
     // =====================================================
-    // 4. SINCRONIZAÇÃO EM SEGUNDO PLANO
+    // SINCRONIZAÇÃO COMPLETA
     // =====================================================
 
-    window._sincronizacaoVendasNFEEmAndamento =
-        true;
+    const ultimaCompleta =
+        Number(
+            localStorage.getItem(
+                'nfe_sync_completa'
+            ) ||
+            0
+        );
 
-    console.log(
-        '🔄 Iniciando atualização do ML em segundo plano...'
-    );
+    if (
+        Date.now() -
+            ultimaCompleta >
+            6 *
+            60 *
+            60 *
+            1000 &&
 
-    // Se não foi solicitada atualização manual,
-    // NÃO usamos await.
-    const processo =
-        sincronizarVendasPendentesML()
-            .then(() => {
+        !window
+            ._nfeSyncCompleta
+    ) {
 
-                localStorage.setItem(
-                    'nfe_ultima_sincronizacao',
-                    String(
-                        Date.now()
-                    )
-                );
+        window
+            ._nfeSyncCompleta =
+            true;
 
-                console.log(
-                    '✅ Sincronização de vendas finalizada'
-                );
-            })
-            .catch(error => {
+        setTimeout(
 
-                console.error(
-                    '❌ Erro na sincronização em segundo plano:',
+            async () => {
+
+                try {
+
+                    await sincronizarVendasPendentesML(
+                        null,
+                        false
+                    );
+
+                    localStorage.setItem(
+                        'nfe_sync_completa',
+                        String(
+                            Date.now()
+                        )
+                    );
+
+                } catch (
                     error
-                );
-            })
-            .finally(() => {
+                ) {
 
-                window._sincronizacaoVendasNFEEmAndamento =
-                    false;
-            });
+                    console.warn(
+                        '⚠️ Sincronização completa:',
+                        error
+                    );
 
-    // Atualização manual espera terminar.
-    if (forcarAtualizacao) {
+                } finally {
 
-        await processo;
+                    window
+                        ._nfeSyncCompleta =
+                        false;
+                }
+            },
+
+            1500
+        );
     }
 }
 
-// =========================================================
-// 🔥 FUNÇÃO PARA SINCRONIZAR ESTOQUE COM ML (VERSÃO MELHORADA)
-// =========================================================
+async function sincronizarEstoqueComML(
+    vendaId
+) {
 
-async function sincronizarEstoqueComML(vendaId) {
     try {
-        console.log(`🔄 Sincronizando estoque com ML para venda ${vendaId}...`);
-        
-        let token = localStorage.getItem('ml_access_token');
-        if (!token && typeof window.getValidToken === 'function') {
-            const tokenData = await window.getValidToken();
-            token = tokenData?.access_token;
+
+        console.log(
+            `🔄 Sincronizando estoque com ML para venda ${vendaId}`
+        );
+
+        let token =
+            localStorage.getItem(
+                'ml_access_token'
+            );
+
+        if (
+            !token &&
+            typeof window
+                .getValidToken ===
+            'function'
+        ) {
+
+            const tokenData =
+                await window
+                    .getValidToken();
+
+            token =
+                tokenData
+                    ?.access_token;
         }
-        
+
         if (!token) {
-            console.warn('⚠️ Token ML não disponível para sincronização');
+
+            console.warn(
+                '⚠️ Token ML não disponível'
+            );
+
             return false;
         }
 
-        // ===== 1. TENTAR BUSCAR A VENDA NO SUPABASE =====
-        let vendaML = null;
-        let itensParaSincronizar = [];
-        
-        // Tentar na tabela vendas_ml
-        const { data: venda1, error: error1 } = await window.supabaseClient
-            .from('vendas_ml')
-            .select('sku, quantidade, skus_kit, eh_kit, produtos')
-            .eq('id_venda_ml', String(vendaId))
-            .maybeSingle();
-        
-        if (!error1 && venda1) {
-            vendaML = venda1;
-            console.log('✅ Venda encontrada na tabela vendas_ml');
-        } else {
-            // Tentar na tabela vendas_nfe
-            const { data: venda2, error: error2 } = await window.supabaseClient
-                .from('vendas_nfe')
-                .select('sku, quantidade, skus_kit, eh_kit, items_json')
-                .eq('id_venda_ml', String(vendaId))
-                .maybeSingle();
-            
-            if (!error2 && venda2) {
-                vendaML = venda2;
-                console.log('✅ Venda encontrada na tabela vendas_nfe');
-            }
-        }
-        
-        // ===== 2. EXTRAIR SKUs DA VENDA =====
-        if (vendaML) {
-            if (vendaML.eh_kit && vendaML.skus_kit && vendaML.skus_kit.length > 0) {
-                for (const kitItem of vendaML.skus_kit) {
-                    const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(kitItem.sku);
-                    const quantidadeKit = kitItem.estoque || 1;
-                    const quantidadeTotal = quantidadeKit * (vendaML.quantidade || 1) * multiplicador;
-                    itensParaSincronizar.push({
-                        sku: skuReal,
-                        quantidade: quantidadeTotal
-                    });
-                }
-                console.log(`📦 KIT detectado: ${vendaML.skus_kit.length} SKUs para sincronizar`);
-            } else {
-                const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(vendaML.sku);
-                const quantidadeTotal = (vendaML.quantidade || 1) * multiplicador;
-                itensParaSincronizar.push({
-                    sku: skuReal,
-                    quantidade: quantidadeTotal
-                });
-            }
-        }
-        
-        // ===== 3. FALLBACK: USAR OS PRODUTOS DA EMISSÃO =====
-        if (itensParaSincronizar.length === 0 && window.produtosParaEmissao && window.produtosParaEmissao.length > 0) {
-            console.log('📦 Usando produtos da emissão para sincronização (fallback)');
-            
-            for (const prod of window.produtosParaEmissao) {
-                if (!prod.sku || prod.sku === 'SEM_SKU' || prod.sku === 'N/A') continue;
-                const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(prod.sku);
-                const quantidadeTotal = (prod.quantidade || 1) * multiplicador;
-                itensParaSincronizar.push({
-                    sku: skuReal,
-                    quantidade: quantidadeTotal
-                });
-            }
-        }
-        
-        // ===== 4. SE NÃO TEM NENHUM ITEM, RETORNAR =====
-        if (itensParaSincronizar.length === 0) {
-            console.warn('⚠️ Nenhum SKU encontrado para sincronizar');
-            return false;
-        }
-        
-        // ===== 5. BUSCAR OS PRODUTOS NO ESTOQUE E SINCRONIZAR =====
-        let itensSincronizados = 0;
-        
-        for (const item of itensParaSincronizar) {
-            if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
-            
-            console.log(`🔄 Sincronizando SKU ${item.sku} com ML...`);
-            
-            // Buscar o produto no estoque
-            const { data: produto, error: prodError } = await window.supabaseClient
-                .from('produtos_estoque')
-                .select('id, quantidade, mlb_codes, sku, nome')
-                .eq('sku', item.sku)
-                .maybeSingle();
-            
-            if (prodError || !produto) {
-                console.warn(`⚠️ Produto ${item.sku} não encontrado no estoque`);
-                continue;
+        const itensParaSincronizar =
+            [];
+
+        // =====================================================
+        // 1. CACHE NOVO
+        // =====================================================
+
+        try {
+
+            const {
+                data:
+                    cache,
+
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .select(
+                        'estoque_detalhes'
+                    )
+                    .eq(
+                        'id_venda_ml',
+                        String(
+                            vendaId
+                        )
+                    )
+                    .maybeSingle();
+
+            if (
+                !error &&
+                Array.isArray(
+                    cache
+                        ?.estoque_detalhes
+                )
+            ) {
+
+                cache
+                    .estoque_detalhes
+                    .forEach(
+                        item => {
+
+                            if (
+                                item.encontrado &&
+                                item.sku
+                            ) {
+
+                                itensParaSincronizar.push({
+
+                                    sku:
+                                        item.sku,
+
+                                    quantidade:
+                                        item.quantidade_venda ||
+                                        1
+                                });
+                            }
+                        }
+                    );
             }
 
-            // Verificar se tem sincronização bloqueada
-            const syncBloqueado = produto.bloquear_sync_ml || false;
-            if (syncBloqueado) {
-                console.log(`🔒 Sincronização bloqueada para ${item.sku}`);
-                continue;
-            }
+        } catch (cacheError) {
 
-            // Extrair MLB Codes
-            let mlbCodes = null;
-            if (produto.mlb_codes) {
-                if (Array.isArray(produto.mlb_codes) && produto.mlb_codes.length > 0) {
-                    mlbCodes = produto.mlb_codes;
-                } else if (typeof produto.mlb_codes === 'string') {
-                    try {
-                        const parsed = JSON.parse(produto.mlb_codes);
-                        mlbCodes = Array.isArray(parsed) ? parsed : [parsed];
-                    } catch (e) {
-                        mlbCodes = produto.mlb_codes.split(',').map(s => s.trim()).filter(s => s);
+            console.warn(
+                '⚠️ Erro ao ler cache:',
+                cacheError
+            );
+        }
+
+        // =====================================================
+        // 2. FALLBACK vendas_ml
+        // =====================================================
+
+        if (
+            itensParaSincronizar.length ===
+            0
+        ) {
+
+            try {
+
+                const {
+                    data:
+                        venda
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'vendas_ml'
+                        )
+                        .select(
+                            'sku, quantidade, skus_kit, eh_kit'
+                        )
+                        .eq(
+                            'id_venda_ml',
+                            String(
+                                vendaId
+                            )
+                        )
+                        .maybeSingle();
+
+                if (venda) {
+
+                    if (
+                        venda.eh_kit &&
+                        Array.isArray(
+                            venda.skus_kit
+                        )
+                    ) {
+
+                        venda.skus_kit
+                            .forEach(
+                                kit => {
+
+                                    const {
+                                        sku,
+                                        multiplicador
+                                    } =
+                                        extrairSkuEQuantidade(
+                                            kit.sku
+                                        );
+
+                                    itensParaSincronizar.push({
+
+                                        sku,
+
+                                        quantidade:
+                                            (
+                                                kit.estoque ||
+                                                1
+                                            ) *
+                                            (
+                                                venda.quantidade ||
+                                                1
+                                            ) *
+                                            multiplicador
+                                    });
+                                }
+                            );
+
+                    } else if (
+                        venda.sku
+                    ) {
+
+                        const {
+                            sku,
+                            multiplicador
+                        } =
+                            extrairSkuEQuantidade(
+                                venda.sku
+                            );
+
+                        itensParaSincronizar.push({
+
+                            sku,
+
+                            quantidade:
+                                (
+                                    venda.quantidade ||
+                                    1
+                                ) *
+                                multiplicador
+                        });
                     }
-                } else if (typeof produto.mlb_codes === 'object') {
-                    const values = Object.values(produto.mlb_codes);
-                    mlbCodes = values.length > 0 ? values : null;
                 }
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ Fallback vendas_ml falhou:',
+                    error
+                );
             }
-            
-            if (!mlbCodes || mlbCodes.length === 0) {
-                console.warn(`⚠️ MLB Codes não encontrados para SKU ${item.sku}`);
+        }
+
+        // Remover SKUs repetidos
+        const skusUnicos =
+            [
+                ...new Set(
+                    itensParaSincronizar
+                        .map(
+                            item =>
+                                item.sku
+                        )
+                        .filter(Boolean)
+                )
+            ];
+
+        if (
+            skusUnicos.length ===
+            0
+        ) {
+
+            console.warn(
+                '⚠️ Nenhum SKU para sincronizar'
+            );
+
+            return false;
+        }
+
+        let sucessos =
+            0;
+
+        let falhas =
+            0;
+
+        // =====================================================
+        // SINCRONIZAR CADA SKU
+        // =====================================================
+
+        for (
+            const sku
+            of skusUnicos
+        ) {
+
+            const {
+                data:
+                    produto,
+
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .select(`
+                        id,
+                        sku,
+                        nome,
+                        quantidade,
+                        mlb_codes,
+                        bloquear_sync_ml
+                    `)
+                    .eq(
+                        'sku',
+                        sku
+                    )
+                    .maybeSingle();
+
+            if (
+                error ||
+                !produto
+            ) {
+
+                console.warn(
+                    `⚠️ SKU ${sku} não encontrado`
+                );
+
+                falhas++;
+
                 continue;
             }
 
-            // Sincronizar cada MLB Code
-            for (const mlbCode of mlbCodes) {
-                if (!mlbCode) continue;
-                
-                const itemId = mlbCode.startsWith('MLB') ? mlbCode : `MLB${mlbCode}`;
-                
+            if (
+                produto
+                    .bloquear_sync_ml
+            ) {
+
+                console.log(
+                    `🔒 Sync ML bloqueada para ${sku}`
+                );
+
+                continue;
+            }
+
+            let mlbCodes =
+                [];
+
+            if (
+                Array.isArray(
+                    produto.mlb_codes
+                )
+            ) {
+
+                mlbCodes =
+                    produto.mlb_codes;
+
+            } else if (
+                typeof produto
+                    .mlb_codes ===
+                'string'
+            ) {
+
                 try {
-                    // Atualizar estoque no ML
-                    const updateUrl = `https://api.mercadolibre.com/items/${itemId}`;
-                    const updatePayload = {
-                        available_quantity: produto.quantidade
-                    };
-                    
-                    const updateProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(updateUrl)}&token=${encodeURIComponent(token)}&method=PUT`;
-                    const updateResponse = await fetch(updateProxyUrl, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(updatePayload)
-                    });
-                    
-                    if (updateResponse.ok) {
-                        itensSincronizados++;
-                        console.log(`✅ Estoque do SKU ${item.sku} (${itemId}) sincronizado com ML: ${produto.quantidade}`);
+
+                    const parsed =
+                        JSON.parse(
+                            produto.mlb_codes
+                        );
+
+                    mlbCodes =
+                        Array.isArray(
+                            parsed
+                        )
+                            ? parsed
+                            : [parsed];
+
+                } catch {
+
+                    mlbCodes =
+                        produto.mlb_codes
+                            .split(',')
+                            .map(
+                                item =>
+                                    item.trim()
+                            )
+                            .filter(Boolean);
+                }
+
+            } else if (
+                produto.mlb_codes &&
+                typeof produto.mlb_codes ===
+                'object'
+            ) {
+
+                mlbCodes =
+                    Object.values(
+                        produto.mlb_codes
+                    );
+            }
+
+            if (
+                mlbCodes.length ===
+                0
+            ) {
+
+                console.warn(
+                    `⚠️ SKU ${sku} não possui MLB`
+                );
+
+                falhas++;
+
+                continue;
+            }
+
+            for (
+                const codigo
+                of mlbCodes
+            ) {
+
+                const codigoTexto =
+                    String(
+                        codigo
+                    );
+
+                const itemId =
+                    codigoTexto.startsWith(
+                        'MLB'
+                    )
+                        ? codigoTexto
+                        : `MLB${codigoTexto}`;
+
+                try {
+
+                    const updateUrl =
+                        `https://api.mercadolibre.com/items/${itemId}`;
+
+                    const proxyUrl =
+                        `${window.WORKER_URL}/api/ml/proxy?url=` +
+                        `${encodeURIComponent(updateUrl)}` +
+                        `&token=${encodeURIComponent(token)}` +
+                        `&method=PUT`;
+
+                    const response =
+                        await fetch(
+                            proxyUrl,
+                            {
+                                method:
+                                    'PUT',
+
+                                headers: {
+                                    'Content-Type':
+                                        'application/json'
+                                },
+
+                                body:
+                                    JSON.stringify({
+
+                                        available_quantity:
+                                            Number(
+                                                produto.quantidade ||
+                                                0
+                                            )
+                                    })
+                            }
+                        );
+
+                    if (
+                        response.ok
+                    ) {
+
+                        sucessos++;
+
+                        console.log(
+                            `✅ ${sku} / ${itemId} = ${produto.quantidade}`
+                        );
+
                     } else {
-                        const errorText = await updateResponse.text();
-                        console.warn(`⚠️ Erro ao sincronizar SKU ${item.sku} (${itemId}): ${errorText}`);
+
+                        falhas++;
+
+                        console.warn(
+                            `⚠️ Erro ML ${itemId}:`,
+                            await response.text()
+                        );
                     }
-                } catch (e) {
-                    console.warn(`⚠️ Erro ao sincronizar SKU ${item.sku}:`, e);
+
+                } catch (error) {
+
+                    falhas++;
+
+                    console.warn(
+                        `⚠️ Erro ao sincronizar ${itemId}:`,
+                        error
+                    );
                 }
             }
         }
 
-        if (itensSincronizados > 0) {
-            console.log(`✅ ${itensSincronizados} item(ns) sincronizados com ML`);
-            showToast(`✅ ${itensSincronizados} item(ns) sincronizados com ML!`, 'success');
-        } else {
-            console.warn('⚠️ Nenhum item foi sincronizado com ML');
-        }
+        console.log(
+            `📊 Sync ML: ${sucessos} sucesso(s), ${falhas} falha(s)`
+        );
 
-        return itensSincronizados > 0;
+        return (
+            sucessos >
+            0 &&
+            falhas ===
+            0
+        );
 
     } catch (error) {
-        console.error('❌ Erro ao sincronizar estoque com ML:', error);
+
+        console.error(
+            '❌ Erro na sincronização ML:',
+            error
+        );
+
         return false;
     }
 }
@@ -4641,17 +8987,19 @@ async function salvarClienteNoBanco(dadosCliente) {
 }
 
 async function confirmarEmissaoNFE() {
-    console.log('🔵 [confirmarEmissaoNFE] FUNÇÃO INICIADA');
 
-    // =====================================================
-    // CONTROLE DE SEGURANÇA
-    // =====================================================
+    console.log(
+        '🔵 [confirmarEmissaoNFE] INICIADA'
+    );
 
-    let nfeFoiEmitida = false;
+    let nfeFoiEmitida =
+        false;
 
-    const orderId = pendingEmitOrderId;
+    const orderId =
+        pendingEmitOrderId;
 
     if (!orderId) {
+
         showToast(
             '❌ Nenhuma venda selecionada',
             'error'
@@ -4662,20 +9010,18 @@ async function confirmarEmissaoNFE() {
         return;
     }
 
-    // Evitar duas emissões simultâneas
-    if (window._nfeEmissaoEmAndamento) {
+    if (
+        window
+            ._nfeEmissaoEmAndamento
+    ) {
 
         showToast(
-            '⚠️ Já existe uma emissão de NF-e em andamento. Aguarde.',
+            '⚠️ Já existe uma emissão em andamento.',
             'warning'
         );
 
         return;
     }
-
-    // =====================================================
-    // BUSCAR O MODAL NOVO
-    // =====================================================
 
     const modal =
         document.getElementById(
@@ -4685,84 +9031,93 @@ async function confirmarEmissaoNFE() {
     if (!modal) {
 
         showToast(
-            '❌ Modal de emissão não encontrado',
+            '❌ Modal não encontrado',
             'error'
         );
 
         return;
     }
 
-    // Buscar sempre dentro do modal novo
-    // para evitar IDs duplicados com o modal antigo.
-    const campo = selector =>
-        modal.querySelector(selector);
-
-    // =====================================================
-    // DADOS DO CLIENTE
-    // =====================================================
+    const campo =
+        seletor =>
+            modal.querySelector(
+                seletor
+            );
 
     const nome =
-        campo('#clienteNome')
-            ?.value
-            .trim() || '';
+        campo(
+            '#clienteNome'
+        )?.value.trim() ||
+        '';
 
     const documento =
         (
-            campo('#clienteDocumento')
-                ?.value || ''
+            campo(
+                '#clienteDocumento'
+            )?.value ||
+            ''
         )
-            .trim()
-            .replace(/\D/g, '');
+            .replace(
+                /\D/g,
+                ''
+            );
 
     const endereco =
-        campo('#clienteEndereco')
-            ?.value
-            .trim() || '';
+        campo(
+            '#clienteEndereco'
+        )?.value.trim() ||
+        '';
 
     const numero =
-        campo('#clienteNumero')
-            ?.value
-            .trim() || 'S/N';
+        campo(
+            '#clienteNumero'
+        )?.value.trim() ||
+        'S/N';
 
     const bairro =
-        campo('#clienteBairro')
-            ?.value
-            .trim() || '';
+        campo(
+            '#clienteBairro'
+        )?.value.trim() ||
+        '';
 
     const cidade =
-        campo('#clienteCidade')
-            ?.value
-            .trim() || '';
+        campo(
+            '#clienteCidade'
+        )?.value.trim() ||
+        '';
 
     const uf =
         (
-            campo('#clienteUF')
-                ?.value || ''
+            campo(
+                '#clienteUF'
+            )?.value ||
+            ''
         )
             .trim()
             .toUpperCase();
 
     const cep =
         (
-            campo('#clienteCEP')
-                ?.value || ''
+            campo(
+                '#clienteCEP'
+            )?.value ||
+            ''
         )
-            .trim()
-            .replace(/\D/g, '');
+            .replace(
+                /\D/g,
+                ''
+            );
 
     const transportadoraId =
-        campo('#nfeTransportadora')
-            ?.value || null;
-
-    // =====================================================
-    // CFOP
-    // =====================================================
-
-    const cfopSelect =
-        campo('#nfeCfop');
+        campo(
+            '#nfeTransportadora'
+        )?.value ||
+        null;
 
     const cfop =
-        cfopSelect?.value ||
+        campo(
+            '#nfeCfop'
+        )?.value ||
         '6108';
 
     // =====================================================
@@ -4772,7 +9127,7 @@ async function confirmarEmissaoNFE() {
     if (!nome) {
 
         showToast(
-            '⚠️ Nome é obrigatório',
+            '⚠️ Nome obrigatório',
             'warning'
         );
 
@@ -4780,15 +9135,14 @@ async function confirmarEmissaoNFE() {
     }
 
     if (
-        !documento ||
-        (
-            documento.length !== 11 &&
-            documento.length !== 14
-        )
+        documento.length !==
+            11 &&
+        documento.length !==
+            14
     ) {
 
         showToast(
-            '⚠️ CPF/CNPJ inválido (11 ou 14 dígitos)',
+            '⚠️ CPF/CNPJ inválido',
             'warning'
         );
 
@@ -4798,7 +9152,7 @@ async function confirmarEmissaoNFE() {
     if (!endereco) {
 
         showToast(
-            '⚠️ Endereço é obrigatório',
+            '⚠️ Endereço obrigatório',
             'warning'
         );
 
@@ -4808,17 +9162,7 @@ async function confirmarEmissaoNFE() {
     if (!cidade) {
 
         showToast(
-            '⚠️ Cidade é obrigatória',
-            'warning'
-        );
-
-        return;
-    }
-
-    if (uf.length !== 2) {
-
-        showToast(
-            '⚠️ UF deve ter 2 letras',
+            '⚠️ Cidade obrigatória',
             'warning'
         );
 
@@ -4826,36 +9170,18 @@ async function confirmarEmissaoNFE() {
     }
 
     const ufValidas = [
-        'AC',
-        'AL',
-        'AP',
-        'AM',
-        'BA',
-        'CE',
-        'DF',
-        'ES',
-        'GO',
-        'MA',
-        'MT',
-        'MS',
-        'MG',
-        'PA',
-        'PB',
-        'PR',
-        'PE',
-        'PI',
-        'RJ',
-        'RN',
-        'RS',
-        'RO',
-        'RR',
-        'SC',
-        'SP',
-        'SE',
-        'TO'
+        'AC','AL','AP','AM','BA','CE',
+        'DF','ES','GO','MA','MT','MS',
+        'MG','PA','PB','PR','PE','PI',
+        'RJ','RN','RS','RO','RR','SC',
+        'SP','SE','TO'
     ];
 
-    if (!ufValidas.includes(uf)) {
+    if (
+        !ufValidas.includes(
+            uf
+        )
+    ) {
 
         showToast(
             `⚠️ UF "${uf}" inválida`,
@@ -4865,144 +9191,98 @@ async function confirmarEmissaoNFE() {
         return;
     }
 
-    // =====================================================
-    // BOTÃO DE EMISSÃO
-    // =====================================================
-
     const btn =
         modal.querySelector(
             '#confirmarProdutosFinalBtn'
-        ) ||
-        document.querySelector(
-            `#vendasPendentesBody .btn-emitir-nfe[data-venda-id="${orderId}"]`
         );
 
     const originalText =
-        btn?.innerHTML || '';
+        btn?.innerHTML ||
+        '';
 
     if (btn) {
 
+        btn.disabled =
+            true;
+
         btn.innerHTML =
             '<span class="spinner"></span> Emitindo...';
-
-        btn.disabled = true;
     }
 
-    // Impede outro clique enquanto trabalha
-    window._nfeEmissaoEmAndamento =
-        String(orderId);
+    window
+        ._nfeEmissaoEmAndamento =
+        String(
+            orderId
+        );
 
     try {
 
         // =====================================================
-        // 1. VERIFICAR SE JÁ EXISTE NF-E PARA A VENDA
+        // VERIFICAR DUPLICIDADE
         // =====================================================
 
-        try {
-
-            console.log(
-                `🔎 Verificando se a venda ${orderId} já possui NF-e...`
+        const listResponse =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/listar-nfes`,
+                {
+                    cache:
+                        'no-store'
+                }
             );
 
-            const verificarResponse =
-                await fetch(
-                    `${window.API_BASE_URL}/nfe/listar-nfes`,
-                    {
-                        cache: 'no-store'
-                    }
-                );
+        const listData =
+            await listResponse
+                .json();
 
-            if (!verificarResponse.ok) {
+        if (
+            listData.success &&
+            Array.isArray(
+                listData.notas
+            )
+        ) {
 
-                throw new Error(
-                    `HTTP ${verificarResponse.status}`
-                );
-            }
-
-            const verificarData =
-                await verificarResponse.json();
-
-            if (
-                !verificarData.success ||
-                !Array.isArray(
-                    verificarData.notas
-                )
-            ) {
-
-                throw new Error(
-                    verificarData.error ||
-                    'Resposta inválida ao verificar NF-es existentes'
-                );
-            }
-
-            const nfeExistente =
-                verificarData.notas.find(
+            const existente =
+                listData.notas.find(
                     nfe => {
 
-                        const vendaDaNfe =
+                        const venda =
                             nfe.venda_id ||
                             nfe.venda_id_ml ||
                             nfe.id_venda;
 
-                        const estaCancelada =
-                            nfe.cancelada === true ||
-                            nfe.cancelada === 'true' ||
-                            nfe.status === 'cancelada';
-
                         return (
-                            String(vendaDaNfe) ===
-                            String(orderId)
+                            String(
+                                venda
+                            ) ===
+                            String(
+                                orderId
+                            )
                         ) &&
-                        !estaCancelada;
+                        !nfe.cancelada;
                     }
                 );
 
-            if (nfeExistente) {
-
-                console.warn(
-                    '🚫 Venda já possui NF-e:',
-                    nfeExistente
-                );
+            if (existente) {
 
                 showToast(
-                    '🚫 Esta venda já possui NF-e emitida. Nova emissão bloqueada para evitar duplicidade.',
+                    '🚫 Esta venda já possui NF-e.',
                     'warning'
                 );
 
                 fecharModalEdicaoProdutos();
 
-                pendingEmitOrderId = null;
-                vendaIdParaEdicao = null;
-
-                window.produtosParaEmissao =
+                pendingEmitOrderId =
                     null;
 
-                produtosEditados = [];
+                vendaIdParaEdicao =
+                    null;
 
                 return;
             }
-
-            console.log(
-                '✅ Nenhuma NF-e existente encontrada para esta venda'
-            );
-
-        } catch (verificacaoError) {
-
-            console.error(
-                '❌ Não foi possível verificar duplicidade:',
-                verificacaoError
-            );
-
-            showToast(
-                '⚠️ Não foi possível verificar se esta venda já possui NF-e. Emissão bloqueada por segurança. Tente novamente.',
-                'warning'
-            );
-
-            return;
         }
 
         // =====================================================
-        // 2. TOKEN DO MERCADO LIVRE
+        // TOKEN
         // =====================================================
 
         let token =
@@ -5012,238 +9292,95 @@ async function confirmarEmissaoNFE() {
 
         if (
             !token &&
-            typeof window.getValidToken ===
+            typeof window
+                .getValidToken ===
             'function'
         ) {
 
             const tokenData =
-                await window.getValidToken();
+                await window
+                    .getValidToken();
 
             token =
-                tokenData?.access_token;
+                tokenData
+                    ?.access_token;
         }
 
-        // =====================================================
-        // 3. PRODUTOS EDITADOS NO MODAL
-        // =====================================================
-
-        let produtos =
+        const produtos =
             Array.isArray(
-                window.produtosParaEmissao
+                window
+                    .produtosParaEmissao
             )
-                ? [
-                    ...window.produtosParaEmissao
-                ]
+                ? window
+                    .produtosParaEmissao
                 : [];
 
-        // =====================================================
-        // FALLBACK: BUSCAR PRODUTOS DO ML
-        // =====================================================
-
         if (
-            produtos.length === 0 &&
-            token
+            produtos.length ===
+            0
         ) {
 
-            try {
-
-                const url =
-                    `https://api.mercadolibre.com/orders/${orderId}`;
-
-                const proxyUrl =
-                    `${window.WORKER_URL}/api/ml/proxy?url=` +
-                    `${encodeURIComponent(url)}` +
-                    `&token=${encodeURIComponent(token)}`;
-
-                const response =
-                    await fetch(proxyUrl);
-
-                if (response.ok) {
-
-                    const venda =
-                        await response.json();
-
-                    const orderItems =
-                        venda.order_items || [];
-
-                    for (
-                        const item
-                        of orderItems
-                    ) {
-
-                        const sku =
-                            item.item
-                                ?.seller_sku ||
-                            'SEM_SKU';
-
-                        const quantidade =
-                            item.quantity || 1;
-
-                        const valorPago =
-                            item.unit_price || 0;
-
-                        let ncmSalvo =
-                            '87149990';
-
-                        try {
-
-                            const ncmData =
-                                await buscarNCMporSKU(
-                                    sku
-                                );
-
-                            if (ncmData) {
-
-                                ncmSalvo =
-                                    ncmData;
-                            }
-
-                        } catch (e) {
-
-                            console.warn(
-                                `⚠️ Erro ao buscar NCM do SKU ${sku}:`,
-                                e
-                            );
-                        }
-
-                        produtos.push({
-                            nome:
-                                item.item
-                                    ?.title ||
-                                'Produto',
-
-                            quantidade,
-
-                            valor_unitario:
-                                valorPago,
-
-                            sku,
-
-                            ncm:
-                                ncmSalvo
-                        });
-                    }
-                }
-
-            } catch (error) {
-
-                console.warn(
-                    '⚠️ Erro ao buscar produtos da venda:',
-                    error
-                );
-            }
-        }
-
-        if (
-            produtos.length === 0
-        ) {
-
-            showToast(
-                '❌ Nenhum produto encontrado para emissão',
-                'error'
+            throw new Error(
+                'Nenhum produto para emissão'
             );
-
-            return;
         }
-
-        // =====================================================
-        // 4. TRATAR NCM
-        // =====================================================
 
         const produtosFinal =
             await Promise.all(
 
                 produtos.map(
-                    async prod => {
+                    async produto => {
 
-                        let ncmFinal =
-                            prod.ncm ||
+                        let ncm =
+                            produto.ncm ||
                             '87149990';
 
                         if (
-                            prod.sku &&
-                            prod.sku !==
-                            'SEM_SKU' &&
-                            prod.sku !==
-                            'N/A'
+                            produto.sku &&
+                            produto.sku !==
+                            'SEM_SKU'
                         ) {
 
-                            try {
+                            const salvo =
+                                await buscarNCMporSKU(
+                                    produto.sku
+                                );
 
-                                const ncmSalvo =
-                                    await buscarNCMporSKU(
-                                        prod.sku
-                                    );
+                            if (salvo) {
 
-                                if (ncmSalvo) {
+                                ncm =
+                                    salvo;
 
-                                    ncmFinal =
-                                        ncmSalvo;
+                            } else {
 
-                                } else {
-
-                                    await salvarNCMporSKU(
-                                        prod.sku,
-                                        ncmFinal
-                                    );
-                                }
-
-                            } catch (
-                                ncmError
-                            ) {
-
-                                console.warn(
-                                    `⚠️ Erro ao tratar NCM do SKU ${prod.sku}:`,
-                                    ncmError
+                                await salvarNCMporSKU(
+                                    produto.sku,
+                                    ncm
                                 );
                             }
                         }
 
                         return {
 
-                            ...prod,
+                            ...produto,
 
-                            nome:
-                                prod.nome ||
-                                'Produto',
-
-                            quantidade:
-                                Number(
-                                    prod.quantidade
-                                ) || 1,
-
-                            valor_unitario:
-                                Number(
-                                    prod.valor_unitario
-                                ) || 0,
-
-                            sku:
-                                prod.sku ||
-                                'SEM_SKU',
-
-                            ncm:
-                                ncmFinal
+                            ncm
                         };
                     }
                 )
             );
 
-        // =====================================================
-        // TOKEN USADO NO UPLOAD DO XML
-        // =====================================================
-
         const mlToken =
-            window._mlAccessToken ||
+            window
+                ._mlAccessToken ||
             token;
-
-        // =====================================================
-        // PAYLOAD NF-E
-        // =====================================================
 
         const payload = {
 
             venda_id:
-                String(orderId),
+                String(
+                    orderId
+                ),
 
             cliente: {
                 nome,
@@ -5277,7 +9414,7 @@ async function confirmarEmissaoNFE() {
         };
 
         console.log(
-            '📤 Payload para emissão:',
+            '📤 Payload:',
             JSON.stringify(
                 payload,
                 null,
@@ -5285,15 +9422,12 @@ async function confirmarEmissaoNFE() {
             )
         );
 
-        // =====================================================
-        // 5. EMITIR NF-E
-        // =====================================================
-
-        const emitResponse =
+        const response =
             await fetch(
                 `${window.API_BASE_URL}/nfe/emitir`,
                 {
-                    method: 'POST',
+                    method:
+                        'POST',
 
                     headers: {
                         'Content-Type':
@@ -5307,140 +9441,41 @@ async function confirmarEmissaoNFE() {
                 }
             );
 
-        let result;
+        const result =
+            await response.json();
 
-        try {
+        if (
+            !result.success
+        ) {
 
-            result =
-                await emitResponse.json();
-
-        } catch (parseError) {
-
-            throw new Error(
-                `Servidor retornou resposta inválida na emissão (HTTP ${emitResponse.status})`
-            );
-        }
-
-        // =====================================================
-        // NF-E NÃO FOI AUTORIZADA
-        // =====================================================
-
-        if (!result.success) {
-
-            let mensagemErro =
+            const mensagem =
                 result.error ||
-                result.message ||
-                `Erro HTTP ${emitResponse.status}`;
-
-            const errosSEFAZ = {
-
-                '275':
-                    'Código do Município do Destinatário difere da UF do Destinatário.',
-
-                '245':
-                    'Código do Município do Destinatário não informado.',
-
-                '246':
-                    'Código do Município do Destinatário inválido.',
-
-                '247':
-                    'UF do Destinatário inválida.',
-
-                '248':
-                    'CEP do Destinatário inválido.',
-
-                '249':
-                    'Endereço do Destinatário não informado.',
-
-                '250':
-                    'Bairro do Destinatário não informado.',
-
-                '251':
-                    'Cidade do Destinatário não informada.'
-            };
-
-            const cStatMatch =
-                String(
-                    mensagemErro
-                ).match(
-                    /cStat=(\d+)/
-                );
-
-            if (cStatMatch) {
-
-                const cStat =
-                    cStatMatch[1];
-
-                if (
-                    errosSEFAZ[
-                        cStat
-                    ]
-                ) {
-
-                    mensagemErro =
-                        `${mensagemErro}\n\n💡 ${errosSEFAZ[cStat]}`;
-                }
-            }
-
-            console.error(
-                '❌ NF-e não foi emitida:',
-                mensagemErro
-            );
+                'Erro desconhecido';
 
             showToast(
-                `❌ Erro ao emitir NF-e: ${mensagemErro}`,
+                `❌ Erro ao emitir NF-e: ${mensagem}`,
                 'error'
             );
 
-            if (
-                String(
-                    mensagemErro
-                ).includes(
-                    'Municipio'
-                ) ||
-                String(
-                    mensagemErro
-                ).includes(
-                    'município'
-                )
-            ) {
-
-                showToast(
-                    '⚠️ Verifique a UF e a Cidade no próprio modal.',
-                    'warning'
-                );
-            }
-
-            // Modal fica aberto para corrigir.
             return;
         }
 
         // =====================================================
-        // 6. PONTO SEM VOLTA
-        // A NF-E JÁ FOI AUTORIZADA
+        // A PARTIR DAQUI NF-E JÁ FOI EMITIDA
         // =====================================================
 
-        nfeFoiEmitida = true;
+        nfeFoiEmitida =
+            true;
 
         console.log(
-            '✅ NF-e emitida com sucesso:',
+            '✅ NF-e emitida:',
             result
         );
 
         showToast(
-            `✅ NF-e emitida! Protocolo: ${
-                result.protocolo ||
-                'autorizada'
-            }`,
+            `✅ NF-e emitida! Protocolo: ${result.protocolo || 'autorizada'}`,
             'success'
         );
-
-        // =====================================================
-        // FECHAR MODAL IMEDIATAMENTE
-        // =====================================================
-        //
-        // Mesmo que qualquer coisa abaixo dê erro,
-        // o usuário NÃO terá o botão para emitir de novo.
 
         fecharModalEdicaoProdutos();
 
@@ -5453,32 +9488,21 @@ async function confirmarEmissaoNFE() {
         produtosEditados =
             [];
 
-        console.log(
-            `🔒 Venda ${orderId} bloqueada para nova emissão nesta tela`
-        );
-
         // =====================================================
-        // 7. SALVAR EM nfe_emitidas
+        // SALVAR NF-E
         // =====================================================
 
         try {
 
-            const chaveAcesso =
+            const chave =
                 result.chave_acesso ||
                 result.chave;
 
-            if (
-                chaveAcesso &&
-                window.supabaseClient
-            ) {
+            if (chave) {
 
                 const {
                     data:
-                        existing,
-
-                    error:
-                        existingError
-
+                        existente
                 } =
                     await window
                         .supabaseClient
@@ -5490,188 +9514,282 @@ async function confirmarEmissaoNFE() {
                         )
                         .eq(
                             'chave_acesso',
-                            chaveAcesso
+                            chave
                         )
                         .maybeSingle();
 
-                if (
-                    existingError
-                ) {
+                if (!existente) {
 
-                    console.warn(
-                        '⚠️ Erro ao verificar NF-e no Supabase:',
-                        existingError
-                    );
-                }
-
-                if (!existing) {
-
-                    const {
-                        error:
-                            insertError
-                    } =
-                        await window
-                            .supabaseClient
-                            .from(
-                                'nfe_emitidas'
-                            )
-                            .insert({
-
-                                chave_acesso:
-                                    chaveAcesso,
-
-                                venda_id:
-                                    orderId,
-
-                                protocolo:
-                                    result.protocolo,
-
-                                data_emissao:
-                                    new Date()
-                                        .toISOString(),
-
-                                cliente_nome:
-                                    nome,
-
-                                valor_total:
-                                    produtosFinal.reduce(
-                                        (
-                                            acc,
-                                            p
-                                        ) =>
-                                            acc +
-                                            (
-                                                p.valor_unitario *
-                                                p.quantidade
-                                            ),
-                                        0
-                                    ),
-
-                                xml_assinado:
-                                    result.xml ||
-                                    null,
-
-                                cancelada:
-                                    false
-                            });
-
-                    if (
-                        insertError
-                    ) {
-
-                        console.warn(
-                            '⚠️ Erro ao inserir NF-e no Supabase:',
-                            insertError
-                        );
-
-                    } else {
-
-                        console.log(
-                            '✅ NF-e salva na tabela nfe_emitidas'
-                        );
-                    }
-                }
-            }
-
-        } catch (
-            saveError
-        ) {
-
-            console.warn(
-                '⚠️ NF-e já emitida, mas houve erro ao salvar em nfe_emitidas:',
-                saveError
-            );
-        }
-
-        // =====================================================
-        // 8. ATUALIZAR STATUS DA VENDA
-        // =====================================================
-
-        try {
-
-            if (
-                window.supabaseClient
-            ) {
-
-                const {
-                    error:
-                        statusError
-                } =
                     await window
                         .supabaseClient
                         .from(
-                            'vendas_ml'
+                            'nfe_emitidas'
                         )
-                        .update({
+                        .insert({
 
-                            nfe_emitida:
-                                true,
+                            chave_acesso:
+                                chave,
 
-                            status_nfe:
-                                'emitida',
+                            venda_id:
+                                orderId,
 
-                            status_sistema:
-                                'finalizada',
+                            protocolo:
+                                result.protocolo,
 
-                            updated_at:
+                            data_emissao:
                                 new Date()
-                                    .toISOString()
-                        })
-                        .eq(
-                            'id_venda_ml',
-                            String(
-                                orderId
-                            )
-                        );
+                                    .toISOString(),
 
-                if (
-                    statusError
-                ) {
+                            cliente_nome:
+                                nome,
 
-                    console.warn(
-                        '⚠️ Erro ao atualizar status da venda:',
-                        statusError
-                    );
+                            valor_total:
+                                produtosFinal.reduce(
+                                    (
+                                        total,
+                                        p
+                                    ) =>
+                                        total +
+                                        (
+                                            Number(
+                                                p.valor_unitario ||
+                                                0
+                                            ) *
+                                            Number(
+                                                p.quantidade ||
+                                                1
+                                            )
+                                        ),
+                                    0
+                                ),
 
-                } else {
+                            xml_assinado:
+                                result.xml ||
+                                null,
 
-                    console.log(
-                        '✅ Status da venda atualizado'
-                    );
+                            cancelada:
+                                false
+                        });
                 }
             }
 
-        } catch (
-            statusError
-        ) {
+        } catch (error) {
 
             console.warn(
-                '⚠️ NF-e já emitida, mas houve erro ao atualizar status da venda:',
-                statusError
+                '⚠️ NF-e emitida, mas erro ao salvar registro:',
+                error
             );
         }
 
         // =====================================================
-        // 9. ENVIAR XML PARA MERCADO LIVRE
+        // STATUS vendas_ml
         // =====================================================
 
         try {
 
-            const chaveAcesso =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_ml'
+                )
+                .update({
+
+                    nfe_emitida:
+                        true,
+
+                    status_nfe:
+                        'emitida',
+
+                    status_sistema:
+                        'finalizada',
+
+                    updated_at:
+                        new Date()
+                            .toISOString()
+
+                })
+                .eq(
+                    'id_venda_ml',
+                    String(
+                        orderId
+                    )
+                );
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ Erro ao atualizar vendas_ml:',
+                error
+            );
+        }
+
+        // =====================================================
+        // CACHE
+        // SOMENTE MUDA NF-e.
+        // NÃO TOCA EM ESTOQUE.
+        // =====================================================
+
+        try {
+
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .update({
+
+                    tem_nfe:
+                        true,
+
+                    atualizado_em:
+                        new Date()
+                            .toISOString()
+
+                })
+                .eq(
+                    'id_venda_ml',
+                    String(
+                        orderId
+                    )
+                );
+
+                // =====================================================
+// BAIXA AUTOMÁTICA DO ESTOQUE APÓS NF-e
+//
+// REGRA:
+// - se já baixou pelo botão → não faz nada.
+// - se ainda não baixou → baixa agora.
+// - FULL → não mexe.
+// =====================================================
+
+try {
+
+    const vendaIdEstoque =
+        normalizarOrderIdML(
+            orderId
+        );
+
+    console.log(
+        `📦 NF-e emitida. Verificando estoque da venda ${vendaIdEstoque}...`
+    );
+
+    const resultadoEstoque =
+        await garantirBaixaEstoqueVenda(
+            vendaIdEstoque,
+            'nfe'
+        );
+
+    if (
+        resultadoEstoque.success
+    ) {
+
+        if (
+            resultadoEstoque.full
+        ) {
+
+            console.log(
+                'ℹ️ Venda FULL. Nenhuma baixa local necessária.'
+            );
+
+        } else if (
+            resultadoEstoque.already
+        ) {
+
+            console.log(
+                `✅ Venda ${vendaIdEstoque}: estoque já havia sido baixado anteriormente. NF-e NÃO baixou novamente.`
+            );
+
+        } else {
+
+            console.log(
+                `✅ Venda ${vendaIdEstoque}: estoque baixado automaticamente após emissão da NF-e.`
+            );
+
+            if (
+                resultadoEstoque.sincronizado
+            ) {
+
+                showToast(
+                    '✅ NF-e emitida e estoque baixado/sincronizado!',
+                    'success'
+                );
+
+            } else {
+
+                showToast(
+                    '⚠️ NF-e emitida e estoque baixado. Sincronização com ML ficou pendente.',
+                    'warning'
+                );
+            }
+        }
+
+    } else {
+
+        // =================================================
+        // IMPORTANTE:
+        //
+        // A NF-e JÁ FOI EMITIDA.
+        // Erro de estoque não pode virar "erro de emissão".
+        // =================================================
+
+        console.warn(
+            `⚠️ NF-e emitida, mas não foi possível baixar estoque:`,
+            resultadoEstoque.error
+        );
+
+        showToast(
+            `⚠️ NF-e emitida, mas o estoque não foi baixado: ${resultadoEstoque.error}`,
+            'warning'
+                    );
+                }
+
+            } catch (
+                estoqueError
+            ) {
+
+                console.error(
+                    '⚠️ NF-e JÁ FOI EMITIDA, mas ocorreu erro na baixa automática:',
+                    estoqueError
+                );
+
+                showToast(
+                    '⚠️ NF-e emitida, mas houve erro ao processar a baixa de estoque.',
+                    'warning'
+                );
+            }
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ Erro ao atualizar cache:',
+                error
+            );
+        }
+
+        // =====================================================
+        // XML MERCADO LIVRE
+        // =====================================================
+
+        try {
+
+            const chave =
                 result.chave_acesso ||
                 result.chave;
 
-            if (chaveAcesso) {
+            if (chave) {
 
                 const xmlResponse =
                     await fetch(
-                        `${window.API_BASE_URL}/nfe/buscar-xml?chave=${encodeURIComponent(chaveAcesso)}`
+                        `${window.API_BASE_URL}/nfe/buscar-xml?chave=${encodeURIComponent(chave)}`
                     );
 
                 const xmlData =
-                    await xmlResponse.json();
+                    await xmlResponse
+                        .json();
 
-                if (xmlData.xml) {
+                if (
+                    xmlData.xml
+                ) {
 
                     let xmlContent =
                         xmlData.xml;
@@ -5701,27 +9819,19 @@ async function confirmarEmissaoNFE() {
                                 /<NFe[^>]*>([\s\S]*?)<\/NFe>/
                             );
 
+                        const protMatch =
+                            xmlContent.match(
+                                /<protNFe[^>]*>([\s\S]*?)<\/protNFe>/
+                            );
+
                         if (nfeMatch) {
 
-                            const nfeContent =
-                                nfeMatch[0];
-
-                            const protMatch =
-                                xmlContent.match(
-                                    /<protNFe[^>]*>([\s\S]*?)<\/protNFe>/
-                                );
-
-                            const protContent =
-                                protMatch
-                                    ? protMatch[0]
-                                    : '';
-
                             xmlContent =
-                                '<?xml version="1.0" encoding="UTF-8"?>\n' +
-                                '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">\n' +
-                                `${nfeContent}\n` +
-                                `${protContent}\n` +
-                                '</nfeProc>';
+                                `<?xml version="1.0" encoding="UTF-8"?>\n` +
+                                `<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">\n` +
+                                `${nfeMatch[0]}\n` +
+                                `${protMatch ? protMatch[0] : ''}\n` +
+                                `</nfeProc>`;
                         }
                     }
 
@@ -5736,497 +9846,30 @@ async function confirmarEmissaoNFE() {
                                 ''
                             );
 
-                    const uploadResult =
-                        await enviarXMLparaMercadoLivre(
-                            orderId,
-                            xmlContent,
-                            mlToken
-                        );
-
-                    if (
-                        uploadResult
-                            ?.success
-                    ) {
-
-                        console.log(
-                            '✅ NF-e vinculada ao Mercado Livre'
-                        );
-
-                        showToast(
-                            '✅ NF-e vinculada ao ML com sucesso!',
-                            'success'
-                        );
-
-                    } else {
-
-                        console.warn(
-                            '⚠️ NF-e emitida, mas erro ao vincular XML ao ML:',
-                            uploadResult
-                        );
-
-                        showToast(
-                            '⚠️ NF-e foi emitida, mas houve erro ao vincular o XML ao ML.',
-                            'warning'
-                        );
-                    }
-
-                } else {
-
-                    console.warn(
-                        '⚠️ NF-e emitida, mas XML não foi retornado por /nfe/buscar-xml'
+                    await enviarXMLparaMercadoLivre(
+                        orderId,
+                        xmlContent,
+                        mlToken
                     );
                 }
             }
 
-        } catch (
-            uploadError
-        ) {
+        } catch (error) {
 
-            console.error(
-                '⚠️ NF-e já emitida, mas houve erro ao enviar XML para o ML:',
-                uploadError
+            console.warn(
+                '⚠️ NF-e emitida, mas erro no XML ML:',
+                error
             );
 
             showToast(
-                '⚠️ NF-e foi emitida, mas houve erro ao vincular o XML ao ML.',
+                '⚠️ NF-e emitida, mas houve erro ao vincular o XML ao ML.',
                 'warning'
             );
         }
 
         // =====================================================
-        // 10. BAIXAR ESTOQUE
+        // CLIENTE
         // =====================================================
-
-        let itensBaixados = 0;
-
-        try {
-
-            console.log(
-                '📦 Baixando estoque...'
-            );
-
-            let vendaML = null;
-            let vendaError = null;
-
-            if (
-                window.supabaseClient
-            ) {
-
-                const resultadoVenda =
-                    await window
-                        .supabaseClient
-                        .from(
-                            'vendas_ml'
-                        )
-                        .select(
-                            'sku, quantidade, skus_kit, eh_kit'
-                        )
-                        .eq(
-                            'id_venda_ml',
-                            String(
-                                orderId
-                            )
-                        )
-                        .maybeSingle();
-
-                vendaML =
-                    resultadoVenda.data;
-
-                vendaError =
-                    resultadoVenda.error;
-            }
-
-            const itensParaBaixar =
-                [];
-
-            // =====================
-            // KIT
-            // =====================
-
-            if (
-                vendaML &&
-                !vendaError
-            ) {
-
-                if (
-                    vendaML.eh_kit &&
-                    Array.isArray(
-                        vendaML.skus_kit
-                    ) &&
-                    vendaML.skus_kit
-                        .length > 0
-                ) {
-
-                    for (
-                        const kitItem
-                        of vendaML.skus_kit
-                    ) {
-
-                        const {
-                            sku:
-                                skuReal,
-
-                            multiplicador
-                        } =
-                            extrairSkuEQuantidade(
-                                kitItem.sku
-                            );
-
-                        const quantidadeKit =
-                            kitItem.estoque ||
-                            1;
-
-                        const quantidadeTotal =
-                            quantidadeKit *
-                            (
-                                vendaML.quantidade ||
-                                1
-                            ) *
-                            multiplicador;
-
-                        itensParaBaixar.push({
-                            sku:
-                                skuReal,
-
-                            skuOriginal:
-                                kitItem.sku,
-
-                            quantidade:
-                                quantidadeTotal
-                        });
-                    }
-
-                    console.log(
-                        `📦 KIT detectado: ${vendaML.skus_kit.length} SKUs para baixar`
-                    );
-
-                } else {
-
-                    const {
-                        sku:
-                            skuReal,
-
-                        multiplicador
-                    } =
-                        extrairSkuEQuantidade(
-                            vendaML.sku
-                        );
-
-                    const quantidadeTotal =
-                        (
-                            vendaML.quantidade ||
-                            1
-                        ) *
-                        multiplicador;
-
-                    itensParaBaixar.push({
-                        sku:
-                            skuReal,
-
-                        skuOriginal:
-                            vendaML.sku,
-
-                        quantidade:
-                            quantidadeTotal
-                    });
-                }
-            }
-
-            // =====================================================
-            // FALLBACK: PRODUTOS DA NF-E
-            // =====================================================
-
-            if (
-                itensParaBaixar.length ===
-                0
-            ) {
-
-                for (
-                    const prod
-                    of produtosFinal
-                ) {
-
-                    if (
-                        !prod.sku ||
-                        prod.sku ===
-                        'SEM_SKU' ||
-                        prod.sku ===
-                        'N/A'
-                    ) {
-                        continue;
-                    }
-
-                    const {
-                        sku:
-                            skuReal,
-
-                        multiplicador
-                    } =
-                        extrairSkuEQuantidade(
-                            prod.sku
-                        );
-
-                    const quantidadeTotal =
-                        (
-                            prod.quantidade ||
-                            1
-                        ) *
-                        multiplicador;
-
-                    itensParaBaixar.push({
-                        sku:
-                            skuReal,
-
-                        skuOriginal:
-                            prod.sku,
-
-                        quantidade:
-                            quantidadeTotal
-                    });
-                }
-            }
-
-            // =====================================================
-            // BAIXAR CADA ITEM
-            // =====================================================
-
-            for (
-                const item
-                of itensParaBaixar
-            ) {
-
-                if (
-                    !item.sku ||
-                    item.sku ===
-                    'SEM_SKU' ||
-                    item.sku ===
-                    'N/A'
-                ) {
-                    continue;
-                }
-
-                if (
-                    !window.supabaseClient
-                ) {
-
-                    console.warn(
-                        '⚠️ Supabase não disponível para baixar estoque'
-                    );
-
-                    break;
-                }
-
-                const {
-                    data:
-                        produto,
-
-                    error:
-                        prodError
-                } =
-                    await window
-                        .supabaseClient
-                        .from(
-                            'produtos_estoque'
-                        )
-                        .select(
-                            'id, quantidade, nome'
-                        )
-                        .eq(
-                            'sku',
-                            item.sku
-                        )
-                        .maybeSingle();
-
-                if (
-                    !prodError &&
-                    produto
-                ) {
-
-                    const novaQuantidade =
-                        Math.max(
-                            0,
-
-                            Number(
-                                produto.quantidade ||
-                                0
-                            ) -
-                            Number(
-                                item.quantidade ||
-                                0
-                            )
-                        );
-
-                    const {
-                        error:
-                            updateError
-                    } =
-                        await window
-                            .supabaseClient
-                            .from(
-                                'produtos_estoque'
-                            )
-                            .update({
-
-                                quantidade:
-                                    novaQuantidade,
-
-                                updated_at:
-                                    new Date()
-                                        .toISOString()
-                            })
-                            .eq(
-                                'id',
-                                produto.id
-                            );
-
-                    if (
-                        updateError
-                    ) {
-
-                        console.warn(
-                            `⚠️ Erro ao baixar estoque do SKU ${item.sku}:`,
-                            updateError
-                        );
-
-                        continue;
-                    }
-
-                    itensBaixados++;
-
-                    console.log(
-                        `✅ Estoque do SKU ${item.sku} atualizado: ${produto.quantidade} → ${novaQuantidade}`
-                    );
-
-                    // Registrar movimentação
-                    if (
-                        typeof window
-                            .registrarMovimentacao ===
-                        'function'
-                    ) {
-
-                        try {
-
-                            await window
-                                .registrarMovimentacao(
-
-                                    produto.id,
-
-                                    'saida',
-
-                                    item.quantidade,
-
-                                    `NFE-${orderId}`,
-
-                                    'venda'
-                                );
-
-                        } catch (
-                            movError
-                        ) {
-
-                            console.warn(
-                                '⚠️ Erro ao registrar movimentação:',
-                                movError
-                            );
-                        }
-                    }
-
-                } else {
-
-                    console.warn(
-                        `⚠️ Produto não encontrado no estoque: ${item.sku}`,
-                        prodError || ''
-                    );
-                }
-            }
-
-            if (
-                itensBaixados > 0
-            ) {
-
-                showToast(
-                    `✅ ${itensBaixados} item(ns) baixados do estoque!`,
-                    'success'
-                );
-            }
-
-            if (
-                typeof window
-                    .carregarProdutosEstoque ===
-                'function'
-            ) {
-
-                await window
-                    .carregarProdutosEstoque();
-            }
-
-        } catch (
-            stockError
-        ) {
-
-            console.error(
-                '⚠️ NF-e já emitida, mas houve erro ao baixar o estoque:',
-                stockError
-            );
-
-            showToast(
-                '⚠️ NF-e foi emitida, mas houve erro ao baixar o estoque.',
-                'warning'
-            );
-        }
-
-        // =====================================================
-        // 11. SINCRONIZAR ESTOQUE COM MERCADO LIVRE
-        // =====================================================
-
-        try {
-
-            console.log(
-                '🔄 Sincronizando estoque com ML...'
-            );
-
-            const sincronizado =
-                await sincronizarEstoqueComML(
-                    orderId
-                );
-
-            if (sincronizado) {
-
-                console.log(
-                    '✅ Estoque sincronizado com ML com sucesso!'
-                );
-
-            } else {
-
-                console.warn(
-                    '⚠️ NF-e emitida, mas a sincronização de estoque com ML não foi confirmada'
-                );
-            }
-
-        } catch (
-            syncError
-        ) {
-
-            console.error(
-                '⚠️ NF-e já emitida, mas houve erro na sincronização com ML:',
-                syncError
-            );
-
-            showToast(
-                '⚠️ NF-e foi emitida, mas houve erro na sincronização de estoque com ML.',
-                'warning'
-            );
-        }
-
-        // =====================================================
-        // 12. SALVAR CLIENTE
-        // =====================================================
-        //
-        // IMPORTANTE:
-        // NÃO existe resultadoCliente aqui.
-        //
-        // Apenas executamos a função.
-        // Se ela falhar, a NF-e continua considerada emitida.
 
         try {
 
@@ -6241,136 +9884,79 @@ async function confirmarEmissaoNFE() {
                 cep
             });
 
-            console.log(
-                '✅ Cliente processado/salvo com sucesso'
-            );
+        } catch (error) {
 
-        } catch (
-            clienteError
-        ) {
-
-            console.error(
-                '⚠️ NF-e já emitida, mas houve erro ao salvar cliente:',
-                clienteError
-            );
-
-            showToast(
-                '⚠️ NF-e foi emitida, mas houve erro ao salvar o cliente.',
-                'warning'
+            console.warn(
+                '⚠️ NF-e emitida, mas erro ao salvar cliente:',
+                error
             );
         }
 
         // =====================================================
-        // 13. REGISTRAR HISTÓRICO
+        // HISTÓRICO
         // =====================================================
 
         try {
 
-            if (
-                window.supabaseClient
-            ) {
+            await window
+                .supabaseClient
+                .from(
+                    'estoque_historico'
+                )
+                .insert({
 
-                const {
-                    error:
-                        histError
-                } =
-                    await window
-                        .supabaseClient
-                        .from(
-                            'estoque_historico'
-                        )
-                        .insert({
+                    venda_id:
+                        orderId,
 
-                            venda_id:
-                                orderId,
+                    tipo:
+                        'nfe',
 
-                            tipo:
-                                'venda',
+                    observacao:
+                        `NF-e emitida - Venda ${orderId} - Cliente: ${nome}`,
 
-                            observacao:
-                                `NF-e emitida - Venda ${orderId} - Cliente: ${nome}`,
+                    criado_por:
+                        'Sistema NF-e',
 
-                            criado_por:
-                                nome ||
-                                'Sistema',
+                    criado_em:
+                        new Date()
+                            .toISOString()
+                });
 
-                            criado_em:
-                                new Date()
-                                    .toISOString()
-                        });
-
-                if (
-                    histError
-                ) {
-
-                    console.warn(
-                        '⚠️ Erro ao registrar histórico:',
-                        histError
-                    );
-
-                } else {
-
-                    console.log(
-                        '✅ Histórico registrado'
-                    );
-                }
-            }
-
-        } catch (
-            histError
-        ) {
+        } catch (error) {
 
             console.warn(
-                '⚠️ NF-e já emitida, mas houve erro ao registrar histórico:',
-                histError
+                '⚠️ Erro no histórico:',
+                error
             );
         }
 
-        // =====================================================
-        // 14. LIMPAR VARIÁVEIS
-        // =====================================================
-
-        window.produtosParaEmissao =
+        window
+            .produtosParaEmissao =
             null;
 
-        window._mlAccessToken =
-            null;
+        // Atualizar apenas a tela/cache
+        const data =
+            document.getElementById(
+                'filtroDataEnvioNFE'
+            )?.value ||
+            obterDataHojeLocal();
 
-        // =====================================================
-        // RECARREGAR VENDAS PENDENTES
-        // =====================================================
-
-        try {
-
-            await carregarVendasPendentes();
-
-        } catch (
-            reloadVendasError
-        ) {
-
-            console.warn(
-                '⚠️ NF-e emitida, mas erro ao recarregar vendas pendentes:',
-                reloadVendasError
+        const vendas =
+            await carregarVendasCacheNFE(
+                window._nfeFiltroTodas
+                    ? null
+                    : data
             );
-        }
 
-        // =====================================================
-        // RECARREGAR NF-ES
-        // =====================================================
+        renderizarVendasNFETabela(
+            vendas
+        );
 
         try {
 
             await carregarNFesEmitidas();
 
-        } catch (
-            reloadNfeError
-        ) {
-
-            console.warn(
-                '⚠️ NF-e emitida, mas erro ao recarregar NF-es:',
-                reloadNfeError
-            );
-        }
+        } catch {}
 
         showToast(
             '✅ Processo da NF-e concluído!',
@@ -6379,49 +9965,26 @@ async function confirmarEmissaoNFE() {
 
     } catch (error) {
 
-        // =====================================================
-        // ERRO DEPOIS DA AUTORIZAÇÃO
-        // =====================================================
-        //
-        // Esse é o ponto crítico.
-        //
-        // Se nfeFoiEmitida = true,
-        // NÃO podemos dizer que houve erro na emissão.
-
-        if (nfeFoiEmitida) {
+        if (
+            nfeFoiEmitida
+        ) {
 
             console.error(
-                '⚠️ NF-e JÁ FOI EMITIDA, mas houve erro no pós-processamento:',
+                '⚠️ NF-e JÁ FOI EMITIDA. Erro posterior:',
                 error
             );
 
             showToast(
-                '⚠️ A NF-e FOI EMITIDA. Houve um erro depois da autorização. NÃO EMITA NOVAMENTE.',
+                '⚠️ A NF-e FOI EMITIDA. Houve apenas um erro posterior. NÃO EMITA NOVAMENTE.',
                 'warning'
             );
 
             fecharModalEdicaoProdutos();
 
-            pendingEmitOrderId =
-                null;
-
-            vendaIdParaEdicao =
-                null;
-
-            window.produtosParaEmissao =
-                null;
-
-            produtosEditados =
-                [];
-
         } else {
 
-            // =====================================================
-            // ERRO ANTES DA AUTORIZAÇÃO
-            // =====================================================
-
             console.error(
-                '❌ Erro antes da emissão da NF-e:',
+                '❌ Erro antes da emissão:',
                 error
             );
 
@@ -6433,13 +9996,6 @@ async function confirmarEmissaoNFE() {
 
     } finally {
 
-        // =====================================================
-        // SE NÃO EMITIU
-        // =====================================================
-        //
-        // Libera o botão para corrigir os dados
-        // e tentar novamente.
-
         if (
             !nfeFoiEmitida &&
             btn &&
@@ -6448,49 +10004,27 @@ async function confirmarEmissaoNFE() {
             )
         ) {
 
-            btn.innerHTML =
-                originalText;
-
             btn.disabled =
                 false;
+
+            btn.innerHTML =
+                originalText;
         }
 
-        // =====================================================
-        // SE JÁ EMITIU
-        // =====================================================
-        //
-        // Nunca deixar o modal/botão disponível.
-
-        if (nfeFoiEmitida) {
-
-            fecharModalEdicaoProdutos();
-
-            pendingEmitOrderId =
-                null;
-
-            vendaIdParaEdicao =
-                null;
-
-            window.produtosParaEmissao =
-                null;
-
-            produtosEditados =
-                [];
-        }
-
-        window._mlAccessToken =
-            null;
-
-        // Liberar controle global
-        // somente depois que todo o processo terminou.
         if (
-            window._nfeEmissaoEmAndamento ===
-            String(orderId)
+            nfeFoiEmitida
         ) {
 
-            window._nfeEmissaoEmAndamento =
-                null;
+            fecharModalEdicaoProdutos();
         }
+
+        window
+            ._mlAccessToken =
+            null;
+
+        window
+            ._nfeEmissaoEmAndamento =
+            null;
     }
 }
 
@@ -7183,6 +10717,103 @@ async function salvarNovaTransportadora() {
     }
 }
 
+// =========================================================
+// NORMALIZAÇÃO DE ID
+// =========================================================
+
+function normalizarOrderIdML(valor) {
+
+    if (
+        valor === null ||
+        valor === undefined
+    ) {
+        return '';
+    }
+
+    return String(valor)
+        .trim()
+        .replace(/^ML(?=\d)/i, '');
+}
+
+function variantesOrderIdML(valor) {
+
+    const id =
+        normalizarOrderIdML(valor);
+
+    if (!id) {
+        return [];
+    }
+
+    return [
+        id,
+        `ML${id}`
+    ];
+}
+
+// =========================================================
+// PARSE DAS INFORMAÇÕES DE ENVIO
+// =========================================================
+
+function parseInformacoesEnvioNFE(venda) {
+
+    let info =
+        venda?.informacoes_envio ||
+        {};
+
+    if (
+        typeof info ===
+        'string'
+    ) {
+
+        try {
+
+            info =
+                JSON.parse(info);
+
+        } catch (error) {
+
+            info = {};
+        }
+    }
+
+    if (
+        !info ||
+        typeof info !==
+            'object'
+    ) {
+
+        return {};
+    }
+
+    return info;
+}
+
+// =========================================================
+// DATA DA VENDA
+// =========================================================
+
+function obterDataVendaNFE(venda) {
+
+    const valor =
+        venda?.data_venda ||
+        venda?.date_created ||
+        venda?.created_at ||
+        null;
+
+    if (!valor) {
+        return null;
+    }
+
+    const match =
+        String(valor).match(
+            /(\d{4}-\d{2}-\d{2})/
+        );
+
+    return match
+        ? match[1]
+        : null;
+}
+
 async function carregarTransportadorasSelect() {
 
     console.log(
@@ -7523,69 +11154,51 @@ function limparFormAvulsa() {
 }
 
 async function sincronizarVendasML() {
-    window.showToast('A sincronização de vendas é feita automaticamente ao acessar a aba.', 'info');
+
+    await atualizarVendasDataSelecionada();
 }
 
 function inicializarAbaNFE() {
-    mostrarAbaNFE('vendas');
+
+    inicializarFiltroDataNFE();
+
+    mostrarAbaNFE(
+        'vendas'
+    );
 }
 
 async function atualizarListaNFE() {
 
-    const btn =
-        document.getElementById(
-            'btnAtualizarNFE'
+    if (
+        window._nfeFiltroTodas
+    ) {
+
+        const vendas =
+            await carregarVendasCacheNFE(
+                null
+            );
+
+        renderizarVendasNFETabela(
+            vendas
         );
 
-    const textoOriginal =
-        btn?.innerHTML || '';
-
-    if (btn) {
-
-        btn.innerHTML =
-            '<span class="spinner"></span> Atualizando em segundo plano...';
-
-        btn.disabled =
-            true;
+        return;
     }
+
+    await atualizarVendasDataSelecionada();
 
     try {
 
-        // Força nova consulta ao ML
-        await carregarVendasPendentes(
-            true
-        );
-
         await carregarNFesEmitidas();
 
-        showToast(
-            '✅ Vendas atualizadas!',
-            'success'
-        );
+    } catch (
+        error
+    ) {
 
-    } catch (error) {
-
-        console.error(
-            '❌ Erro ao atualizar lista:',
+        console.warn(
+            '⚠️ Erro carregando NF-es emitidas:',
             error
         );
-
-        showToast(
-            'Erro ao atualizar vendas',
-            'error'
-        );
-
-    } finally {
-
-        if (btn) {
-
-            btn.innerHTML =
-                textoOriginal ||
-                '<i class="fas fa-sync-alt"></i> Atualizar Lista';
-
-            btn.disabled =
-                false;
-        }
     }
 }
 
@@ -7717,6 +11330,23 @@ window.enviarXMLparaMercadoLivre = enviarXMLparaMercadoLivre;
 window.buscarValorExatoPagamento = buscarValorExatoPagamento;
 window.baixarXMLCompletoML = baixarXMLCompletoML;
 window.sincronizarEstoqueComML = sincronizarEstoqueComML;
+window.obterDataHojeLocal = obterDataHojeLocal;
+window.extrairDataEnvioML = extrairDataEnvioML;
+window.garantirControlesVendasNFE = garantirControlesVendasNFE;
+window.inicializarFiltroDataNFE = inicializarFiltroDataNFE;
+window.carregarVendasCacheNFE = carregarVendasCacheNFE;
+window.salvarVendasCacheNFE = salvarVendasCacheNFE;
+window.verificarEstoqueVenda = verificarEstoqueVenda;
+window.renderizarVendasNFETabela = renderizarVendasNFETabela;
+window.sincronizarVendasPendentesML = sincronizarVendasPendentesML;
+window.carregarVendasPendentes = carregarVendasPendentes;
+window.atualizarVendasDataSelecionada = atualizarVendasDataSelecionada;
+window.mostrarTodasVendasCacheNFE = mostrarTodasVendasCacheNFE;
+window.darBaixaEstoqueVenda = darBaixaEstoqueVenda;
+window.sincronizarEstoqueVendaManual = sincronizarEstoqueVendaManual;
+window.sincronizarEstoqueComML = sincronizarEstoqueComML;
+window.atualizarListaNFE = atualizarListaNFE;
+window.sincronizarVendasML = sincronizarVendasML;
 
 // ===================== INICIALIZAR =====================
 document.addEventListener('DOMContentLoaded', function() {
