@@ -105,13 +105,13 @@ let estadoFiltrosEstoque = {
 function verificarDuplicidadeSKU(novoSKU, idIgnorar = null) {
     if (!novoSKU) return { duplicado: false };
     
-    const prefixo = novoSKU.trim().substring(0, 5).toUpperCase();
-    if (prefixo.length < 5) return { duplicado: false };
+    const prefixo = novoSKU.trim().substring(0, 8).toUpperCase();
+    if (prefixo.length < 8) return { duplicado: false };
     
     const existente = produtosEstoque.find(p => {
         if (idIgnorar && p.id == idIgnorar) return false;
         const pSku = (p.sku || '').trim().toUpperCase();
-        return pSku.substring(0, 5) === prefixo;
+        return pSku.substring(0, 8) === prefixo;
     });
     
     if (existente) {
