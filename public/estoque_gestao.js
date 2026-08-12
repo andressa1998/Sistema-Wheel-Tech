@@ -899,8 +899,8 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             botoes += `<button class="btn btn-sm btn-secondary" disabled title="Apenas administradores podem sincronizar"><i class="fab fa-mercadolibre"></i></button>`;
         }
         
-        // Mostrar prefixo do SKU (5 primeiros caracteres)
-        const skuPrefix = prod.sku ? prod.sku.substring(0, 5).toUpperCase() : '-';
+        // Mostrar prefixo do SKU (8 primeiros caracteres)
+        const skuPrefix = prod.sku ? prod.sku.substring(0, 8).toUpperCase() : '-';
         
         let rowHtml = `
             <td>${prod.id}</td>
