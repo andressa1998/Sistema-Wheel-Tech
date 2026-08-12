@@ -997,104 +997,741 @@ console.log('  await cancelarNFEporVendaSistema("ID_DA_VENDA")   - Cancelar pelo
 console.log('  await listarNFesParaCancelarSistema()             - Listar NF-es e cancelar');
 console.log('  await removerNFESistema("CHAVE_DA_NFE")           - Remover apenas o registro');
 
-async function abrirModalEdicaoProdutos(orderId) {
-    console.log('🔧 Abrindo modal único de emissão para venda:', orderId);
+async function buscarOrdersPackParaNFE(
+    orderId,
+    token
+) {
 
-    // =====================================================
-    // REMOVER MODAL ANTIGO PARA EVITAR IDs DUPLICADOS
-    // =====================================================
-
-    const modalClienteAntigo =
-        document.getElementById('modalDadosClienteNFE');
-
-    if (modalClienteAntigo) {
-
-        console.log(
-            '🗑️ Removendo modal antigo de cliente'
+    orderId =
+        normalizarOrderIdML(
+            orderId
         );
 
-        modalClienteAntigo.remove();
+    if (!orderId) {
+
+        throw new Error(
+            'ID principal da venda inválido'
+        );
     }
 
-    // Também remover eventual modal de emissão anterior
-    const modalEmissaoAntigo =
-        document.getElementById('modalEdicaoProdutos');
+    // =====================================================
+    // LOCALIZAR GRUPO
+    //
+    // Não dependemos somente do handler.
+    // Se por qualquer motivo o global não existir,
+    // procuramos novamente em vendasPendentes.
+    // =====================================================
 
-    if (modalEmissaoAntigo) {
-        modalEmissaoAntigo.remove();
+    let grupo =
+        window._nfeVendaGrupoAtual ||
+        null;
+
+    if (
+        !grupo &&
+        Array.isArray(
+            vendasPendentes
+        )
+    ) {
+
+        grupo =
+            vendasPendentes.find(
+                venda => {
+
+                    const principal =
+                        normalizarOrderIdML(
+                            venda.id_venda_ml ||
+                            venda.id
+                        );
+
+                    if (
+                        principal ===
+                        orderId
+                    ) {
+
+                        return true;
+                    }
+
+                    return (
+                        Array.isArray(
+                            venda._order_ids_pack
+                        ) &&
+                        venda
+                            ._order_ids_pack
+                            .map(
+                                normalizarOrderIdML
+                            )
+                            .includes(
+                                orderId
+                            )
+                    );
+                }
+            ) ||
+            null;
     }
 
-    if (!orderId || orderId === 'null' || orderId === 'undefined') {
-        showToast('❌ ID da venda inválido', 'error');
+    // =====================================================
+    // IDS DAS ORDERS
+    // =====================================================
+
+    let orderIds =
+        grupo
+            ?._order_ids_pack ||
+
+        window
+            ._nfeOrderIdsAtuais ||
+
+        [
+            orderId
+        ];
+
+    orderIds =
+        [
+            ...new Set(
+
+                orderIds
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(Boolean)
+            )
+        ];
+
+    if (
+        !orderIds.includes(
+            orderId
+        )
+    ) {
+
+        orderIds.unshift(
+            orderId
+        );
+    }
+
+    console.log(
+        '📦 Orders que formarão a NF-e:',
+        orderIds
+    );
+
+    // =====================================================
+    // BUSCAR CADA ORDER
+    //
+    // MUITO IMPORTANTE:
+    //
+    // Cada order tem:
+    // - produtos próprios
+    // - pagamento próprio
+    //
+    // Precisamos somar tudo.
+    // =====================================================
+
+    const resultados =
+        await Promise.all(
+
+            orderIds.map(
+                async id => {
+
+                    // =========================================
+                    // ORDER ML
+                    // =========================================
+
+                    const orderUrl =
+                        `https://api.mercadolibre.com/orders/${id}`;
+
+                    const orderProxyUrl =
+                        `${window.WORKER_URL}/api/ml/proxy?url=` +
+                        `${encodeURIComponent(orderUrl)}` +
+                        `&token=${encodeURIComponent(token)}`;
+
+                    const response =
+                        await fetch(
+                            orderProxyUrl,
+                            {
+                                cache:
+                                    'no-store'
+                            }
+                        );
+
+                    if (
+                        !response.ok
+                    ) {
+
+                        throw new Error(
+                            `Erro ao buscar venda ${id}: HTTP ${response.status}`
+                        );
+                    }
+
+                    const order =
+                        await response.json();
+
+                    // =========================================
+                    // PAGAMENTO CORRETO
+                    //
+                    // Continua usando:
+                    // Mercado Pago x total_amount
+                    // menor valor
+                    // =========================================
+
+                    let pagamento =
+                        null;
+
+                    try {
+
+                        pagamento =
+                            await buscarValorExatoPagamento(
+                                id
+                            );
+
+                    } catch (error) {
+
+                        console.warn(
+                            `⚠️ Erro ao buscar pagamento da order ${id}:`,
+                            error
+                        );
+                    }
+
+                    // =========================================
+                    // TOTAL ORIGINAL DOS ITENS
+                    // =========================================
+
+                    const itens =
+                        Array.isArray(
+                            order.order_items
+                        )
+                            ? order.order_items
+                            : [];
+
+                    const totalOriginalItens =
+                        itens.reduce(
+                            (
+                                total,
+                                item
+                            ) => {
+
+                                return (
+                                    total +
+                                    (
+                                        Number(
+                                            item.unit_price ||
+                                            0
+                                        ) *
+                                        Number(
+                                            item.quantity ||
+                                            1
+                                        )
+                                    )
+                                );
+                            },
+                            0
+                        );
+
+                    // =========================================
+                    // VALOR REAL DA ORDER
+                    // =========================================
+
+                    const valorCorrigido =
+                        Number(
+                            pagamento
+                                ?.valor_produto ??
+                            order.total_amount ??
+                            totalOriginalItens ??
+                            0
+                        );
+
+                    return {
+
+                        id,
+
+                        order,
+
+                        pagamento,
+
+                        itens,
+
+                        totalOriginalItens,
+
+                        valorCorrigido
+                    };
+                }
+            )
+        );
+
+    // =====================================================
+    // SOMA DE TODAS AS ORDERS
+    // =====================================================
+
+    const valorTotalProduto =
+        resultados.reduce(
+            (
+                total,
+                resultado
+            ) => {
+
+                return (
+                    total +
+                    Number(
+                        resultado
+                            .valorCorrigido ||
+                        0
+                    )
+                );
+            },
+            0
+        );
+
+    // =====================================================
+    // JUNTAR TODOS OS PRODUTOS
+    // =====================================================
+
+    const items =
+        [];
+
+    for (
+        const resultado
+        of resultados
+    ) {
+
+        const {
+            id,
+            itens,
+            valorCorrigido,
+            totalOriginalItens
+        } =
+            resultado;
+
+        // =================================================
+        // DISTRIBUIR O VALOR CORRIGIDO DA ORDER
+        // ENTRE OS ITENS DELA
+        //
+        // Normalmente essas orders possuem 1 item,
+        // então recebe exatamente o valor corrigido.
+        //
+        // Se houver vários itens na mesma order,
+        // distribuímos proporcionalmente.
+        // =================================================
+
+        for (
+            const item
+            of itens
+        ) {
+
+            const quantidade =
+                Number(
+                    item.quantity ||
+                    1
+                );
+
+            const valorUnitarioOriginal =
+                Number(
+                    item.unit_price ||
+                    0
+                );
+
+            const subtotalOriginal =
+                quantidade *
+                valorUnitarioOriginal;
+
+            let subtotalCorrigido =
+                subtotalOriginal;
+
+            if (
+                valorCorrigido >
+                    0 &&
+                totalOriginalItens >
+                    0
+            ) {
+
+                subtotalCorrigido =
+                    valorCorrigido *
+                    (
+                        subtotalOriginal /
+                        totalOriginalItens
+                    );
+            }
+
+            const valorUnitarioCorrigido =
+                quantidade > 0
+                    ? subtotalCorrigido /
+                      quantidade
+                    : subtotalCorrigido;
+
+            items.push({
+
+                ...item,
+
+                _order_id:
+                    id,
+
+                _valor_total_corrigido:
+                    subtotalCorrigido,
+
+                _valor_unitario_corrigido:
+                    valorUnitarioCorrigido
+            });
+        }
+    }
+
+    // =====================================================
+    // VENDA PRINCIPAL
+    //
+    // Usamos para:
+    // - comprador
+    // - endereço
+    // - billing_info
+    // =====================================================
+
+    const vendaPrincipal =
+        resultados[0]
+            ?.order ||
+        null;
+
+    const packId =
+        grupo
+            ?._pack_id ||
+        null;
+
+    const shipmentId =
+        grupo
+            ?._shipment_id ||
+        vendaPrincipal
+            ?.shipping
+            ?.id ||
+        null;
+
+    console.log(
+        '✅ PACK preparado para emissão:',
+        {
+            ehPack:
+                orderIds.length > 1,
+
+            packId,
+
+            shipmentId,
+
+            orders:
+                orderIds,
+
+            produtos:
+                items.map(
+                    item => ({
+                        order:
+                            item._order_id,
+
+                        sku:
+                            item.item
+                                ?.seller_sku,
+
+                        quantidade:
+                            item.quantity,
+
+                        valor:
+                            item
+                                ._valor_unitario_corrigido
+                    })
+                ),
+
+            valorTotalProduto
+        }
+    );
+
+    return {
+
+        ehPack:
+            orderIds.length >
+            1,
+
+        packId,
+
+        shipmentId,
+
+        orderIds,
+
+        resultados,
+
+        vendaPrincipal,
+
+        items,
+
+        valorTotalProduto
+    };
+}
+
+async function abrirModalEdicaoProdutos(
+    orderId
+) {
+
+    console.log(
+        '🔧 Abrindo modal de emissão:',
+        orderId
+    );
+
+    orderId =
+        normalizarOrderIdML(
+            orderId
+        );
+
+    // =====================================================
+    // REMOVER MODAIS ANTIGOS
+    // =====================================================
+
+    document
+        .getElementById(
+            'modalDadosClienteNFE'
+        )
+        ?.remove();
+
+    document
+        .getElementById(
+            'modalEdicaoProdutos'
+        )
+        ?.remove();
+
+    if (!orderId) {
+
+        showToast(
+            '❌ ID da venda inválido',
+            'error'
+        );
+
         return;
     }
 
-    vendaIdParaEdicao = orderId;
-    pendingEmitOrderId = orderId;
+    vendaIdParaEdicao =
+        orderId;
 
-    let token = localStorage.getItem('ml_access_token');
+    pendingEmitOrderId =
+        orderId;
 
-    if (!token && typeof window.getValidToken === 'function') {
-        const tokenData = await window.getValidToken();
-        token = tokenData?.access_token;
+    // =====================================================
+    // IDENTIFICAR O PACK
+    //
+    // Mesmo que o handler não tenha configurado,
+    // procuramos diretamente nas vendas da tabela.
+    // =====================================================
+
+    let vendaGrupo =
+        window._nfeVendaGrupoAtual ||
+        null;
+
+    if (
+        !vendaGrupo &&
+        Array.isArray(
+            vendasPendentes
+        )
+    ) {
+
+        vendaGrupo =
+            vendasPendentes.find(
+                venda => {
+
+                    const principal =
+                        normalizarOrderIdML(
+                            venda.id_venda_ml ||
+                            venda.id
+                        );
+
+                    if (
+                        principal ===
+                        orderId
+                    ) {
+
+                        return true;
+                    }
+
+                    return (
+                        Array.isArray(
+                            venda._order_ids_pack
+                        ) &&
+                        venda
+                            ._order_ids_pack
+                            .map(
+                                normalizarOrderIdML
+                            )
+                            .includes(
+                                orderId
+                            )
+                    );
+                }
+            ) ||
+            null;
+    }
+
+    window._nfeVendaGrupoAtual =
+        vendaGrupo;
+
+    if (vendaGrupo) {
+
+        window._nfeOrderIdsAtuais =
+            [
+                ...new Set(
+
+                    (
+                        vendaGrupo
+                            ._order_ids_pack ||
+                        [orderId]
+                    )
+                        .map(
+                            normalizarOrderIdML
+                        )
+                        .filter(Boolean)
+                )
+            ];
+
+        window._nfePackIdAtual =
+            vendaGrupo
+                ._pack_id ||
+            null;
+
+        window._nfeShipmentIdAtual =
+            vendaGrupo
+                ._shipment_id ||
+            null;
+    }
+
+    // =====================================================
+    // TOKEN
+    // =====================================================
+
+    let token =
+        localStorage.getItem(
+            'ml_access_token'
+        );
+
+    if (
+        !token &&
+        typeof window
+            .getValidToken ===
+        'function'
+    ) {
+
+        const tokenData =
+            await window
+                .getValidToken();
+
+        token =
+            tokenData
+                ?.access_token;
     }
 
     if (!token) {
-        showToast('Token ML não disponível', 'error');
+
+        showToast(
+            '❌ Token ML não disponível',
+            'error'
+        );
+
         return;
     }
 
-    // Remove modal anterior, caso exista
+    window._mlAccessToken =
+        token;
+
     fecharModalEdicaoProdutos();
 
     try {
-        showToast('🔄 Carregando dados da venda...', 'info');
 
-        // =====================================================
-        // BUSCAR VALOR DA VENDA
-        // =====================================================
-
-        const dadosPagamento = await buscarValorExatoPagamento(orderId);
-
-        console.log(
-            '📊 Dados do pagamento para emissão:',
-            dadosPagamento
+        showToast(
+            '🔄 Carregando produtos da venda...',
+            'info'
         );
 
         // =====================================================
-        // BUSCAR VENDA NO MERCADO LIVRE
+        // BUSCAR TODAS AS ORDERS DO PACK
         // =====================================================
 
-        const orderUrl =
-            `https://api.mercadolibre.com/orders/${orderId}`;
+        const dadosPack =
+            await buscarOrdersPackParaNFE(
+                orderId,
+                token
+            );
 
-        const orderProxyUrl =
-            `${window.WORKER_URL}/api/ml/proxy?url=` +
-            `${encodeURIComponent(orderUrl)}` +
-            `&token=${encodeURIComponent(token)}`;
+        const venda =
+            dadosPack
+                .vendaPrincipal;
 
-        const orderResponse = await fetch(orderProxyUrl);
+        const items =
+            dadosPack
+                .items ||
+            [];
 
-        if (!orderResponse.ok) {
+        if (!venda) {
+
             throw new Error(
-                'Erro ao buscar venda no Mercado Livre'
+                'Venda principal não encontrada'
             );
         }
 
-        const venda = await orderResponse.json();
+        if (
+            items.length ===
+            0
+        ) {
 
-        console.log('📦 Venda ML:', venda);
+            throw new Error(
+                'Nenhum produto encontrado para emissão'
+            );
+        }
 
         // =====================================================
-        // NÃO PERMITIR VENDA FULL
+        // SALVAR IDS
+        // =====================================================
+
+        window._nfeOrderIdsAtuais =
+            dadosPack
+                .orderIds;
+
+        window._nfePackIdAtual =
+            dadosPack
+                .packId ||
+            window
+                ._nfePackIdAtual ||
+            null;
+
+        window._nfeShipmentIdAtual =
+            dadosPack
+                .shipmentId ||
+            window
+                ._nfeShipmentIdAtual ||
+            null;
+
+        console.log(
+            '📦 Modal NF-e:',
+            {
+                ehPack:
+                    dadosPack.ehPack,
+
+                orders:
+                    window
+                        ._nfeOrderIdsAtuais,
+
+                produtos:
+                    items.length,
+
+                valor:
+                    dadosPack
+                        .valorTotalProduto
+            }
+        );
+
+        // =====================================================
+        // FULL
         // =====================================================
 
         if (
-            typeof isFullByAnyField === 'function' &&
-            isFullByAnyField(venda)
+            (
+                typeof isFullByAnyField ===
+                    'function' &&
+                isFullByAnyField(
+                    venda
+                )
+            ) ||
+            vendaGrupo
+                ?._is_full
         ) {
-            pendingEmitOrderId = null;
-            vendaIdParaEdicao = null;
+
+            pendingEmitOrderId =
+                null;
+
+            vendaIdParaEdicao =
+                null;
 
             showToast(
                 '🚫 Esta venda é FULL e não permite emissão manual.',
@@ -1104,66 +1741,75 @@ async function abrirModalEdicaoProdutos(orderId) {
             return;
         }
 
-        const items = venda.order_items || [];
-
-        if (items.length === 0) {
-            showToast(
-                'Nenhum produto encontrado',
-                'warning'
-            );
-
-            return;
-        }
-
         // =====================================================
-        // BUSCAR ENDEREÇO DO SHIPMENT
+        // ENDEREÇO
         // =====================================================
 
         let address = {};
 
-        if (venda.shipping?.id) {
+        const shipmentId =
+            dadosPack
+                .shipmentId ||
+            venda.shipping
+                ?.id ||
+            null;
+
+        if (shipmentId) {
+
             try {
 
                 const shipUrl =
-                    `https://api.mercadolibre.com/shipments/${venda.shipping.id}`;
+                    `https://api.mercadolibre.com/shipments/${shipmentId}`;
 
-                const shipProxyUrl =
+                const proxyUrl =
                     `${window.WORKER_URL}/api/ml/proxy?url=` +
                     `${encodeURIComponent(shipUrl)}` +
                     `&token=${encodeURIComponent(token)}`;
 
-                const shipResponse =
-                    await fetch(shipProxyUrl);
+                const response =
+                    await fetch(
+                        proxyUrl
+                    );
 
-                if (shipResponse.ok) {
+                if (
+                    response.ok
+                ) {
 
                     const shipment =
-                        await shipResponse.json();
+                        await response
+                            .json();
 
                     address =
-                        shipment.receiver_address || {};
+                        shipment
+                            .receiver_address ||
+                        {};
                 }
 
-            } catch (e) {
+            } catch (error) {
 
                 console.warn(
-                    '⚠️ Não foi possível buscar endereço do shipment:',
-                    e
+                    '⚠️ Erro buscando endereço:',
+                    error
                 );
             }
         }
 
-        // Fallback
         if (
             !address.address_line &&
             !address.street_name &&
             venda.buyer?.address
         ) {
-            address = venda.buyer.address;
+
+            address =
+                venda.buyer
+                    .address;
         }
 
         // =====================================================
-        // BUSCAR CPF / CNPJ / DADOS DE FATURAMENTO
+        // BILLING INFO
+        //
+        // O comprador é o mesmo do pack,
+        // então usamos a order principal.
         // =====================================================
 
         let billingInfo = {};
@@ -1179,64 +1825,74 @@ async function abrirModalEdicaoProdutos(orderId) {
                 `&token=${encodeURIComponent(token)}`;
 
             const billingResponse =
-                await fetch(billingProxyUrl);
+                await fetch(
+                    billingProxyUrl
+                );
 
-            if (billingResponse.ok) {
+            if (
+                billingResponse.ok
+            ) {
 
                 const billingResult =
-                    await billingResponse.json();
+                    await billingResponse
+                        .json();
 
                 billingInfo =
-                    billingResult?.billing_info ||
+                    billingResult
+                        ?.billing_info ||
                     billingResult ||
                     {};
-
-                console.log(
-                    '🧾 Billing info obtido:',
-                    billingInfo
-                );
-
-            } else {
-
-                console.warn(
-                    '⚠️ Billing info não disponível:',
-                    billingResponse.status
-                );
             }
 
-        } catch (e) {
+        } catch (error) {
 
             console.warn(
-                '⚠️ Erro ao buscar billing_info:',
-                e
+                '⚠️ Erro buscando billing_info:',
+                error
             );
         }
 
         // =====================================================
-        // ORGANIZAR ADDITIONAL_INFO
+        // ADDITIONAL INFO
         // =====================================================
 
         const infoExtra = {};
 
-        if (Array.isArray(billingInfo.additional_info)) {
+        if (
+            Array.isArray(
+                billingInfo
+                    .additional_info
+            )
+        ) {
 
-            billingInfo.additional_info.forEach(item => {
+            billingInfo
+                .additional_info
+                .forEach(
+                    item => {
 
-                if (item?.type) {
+                        if (
+                            item?.type
+                        ) {
 
-                    infoExtra[
-                        String(item.type).toUpperCase()
-                    ] = item.value ?? '';
-                }
-
-            });
+                            infoExtra[
+                                String(
+                                    item.type
+                                ).toUpperCase()
+                            ] =
+                                item.value ??
+                                '';
+                        }
+                    }
+                );
         }
 
         // =====================================================
-        // DADOS DO CLIENTE
+        // CLIENTE
         // =====================================================
 
-        const buyer = venda.buyer || {};
+        const buyer =
+            venda.buyer ||
+            {};
 
         const nomeBuyer =
             `${buyer.first_name || ''} ${buyer.last_name || ''}`
@@ -1247,55 +1903,86 @@ async function abrirModalEdicaoProdutos(orderId) {
                 .trim();
 
         const nomeCliente =
+
             nomeBilling ||
+
             nomeBuyer ||
+
             buyer.nickname ||
+
             billingInfo.name ||
+
+            vendaGrupo
+                ?.cliente ||
+
             '';
 
-        const documentoCliente = String(
+        const documentoCliente =
+            String(
 
-            infoExtra.DOC_NUMBER ||
+                infoExtra.DOC_NUMBER ||
 
-            billingInfo.doc_number ||
+                billingInfo
+                    .doc_number ||
 
-            billingInfo.document_number ||
+                billingInfo
+                    .document_number ||
 
-            billingInfo.identification?.number ||
+                billingInfo
+                    .identification
+                    ?.number ||
 
-            buyer.identification?.number ||
+                buyer
+                    .identification
+                    ?.number ||
 
-            ''
-
-        ).replace(/\D/g, '');
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
 
         // =====================================================
         // ENDEREÇO
         // =====================================================
 
         let logradouro =
-            address.address_line ||
-            address.street_name ||
-            infoExtra.STREET_NAME ||
+
+            address
+                .address_line ||
+
+            address
+                .street_name ||
+
+            infoExtra
+                .STREET_NAME ||
+
             '';
 
         let numero =
-            address.street_number ||
-            infoExtra.STREET_NUMBER ||
+
+            address
+                .street_number ||
+
+            infoExtra
+                .STREET_NUMBER ||
+
             'S/N';
 
-        // Evitar número duplicado no endereço
         if (
             logradouro &&
             numero &&
-            numero !== 'S/N'
+            numero !==
+                'S/N'
         ) {
 
             const numeroEscapado =
-                String(numero).replace(
-                    /[.*+?^${}()|[\]\\]/g,
-                    '\\$&'
-                );
+                String(numero)
+                    .replace(
+                        /[.*+?^${}()|[\]\\]/g,
+                        '\\$&'
+                    );
 
             const numeroPattern =
                 new RegExp(
@@ -1304,73 +1991,101 @@ async function abrirModalEdicaoProdutos(orderId) {
 
             logradouro =
                 logradouro
-                    .replace(numeroPattern, '')
-                    .replace(/,\s*$/, '')
+                    .replace(
+                        numeroPattern,
+                        ''
+                    )
+                    .replace(
+                        /,\s*$/,
+                        ''
+                    )
                     .trim();
         }
 
         const bairro =
-            address.neighborhood?.name ||
-            address.neighborhood ||
-            infoExtra.NEIGHBORHOOD ||
+
+            address
+                .neighborhood
+                ?.name ||
+
+            address
+                .neighborhood ||
+
+            infoExtra
+                .NEIGHBORHOOD ||
+
             '';
 
         const cidade =
-            address.city?.name ||
-            address.city ||
-            infoExtra.CITY_NAME ||
-            infoExtra.CITY ||
+
+            address
+                .city
+                ?.name ||
+
+            address
+                .city ||
+
+            infoExtra
+                .CITY_NAME ||
+
+            infoExtra
+                .CITY ||
+
             '';
 
         const ufOriginal =
-            address.state?.name ||
-            address.state ||
-            infoExtra.STATE_NAME ||
-            infoExtra.STATE ||
+
+            address
+                .state
+                ?.name ||
+
+            address
+                .state ||
+
+            infoExtra
+                .STATE_NAME ||
+
+            infoExtra
+                .STATE ||
+
             '';
 
-        const uf = mapearUF(ufOriginal);
+        const uf =
+            mapearUF(
+                ufOriginal
+            );
 
-        const cep = String(
-            address.zip_code ||
-            infoExtra.ZIP_CODE ||
-            ''
-        ).replace(/\D/g, '');
+        const cep =
+            String(
 
-        // =====================================================
-        // CALCULAR VALOR TOTAL DOS PRODUTOS
-        // =====================================================
+                address
+                    .zip_code ||
 
-        let valorTotalProduto = 0;
+                infoExtra
+                    .ZIP_CODE ||
 
-        let quantidadeTotal = 0;
-
-        for (const item of items) {
-
-            quantidadeTotal +=
-                item.quantity || 1;
-        }
-
-        if (
-            dadosPagamento &&
-            dadosPagamento.valor_produto > 0
-        ) {
-
-            valorTotalProduto =
-                dadosPagamento.valor_produto;
-
-        } else {
-
-            for (const item of items) {
-
-                valorTotalProduto +=
-                    (item.unit_price || 0) *
-                    (item.quantity || 1);
-            }
-        }
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
 
         // =====================================================
-        // BUSCAR NCM SALVO
+        // VALOR TOTAL DO PACK
+        //
+        // ESTE É O PONTO PRINCIPAL DA CORREÇÃO.
+        // =====================================================
+
+        const valorTotalProduto =
+            Number(
+                dadosPack
+                    .valorTotalProduto ||
+                0
+            );
+
+        // =====================================================
+        // NCM
         // =====================================================
 
         const ncmPorSku = {};
@@ -1378,733 +2093,977 @@ async function abrirModalEdicaoProdutos(orderId) {
         try {
 
             const skus =
-                items.map(
-                    item =>
-                        item.item.seller_sku ||
-                        'SEM_SKU'
-                );
+                [
+                    ...new Set(
 
-            const { data, error } =
-                await window.supabaseClient
-                    .from('produto_ncm')
-                    .select('sku, ncm')
-                    .in('sku', skus);
+                        items
+                            .map(
+                                item =>
+                                    item.item
+                                        ?.seller_sku ||
+                                    'SEM_SKU'
+                            )
+                            .filter(
+                                sku =>
+                                    sku &&
+                                    sku !==
+                                    'SEM_SKU'
+                            )
+                    )
+                ];
 
-            if (!error && data) {
+            if (
+                skus.length >
+                0
+            ) {
 
-                data.forEach(row => {
+                const {
+                    data,
+                    error
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'produto_ncm'
+                        )
+                        .select(
+                            'sku, ncm'
+                        )
+                        .in(
+                            'sku',
+                            skus
+                        );
 
-                    ncmPorSku[row.sku] =
-                        row.ncm;
+                if (
+                    !error &&
+                    Array.isArray(
+                        data
+                    )
+                ) {
 
-                });
+                    data.forEach(
+                        row => {
+
+                            ncmPorSku[
+                                row.sku
+                            ] =
+                                row.ncm;
+                        }
+                    );
+                }
             }
 
-        } catch (e) {
+        } catch (error) {
 
             console.warn(
-                '⚠️ Erro ao buscar NCM:',
-                e
+                '⚠️ Erro buscando NCM:',
+                error
             );
         }
 
         // =====================================================
-        // MONTAR PRODUTOS EDITÁVEIS
+        // PRODUTOS DO MODAL
+        //
+        // TODOS os itens de TODAS as orders.
         // =====================================================
 
         produtosEditados =
-            items.map(item => {
+            items.map(
+                item => {
 
-                const sku =
-                    item.item.seller_sku ||
-                    'SEM_SKU';
+                    const sku =
+                        item.item
+                            ?.seller_sku ||
+                        'SEM_SKU';
 
-                const quantidade =
-                    item.quantity || 1;
+                    const quantidade =
+                        Number(
+                            item.quantity ||
+                            1
+                        );
 
-                let valorUnitario;
+                    const valorUnitario =
+                        Number(
+                            item
+                                ._valor_unitario_corrigido ??
+                            item
+                                .unit_price ??
+                            0
+                        );
 
-                if (
-                    quantidadeTotal > 0 &&
-                    valorTotalProduto > 0
-                ) {
+                    return {
 
-                    valorUnitario =
-                        valorTotalProduto /
-                        quantidadeTotal;
+                        nome:
+                            item.item
+                                ?.title ||
+                            'Produto',
 
-                } else {
+                        quantidade,
 
-                    valorUnitario =
-                        item.unit_price || 0;
+                        valor_unitario:
+                            valorUnitario,
+
+                        sku,
+
+                        ncm:
+                            ncmPorSku[
+                                sku
+                            ] ||
+                            '87149990',
+
+                        _order_id:
+                            item._order_id,
+
+                        _valor_original:
+                            Number(
+                                item
+                                    .unit_price ||
+                                0
+                            )
+                    };
                 }
-
-                return {
-
-                    nome:
-                        item.item.title ||
-                        'Produto',
-
-                    quantidade,
-
-                    valor_unitario:
-                        valorUnitario,
-
-                    sku,
-
-                    ncm:
-                        ncmPorSku[sku] ||
-                        '87149990',
-
-                    _valor_original:
-                        item.unit_price || 0
-                };
-            });
+            );
 
         // =====================================================
-        // CORRIGIR CENTAVOS
+        // AJUSTAR EVENTUAL DIFERENÇA DE CENTAVOS
         // =====================================================
 
         const totalCalculado =
             produtosEditados.reduce(
-                (acc, p) =>
-                    acc +
-                    (
-                        p.valor_unitario *
-                        p.quantidade
-                    ),
+                (
+                    total,
+                    produto
+                ) => {
+
+                    return (
+                        total +
+                        (
+                            Number(
+                                produto
+                                    .quantidade ||
+                                0
+                            ) *
+                            Number(
+                                produto
+                                    .valor_unitario ||
+                                0
+                            )
+                        )
+                    );
+                },
                 0
             );
 
+        const diferenca =
+            valorTotalProduto -
+            totalCalculado;
+
         if (
             Math.abs(
-                totalCalculado -
-                valorTotalProduto
-            ) > 0.01 &&
-            produtosEditados.length > 0 &&
-            valorTotalProduto > 0
+                diferenca
+            ) >
+                0.001 &&
+            produtosEditados.length >
+                0
         ) {
-
-            const diff =
-                valorTotalProduto -
-                totalCalculado;
 
             const ultimo =
                 produtosEditados[
-                    produtosEditados.length - 1
+                    produtosEditados
+                        .length -
+                    1
                 ];
 
+            const qtdUltimo =
+                Number(
+                    ultimo.quantidade ||
+                    1
+                );
+
             ultimo.valor_unitario +=
-                diff /
-                ultimo.quantidade;
+                diferenca /
+                qtdUltimo;
         }
 
         // =====================================================
-        // ESCAPAR HTML
+        // HTML ESCAPE
         // =====================================================
 
-        const esc = value =>
-            String(value ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
+        const esc =
+            value =>
+                String(
+                    value ??
+                    ''
+                )
+                    .replace(
+                        /&/g,
+                        '&amp;'
+                    )
+                    .replace(
+                        /</g,
+                        '&lt;'
+                    )
+                    .replace(
+                        />/g,
+                        '&gt;'
+                    )
+                    .replace(
+                        /"/g,
+                        '&quot;'
+                    )
+                    .replace(
+                        /'/g,
+                        '&#039;'
+                    );
+
+        const ehPack =
+            dadosPack
+                .orderIds
+                .length >
+            1;
+
+        const descricaoVenda =
+            ehPack
+
+                ? `
+                    Pacote Mercado Livre:
+                    <strong>
+                        ${esc(
+                            window._nfePackIdAtual ||
+                            window._nfeShipmentIdAtual ||
+                            'PACK'
+                        )}
+                    </strong>
+
+                    <br>
+
+                    <span
+                        style="
+                            font-size:11px;
+                            color:#6c757d;
+                        "
+                    >
+                        ${dadosPack.orderIds.length}
+                        pedidos:
+                        ${dadosPack.orderIds
+                            .map(
+                                esc
+                            )
+                            .join(' + ')}
+                    </span>
+                `
+
+                : `
+                    Venda Mercado Livre:
+                    ${esc(orderId)}
+                `;
 
         // =====================================================
-        // MODAL ÚNICO
+        // MODAL
         // =====================================================
 
         const modalHTML = `
 
-        <div
-            id="modalEdicaoProdutos"
-            class="modal"
-            style="
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                background:rgba(0,0,0,0.5);
-                z-index:10000;
-                position:fixed;
-                inset:0;
-            "
-        >
             <div
-                class="modal-content"
+                id="modalEdicaoProdutos"
+                class="modal"
                 style="
-                    max-width:1150px;
-                    width:96%;
-                    max-height:94vh;
-                    overflow-y:auto;
-                    background:white;
-                    padding:25px;
-                    border-radius:10px;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    background:rgba(0,0,0,0.5);
+                    z-index:10000;
+                    position:fixed;
+                    inset:0;
                 "
             >
-                <!-- CABEÇALHO -->
+
                 <div
+                    class="modal-content"
                     style="
-                        display:flex;
-                        justify-content:space-between;
-                        align-items:center;
-                        margin-bottom:18px;
+                        max-width:1150px;
+                        width:96%;
+                        max-height:94vh;
+                        overflow-y:auto;
+                        background:white;
+                        padding:25px;
+                        border-radius:10px;
                     "
                 >
-                    <div>
-                        <h3 style="margin:0;">
-                            <i class="fas fa-file-invoice"></i>
-                            Emitir NF-e
-                        </h3>
-                        <small style="color:#6c757d;">
-                            Venda Mercado Livre:
-                            ${esc(orderId)}
-                        </small>
+
+                    <div
+                        style="
+                            display:flex;
+                            justify-content:space-between;
+                            align-items:flex-start;
+                            margin-bottom:18px;
+                        "
+                    >
+
+                        <div>
+
+                            <h3
+                                style="
+                                    margin:0 0 4px 0;
+                                "
+                            >
+
+                                <i class="fas fa-file-invoice"></i>
+
+                                Emitir NF-e
+
+                            </h3>
+
+                            <small
+                                style="
+                                    color:#6c757d;
+                                "
+                            >
+                                ${descricaoVenda}
+                            </small>
+
+                        </div>
+
+                        <button
+                            type="button"
+                            onclick="fecharModalEdicaoProdutos()"
+                            style="
+                                background:none;
+                                border:none;
+                                font-size:28px;
+                                cursor:pointer;
+                                color:#6c757d;
+                            "
+                        >
+                            &times;
+                        </button>
+
                     </div>
-                    <button
-                        type="button"
-                        onclick="fecharModalEdicaoProdutos()"
+
+
+                    <div
                         style="
-                            background:none;
-                            border:none;
-                            font-size:28px;
-                            cursor:pointer;
-                            color:#6c757d;
+                            background:#f8f9fa;
+                            padding:14px;
+                            border-radius:8px;
+                            margin-bottom:20px;
                         "
                     >
-                        &times;
-                    </button>
-                </div>
-                <!-- VALOR -->
-                <div
-                    style="
-                        background:#f8f9fa;
-                        padding:14px;
-                        border-radius:8px;
-                        margin-bottom:20px;
-                    "
-                >
-                    <strong>
 
-                        Valor sugerido da nota:
-                        R$
-                        ${valorTotalProduto.toFixed(2)}
-                    </strong>
-                    <span
+                        <strong>
+
+                            Valor sugerido da nota:
+
+                            R$
+
+                            ${valorTotalProduto.toFixed(2)}
+
+                        </strong>
+
+                        ${
+                            ehPack
+                                ? `
+                                    <span
+                                        style="
+                                            margin-left:10px;
+                                            padding:4px 8px;
+                                            background:#17a2b8;
+                                            color:white;
+                                            border-radius:5px;
+                                            font-size:11px;
+                                        "
+                                    >
+                                        ${dadosPack.orderIds.length}
+                                        pedidos agrupados
+                                    </span>
+                                `
+                                : ''
+                        }
+
+                        <span
+                            style="
+                                color:#6c757d;
+                                margin-left:8px;
+                            "
+                        >
+                            Você pode ajustar os valores abaixo.
+                        </span>
+
+                    </div>
+
+
+                    <h4>
+
+                        <i class="fas fa-box"></i>
+
+                        Produtos
+
+                    </h4>
+
+
+                    <div
+                        class="table-responsive"
                         style="
-                            color:#6c757d;
-                            margin-left:8px;
+                            margin-bottom:22px;
                         "
                     >
-                        Você pode ajustar os valores abaixo.
 
-                    </span>
-
-                </div>
-
-
-                <!-- PRODUTOS -->
-
-                <h4>
-
-                    <i class="fas fa-box"></i>
-
-                    Produtos
-
-                </h4>
-
-
-                <div
-                    class="table-responsive"
-                    style="margin-bottom:22px;"
-                >
-
-                    <table
-                        class="table table-striped"
-                        style="min-width:980px;"
-                    >
-
-                        <thead>
-
-                            <tr>
-
-                                <th>Nome do produto</th>
-
-                                <th>SKU</th>
-
-                                <th>Qtd</th>
-
-                                <th>Valor unit.</th>
-
-                                <th>NCM</th>
-
-                                <th>Subtotal</th>
-
-                            </tr>
-
-                        </thead>
-
-
-                        <tbody
-                            id="produtosEditaveisBody"
+                        <table
+                            class="table table-striped"
+                            style="
+                                min-width:980px;
+                            "
                         >
 
-                            ${produtosEditados.map(
-                                (p, index) => `
+                            <thead>
+
+                                <tr>
+
+                                    <th>
+                                        Nome do produto
+                                    </th>
+
+                                    <th>
+                                        SKU
+                                    </th>
+
+                                    <th>
+                                        Qtd
+                                    </th>
+
+                                    <th>
+                                        Valor unit.
+                                    </th>
+
+                                    <th>
+                                        NCM
+                                    </th>
+
+                                    <th>
+                                        Subtotal
+                                    </th>
+
+                                </tr>
+
+                            </thead>
+
+
+                            <tbody
+                                id="produtosEditaveisBody"
+                            >
+
+                                ${produtosEditados
+                                    .map(
+                                        (
+                                            p,
+                                            index
+                                        ) => `
+
+                                        <tr
+                                            data-index="${index}"
+                                        >
+
+                                            <td>
+
+                                                <input
+                                                    type="text"
+                                                    class="
+                                                        form-control
+                                                        form-control-sm
+                                                        nome-produto
+                                                    "
+                                                    data-index="${index}"
+                                                    value="${esc(p.nome)}"
+                                                >
+
+                                            </td>
+
+
+                                            <td>
+
+                                                <input
+                                                    type="text"
+                                                    class="
+                                                        form-control
+                                                        form-control-sm
+                                                        sku-produto
+                                                    "
+                                                    data-index="${index}"
+                                                    value="${esc(p.sku)}"
+                                                >
+
+                                            </td>
+
+
+                                            <td>
+
+                                                <input
+                                                    type="number"
+                                                    class="
+                                                        form-control
+                                                        form-control-sm
+                                                        qtd-produto
+                                                    "
+                                                    data-index="${index}"
+                                                    value="${p.quantidade}"
+                                                    min="0.01"
+                                                    step="0.01"
+                                                >
+
+                                            </td>
+
+
+                                            <td>
+
+                                                <input
+                                                    type="number"
+                                                    class="
+                                                        form-control
+                                                        form-control-sm
+                                                        valor-produto
+                                                    "
+                                                    data-index="${index}"
+                                                    value="${Number(
+                                                        p.valor_unitario
+                                                    ).toFixed(2)}"
+                                                    min="0"
+                                                    step="0.01"
+                                                >
+
+                                            </td>
+
+
+                                            <td>
+
+                                                <input
+                                                    type="text"
+                                                    class="
+                                                        form-control
+                                                        form-control-sm
+                                                        ncm-produto
+                                                    "
+                                                    data-index="${index}"
+                                                    value="${esc(p.ncm)}"
+                                                    maxlength="8"
+                                                >
+
+                                            </td>
+
+
+                                            <td
+                                                class="subtotal-produto"
+                                            >
+
+                                                R$
+
+                                                ${(
+                                                    Number(
+                                                        p.quantidade
+                                                    ) *
+                                                    Number(
+                                                        p.valor_unitario
+                                                    )
+                                                ).toFixed(2)}
+
+                                            </td>
+
+                                        </tr>
+
+                                    `
+                                    )
+                                    .join('')}
+
+                            </tbody>
+
+
+                            <tfoot>
 
                                 <tr
-                                    data-index="${index}"
+                                    style="
+                                        font-weight:bold;
+                                        background:#f8f9fa;
+                                    "
                                 >
 
-                                    <td>
-
-                                        <input
-                                            type="text"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                nome-produto
-                                            "
-                                            data-index="${index}"
-                                            value="${esc(p.nome)}"
-                                        >
-
+                                    <td
+                                        colspan="5"
+                                        style="
+                                            text-align:right;
+                                        "
+                                    >
+                                        Total da Nota:
                                     </td>
-
-
-                                    <td>
-
-                                        <input
-                                            type="text"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                sku-produto
-                                            "
-                                            data-index="${index}"
-                                            value="${esc(p.sku)}"
-                                        >
-
-                                    </td>
-
-
-                                    <td>
-
-                                        <input
-                                            type="number"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                qtd-produto
-                                            "
-                                            data-index="${index}"
-                                            value="${p.quantidade}"
-                                            min="0.01"
-                                            step="0.01"
-                                        >
-
-                                    </td>
-
-
-                                    <td>
-
-                                        <input
-                                            type="number"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                valor-produto
-                                            "
-                                            data-index="${index}"
-                                            value="${p.valor_unitario.toFixed(2)}"
-                                            min="0"
-                                            step="0.01"
-                                        >
-
-                                    </td>
-
-
-                                    <td>
-
-                                        <input
-                                            type="text"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                ncm-produto
-                                            "
-                                            data-index="${index}"
-                                            value="${esc(p.ncm)}"
-                                            maxlength="8"
-                                        >
-
-                                    </td>
-
 
                                     <td
-                                        class="subtotal-produto"
+                                        id="totalGeralProdutos"
                                     >
 
                                         R$
-                                        ${(p.quantidade * p.valor_unitario).toFixed(2)}
+
+                                        ${produtosEditados
+                                            .reduce(
+                                                (
+                                                    total,
+                                                    p
+                                                ) => {
+
+                                                    return (
+                                                        total +
+                                                        (
+                                                            Number(
+                                                                p.quantidade
+                                                            ) *
+                                                            Number(
+                                                                p.valor_unitario
+                                                            )
+                                                        )
+                                                    );
+                                                },
+                                                0
+                                            )
+                                            .toFixed(2)}
 
                                     </td>
 
                                 </tr>
 
-                            `).join('')}
+                            </tfoot>
 
-                        </tbody>
+                        </table>
+
+                    </div>
 
 
-                        <tfoot>
+                    <!-- CLIENTE -->
 
-                            <tr
+                    <div
+                        style="
+                            margin-top:20px;
+                            margin-bottom:20px;
+                            padding:16px;
+                            background:#f8f9fa;
+                            border:1px solid #e1e5eb;
+                            border-radius:10px;
+                        "
+                    >
+
+                        <h4
+                            style="
+                                margin:0 0 14px 0;
+                            "
+                        >
+
+                            <i class="fas fa-user"></i>
+
+                            Dados do cliente
+
+                        </h4>
+
+
+                        <div
+                            style="
+                                display:grid;
+                                grid-template-columns:repeat(12,1fr);
+                                gap:12px;
+                                align-items:end;
+                            "
+                        >
+
+                            <div
                                 style="
-                                    font-weight:bold;
-                                    background:#f8f9fa;
+                                    grid-column:span 8;
                                 "
                             >
 
-                                <td
-                                    colspan="5"
-                                    style="text-align:right;"
+                                <label>
+                                    Nome completo *
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="clienteNome"
+                                    class="form-control"
+                                    value="${esc(nomeCliente)}"
+                                    required
                                 >
 
-                                    Total da Nota:
-
-                                </td>
-
-                                <td
-                                    id="totalGeralProdutos"
-                                >
-
-                                    R$
-                                    ${produtosEditados.reduce(
-                                        (acc, p) =>
-                                            acc +
-                                            (
-                                                p.quantidade *
-                                                p.valor_unitario
-                                            ),
-                                        0
-                                    ).toFixed(2)}
-
-                                </td>
-
-                            </tr>
-
-                        </tfoot>
-
-                    </table>
-
-                </div>
+                            </div>
 
 
-<!-- CLIENTE -->
-
-<div style="
-    margin-top:20px;
-    margin-bottom:20px;
-    padding:16px;
-    background:#f8f9fa;
-    border:1px solid #e1e5eb;
-    border-radius:10px;
-">
-
-    <h4 style="
-        margin:0 0 14px 0;
-        display:flex;
-        align-items:center;
-        gap:8px;
-    ">
-        <i class="fas fa-user"></i>
-        Dados do cliente
-    </h4>
-
-    <div style="
-        display:grid;
-        grid-template-columns:repeat(12, 1fr);
-        gap:12px;
-        align-items:end;
-    ">
-
-        <!-- NOME -->
-        <div style="grid-column:span 8;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Nome completo *
-            </label>
-
-            <input
-                type="text"
-                id="clienteNome"
-                class="form-control"
-                value="${esc(nomeCliente)}"
-                required
-            >
-        </div>
-
-        <!-- CPF -->
-        <div style="grid-column:span 4;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                CPF / CNPJ *
-            </label>
-
-            <input
-                type="text"
-                id="clienteDocumento"
-                class="form-control"
-                value="${esc(documentoCliente)}"
-                placeholder="CPF/CNPJ"
-                required
-            >
-        </div>
-
-        <!-- ENDEREÇO -->
-        <div style="grid-column:span 6;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Endereço *
-            </label>
-
-            <input
-                type="text"
-                id="clienteEndereco"
-                class="form-control"
-                value="${esc(logradouro)}"
-                required
-            >
-        </div>
-
-        <!-- NÚMERO -->
-        <div style="grid-column:span 2;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Número
-            </label>
-
-            <input
-                type="text"
-                id="clienteNumero"
-                class="form-control"
-                value="${esc(numero || 'S/N')}"
-            >
-        </div>
-
-        <!-- BAIRRO -->
-        <div style="grid-column:span 4;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Bairro
-            </label>
-
-            <input
-                type="text"
-                id="clienteBairro"
-                class="form-control"
-                value="${esc(bairro)}"
-            >
-        </div>
-
-        <!-- CIDADE -->
-        <div style="grid-column:span 6;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Cidade *
-            </label>
-
-            <input
-                type="text"
-                id="clienteCidade"
-                class="form-control"
-                value="${esc(cidade)}"
-                required
-            >
-        </div>
-
-        <!-- UF -->
-        <div style="grid-column:span 2;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                UF *
-            </label>
-
-            <input
-                type="text"
-                id="clienteUF"
-                class="form-control"
-                value="${esc(uf)}"
-                maxlength="2"
-                required
-            >
-        </div>
-
-        <!-- CEP -->
-        <div style="grid-column:span 4;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                CEP
-            </label>
-
-            <input
-                type="text"
-                id="clienteCEP"
-                class="form-control"
-                value="${esc(cep)}"
-                placeholder="00000000"
-            >
-        </div>
-
-    </div>
-</div>
-
-
-                <!-- FISCAL -->
-
-                <h4>
-
-                    <i class="fas fa-receipt"></i>
-
-                    Dados fiscais e transporte
-
-                </h4>
-
-
-                <div class="row">
-
-                    <div class="col-md-4">
-
-                        <div class="form-group">
-
-                            <label>CFOP</label>
-
-                            <select
-                                id="nfeCfop"
-                                class="form-control"
+                            <div
+                                style="
+                                    grid-column:span 4;
+                                "
                             >
 
-                                <option
-                                    value="6108"
-                                    selected
+                                <label>
+                                    CPF / CNPJ *
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="clienteDocumento"
+                                    class="form-control"
+                                    value="${esc(documentoCliente)}"
+                                    required
                                 >
 
-                                    6108 - Venda interestadual
+                            </div>
 
-                                </option>
 
-                                <option value="5102">
+                            <div
+                                style="
+                                    grid-column:span 6;
+                                "
+                            >
 
-                                    5102 - Venda dentro do estado
+                                <label>
+                                    Endereço *
+                                </label>
 
-                                </option>
+                                <input
+                                    type="text"
+                                    id="clienteEndereco"
+                                    class="form-control"
+                                    value="${esc(logradouro)}"
+                                    required
+                                >
 
-                                <option value="5405">
+                            </div>
 
-                                    5405 - Venda de produção
 
-                                </option>
+                            <div
+                                style="
+                                    grid-column:span 2;
+                                "
+                            >
 
-                            </select>
+                                <label>
+                                    Número
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="clienteNumero"
+                                    class="form-control"
+                                    value="${esc(numero || 'S/N')}"
+                                >
+
+                            </div>
+
+
+                            <div
+                                style="
+                                    grid-column:span 4;
+                                "
+                            >
+
+                                <label>
+                                    Bairro
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="clienteBairro"
+                                    class="form-control"
+                                    value="${esc(bairro)}"
+                                >
+
+                            </div>
+
+
+                            <div
+                                style="
+                                    grid-column:span 6;
+                                "
+                            >
+
+                                <label>
+                                    Cidade *
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="clienteCidade"
+                                    class="form-control"
+                                    value="${esc(cidade)}"
+                                    required
+                                >
+
+                            </div>
+
+
+                            <div
+                                style="
+                                    grid-column:span 2;
+                                "
+                            >
+
+                                <label>
+                                    UF *
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="clienteUF"
+                                    class="form-control"
+                                    value="${esc(uf)}"
+                                    maxlength="2"
+                                    required
+                                >
+
+                            </div>
+
+
+                            <div
+                                style="
+                                    grid-column:span 4;
+                                "
+                            >
+
+                                <label>
+                                    CEP
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="clienteCEP"
+                                    class="form-control"
+                                    value="${esc(cep)}"
+                                >
+
+                            </div>
 
                         </div>
 
                     </div>
 
 
-                    <div class="col-md-8">
+                    <!-- FISCAL -->
 
-                        <div class="form-group">
+                    <h4>
 
-                            <label>
-                                Transportadora
-                            </label>
+                        <i class="fas fa-receipt"></i>
 
-                            <select
-                                id="nfeTransportadora"
-                                class="form-control"
+                        Dados fiscais e transporte
+
+                    </h4>
+
+
+                    <div
+                        class="row"
+                    >
+
+                        <div
+                            class="col-md-4"
+                        >
+
+                            <div
+                                class="form-group"
                             >
 
-                                <option value="">
+                                <label>
+                                    CFOP
+                                </label>
 
-                                    Selecione uma transportadora
+                                <select
+                                    id="nfeCfop"
+                                    class="form-control"
+                                >
 
-                                </option>
+                                    <option
+                                        value="6108"
+                                        selected
+                                    >
+                                        6108 - Venda interestadual
+                                    </option>
 
-                            </select>
+                                    <option
+                                        value="5102"
+                                    >
+                                        5102 - Venda dentro do estado
+                                    </option>
+
+                                    <option
+                                        value="5405"
+                                    >
+                                        5405 - Venda de produção
+                                    </option>
+
+                                </select>
+
+                            </div>
+
+                        </div>
+
+
+                        <div
+                            class="col-md-8"
+                        >
+
+                            <div
+                                class="form-group"
+                            >
+
+                                <label>
+                                    Transportadora
+                                </label>
+
+                                <select
+                                    id="nfeTransportadora"
+                                    class="form-control"
+                                >
+
+                                    <option
+                                        value=""
+                                    >
+                                        Selecione uma transportadora
+                                    </option>
+
+                                </select>
+
+                            </div>
 
                         </div>
 
                     </div>
 
-                </div>
 
-
-                <!-- BOTÕES -->
-
-                <div
-                    class="
-                        d-flex
-                        justify-content-end
-                        gap-2
-                        mt-3
-                    "
-                >
-
-                    <button
-                        type="button"
-                        class="btn btn-secondary"
-                        onclick="fecharModalEdicaoProdutos()"
+                    <div
+                        class="
+                            d-flex
+                            justify-content-end
+                            gap-2
+                            mt-3
+                        "
                     >
 
-                        Cancelar
+                        <button
+                            type="button"
+                            class="btn btn-secondary"
+                            onclick="fecharModalEdicaoProdutos()"
+                        >
+                            Cancelar
+                        </button>
 
-                    </button>
 
+                        <button
+                            type="button"
+                            class="btn btn-success"
+                            id="confirmarProdutosFinalBtn"
+                        >
 
-                    <button
-                        type="button"
-                        class="btn btn-success"
-                        id="confirmarProdutosFinalBtn"
-                    >
+                            <i class="fas fa-file-invoice"></i>
 
-                        <i class="fas fa-file-invoice"></i>
+                            Confirmar e Emitir NF-e
 
-                        Confirmar e Emitir NF-e
+                        </button>
 
-                    </button>
+                    </div>
 
                 </div>
 
             </div>
-
-        </div>
-
         `;
 
         // =====================================================
@@ -2112,175 +3071,232 @@ async function abrirModalEdicaoProdutos(orderId) {
         // =====================================================
 
         const modalContainer =
-            document.createElement('div');
+            document.createElement(
+                'div'
+            );
 
         modalContainer.innerHTML =
             modalHTML;
 
-        document.body.appendChild(
-            modalContainer.firstElementChild
-        );
+        document.body
+            .appendChild(
+                modalContainer
+                    .firstElementChild
+            );
 
-        // Agora que o modal existe no DOM,
-        // carregar a lista de transportadoras.
+        const modal =
+            document.getElementById(
+                'modalEdicaoProdutos'
+            );
+
+        // =====================================================
+        // TRANSPORTADORAS
+        // =====================================================
 
         await carregarTransportadorasSelect();
 
         // =====================================================
-        // CARREGAR TRANSPORTADORAS
+        // CFOP
         // =====================================================
 
-        carregarTransportadorasSelect()
-            .catch(error => {
-
-                console.error(
-                    '❌ Erro no carregamento das transportadoras:',
-                    error
+        const cfopSelect =
+            modal
+                ?.querySelector(
+                    '#nfeCfop'
                 );
 
-            });
-
-        // CFOP padrão
-        const cfopSelect =
-            document.getElementById('nfeCfop');
-
         if (cfopSelect) {
-            cfopSelect.value = '6108';
-        }
 
-        // Salva token
-        window._mlAccessToken = token;
+            cfopSelect.value =
+                '6108';
+        }
 
         // =====================================================
         // RECALCULAR TOTAL
         // =====================================================
 
-        const recalcularTotalGeral = () => {
+        const recalcularTotalGeral =
+            () => {
 
-            let total = 0;
+                let total = 0;
 
-            produtosEditados.forEach(p => {
+                modal
+                    ?.querySelectorAll(
+                        '#produtosEditaveisBody tr'
+                    )
+                    .forEach(
+                        (
+                            row,
+                            index
+                        ) => {
 
-                total +=
-                    (Number(p.quantidade) || 0) *
-                    (Number(p.valor_unitario) || 0);
+                            const produto =
+                                produtosEditados[
+                                    index
+                                ];
 
-            });
+                            if (!produto) {
 
-            const totalCell =
-                document.getElementById(
-                    'totalGeralProdutos'
-                );
+                                return;
+                            }
 
-            if (totalCell) {
+                            produto.nome =
+                                row
+                                    .querySelector(
+                                        '.nome-produto'
+                                    )
+                                    ?.value
+                                    .trim() ||
+                                'Produto';
 
-                totalCell.textContent =
-                    `R$ ${total.toFixed(2)}`;
-            }
-        };
+                            produto.sku =
+                                row
+                                    .querySelector(
+                                        '.sku-produto'
+                                    )
+                                    ?.value
+                                    .trim() ||
+                                'SEM_SKU';
 
-        // =====================================================
-        // CAMPOS EDITÁVEIS DOS PRODUTOS
-        // =====================================================
+                            produto.quantidade =
+                                parseFloat(
+                                    row
+                                        .querySelector(
+                                            '.qtd-produto'
+                                        )
+                                        ?.value
+                                ) ||
+                                0;
 
-        document.querySelectorAll(
-            `
-            #modalEdicaoProdutos .nome-produto,
-            #modalEdicaoProdutos .sku-produto,
-            #modalEdicaoProdutos .qtd-produto,
-            #modalEdicaoProdutos .valor-produto,
-            #modalEdicaoProdutos .ncm-produto
-            `
-        ).forEach(input => {
+                            produto.valor_unitario =
+                                parseFloat(
+                                    row
+                                        .querySelector(
+                                            '.valor-produto'
+                                        )
+                                        ?.value
+                                ) ||
+                                0;
 
-            input.addEventListener(
-                'input',
-                function () {
+                            produto.ncm =
+                                row
+                                    .querySelector(
+                                        '.ncm-produto'
+                                    )
+                                    ?.value
+                                    .trim() ||
+                                '87149990';
 
-                    const idx =
-                        Number(
-                            this.dataset.index
+                            const subtotal =
+                                produto.quantidade *
+                                produto.valor_unitario;
+
+                            total +=
+                                subtotal;
+
+                            const subtotalCell =
+                                row.querySelector(
+                                    '.subtotal-produto'
+                                );
+
+                            if (
+                                subtotalCell
+                            ) {
+
+                                subtotalCell
+                                    .textContent =
+                                    `R$ ${subtotal.toFixed(2)}`;
+                            }
+                        }
+                    );
+
+                const totalCell =
+                    modal
+                        ?.querySelector(
+                            '#totalGeralProdutos'
                         );
 
-                    const row =
-                        this.closest('tr');
+                if (totalCell) {
 
-                    if (
-                        !row ||
-                        !produtosEditados[idx]
-                    ) {
-                        return;
-                    }
+                    totalCell.textContent =
+                        `R$ ${total.toFixed(2)}`;
+                }
+            };
 
-                    const p =
-                        produtosEditados[idx];
+        // =====================================================
+        // EVENTOS PRODUTOS
+        // =====================================================
 
-                    p.nome =
-                        row.querySelector(
-                            '.nome-produto'
-                        )?.value.trim() ||
-                        'Produto';
+        modal
+            ?.querySelectorAll(
+                `
+                .nome-produto,
+                .sku-produto,
+                .qtd-produto,
+                .valor-produto,
+                .ncm-produto
+                `
+            )
+            .forEach(
+                input => {
 
-                    p.sku =
-                        row.querySelector(
-                            '.sku-produto'
-                        )?.value.trim() ||
-                        'SEM_SKU';
-
-                    p.quantidade =
-                        parseFloat(
-                            row.querySelector(
-                                '.qtd-produto'
-                            )?.value
-                        ) || 0;
-
-                    p.valor_unitario =
-                        parseFloat(
-                            row.querySelector(
-                                '.valor-produto'
-                            )?.value
-                        ) || 0;
-
-                    p.ncm =
-                        row.querySelector(
-                            '.ncm-produto'
-                        )?.value.trim() ||
-                        '87149990';
-
-                    const subtotalCell =
-                        row.querySelector(
-                            '.subtotal-produto'
-                        );
-
-                    if (subtotalCell) {
-
-                        subtotalCell.textContent =
-                            `R$ ${(p.quantidade * p.valor_unitario).toFixed(2)}`;
-                    }
-
-                    recalcularTotalGeral();
+                    input.addEventListener(
+                        'input',
+                        recalcularTotalGeral
+                    );
                 }
             );
-        });
 
         // =====================================================
-        // BOTÃO EMITIR
+        // BOTÃO FINAL
         // =====================================================
 
-        document
-            .getElementById(
-                'confirmarProdutosFinalBtn'
+        modal
+            ?.querySelector(
+                '#confirmarProdutosFinalBtn'
             )
             ?.addEventListener(
                 'click',
-                async function (e) {
+                async event => {
 
-                    e.preventDefault();
-                    e.stopPropagation();
+                    event.preventDefault();
+
+                    event.stopPropagation();
 
                     await confirmarProdutosEditados();
                 }
             );
+
+        console.log(
+            '✅ Modal NF-e carregado:',
+            {
+                orders:
+                    window
+                        ._nfeOrderIdsAtuais,
+
+                itens:
+                    produtosEditados
+                        .length,
+
+                total:
+                    produtosEditados.reduce(
+                        (
+                            total,
+                            p
+                        ) =>
+                            total +
+                            (
+                                Number(
+                                    p.quantidade
+                                ) *
+                                Number(
+                                    p.valor_unitario
+                                )
+                            ),
+                        0
+                    )
+            }
+        );
 
     } catch (error) {
 
@@ -2290,13 +3306,16 @@ async function abrirModalEdicaoProdutos(orderId) {
         );
 
         showToast(
-            'Erro ao carregar dados da emissão: ' +
+            '❌ Erro ao carregar dados da emissão: ' +
             error.message,
             'error'
         );
 
-        pendingEmitOrderId = null;
-        vendaIdParaEdicao = null;
+        pendingEmitOrderId =
+            null;
+
+        vendaIdParaEdicao =
+            null;
     }
 }
 
@@ -3739,156 +4758,19 @@ async function verificarEstoqueVenda(
 
     try {
 
+        // =====================================================
+        // DESCOBRIR TODOS OS PRODUTOS FÍSICOS DA VENDA
+        // =====================================================
+
         const itensParaVerificar =
-            [];
+            montarItensEstoqueVendaNFE(
+                venda
+            );
 
-        // =====================================================
-        // KIT JÁ CONFIGURADO NA ABA VENDAS ML
-        // =====================================================
-
-        if (
-            venda.eh_kit &&
-            Array.isArray(
-                venda.skus_kit
-            ) &&
-            venda.skus_kit.length >
-                0
-        ) {
-
-            for (
-                const item
-                of venda.skus_kit
-            ) {
-
-                const {
-                    sku,
-                    multiplicador
-                } =
-                    extrairSkuEQuantidade(
-                        item.sku
-                    );
-
-                itensParaVerificar.push({
-
-                    sku,
-
-                    sku_original:
-                        item.sku,
-
-                    quantidade_venda:
-                        (
-                            Number(
-                                item.estoque ||
-                                1
-                            ) *
-                            Number(
-                                venda.quantidade ||
-                                1
-                            ) *
-                            Number(
-                                multiplicador ||
-                                1
-                            )
-                        )
-                });
-            }
-
-        // =====================================================
-        // FORMATO DA ABA VENDAS ML
-        // =====================================================
-
-        } else if (
-            venda.sku
-        ) {
-
-            const {
-                sku,
-                multiplicador
-            } =
-                extrairSkuEQuantidade(
-                    venda.sku
-                );
-
-            itensParaVerificar.push({
-
-                sku,
-
-                sku_original:
-                    venda.sku,
-
-                quantidade_venda:
-                    Number(
-                        venda.quantidade ||
-                        venda.quantity ||
-                        1
-                    ) *
-                    Number(
-                        multiplicador ||
-                        1
-                    )
-            });
-
-        // =====================================================
-        // FALLBACK: ORDER ORIGINAL
-        // =====================================================
-
-        } else if (
-            Array.isArray(
-                venda.order_items
-            )
-        ) {
-
-            for (
-                const item
-                of venda.order_items
-            ) {
-
-                const skuOriginal =
-                    item.item
-                        ?.seller_sku;
-
-                if (!skuOriginal) {
-
-                    itensParaVerificar.push({
-
-                        sku:
-                            'SEM_SKU',
-
-                        quantidade_venda:
-                            item.quantity ||
-                            1
-                    });
-
-                    continue;
-                }
-
-                const {
-                    sku,
-                    multiplicador
-                } =
-                    extrairSkuEQuantidade(
-                        skuOriginal
-                    );
-
-                itensParaVerificar.push({
-
-                    sku,
-
-                    sku_original:
-                        skuOriginal,
-
-                    quantidade_venda:
-                        Number(
-                            item.quantity ||
-                            1
-                        ) *
-                        Number(
-                            multiplicador ||
-                            1
-                        )
-                });
-            }
-        }
+        console.log(
+            '📦 Produtos físicos que precisam sair do estoque:',
+            itensParaVerificar
+        );
 
         if (
             itensParaVerificar.length ===
@@ -3906,7 +4788,7 @@ async function verificarEstoqueVenda(
         }
 
         // =====================================================
-        // CONSULTAR CADASTRO
+        // CONSULTAR TODOS OS SKUs
         // =====================================================
 
         const resultado =
@@ -3920,7 +4802,7 @@ async function verificarEstoqueVenda(
             if (
                 !item.sku ||
                 item.sku ===
-                'SEM_SKU'
+                    'SEM_SKU'
             ) {
 
                 resultado.push({
@@ -3948,9 +4830,14 @@ async function verificarEstoqueVenda(
                     .from(
                         'produtos_estoque'
                     )
-                    .select(
-                        'id, sku, nome, quantidade'
-                    )
+                    .select(`
+                        id,
+                        sku,
+                        nome,
+                        quantidade,
+                        mlb_codes,
+                        bloquear_sync_ml
+                    `)
                     .eq(
                         'sku',
                         item.sku
@@ -3958,9 +4845,23 @@ async function verificarEstoqueVenda(
                     .maybeSingle();
 
             if (
+                error
+            ) {
+
+                console.warn(
+                    `⚠️ Erro consultando SKU ${item.sku}:`,
+                    error
+                );
+            }
+
+            if (
                 error ||
                 !produto
             ) {
+
+                console.warn(
+                    `❌ SKU físico não cadastrado: ${item.sku}`
+                );
 
                 resultado.push({
 
@@ -3975,6 +4876,10 @@ async function verificarEstoqueVenda(
 
                 continue;
             }
+
+            console.log(
+                `✅ SKU físico encontrado: ${item.sku} | baixa=${item.quantidade_venda} | estoque=${produto.quantidade}`
+            );
 
             resultado.push({
 
@@ -3993,17 +4898,51 @@ async function verificarEstoqueVenda(
                     Number(
                         produto.quantidade ||
                         0
+                    ),
+
+                mlb_codes:
+                    produto.mlb_codes,
+
+                bloquear_sync_ml:
+                    Boolean(
+                        produto.bloquear_sync_ml
                     )
             });
         }
+
+        // =====================================================
+        // TODOS PRECISAM EXISTIR
+        // =====================================================
 
         const todosEncontrados =
             resultado.length >
                 0 &&
             resultado.every(
                 produto =>
-                    produto.encontrado
+                    produto.encontrado ===
+                    true
             );
+
+        if (
+            !todosEncontrados
+        ) {
+
+            const faltantes =
+                resultado
+                    .filter(
+                        item =>
+                            !item.encontrado
+                    )
+                    .map(
+                        item =>
+                            item.sku
+                    );
+
+            console.warn(
+                '⚠️ Baixa bloqueada. SKUs não encontrados:',
+                faltantes
+            );
+        }
 
         return {
 
@@ -4280,31 +5219,210 @@ async function salvarNCMporSKU(sku, ncm) {
 // FUNÇÃO PARA EXTRAIR SKU E QUANTIDADE DO PREFIXO
 // =========================================================
 
-function extrairSkuEQuantidade(skuComPrefixo) {
-    if (!skuComPrefixo || skuComPrefixo === 'SEM_SKU' || skuComPrefixo === 'N/A') {
-        return { sku: skuComPrefixo, multiplicador: 1 };
-    }
-    
-    // Verifica se tem prefixo numérico de 3 dígitos no início
-    const match = skuComPrefixo.match(/^(\d{3})(.+)$/);
-    if (match) {
-        const prefixo = parseInt(match[1]);
-        let skuReal = match[2];
-        if (skuReal.startsWith('/') || skuReal.startsWith('\\')) {
-            skuReal = skuReal.substring(1);
-        }
-        return { 
-            sku: skuReal, 
-            multiplicador: prefixo,
-            skuOriginal: skuComPrefixo 
+function extrairSkuEQuantidade(
+    skuComPrefixo
+) {
+
+    if (
+        !skuComPrefixo ||
+        skuComPrefixo === 'SEM_SKU' ||
+        skuComPrefixo === 'N/A'
+    ) {
+
+        return {
+
+            sku:
+                skuComPrefixo,
+
+            multiplicador:
+                1,
+
+            skuOriginal:
+                skuComPrefixo
         };
     }
-    
-    return { 
-        sku: skuComPrefixo, 
-        multiplicador: 1, 
-        skuOriginal: skuComPrefixo 
+
+    const texto =
+        String(
+            skuComPrefixo
+        ).trim();
+
+    // =====================================================
+    // PREFIXO DE 3 DÍGITOS
+    //
+    // 001ABC = 1 x ABC
+    // 002ABC = 2 x ABC
+    // 010ABC = 10 x ABC
+    // =====================================================
+
+    const match =
+        texto.match(
+            /^(\d{3})(.+)$/
+        );
+
+    if (match) {
+
+        let quantidade =
+            parseInt(
+                match[1],
+                10
+            );
+
+        let skuReal =
+            String(
+                match[2] ||
+                ''
+            ).trim();
+
+        if (
+            !Number.isFinite(
+                quantidade
+            ) ||
+            quantidade <=
+                0
+        ) {
+
+            quantidade = 1;
+        }
+
+        if (
+            skuReal.startsWith(
+                '/'
+            ) ||
+            skuReal.startsWith(
+                '\\'
+            )
+        ) {
+
+            skuReal =
+                skuReal.substring(
+                    1
+                );
+        }
+
+        return {
+
+            sku:
+                skuReal,
+
+            multiplicador:
+                quantidade,
+
+            skuOriginal:
+                texto
+        };
+    }
+
+    return {
+
+        sku:
+            texto,
+
+        multiplicador:
+            1,
+
+        skuOriginal:
+            texto
     };
+}
+
+function decomporSkuCompostoNFE(
+    skuOriginal,
+    quantidadeVenda = 1
+) {
+
+    if (
+        !skuOriginal ||
+        skuOriginal === 'SEM_SKU' ||
+        skuOriginal === 'N/A'
+    ) {
+
+        return [];
+    }
+
+    const quantidadeDoAnuncio =
+        Number(
+            quantidadeVenda
+        ) || 1;
+
+    // =====================================================
+    // "." SEPARA PRODUTOS FÍSICOS DIFERENTES
+    // =====================================================
+
+    const partes =
+        String(
+            skuOriginal
+        )
+            .split('.')
+            .map(
+                parte =>
+                    parte.trim()
+            )
+            .filter(Boolean);
+
+    const resultado =
+        [];
+
+    for (
+        const parte
+        of partes
+    ) {
+
+        const {
+            sku,
+            multiplicador
+        } =
+            extrairSkuEQuantidade(
+                parte
+            );
+
+        if (
+            !sku ||
+            sku === 'SEM_SKU' ||
+            sku === 'N/A'
+        ) {
+
+            continue;
+        }
+
+        const qtdComponente =
+            Number(
+                multiplicador ||
+                1
+            );
+
+        resultado.push({
+
+            // SKU REAL cadastrado em produtos_estoque
+            sku,
+
+            // Ex.: 00200161POREIESTRP15000
+            sku_original:
+                parte,
+
+            // SKU inteiro do anúncio
+            sku_anuncio:
+                String(
+                    skuOriginal
+                ),
+
+            multiplicador:
+                qtdComponente,
+
+            // quantidade realmente retirada do estoque
+            quantidade_venda:
+                quantidadeDoAnuncio *
+                qtdComponente
+        });
+    }
+
+    console.log(
+        '🧩 SKU composto decomposto:',
+        skuOriginal,
+        resultado
+    );
+
+    return resultado;
 }
 
 // =========================================================
@@ -4569,18 +5687,149 @@ async function mostrarAbaNFE(
     }
 }
 
-// =========================================================
-// HANDLERS PARA OS BOTÕES DA TABELA
-// =========================================================
+function handleEmitirNFEClick(
+    event
+) {
 
-// Handler para emitir NF-e
-function handleEmitirNFEClick(event) {
-    const vendaId = event.currentTarget.dataset.vendaId;
+    const vendaId =
+        normalizarOrderIdML(
+            event
+                .currentTarget
+                .dataset
+                .vendaId
+        );
+
     if (!vendaId) {
-        showToast('❌ ID da venda não encontrado', 'error');
+
+        showToast(
+            '❌ ID da venda não encontrado',
+            'error'
+        );
+
         return;
     }
-    abrirModalEdicaoProdutos(vendaId);
+
+    // =====================================================
+    // LOCALIZAR A VENDA / PACK NA TABELA ATUAL
+    // =====================================================
+
+    const vendaGrupo =
+        Array.isArray(
+            vendasPendentes
+        )
+            ? vendasPendentes.find(
+                venda => {
+
+                    const idPrincipal =
+                        normalizarOrderIdML(
+                            venda.id_venda_ml ||
+                            venda.id
+                        );
+
+                    if (
+                        idPrincipal ===
+                        vendaId
+                    ) {
+
+                        return true;
+                    }
+
+                    if (
+                        Array.isArray(
+                            venda._order_ids_pack
+                        )
+                    ) {
+
+                        return venda
+                            ._order_ids_pack
+                            .map(
+                                normalizarOrderIdML
+                            )
+                            .includes(
+                                vendaId
+                            );
+                    }
+
+                    return false;
+                }
+            )
+            : null;
+
+    // =====================================================
+    // GUARDAR O GRUPO ATUAL
+    // =====================================================
+
+    window._nfeVendaGrupoAtual =
+        vendaGrupo ||
+        null;
+
+    let orderIds =
+        vendaGrupo
+            ?._order_ids_pack ||
+        [
+            vendaId
+        ];
+
+    orderIds =
+        [
+            ...new Set(
+
+                orderIds
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(Boolean)
+            )
+        ];
+
+    if (
+        orderIds.length ===
+        0
+    ) {
+
+        orderIds = [
+            vendaId
+        ];
+    }
+
+    window._nfeOrderIdsAtuais =
+        orderIds;
+
+    window._nfePackIdAtual =
+        vendaGrupo
+            ?._pack_id ||
+        null;
+
+    window._nfeShipmentIdAtual =
+        vendaGrupo
+            ?._shipment_id ||
+        null;
+
+    console.log(
+        '📦 Venda selecionada para emissão:',
+        {
+            principal:
+                vendaId,
+
+            ehPack:
+                orderIds.length > 1,
+
+            packId:
+                window
+                    ._nfePackIdAtual,
+
+            shipmentId:
+                window
+                    ._nfeShipmentIdAtual,
+
+            orders:
+                orderIds
+        }
+    );
+
+    abrirModalEdicaoProdutos(
+        vendaId
+    );
 }
 
 // Handler para ver NF-e
@@ -6599,6 +7848,1452 @@ async function salvarVendasCacheNFE(
     }
 }
 
+function obterDadosCompletosVendaNFE(
+    venda
+) {
+
+    if (!venda) {
+        return {};
+    }
+
+    let dados =
+        venda.dados_completos ||
+        {};
+
+    if (
+        typeof dados ===
+        'string'
+    ) {
+
+        try {
+
+            dados =
+                JSON.parse(
+                    dados
+                );
+
+        } catch (error) {
+
+            dados = {};
+        }
+    }
+
+    if (
+        !dados ||
+        typeof dados !==
+            'object'
+    ) {
+
+        return {};
+    }
+
+    return dados;
+}
+
+function obterPackIdNFE(
+    venda
+) {
+
+    if (!venda) {
+        return null;
+    }
+
+    const dados =
+        obterDadosCompletosVendaNFE(
+            venda
+        );
+
+    const vendaJson =
+        parseObjetoSeguroNFE(
+            venda.venda_json
+        );
+
+    const candidatos = [
+
+        venda.pack_id,
+
+        venda.pack?.id,
+
+        venda._pack_id,
+
+        dados.pack_id,
+
+        dados.pack?.id,
+
+        vendaJson.pack_id,
+
+        vendaJson.pack?.id
+    ];
+
+    for (
+        const candidato
+        of candidatos
+    ) {
+
+        if (
+            candidato !==
+                null &&
+            candidato !==
+                undefined &&
+            String(
+                candidato
+            ).trim()
+        ) {
+
+            return String(
+                candidato
+            ).trim();
+        }
+    }
+
+    return null;
+}
+
+function obterShipmentIdNFE(
+    venda
+) {
+
+    if (!venda) {
+        return null;
+    }
+
+    const dados =
+        obterDadosCompletosVendaNFE(
+            venda
+        );
+
+    const info =
+        parseObjetoSeguroNFE(
+            venda.informacoes_envio
+        );
+
+    const candidatos = [
+
+        venda.shipment_id,
+
+        venda._shipment_id,
+
+        venda.id_envio,
+
+        venda.shipping?.id,
+
+        info.id,
+
+        info.shipment_id,
+
+        dados.shipping?.id,
+
+        dados.id_envio
+    ];
+
+    for (
+        const candidato
+        of candidatos
+    ) {
+
+        if (
+            candidato !==
+                null &&
+            candidato !==
+                undefined &&
+            String(
+                candidato
+            ).trim()
+        ) {
+
+            return String(
+                candidato
+            ).trim();
+        }
+    }
+
+    return null;
+}
+
+function obterChaveAgrupamentoNFE(
+    venda
+) {
+
+    if (!venda) {
+        return null;
+    }
+
+    const orderId =
+        normalizarOrderIdML(
+            venda.id_venda_ml ||
+            venda.id
+        );
+
+    // =====================================================
+    // 1. PACK_ID REAL
+    // =====================================================
+
+    const packId =
+        obterPackIdNFE(
+            venda
+        );
+
+    if (packId) {
+
+        return (
+            `PACK:${packId}`
+        );
+    }
+
+    // =====================================================
+    // 2. SHIPMENT
+    //
+    // Duas orders dentro do MESMO pacote de despacho
+    // devem virar uma única linha.
+    // =====================================================
+
+    const shipmentId =
+        obterShipmentIdNFE(
+            venda
+        );
+
+    if (
+        shipmentId &&
+        !venda._is_full
+    ) {
+
+        return (
+            `SHIPMENT:${shipmentId}`
+        );
+    }
+
+    // =====================================================
+    // 3. VENDA INDIVIDUAL
+    // =====================================================
+
+    return (
+        `ORDER:${orderId}`
+    );
+}
+
+function agruparVendasEmPacksNFE(
+    vendas
+) {
+
+    if (
+        !Array.isArray(
+            vendas
+        ) ||
+        vendas.length ===
+            0
+    ) {
+
+        return [];
+    }
+
+    const grupos =
+        new Map();
+
+    // =====================================================
+    // AGRUPAR
+    // =====================================================
+
+    for (
+        const venda
+        of vendas
+    ) {
+
+        if (!venda) {
+            continue;
+        }
+
+        const chave =
+            obterChaveAgrupamentoNFE(
+                venda
+            );
+
+        if (!chave) {
+            continue;
+        }
+
+        if (
+            !grupos.has(
+                chave
+            )
+        ) {
+
+            grupos.set(
+                chave,
+                []
+            );
+        }
+
+        grupos
+            .get(
+                chave
+            )
+            .push(
+                venda
+            );
+    }
+
+    const resultado =
+        [];
+
+    // =====================================================
+    // MONTAR GRUPOS
+    // =====================================================
+
+    for (
+        const [
+            chave,
+            membrosBrutos
+        ]
+        of grupos.entries()
+    ) {
+
+        if (
+            !Array.isArray(
+                membrosBrutos
+            ) ||
+            membrosBrutos.length ===
+                0
+        ) {
+
+            continue;
+        }
+
+        // =================================================
+        // ELIMINAR POSSÍVEL REPETIÇÃO DA MESMA ORDER
+        // =================================================
+
+        const mapaOrders =
+            new Map();
+
+        membrosBrutos.forEach(
+            venda => {
+
+                const id =
+                    normalizarOrderIdML(
+                        venda.id_venda_ml ||
+                        venda.id
+                    );
+
+                if (!id) {
+                    return;
+                }
+
+                mapaOrders.set(
+                    id,
+                    venda
+                );
+            }
+        );
+
+        const membros =
+            [
+                ...mapaOrders.values()
+            ];
+
+        if (
+            membros.length ===
+            0
+        ) {
+
+            continue;
+        }
+
+        const principal =
+            membros[0];
+
+        const orderIds =
+            membros
+                .map(
+                    venda =>
+                        normalizarOrderIdML(
+                            venda.id_venda_ml ||
+                            venda.id
+                        )
+                )
+                .filter(Boolean);
+
+        const packId =
+            membros
+                .map(
+                    obterPackIdNFE
+                )
+                .find(Boolean) ||
+            null;
+
+        const shipmentId =
+            membros
+                .map(
+                    obterShipmentIdNFE
+                )
+                .find(Boolean) ||
+            null;
+
+        // =================================================
+        // VENDA INDIVIDUAL
+        // =================================================
+
+        if (
+            membros.length ===
+            1
+        ) {
+
+            resultado.push({
+
+                ...principal,
+
+                _eh_pack:
+                    false,
+
+                _pack_key:
+                    chave,
+
+                _pack_id:
+                    packId,
+
+                _shipment_id:
+                    shipmentId,
+
+                _order_ids_pack:
+                    orderIds,
+
+                _membros_pack:
+                    membros,
+
+                _quantidade_orders_pack:
+                    1
+            });
+
+            continue;
+        }
+
+        // =================================================
+        // É PACK
+        // =================================================
+
+        console.log(
+            '📦 PACK ENCONTRADO:',
+            {
+                chave,
+                packId,
+                shipmentId,
+                orders:
+                    orderIds
+            }
+        );
+
+        // =================================================
+        // ITENS DE TODAS AS ORDERS
+        // =================================================
+
+        const todosItens =
+            [];
+
+        for (
+            const membro
+            of membros
+        ) {
+
+            const orderIdMembro =
+                normalizarOrderIdML(
+                    membro.id_venda_ml ||
+                    membro.id
+                );
+
+            if (
+                Array.isArray(
+                    membro.order_items
+                ) &&
+                membro.order_items.length >
+                    0
+            ) {
+
+                membro.order_items
+                    .forEach(
+                        item => {
+
+                            todosItens.push({
+
+                                ...item,
+
+                                _order_id:
+                                    orderIdMembro
+                            });
+                        }
+                    );
+
+                continue;
+            }
+
+            // =============================================
+            // FALLBACK DO CACHE vendas_ml
+            // =============================================
+
+            const sku =
+                membro.sku ||
+                membro.item_sku ||
+                membro.codigo ||
+                'SEM_SKU';
+
+            const quantidade =
+                Number(
+                    membro.quantidade ||
+                    membro.quantity ||
+                    1
+                );
+
+            const valor =
+                Number(
+                    membro._valor_produto ??
+                    membro.valor_produto ??
+                    membro.valor_total ??
+                    membro.total_amount ??
+                    0
+                );
+
+            todosItens.push({
+
+                _order_id:
+                    orderIdMembro,
+
+                quantity:
+                    quantidade,
+
+                unit_price:
+                    quantidade >
+                    0
+                        ? valor /
+                          quantidade
+                        : valor,
+
+                item: {
+
+                    title:
+                        membro.titulo ||
+                        membro.title ||
+                        'Produto',
+
+                    seller_sku:
+                        sku
+                }
+            });
+        }
+
+        // =================================================
+        // SOMAR VALORES
+        // =================================================
+
+        const valorProduto =
+            membros.reduce(
+                (
+                    total,
+                    venda
+                ) => {
+
+                    return (
+                        total +
+                        Number(
+                            venda._valor_produto ??
+                            venda.valor_produto ??
+                            venda.valor_total ??
+                            venda.total_amount ??
+                            0
+                        )
+                    );
+                },
+                0
+            );
+
+        const valorFrete =
+            membros.reduce(
+                (
+                    total,
+                    venda
+                ) => {
+
+                    return (
+                        total +
+                        Number(
+                            venda._valor_frete ??
+                            venda.valor_frete ??
+                            0
+                        )
+                    );
+                },
+                0
+            );
+
+        const totalPago =
+            membros.reduce(
+                (
+                    total,
+                    venda
+                ) => {
+
+                    return (
+                        total +
+                        Number(
+                            venda._total_pago ??
+                            venda.total_pago ??
+                            venda.valor_total ??
+                            venda.total_amount ??
+                            venda._valor_produto ??
+                            0
+                        )
+                    );
+                },
+                0
+            );
+
+        // =================================================
+        // NF-E
+        // =================================================
+
+        const temNfe =
+            membros.some(
+                venda =>
+                    venda._tem_nfe ===
+                    true
+            );
+
+        // =================================================
+        // ESTOQUE
+        // =================================================
+
+        const naoFull =
+            membros.filter(
+                venda =>
+                    !venda._is_full
+            );
+
+        const estoqueBaixado =
+            naoFull.length >
+                0 &&
+            naoFull.every(
+                venda =>
+                    venda._estoque_baixado ===
+                    true
+            );
+
+        let estoqueStatus =
+            'nao_verificado';
+
+        if (
+            estoqueBaixado
+        ) {
+
+            estoqueStatus =
+                naoFull.some(
+                    venda =>
+                        venda._estoque_status ===
+                        'baixado_sync_pendente'
+                )
+                    ? 'baixado_sync_pendente'
+                    : 'baixado';
+
+        } else if (
+            naoFull.some(
+                venda =>
+                    venda._estoque_status ===
+                    'sem_cadastro'
+            )
+        ) {
+
+            estoqueStatus =
+                'sem_cadastro';
+
+        } else if (
+            naoFull.length >
+                0 &&
+            naoFull.every(
+                venda =>
+                    venda._estoque_status ===
+                    'disponivel'
+            )
+        ) {
+
+            estoqueStatus =
+                'disponivel';
+
+        } else if (
+            naoFull.some(
+                venda =>
+                    venda._estoque_status ===
+                    'processando'
+            )
+        ) {
+
+            estoqueStatus =
+                'processando';
+
+        } else if (
+            naoFull.some(
+                venda =>
+                    venda._estoque_status ===
+                    'erro'
+            )
+        ) {
+
+            estoqueStatus =
+                'erro';
+        }
+
+        // =================================================
+        // DETALHES DE ESTOQUE
+        // =================================================
+
+        let detalhesEstoque =
+            [];
+
+        naoFull.forEach(
+            venda => {
+
+                if (
+                    Array.isArray(
+                        venda._estoque_detalhes
+                    )
+                ) {
+
+                    detalhesEstoque.push(
+                        ...venda._estoque_detalhes
+                    );
+                }
+            }
+        );
+
+        if (
+            typeof consolidarItensEstoqueNFE ===
+            'function'
+        ) {
+
+            detalhesEstoque =
+                consolidarItensEstoqueNFE(
+                    detalhesEstoque
+                );
+        }
+
+        // =================================================
+        // DATA DE ENVIO
+        // =================================================
+
+        const datasEnvio =
+            membros
+                .map(
+                    venda =>
+                        venda._data_envio
+                )
+                .filter(Boolean)
+                .sort();
+
+        const dataEnvio =
+            datasEnvio[0] ||
+            principal._data_envio ||
+            null;
+
+        const prazos =
+            membros
+                .map(
+                    venda =>
+                        venda._prazo_envio
+                )
+                .filter(Boolean)
+                .sort(
+                    (
+                        a,
+                        b
+                    ) => {
+
+                        return (
+                            new Date(a) -
+                            new Date(b)
+                        );
+                    }
+                );
+
+        const prazoEnvio =
+            prazos[0] ||
+            principal._prazo_envio ||
+            null;
+
+        // =================================================
+        // MODALIDADE
+        // =================================================
+
+        const logisticType =
+            membros
+                .map(
+                    venda =>
+                        modalidadeEnvioValidaNFE(
+                            venda._logistic_type
+                        )
+                )
+                .find(Boolean) ||
+            '';
+
+        const shippingMode =
+            membros
+                .map(
+                    venda =>
+                        modalidadeEnvioValidaNFE(
+                            venda._shipping_mode
+                        )
+                )
+                .find(Boolean) ||
+            '';
+
+        // =================================================
+        // CLIENTE
+        // =================================================
+
+        const cliente =
+            principal.cliente ||
+
+            principal.buyer
+                ?.nickname ||
+
+            'N/I';
+
+        // =================================================
+        // PACK FINAL
+        // =================================================
+
+        resultado.push({
+
+            ...principal,
+
+            id:
+                orderIds[0],
+
+            id_venda_ml:
+                orderIds[0],
+
+            cliente,
+
+            order_items:
+                todosItens,
+
+            total_amount:
+                totalPago,
+
+            shipment_id:
+                shipmentId,
+
+            id_envio:
+                shipmentId,
+
+            _eh_pack:
+                true,
+
+            _pack_key:
+                chave,
+
+            _pack_id:
+                packId,
+
+            _shipment_id:
+                shipmentId,
+
+            _order_ids_pack:
+                orderIds,
+
+            _membros_pack:
+                membros,
+
+            _quantidade_orders_pack:
+                orderIds.length,
+
+            _data_envio:
+                dataEnvio,
+
+            _prazo_envio:
+                prazoEnvio,
+
+            _logistic_type:
+                logisticType,
+
+            _shipping_mode:
+                shippingMode,
+
+            _is_full:
+                false,
+
+            _tem_nfe:
+                temNfe,
+
+            _valor_produto:
+                valorProduto,
+
+            _valor_frete:
+                valorFrete,
+
+            _total_pago:
+                totalPago,
+
+            _estoque_baixado:
+                estoqueBaixado,
+
+            _estoque_status:
+                estoqueStatus,
+
+            _estoque_detalhes:
+                detalhesEstoque
+        });
+    }
+
+    console.log(
+        `📦 Agrupamento: ${vendas.length} orders → ${resultado.length} linha(s)`
+    );
+
+    return resultado;
+}
+
+function consolidarItensEstoqueNFE(
+    itens
+) {
+
+    const mapa =
+        new Map();
+
+    for (
+        const item
+        of itens || []
+    ) {
+
+        if (
+            !item ||
+            !item.sku
+        ) {
+
+            continue;
+        }
+
+        const sku =
+            String(
+                item.sku
+            ).trim();
+
+        if (!sku) {
+
+            continue;
+        }
+
+        const quantidade =
+            Number(
+                item.quantidade_venda ||
+                0
+            );
+
+        if (
+            mapa.has(
+                sku
+            )
+        ) {
+
+            const existente =
+                mapa.get(
+                    sku
+                );
+
+            existente.quantidade_venda =
+                Number(
+                    existente
+                        .quantidade_venda ||
+                    0
+                ) +
+                quantidade;
+
+            // Guardar origens para facilitar diagnóstico
+            if (
+                item.sku_original &&
+                !existente.skus_origem
+                    .includes(
+                        item.sku_original
+                    )
+            ) {
+
+                existente
+                    .skus_origem
+                    .push(
+                        item.sku_original
+                    );
+            }
+
+        } else {
+
+            mapa.set(
+                sku,
+                {
+
+                    ...item,
+
+                    sku,
+
+                    quantidade_venda:
+                        quantidade,
+
+                    skus_origem:
+                        item.sku_original
+                            ? [
+                                item
+                                    .sku_original
+                            ]
+                            : []
+                }
+            );
+        }
+    }
+
+    return [
+        ...mapa.values()
+    ];
+}
+
+function montarItensEstoqueVendaNFE(
+    venda
+) {
+
+    const itens =
+        [];
+
+    if (!venda) {
+
+        return itens;
+    }
+
+    // =====================================================
+    // 1. PACK
+    //
+    // Cada membro é processado separadamente.
+    // =====================================================
+
+    if (
+        venda._eh_pack &&
+        Array.isArray(
+            venda._membros_pack
+        ) &&
+        venda._membros_pack.length >
+            0
+    ) {
+
+        for (
+            const membro
+            of venda._membros_pack
+        ) {
+
+            const itensMembro =
+                montarItensEstoqueVendaNFE({
+
+                    ...membro,
+
+                    // Evitar entrar novamente neste bloco
+                    _eh_pack:
+                        false,
+
+                    _membros_pack:
+                        null
+                });
+
+            itens.push(
+                ...itensMembro
+            );
+        }
+
+        return consolidarItensEstoqueNFE(
+            itens
+        );
+    }
+
+    // =====================================================
+    // 2. KIT JÁ CONFIGURADO NO SISTEMA
+    // =====================================================
+
+    if (
+        venda.eh_kit &&
+        Array.isArray(
+            venda.skus_kit
+        ) &&
+        venda.skus_kit.length >
+            0
+    ) {
+
+        const quantidadeVenda =
+            Number(
+                venda.quantidade ||
+                venda.quantity ||
+                1
+            );
+
+        for (
+            const itemKit
+            of venda.skus_kit
+        ) {
+
+            const quantidadeKit =
+                Number(
+                    itemKit.estoque ||
+                    itemKit.quantidade ||
+                    1
+                );
+
+            const componentes =
+                decomporSkuCompostoNFE(
+
+                    itemKit.sku,
+
+                    quantidadeVenda *
+                    quantidadeKit
+                );
+
+            itens.push(
+                ...componentes
+            );
+        }
+
+        return consolidarItensEstoqueNFE(
+            itens
+        );
+    }
+
+    // =====================================================
+    // 3. ORDER_ITEMS
+    //
+    // Prioridade sobre venda.sku porque uma order pode
+    // conter mais de um item.
+    // =====================================================
+
+    if (
+        Array.isArray(
+            venda.order_items
+        ) &&
+        venda.order_items.length >
+            0
+    ) {
+
+        for (
+            const item
+            of venda.order_items
+        ) {
+
+            const skuOriginal =
+                item.item
+                    ?.seller_sku ||
+                item.seller_sku ||
+                '';
+
+            const quantidadeVenda =
+                Number(
+                    item.quantity ||
+                    1
+                );
+
+            if (!skuOriginal) {
+
+                itens.push({
+
+                    sku:
+                        'SEM_SKU',
+
+                    sku_original:
+                        'SEM_SKU',
+
+                    quantidade_venda:
+                        quantidadeVenda
+                });
+
+                continue;
+            }
+
+            // =============================================
+            // AQUI ENTRA O SKU COM "."
+            // =============================================
+
+            const componentes =
+                decomporSkuCompostoNFE(
+                    skuOriginal,
+                    quantidadeVenda
+                );
+
+            itens.push(
+                ...componentes
+            );
+        }
+
+        return consolidarItensEstoqueNFE(
+            itens
+        );
+    }
+
+    // =====================================================
+    // 4. FORMATO DA TABELA vendas_ml
+    // =====================================================
+
+    if (
+        venda.sku
+    ) {
+
+        const quantidadeVenda =
+            Number(
+                venda.quantidade ||
+                venda.quantity ||
+                1
+            );
+
+        const componentes =
+            decomporSkuCompostoNFE(
+                venda.sku,
+                quantidadeVenda
+            );
+
+        itens.push(
+            ...componentes
+        );
+    }
+
+    return consolidarItensEstoqueNFE(
+        itens
+    );
+}
+
+function modalidadeEnvioValidaNFE(valor) {
+
+    if (
+        valor === null ||
+        valor === undefined
+    ) {
+        return '';
+    }
+
+    const texto =
+        String(valor).trim();
+
+    if (!texto) {
+        return '';
+    }
+
+    const normalizado =
+        texto
+            .toUpperCase()
+            .trim();
+
+    const invalidos = [
+        'N/I',
+        'NI',
+        'N/A',
+        'NA',
+        'NULL',
+        'UNDEFINED',
+        'NÃO ESPECIFICADO',
+        'NAO ESPECIFICADO',
+        'NÃO INFORMADO',
+        'NAO INFORMADO',
+        '-'
+    ];
+
+    if (
+        invalidos.includes(
+            normalizado
+        )
+    ) {
+        return '';
+    }
+
+    return texto;
+}
+
+function parseObjetoSeguroNFE(valor) {
+
+    if (!valor) {
+        return {};
+    }
+
+    if (
+        typeof valor ===
+        'object'
+    ) {
+        return valor;
+    }
+
+    if (
+        typeof valor ===
+        'string'
+    ) {
+
+        try {
+
+            const parsed =
+                JSON.parse(valor);
+
+            if (
+                parsed &&
+                typeof parsed ===
+                    'object'
+            ) {
+                return parsed;
+            }
+
+        } catch (error) {
+
+            return {};
+        }
+    }
+
+    return {};
+}
+
+function extrairModalidadeEnvioLocalNFE(
+    venda
+) {
+
+    if (!venda) {
+
+        return {
+            logisticType: '',
+            shippingMode: ''
+        };
+    }
+
+    const infoEnvio =
+        parseObjetoSeguroNFE(
+            venda.informacoes_envio
+        );
+
+    const dadosCompletos =
+        parseObjetoSeguroNFE(
+            venda.dados_completos
+        );
+
+    const vendaJson =
+        parseObjetoSeguroNFE(
+            venda.venda_json
+        );
+
+    // =====================================================
+    // LOGISTIC TYPE
+    // =====================================================
+
+    const candidatosLogistic = [
+
+        venda._logistic_type,
+
+        venda.logistic_type,
+
+        venda.shipping
+            ?.logistic_type,
+
+        infoEnvio
+            ?.logistic_type,
+
+        infoEnvio
+            ?.sla
+            ?.logistic_type,
+
+        dadosCompletos
+            ?.shipping
+            ?.logistic_type,
+
+        vendaJson
+            ?._logistic_type,
+
+        vendaJson
+            ?.shipping
+            ?.logistic_type,
+
+        venda.tipo_envio,
+
+        venda.meio_envio,
+
+        infoEnvio.tipo
+    ];
+
+    let logisticType = '';
+
+    for (
+        const candidato
+        of candidatosLogistic
+    ) {
+
+        const valor =
+            modalidadeEnvioValidaNFE(
+                candidato
+            );
+
+        if (valor) {
+
+            logisticType =
+                valor;
+
+            break;
+        }
+    }
+
+    // =====================================================
+    // SHIPPING MODE
+    // =====================================================
+
+    const candidatosMode = [
+
+        venda._shipping_mode,
+
+        venda.shipping_mode,
+
+        venda.shipping
+            ?.shipping_mode,
+
+        venda.shipping
+            ?.mode,
+
+        infoEnvio
+            ?.shipping_mode,
+
+        infoEnvio
+            ?.mode,
+
+        infoEnvio
+            ?.sla
+            ?.shipping_mode,
+
+        dadosCompletos
+            ?.shipping
+            ?.shipping_mode,
+
+        dadosCompletos
+            ?.shipping
+            ?.mode,
+
+        vendaJson
+            ?._shipping_mode,
+
+        vendaJson
+            ?.shipping
+            ?.shipping_mode
+    ];
+
+    let shippingMode = '';
+
+    for (
+        const candidato
+        of candidatosMode
+    ) {
+
+        const valor =
+            modalidadeEnvioValidaNFE(
+                candidato
+            );
+
+        if (valor) {
+
+            shippingMode =
+                valor;
+
+            break;
+        }
+    }
+
+    return {
+        logisticType,
+        shippingMode
+    };
+}
+
 async function carregarVendasCacheNFE(
     dataEnvio = null
 ) {
@@ -6623,54 +9318,364 @@ async function carregarVendasCacheNFE(
                     }
                 )
                 .limit(
-                    2000
+                    3000
                 );
 
         if (error) {
+
             throw error;
         }
 
-        let registros =
-            Array.isArray(data)
+        const registros =
+            Array.isArray(
+                data
+            )
                 ? data
                 : [];
 
         // =====================================================
-        // FILTRO
+        // NORMALIZAR ORDERS
+        // =====================================================
+
+        const vendasNormalizadas =
+            registros.map(
+                registro => {
+
+                    let venda =
+                        registro.venda_json ||
+                        {};
+
+                    if (
+                        typeof venda ===
+                        'string'
+                    ) {
+
+                        try {
+
+                            venda =
+                                JSON.parse(
+                                    venda
+                                );
+
+                        } catch (error) {
+
+                            venda = {};
+                        }
+                    }
+
+                    const idVenda =
+                        normalizarOrderIdML(
+                            registro.id_venda_ml
+                        );
+
+                    // =========================================
+                    // MODALIDADE
+                    // =========================================
+
+                    const local =
+                        extrairModalidadeEnvioLocalNFE(
+                            venda
+                        );
+
+                    const logisticType =
+                        modalidadeEnvioValidaNFE(
+                            registro.logistic_type
+                        ) ||
+
+                        modalidadeEnvioValidaNFE(
+                            local.logisticType
+                        ) ||
+
+                        '';
+
+                    const shippingMode =
+                        modalidadeEnvioValidaNFE(
+                            registro.shipping_mode
+                        ) ||
+
+                        modalidadeEnvioValidaNFE(
+                            local.shippingMode
+                        ) ||
+
+                        '';
+
+                    // =========================================
+                    // SHIPMENT
+                    // =========================================
+
+                    const shipmentId =
+                        registro.shipment_id ||
+
+                        venda.shipment_id ||
+
+                        venda.id_envio ||
+
+                        venda.shipping
+                            ?.id ||
+
+                        obterShipmentIdNFE(
+                            venda
+                        ) ||
+
+                        null;
+
+                    // =========================================
+                    // ORDER ITEMS
+                    // =========================================
+
+                    let orderItems =
+                        Array.isArray(
+                            venda.order_items
+                        )
+                            ? venda.order_items
+                            : [];
+
+                    if (
+                        orderItems.length ===
+                            0 &&
+                        (
+                            registro.sku ||
+                            venda.sku
+                        )
+                    ) {
+
+                        const quantidade =
+                            Number(
+                                venda.quantidade ||
+                                venda.quantity ||
+                                1
+                            );
+
+                        const valorProduto =
+                            Number(
+                                registro.valor_produto ||
+                                venda._valor_produto ||
+                                venda.valor_total ||
+                                0
+                            );
+
+                        orderItems = [
+                            {
+
+                                quantity:
+                                    quantidade,
+
+                                unit_price:
+                                    quantidade >
+                                    0
+                                        ? valorProduto /
+                                          quantidade
+                                        : valorProduto,
+
+                                item: {
+
+                                    title:
+                                        venda.titulo ||
+                                        venda.title ||
+                                        'Produto',
+
+                                    seller_sku:
+                                        registro.sku ||
+                                        venda.sku ||
+                                        'SEM_SKU'
+                                }
+                            }
+                        ];
+                    }
+
+                    return {
+
+                        ...venda,
+
+                        id:
+                            idVenda,
+
+                        id_venda_ml:
+                            idVenda,
+
+                        shipment_id:
+                            shipmentId,
+
+                        id_envio:
+                            shipmentId,
+
+                        cliente:
+                            registro.cliente ||
+                            venda.cliente,
+
+                        date_created:
+                            registro.data_venda ||
+                            venda.date_created,
+
+                        data_venda:
+                            registro.data_venda ||
+                            venda.data_venda ||
+                            venda.date_created,
+
+                        buyer:
+                            venda.buyer || {
+                                nickname:
+                                    registro.cliente ||
+                                    venda.cliente ||
+                                    'N/I'
+                            },
+
+                        order_items:
+                            orderItems,
+
+                        shipping: {
+
+                            ...(venda.shipping || {}),
+
+                            id:
+                                shipmentId,
+
+                            logistic_type:
+                                logisticType,
+
+                            shipping_mode:
+                                shippingMode
+                        },
+
+                        // =========================================
+                        // ENVIO
+                        // =========================================
+
+                        _data_envio:
+                            registro.data_envio ||
+                            venda._data_envio ||
+                            null,
+
+                        _prazo_envio:
+                            registro.prazo_envio ||
+                            venda._prazo_envio ||
+                            null,
+
+                        _shipment_id:
+                            shipmentId,
+
+                        _logistic_type:
+                            logisticType,
+
+                        _shipping_mode:
+                            shippingMode,
+
+                        _is_full:
+                            Boolean(
+                                registro.is_full ||
+                                venda._is_full
+                            ),
+
+                        // =========================================
+                        // VALORES
+                        // =========================================
+
+                        _valor_produto:
+                            Number(
+                                registro.valor_produto ??
+                                venda._valor_produto ??
+                                venda.valor_total ??
+                                0
+                            ),
+
+                        _valor_frete:
+                            Number(
+                                registro.valor_frete ??
+                                venda._valor_frete ??
+                                0
+                            ),
+
+                        _total_pago:
+                            Number(
+                                registro.total_pago ??
+                                venda._total_pago ??
+                                venda.valor_total ??
+                                0
+                            ),
+
+                        // =========================================
+                        // NF-E
+                        // =========================================
+
+                        _tem_nfe:
+                            Boolean(
+                                registro.tem_nfe ||
+                                venda._tem_nfe
+                            ),
+
+                        // =========================================
+                        // ESTOQUE
+                        // =========================================
+
+                        _estoque_status:
+                            registro.estoque_status ||
+                            venda._estoque_status ||
+                            'nao_verificado',
+
+                        _estoque_baixado:
+                            Boolean(
+                                registro.estoque_baixado ||
+                                venda._estoque_baixado
+                            ),
+
+                        _estoque_baixado_em:
+                            registro.estoque_baixado_em ||
+                            venda._estoque_baixado_em ||
+                            null,
+
+                        _estoque_detalhes:
+                            Array.isArray(
+                                registro.estoque_detalhes
+                            )
+                                ? registro.estoque_detalhes
+                                : (
+                                    venda._estoque_detalhes ||
+                                    []
+                                )
+                    };
+                }
+            );
+
+        // =====================================================
+        // AQUI ESTÁ A CORREÇÃO PRINCIPAL
+        //
+        // AGRUPAR ANTES DE FILTRAR/RENDERIZAR
+        // =====================================================
+
+        let vendas =
+            agruparVendasEmPacksNFE(
+                vendasNormalizadas
+            );
+
+        // =====================================================
+        // FILTRO DA DATA
         // =====================================================
 
         if (dataEnvio) {
 
-            registros =
-                registros.filter(
-                    registro => {
-
-                        // =========================================
-                        // FULL
-                        // =========================================
+            vendas =
+                vendas.filter(
+                    venda => {
 
                         if (
-                            registro
-                                .is_full
+                            venda._is_full
                         ) {
 
-                            return (
+                            const dataVenda =
                                 normalizarDataEnvioML(
-                                    registro
-                                        .data_venda
-                                ) ===
+                                    venda.data_venda ||
+                                    venda.date_created
+                                );
+
+                            return (
+                                dataVenda ===
                                 dataEnvio
                             );
                         }
 
-                        // =========================================
-                        // ENVIO NORMAL
-                        // =========================================
-
                         return (
                             normalizarDataEnvioML(
-                                registro
-                                    .data_envio
+                                venda._data_envio
                             ) ===
                             dataEnvio
                         );
@@ -6678,159 +9683,60 @@ async function carregarVendasCacheNFE(
                 );
         }
 
-        return registros.map(
-            registro => {
+        // =====================================================
+        // ORDENAR
+        // =====================================================
 
-                let venda =
-                    registro
-                        .venda_json ||
-                    {};
+        vendas.sort(
+            (
+                a,
+                b
+            ) => {
+
+                const prazoA =
+                    a._prazo_envio
+                        ? new Date(
+                            a._prazo_envio
+                        ).getTime()
+                        : Number.MAX_SAFE_INTEGER;
+
+                const prazoB =
+                    b._prazo_envio
+                        ? new Date(
+                            b._prazo_envio
+                        ).getTime()
+                        : Number.MAX_SAFE_INTEGER;
 
                 if (
-                    typeof venda ===
-                    'string'
+                    prazoA !==
+                    prazoB
                 ) {
 
-                    try {
-
-                        venda =
-                            JSON.parse(
-                                venda
-                            );
-
-                    } catch (
-                        error
-                    ) {
-
-                        venda =
-                            {};
-                    }
+                    return (
+                        prazoA -
+                        prazoB
+                    );
                 }
 
-                return {
-
-                    ...venda,
-
-                    id:
-                        normalizarOrderIdML(
-                            registro
-                                .id_venda_ml
-                        ),
-
-                    id_venda_ml:
-                        normalizarOrderIdML(
-                            registro
-                                .id_venda_ml
-                        ),
-
-                    date_created:
-                        registro
-                            .data_venda ||
-                        venda
-                            .date_created,
-
-                    data_venda:
-                        registro
-                            .data_venda ||
-                        venda
-                            .data_venda,
-
-                    cliente:
-                        registro
-                            .cliente ||
-                        venda
-                            .cliente,
-
-                    buyer:
-                        venda.buyer ||
-                        {
-                            nickname:
-                                registro
-                                    .cliente
-                        },
-
-                    _data_envio:
-                        registro
-                            .data_envio,
-
-                    _prazo_envio:
-                        registro
-                            .prazo_envio,
-
-                    _valor_produto:
-                        Number(
-                            registro
-                                .valor_produto ||
-                            0
-                        ),
-
-                    _valor_frete:
-                        Number(
-                            registro
-                                .valor_frete ||
-                            0
-                        ),
-
-                    _total_pago:
-                        Number(
-                            registro
-                                .total_pago ||
-                            0
-                        ),
-
-                    _logistic_type:
-                        registro
-                            .logistic_type ||
-                        venda
-                            ._logistic_type ||
-                        '',
-
-                    _shipping_mode:
-                        registro
-                            .shipping_mode ||
-                        venda
-                            ._shipping_mode ||
-                        '',
-
-                    _is_full:
-                        Boolean(
-                            registro
-                                .is_full
-                        ),
-
-                    _tem_nfe:
-                        Boolean(
-                            registro
-                                .tem_nfe
-                        ),
-
-                    _estoque_status:
-                        registro
-                            .estoque_status ||
-                        'nao_verificado',
-
-                    _estoque_baixado:
-                        Boolean(
-                            registro
-                                .estoque_baixado
-                        ),
-
-                    _estoque_baixado_em:
-                        registro
-                            .estoque_baixado_em ||
-                        null,
-
-                    _estoque_detalhes:
-                        registro
-                            .estoque_detalhes ||
-                        []
-                };
+                return String(
+                    b.id_venda_ml ||
+                    ''
+                ).localeCompare(
+                    String(
+                        a.id_venda_ml ||
+                        ''
+                    )
+                );
             }
         );
 
-    } catch (
-        error
-    ) {
+        console.log(
+            `⚡ Cache NF-e: ${registros.length} orders → ${vendas.length} venda(s)/pack(s)`
+        );
+
+        return vendas;
+
+    } catch (error) {
 
         console.error(
             '❌ Erro ao carregar cache NF-e:',
