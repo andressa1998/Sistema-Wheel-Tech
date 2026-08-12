@@ -5497,9 +5497,10 @@ async function sincronizarEstoqueVendaManual(
     }
 }
 
-async function garantirBaixaEstoqueVenda(
+async function registrarHistoricoBaixaEstoqueNFE(
     vendaId,
-    origem = 'manual'
+    origem = 'manual',
+    detalhesEstoque = []
 ) {
 
     vendaId =
@@ -5515,252 +5516,79 @@ async function garantirBaixaEstoqueVenda(
         };
     }
 
-    console.log(
-        `📦 Verificando baixa de estoque da venda ${vendaId} - origem: ${origem}`
-    );
-
     try {
 
         // =====================================================
-        // 1. BUSCAR ESTADO ATUAL
+        // DESCRIÇÃO DOS PRODUTOS
         // =====================================================
 
-        const {
-            data: vendaCache,
-            error: erroVenda
-        } =
-            await window
-                .supabaseClient
-                .from(
-                    'vendas_nfe_cache'
-                )
-                .select(`
-                    id_venda_ml,
-                    is_full,
-                    estoque_baixado,
-                    estoque_status,
-                    estoque_baixado_em,
-                    estoque_detalhes
-                `)
-                .eq(
-                    'id_venda_ml',
-                    vendaId
-                )
-                .maybeSingle();
-
-        if (
-            erroVenda ||
-            !vendaCache
-        ) {
-
-            console.warn(
-                `⚠️ Venda ${vendaId} não encontrada no cache`,
-                erroVenda
-            );
-
-            return {
-                success: false,
-                error: 'Venda não encontrada no cache'
-            };
-        }
-
-        // =====================================================
-        // 2. FULL
-        // =====================================================
-
-        if (
-            vendaCache.is_full
-        ) {
-
-            console.log(
-                `ℹ️ Venda ${vendaId} é FULL. Estoque local não será baixado.`
-            );
-
-            return {
-                success: true,
-                full: true,
-                skipped: true
-            };
-        }
-
-        // =====================================================
-        // 3. JÁ FOI BAIXADO
-        //
-        // ESTA É A PROTEÇÃO PRINCIPAL.
-        // =====================================================
-
-        if (
-            vendaCache.estoque_baixado
-        ) {
-
-            console.log(
-                `✅ Venda ${vendaId} já teve estoque baixado. Nada será feito novamente.`
-            );
-
-            return {
-                success: true,
-                already: true,
-                skipped: true
-            };
-        }
-
-        // =====================================================
-        // 4. VERIFICAR PRODUTOS
-        // =====================================================
-
-        const detalhes =
+        const produtos =
             Array.isArray(
-                vendaCache.estoque_detalhes
+                detalhesEstoque
             )
-                ? vendaCache.estoque_detalhes
+                ? detalhesEstoque
                 : [];
 
-        if (
-            detalhes.length ===
-            0
-        ) {
-
-            console.warn(
-                `⚠️ Venda ${vendaId} ainda não possui detalhes de estoque`
-            );
-
-            return {
-                success: false,
-                error: 'Produtos da venda ainda não foram verificados no estoque'
-            };
-        }
-
-        const produtoNaoEncontrado =
-            detalhes.find(
-                item =>
-                    !item.encontrado
-            );
-
-        if (
-            produtoNaoEncontrado
-        ) {
-
-            console.warn(
-                `⚠️ SKU não cadastrado: ${produtoNaoEncontrado.sku}`
-            );
-
-            return {
-                success: false,
-                semCadastro: true,
-                error:
-                    `SKU ${produtoNaoEncontrado.sku || 'SEM_SKU'} não cadastrado`
-            };
-        }
-
-        // =====================================================
-        // 5. MARCAR COMO PROCESSANDO
-        // =====================================================
-
-        await window
-            .supabaseClient
-            .from(
-                'vendas_nfe_cache'
-            )
-            .update({
-                estoque_status:
-                    'processando'
-            })
-            .eq(
-                'id_venda_ml',
-                vendaId
-            )
-            .eq(
-                'estoque_baixado',
-                false
-            );
-
-        // =====================================================
-        // 6. BAIXA ATÔMICA
-        //
-        // A PRÓPRIA RPC VERIFICA NOVAMENTE
-        // estoque_baixado.
-        //
-        // Mesmo com dois cliques/requisições,
-        // não haverá dupla baixa.
-        // =====================================================
-
-        const {
-            data: resultado,
-            error: erroBaixa
-        } =
-            await window
-                .supabaseClient
-                .rpc(
-                    'dar_baixa_estoque_venda_nfe',
-                    {
-                        p_venda_id:
-                            vendaId
-                    }
-                );
-
-        if (
-            erroBaixa
-        ) {
-
-            throw erroBaixa;
-        }
-
-        // =====================================================
-        // RPC AVISOU QUE JÁ ESTAVA BAIXADO
-        // =====================================================
-
-        if (
-            resultado?.already
-        ) {
-
-            console.log(
-                `✅ Venda ${vendaId} já havia sido baixada pela RPC`
-            );
-
-            await window
-                .supabaseClient
-                .from(
-                    'vendas_nfe_cache'
+        const descricaoProdutos =
+            produtos
+                .filter(
+                    item =>
+                        item?.sku &&
+                        item.encontrado !==
+                            false
                 )
-                .update({
-                    estoque_baixado:
-                        true,
+                .map(
+                    item => {
 
-                    estoque_status:
-                        'baixado'
-                })
-                .eq(
-                    'id_venda_ml',
-                    vendaId
-                );
+                        const quantidade =
+                            Number(
+                                item.quantidade_venda ||
+                                1
+                            );
 
-            return {
-                success: true,
-                already: true
-            };
-        }
+                        return (
+                            `${item.sku} x${quantidade}`
+                        );
+                    }
+                )
+                .join(' | ');
+
+        // =====================================================
+        // ORIGEM
+        // =====================================================
+
+        const origemTexto =
+            origem === 'nfe'
+                ? 'automática após emissão da NF-e'
+                : 'manual pelo botão Dar baixa';
+
+        let observacao =
+            `Baixa de estoque ${origemTexto} - Venda ML ${vendaId}`;
 
         if (
-            !resultado?.success
+            descricaoProdutos
         ) {
 
-            throw new Error(
-                resultado?.error ||
-                'Erro desconhecido na baixa de estoque'
-            );
+            observacao +=
+                ` - Produtos: ${descricaoProdutos}`;
         }
 
         console.log(
-            `✅ Baixa local realizada para venda ${vendaId}`,
-            resultado
+            '📝 Registrando histórico da baixa:',
+            observacao
         );
 
         // =====================================================
-        // 7. REGISTRAR HISTÓRICO
+        // IMPORTANTE:
+        //
+        // O código antigo NÃO verificava o error retornado
+        // pelo Supabase.
         // =====================================================
 
-        try {
-
+        const {
+            data,
+            error
+        } =
             await window
                 .supabaseClient
                 .from(
@@ -5775,9 +5603,7 @@ async function garantirBaixaEstoqueVenda(
                         'venda',
 
                     observacao:
-                        origem === 'nfe'
-                            ? `Baixa automática de estoque após emissão da NF-e - Venda ${vendaId}`
-                            : `Baixa manual de estoque - Venda ${vendaId}`,
+                        observacao,
 
                     criado_por:
                         origem === 'nfe'
@@ -5787,179 +5613,52 @@ async function garantirBaixaEstoqueVenda(
                     criado_em:
                         new Date()
                             .toISOString()
-                });
 
-        } catch (
-            histError
-        ) {
+                })
+                .select();
 
-            console.warn(
-                '⚠️ Erro ao registrar histórico da baixa:',
-                histError
-            );
-        }
-
-        // =====================================================
-        // 8. SINCRONIZAR ESTOQUE COM MERCADO LIVRE
-        // =====================================================
-
-        let sincronizado =
-            false;
-
-        try {
-
-            sincronizado =
-                await sincronizarEstoqueComML(
-                    vendaId
-                );
-
-        } catch (
-            syncError
-        ) {
+        if (error) {
 
             console.error(
-                `⚠️ Estoque local baixado, mas erro na sincronização ML da venda ${vendaId}:`,
-                syncError
+                '❌ SUPABASE recusou o histórico da baixa:',
+                error
             );
+
+            return {
+
+                success: false,
+
+                error:
+                    error.message ||
+                    'Erro ao gravar histórico',
+
+                detalhe:
+                    error
+            };
         }
 
-        // =====================================================
-        // 9. ATUALIZAR STATUS FINAL
-        // =====================================================
-
-        if (
-            sincronizado
-        ) {
-
-            await window
-                .supabaseClient
-                .from(
-                    'vendas_nfe_cache'
-                )
-                .update({
-
-                    estoque_baixado:
-                        true,
-
-                    estoque_status:
-                        'baixado',
-
-                    estoque_baixado_em:
-                        new Date()
-                            .toISOString()
-
-                })
-                .eq(
-                    'id_venda_ml',
-                    vendaId
-                );
-
-            console.log(
-                `✅ Venda ${vendaId}: estoque baixado e ML sincronizado`
-            );
-
-        } else {
-
-            await window
-                .supabaseClient
-                .from(
-                    'vendas_nfe_cache'
-                )
-                .update({
-
-                    estoque_baixado:
-                        true,
-
-                    estoque_status:
-                        'baixado_sync_pendente',
-
-                    estoque_baixado_em:
-                        new Date()
-                            .toISOString()
-
-                })
-                .eq(
-                    'id_venda_ml',
-                    vendaId
-                );
-
-            console.warn(
-                `⚠️ Venda ${vendaId}: estoque baixado, mas sincronização ML pendente`
-            );
-        }
+        console.log(
+            '✅ Histórico da baixa gravado:',
+            data
+        );
 
         return {
 
-            success:
-                true,
+            success: true,
 
-            already:
-                false,
-
-            sincronizado:
-                sincronizado,
-
-            resultado:
-                resultado
+            data
         };
 
-    } catch (
-        error
-    ) {
+    } catch (error) {
 
         console.error(
-            `❌ Erro ao baixar estoque da venda ${vendaId}:`,
+            '❌ Erro inesperado ao registrar histórico:',
             error
         );
 
-        // Só marcar erro se ainda não tiver sido baixado
-        try {
-
-            const {
-                data: estadoAtual
-            } =
-                await window
-                    .supabaseClient
-                    .from(
-                        'vendas_nfe_cache'
-                    )
-                    .select(
-                        'estoque_baixado'
-                    )
-                    .eq(
-                        'id_venda_ml',
-                        vendaId
-                    )
-                    .maybeSingle();
-
-            if (
-                !estadoAtual
-                    ?.estoque_baixado
-            ) {
-
-                await window
-                    .supabaseClient
-                    .from(
-                        'vendas_nfe_cache'
-                    )
-                    .update({
-                        estoque_status:
-                            'erro'
-                    })
-                    .eq(
-                        'id_venda_ml',
-                        vendaId
-                    );
-            }
-
-        } catch (
-            errorStatus
-        ) {}
-
         return {
 
-            success:
-                false,
+            success: false,
 
             error:
                 error.message
@@ -5986,18 +5685,13 @@ async function darBaixaEstoqueVenda(
         return;
     }
 
-    // =====================================================
-    // EVITAR CLIQUE DUPLO
-    // =====================================================
-
     if (
         window
-            ._baixaEstoqueEmAndamento ===
-        vendaId
+            ._baixaEstoqueEmAndamento
     ) {
 
         showToast(
-            '⚠️ A baixa desta venda já está sendo processada.',
+            '⚠️ Já existe uma baixa sendo processada.',
             'warning'
         );
 
@@ -6005,13 +5699,49 @@ async function darBaixaEstoqueVenda(
     }
 
     // =====================================================
-    // VERIFICAR ANTES DE PERGUNTAR
+    // PACK
+    // =====================================================
+
+    let orderIds =
+        obterOrderIdsVendaAtualNFE(
+            vendaId
+        );
+
+    orderIds =
+        [
+            ...new Set(
+
+                (
+                    orderIds ||
+                    [vendaId]
+                )
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(Boolean)
+            )
+        ];
+
+    if (
+        orderIds.length ===
+        0
+    ) {
+
+        orderIds = [
+            vendaId
+        ];
+    }
+
+    // =====================================================
+    // PRÉ-VALIDAÇÃO DE TODAS AS ORDERS
     // =====================================================
 
     try {
 
         const {
-            data: cache,
+            data:
+                vendasCache,
+
             error
         } =
             await window
@@ -6020,77 +5750,105 @@ async function darBaixaEstoqueVenda(
                     'vendas_nfe_cache'
                 )
                 .select(`
+                    id_venda_ml,
+                    is_full,
                     estoque_baixado,
                     estoque_status,
-                    is_full
+                    estoque_detalhes
                 `)
-                .eq(
+                .in(
                     'id_venda_ml',
-                    vendaId
+                    orderIds
+                );
+
+        if (error) {
+
+            throw error;
+        }
+
+        const cache =
+            Array.isArray(
+                vendasCache
+            )
+                ? vendasCache
+                : [];
+
+        for (
+            const venda
+            of cache
+        ) {
+
+            if (
+                venda.is_full ||
+                venda.estoque_baixado
+            ) {
+
+                continue;
+            }
+
+            const detalhes =
+                Array.isArray(
+                    venda.estoque_detalhes
                 )
-                .maybeSingle();
+                    ? venda.estoque_detalhes
+                    : [];
 
-        if (
-            error ||
-            !cache
-        ) {
+            if (
+                detalhes.length ===
+                0
+            ) {
 
-            showToast(
-                '❌ Venda não encontrada no cache',
-                'error'
-            );
+                throw new Error(
+                    `Venda ${venda.id_venda_ml}: estoque ainda não verificado`
+                );
+            }
 
-            return;
+            const faltante =
+                detalhes.find(
+                    item =>
+                        !item.encontrado
+                );
+
+            if (
+                faltante
+            ) {
+
+                throw new Error(
+                    `SKU ${faltante.sku || 'SEM_SKU'} não está cadastrado`
+                );
+            }
         }
 
-        if (
-            cache.is_full
-        ) {
+    } catch (error) {
 
-            showToast(
-                'ℹ️ Venda FULL não utiliza baixa do estoque local.',
-                'info'
-            );
-
-            return;
-        }
-
-        if (
-            cache.estoque_baixado
-        ) {
-
-            showToast(
-                '✅ O estoque desta venda já foi baixado.',
-                'success'
-            );
-
-            // Atualiza tela para remover botão antigo
-            await atualizarTabelaVendasNFEPosEstoque();
-
-            return;
-        }
-
-    } catch (
-        error
-    ) {
-
-        console.error(
-            error
+        showToast(
+            `⚠️ Não foi possível dar baixa: ${error.message}`,
+            'warning'
         );
+
+        return;
     }
 
     // =====================================================
-    // CONFIRMAÇÃO MANUAL
+    // CONFIRMAÇÃO
     // =====================================================
 
     const confirmar =
         confirm(
 
-            `Confirma a baixa do estoque da venda ${vendaId}?\n\n` +
+            orderIds.length >
+                1
 
-            `Esta operação será realizada somente uma vez.\n` +
+                ? (
+                    `Confirma a baixa do estoque deste PACK?\n\n` +
+                    `${orderIds.length} pedidos serão processados.\n\n` +
+                    `Após cada baixa o estoque será sincronizado com o Mercado Livre.`
+                )
 
-            `Depois disso, emitir a NF-e NÃO baixará novamente.`
+                : (
+                    `Confirma a baixa do estoque da venda ${vendaId}?\n\n` +
+                    `Após a baixa o estoque será sincronizado com o Mercado Livre.`
+                )
         );
 
     if (!confirmar) {
@@ -6104,53 +5862,142 @@ async function darBaixaEstoqueVenda(
 
     try {
 
-        const resultado =
-            await garantirBaixaEstoqueVenda(
-                vendaId,
-                'manual'
-            );
+        const resultados =
+            [];
 
-        if (
-            resultado.success
+        // =====================================================
+        // CADA ORDER PASSA PELA MESMA ROTINA CENTRAL
+        // =====================================================
+
+        for (
+            const orderId
+            of orderIds
         ) {
 
-            if (
-                resultado.already
-            ) {
-
-                showToast(
-                    '✅ O estoque desta venda já havia sido baixado.',
-                    'success'
+            const resultado =
+                await garantirBaixaEstoqueVenda(
+                    orderId,
+                    'manual'
                 );
 
-            } else if (
-                resultado.sincronizado
-            ) {
+            resultados.push({
 
-                showToast(
-                    '✅ Estoque baixado e sincronizado com o Mercado Livre!',
-                    'success'
-                );
+                orderId,
 
-            } else {
+                ...resultado
+            });
+        }
 
-                showToast(
-                    '⚠️ Estoque baixado. A sincronização com o Mercado Livre ficou pendente.',
-                    'warning'
-                );
-            }
+        const falhas =
+            resultados.filter(
+                item =>
+                    !item.success
+            );
 
-        } else {
+        const baixadosAgora =
+            resultados.filter(
+                item =>
+                    item.success &&
+                    !item.already &&
+                    !item.skipped
+            );
+
+        const jaBaixados =
+            resultados.filter(
+                item =>
+                    item.success &&
+                    (
+                        item.already ||
+                        item.skipped
+                    )
+            );
+
+        const syncPendente =
+            resultados.filter(
+                item =>
+                    item.success &&
+                    item.sincronizado ===
+                        false
+            );
+
+        // =====================================================
+        // MENSAGEM
+        // =====================================================
+
+        if (
+            falhas.length >
+            0
+        ) {
+
+            const erros =
+                falhas
+                    .map(
+                        item =>
+                            `${item.orderId}: ${item.error || 'erro'}`
+                    )
+                    .join(' | ');
 
             showToast(
-                `❌ ${resultado.error || 'Erro ao baixar estoque'}`,
-                resultado.semCadastro
-                    ? 'warning'
-                    : 'error'
+                `⚠️ Houve erro em parte da baixa: ${erros}`,
+                'warning'
+            );
+
+        } else if (
+            syncPendente.length >
+            0
+        ) {
+
+            showToast(
+                '⚠️ Estoque baixado, mas existe sincronização pendente com o Mercado Livre.',
+                'warning'
+            );
+
+        } else if (
+            baixadosAgora.length >
+            0
+        ) {
+
+            showToast(
+                orderIds.length > 1
+                    ? `✅ Pack baixado e sincronizado com ML! ${baixadosAgora.length} pedido(s) processado(s).`
+                    : '✅ Estoque baixado e sincronizado com o Mercado Livre!',
+                'success'
+            );
+
+        } else if (
+            jaBaixados.length >
+            0
+        ) {
+
+            showToast(
+                '✅ O estoque já havia sido baixado anteriormente.',
+                'success'
             );
         }
 
-        await atualizarTabelaVendasNFEPosEstoque();
+        // =====================================================
+        // ATUALIZAR TABELA
+        // =====================================================
+
+        const data =
+            document
+                .getElementById(
+                    'filtroDataEnvioNFE'
+                )
+                ?.value ||
+            obterDataHojeLocal();
+
+        const vendas =
+            await carregarVendasCacheNFE(
+
+                window._nfeFiltroTodas
+                    ? null
+                    : data
+            );
+
+        renderizarVendasNFETabela(
+            vendas
+        );
 
         if (
             typeof window
@@ -6163,23 +6010,26 @@ async function darBaixaEstoqueVenda(
                 await window
                     .carregarProdutosEstoque();
 
-            } catch (
-                error
-            ) {}
+            } catch (error) {}
         }
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro geral na baixa:',
+            error
+        );
+
+        showToast(
+            `❌ Erro ao baixar estoque: ${error.message}`,
+            'error'
+        );
 
     } finally {
 
-        if (
-            window
-                ._baixaEstoqueEmAndamento ===
-            vendaId
-        ) {
-
-            window
-                ._baixaEstoqueEmAndamento =
-                null;
-        }
+        window
+            ._baixaEstoqueEmAndamento =
+            null;
     }
 }
 
@@ -10025,6 +9875,609 @@ try {
         window
             ._nfeEmissaoEmAndamento =
             null;
+    }
+}
+
+async function garantirBaixaEstoqueVenda(
+    vendaId,
+    origem = 'manual'
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+    if (!vendaId) {
+
+        return {
+
+            success: false,
+
+            error:
+                'ID da venda inválido'
+        };
+    }
+
+    console.log(
+        `📦 [BAIXA] Venda ${vendaId} | origem: ${origem}`
+    );
+
+    try {
+
+        // =====================================================
+        // 1. BUSCAR ESTADO DA VENDA
+        // =====================================================
+
+        const {
+            data:
+                vendaCache,
+
+            error:
+                erroVenda
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .select(`
+                    id_venda_ml,
+                    is_full,
+                    estoque_baixado,
+                    estoque_status,
+                    estoque_baixado_em,
+                    estoque_detalhes
+                `)
+                .eq(
+                    'id_venda_ml',
+                    vendaId
+                )
+                .maybeSingle();
+
+        if (
+            erroVenda
+        ) {
+
+            throw erroVenda;
+        }
+
+        if (
+            !vendaCache
+        ) {
+
+            throw new Error(
+                `Venda ${vendaId} não encontrada no cache`
+            );
+        }
+
+        // =====================================================
+        // 2. FULL
+        // =====================================================
+
+        if (
+            vendaCache.is_full
+        ) {
+
+            console.log(
+                `ℹ️ ${vendaId} é FULL. Sem baixa local.`
+            );
+
+            return {
+
+                success: true,
+
+                full: true,
+
+                skipped: true
+            };
+        }
+
+        // =====================================================
+        // 3. JÁ FOI BAIXADO
+        //
+        // NÃO BAIXAR NOVAMENTE.
+        // =====================================================
+
+        if (
+            vendaCache
+                .estoque_baixado
+        ) {
+
+            console.log(
+                `✅ ${vendaId}: estoque já havia sido baixado`
+            );
+
+            // =================================================
+            // SE A SINCRONIZAÇÃO ANTERIOR FICOU PENDENTE,
+            // TENTAMOS NOVAMENTE.
+            // =================================================
+
+            if (
+                vendaCache
+                    .estoque_status ===
+                'baixado_sync_pendente'
+            ) {
+
+                console.log(
+                    `🔄 ${vendaId}: baixa já feita, tentando novamente a sincronização ML...`
+                );
+
+                let sincronizado =
+                    false;
+
+                try {
+
+                    sincronizado =
+                        await sincronizarEstoqueComML(
+                            vendaId
+                        );
+
+                } catch (error) {
+
+                    console.error(
+                        '❌ Erro repetindo sincronização ML:',
+                        error
+                    );
+                }
+
+                if (
+                    sincronizado
+                ) {
+
+                    await window
+                        .supabaseClient
+                        .from(
+                            'vendas_nfe_cache'
+                        )
+                        .update({
+
+                            estoque_status:
+                                'baixado',
+
+                            atualizado_em:
+                                new Date()
+                                    .toISOString()
+
+                        })
+                        .eq(
+                            'id_venda_ml',
+                            vendaId
+                        );
+                }
+
+                return {
+
+                    success: true,
+
+                    already: true,
+
+                    skipped: true,
+
+                    sincronizado
+                };
+            }
+
+            return {
+
+                success: true,
+
+                already: true,
+
+                skipped: true,
+
+                sincronizado: true
+            };
+        }
+
+        // =====================================================
+        // 4. DETALHES DOS PRODUTOS
+        // =====================================================
+
+        const detalhesEstoque =
+            Array.isArray(
+                vendaCache
+                    .estoque_detalhes
+            )
+                ? vendaCache
+                    .estoque_detalhes
+                : [];
+
+        if (
+            detalhesEstoque.length ===
+            0
+        ) {
+
+            return {
+
+                success: false,
+
+                error:
+                    'Produtos ainda não foram verificados no estoque'
+            };
+        }
+
+        const naoEncontrado =
+            detalhesEstoque.find(
+                item =>
+                    !item.encontrado
+            );
+
+        if (
+            naoEncontrado
+        ) {
+
+            return {
+
+                success: false,
+
+                semCadastro: true,
+
+                error:
+                    `SKU ${naoEncontrado.sku || 'SEM_SKU'} não cadastrado`
+            };
+        }
+
+        // =====================================================
+        // 5. MARCAR PROCESSANDO
+        // =====================================================
+
+        await window
+            .supabaseClient
+            .from(
+                'vendas_nfe_cache'
+            )
+            .update({
+
+                estoque_status:
+                    'processando'
+
+            })
+            .eq(
+                'id_venda_ml',
+                vendaId
+            )
+            .eq(
+                'estoque_baixado',
+                false
+            );
+
+        // =====================================================
+        // 6. BAIXA ATÔMICA
+        //
+        // ESSA RPC É A PROTEÇÃO FINAL CONTRA DUPLICIDADE.
+        // =====================================================
+
+        console.log(
+            `📉 Executando baixa local da venda ${vendaId}...`
+        );
+
+        const {
+            data:
+                resultado,
+
+            error:
+                erroBaixa
+        } =
+            await window
+                .supabaseClient
+                .rpc(
+                    'dar_baixa_estoque_venda_nfe',
+                    {
+                        p_venda_id:
+                            vendaId
+                    }
+                );
+
+        if (
+            erroBaixa
+        ) {
+
+            throw erroBaixa;
+        }
+
+        // =====================================================
+        // RPC DETECTOU BAIXA ANTERIOR
+        // =====================================================
+
+        if (
+            resultado?.already
+        ) {
+
+            console.log(
+                `✅ RPC confirmou que ${vendaId} já havia sido baixada`
+            );
+
+            return {
+
+                success: true,
+
+                already: true,
+
+                skipped: true
+            };
+        }
+
+        if (
+            !resultado?.success
+        ) {
+
+            throw new Error(
+                resultado?.error ||
+                'Erro ao realizar baixa de estoque'
+            );
+        }
+
+        console.log(
+            '✅ BAIXA LOCAL CONCLUÍDA:',
+            resultado
+        );
+
+        // =====================================================
+        // 7. HISTÓRICO
+        //
+        // A BAIXA SÓ CHEGA AQUI SE REALMENTE ACONTECEU.
+        // =====================================================
+
+        const resultadoHistorico =
+            await registrarHistoricoBaixaEstoqueNFE(
+
+                vendaId,
+
+                origem,
+
+                detalhesEstoque
+            );
+
+        if (
+            !resultadoHistorico
+                .success
+        ) {
+
+            // =============================================
+            // A BAIXA JÁ ACONTECEU.
+            // NÃO PODEMOS DESFAZER.
+            // MAS PRECISAMOS INFORMAR O ERRO.
+            // =============================================
+
+            console.error(
+                '⚠️ Estoque foi baixado, mas histórico NÃO foi gravado:',
+                resultadoHistorico
+            );
+
+            showToast(
+                `⚠️ Estoque baixado, mas houve erro ao gravar o histórico: ${resultadoHistorico.error}`,
+                'warning'
+            );
+        }
+
+        // =====================================================
+        // 8. SINCRONIZAÇÃO COM MERCADO LIVRE
+        //
+        // IMPORTANTE:
+        //
+        // TODO CAMINHO DE BAIXA PASSA AQUI:
+        //
+        // botão
+        // ou
+        // emissão NF-e
+        // =====================================================
+
+        console.log(
+            `🚀 Acionando sincronização com Mercado Livre após baixa da venda ${vendaId}...`
+        );
+
+        let sincronizado =
+            false;
+
+        try {
+
+            sincronizado =
+                await sincronizarEstoqueComML(
+                    vendaId
+                );
+
+        } catch (
+            syncError
+        ) {
+
+            console.error(
+                `❌ Erro ao sincronizar estoque da venda ${vendaId} com ML:`,
+                syncError
+            );
+
+            sincronizado =
+                false;
+        }
+
+        // =====================================================
+        // 9. STATUS FINAL
+        // =====================================================
+
+        if (
+            sincronizado
+        ) {
+
+            const {
+                error:
+                    erroStatus
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .update({
+
+                        estoque_baixado:
+                            true,
+
+                        estoque_status:
+                            'baixado',
+
+                        estoque_baixado_em:
+                            new Date()
+                                .toISOString(),
+
+                        atualizado_em:
+                            new Date()
+                                .toISOString()
+
+                    })
+                    .eq(
+                        'id_venda_ml',
+                        vendaId
+                    );
+
+            if (
+                erroStatus
+            ) {
+
+                console.error(
+                    '⚠️ Erro atualizando status final:',
+                    erroStatus
+                );
+            }
+
+            console.log(
+                `✅ ${vendaId}: estoque local + Mercado Livre sincronizados`
+            );
+
+        } else {
+
+            const {
+                error:
+                    erroStatus
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .update({
+
+                        estoque_baixado:
+                            true,
+
+                        estoque_status:
+                            'baixado_sync_pendente',
+
+                        estoque_baixado_em:
+                            new Date()
+                                .toISOString(),
+
+                        atualizado_em:
+                            new Date()
+                                .toISOString()
+
+                    })
+                    .eq(
+                        'id_venda_ml',
+                        vendaId
+                    );
+
+            if (
+                erroStatus
+            ) {
+
+                console.error(
+                    '⚠️ Erro atualizando status pendente:',
+                    erroStatus
+                );
+            }
+
+            console.warn(
+                `⚠️ ${vendaId}: estoque baixado, mas sincronização ML pendente`
+            );
+        }
+
+        return {
+
+            success: true,
+
+            already: false,
+
+            skipped: false,
+
+            sincronizado,
+
+            historico:
+                resultadoHistorico
+                    .success,
+
+            resultado
+        };
+
+    } catch (error) {
+
+        console.error(
+            `❌ Erro na baixa ${vendaId}:`,
+            error
+        );
+
+        // =====================================================
+        // SÓ MARCAR ERRO SE A BAIXA NÃO TIVER ACONTECIDO
+        // =====================================================
+
+        try {
+
+            const {
+                data:
+                    estadoAtual
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .select(
+                        'estoque_baixado'
+                    )
+                    .eq(
+                        'id_venda_ml',
+                        vendaId
+                    )
+                    .maybeSingle();
+
+            if (
+                !estadoAtual
+                    ?.estoque_baixado
+            ) {
+
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .update({
+
+                        estoque_status:
+                            'erro'
+
+                    })
+                    .eq(
+                        'id_venda_ml',
+                        vendaId
+                    );
+            }
+
+        } catch (
+            erroStatus
+        ) {
+
+            console.warn(
+                '⚠️ Erro atualizando status após falha:',
+                erroStatus
+            );
+        }
+
+        return {
+
+            success: false,
+
+            error:
+                error.message
+        };
     }
 }
 
