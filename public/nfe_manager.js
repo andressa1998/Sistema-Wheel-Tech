@@ -982,270 +982,1515 @@ console.log('  await cancelarNFEporVendaSistema("ID_DA_VENDA")   - Cancelar pelo
 console.log('  await listarNFesParaCancelarSistema()             - Listar NF-es e cancelar');
 console.log('  await removerNFESistema("CHAVE_DA_NFE")           - Remover apenas o registro');
 
-// =========================================================
-// EDIÇÃO DE PRODUTOS (CORRIGIDO - MENOR VALOR)
-// =========================================================
-
 async function abrirModalEdicaoProdutos(orderId) {
-    console.log('🔧 Abrindo edição de produtos para venda:', orderId);
+    console.log('🔧 Abrindo modal único de emissão para venda:', orderId);
+
+    // =====================================================
+    // REMOVER MODAL ANTIGO PARA EVITAR IDs DUPLICADOS
+    // =====================================================
+
+    const modalClienteAntigo =
+        document.getElementById('modalDadosClienteNFE');
+
+    if (modalClienteAntigo) {
+
+        console.log(
+            '🗑️ Removendo modal antigo de cliente'
+        );
+
+        modalClienteAntigo.remove();
+    }
+
+    // Também remover eventual modal de emissão anterior
+    const modalEmissaoAntigo =
+        document.getElementById('modalEdicaoProdutos');
+
+    if (modalEmissaoAntigo) {
+        modalEmissaoAntigo.remove();
+    }
+
+    if (!orderId || orderId === 'null' || orderId === 'undefined') {
+        showToast('❌ ID da venda inválido', 'error');
+        return;
+    }
+
     vendaIdParaEdicao = orderId;
+    pendingEmitOrderId = orderId;
 
     let token = localStorage.getItem('ml_access_token');
+
     if (!token && typeof window.getValidToken === 'function') {
         const tokenData = await window.getValidToken();
         token = tokenData?.access_token;
     }
+
     if (!token) {
         showToast('Token ML não disponível', 'error');
         return;
     }
 
+    // Remove modal anterior, caso exista
+    fecharModalEdicaoProdutos();
+
     try {
+        showToast('🔄 Carregando dados da venda...', 'info');
+
+        // =====================================================
+        // BUSCAR VALOR DA VENDA
+        // =====================================================
+
         const dadosPagamento = await buscarValorExatoPagamento(orderId);
-        console.log('📊 Dados do pagamento para edição:', dadosPagamento);
 
-        const url = `https://api.mercadolibre.com/orders/${orderId}`;
-        const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('Erro ao buscar venda');
-        const venda = await response.json();
+        console.log(
+            '📊 Dados do pagamento para emissão:',
+            dadosPagamento
+        );
 
-        const items = venda.order_items || [];
-        if (items.length === 0) {
-            showToast('Nenhum produto encontrado', 'warning');
+        // =====================================================
+        // BUSCAR VENDA NO MERCADO LIVRE
+        // =====================================================
+
+        const orderUrl =
+            `https://api.mercadolibre.com/orders/${orderId}`;
+
+        const orderProxyUrl =
+            `${window.WORKER_URL}/api/ml/proxy?url=` +
+            `${encodeURIComponent(orderUrl)}` +
+            `&token=${encodeURIComponent(token)}`;
+
+        const orderResponse = await fetch(orderProxyUrl);
+
+        if (!orderResponse.ok) {
+            throw new Error(
+                'Erro ao buscar venda no Mercado Livre'
+            );
+        }
+
+        const venda = await orderResponse.json();
+
+        console.log('📦 Venda ML:', venda);
+
+        // =====================================================
+        // NÃO PERMITIR VENDA FULL
+        // =====================================================
+
+        if (
+            typeof isFullByAnyField === 'function' &&
+            isFullByAnyField(venda)
+        ) {
+            pendingEmitOrderId = null;
+            vendaIdParaEdicao = null;
+
+            showToast(
+                '🚫 Esta venda é FULL e não permite emissão manual.',
+                'warning'
+            );
+
             return;
         }
 
-        // 🔥 CALCULAR O VALOR TOTAL DOS PRODUTOS USANDO O MENOR VALOR
-        let valorTotalProduto = 0;
-        let quantidadeTotal = 0;
-        
-        // Primeiro, calcular a quantidade total
-        for (const item of items) {
-            quantidadeTotal += item.quantity || 1;
-        }
-        
-        // 🔥 USAR O MENOR VALOR ENTRE O DA VENDA E O DO MERCADO PAGO
-        if (dadosPagamento && dadosPagamento.valor_produto > 0) {
-            // O valor já vem com o menor entre MP e venda
-            valorTotalProduto = dadosPagamento.valor_produto;
-            console.log(`💰 Valor total do produto (MENOR valor): R$ ${valorTotalProduto.toFixed(2)}`);
-            console.log(`   Fonte: ${dadosPagamento.fonte || 'desconhecido'}`);
-            console.log(`   Valor venda: R$ ${dadosPagamento.valor_venda?.toFixed(2) || 'N/A'}`);
-            console.log(`   Valor MP: R$ ${dadosPagamento.valor_mp?.toFixed(2) || 'N/A'}`);
-        } else {
-            // Fallback: calcular a partir dos itens
-            for (const item of items) {
-                const valorUnitario = item.unit_price || 0;
-                const quantidade = item.quantity || 1;
-                valorTotalProduto += valorUnitario * quantidade;
-            }
-            console.log(`📦 Usando fallback: valor total = R$ ${valorTotalProduto.toFixed(2)}`);
+        const items = venda.order_items || [];
+
+        if (items.length === 0) {
+            showToast(
+                'Nenhum produto encontrado',
+                'warning'
+            );
+
+            return;
         }
 
-        let ncmPorSku = {};
+        // =====================================================
+        // BUSCAR ENDEREÇO DO SHIPMENT
+        // =====================================================
+
+        let address = {};
+
+        if (venda.shipping?.id) {
+            try {
+
+                const shipUrl =
+                    `https://api.mercadolibre.com/shipments/${venda.shipping.id}`;
+
+                const shipProxyUrl =
+                    `${window.WORKER_URL}/api/ml/proxy?url=` +
+                    `${encodeURIComponent(shipUrl)}` +
+                    `&token=${encodeURIComponent(token)}`;
+
+                const shipResponse =
+                    await fetch(shipProxyUrl);
+
+                if (shipResponse.ok) {
+
+                    const shipment =
+                        await shipResponse.json();
+
+                    address =
+                        shipment.receiver_address || {};
+                }
+
+            } catch (e) {
+
+                console.warn(
+                    '⚠️ Não foi possível buscar endereço do shipment:',
+                    e
+                );
+            }
+        }
+
+        // Fallback
+        if (
+            !address.address_line &&
+            !address.street_name &&
+            venda.buyer?.address
+        ) {
+            address = venda.buyer.address;
+        }
+
+        // =====================================================
+        // BUSCAR CPF / CNPJ / DADOS DE FATURAMENTO
+        // =====================================================
+
+        let billingInfo = {};
+
         try {
-            const { data, error } = await window.supabaseClient
-                .from('produto_ncm')
-                .select('sku, ncm')
-                .in('sku', items.map(item => item.item.seller_sku || 'SEM_SKU'));
-            if (!error && data) {
-                data.forEach(row => ncmPorSku[row.sku] = row.ncm);
-            }
-        } catch (e) {
-            console.warn('Erro ao buscar NCM:', e);
-        }
 
-        produtosEditados = items.map((item, index) => {
-            const sku = item.item.seller_sku || 'SEM_SKU';
-            const ncmSalvo = ncmPorSku[sku] || '87149990';
-            const quantidade = item.quantity || 1;
-            
-            let valorUnitario = 0;
-            if (quantidadeTotal > 0 && valorTotalProduto > 0) {
-                // Distribuir o valor total proporcionalmente pela quantidade
-                valorUnitario = (valorTotalProduto / quantidadeTotal);
+            const billingUrl =
+                `https://api.mercadolibre.com/orders/${orderId}/billing_info`;
+
+            const billingProxyUrl =
+                `${window.WORKER_URL}/api/ml/proxy?url=` +
+                `${encodeURIComponent(billingUrl)}` +
+                `&token=${encodeURIComponent(token)}`;
+
+            const billingResponse =
+                await fetch(billingProxyUrl);
+
+            if (billingResponse.ok) {
+
+                const billingResult =
+                    await billingResponse.json();
+
+                billingInfo =
+                    billingResult?.billing_info ||
+                    billingResult ||
+                    {};
+
+                console.log(
+                    '🧾 Billing info obtido:',
+                    billingInfo
+                );
+
             } else {
-                valorUnitario = item.unit_price || 0;
-            }
-            
-            console.log(`📊 Produto ${index + 1}: ${item.item.title}`);
-            console.log(`   Quantidade: ${quantidade}`);
-            console.log(`   Valor unitário calculado: R$ ${valorUnitario.toFixed(2)}`);
-            console.log(`   SKU: ${sku}`);
-            
-            return {
-                nome: item.item.title,
-                quantidade: quantidade,
-                valor_unitario: valorUnitario,
-                sku: sku,
-                ncm: ncmSalvo,
-                _valor_original: item.unit_price || 0
-            };
-        });
 
-        // Ajuste para garantir que o total bate
-        const totalCalculado = produtosEditados.reduce((acc, p) => acc + (p.valor_unitario * p.quantidade), 0);
-        if (Math.abs(totalCalculado - valorTotalProduto) > 0.01 && valorTotalProduto > 0) {
-            const diff = valorTotalProduto - totalCalculado;
-            if (produtosEditados.length > 0) {
-                const ultimoItem = produtosEditados[produtosEditados.length - 1];
-                ultimoItem.valor_unitario += diff / ultimoItem.quantidade;
-                console.log(`🔄 Ajuste aplicado no último item: +R$ ${(diff / ultimoItem.quantidade).toFixed(2)}`);
+                console.warn(
+                    '⚠️ Billing info não disponível:',
+                    billingResponse.status
+                );
             }
+
+        } catch (e) {
+
+            console.warn(
+                '⚠️ Erro ao buscar billing_info:',
+                e
+            );
         }
 
-        // ... resto do código do modal permanece igual ...
-        
-        const modalHTML = `
-        <div id="modalEdicaoProdutos" class="modal" style="display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); z-index:9999;">
-            <div class="modal-content" style="max-width:900px; width:95%; max-height:90vh; overflow-y:auto; background:white; padding:25px; border-radius:8px;">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                    <h3 style="margin:0;"><i class="fas fa-edit"></i> Editar Produtos</h3>
-                    <button onclick="fecharModalEdicaoProdutos()" style="background:none; border:none; font-size:24px; cursor:pointer;">&times;</button>
-                </div>
-                <p style="color:#6c757d; margin-bottom:15px;">
-                    Ajuste a quantidade, valor unitário e NCM de cada produto. 
-                    <br><strong>Valor total: R$ ${valorTotalProduto.toFixed(2)}</strong> (${dadosPagamento?.fonte === 'mercado_pago' ? 'Valor do Mercado Pago' : 'Valor da venda'} - menor valor)
-                </p>
-                <div class="table-responsive">
-                    <table class="table table-striped">
-                        <thead>
-                            <tr>
-                                <th>Produto</th>
-                                <th style="width:100px;">Qtd</th>
-                                <th style="width:130px;">Valor Unit.</th>
-                                <th style="width:130px;">NCM</th>
-                                <th style="width:110px;">Subtotal</th>
-                            </tr>
-                        </thead>
-                        <tbody id="produtosEditaveisBody">
-                            ${produtosEditados.map((p, index) => `
-                                <tr>
-                                    <td><span title="${p.nome}">${p.nome.length > 40 ? p.nome.substring(0,40)+'...' : p.nome}</span></td>
-                                    <td>
-                                        <input type="number" class="form-control form-control-sm qtd-produto" 
-                                               data-index="${index}" value="${p.quantidade}" min="0.01" step="0.01">
-                                    </td>
-                                    <td>
-                                        <input type="number" class="form-control form-control-sm valor-produto" 
-                                               data-index="${index}" value="${p.valor_unitario}" min="0" step="0.01">
-                                    </td>
-                                    <td>
-                                        <input type="text" class="form-control form-control-sm ncm-produto" 
-                                               data-index="${index}" value="${p.ncm}" placeholder="NCM" maxlength="8">
-                                    </td>
-                                    <td class="subtotal-produto">R$ ${(p.quantidade * p.valor_unitario).toFixed(2)}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                        <tfoot>
-                            <tr style="font-weight:bold; background:#f8f9fa;">
-                                <td colspan="3" style="text-align:right;">Total da Nota:</td>
-                                <td id="totalGeralProdutos" style="text-align:right;" colspan="2">R$ ${produtosEditados.reduce((acc, p) => acc + (p.quantidade * p.valor_unitario), 0).toFixed(2)}</td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
+        // =====================================================
+        // ORGANIZAR ADDITIONAL_INFO
+        // =====================================================
 
-                <div class="d-flex justify-content-end gap-2 mt-3">
-                    <button class="btn btn-secondary" onclick="fecharModalEdicaoProdutos()">Cancelar</button>
-                    <button class="btn btn-success" id="confirmarProdutosFinalBtn"><i class="fas fa-check"></i> Confirmar e Emitir NF-e</button>
-                </div>
-            </div>
-        </div>`;
+        const infoExtra = {};
 
-        const modalContainer = document.createElement('div');
-        modalContainer.innerHTML = modalHTML;
-        document.body.appendChild(modalContainer.firstElementChild);
+        if (Array.isArray(billingInfo.additional_info)) {
 
-        document.querySelectorAll('.qtd-produto, .valor-produto, .ncm-produto').forEach(input => {
-            input.addEventListener('input', function() {
-                const idx = parseInt(this.dataset.index);
-                const row = this.closest('tr');
-                const qtdInput = row.querySelector('.qtd-produto');
-                const valorInput = row.querySelector('.valor-produto');
-                const subtotalCell = row.querySelector('.subtotal-produto');
-                const ncmInput = row.querySelector('.ncm-produto');
-                const qtd = parseFloat(qtdInput.value) || 0;
-                const valor = parseFloat(valorInput.value) || 0;
-                const subtotal = qtd * valor;
-                subtotalCell.textContent = `R$ ${subtotal.toFixed(2)}`;
-                produtosEditados[idx].quantidade = qtd;
-                produtosEditados[idx].valor_unitario = valor;
-                produtosEditados[idx].ncm = ncmInput.value.trim() || '87149990';
-                recalcularTotalGeral();
+            billingInfo.additional_info.forEach(item => {
+
+                if (item?.type) {
+
+                    infoExtra[
+                        String(item.type).toUpperCase()
+                    ] = item.value ?? '';
+                }
+
             });
-        });
-
-        function recalcularTotalGeral() {
-            let total = 0;
-            produtosEditados.forEach(p => total += p.quantidade * p.valor_unitario);
-            const totalCell = document.getElementById('totalGeralProdutos');
-            if (totalCell) totalCell.textContent = `R$ ${total.toFixed(2)}`;
         }
 
-        document.getElementById('confirmarProdutosFinalBtn').addEventListener('click', function() {
-            confirmarProdutosEditados();
+        // =====================================================
+        // DADOS DO CLIENTE
+        // =====================================================
+
+        const buyer = venda.buyer || {};
+
+        const nomeBuyer =
+            `${buyer.first_name || ''} ${buyer.last_name || ''}`
+                .trim();
+
+        const nomeBilling =
+            `${infoExtra.FIRST_NAME || ''} ${infoExtra.LAST_NAME || ''}`
+                .trim();
+
+        const nomeCliente =
+            nomeBilling ||
+            nomeBuyer ||
+            buyer.nickname ||
+            billingInfo.name ||
+            '';
+
+        const documentoCliente = String(
+
+            infoExtra.DOC_NUMBER ||
+
+            billingInfo.doc_number ||
+
+            billingInfo.document_number ||
+
+            billingInfo.identification?.number ||
+
+            buyer.identification?.number ||
+
+            ''
+
+        ).replace(/\D/g, '');
+
+        // =====================================================
+        // ENDEREÇO
+        // =====================================================
+
+        let logradouro =
+            address.address_line ||
+            address.street_name ||
+            infoExtra.STREET_NAME ||
+            '';
+
+        let numero =
+            address.street_number ||
+            infoExtra.STREET_NUMBER ||
+            'S/N';
+
+        // Evitar número duplicado no endereço
+        if (
+            logradouro &&
+            numero &&
+            numero !== 'S/N'
+        ) {
+
+            const numeroEscapado =
+                String(numero).replace(
+                    /[.*+?^${}()|[\]\\]/g,
+                    '\\$&'
+                );
+
+            const numeroPattern =
+                new RegExp(
+                    `\\s*[,.]?\\s*${numeroEscapado}\\s*$`
+                );
+
+            logradouro =
+                logradouro
+                    .replace(numeroPattern, '')
+                    .replace(/,\s*$/, '')
+                    .trim();
+        }
+
+        const bairro =
+            address.neighborhood?.name ||
+            address.neighborhood ||
+            infoExtra.NEIGHBORHOOD ||
+            '';
+
+        const cidade =
+            address.city?.name ||
+            address.city ||
+            infoExtra.CITY_NAME ||
+            infoExtra.CITY ||
+            '';
+
+        const ufOriginal =
+            address.state?.name ||
+            address.state ||
+            infoExtra.STATE_NAME ||
+            infoExtra.STATE ||
+            '';
+
+        const uf = mapearUF(ufOriginal);
+
+        const cep = String(
+            address.zip_code ||
+            infoExtra.ZIP_CODE ||
+            ''
+        ).replace(/\D/g, '');
+
+        // =====================================================
+        // CALCULAR VALOR TOTAL DOS PRODUTOS
+        // =====================================================
+
+        let valorTotalProduto = 0;
+
+        let quantidadeTotal = 0;
+
+        for (const item of items) {
+
+            quantidadeTotal +=
+                item.quantity || 1;
+        }
+
+        if (
+            dadosPagamento &&
+            dadosPagamento.valor_produto > 0
+        ) {
+
+            valorTotalProduto =
+                dadosPagamento.valor_produto;
+
+        } else {
+
+            for (const item of items) {
+
+                valorTotalProduto +=
+                    (item.unit_price || 0) *
+                    (item.quantity || 1);
+            }
+        }
+
+        // =====================================================
+        // BUSCAR NCM SALVO
+        // =====================================================
+
+        const ncmPorSku = {};
+
+        try {
+
+            const skus =
+                items.map(
+                    item =>
+                        item.item.seller_sku ||
+                        'SEM_SKU'
+                );
+
+            const { data, error } =
+                await window.supabaseClient
+                    .from('produto_ncm')
+                    .select('sku, ncm')
+                    .in('sku', skus);
+
+            if (!error && data) {
+
+                data.forEach(row => {
+
+                    ncmPorSku[row.sku] =
+                        row.ncm;
+
+                });
+            }
+
+        } catch (e) {
+
+            console.warn(
+                '⚠️ Erro ao buscar NCM:',
+                e
+            );
+        }
+
+        // =====================================================
+        // MONTAR PRODUTOS EDITÁVEIS
+        // =====================================================
+
+        produtosEditados =
+            items.map(item => {
+
+                const sku =
+                    item.item.seller_sku ||
+                    'SEM_SKU';
+
+                const quantidade =
+                    item.quantity || 1;
+
+                let valorUnitario;
+
+                if (
+                    quantidadeTotal > 0 &&
+                    valorTotalProduto > 0
+                ) {
+
+                    valorUnitario =
+                        valorTotalProduto /
+                        quantidadeTotal;
+
+                } else {
+
+                    valorUnitario =
+                        item.unit_price || 0;
+                }
+
+                return {
+
+                    nome:
+                        item.item.title ||
+                        'Produto',
+
+                    quantidade,
+
+                    valor_unitario:
+                        valorUnitario,
+
+                    sku,
+
+                    ncm:
+                        ncmPorSku[sku] ||
+                        '87149990',
+
+                    _valor_original:
+                        item.unit_price || 0
+                };
+            });
+
+        // =====================================================
+        // CORRIGIR CENTAVOS
+        // =====================================================
+
+        const totalCalculado =
+            produtosEditados.reduce(
+                (acc, p) =>
+                    acc +
+                    (
+                        p.valor_unitario *
+                        p.quantidade
+                    ),
+                0
+            );
+
+        if (
+            Math.abs(
+                totalCalculado -
+                valorTotalProduto
+            ) > 0.01 &&
+            produtosEditados.length > 0 &&
+            valorTotalProduto > 0
+        ) {
+
+            const diff =
+                valorTotalProduto -
+                totalCalculado;
+
+            const ultimo =
+                produtosEditados[
+                    produtosEditados.length - 1
+                ];
+
+            ultimo.valor_unitario +=
+                diff /
+                ultimo.quantidade;
+        }
+
+        // =====================================================
+        // ESCAPAR HTML
+        // =====================================================
+
+        const esc = value =>
+            String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+
+        // =====================================================
+        // MODAL ÚNICO
+        // =====================================================
+
+        const modalHTML = `
+
+        <div
+            id="modalEdicaoProdutos"
+            class="modal"
+            style="
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                background:rgba(0,0,0,0.5);
+                z-index:10000;
+                position:fixed;
+                inset:0;
+            "
+        >
+            <div
+                class="modal-content"
+                style="
+                    max-width:1150px;
+                    width:96%;
+                    max-height:94vh;
+                    overflow-y:auto;
+                    background:white;
+                    padding:25px;
+                    border-radius:10px;
+                "
+            >
+                <!-- CABEÇALHO -->
+                <div
+                    style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        margin-bottom:18px;
+                    "
+                >
+                    <div>
+                        <h3 style="margin:0;">
+                            <i class="fas fa-file-invoice"></i>
+                            Emitir NF-e
+                        </h3>
+                        <small style="color:#6c757d;">
+                            Venda Mercado Livre:
+                            ${esc(orderId)}
+                        </small>
+                    </div>
+                    <button
+                        type="button"
+                        onclick="fecharModalEdicaoProdutos()"
+                        style="
+                            background:none;
+                            border:none;
+                            font-size:28px;
+                            cursor:pointer;
+                            color:#6c757d;
+                        "
+                    >
+                        &times;
+                    </button>
+                </div>
+                <!-- VALOR -->
+                <div
+                    style="
+                        background:#f8f9fa;
+                        padding:14px;
+                        border-radius:8px;
+                        margin-bottom:20px;
+                    "
+                >
+                    <strong>
+
+                        Valor sugerido da nota:
+                        R$
+                        ${valorTotalProduto.toFixed(2)}
+                    </strong>
+                    <span
+                        style="
+                            color:#6c757d;
+                            margin-left:8px;
+                        "
+                    >
+                        Você pode ajustar os valores abaixo.
+
+                    </span>
+
+                </div>
+
+
+                <!-- PRODUTOS -->
+
+                <h4>
+
+                    <i class="fas fa-box"></i>
+
+                    Produtos
+
+                </h4>
+
+
+                <div
+                    class="table-responsive"
+                    style="margin-bottom:22px;"
+                >
+
+                    <table
+                        class="table table-striped"
+                        style="min-width:980px;"
+                    >
+
+                        <thead>
+
+                            <tr>
+
+                                <th>Nome do produto</th>
+
+                                <th>SKU</th>
+
+                                <th>Qtd</th>
+
+                                <th>Valor unit.</th>
+
+                                <th>NCM</th>
+
+                                <th>Subtotal</th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody
+                            id="produtosEditaveisBody"
+                        >
+
+                            ${produtosEditados.map(
+                                (p, index) => `
+
+                                <tr
+                                    data-index="${index}"
+                                >
+
+                                    <td>
+
+                                        <input
+                                            type="text"
+                                            class="
+                                                form-control
+                                                form-control-sm
+                                                nome-produto
+                                            "
+                                            data-index="${index}"
+                                            value="${esc(p.nome)}"
+                                        >
+
+                                    </td>
+
+
+                                    <td>
+
+                                        <input
+                                            type="text"
+                                            class="
+                                                form-control
+                                                form-control-sm
+                                                sku-produto
+                                            "
+                                            data-index="${index}"
+                                            value="${esc(p.sku)}"
+                                        >
+
+                                    </td>
+
+
+                                    <td>
+
+                                        <input
+                                            type="number"
+                                            class="
+                                                form-control
+                                                form-control-sm
+                                                qtd-produto
+                                            "
+                                            data-index="${index}"
+                                            value="${p.quantidade}"
+                                            min="0.01"
+                                            step="0.01"
+                                        >
+
+                                    </td>
+
+
+                                    <td>
+
+                                        <input
+                                            type="number"
+                                            class="
+                                                form-control
+                                                form-control-sm
+                                                valor-produto
+                                            "
+                                            data-index="${index}"
+                                            value="${p.valor_unitario.toFixed(2)}"
+                                            min="0"
+                                            step="0.01"
+                                        >
+
+                                    </td>
+
+
+                                    <td>
+
+                                        <input
+                                            type="text"
+                                            class="
+                                                form-control
+                                                form-control-sm
+                                                ncm-produto
+                                            "
+                                            data-index="${index}"
+                                            value="${esc(p.ncm)}"
+                                            maxlength="8"
+                                        >
+
+                                    </td>
+
+
+                                    <td
+                                        class="subtotal-produto"
+                                    >
+
+                                        R$
+                                        ${(p.quantidade * p.valor_unitario).toFixed(2)}
+
+                                    </td>
+
+                                </tr>
+
+                            `).join('')}
+
+                        </tbody>
+
+
+                        <tfoot>
+
+                            <tr
+                                style="
+                                    font-weight:bold;
+                                    background:#f8f9fa;
+                                "
+                            >
+
+                                <td
+                                    colspan="5"
+                                    style="text-align:right;"
+                                >
+
+                                    Total da Nota:
+
+                                </td>
+
+                                <td
+                                    id="totalGeralProdutos"
+                                >
+
+                                    R$
+                                    ${produtosEditados.reduce(
+                                        (acc, p) =>
+                                            acc +
+                                            (
+                                                p.quantidade *
+                                                p.valor_unitario
+                                            ),
+                                        0
+                                    ).toFixed(2)}
+
+                                </td>
+
+                            </tr>
+
+                        </tfoot>
+
+                    </table>
+
+                </div>
+
+
+<!-- CLIENTE -->
+
+<div style="
+    margin-top:20px;
+    margin-bottom:20px;
+    padding:16px;
+    background:#f8f9fa;
+    border:1px solid #e1e5eb;
+    border-radius:10px;
+">
+
+    <h4 style="
+        margin:0 0 14px 0;
+        display:flex;
+        align-items:center;
+        gap:8px;
+    ">
+        <i class="fas fa-user"></i>
+        Dados do cliente
+    </h4>
+
+    <div style="
+        display:grid;
+        grid-template-columns:repeat(12, 1fr);
+        gap:12px;
+        align-items:end;
+    ">
+
+        <!-- NOME -->
+        <div style="grid-column:span 8;">
+            <label style="
+                display:block;
+                font-weight:600;
+                margin-bottom:5px;
+            ">
+                Nome completo *
+            </label>
+
+            <input
+                type="text"
+                id="clienteNome"
+                class="form-control"
+                value="${esc(nomeCliente)}"
+                required
+            >
+        </div>
+
+        <!-- CPF -->
+        <div style="grid-column:span 4;">
+            <label style="
+                display:block;
+                font-weight:600;
+                margin-bottom:5px;
+            ">
+                CPF / CNPJ *
+            </label>
+
+            <input
+                type="text"
+                id="clienteDocumento"
+                class="form-control"
+                value="${esc(documentoCliente)}"
+                placeholder="CPF/CNPJ"
+                required
+            >
+        </div>
+
+        <!-- ENDEREÇO -->
+        <div style="grid-column:span 6;">
+            <label style="
+                display:block;
+                font-weight:600;
+                margin-bottom:5px;
+            ">
+                Endereço *
+            </label>
+
+            <input
+                type="text"
+                id="clienteEndereco"
+                class="form-control"
+                value="${esc(logradouro)}"
+                required
+            >
+        </div>
+
+        <!-- NÚMERO -->
+        <div style="grid-column:span 2;">
+            <label style="
+                display:block;
+                font-weight:600;
+                margin-bottom:5px;
+            ">
+                Número
+            </label>
+
+            <input
+                type="text"
+                id="clienteNumero"
+                class="form-control"
+                value="${esc(numero || 'S/N')}"
+            >
+        </div>
+
+        <!-- BAIRRO -->
+        <div style="grid-column:span 4;">
+            <label style="
+                display:block;
+                font-weight:600;
+                margin-bottom:5px;
+            ">
+                Bairro
+            </label>
+
+            <input
+                type="text"
+                id="clienteBairro"
+                class="form-control"
+                value="${esc(bairro)}"
+            >
+        </div>
+
+        <!-- CIDADE -->
+        <div style="grid-column:span 6;">
+            <label style="
+                display:block;
+                font-weight:600;
+                margin-bottom:5px;
+            ">
+                Cidade *
+            </label>
+
+            <input
+                type="text"
+                id="clienteCidade"
+                class="form-control"
+                value="${esc(cidade)}"
+                required
+            >
+        </div>
+
+        <!-- UF -->
+        <div style="grid-column:span 2;">
+            <label style="
+                display:block;
+                font-weight:600;
+                margin-bottom:5px;
+            ">
+                UF *
+            </label>
+
+            <input
+                type="text"
+                id="clienteUF"
+                class="form-control"
+                value="${esc(uf)}"
+                maxlength="2"
+                required
+            >
+        </div>
+
+        <!-- CEP -->
+        <div style="grid-column:span 4;">
+            <label style="
+                display:block;
+                font-weight:600;
+                margin-bottom:5px;
+            ">
+                CEP
+            </label>
+
+            <input
+                type="text"
+                id="clienteCEP"
+                class="form-control"
+                value="${esc(cep)}"
+                placeholder="00000000"
+            >
+        </div>
+
+    </div>
+</div>
+
+
+                <!-- FISCAL -->
+
+                <h4>
+
+                    <i class="fas fa-receipt"></i>
+
+                    Dados fiscais e transporte
+
+                </h4>
+
+
+                <div class="row">
+
+                    <div class="col-md-4">
+
+                        <div class="form-group">
+
+                            <label>CFOP</label>
+
+                            <select
+                                id="nfeCfop"
+                                class="form-control"
+                            >
+
+                                <option
+                                    value="6108"
+                                    selected
+                                >
+
+                                    6108 - Venda interestadual
+
+                                </option>
+
+                                <option value="5102">
+
+                                    5102 - Venda dentro do estado
+
+                                </option>
+
+                                <option value="5405">
+
+                                    5405 - Venda de produção
+
+                                </option>
+
+                            </select>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="col-md-8">
+
+                        <div class="form-group">
+
+                            <label>
+                                Transportadora
+                            </label>
+
+                            <select
+                                id="nfeTransportadora"
+                                class="form-control"
+                            >
+
+                                <option value="">
+
+                                    Selecione uma transportadora
+
+                                </option>
+
+                            </select>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <!-- BOTÕES -->
+
+                <div
+                    class="
+                        d-flex
+                        justify-content-end
+                        gap-2
+                        mt-3
+                    "
+                >
+
+                    <button
+                        type="button"
+                        class="btn btn-secondary"
+                        onclick="fecharModalEdicaoProdutos()"
+                    >
+
+                        Cancelar
+
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-success"
+                        id="confirmarProdutosFinalBtn"
+                    >
+
+                        <i class="fas fa-file-invoice"></i>
+
+                        Confirmar e Emitir NF-e
+
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        `;
+
+        // =====================================================
+        // ADICIONAR MODAL
+        // =====================================================
+
+        const modalContainer =
+            document.createElement('div');
+
+        modalContainer.innerHTML =
+            modalHTML;
+
+        document.body.appendChild(
+            modalContainer.firstElementChild
+        );
+
+        // Agora que o modal existe no DOM,
+        // carregar a lista de transportadoras.
+
+        await carregarTransportadorasSelect();
+
+        // =====================================================
+        // CARREGAR TRANSPORTADORAS
+        // =====================================================
+
+        carregarTransportadorasSelect()
+            .catch(error => {
+
+                console.error(
+                    '❌ Erro no carregamento das transportadoras:',
+                    error
+                );
+
+            });
+
+        // CFOP padrão
+        const cfopSelect =
+            document.getElementById('nfeCfop');
+
+        if (cfopSelect) {
+            cfopSelect.value = '6108';
+        }
+
+        // Salva token
+        window._mlAccessToken = token;
+
+        // =====================================================
+        // RECALCULAR TOTAL
+        // =====================================================
+
+        const recalcularTotalGeral = () => {
+
+            let total = 0;
+
+            produtosEditados.forEach(p => {
+
+                total +=
+                    (Number(p.quantidade) || 0) *
+                    (Number(p.valor_unitario) || 0);
+
+            });
+
+            const totalCell =
+                document.getElementById(
+                    'totalGeralProdutos'
+                );
+
+            if (totalCell) {
+
+                totalCell.textContent =
+                    `R$ ${total.toFixed(2)}`;
+            }
+        };
+
+        // =====================================================
+        // CAMPOS EDITÁVEIS DOS PRODUTOS
+        // =====================================================
+
+        document.querySelectorAll(
+            `
+            #modalEdicaoProdutos .nome-produto,
+            #modalEdicaoProdutos .sku-produto,
+            #modalEdicaoProdutos .qtd-produto,
+            #modalEdicaoProdutos .valor-produto,
+            #modalEdicaoProdutos .ncm-produto
+            `
+        ).forEach(input => {
+
+            input.addEventListener(
+                'input',
+                function () {
+
+                    const idx =
+                        Number(
+                            this.dataset.index
+                        );
+
+                    const row =
+                        this.closest('tr');
+
+                    if (
+                        !row ||
+                        !produtosEditados[idx]
+                    ) {
+                        return;
+                    }
+
+                    const p =
+                        produtosEditados[idx];
+
+                    p.nome =
+                        row.querySelector(
+                            '.nome-produto'
+                        )?.value.trim() ||
+                        'Produto';
+
+                    p.sku =
+                        row.querySelector(
+                            '.sku-produto'
+                        )?.value.trim() ||
+                        'SEM_SKU';
+
+                    p.quantidade =
+                        parseFloat(
+                            row.querySelector(
+                                '.qtd-produto'
+                            )?.value
+                        ) || 0;
+
+                    p.valor_unitario =
+                        parseFloat(
+                            row.querySelector(
+                                '.valor-produto'
+                            )?.value
+                        ) || 0;
+
+                    p.ncm =
+                        row.querySelector(
+                            '.ncm-produto'
+                        )?.value.trim() ||
+                        '87149990';
+
+                    const subtotalCell =
+                        row.querySelector(
+                            '.subtotal-produto'
+                        );
+
+                    if (subtotalCell) {
+
+                        subtotalCell.textContent =
+                            `R$ ${(p.quantidade * p.valor_unitario).toFixed(2)}`;
+                    }
+
+                    recalcularTotalGeral();
+                }
+            );
         });
+
+        // =====================================================
+        // BOTÃO EMITIR
+        // =====================================================
+
+        document
+            .getElementById(
+                'confirmarProdutosFinalBtn'
+            )
+            ?.addEventListener(
+                'click',
+                async function (e) {
+
+                    e.preventDefault();
+                    e.stopPropagation();
+
+                    await confirmarProdutosEditados();
+                }
+            );
 
     } catch (error) {
-        console.error('Erro ao carregar produtos:', error);
-        showToast('Erro ao carregar produtos: ' + error.message, 'error');
+
+        console.error(
+            '❌ Erro ao abrir modal de emissão:',
+            error
+        );
+
+        showToast(
+            'Erro ao carregar dados da emissão: ' +
+            error.message,
+            'error'
+        );
+
+        pendingEmitOrderId = null;
+        vendaIdParaEdicao = null;
     }
 }
 
 function fecharModalEdicaoProdutos() {
-    const modal = document.getElementById('modalEdicaoProdutos');
-    if (modal) modal.remove();
+    const modal =
+        document.getElementById(
+            'modalEdicaoProdutos'
+        );
+    if (modal) {
+        modal.remove();
+    }
 }
 
 async function confirmarProdutosEditados() {
-    console.log('🔵 [confirmarProdutosEditados] FUNÇÃO INICIADA');
-    
-    const vendaId = vendaIdParaEdicao;
+
+    console.log(
+        '🔵 [confirmarProdutosEditados] MODAL ÚNICO'
+    );
+
+    const vendaId =
+        vendaIdParaEdicao ||
+        pendingEmitOrderId;
+
     if (!vendaId) {
-        showToast('❌ ID da venda não encontrado', 'error');
+
+        showToast(
+            '❌ ID da venda não encontrado',
+            'error'
+        );
+
         return;
     }
 
-    if (!produtosEditados || produtosEditados.length === 0) {
-        showToast('❌ Nenhum produto para emitir', 'error');
+    // =====================================================
+    // CAPTURAR VALORES VISÍVEIS DA TABELA
+    // =====================================================
+
+    document
+        .querySelectorAll(
+            '#modalEdicaoProdutos #produtosEditaveisBody tr'
+        )
+        .forEach(
+            (row, index) => {
+
+                if (!produtosEditados[index]) {
+                    return;
+                }
+
+                produtosEditados[index].nome =
+                    row.querySelector(
+                        '.nome-produto'
+                    )?.value.trim() ||
+                    'Produto';
+
+                produtosEditados[index].sku =
+                    row.querySelector(
+                        '.sku-produto'
+                    )?.value.trim() ||
+                    'SEM_SKU';
+
+                produtosEditados[index].quantidade =
+                    parseFloat(
+                        row.querySelector(
+                            '.qtd-produto'
+                        )?.value
+                    ) || 0;
+
+                produtosEditados[index].valor_unitario =
+                    parseFloat(
+                        row.querySelector(
+                            '.valor-produto'
+                        )?.value
+                    ) || 0;
+
+                produtosEditados[index].ncm =
+                    row.querySelector(
+                        '.ncm-produto'
+                    )?.value.trim() ||
+                    '87149990';
+            }
+        );
+
+    // =====================================================
+    // VALIDAR PRODUTOS
+    // =====================================================
+
+    if (
+        !produtosEditados ||
+        produtosEditados.length === 0
+    ) {
+
+        showToast(
+            '❌ Nenhum produto para emitir',
+            'error'
+        );
+
+        return;
+    }
+
+    const produtoInvalido =
+        produtosEditados.find(
+            p =>
+                !p.nome ||
+                p.quantidade <= 0 ||
+                p.valor_unitario < 0
+        );
+
+    if (produtoInvalido) {
+
+        showToast(
+            '⚠️ Revise nome, quantidade e valor dos produtos.',
+            'warning'
+        );
+
         return;
     }
 
     try {
-        const ncmPromises = produtosEditados.map(p => {
-            if (p.sku && p.sku !== 'SEM_SKU' && p.ncm) {
-                return window.supabaseClient
-                    .from('produto_ncm')
-                    .upsert({ sku: p.sku, ncm: p.ncm }, { onConflict: 'sku' });
-            }
-            return Promise.resolve();
-        });
-        await Promise.all(ncmPromises);
 
-        window.produtosParaEmissao = produtosEditados.map(p => ({
-            nome: p.nome || 'Produto',
-            quantidade: p.quantidade || 1,
-            valor_unitario: p.valor_unitario || 0,
-            sku: p.sku || 'SEM_SKU',
-            ncm: p.ncm || '87149990'
-        }));
+        // =====================================================
+        // SALVAR NCM
+        // =====================================================
 
-        fecharModalEdicaoProdutos();
-        pendingEmitOrderId = vendaId;
-        
-        await emitirNFEParaVenda(vendaId);
-        
-        vendaIdParaEdicao = null;
-        produtosEditados = [];
+        const ncmPromises =
+            produtosEditados.map(
+                p => {
 
-    } catch (error) {
-        console.error('❌ Erro em confirmarProdutosEditados:', error);
-        showToast('❌ Erro ao confirmar produtos: ' + error.message, 'error');
-        vendaIdParaEdicao = null;
-        produtosEditados = [];
+                    if (
+                        p.sku &&
+                        p.sku !== 'SEM_SKU' &&
+                        p.ncm
+                    ) {
+
+                        return window
+                            .supabaseClient
+                            .from(
+                                'produto_ncm'
+                            )
+                            .upsert(
+                                {
+                                    sku:
+                                        p.sku,
+
+                                    ncm:
+                                        p.ncm
+                                },
+                                {
+                                    onConflict:
+                                        'sku'
+                                }
+                            );
+                    }
+
+                    return Promise.resolve();
+                }
+            );
+
+        await Promise.all(
+            ncmPromises
+        );
+
+        // =====================================================
+        // PRODUTOS QUE SERÃO ENVIADOS PARA A NF-E
+        // =====================================================
+
+        window.produtosParaEmissao =
+            produtosEditados.map(
+                p => ({
+
+                    nome:
+                        p.nome ||
+                        'Produto',
+
+                    quantidade:
+                        p.quantidade ||
+                        1,
+
+                    valor_unitario:
+                        p.valor_unitario ||
+                        0,
+
+                    sku:
+                        p.sku ||
+                        'SEM_SKU',
+
+                    ncm:
+                        p.ncm ||
+                        '87149990'
+                })
+            );
+
+        pendingEmitOrderId =
+            vendaId;
+
+        // =====================================================
+        // EMITIR DIRETAMENTE
+        // =====================================================
+
+        await confirmarEmissaoNFE();
+             } catch (error) {
+        console.error(
+            '❌ Erro em confirmarProdutosEditados:',
+            error
+        );
+        showToast(
+            '❌ Erro ao confirmar produtos: ' +
+            error.message,
+            'error'
+        );
     }
 }
 
@@ -1571,11 +2816,658 @@ window.handleCancelarNFEClick = handleCancelarNFEClick;
 // CARREGAR VENDAS PENDENTES (CORRIGIDO - VERIFICA NF-e NO ML)
 // =========================================================
 
-async function carregarVendasPendentes() {
+function renderizarVendasNFETabela(vendas) {
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
+
+    if (!tbody) return;
+
+    if (
+        !Array.isArray(vendas) ||
+        vendas.length === 0
+    ) {
+
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8"
+                    class="text-center py-4">
+                    Nenhuma venda encontrada
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    vendasPendentes = vendas;
+
+    function gerarBadgeEnvio(venda) {
+
+        const logisticType =
+            venda._logistic_type || '';
+
+        const shippingMode =
+            venda._shipping_mode || '';
+
+        const tipo =
+            (
+                logisticType +
+                ' ' +
+                shippingMode
+            ).toUpperCase();
+
+        if (
+            tipo.includes('FULL') ||
+            tipo.includes('FULFILLMENT')
+        ) {
+
+            return `
+                <span
+                    class="badge badge-danger"
+                    style="
+                        background:#dc3545;
+                        color:white;
+                        padding:4px 10px;
+                    "
+                >
+                    <i class="fas fa-warehouse"></i>
+                    FULL
+                </span>
+            `;
+        }
+
+        if (
+            tipo.includes('DROP_OFF') ||
+            tipo.includes('SELF_SERVICE') ||
+            tipo.includes('FLEX')
+        ) {
+
+            return `
+                <span
+                    class="badge"
+                    style="
+                        background:#fd7e14;
+                        color:white;
+                        padding:4px 10px;
+                    "
+                >
+                    <i class="fas fa-motorcycle"></i>
+                    FLEX
+                </span>
+            `;
+        }
+
+        if (
+            tipo.includes('CROSS_DOCKING') ||
+            tipo.includes('ME2') ||
+            tipo.includes('MERCADO_ENVIOS')
+        ) {
+
+            return `
+                <span
+                    class="badge"
+                    style="
+                        background:#17a2b8;
+                        color:white;
+                        padding:4px 10px;
+                    "
+                >
+                    <i class="fas fa-truck"></i>
+                    ME
+                </span>
+            `;
+        }
+
+        if (
+            tipo &&
+            tipo !== 'N/I'
+        ) {
+
+            return `
+                <span
+                    class="badge"
+                    style="
+                        background:#6c757d;
+                        color:white;
+                        padding:4px 10px;
+                    "
+                >
+                    ${tipo}
+                </span>
+            `;
+        }
+
+        if (venda.shipping?.id) {
+
+            return `
+                <span
+                    class="badge"
+                    style="
+                        background:#ffc107;
+                        color:#212529;
+                        padding:4px 10px;
+                    "
+                >
+                    PENDENTE
+                </span>
+            `;
+        }
+
+        return `
+            <span class="badge badge-secondary">
+                N/I
+            </span>
+        `;
+    }
+
+    tbody.innerHTML =
+        vendas.map(v => {
+
+            const vendaId =
+                v.id;
+
+            const dataVenda =
+                v.date_created
+                    ? new Date(
+                        v.date_created
+                    ).toLocaleDateString(
+                        'pt-BR'
+                    )
+                    : '-';
+
+            const cliente =
+                v.buyer?.nickname ||
+                'N/I';
+
+            const sku =
+                v.order_items?.[0]
+                    ?.item
+                    ?.seller_sku ||
+                'N/A';
+
+            const valorExibir =
+                v._valor_produto ||
+                v.total_amount ||
+                0;
+
+            const isFull =
+                v._is_full ||
+                false;
+
+            const temNFE =
+                v._tem_nfe ||
+                false;
+
+            let statusNFE = '';
+            let botaoEmitir = '';
+
+            if (isFull) {
+
+                statusNFE = `
+                    <span
+                        class="badge badge-danger"
+                        style="
+                            background:#dc3545;
+                            color:white;
+                            padding:4px 10px;
+                        "
+                    >
+                        🚫 NF-e gerada pelo ML
+                    </span>
+                `;
+
+                botaoEmitir = `
+                    <span
+                        class="text-muted"
+                        style="font-size:12px;"
+                    >
+                        <i class="fas fa-lock"></i>
+                        Automática
+                    </span>
+                `;
+
+            } else if (temNFE) {
+
+                statusNFE = `
+                    <span
+                        class="badge badge-success"
+                        style="
+                            background:#28a745;
+                            color:white;
+                            padding:4px 10px;
+                        "
+                    >
+                        ✅ NF-e Emitida
+                    </span>
+                `;
+
+                botaoEmitir = `
+                    <button
+                        class="
+                            btn
+                            btn-sm
+                            btn-warning
+                            btn-ver-nfe
+                        "
+                        data-venda-id="${vendaId}"
+                        style="margin-right:4px;"
+                    >
+                        <i class="fas fa-eye"></i>
+                        Ver
+                    </button>
+
+                    <button
+                        class="
+                            btn
+                            btn-sm
+                            btn-danger
+                            btn-cancelar-nfe
+                        "
+                        data-venda-id="${vendaId}"
+                    >
+                        <i class="fas fa-times"></i>
+                        Cancelar
+                    </button>
+                `;
+
+            } else {
+
+                statusNFE = `
+                    <span class="badge badge-warning">
+                        ⏳ Pendente
+                    </span>
+                `;
+
+                botaoEmitir = `
+                    <button
+                        class="
+                            btn
+                            btn-sm
+                            btn-success
+                            btn-emitir-nfe
+                        "
+                        data-venda-id="${vendaId}"
+                    >
+                        <i class="fas fa-file-invoice"></i>
+                        Emitir NF-e
+                    </button>
+                `;
+            }
+
+            return `
+                <tr>
+
+                    <td>
+                        <strong>
+                            ${vendaId}
+                        </strong>
+                    </td>
+
+                    <td>
+                        ${dataVenda}
+                    </td>
+
+                    <td>
+                        ${cliente}
+                    </td>
+
+                    <td>
+                        <code
+                            style="font-size:11px;"
+                        >
+                            ${sku}
+                        </code>
+                    </td>
+
+                    <td>
+                        <strong>
+                            R$
+                            ${parseFloat(
+                                valorExibir || 0
+                            ).toFixed(2)}
+                        </strong>
+                    </td>
+
+                    <td>
+                        ${gerarBadgeEnvio(v)}
+                    </td>
+
+                    <td>
+                        ${statusNFE}
+                    </td>
+
+                    <td>
+                        ${botaoEmitir}
+                    </td>
+
+                </tr>
+            `;
+        }).join('');
+
+    // =====================================================
+    // EVENTOS
+    // =====================================================
+
+    document
+        .querySelectorAll(
+            '#vendasPendentesBody .btn-emitir-nfe'
+        )
+        .forEach(btn => {
+
+            btn.addEventListener(
+                'click',
+                window.handleEmitirNFEClick
+            );
+        });
+
+    document
+        .querySelectorAll(
+            '#vendasPendentesBody .btn-ver-nfe'
+        )
+        .forEach(btn => {
+
+            btn.addEventListener(
+                'click',
+                window.handleVerNFEClick
+            );
+        });
+
+    document
+        .querySelectorAll(
+            '#vendasPendentesBody .btn-cancelar-nfe'
+        )
+        .forEach(btn => {
+
+            btn.addEventListener(
+                'click',
+                window.handleCancelarNFEClick
+            );
+        });
+}
+
+async function salvarVendasCacheNFE(
+    vendas
+) {
+
+    if (
+        !Array.isArray(vendas) ||
+        vendas.length === 0
+    ) {
+        return;
+    }
+
+    try {
+
+        console.log(
+            `💾 Salvando ${vendas.length} vendas no cache...`
+        );
+
+        const registros =
+            vendas.map(venda => {
+
+                const sku =
+                    venda.order_items?.[0]
+                        ?.item
+                        ?.seller_sku ||
+                    'N/A';
+
+                const cliente =
+                    venda.buyer
+                        ?.nickname ||
+                    'N/I';
+
+                return {
+
+                    id_venda_ml:
+                        String(
+                            venda.id
+                        ),
+
+                    data_venda:
+                        venda.date_created ||
+                        null,
+
+                    cliente,
+
+                    sku,
+
+                    valor_produto:
+                        Number(
+                            venda._valor_produto ||
+                            venda.total_amount ||
+                            0
+                        ),
+
+                    valor_frete:
+                        Number(
+                            venda._valor_frete ||
+                            0
+                        ),
+
+                    total_pago:
+                        Number(
+                            venda._total_pago ||
+                            venda.total_amount ||
+                            0
+                        ),
+
+                    logistic_type:
+                        venda._logistic_type ||
+                        '',
+
+                    shipping_mode:
+                        venda._shipping_mode ||
+                        '',
+
+                    is_full:
+                        Boolean(
+                            venda._is_full
+                        ),
+
+                    tem_nfe:
+                        Boolean(
+                            venda._tem_nfe
+                        ),
+
+                    // Guarda a venda para
+                    // podermos reconstruir a tela
+                    venda_json:
+                        venda,
+
+                    atualizado_em:
+                        new Date()
+                            .toISOString()
+                };
+            });
+
+        const {
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .upsert(
+                    registros,
+                    {
+                        onConflict:
+                            'id_venda_ml'
+                    }
+                );
+
+        if (error) {
+
+            throw error;
+        }
+
+        console.log(
+            `✅ ${registros.length} vendas salvas no cache`
+        );
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro ao salvar cache de vendas:',
+            error
+        );
+    }
+}
+
+async function carregarVendasCacheNFE() {
+
+    try {
+
+        console.log(
+            '⚡ Carregando vendas salvas no banco...'
+        );
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .select('*')
+                .order(
+                    'data_venda',
+                    {
+                        ascending:
+                            false
+                    }
+                )
+                .limit(200);
+
+        if (error) {
+
+            throw error;
+        }
+
+        if (
+            !data ||
+            data.length === 0
+        ) {
+
+            console.log(
+                'ℹ️ Cache de vendas ainda está vazio'
+            );
+
+            return [];
+        }
+
+        const vendas =
+            data.map(registro => {
+
+                // Preferir venda_json,
+                // pois mantém todos os
+                // dados originais do ML.
+                const venda =
+                    registro.venda_json ||
+                    {};
+
+                return {
+
+                    ...venda,
+
+                    id:
+                        String(
+                            registro.id_venda_ml
+                        ),
+
+                    date_created:
+                        registro.data_venda,
+
+                    buyer:
+                        venda.buyer || {
+                            nickname:
+                                registro.cliente
+                        },
+
+                    order_items:
+                        venda.order_items || [
+                            {
+                                item: {
+                                    seller_sku:
+                                        registro.sku
+                                }
+                            }
+                        ],
+
+                    total_amount:
+                        Number(
+                            registro.total_pago ||
+                            registro.valor_produto ||
+                            0
+                        ),
+
+                    _valor_produto:
+                        Number(
+                            registro.valor_produto ||
+                            0
+                        ),
+
+                    _valor_frete:
+                        Number(
+                            registro.valor_frete ||
+                            0
+                        ),
+
+                    _total_pago:
+                        Number(
+                            registro.total_pago ||
+                            0
+                        ),
+
+                    _logistic_type:
+                        registro.logistic_type ||
+                        '',
+
+                    _shipping_mode:
+                        registro.shipping_mode ||
+                        '',
+
+                    _is_full:
+                        Boolean(
+                            registro.is_full
+                        ),
+
+                    _tem_nfe:
+                        Boolean(
+                            registro.tem_nfe
+                        )
+                };
+            });
+
+        console.log(
+            `⚡ ${vendas.length} vendas carregadas do banco`
+        );
+
+        return vendas;
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro ao carregar cache de vendas:',
+            error
+        );
+
+        return [];
+    }
+}
+
+    async function sincronizarVendasPendentesML() {
     const tbody = document.getElementById('vendasPendentesBody');
     if (!tbody) return;
 
-    tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4"><div class="spinner"></div> Carregando vendas...</td></tr>`;
+    console.log(
+    '🔄 Atualizando vendas com Mercado Livre em segundo plano...'
+    );
 
     try {
         let token = localStorage.getItem('ml_access_token');
@@ -1810,81 +3702,21 @@ async function carregarVendasPendentes() {
 
         vendasPendentes = vendasProcessadas;
 
-        // ===== 6. RENDERIZAR TABELA =====
-        function gerarBadgeEnvio(venda) {
-            const logisticType = venda._logistic_type || '';
-            const shippingMode = venda._shipping_mode || '';
-            const tipo = (logisticType + ' ' + shippingMode).toUpperCase();
+        // =====================================================
+        // SALVAR RESULTADO NO BANCO
+        // =====================================================
 
-            if (tipo.includes('FULL') || tipo.includes('FULFILLMENT')) {
-                return '<span class="badge badge-danger" style="background: #dc3545; color: white; padding: 4px 10px;"><i class="fas fa-warehouse"></i> FULL</span>';
-            }
-            
-            if (tipo.includes('DROP_OFF') || tipo.includes('SELF_SERVICE') || tipo.includes('FLEX')) {
-                return '<span class="badge badge-flex" style="background: #fd7e14; color: white; padding: 4px 10px;"><i class="fas fa-motorcycle"></i> FLEX</span>';
-            }
-            
-            if (tipo.includes('CROSS_DOCKING') || tipo.includes('ME2') || tipo.includes('MERCADO_ENVIOS')) {
-                return '<span class="badge badge-mercado" style="background: #17a2b8; color: white; padding: 4px 10px;"><i class="fas fa-truck"></i> ME</span>';
-            }
+        await salvarVendasCacheNFE(
+            vendasProcessadas
+        );
 
-            if (tipo && tipo !== 'N/I' && tipo !== '') {
-                return `<span class="badge badge-info" style="background: #6c757d; color: white; padding: 4px 10px;">${tipo}</span>`;
-            }
+        // =====================================================
+        // ATUALIZAR TELA
+        // =====================================================
 
-            if (venda.shipping?.id) {
-                return '<span class="badge badge-warning" style="background: #ffc107; color: #212529; padding: 4px 10px;"><i class="fas fa-clock"></i> PENDENTE</span>';
-            }
-
-            return '<span class="badge badge-secondary" style="padding: 4px 10px;">N/I</span>';
-        }
-
-        tbody.innerHTML = vendasProcessadas.map(v => {
-            const vendaId = v.id;
-            const dataVenda = v.date_created ? new Date(v.date_created).toLocaleDateString('pt-BR') : '-';
-            const cliente = v.buyer?.nickname || 'N/I';
-            const sku = v.order_items?.[0]?.item?.seller_sku || 'N/A';
-            const valorExibir = v._valor_produto || v.total_amount || 0;
-            
-            let statusNFE = '';
-            let botaoEmitir = '';
-            const isFull = v._is_full || false;
-            const temNFE = v._tem_nfe || false;
-
-            if (isFull) {
-                statusNFE = '<span class="badge badge-danger" style="background: #dc3545; color: white; padding: 4px 10px;">🚫 NF-e gerada pelo ML</span>';
-                botaoEmitir = '<span class="text-muted" style="font-size: 12px;"><i class="fas fa-lock"></i> Automática</span>';
-            } else if (temNFE) {
-                statusNFE = '<span class="badge badge-success" style="background: #28a745; color: white; padding: 4px 10px;">✅ NF-e Emitida</span>';
-                botaoEmitir = `
-                    <button class="btn btn-sm btn-warning btn-ver-nfe" data-venda-id="${vendaId}" style="margin-right: 4px;">
-                        <i class="fas fa-eye"></i> Ver
-                    </button>
-                    <button class="btn btn-sm btn-danger btn-cancelar-nfe" data-venda-id="${vendaId}">
-                        <i class="fas fa-times"></i> Cancelar
-                    </button>
-                `;
-            } else {
-                statusNFE = '<span class="badge badge-warning">⏳ Pendente</span>';
-                botaoEmitir = `
-                    <button class="btn btn-sm btn-success btn-emitir-nfe" data-venda-id="${vendaId}">
-                        <i class="fas fa-file-invoice"></i> Emitir NF-e
-                    </button>
-                `;
-            }
-
-            return `
-            <tr>
-                <td><strong>${vendaId}</strong></td>
-                <td>${dataVenda}</td>
-                <td>${cliente}</td>
-                <td><code style="font-size: 11px;">${sku}</code></td>
-                <td><strong>R$ ${parseFloat(valorExibir || 0).toFixed(2)}</strong></td>
-                <td>${gerarBadgeEnvio(v)}</td>
-                <td>${statusNFE}</td>
-                <td>${botaoEmitir}</td>
-            </tr>`;
-        }).join('');
+        renderizarVendasNFETabela(
+            vendasProcessadas
+        );
 
         // ===== 7. ADICIONAR EVENT LISTENERS =====
         document.querySelectorAll('#vendasPendentesBody .btn-emitir-nfe').forEach(btn => {
@@ -1905,6 +3737,154 @@ async function carregarVendasPendentes() {
     } catch (error) {
         console.error('❌ Erro ao carregar vendas pendentes:', error);
         tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">Erro: ${error.message}</td></tr>`;
+    }
+}
+
+async function carregarVendasPendentes(
+    forcarAtualizacao = false
+) {
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
+
+    if (!tbody) return;
+
+    // =====================================================
+    // 1. CARREGAR BANCO PRIMEIRO
+    // =====================================================
+
+    const vendasCache =
+        await carregarVendasCacheNFE();
+
+    if (
+        vendasCache.length > 0
+    ) {
+
+        // Mostra imediatamente
+        renderizarVendasNFETabela(
+            vendasCache
+        );
+
+        console.log(
+            '⚡ Tabela exibida usando cache'
+        );
+
+    } else {
+
+        tbody.innerHTML = `
+            <tr>
+                <td
+                    colspan="8"
+                    class="text-center py-4"
+                >
+                    <div class="spinner"></div>
+
+                    Primeira sincronização
+                    com Mercado Livre...
+                </td>
+            </tr>
+        `;
+    }
+
+    // =====================================================
+    // 2. EVITAR DUAS SINCRONIZAÇÕES
+    // =====================================================
+
+    if (
+        window._sincronizacaoVendasNFEEmAndamento
+    ) {
+
+        console.log(
+            'ℹ️ Sincronização de vendas já está acontecendo'
+        );
+
+        return;
+    }
+
+    // =====================================================
+    // 3. VERIFICAR QUANDO SINCRONIZOU
+    // =====================================================
+
+    const ultimaSync =
+        Number(
+            localStorage.getItem(
+                'nfe_ultima_sincronizacao'
+            ) || 0
+        );
+
+    const agora =
+        Date.now();
+
+    // Atualizar automaticamente
+    // a cada 10 minutos.
+    const intervalo =
+        10 * 60 * 1000;
+
+    const precisaAtualizar =
+        forcarAtualizacao ||
+        vendasCache.length === 0 ||
+        (
+            agora -
+            ultimaSync >
+            intervalo
+        );
+
+    if (!precisaAtualizar) {
+
+        console.log(
+            '✅ Cache ainda recente. Não precisa consultar ML.'
+        );
+
+        return;
+    }
+
+    // =====================================================
+    // 4. SINCRONIZAÇÃO EM SEGUNDO PLANO
+    // =====================================================
+
+    window._sincronizacaoVendasNFEEmAndamento =
+        true;
+
+    console.log(
+        '🔄 Iniciando atualização do ML em segundo plano...'
+    );
+
+    // Se não foi solicitada atualização manual,
+    // NÃO usamos await.
+    const processo =
+        sincronizarVendasPendentesML()
+            .then(() => {
+
+                localStorage.setItem(
+                    'nfe_ultima_sincronizacao',
+                    String(
+                        Date.now()
+                    )
+                );
+
+                console.log(
+                    '✅ Sincronização de vendas finalizada'
+                );
+            })
+            .catch(error => {
+
+                console.error(
+                    '❌ Erro na sincronização em segundo plano:',
+                    error
+                );
+            })
+            .finally(() => {
+
+                window._sincronizacaoVendasNFEEmAndamento =
+                    false;
+            });
+
+    // Atualização manual espera terminar.
+    if (forcarAtualizacao) {
+
+        await processo;
     }
 }
 
@@ -2520,472 +4500,1997 @@ function fecharModalDadosClienteNFE() {
     }
 }
 
-// =========================================================
-// SALVAR CLIENTE NO BANCO
-// =========================================================
-
 async function salvarClienteNoBanco(dadosCliente) {
     try {
-        const responseBusca = await fetch(`${window.API_BASE_URL}/nfe/clientes?documento=${dadosCliente.documento}`);
-        if (responseBusca.ok) {
-            const data = await responseBusca.json();
-            if (data.clientes && data.clientes.length > 0) {
-                return;
-            }
+        console.log('👤 Iniciando salvamento do cliente:', dadosCliente);
+
+        const documentoLimpo = String(dadosCliente.documento || '')
+            .replace(/\D/g, '');
+
+        if (!documentoLimpo) {
+            throw new Error('Documento do cliente não informado');
         }
+
+        // =====================================================
+        // 1. VERIFICAR SE O CLIENTE JÁ EXISTE
+        // =====================================================
+
+        const urlBusca =
+            `${window.API_BASE_URL}/nfe/clientes?documento=${encodeURIComponent(documentoLimpo)}`;
+
+        console.log('🔎 Procurando cliente:', documentoLimpo);
+
+        const responseBusca = await fetch(urlBusca);
+
+        if (responseBusca.ok) {
+            const dataBusca = await responseBusca.json();
+
+            console.log('📥 Resultado da busca do cliente:', dataBusca);
+
+            const clientes = Array.isArray(dataBusca.clientes)
+                ? dataBusca.clientes
+                : [];
+
+            // IMPORTANTE:
+            // não basta existir algum cliente.
+            // Tem que existir o MESMO CPF/CNPJ.
+            const clienteExistente = clientes.find(cliente => {
+                const documentoCliente = String(cliente.documento || '')
+                    .replace(/\D/g, '');
+
+                return documentoCliente === documentoLimpo;
+            });
+
+            if (clienteExistente) {
+                console.log(
+                    'ℹ️ Cliente já cadastrado:',
+                    clienteExistente.nome,
+                    documentoLimpo
+                );
+
+                return {
+                    success: true,
+                    existente: true,
+                    cliente: clienteExistente
+                };
+            }
+        } else {
+            console.warn(
+                '⚠️ Não foi possível consultar cliente existente:',
+                responseBusca.status
+            );
+        }
+
+        // =====================================================
+        // 2. CADASTRAR CLIENTE
+        // =====================================================
 
         const payload = {
             nome: dadosCliente.nome,
-            documento: dadosCliente.documento,
+            documento: documentoLimpo,
             logradouro: dadosCliente.endereco,
-            numero: dadosCliente.numero,
-            bairro: dadosCliente.bairro,
+            numero: dadosCliente.numero || 'S/N',
+            bairro: dadosCliente.bairro || '',
             cidade: dadosCliente.cidade,
             uf: dadosCliente.uf,
-            cep: dadosCliente.cep
+            cep: String(dadosCliente.cep || '').replace(/\D/g, '')
         };
 
-        await fetch(`${window.API_BASE_URL}/nfe/clientes`, {
+        console.log('📤 Cadastrando cliente:', payload);
+
+        const response = await fetch(`${window.API_BASE_URL}/nfe/clientes`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(payload)
         });
+
+        let result = {};
+
+        try {
+            result = await response.json();
+        } catch (e) {
+            console.warn('⚠️ API não retornou JSON ao cadastrar cliente');
+        }
+
+        console.log('📥 Resposta do cadastro do cliente:', {
+            status: response.status,
+            ok: response.ok,
+            result
+        });
+
+        if (!response.ok) {
+            throw new Error(
+                result.error ||
+                result.message ||
+                `Erro HTTP ${response.status} ao cadastrar cliente`
+            );
+        }
+
+        if (result.success === false) {
+            throw new Error(
+                result.error ||
+                result.message ||
+                'API informou erro ao cadastrar cliente'
+            );
+        }
+
+        console.log('✅ Cliente salvo com sucesso:', documentoLimpo);
+
+        return {
+            success: true,
+            existente: false,
+            cliente: result.cliente || result
+        };
+
     } catch (error) {
-        console.error('❌ Erro ao salvar cliente:', error);
+
+        console.error('❌ ERRO AO SALVAR CLIENTE:', error);
+
+        showToast(
+            `⚠️ NF-e emitida, mas o cliente não foi salvo: ${error.message}`,
+            'warning'
+        );
+
+        return {
+            success: false,
+            error: error.message
+        };
     }
 }
 
-// =========================================================
-// CONFIRMAR EMISSÃO NF-E (COMPLETA COM SINCRONIZAÇÃO ML)
-// =========================================================
-
 async function confirmarEmissaoNFE() {
     console.log('🔵 [confirmarEmissaoNFE] FUNÇÃO INICIADA');
-    
+
+    // =====================================================
+    // CONTROLE DE SEGURANÇA
+    // =====================================================
+
+    let nfeFoiEmitida = false;
+
     const orderId = pendingEmitOrderId;
+
     if (!orderId) {
-        showToast('❌ Nenhuma venda selecionada', 'error');
-        fecharModalDadosClienteNFE();
+        showToast(
+            '❌ Nenhuma venda selecionada',
+            'error'
+        );
+
+        fecharModalEdicaoProdutos();
+
         return;
     }
 
-    // Capturar dados do cliente
-    const nome = document.getElementById('clienteNome').value.trim();
-    const documento = document.getElementById('clienteDocumento').value.trim().replace(/\D/g, '');
-    const endereco = document.getElementById('clienteEndereco').value.trim();
-    const numero = document.getElementById('clienteNumero').value.trim() || 'S/N';
-    const bairro = document.getElementById('clienteBairro').value.trim() || '';
-    const cidade = document.getElementById('clienteCidade').value.trim();
-    const uf = document.getElementById('clienteUF').value.trim().toUpperCase();
-    const cep = document.getElementById('clienteCEP').value.trim().replace(/\D/g, '');
-    const transportadoraId = document.getElementById('nfeTransportadora')?.value || null;
+    // Evitar duas emissões simultâneas
+    if (window._nfeEmissaoEmAndamento) {
 
-    const cfopSelect = document.getElementById('nfeCfop');
-    let cfop = cfopSelect ? cfopSelect.value : '';
-    if (!cfop) {
-        cfop = (uf === 'PR') ? '5102' : '6108';
-    }
+        showToast(
+            '⚠️ Já existe uma emissão de NF-e em andamento. Aguarde.',
+            'warning'
+        );
 
-    // Validações
-    if (!nome) { showToast('⚠️ Nome é obrigatório', 'warning'); return; }
-    if (!documento || (documento.length !== 11 && documento.length !== 14)) {
-        showToast('⚠️ CPF/CNPJ inválido (11 ou 14 dígitos)', 'warning');
         return;
     }
-    if (!endereco) { showToast('⚠️ Endereço é obrigatório', 'warning'); return; }
-    if (!cidade) { showToast('⚠️ Cidade é obrigatória', 'warning'); return; }
-    if (uf.length !== 2) { showToast('⚠️ UF deve ter 2 letras', 'warning'); return; }
 
-    const ufValidas = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
+    // =====================================================
+    // BUSCAR O MODAL NOVO
+    // =====================================================
+
+    const modal =
+        document.getElementById(
+            'modalEdicaoProdutos'
+        );
+
+    if (!modal) {
+
+        showToast(
+            '❌ Modal de emissão não encontrado',
+            'error'
+        );
+
+        return;
+    }
+
+    // Buscar sempre dentro do modal novo
+    // para evitar IDs duplicados com o modal antigo.
+    const campo = selector =>
+        modal.querySelector(selector);
+
+    // =====================================================
+    // DADOS DO CLIENTE
+    // =====================================================
+
+    const nome =
+        campo('#clienteNome')
+            ?.value
+            .trim() || '';
+
+    const documento =
+        (
+            campo('#clienteDocumento')
+                ?.value || ''
+        )
+            .trim()
+            .replace(/\D/g, '');
+
+    const endereco =
+        campo('#clienteEndereco')
+            ?.value
+            .trim() || '';
+
+    const numero =
+        campo('#clienteNumero')
+            ?.value
+            .trim() || 'S/N';
+
+    const bairro =
+        campo('#clienteBairro')
+            ?.value
+            .trim() || '';
+
+    const cidade =
+        campo('#clienteCidade')
+            ?.value
+            .trim() || '';
+
+    const uf =
+        (
+            campo('#clienteUF')
+                ?.value || ''
+        )
+            .trim()
+            .toUpperCase();
+
+    const cep =
+        (
+            campo('#clienteCEP')
+                ?.value || ''
+        )
+            .trim()
+            .replace(/\D/g, '');
+
+    const transportadoraId =
+        campo('#nfeTransportadora')
+            ?.value || null;
+
+    // =====================================================
+    // CFOP
+    // =====================================================
+
+    const cfopSelect =
+        campo('#nfeCfop');
+
+    const cfop =
+        cfopSelect?.value ||
+        '6108';
+
+    // =====================================================
+    // VALIDAÇÕES
+    // =====================================================
+
+    if (!nome) {
+
+        showToast(
+            '⚠️ Nome é obrigatório',
+            'warning'
+        );
+
+        return;
+    }
+
+    if (
+        !documento ||
+        (
+            documento.length !== 11 &&
+            documento.length !== 14
+        )
+    ) {
+
+        showToast(
+            '⚠️ CPF/CNPJ inválido (11 ou 14 dígitos)',
+            'warning'
+        );
+
+        return;
+    }
+
+    if (!endereco) {
+
+        showToast(
+            '⚠️ Endereço é obrigatório',
+            'warning'
+        );
+
+        return;
+    }
+
+    if (!cidade) {
+
+        showToast(
+            '⚠️ Cidade é obrigatória',
+            'warning'
+        );
+
+        return;
+    }
+
+    if (uf.length !== 2) {
+
+        showToast(
+            '⚠️ UF deve ter 2 letras',
+            'warning'
+        );
+
+        return;
+    }
+
+    const ufValidas = [
+        'AC',
+        'AL',
+        'AP',
+        'AM',
+        'BA',
+        'CE',
+        'DF',
+        'ES',
+        'GO',
+        'MA',
+        'MT',
+        'MS',
+        'MG',
+        'PA',
+        'PB',
+        'PR',
+        'PE',
+        'PI',
+        'RJ',
+        'RN',
+        'RS',
+        'RO',
+        'RR',
+        'SC',
+        'SP',
+        'SE',
+        'TO'
+    ];
+
     if (!ufValidas.includes(uf)) {
-        showToast(`⚠️ UF "${uf}" inválida`, 'warning');
+
+        showToast(
+            `⚠️ UF "${uf}" inválida`,
+            'warning'
+        );
+
         return;
     }
 
-    fecharModalDadosClienteNFE();
+    // =====================================================
+    // BOTÃO DE EMISSÃO
+    // =====================================================
 
-    // Loading no botão
-    const btn = document.querySelector(`#vendasPendentesBody .btn-emitir-nfe[data-venda-id="${orderId}"]`);
-    let originalText = '';
+    const btn =
+        modal.querySelector(
+            '#confirmarProdutosFinalBtn'
+        ) ||
+        document.querySelector(
+            `#vendasPendentesBody .btn-emitir-nfe[data-venda-id="${orderId}"]`
+        );
+
+    const originalText =
+        btn?.innerHTML || '';
+
     if (btn) {
-        originalText = btn.innerHTML;
-        btn.innerHTML = '<span class="spinner"></span> Emitindo...';
+
+        btn.innerHTML =
+            '<span class="spinner"></span> Emitindo...';
+
         btn.disabled = true;
     }
 
+    // Impede outro clique enquanto trabalha
+    window._nfeEmissaoEmAndamento =
+        String(orderId);
+
     try {
-        let token = localStorage.getItem('ml_access_token');
-        if (!token && typeof window.getValidToken === 'function') {
-            const tokenData = await window.getValidToken();
-            token = tokenData?.access_token;
+
+        // =====================================================
+        // 1. VERIFICAR SE JÁ EXISTE NF-E PARA A VENDA
+        // =====================================================
+
+        try {
+
+            console.log(
+                `🔎 Verificando se a venda ${orderId} já possui NF-e...`
+            );
+
+            const verificarResponse =
+                await fetch(
+                    `${window.API_BASE_URL}/nfe/listar-nfes`,
+                    {
+                        cache: 'no-store'
+                    }
+                );
+
+            if (!verificarResponse.ok) {
+
+                throw new Error(
+                    `HTTP ${verificarResponse.status}`
+                );
+            }
+
+            const verificarData =
+                await verificarResponse.json();
+
+            if (
+                !verificarData.success ||
+                !Array.isArray(
+                    verificarData.notas
+                )
+            ) {
+
+                throw new Error(
+                    verificarData.error ||
+                    'Resposta inválida ao verificar NF-es existentes'
+                );
+            }
+
+            const nfeExistente =
+                verificarData.notas.find(
+                    nfe => {
+
+                        const vendaDaNfe =
+                            nfe.venda_id ||
+                            nfe.venda_id_ml ||
+                            nfe.id_venda;
+
+                        const estaCancelada =
+                            nfe.cancelada === true ||
+                            nfe.cancelada === 'true' ||
+                            nfe.status === 'cancelada';
+
+                        return (
+                            String(vendaDaNfe) ===
+                            String(orderId)
+                        ) &&
+                        !estaCancelada;
+                    }
+                );
+
+            if (nfeExistente) {
+
+                console.warn(
+                    '🚫 Venda já possui NF-e:',
+                    nfeExistente
+                );
+
+                showToast(
+                    '🚫 Esta venda já possui NF-e emitida. Nova emissão bloqueada para evitar duplicidade.',
+                    'warning'
+                );
+
+                fecharModalEdicaoProdutos();
+
+                pendingEmitOrderId = null;
+                vendaIdParaEdicao = null;
+
+                window.produtosParaEmissao =
+                    null;
+
+                produtosEditados = [];
+
+                return;
+            }
+
+            console.log(
+                '✅ Nenhuma NF-e existente encontrada para esta venda'
+            );
+
+        } catch (verificacaoError) {
+
+            console.error(
+                '❌ Não foi possível verificar duplicidade:',
+                verificacaoError
+            );
+
+            showToast(
+                '⚠️ Não foi possível verificar se esta venda já possui NF-e. Emissão bloqueada por segurança. Tente novamente.',
+                'warning'
+            );
+
+            return;
         }
 
-        // Buscar produtos
-        let produtos = window.produtosParaEmissao || [];
-        
-        if (produtos.length === 0 && token) {
+        // =====================================================
+        // 2. TOKEN DO MERCADO LIVRE
+        // =====================================================
+
+        let token =
+            localStorage.getItem(
+                'ml_access_token'
+            );
+
+        if (
+            !token &&
+            typeof window.getValidToken ===
+            'function'
+        ) {
+
+            const tokenData =
+                await window.getValidToken();
+
+            token =
+                tokenData?.access_token;
+        }
+
+        // =====================================================
+        // 3. PRODUTOS EDITADOS NO MODAL
+        // =====================================================
+
+        let produtos =
+            Array.isArray(
+                window.produtosParaEmissao
+            )
+                ? [
+                    ...window.produtosParaEmissao
+                ]
+                : [];
+
+        // =====================================================
+        // FALLBACK: BUSCAR PRODUTOS DO ML
+        // =====================================================
+
+        if (
+            produtos.length === 0 &&
+            token
+        ) {
+
             try {
-                const url = `https://api.mercadolibre.com/orders/${orderId}`;
-                const proxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
-                const response = await fetch(proxyUrl);
+
+                const url =
+                    `https://api.mercadolibre.com/orders/${orderId}`;
+
+                const proxyUrl =
+                    `${window.WORKER_URL}/api/ml/proxy?url=` +
+                    `${encodeURIComponent(url)}` +
+                    `&token=${encodeURIComponent(token)}`;
+
+                const response =
+                    await fetch(proxyUrl);
+
                 if (response.ok) {
-                    const venda = await response.json();
-                    const orderItems = venda.order_items || [];
-                    
-                    for (const item of orderItems) {
-                        const sku = item.item.seller_sku || 'SEM_SKU';
-                        const quantidade = item.quantity || 1;
-                        const valorPago = item.unit_price || 0;
-                        
-                        let ncmSalvo = '87149990';
+
+                    const venda =
+                        await response.json();
+
+                    const orderItems =
+                        venda.order_items || [];
+
+                    for (
+                        const item
+                        of orderItems
+                    ) {
+
+                        const sku =
+                            item.item
+                                ?.seller_sku ||
+                            'SEM_SKU';
+
+                        const quantidade =
+                            item.quantity || 1;
+
+                        const valorPago =
+                            item.unit_price || 0;
+
+                        let ncmSalvo =
+                            '87149990';
+
                         try {
-                            const ncmData = await buscarNCMporSKU(sku);
-                            if (ncmData) ncmSalvo = ncmData;
-                        } catch (e) {}
-                        
+
+                            const ncmData =
+                                await buscarNCMporSKU(
+                                    sku
+                                );
+
+                            if (ncmData) {
+
+                                ncmSalvo =
+                                    ncmData;
+                            }
+
+                        } catch (e) {
+
+                            console.warn(
+                                `⚠️ Erro ao buscar NCM do SKU ${sku}:`,
+                                e
+                            );
+                        }
+
                         produtos.push({
-                            nome: item.item.title || 'Produto',
-                            quantidade: quantidade,
-                            valor_unitario: valorPago,
-                            sku: sku,
-                            ncm: ncmSalvo
+                            nome:
+                                item.item
+                                    ?.title ||
+                                'Produto',
+
+                            quantidade,
+
+                            valor_unitario:
+                                valorPago,
+
+                            sku,
+
+                            ncm:
+                                ncmSalvo
                         });
                     }
                 }
+
             } catch (error) {
-                console.warn('⚠️ Erro ao buscar dados da venda:', error);
+
+                console.warn(
+                    '⚠️ Erro ao buscar produtos da venda:',
+                    error
+                );
             }
         }
 
-        if (produtos.length === 0) {
-            produtos = [{
-                nome: 'Produto não identificado',
-                quantidade: 1,
-                valor_unitario: 0,
-                sku: 'SEM_SKU',
-                ncm: '87149990'
-            }];
+        if (
+            produtos.length === 0
+        ) {
+
+            showToast(
+                '❌ Nenhum produto encontrado para emissão',
+                'error'
+            );
+
+            return;
         }
 
-        // NCM
-        const produtosFinal = await Promise.all(produtos.map(async (prod) => {
-            let ncmFinal = prod.ncm || '87149990';
-            if (prod.sku && prod.sku !== 'SEM_SKU' && prod.sku !== 'N/A') {
-                const ncmSalvo = await buscarNCMporSKU(prod.sku);
-                if (ncmSalvo) ncmFinal = ncmSalvo;
-                else await salvarNCMporSKU(prod.sku, ncmFinal);
-            }
-            return { ...prod, ncm: ncmFinal };
-        }));
+        // =====================================================
+        // 4. TRATAR NCM
+        // =====================================================
 
-        const mlToken = window._mlAccessToken || token;
+        const produtosFinal =
+            await Promise.all(
+
+                produtos.map(
+                    async prod => {
+
+                        let ncmFinal =
+                            prod.ncm ||
+                            '87149990';
+
+                        if (
+                            prod.sku &&
+                            prod.sku !==
+                            'SEM_SKU' &&
+                            prod.sku !==
+                            'N/A'
+                        ) {
+
+                            try {
+
+                                const ncmSalvo =
+                                    await buscarNCMporSKU(
+                                        prod.sku
+                                    );
+
+                                if (ncmSalvo) {
+
+                                    ncmFinal =
+                                        ncmSalvo;
+
+                                } else {
+
+                                    await salvarNCMporSKU(
+                                        prod.sku,
+                                        ncmFinal
+                                    );
+                                }
+
+                            } catch (
+                                ncmError
+                            ) {
+
+                                console.warn(
+                                    `⚠️ Erro ao tratar NCM do SKU ${prod.sku}:`,
+                                    ncmError
+                                );
+                            }
+                        }
+
+                        return {
+
+                            ...prod,
+
+                            nome:
+                                prod.nome ||
+                                'Produto',
+
+                            quantidade:
+                                Number(
+                                    prod.quantidade
+                                ) || 1,
+
+                            valor_unitario:
+                                Number(
+                                    prod.valor_unitario
+                                ) || 0,
+
+                            sku:
+                                prod.sku ||
+                                'SEM_SKU',
+
+                            ncm:
+                                ncmFinal
+                        };
+                    }
+                )
+            );
+
+        // =====================================================
+        // TOKEN USADO NO UPLOAD DO XML
+        // =====================================================
+
+        const mlToken =
+            window._mlAccessToken ||
+            token;
+
+        // =====================================================
+        // PAYLOAD NF-E
+        // =====================================================
 
         const payload = {
-            venda_id: String(orderId),
-            cliente: { nome, documento, endereco, numero, bairro, cidade, uf, cep },
-            produtos: produtosFinal,
-            cfop: cfop,
-            natureza_operacao: 'VENDA',
-            modalidade_frete: transportadoraId ? '0' : '9',
-            transportadora_id: transportadoraId,
-            ml_access_token: mlToken
+
+            venda_id:
+                String(orderId),
+
+            cliente: {
+                nome,
+                documento,
+                endereco,
+                numero,
+                bairro,
+                cidade,
+                uf,
+                cep
+            },
+
+            produtos:
+                produtosFinal,
+
+            cfop,
+
+            natureza_operacao:
+                'VENDA',
+
+            modalidade_frete:
+                transportadoraId
+                    ? '0'
+                    : '9',
+
+            transportadora_id:
+                transportadoraId,
+
+            ml_access_token:
+                mlToken
         };
 
-        console.log('📤 Payload para emissão:', JSON.stringify(payload, null, 2));
+        console.log(
+            '📤 Payload para emissão:',
+            JSON.stringify(
+                payload,
+                null,
+                2
+            )
+        );
 
-        // ===== EMITIR NF-E =====
-        const emitResponse = await fetch(`${window.API_BASE_URL}/nfe/emitir`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        const result = await emitResponse.json();
+        // =====================================================
+        // 5. EMITIR NF-E
+        // =====================================================
 
-        if (result.success) {
-            showToast(`✅ NF-e emitida! Protocolo: ${result.protocolo}`, 'success');
-            console.log('✅ NF-e emitida com sucesso:', result);
-            
-            // ===== SALVAR NA TABELA nfe_emitidas =====
-            try {
-                const chaveAcesso = result.chave_acesso || result.chave;
-                if (chaveAcesso) {
-                    // Verificar se já existe
-                    const { data: existing } = await window.supabaseClient
-                        .from('nfe_emitidas')
-                        .select('id')
-                        .eq('chave_acesso', chaveAcesso)
+        const emitResponse =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/emitir`,
+                {
+                    method: 'POST',
+
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+
+                    body:
+                        JSON.stringify(
+                            payload
+                        )
+                }
+            );
+
+        let result;
+
+        try {
+
+            result =
+                await emitResponse.json();
+
+        } catch (parseError) {
+
+            throw new Error(
+                `Servidor retornou resposta inválida na emissão (HTTP ${emitResponse.status})`
+            );
+        }
+
+        // =====================================================
+        // NF-E NÃO FOI AUTORIZADA
+        // =====================================================
+
+        if (!result.success) {
+
+            let mensagemErro =
+                result.error ||
+                result.message ||
+                `Erro HTTP ${emitResponse.status}`;
+
+            const errosSEFAZ = {
+
+                '275':
+                    'Código do Município do Destinatário difere da UF do Destinatário.',
+
+                '245':
+                    'Código do Município do Destinatário não informado.',
+
+                '246':
+                    'Código do Município do Destinatário inválido.',
+
+                '247':
+                    'UF do Destinatário inválida.',
+
+                '248':
+                    'CEP do Destinatário inválido.',
+
+                '249':
+                    'Endereço do Destinatário não informado.',
+
+                '250':
+                    'Bairro do Destinatário não informado.',
+
+                '251':
+                    'Cidade do Destinatário não informada.'
+            };
+
+            const cStatMatch =
+                String(
+                    mensagemErro
+                ).match(
+                    /cStat=(\d+)/
+                );
+
+            if (cStatMatch) {
+
+                const cStat =
+                    cStatMatch[1];
+
+                if (
+                    errosSEFAZ[
+                        cStat
+                    ]
+                ) {
+
+                    mensagemErro =
+                        `${mensagemErro}\n\n💡 ${errosSEFAZ[cStat]}`;
+                }
+            }
+
+            console.error(
+                '❌ NF-e não foi emitida:',
+                mensagemErro
+            );
+
+            showToast(
+                `❌ Erro ao emitir NF-e: ${mensagemErro}`,
+                'error'
+            );
+
+            if (
+                String(
+                    mensagemErro
+                ).includes(
+                    'Municipio'
+                ) ||
+                String(
+                    mensagemErro
+                ).includes(
+                    'município'
+                )
+            ) {
+
+                showToast(
+                    '⚠️ Verifique a UF e a Cidade no próprio modal.',
+                    'warning'
+                );
+            }
+
+            // Modal fica aberto para corrigir.
+            return;
+        }
+
+        // =====================================================
+        // 6. PONTO SEM VOLTA
+        // A NF-E JÁ FOI AUTORIZADA
+        // =====================================================
+
+        nfeFoiEmitida = true;
+
+        console.log(
+            '✅ NF-e emitida com sucesso:',
+            result
+        );
+
+        showToast(
+            `✅ NF-e emitida! Protocolo: ${
+                result.protocolo ||
+                'autorizada'
+            }`,
+            'success'
+        );
+
+        // =====================================================
+        // FECHAR MODAL IMEDIATAMENTE
+        // =====================================================
+        //
+        // Mesmo que qualquer coisa abaixo dê erro,
+        // o usuário NÃO terá o botão para emitir de novo.
+
+        fecharModalEdicaoProdutos();
+
+        pendingEmitOrderId =
+            null;
+
+        vendaIdParaEdicao =
+            null;
+
+        produtosEditados =
+            [];
+
+        console.log(
+            `🔒 Venda ${orderId} bloqueada para nova emissão nesta tela`
+        );
+
+        // =====================================================
+        // 7. SALVAR EM nfe_emitidas
+        // =====================================================
+
+        try {
+
+            const chaveAcesso =
+                result.chave_acesso ||
+                result.chave;
+
+            if (
+                chaveAcesso &&
+                window.supabaseClient
+            ) {
+
+                const {
+                    data:
+                        existing,
+
+                    error:
+                        existingError
+
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'nfe_emitidas'
+                        )
+                        .select(
+                            'id'
+                        )
+                        .eq(
+                            'chave_acesso',
+                            chaveAcesso
+                        )
                         .maybeSingle();
-                    
-                    if (!existing) {
-                        await window.supabaseClient
-                            .from('nfe_emitidas')
+
+                if (
+                    existingError
+                ) {
+
+                    console.warn(
+                        '⚠️ Erro ao verificar NF-e no Supabase:',
+                        existingError
+                    );
+                }
+
+                if (!existing) {
+
+                    const {
+                        error:
+                            insertError
+                    } =
+                        await window
+                            .supabaseClient
+                            .from(
+                                'nfe_emitidas'
+                            )
                             .insert({
-                                chave_acesso: chaveAcesso,
-                                venda_id: orderId,
-                                protocolo: result.protocolo,
-                                data_emissao: new Date().toISOString(),
-                                cliente_nome: nome,
-                                valor_total: produtosFinal.reduce((acc, p) => acc + (p.valor_unitario * p.quantidade), 0),
-                                xml_assinado: result.xml || null,
-                                cancelada: false
+
+                                chave_acesso:
+                                    chaveAcesso,
+
+                                venda_id:
+                                    orderId,
+
+                                protocolo:
+                                    result.protocolo,
+
+                                data_emissao:
+                                    new Date()
+                                        .toISOString(),
+
+                                cliente_nome:
+                                    nome,
+
+                                valor_total:
+                                    produtosFinal.reduce(
+                                        (
+                                            acc,
+                                            p
+                                        ) =>
+                                            acc +
+                                            (
+                                                p.valor_unitario *
+                                                p.quantidade
+                                            ),
+                                        0
+                                    ),
+
+                                xml_assinado:
+                                    result.xml ||
+                                    null,
+
+                                cancelada:
+                                    false
                             });
-                        console.log('✅ NF-e salva na tabela nfe_emitidas');
-                    }
-                }
-            } catch (saveError) {
-                console.warn('⚠️ Erro ao salvar NF-e no banco:', saveError);
-            }
-            
-            // ===== ATUALIZAR STATUS DA VENDA =====
-            try {
-                await window.supabaseClient
-                    .from('vendas_ml')
-                    .update({ 
-                        nfe_emitida: true,
-                        status_nfe: 'emitida',
-                        status_sistema: 'finalizada',
-                        updated_at: new Date().toISOString()
-                    })
-                    .eq('id_venda_ml', String(orderId));
-                console.log('✅ Status da venda atualizado');
-            } catch (statusError) {
-                console.warn('⚠️ Erro ao atualizar status da venda:', statusError);
-            }
-            
-            // ===== ENVIAR XML PARA O ML =====
-            try {
-                const chaveAcesso = result.chave_acesso || result.chave;
-                if (chaveAcesso) {
-                    const xmlResponse = await fetch(`${window.API_BASE_URL}/nfe/buscar-xml?chave=${chaveAcesso}`);
-                    const xmlData = await xmlResponse.json();
-                    
-                    if (xmlData.xml) {
-                        let xmlContent = xmlData.xml;
-                        
-                        if (!xmlContent.startsWith('<?xml')) {
-                            xmlContent = '<?xml version="1.0" encoding="UTF-8"?>\n' + xmlContent;
-                        }
-                        
-                        if (xmlContent.includes('<NFe') && !xmlContent.includes('<nfeProc')) {
-                            const nfeMatch = xmlContent.match(/<NFe[^>]*>([\s\S]*?)<\/NFe>/);
-                            if (nfeMatch) {
-                                const nfeContent = nfeMatch[0];
-                                const protMatch = xmlContent.match(/<protNFe[^>]*>([\s\S]*?)<\/protNFe>/);
-                                const protContent = protMatch ? protMatch[0] : '';
-                                xmlContent = `<?xml version="1.0" encoding="UTF-8"?>\n<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">\n${nfeContent}\n${protContent}\n</nfeProc>`;
-                            }
-                        }
-                        
-                        xmlContent = xmlContent.replace(/>\s+</g, '><').replace(/^\s*[\r\n]/gm, '');
-                        
-                        const uploadResult = await enviarXMLparaMercadoLivre(orderId, xmlContent, mlToken);
-                        
-                        if (uploadResult.success) {
-                            showToast('✅ NF-e vinculada ao ML com sucesso!', 'success');
-                        } else {
-                            showToast('⚠️ NF-e emitida, mas erro ao vincular ao ML', 'warning');
-                        }
-                    }
-                }
-            } catch (uploadError) {
-                console.error('❌ Erro ao enviar XML para o ML:', uploadError);
-                showToast('⚠️ NF-e emitida, mas erro ao vincular ao ML', 'warning');
-            }
-            
-            // ===== BAIXAR ESTOQUE =====
-            let itensBaixados = 0;
-            try {
-                console.log('📦 Baixando estoque...');
-                
-                const { data: vendaML, error: vendaError } = await window.supabaseClient
-                    .from('vendas_ml')
-                    .select('sku, quantidade, skus_kit, eh_kit')
-                    .eq('id_venda_ml', String(orderId))
-                    .maybeSingle();
-                
-                const itensParaBaixar = [];
-                
-                if (vendaML && !vendaError) {
-                    if (vendaML.eh_kit && vendaML.skus_kit && vendaML.skus_kit.length > 0) {
-                        for (const kitItem of vendaML.skus_kit) {
-                            const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(kitItem.sku);
-                            const quantidadeKit = kitItem.estoque || 1;
-                            const quantidadeTotal = quantidadeKit * (vendaML.quantidade || 1) * multiplicador;
-                            itensParaBaixar.push({
-                                sku: skuReal,
-                                skuOriginal: kitItem.sku,
-                                quantidade: quantidadeTotal
-                            });
-                        }
-                        console.log(`📦 KIT detectado: ${vendaML.skus_kit.length} SKUs para baixar`);
+
+                    if (
+                        insertError
+                    ) {
+
+                        console.warn(
+                            '⚠️ Erro ao inserir NF-e no Supabase:',
+                            insertError
+                        );
+
                     } else {
-                        const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(vendaML.sku);
-                        const quantidadeTotal = (vendaML.quantidade || 1) * multiplicador;
-                        itensParaBaixar.push({
-                            sku: skuReal,
-                            skuOriginal: vendaML.sku,
-                            quantidade: quantidadeTotal
-                        });
+
+                        console.log(
+                            '✅ NF-e salva na tabela nfe_emitidas'
+                        );
                     }
                 }
-                
-                if (itensParaBaixar.length === 0) {
-                    for (const prod of produtosFinal) {
-                        if (!prod.sku || prod.sku === 'SEM_SKU' || prod.sku === 'N/A') continue;
-                        const { sku: skuReal, multiplicador } = extrairSkuEQuantidade(prod.sku);
-                        const quantidadeTotal = (prod.quantidade || 1) * multiplicador;
-                        itensParaBaixar.push({
-                            sku: skuReal,
-                            skuOriginal: prod.sku,
-                            quantidade: quantidadeTotal
-                        });
-                    }
+            }
+
+        } catch (
+            saveError
+        ) {
+
+            console.warn(
+                '⚠️ NF-e já emitida, mas houve erro ao salvar em nfe_emitidas:',
+                saveError
+            );
+        }
+
+        // =====================================================
+        // 8. ATUALIZAR STATUS DA VENDA
+        // =====================================================
+
+        try {
+
+            if (
+                window.supabaseClient
+            ) {
+
+                const {
+                    error:
+                        statusError
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'vendas_ml'
+                        )
+                        .update({
+
+                            nfe_emitida:
+                                true,
+
+                            status_nfe:
+                                'emitida',
+
+                            status_sistema:
+                                'finalizada',
+
+                            updated_at:
+                                new Date()
+                                    .toISOString()
+                        })
+                        .eq(
+                            'id_venda_ml',
+                            String(
+                                orderId
+                            )
+                        );
+
+                if (
+                    statusError
+                ) {
+
+                    console.warn(
+                        '⚠️ Erro ao atualizar status da venda:',
+                        statusError
+                    );
+
+                } else {
+
+                    console.log(
+                        '✅ Status da venda atualizado'
+                    );
                 }
-                
-                for (const item of itensParaBaixar) {
-                    if (!item.sku || item.sku === 'SEM_SKU' || item.sku === 'N/A') continue;
-                    
-                    const { data: produto, error: prodError } = await window.supabaseClient
-                        .from('produtos_estoque')
-                        .select('id, quantidade, nome')
-                        .eq('sku', item.sku)
+            }
+
+        } catch (
+            statusError
+        ) {
+
+            console.warn(
+                '⚠️ NF-e já emitida, mas houve erro ao atualizar status da venda:',
+                statusError
+            );
+        }
+
+        // =====================================================
+        // 9. ENVIAR XML PARA MERCADO LIVRE
+        // =====================================================
+
+        try {
+
+            const chaveAcesso =
+                result.chave_acesso ||
+                result.chave;
+
+            if (chaveAcesso) {
+
+                const xmlResponse =
+                    await fetch(
+                        `${window.API_BASE_URL}/nfe/buscar-xml?chave=${encodeURIComponent(chaveAcesso)}`
+                    );
+
+                const xmlData =
+                    await xmlResponse.json();
+
+                if (xmlData.xml) {
+
+                    let xmlContent =
+                        xmlData.xml;
+
+                    if (
+                        !xmlContent.startsWith(
+                            '<?xml'
+                        )
+                    ) {
+
+                        xmlContent =
+                            '<?xml version="1.0" encoding="UTF-8"?>\n' +
+                            xmlContent;
+                    }
+
+                    if (
+                        xmlContent.includes(
+                            '<NFe'
+                        ) &&
+                        !xmlContent.includes(
+                            '<nfeProc'
+                        )
+                    ) {
+
+                        const nfeMatch =
+                            xmlContent.match(
+                                /<NFe[^>]*>([\s\S]*?)<\/NFe>/
+                            );
+
+                        if (nfeMatch) {
+
+                            const nfeContent =
+                                nfeMatch[0];
+
+                            const protMatch =
+                                xmlContent.match(
+                                    /<protNFe[^>]*>([\s\S]*?)<\/protNFe>/
+                                );
+
+                            const protContent =
+                                protMatch
+                                    ? protMatch[0]
+                                    : '';
+
+                            xmlContent =
+                                '<?xml version="1.0" encoding="UTF-8"?>\n' +
+                                '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">\n' +
+                                `${nfeContent}\n` +
+                                `${protContent}\n` +
+                                '</nfeProc>';
+                        }
+                    }
+
+                    xmlContent =
+                        xmlContent
+                            .replace(
+                                />\s+</g,
+                                '><'
+                            )
+                            .replace(
+                                /^\s*[\r\n]/gm,
+                                ''
+                            );
+
+                    const uploadResult =
+                        await enviarXMLparaMercadoLivre(
+                            orderId,
+                            xmlContent,
+                            mlToken
+                        );
+
+                    if (
+                        uploadResult
+                            ?.success
+                    ) {
+
+                        console.log(
+                            '✅ NF-e vinculada ao Mercado Livre'
+                        );
+
+                        showToast(
+                            '✅ NF-e vinculada ao ML com sucesso!',
+                            'success'
+                        );
+
+                    } else {
+
+                        console.warn(
+                            '⚠️ NF-e emitida, mas erro ao vincular XML ao ML:',
+                            uploadResult
+                        );
+
+                        showToast(
+                            '⚠️ NF-e foi emitida, mas houve erro ao vincular o XML ao ML.',
+                            'warning'
+                        );
+                    }
+
+                } else {
+
+                    console.warn(
+                        '⚠️ NF-e emitida, mas XML não foi retornado por /nfe/buscar-xml'
+                    );
+                }
+            }
+
+        } catch (
+            uploadError
+        ) {
+
+            console.error(
+                '⚠️ NF-e já emitida, mas houve erro ao enviar XML para o ML:',
+                uploadError
+            );
+
+            showToast(
+                '⚠️ NF-e foi emitida, mas houve erro ao vincular o XML ao ML.',
+                'warning'
+            );
+        }
+
+        // =====================================================
+        // 10. BAIXAR ESTOQUE
+        // =====================================================
+
+        let itensBaixados = 0;
+
+        try {
+
+            console.log(
+                '📦 Baixando estoque...'
+            );
+
+            let vendaML = null;
+            let vendaError = null;
+
+            if (
+                window.supabaseClient
+            ) {
+
+                const resultadoVenda =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'vendas_ml'
+                        )
+                        .select(
+                            'sku, quantidade, skus_kit, eh_kit'
+                        )
+                        .eq(
+                            'id_venda_ml',
+                            String(
+                                orderId
+                            )
+                        )
                         .maybeSingle();
-                    
-                    if (!prodError && produto) {
-                        const novaQuantidade = Math.max(0, produto.quantidade - item.quantidade);
-                        
-                        await window.supabaseClient
-                            .from('produtos_estoque')
-                            .update({ 
-                                quantidade: novaQuantidade,
-                                updated_at: new Date().toISOString()
+
+                vendaML =
+                    resultadoVenda.data;
+
+                vendaError =
+                    resultadoVenda.error;
+            }
+
+            const itensParaBaixar =
+                [];
+
+            // =====================
+            // KIT
+            // =====================
+
+            if (
+                vendaML &&
+                !vendaError
+            ) {
+
+                if (
+                    vendaML.eh_kit &&
+                    Array.isArray(
+                        vendaML.skus_kit
+                    ) &&
+                    vendaML.skus_kit
+                        .length > 0
+                ) {
+
+                    for (
+                        const kitItem
+                        of vendaML.skus_kit
+                    ) {
+
+                        const {
+                            sku:
+                                skuReal,
+
+                            multiplicador
+                        } =
+                            extrairSkuEQuantidade(
+                                kitItem.sku
+                            );
+
+                        const quantidadeKit =
+                            kitItem.estoque ||
+                            1;
+
+                        const quantidadeTotal =
+                            quantidadeKit *
+                            (
+                                vendaML.quantidade ||
+                                1
+                            ) *
+                            multiplicador;
+
+                        itensParaBaixar.push({
+                            sku:
+                                skuReal,
+
+                            skuOriginal:
+                                kitItem.sku,
+
+                            quantidade:
+                                quantidadeTotal
+                        });
+                    }
+
+                    console.log(
+                        `📦 KIT detectado: ${vendaML.skus_kit.length} SKUs para baixar`
+                    );
+
+                } else {
+
+                    const {
+                        sku:
+                            skuReal,
+
+                        multiplicador
+                    } =
+                        extrairSkuEQuantidade(
+                            vendaML.sku
+                        );
+
+                    const quantidadeTotal =
+                        (
+                            vendaML.quantidade ||
+                            1
+                        ) *
+                        multiplicador;
+
+                    itensParaBaixar.push({
+                        sku:
+                            skuReal,
+
+                        skuOriginal:
+                            vendaML.sku,
+
+                        quantidade:
+                            quantidadeTotal
+                    });
+                }
+            }
+
+            // =====================================================
+            // FALLBACK: PRODUTOS DA NF-E
+            // =====================================================
+
+            if (
+                itensParaBaixar.length ===
+                0
+            ) {
+
+                for (
+                    const prod
+                    of produtosFinal
+                ) {
+
+                    if (
+                        !prod.sku ||
+                        prod.sku ===
+                        'SEM_SKU' ||
+                        prod.sku ===
+                        'N/A'
+                    ) {
+                        continue;
+                    }
+
+                    const {
+                        sku:
+                            skuReal,
+
+                        multiplicador
+                    } =
+                        extrairSkuEQuantidade(
+                            prod.sku
+                        );
+
+                    const quantidadeTotal =
+                        (
+                            prod.quantidade ||
+                            1
+                        ) *
+                        multiplicador;
+
+                    itensParaBaixar.push({
+                        sku:
+                            skuReal,
+
+                        skuOriginal:
+                            prod.sku,
+
+                        quantidade:
+                            quantidadeTotal
+                    });
+                }
+            }
+
+            // =====================================================
+            // BAIXAR CADA ITEM
+            // =====================================================
+
+            for (
+                const item
+                of itensParaBaixar
+            ) {
+
+                if (
+                    !item.sku ||
+                    item.sku ===
+                    'SEM_SKU' ||
+                    item.sku ===
+                    'N/A'
+                ) {
+                    continue;
+                }
+
+                if (
+                    !window.supabaseClient
+                ) {
+
+                    console.warn(
+                        '⚠️ Supabase não disponível para baixar estoque'
+                    );
+
+                    break;
+                }
+
+                const {
+                    data:
+                        produto,
+
+                    error:
+                        prodError
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'produtos_estoque'
+                        )
+                        .select(
+                            'id, quantidade, nome'
+                        )
+                        .eq(
+                            'sku',
+                            item.sku
+                        )
+                        .maybeSingle();
+
+                if (
+                    !prodError &&
+                    produto
+                ) {
+
+                    const novaQuantidade =
+                        Math.max(
+                            0,
+
+                            Number(
+                                produto.quantidade ||
+                                0
+                            ) -
+                            Number(
+                                item.quantidade ||
+                                0
+                            )
+                        );
+
+                    const {
+                        error:
+                            updateError
+                    } =
+                        await window
+                            .supabaseClient
+                            .from(
+                                'produtos_estoque'
+                            )
+                            .update({
+
+                                quantidade:
+                                    novaQuantidade,
+
+                                updated_at:
+                                    new Date()
+                                        .toISOString()
                             })
-                            .eq('id', produto.id);
-                        
-                        itensBaixados++;
-                        console.log(`✅ Estoque do SKU ${item.sku} atualizado: ${produto.quantidade} → ${novaQuantidade}`);
-                        
-                        // Registrar movimentação
-                        if (typeof window.registrarMovimentacao === 'function') {
-                            try {
-                                await window.registrarMovimentacao(
+                            .eq(
+                                'id',
+                                produto.id
+                            );
+
+                    if (
+                        updateError
+                    ) {
+
+                        console.warn(
+                            `⚠️ Erro ao baixar estoque do SKU ${item.sku}:`,
+                            updateError
+                        );
+
+                        continue;
+                    }
+
+                    itensBaixados++;
+
+                    console.log(
+                        `✅ Estoque do SKU ${item.sku} atualizado: ${produto.quantidade} → ${novaQuantidade}`
+                    );
+
+                    // Registrar movimentação
+                    if (
+                        typeof window
+                            .registrarMovimentacao ===
+                        'function'
+                    ) {
+
+                        try {
+
+                            await window
+                                .registrarMovimentacao(
+
                                     produto.id,
+
                                     'saida',
+
                                     item.quantidade,
+
                                     `NFE-${orderId}`,
+
                                     'venda'
                                 );
-                            } catch (movError) {
-                                console.warn(`⚠️ Erro ao registrar movimentação:`, movError);
-                            }
+
+                        } catch (
+                            movError
+                        ) {
+
+                            console.warn(
+                                '⚠️ Erro ao registrar movimentação:',
+                                movError
+                            );
                         }
-                    } else {
-                        console.warn(`⚠️ Produto não encontrado: ${item.sku}`);
                     }
-                }
-                
-                if (itensBaixados > 0) {
-                    showToast(`✅ ${itensBaixados} item(ns) baixados do estoque!`, 'success');
-                }
-                
-                // Recarregar estoque
-                if (typeof window.carregarProdutosEstoque === 'function') {
-                    await window.carregarProdutosEstoque();
-                }
-                
-            } catch (stockError) {
-                console.error('❌ Erro ao baixar estoque:', stockError);
-                showToast('⚠️ NF-e emitida, mas houve erro ao baixar o estoque', 'warning');
-            }
-            
-            // =========================================================
-            // 🔥 SINCRONIZAR ESTOQUE COM ML APÓS A BAIXA
-            // =========================================================
-            try {
-                console.log('🔄 Sincronizando estoque com ML...');
-                const sincronizado = await sincronizarEstoqueComML(orderId);
-                if (sincronizado) {
-                    console.log('✅ Estoque sincronizado com ML com sucesso!');
+
                 } else {
-                    console.warn('⚠️ Falha na sincronização com ML');
+
+                    console.warn(
+                        `⚠️ Produto não encontrado no estoque: ${item.sku}`,
+                        prodError || ''
+                    );
                 }
-            } catch (syncError) {
-                console.error('❌ Erro na sincronização com ML:', syncError);
-                showToast('⚠️ NF-e emitida, mas erro na sincronização com ML', 'warning');
             }
-            
-            // ===== SALVAR CLIENTE =====
-            await salvarClienteNoBanco({ nome, documento, endereco, numero, bairro, cidade, uf, cep });
-            
-            // ===== REGISTRAR NO HISTÓRICO =====
-            try {
-                await window.supabaseClient
-                    .from('estoque_historico')
-                    .insert({
-                        venda_id: orderId,
-                        tipo: 'venda',
-                        observacao: `NF-e emitida - Venda ${orderId} - Cliente: ${nome}`,
-                        criado_por: nome || 'Sistema',
-                        criado_em: new Date().toISOString()
-                    });
-                console.log('✅ Histórico registrado');
-            } catch (histError) {
-                console.warn('⚠️ Erro ao registrar histórico:', histError);
+
+            if (
+                itensBaixados > 0
+            ) {
+
+                showToast(
+                    `✅ ${itensBaixados} item(ns) baixados do estoque!`,
+                    'success'
+                );
             }
-            
-            // ===== LIMPAR E RECARREGAR =====
-            window.produtosParaEmissao = null;
-            window._mlAccessToken = null;
-            pendingEmitOrderId = null;
-            vendaIdParaEdicao = null;
-            
+
+            if (
+                typeof window
+                    .carregarProdutosEstoque ===
+                'function'
+            ) {
+
+                await window
+                    .carregarProdutosEstoque();
+            }
+
+        } catch (
+            stockError
+        ) {
+
+            console.error(
+                '⚠️ NF-e já emitida, mas houve erro ao baixar o estoque:',
+                stockError
+            );
+
+            showToast(
+                '⚠️ NF-e foi emitida, mas houve erro ao baixar o estoque.',
+                'warning'
+            );
+        }
+
+        // =====================================================
+        // 11. SINCRONIZAR ESTOQUE COM MERCADO LIVRE
+        // =====================================================
+
+        try {
+
+            console.log(
+                '🔄 Sincronizando estoque com ML...'
+            );
+
+            const sincronizado =
+                await sincronizarEstoqueComML(
+                    orderId
+                );
+
+            if (sincronizado) {
+
+                console.log(
+                    '✅ Estoque sincronizado com ML com sucesso!'
+                );
+
+            } else {
+
+                console.warn(
+                    '⚠️ NF-e emitida, mas a sincronização de estoque com ML não foi confirmada'
+                );
+            }
+
+        } catch (
+            syncError
+        ) {
+
+            console.error(
+                '⚠️ NF-e já emitida, mas houve erro na sincronização com ML:',
+                syncError
+            );
+
+            showToast(
+                '⚠️ NF-e foi emitida, mas houve erro na sincronização de estoque com ML.',
+                'warning'
+            );
+        }
+
+        // =====================================================
+        // 12. SALVAR CLIENTE
+        // =====================================================
+        //
+        // IMPORTANTE:
+        // NÃO existe resultadoCliente aqui.
+        //
+        // Apenas executamos a função.
+        // Se ela falhar, a NF-e continua considerada emitida.
+
+        try {
+
+            await salvarClienteNoBanco({
+                nome,
+                documento,
+                endereco,
+                numero,
+                bairro,
+                cidade,
+                uf,
+                cep
+            });
+
+            console.log(
+                '✅ Cliente processado/salvo com sucesso'
+            );
+
+        } catch (
+            clienteError
+        ) {
+
+            console.error(
+                '⚠️ NF-e já emitida, mas houve erro ao salvar cliente:',
+                clienteError
+            );
+
+            showToast(
+                '⚠️ NF-e foi emitida, mas houve erro ao salvar o cliente.',
+                'warning'
+            );
+        }
+
+        // =====================================================
+        // 13. REGISTRAR HISTÓRICO
+        // =====================================================
+
+        try {
+
+            if (
+                window.supabaseClient
+            ) {
+
+                const {
+                    error:
+                        histError
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'estoque_historico'
+                        )
+                        .insert({
+
+                            venda_id:
+                                orderId,
+
+                            tipo:
+                                'venda',
+
+                            observacao:
+                                `NF-e emitida - Venda ${orderId} - Cliente: ${nome}`,
+
+                            criado_por:
+                                nome ||
+                                'Sistema',
+
+                            criado_em:
+                                new Date()
+                                    .toISOString()
+                        });
+
+                if (
+                    histError
+                ) {
+
+                    console.warn(
+                        '⚠️ Erro ao registrar histórico:',
+                        histError
+                    );
+
+                } else {
+
+                    console.log(
+                        '✅ Histórico registrado'
+                    );
+                }
+            }
+
+        } catch (
+            histError
+        ) {
+
+            console.warn(
+                '⚠️ NF-e já emitida, mas houve erro ao registrar histórico:',
+                histError
+            );
+        }
+
+        // =====================================================
+        // 14. LIMPAR VARIÁVEIS
+        // =====================================================
+
+        window.produtosParaEmissao =
+            null;
+
+        window._mlAccessToken =
+            null;
+
+        // =====================================================
+        // RECARREGAR VENDAS PENDENTES
+        // =====================================================
+
+        try {
+
             await carregarVendasPendentes();
+
+        } catch (
+            reloadVendasError
+        ) {
+
+            console.warn(
+                '⚠️ NF-e emitida, mas erro ao recarregar vendas pendentes:',
+                reloadVendasError
+            );
+        }
+
+        // =====================================================
+        // RECARREGAR NF-ES
+        // =====================================================
+
+        try {
+
             await carregarNFesEmitidas();
-            
-            showToast('✅ Processo concluído com sucesso!', 'success');
-            
-        } else {
-            // ===== ERRO NA EMISSÃO =====
-            let mensagemErro = result.error || 'Erro desconhecido';
-            
-            // Mapear erros da SEFAZ
-            const errosSEFAZ = {
-                '275': 'Código do Município do Destinatário difere da UF do Destinatário.',
-                '245': 'Código do Município do Destinatário não informado.',
-                '246': 'Código do Município do Destinatário inválido.',
-                '247': 'UF do Destinatário inválida.',
-                '248': 'CEP do Destinatário inválido.',
-                '249': 'Endereço do Destinatário não informado.',
-                '250': 'Bairro do Destinatário não informado.',
-                '251': 'Cidade do Destinatário não informada.'
-            };
-            
-            const cStatMatch = mensagemErro.match(/cStat=(\d+)/);
-            if (cStatMatch) {
-                const cStat = cStatMatch[1];
-                if (errosSEFAZ[cStat]) {
-                    mensagemErro = `${mensagemErro}\n\n💡 ${errosSEFAZ[cStat]}`;
-                }
-            }
-            
-            showToast(`❌ Erro: ${mensagemErro}`, 'error');
-            
-            if (mensagemErro.includes('Municipio') || mensagemErro.includes('município')) {
-                showToast('⚠️ Verifique a UF e a Cidade.', 'warning');
-                setTimeout(() => abrirModalCliente(), 1000);
-            }
+
+        } catch (
+            reloadNfeError
+        ) {
+
+            console.warn(
+                '⚠️ NF-e emitida, mas erro ao recarregar NF-es:',
+                reloadNfeError
+            );
         }
-        
+
+        showToast(
+            '✅ Processo da NF-e concluído!',
+            'success'
+        );
+
     } catch (error) {
-        console.error('❌ Erro na emissão:', error);
-        showToast(`❌ Erro: ${error.message}`, 'error');
-    } finally {
-        if (btn) {
-            btn.innerHTML = originalText;
-            btn.disabled = false;
+
+        // =====================================================
+        // ERRO DEPOIS DA AUTORIZAÇÃO
+        // =====================================================
+        //
+        // Esse é o ponto crítico.
+        //
+        // Se nfeFoiEmitida = true,
+        // NÃO podemos dizer que houve erro na emissão.
+
+        if (nfeFoiEmitida) {
+
+            console.error(
+                '⚠️ NF-e JÁ FOI EMITIDA, mas houve erro no pós-processamento:',
+                error
+            );
+
+            showToast(
+                '⚠️ A NF-e FOI EMITIDA. Houve um erro depois da autorização. NÃO EMITA NOVAMENTE.',
+                'warning'
+            );
+
+            fecharModalEdicaoProdutos();
+
+            pendingEmitOrderId =
+                null;
+
+            vendaIdParaEdicao =
+                null;
+
+            window.produtosParaEmissao =
+                null;
+
+            produtosEditados =
+                [];
+
+        } else {
+
+            // =====================================================
+            // ERRO ANTES DA AUTORIZAÇÃO
+            // =====================================================
+
+            console.error(
+                '❌ Erro antes da emissão da NF-e:',
+                error
+            );
+
+            showToast(
+                `❌ Não foi possível emitir a NF-e: ${error.message}`,
+                'error'
+            );
         }
-        window._mlAccessToken = null;
-        window.produtosParaEmissao = null;
+
+    } finally {
+
+        // =====================================================
+        // SE NÃO EMITIU
+        // =====================================================
+        //
+        // Libera o botão para corrigir os dados
+        // e tentar novamente.
+
+        if (
+            !nfeFoiEmitida &&
+            btn &&
+            document.body.contains(
+                btn
+            )
+        ) {
+
+            btn.innerHTML =
+                originalText;
+
+            btn.disabled =
+                false;
+        }
+
+        // =====================================================
+        // SE JÁ EMITIU
+        // =====================================================
+        //
+        // Nunca deixar o modal/botão disponível.
+
+        if (nfeFoiEmitida) {
+
+            fecharModalEdicaoProdutos();
+
+            pendingEmitOrderId =
+                null;
+
+            vendaIdParaEdicao =
+                null;
+
+            window.produtosParaEmissao =
+                null;
+
+            produtosEditados =
+                [];
+        }
+
+        window._mlAccessToken =
+            null;
+
+        // Liberar controle global
+        // somente depois que todo o processo terminou.
+        if (
+            window._nfeEmissaoEmAndamento ===
+            String(orderId)
+        ) {
+
+            window._nfeEmissaoEmAndamento =
+                null;
+        }
     }
 }
 
@@ -3679,17 +7184,215 @@ async function salvarNovaTransportadora() {
 }
 
 async function carregarTransportadorasSelect() {
-    const select = document.getElementById('nfeTransportadora');
-    if (!select) return;
+
+    console.log(
+        '🚚 Carregando transportadoras no MODAL NOVO...'
+    );
+
+    // =====================================================
+    // BUSCAR ESPECIFICAMENTE NO MODAL NOVO
+    // =====================================================
+
+    const modal =
+        document.getElementById(
+            'modalEdicaoProdutos'
+        );
+
+    if (!modal) {
+
+        console.error(
+            '❌ Modal de emissão não encontrado'
+        );
+
+        return false;
+    }
+
+    const select =
+        modal.querySelector(
+            '#nfeTransportadora'
+        );
+
+    if (!select) {
+
+        console.error(
+            '❌ Select de transportadora não encontrado dentro do modal'
+        );
+
+        return false;
+    }
+
     try {
-        const response = await fetch(`${window.API_BASE_URL}/nfe/transportadoras`);
-        const data = await response.json();
-        if (!data.success) throw new Error(data.error);
-        const transportadoras = data.transportadoras || [];
-        select.innerHTML = '<option value="">Selecione uma transportadora</option>' +
-            transportadoras.map(t => `<option value="${t.id}">${t.nome} (${t.cnpj})</option>`).join('');
+
+        select.disabled = true;
+
+        select.innerHTML = `
+            <option value="">
+                ⏳ Carregando transportadoras...
+            </option>
+        `;
+
+        const url =
+            `${window.API_BASE_URL}/nfe/transportadoras`;
+
+        console.log(
+            '🚚 URL:',
+            url
+        );
+
+        const response =
+            await fetch(
+                url,
+                {
+                    method: 'GET',
+
+                    headers: {
+                        'Accept':
+                            'application/json'
+                    },
+
+                    cache:
+                        'no-store'
+                }
+            );
+
+        console.log(
+            '🚚 HTTP:',
+            response.status
+        );
+
+        if (!response.ok) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+        const data =
+            await response.json();
+
+        console.log(
+            '🚚 Dados recebidos:',
+            data
+        );
+
+        if (!data.success) {
+
+            throw new Error(
+                data.error ||
+                'API retornou success=false'
+            );
+        }
+
+        const transportadoras =
+            Array.isArray(
+                data.transportadoras
+            )
+                ? data.transportadoras
+                : [];
+
+        console.log(
+            `🚚 ${transportadoras.length} transportadoras encontradas`
+        );
+
+        if (
+            transportadoras.length === 0
+        ) {
+
+            select.innerHTML = `
+                <option value="">
+                    Nenhuma transportadora cadastrada
+                </option>
+            `;
+
+            select.disabled = false;
+
+            return true;
+        }
+
+        // =====================================================
+        // PRIMEIRA OPÇÃO
+        // =====================================================
+
+        select.innerHTML = '';
+
+        const optionInicial =
+            document.createElement(
+                'option'
+            );
+
+        optionInicial.value = '';
+
+        optionInicial.textContent =
+            'Selecione uma transportadora';
+
+        select.appendChild(
+            optionInicial
+        );
+
+        // =====================================================
+        // TRANSPORTADORAS
+        // =====================================================
+
+        transportadoras.forEach(
+            transportadora => {
+
+                const option =
+                    document.createElement(
+                        'option'
+                    );
+
+                option.value =
+                    String(
+                        transportadora.id
+                    );
+
+                let texto =
+                    transportadora.nome ||
+                    'Transportadora';
+
+                if (
+                    transportadora.cnpj
+                ) {
+
+                    texto +=
+                        ` - ${transportadora.cnpj}`;
+                }
+
+                option.textContent =
+                    texto;
+
+                select.appendChild(
+                    option
+                );
+            }
+        );
+
+        select.disabled = false;
+
+        console.log(
+            '✅ Select preenchido:',
+            select.options.length,
+            'opções'
+        );
+
+        return true;
+
     } catch (error) {
-        console.error('Erro ao carregar transportadoras:', error);
+
+        console.error(
+            '❌ Erro ao carregar transportadoras:',
+            error
+        );
+
+        select.innerHTML = `
+            <option value="">
+                ❌ Erro ao carregar transportadoras
+            </option>
+        `;
+
+        select.disabled = false;
+
+        return false;
     }
 }
 
@@ -3827,28 +7530,61 @@ function inicializarAbaNFE() {
     mostrarAbaNFE('vendas');
 }
 
-// =========================================================
-// ATUALIZAR LISTA DE VENDAS
-// =========================================================
-
 async function atualizarListaNFE() {
-    const btn = document.getElementById('btnAtualizarNFE');
+
+    const btn =
+        document.getElementById(
+            'btnAtualizarNFE'
+        );
+
+    const textoOriginal =
+        btn?.innerHTML || '';
+
     if (btn) {
-        btn.innerHTML = '<span class="spinner"></span> Atualizando...';
-        btn.disabled = true;
+
+        btn.innerHTML =
+            '<span class="spinner"></span> Atualizando em segundo plano...';
+
+        btn.disabled =
+            true;
     }
 
     try {
-        await carregarVendasPendentes();
+
+        // Força nova consulta ao ML
+        await carregarVendasPendentes(
+            true
+        );
+
         await carregarNFesEmitidas();
-        showToast('✅ Lista atualizada!', 'success');
+
+        showToast(
+            '✅ Vendas atualizadas!',
+            'success'
+        );
+
     } catch (error) {
-        console.error('❌ Erro ao atualizar lista:', error);
-        showToast('Erro ao atualizar vendas', 'error');
+
+        console.error(
+            '❌ Erro ao atualizar lista:',
+            error
+        );
+
+        showToast(
+            'Erro ao atualizar vendas',
+            'error'
+        );
+
     } finally {
+
         if (btn) {
-            btn.innerHTML = '<i class="fas fa-sync-alt"></i> Atualizar Lista';
-            btn.disabled = false;
+
+            btn.innerHTML =
+                textoOriginal ||
+                '<i class="fas fa-sync-alt"></i> Atualizar Lista';
+
+            btn.disabled =
+                false;
         }
     }
 }
