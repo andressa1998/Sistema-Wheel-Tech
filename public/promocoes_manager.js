@@ -773,91 +773,194 @@ window.analisarItens = async function() {
 };
 
 // ============================================================
-// FUNÇÃO: RENDERIZAR TABELA DA INTERSEÇÃO
+// FUNÇÃO: RENDERIZAR TABELA DA INTERSEÇÃO - ATUALIZADA
 // ============================================================
 function renderizarTabelaInterseccao(itens) {
     const tbody = document.getElementById('bulkItensBody');
-    if (!tbody) return;
-    
-    if (!itens || itens.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted">Nenhum MLB encontrado com a regra selecionada</td></tr>`;
+
+    if (!tbody) {
+        log('❌ bulkItensBody não encontrado', 'error');
         return;
     }
-    
+
+    if (!itens || itens.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center py-4 text-muted">
+                    Nenhum MLB encontrado com a regra selecionada
+                </td>
+            </tr>
+        `;
+
+        atualizarBotaoAtivacao();
+        return;
+    }
+
     tbody.innerHTML = '';
-    
+
     itens.forEach((item, index) => {
         const tr = document.createElement('tr');
-        
+
         let bgColor = '#ffffff';
         let statusColor = '#6c757d';
         let statusText = item.statusLabel || 'Desconhecido';
-        
-        switch(item.tipo) {
+
+        switch (item.tipo) {
             case 'started':
                 bgColor = '#d4edda';
                 statusColor = '#155724';
                 break;
+
             case 'pending':
                 bgColor = '#fff3cd';
                 statusColor = '#856404';
                 break;
+
             case 'candidate':
                 bgColor = '#d1ecf1';
                 statusColor = '#0c5460';
                 break;
+
             default:
                 bgColor = '#f8d7da';
                 statusColor = '#721c24';
                 break;
         }
-        
+
         tr.style.backgroundColor = bgColor;
-        
-        const isBloqueado = mlbsBloqueados.includes(item.mlb);
+
+        const isBloqueado =
+            mlbsBloqueados.includes(item.mlb);
+
         if (isBloqueado) {
             tr.style.opacity = '0.6';
         }
-        
-        const podeSelecionar = !isBloqueado && item.tipo !== 'started';
-        
-        // Calcular diferença
-        const diferenca = (item.precoDestino || 0) - (item.precoOrigem || 0);
-        const diffColor = diferenca > 0 ? '#28a745' : (diferenca < 0 ? '#dc3545' : '#6c757d');
-        const diffLabel = diferenca > 0 ? `+R$ ${diferenca.toFixed(2)}` : (diferenca < 0 ? `-R$ ${Math.abs(diferenca).toFixed(2)}` : 'R$ 0,00');
-        
+
+        // IMPORTANTE:
+        // somente CANDIDATE deve ser enviado para ativação.
+        //
+        // started = já ativo
+        // pending = já programado
+        // candidate = pode ser aceito/ativado
+        const podeSelecionar =
+            !isBloqueado &&
+            item.tipo === 'candidate';
+
+        const precoOrigem =
+            Number(item.precoOrigem) || 0;
+
+        const precoDestino =
+            Number(item.precoDestino) || 0;
+
+        const diferenca =
+            precoDestino - precoOrigem;
+
+        const diffColor =
+            diferenca > 0
+                ? '#28a745'
+                : diferenca < 0
+                    ? '#dc3545'
+                    : '#6c757d';
+
+        const diffLabel =
+            diferenca > 0
+                ? `+R$ ${diferenca.toFixed(2)}`
+                : diferenca < 0
+                    ? `-R$ ${Math.abs(diferenca).toFixed(2)}`
+                    : 'R$ 0,00';
+
+        let complementoStatus = '';
+
+        if (item.tipo === 'started') {
+            complementoStatus =
+                '<br><small style="color:#28a745;">✅ Já ativo</small>';
+        }
+
+        if (item.tipo === 'candidate') {
+            complementoStatus =
+                '<br><small style="color:#0c5460;">📌 Pode ativar</small>';
+        }
+
+        if (item.tipo === 'pending') {
+            complementoStatus =
+                '<br><small style="color:#856404;">⏳ Já programado</small>';
+        }
+
         tr.innerHTML = `
             <td style="text-align:center;">
-                <input type="checkbox" class="bulk-item-checkbox" data-index="${index}" 
-                    ${podeSelecionar ? 'checked' : 'disabled'} 
+                <input
+                    type="checkbox"
+                    class="bulk-item-checkbox"
+                    data-index="${index}"
+                    data-mlb="${item.mlb || ''}"
+                    ${podeSelecionar ? 'checked' : 'disabled'}
                     ${!podeSelecionar ? 'style="opacity:0.5;"' : ''}
-                    onchange="atualizarBotaoAtivacao()">
-                ${isBloqueado ? ' <i class="fas fa-ban text-danger" title="MLB bloqueado"></i>' : ''}
+                    onchange="atualizarBotaoAtivacao()"
+                >
+
+                ${
+                    isBloqueado
+                        ? '<i class="fas fa-ban text-danger" title="MLB bloqueado"></i>'
+                        : ''
+                }
             </td>
-            <td><strong>${item.mlb || 'N/A'}</strong></td>
+
+            <td>
+                <strong>${item.mlb || 'N/A'}</strong>
+            </td>
+
             <td style="text-align:right; font-weight:600; color:#007bff;">
-                R$ ${(item.precoOrigem || 0).toFixed(2)}
+                R$ ${precoOrigem.toFixed(2)}
             </td>
-            <td style="text-align:center;">${(item.percentOrigem || 0)}%</td>
+
+            <td style="text-align:center;">
+                ${Number(item.percentOrigem) || 0}%
+            </td>
+
             <td style="text-align:right; font-weight:600; color:#28a745;">
-                R$ ${(item.precoDestino || 0).toFixed(2)}
+                R$ ${precoDestino.toFixed(2)}
             </td>
-            <td style="text-align:center;">${(item.percentDestino || 0)}%</td>
-            <td style="text-align:center; font-size:12px; font-weight:600; color:${diffColor};">
+
+            <td style="text-align:center;">
+                ${Number(item.percentDestino) || 0}%
+            </td>
+
+            <td
+                style="
+                    text-align:center;
+                    font-size:12px;
+                    font-weight:600;
+                    color:${diffColor};
+                "
+            >
                 ${diffLabel}
             </td>
-            <td style="text-align:center; font-size:12px; font-weight:600; color:${statusColor};">
+
+            <td
+                style="
+                    text-align:center;
+                    font-size:12px;
+                    font-weight:600;
+                    color:${statusColor};
+                "
+            >
                 ${statusText}
-                ${item.tipo === 'started' ? '<br><small style="color:#28a745;">✅ Já ativo</small>' : ''}
-                ${item.tipo === 'candidate' ? '<br><small style="color:#0c5460;">📌 Pode ativar</small>' : ''}
-                ${item.tipo === 'pending' ? '<br><small style="color:#856404;">⏳ Programado</small>' : ''}
+                ${complementoStatus}
             </td>
         `;
-        
+
         tbody.appendChild(tr);
     });
-    
-    document.querySelectorAll('.bulk-item-checkbox:not(:disabled)').forEach(cb => cb.checked = true);
+
+    // Marcar automaticamente somente os candidates habilitados
+    document
+        .querySelectorAll(
+            '.bulk-item-checkbox:not(:disabled)'
+        )
+        .forEach(cb => {
+            cb.checked = true;
+        });
+
     atualizarBotaoAtivacao();
 }
 
@@ -1199,32 +1302,144 @@ async function buscarDetalhesPromocao(promotionId, promotionType, token) {
 }
 
 // ============================================================
-// FUNÇÃO: ATIVAR ITEM EM UMA PROMOÇÃO
+// FUNÇÃO: ATIVAR ITEM EM UMA PROMOÇÃO - ATUALIZADA
 // ============================================================
-async function ativarItemPromocao(itemId, promotionId, price, token) {
+async function ativarItemPromocao(
+    itemId,
+    promotionId,
+    promotionType,
+    dealPrice,
+    token
+) {
     try {
-        const url = `https://api.mercadolibre.com/seller-promotions/offers?app_version=v2`;
+        if (!itemId) {
+            return {
+                success: false,
+                error: 'Item ID não informado'
+            };
+        }
+
+        if (!promotionId) {
+            return {
+                success: false,
+                error: 'Promotion ID não informado'
+            };
+        }
+
+        if (!promotionType) {
+            return {
+                success: false,
+                error: 'Promotion Type não informado'
+            };
+        }
+
+        if (!token) {
+            return {
+                success: false,
+                error: 'Token não informado'
+            };
+        }
+
+        // Endpoint correto para incluir/aceitar o item na promoção
+        const url =
+            `https://api.mercadolibre.com/seller-promotions/items/${itemId}?app_version=v2`;
+
         const body = {
             promotion_id: promotionId,
-            item_id: itemId,
-            price: Math.round(price * 100) // Converter para centavos
+            promotion_type: promotionType
         };
-        
-        const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${token}`;
+
+        // Algumas promoções exigem deal_price.
+        // IMPORTANTE: NÃO multiplicar por 100.
+        const precoNumerico = Number(dealPrice);
+
+        if (Number.isFinite(precoNumerico) && precoNumerico > 0) {
+            body.deal_price = Number(precoNumerico.toFixed(2));
+        }
+
+        const worker =
+            window.WORKER_URL ||
+            'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
+
+        const proxyUrl =
+            `${worker}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(token)}`;
+
+        log(`🚀 Ativando ${itemId} na promoção ${promotionId}`, 'info');
+        log(`   Tipo: ${promotionType}`, 'debug');
+        log(
+            `   Deal price: ${
+                body.deal_price !== undefined
+                    ? `R$ ${body.deal_price.toFixed(2)}`
+                    : 'não informado'
+            }`,
+            'debug'
+        );
+        log(`   Body: ${JSON.stringify(body)}`, 'debug');
+
         const response = await fetch(proxyUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(body)
         });
-        
-        if (response.ok) {
-            return { success: true, data: await response.json() };
-        } else {
-            const errorText = await response.text();
-            return { success: false, error: errorText };
+
+        const responseText = await response.text();
+
+        let responseData = null;
+
+        if (responseText) {
+            try {
+                responseData = JSON.parse(responseText);
+            } catch {
+                responseData = responseText;
+            }
         }
+
+        log(
+            `📥 ${itemId} → HTTP ${response.status}: ${responseText || 'sem conteúdo'}`,
+            response.ok ? 'success' : 'warning'
+        );
+
+        if (response.ok) {
+            return {
+                success: true,
+                status: response.status,
+                data: responseData
+            };
+        }
+
+        let mensagemErro = responseText || `HTTP ${response.status}`;
+
+        if (
+            responseData &&
+            typeof responseData === 'object'
+        ) {
+            mensagemErro =
+                responseData.message ||
+                responseData.error ||
+                responseData.cause?.[0]?.message ||
+                responseText ||
+                `HTTP ${response.status}`;
+        }
+
+        return {
+            success: false,
+            status: response.status,
+            error: mensagemErro,
+            data: responseData
+        };
+
     } catch (error) {
-        return { success: false, error: error.message };
+        log(
+            `❌ Erro ao ativar ${itemId}: ${error.message}`,
+            'error'
+        );
+
+        return {
+            success: false,
+            error: error.message
+        };
     }
 }
 
@@ -1662,150 +1877,382 @@ function atualizarBotaoAtivacao() {
         atualizarBotaoAtivacao();
     };
 
+// ============================================================
+// FUNÇÃO: EXECUTAR ATIVAÇÃO EM MASSA - ATUALIZADA
+// ============================================================
 window.executarAtivacaoEmMassa = async function() {
-    log('🚀 EXECUTANDO ATIVAÇÃO EM MASSA', 'info');
-    log('═══════════════════════════════════════════════════════════', 'info');
+    log(
+        '🚀 EXECUTANDO ATIVAÇÃO EM MASSA',
+        'info'
+    );
 
-    // 1. Buscar os itens selecionados
-    const selecionados = [];
-    const checkboxes = document.querySelectorAll('.bulk-item-checkbox:checked');
+    log(
+        '═══════════════════════════════════════════════════════════',
+        'info'
+    );
 
-    if (checkboxes.length === 0) {
-        showToast('⚠️ Nenhum item selecionado.', 'warning');
+    // ========================================================
+    // 1. OBTER ITENS SELECIONADOS
+    // ========================================================
+    const checkboxes = document.querySelectorAll(
+        '.bulk-item-checkbox:checked:not(:disabled)'
+    );
+
+    if (!checkboxes.length) {
+        showToast(
+            '⚠️ Nenhum item selecionado.',
+            'warning'
+        );
         return;
     }
 
+    const selecionados = [];
+
     checkboxes.forEach(cb => {
-        const index = parseInt(cb.dataset.index);
-        if (!isNaN(index) && itensAnalisados && itensAnalisados[index]) {
+        const index = Number(cb.dataset.index);
+
+        if (
+            Number.isInteger(index) &&
+            itensAnalisados &&
+            itensAnalisados[index]
+        ) {
             const item = itensAnalisados[index];
-            const isBloqueado = mlbsBloqueados.includes(item.mlb);
-            if (!isBloqueado && item.tipo !== 'started') {
+
+            const bloqueado =
+                mlbsBloqueados.includes(item.mlb);
+
+            // Somente candidate realmente precisa ser ativado.
+            if (
+                !bloqueado &&
+                item.tipo === 'candidate'
+            ) {
                 selecionados.push(item);
             }
         }
     });
 
-    if (selecionados.length === 0) {
-        showToast('⚠️ Nenhum item elegível selecionado.', 'warning');
+    if (!selecionados.length) {
+        showToast(
+            '⚠️ Nenhum item candidato selecionado para ativação.',
+            'warning'
+        );
         return;
     }
 
-    // 2. Verificar destino e token
-    const destinoId = document.getElementById('bulkPromocaoDestino')?.value;
+    // ========================================================
+    // 2. PROMOÇÃO DESTINO
+    // ========================================================
+    const destinoId =
+        document.getElementById(
+            'bulkPromocaoDestino'
+        )?.value;
+
     if (!destinoId) {
-        showToast('⚠️ Selecione a promoção de destino', 'warning');
+        showToast(
+            '⚠️ Selecione a promoção de destino.',
+            'warning'
+        );
         return;
     }
 
-    const tokenData = await window.getValidToken?.();
+    const promocaoDestino =
+        todasPromocoes.find(
+            promocao =>
+                String(promocao.id) ===
+                String(destinoId)
+        );
+
+    if (!promocaoDestino) {
+        showToast(
+            '❌ Não foi possível identificar a promoção de destino.',
+            'error'
+        );
+
+        log(
+            `❌ Promoção destino ${destinoId} não encontrada em todasPromocoes`,
+            'error'
+        );
+
+        return;
+    }
+
+    const promotionType =
+        promocaoDestino.type;
+
+    if (!promotionType) {
+        showToast(
+            '❌ Tipo da promoção de destino não identificado.',
+            'error'
+        );
+
+        return;
+    }
+
+    log(
+        `🎯 Promoção destino: ${promocaoDestino.name || destinoId}`,
+        'info'
+    );
+
+    log(
+        `🎯 ID: ${destinoId}`,
+        'debug'
+    );
+
+    log(
+        `🎯 Tipo: ${promotionType}`,
+        'debug'
+    );
+
+    // ========================================================
+    // 3. TOKEN
+    // ========================================================
+    const tokenData =
+        await window.getValidToken?.();
+
     if (!tokenData?.access_token) {
-        showToast('❌ Token não disponível', 'error');
+        showToast(
+            '❌ Token do Mercado Livre não disponível.',
+            'error'
+        );
         return;
     }
 
-    // 3. Confirmar com o usuário
-    if (!confirm(`Ativar ${selecionados.length} itens na promoção?`)) {
+    const token =
+        tokenData.access_token;
+
+    // ========================================================
+    // 4. CONFIRMAÇÃO
+    // ========================================================
+    const confirmar = confirm(
+        `Ativar ${selecionados.length} MLB(s) na promoção "${promocaoDestino.name || destinoId}"?`
+    );
+
+    if (!confirmar) {
         return;
     }
 
-    // 4. Executar ativação
-    mostrarBarraProgresso(`Ativando ${selecionados.length} itens...`, 'Aguarde...');
+    // ========================================================
+    // 5. INTERFACE / PROGRESSO
+    // ========================================================
+    const btnAtivar =
+        document.getElementById(
+            'btnAtivarMassa'
+        );
+
+    if (btnAtivar) {
+        btnAtivar.disabled = true;
+        btnAtivar.innerHTML =
+            '<i class="fas fa-spinner fa-spin"></i> Ativando...';
+    }
+
+    mostrarBarraProgresso(
+        `Ativando ${selecionados.length} itens...`,
+        promocaoDestino.name || destinoId
+    );
 
     let sucessos = 0;
     let falhas = 0;
+
     const falhasLista = [];
 
-    for (let i = 0; i < selecionados.length; i++) {
-        const item = selecionados[i];
-        const mlb = item.mlb;
-        
-        // Atualizar progresso
-        const pct = ((i + 1) / selecionados.length) * 100;
-        atualizarProgresso(pct, `Processando ${i+1}/${selecionados.length}`, `${sucessos} sucessos, ${falhas} falhas`, `${Math.round(pct)}%`);
+    // ========================================================
+    // 6. PROCESSAR MLB POR MLB
+    // ========================================================
+    for (
+        let i = 0;
+        i < selecionados.length;
+        i++
+    ) {
+        const item =
+            selecionados[i];
+
+        const mlb =
+            item.mlb;
+
+        const percentual =
+            ((i + 1) / selecionados.length) * 100;
+
+        atualizarProgresso(
+            percentual,
+            `Processando ${i + 1}/${selecionados.length}`,
+            `${sucessos} sucessos • ${falhas} falhas`,
+            `${Math.round(percentual)}%`
+        );
 
         try {
-            // 🔥 MÉTODO CORRETO: Usar o endpoint de criação de oferta
-            // Primeiro, buscar o item para obter o preço atual
-            const urlItem = `https://api.mercadolibre.com/items/${mlb}`;
-            const proxyUrlItem = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(urlItem)}&token=${tokenData.access_token}`;
-            const responseItem = await fetch(proxyUrlItem);
-            
-            if (!responseItem.ok) {
+            if (!mlb) {
                 falhas++;
-                falhasLista.push(`${mlb}: não foi possível obter dados do item`);
-                log(`❌ ${mlb} - Erro ao buscar item: ${responseItem.status}`, 'error');
-                continue;
-            }
-            
-            const itemData = await responseItem.json();
-            const price = itemData.price || 0;
-            
-            if (price === 0) {
-                falhas++;
-                falhasLista.push(`${mlb}: preço inválido (0)`);
-                log(`❌ ${mlb} - Preço inválido`, 'warning');
+
+                falhasLista.push(
+                    'Item sem MLB'
+                );
+
                 continue;
             }
 
-            // 🔥 ENDPOINT CORRETO PARA CRIAR OFERTA NA PROMOÇÃO
-            const url = `https://api.mercadolibre.com/seller-promotions/offers?app_version=v2`;
-            
-            const body = {
-                promotion_id: destinoId,
-                item_id: mlb,
-                price: Math.round(price * 100) // ML trabalha com centavos
-            };
+            // O preço que interessa é o preço FINAL da
+            // promoção destino obtido durante a análise.
+            //
+            // NÃO usar o preço normal de /items/{MLB}
+            // e NÃO multiplicar por 100.
+            let dealPrice =
+                Number(item.precoDestino) || 0;
 
-            const proxyUrl = `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${tokenData.access_token}`;
+            log(
+                `🔄 ${mlb} → promoção ${destinoId}`,
+                'info'
+            );
 
-            log(`🔄 Ativando ${mlb} com preço R$ ${price.toFixed(2)}...`, 'debug');
-            log(`📦 Body: ${JSON.stringify(body)}`, 'debug');
+            log(
+                `   Status atual: ${item.tipo}`,
+                'debug'
+            );
 
-            const response = await fetch(proxyUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
+            log(
+                `   Preço destino analisado: ${
+                    dealPrice > 0
+                        ? `R$ ${dealPrice.toFixed(2)}`
+                        : 'não disponível'
+                }`,
+                'debug'
+            );
 
-            const responseText = await response.text();
-            log(`📥 Resposta: ${response.status} - ${responseText.substring(0, 200)}`, 'debug');
+            const resultado =
+                await ativarItemPromocao(
+                    mlb,
+                    destinoId,
+                    promotionType,
+                    dealPrice,
+                    token
+                );
 
-            if (response.ok) {
+            if (resultado.success) {
                 sucessos++;
-                log(`✅ ${mlb} ativado com sucesso!`, 'success');
+
+                log(
+                    `✅ ${mlb} ativado na promoção ${destinoId}`,
+                    'success'
+                );
+
+                // Atualizar localmente para impedir
+                // clique duplicado enquanto a análise
+                // ainda não foi recarregada.
+                item.tipo = 'pending';
+                item.statusDestino = 'pending';
+                item.statusLabel = '⏳ Programado';
+
             } else {
                 falhas++;
-                falhasLista.push(`${mlb}: ${responseText}`);
-                log(`❌ ${mlb} falhou: ${responseText}`, 'warning');
+
+                const erro =
+                    resultado.error ||
+                    `HTTP ${resultado.status || '?'}`;
+
+                falhasLista.push(
+                    `${mlb}: ${erro}`
+                );
+
+                log(
+                    `❌ ${mlb} não ativado: ${erro}`,
+                    'error'
+                );
             }
-        } catch (err) {
+
+        } catch (error) {
             falhas++;
-            falhasLista.push(`${mlb}: ${err.message}`);
-            log(`❌ ${mlb} erro: ${err.message}`, 'warning');
+
+            falhasLista.push(
+                `${mlb}: ${error.message}`
+            );
+
+            log(
+                `❌ ${mlb}: ${error.message}`,
+                'error'
+            );
         }
     }
 
-    // 5. Resultado final
-    log(`✅ Sucessos: ${sucessos}`, 'success');
-    log(`❌ Falhas: ${falhas}`, 'warning');
+    // ========================================================
+    // 7. RESULTADO
+    // ========================================================
+    log(
+        '═══════════════════════════════════════════════════════════',
+        'info'
+    );
 
-    setTimeout(fecharBarraProgresso, 2000);
+    log(
+        `✅ Sucessos: ${sucessos}`,
+        'success'
+    );
 
-    if (sucessos > 0 && falhas === 0) {
-        showToast(`✅ Todos os ${sucessos} itens foram ativados!`, 'success');
-    } else if (sucessos > 0 && falhas > 0) {
-        showToast(`⚠️ ${sucessos} ativados, ${falhas} falhas.`, 'warning');
-        if (falhasLista.length > 0) {
-            console.log('📋 Lista de falhas:', falhasLista);
-        }
+    log(
+        `❌ Falhas: ${falhas}`,
+        falhas > 0 ? 'warning' : 'info'
+    );
+
+    if (falhasLista.length) {
+        console.group(
+            '📋 Falhas na ativação em massa'
+        );
+
+        falhasLista.forEach(erro =>
+            console.error(erro)
+        );
+
+        console.groupEnd();
+    }
+
+    atualizarProgresso(
+        100,
+        'Processamento concluído',
+        `${sucessos} ativados • ${falhas} falhas`,
+        '100%'
+    );
+
+    if (
+        sucessos > 0 &&
+        falhas === 0
+    ) {
+        showToast(
+            `✅ ${sucessos} MLB(s) enviados para a promoção com sucesso!`,
+            'success'
+        );
+
+    } else if (
+        sucessos > 0 &&
+        falhas > 0
+    ) {
+        showToast(
+            `⚠️ ${sucessos} ativados e ${falhas} falharam. Veja o console para os detalhes.`,
+            'warning'
+        );
+
     } else {
-        showToast(`❌ Nenhum item ativado. ${falhas} falhas.`, 'error');
-        console.log('📋 Lista de falhas:', falhasLista);
+        showToast(
+            `❌ Nenhum MLB foi ativado. ${falhas} falha(s). Veja o console.`,
+            'error'
+        );
     }
 
-    // Recarregar análise
-    setTimeout(() => window.analisarItens(), 3000);
+    // ========================================================
+    // 8. RECARREGAR A ANÁLISE
+    // ========================================================
+    fecharBarraProgresso();
+
+    try {
+        await window.analisarItens();
+    } catch (error) {
+        log(
+            `⚠️ Ativação terminou, mas houve erro ao atualizar a análise: ${error.message}`,
+            'warning'
+        );
+
+        if (btnAtivar) {
+            btnAtivar.disabled = false;
+        }
+
+        atualizarBotaoAtivacao();
+    }
 };
 
 // ADICIONE ESTA FUNÇÃO AO FINAL DO ARQUIVO (antes do fechamento da IIFE)
