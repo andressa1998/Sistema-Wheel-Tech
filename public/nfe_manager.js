@@ -11246,8 +11246,8 @@ async function garantirBaixaEstoqueVenda(
 
 
                 const sincronizado =
-                    await sincronizarEstoqueComML(
-                        vendaId
+                    await sincronizarProdutosBaixadosNFE(
+                        vendaCache.estoque_detalhes || []
                     );
 
 
@@ -11560,35 +11560,33 @@ async function garantirBaixaEstoqueVenda(
         // =====================================================
 
         console.log(
-            `🚀 ${vendaId}: INICIANDO SINCRONIZAÇÃO MERCADO LIVRE`
-        );
-
-
-        let sincronizado =
-            false;
-
-
-        try {
-
-            sincronizado =
-                await sincronizarEstoqueComML(
-                    vendaId
-                );
-
-
-        } catch (
-            error
-        ) {
-
-            console.error(
-                `❌ ${vendaId}: erro sincronizando ML:`,
-                error
+    `🚀 Acionando sincronização da Gestão de Estoque após baixa da venda ${vendaId}...`
             );
 
-
-            sincronizado =
+            let sincronizado =
                 false;
-        }
+
+
+            try {
+
+                sincronizado =
+                    await sincronizarProdutosBaixadosNFE(
+                        detalhesEstoque
+                    );
+
+
+            } catch (
+                syncError
+            ) {
+
+                console.error(
+                    `❌ Erro ao sincronizar produtos da venda ${vendaId}:`,
+                    syncError
+                );
+
+                sincronizado =
+                    false;
+            }
 
 
         // =====================================================
@@ -13024,6 +13022,234 @@ function inicializarAbaNFE() {
     mostrarAbaNFE(
         'vendas'
     );
+}
+
+async function sincronizarProdutosBaixadosNFE(
+    detalhesEstoque
+) {
+
+    console.log(
+        '🔄 [NFE → ESTOQUE] Chamando sincronização existente da Gestão de Estoque...'
+    );
+
+    if (
+        typeof window.sincronizarEstoqueML !==
+        'function'
+    ) {
+
+        console.error(
+            '❌ Função window.sincronizarEstoqueML não está disponível'
+        );
+
+        return false;
+    }
+
+
+    if (
+        !Array.isArray(
+            detalhesEstoque
+        ) ||
+        detalhesEstoque.length ===
+            0
+    ) {
+
+        console.warn(
+            '⚠️ Nenhum produto para sincronizar'
+        );
+
+        return false;
+    }
+
+
+    let todosSincronizados =
+        true;
+
+
+    for (
+        const item
+        of detalhesEstoque
+    ) {
+
+        if (
+            !item ||
+            item.encontrado ===
+                false
+        ) {
+
+            continue;
+        }
+
+
+        try {
+
+            let produto =
+                null;
+
+            let erroProduto =
+                null;
+
+
+            // =============================================
+            // PRIORIDADE: ID DO PRODUTO
+            // =============================================
+
+            if (
+                item.produto_id
+            ) {
+
+                const {
+                    data,
+                    error
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'produtos_estoque'
+                        )
+                        .select(
+                            '*'
+                        )
+                        .eq(
+                            'id',
+                            item.produto_id
+                        )
+                        .maybeSingle();
+
+
+                produto =
+                    data;
+
+                erroProduto =
+                    error;
+
+
+            // =============================================
+            // FALLBACK: SKU
+            // =============================================
+
+            } else if (
+                item.sku
+            ) {
+
+                const {
+                    data,
+                    error
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'produtos_estoque'
+                        )
+                        .select(
+                            '*'
+                        )
+                        .eq(
+                            'sku',
+                            item.sku
+                        )
+                        .maybeSingle();
+
+
+                produto =
+                    data;
+
+                erroProduto =
+                    error;
+            }
+
+
+            if (
+                erroProduto
+            ) {
+
+                console.error(
+                    `❌ Erro buscando produto ${item.sku}:`,
+                    erroProduto
+                );
+
+                todosSincronizados =
+                    false;
+
+                continue;
+            }
+
+
+            if (
+                !produto
+            ) {
+
+                console.error(
+                    `❌ Produto ${item.sku} não encontrado após a baixa`
+                );
+
+                todosSincronizados =
+                    false;
+
+                continue;
+            }
+
+
+            console.log(
+                `🚀 [NFE → ESTOQUE] Sincronizando ${produto.sku} | estoque atual: ${produto.quantidade}`
+            );
+
+
+            // =============================================
+            // AQUI CHAMA A FUNÇÃO ORIGINAL DO ESTOQUE
+            // =============================================
+
+            const resultadoSync =
+                await window
+                    .sincronizarEstoqueML(
+                        produto
+                    );
+
+
+            console.log(
+                `📥 Resultado sincronização ${produto.sku}:`,
+                resultadoSync
+            );
+
+
+            if (
+                !resultadoSync ||
+                resultadoSync.success ===
+                    false
+            ) {
+
+                todosSincronizados =
+                    false;
+
+                console.warn(
+                    `⚠️ Sincronização falhou para ${produto.sku}`,
+                    resultadoSync
+                );
+
+
+            } else {
+
+                console.log(
+                    `✅ ${produto.sku} sincronizado pela rotina da Gestão de Estoque`
+                );
+            }
+
+
+        } catch (
+            error
+        ) {
+
+            todosSincronizados =
+                false;
+
+            console.error(
+                `❌ Erro sincronizando ${item.sku}:`,
+                error
+            );
+        }
+    }
+
+
+    return todosSincronizados;
 }
 
 async function atualizarListaNFE() {

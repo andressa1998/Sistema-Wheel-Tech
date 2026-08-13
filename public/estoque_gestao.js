@@ -6336,6 +6336,7 @@ window.abrirModalRegraIndividual = abrirModalRegraIndividual;
 window.abrirModalCategorias = abrirModalCategorias;
 window.sincronizarProdutoML = window.sincronizarProdutoML;
 window.irParaPaginaEstoque = irParaPaginaEstoque;
+window.sincronizarEstoqueML = sincronizarEstoqueML;
 window.alterarItensPorPaginaEstoque = alterarItensPorPaginaEstoque;
 window.abrirModalFullDetectados = abrirModalFullDetectados;
 window.confirmarFullDetectado = confirmarFullDetectado;
