@@ -63,17 +63,20 @@ function mapearUF(nomeEstado) {
 }
 
 // =========================================================
-// FUNÇÃO PARA BUSCAR VALOR EXATO DO MERCADO PAGO (CORRIGIDA)
+// FUNÇÃO PARA BUSCAR VALOR EXATO DO MERCADO PAGO
+// CORRIGIDA: FRETE NÃO REDUZ O VALOR DO PRODUTO
 // =========================================================
 
 async function buscarValorExatoPagamento(orderId) {
     try {
-        orderId =
-            normalizarOrderIdML(
-                orderId
-            );
-            if (!orderId) {
 
+        // =====================================================
+        // NORMALIZAR ID DA VENDA
+        // =====================================================
+
+        orderId = normalizarOrderIdML(orderId);
+
+        if (!orderId) {
             console.warn(
                 '⚠️ ID da venda inválido para buscar pagamento'
             );
@@ -81,123 +84,474 @@ async function buscarValorExatoPagamento(orderId) {
             return null;
         }
 
+
         console.log(
             `🔍 Buscando valor exato do pagamento para venda ${orderId}...`
         );
-        
-        let token = localStorage.getItem('ml_access_token');
-        if (!token && typeof window.getValidToken === 'function') {
-            const tokenData = await window.getValidToken();
-            token = tokenData?.access_token;
+
+
+        // =====================================================
+        // TOKEN MERCADO LIVRE
+        // =====================================================
+
+        let token =
+            localStorage.getItem(
+                'ml_access_token'
+            );
+
+
+        if (
+            !token &&
+            typeof window.getValidToken === 'function'
+        ) {
+
+            const tokenData =
+                await window.getValidToken();
+
+            token =
+                tokenData?.access_token;
         }
+
+
         if (!token) {
-            console.warn('⚠️ Token ML não disponível');
+
+            console.warn(
+                '⚠️ Token ML não disponível'
+            );
+
             return null;
         }
 
-        const orderUrl = `https://api.mercadolibre.com/orders/${orderId}`;
-        const orderProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${encodeURIComponent(token)}`;
-        const orderResponse = await fetch(orderProxyUrl);
-        
+
+        // =====================================================
+        // BUSCAR VENDA NO MERCADO LIVRE
+        // =====================================================
+
+        const orderUrl =
+            `https://api.mercadolibre.com/orders/${orderId}`;
+
+
+        const orderProxyUrl =
+            `${window.WORKER_URL}/api/ml/proxy?url=` +
+            `${encodeURIComponent(orderUrl)}` +
+            `&token=${encodeURIComponent(token)}`;
+
+
+        const orderResponse =
+            await fetch(
+                orderProxyUrl,
+                {
+                    cache: 'no-store'
+                }
+            );
+
+
         if (!orderResponse.ok) {
-            console.warn(`⚠️ Não foi possível buscar a venda ${orderId}: ${orderResponse.status}`);
+
+            console.warn(
+                `⚠️ Não foi possível buscar a venda ${orderId}: ${orderResponse.status}`
+            );
+
             return null;
         }
-        
-        const orderData = await orderResponse.json();
-        console.log('📦 Dados da venda:', orderData);
-        
-        // 🔥 PEGAR O VALOR DA VENDA (total_amount)
-        let valorVenda = parseFloat(orderData.total_amount || 0);
-        console.log(`💰 Valor da venda (total_amount): R$ ${valorVenda.toFixed(2)}`);
-        
-        let paymentId = null;
-        if (orderData.payments && orderData.payments.length > 0) {
-            paymentId = orderData.payments[0].id;
-        } else if (orderData.payment_id) {
-            paymentId = orderData.payment_id;
-        } else if (orderData.payment_ids && orderData.payment_ids.length > 0) {
-            paymentId = orderData.payment_ids[0];
+
+
+        const orderData =
+            await orderResponse.json();
+
+
+        console.log(
+            '📦 Dados da venda:',
+            orderData
+        );
+
+
+        // =====================================================
+        // VALOR DA VENDA NO MERCADO LIVRE
+        // =====================================================
+
+        const valorVenda =
+            parseFloat(
+                orderData.total_amount ||
+                0
+            ) || 0;
+
+
+        console.log(
+            `💰 Valor da venda (total_amount): R$ ${valorVenda.toFixed(2)}`
+        );
+
+
+        // =====================================================
+        // LOCALIZAR PAYMENT ID
+        // =====================================================
+
+        let paymentId =
+            null;
+
+
+        if (
+            Array.isArray(orderData.payments) &&
+            orderData.payments.length > 0
+        ) {
+
+            paymentId =
+                orderData.payments[0]?.id;
+
+        } else if (
+            orderData.payment_id
+        ) {
+
+            paymentId =
+                orderData.payment_id;
+
+        } else if (
+            Array.isArray(orderData.payment_ids) &&
+            orderData.payment_ids.length > 0
+        ) {
+
+            paymentId =
+                orderData.payment_ids[0];
         }
-        
+
+
+        // =====================================================
+        // SEM PAYMENT ID
+        // =====================================================
+
         if (!paymentId) {
-            console.warn(`⚠️ Não foi possível encontrar o ID do pagamento para venda ${orderId}`);
+
+            console.warn(
+                `⚠️ Não foi possível encontrar o ID do pagamento para venda ${orderId}`
+            );
+
+
             return {
-                valor_produto: valorVenda,
-                valor_frete: 0,
-                total_pago: valorVenda,
-                payment_id: null,
-                desconto_cupom: 0,
-                fonte: 'venda'
+
+                valor_produto:
+                    valorVenda,
+
+                valor_frete:
+                    0,
+
+                total_pago:
+                    valorVenda,
+
+                payment_id:
+                    null,
+
+                desconto_cupom:
+                    0,
+
+                fonte:
+                    'venda',
+
+                valor_venda:
+                    valorVenda,
+
+                valor_mp:
+                    null
             };
         }
-        
-        console.log(`💳 ID do pagamento: ${paymentId}`);
-        
-        const paymentUrl = `https://api.mercadopago.com/v1/payments/${paymentId}`;
-        const paymentProxyUrl = `${window.WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(paymentUrl)}&token=${encodeURIComponent(token)}`;
-        const paymentResponse = await fetch(paymentProxyUrl);
-        
+
+
+        console.log(
+            `💳 ID do pagamento: ${paymentId}`
+        );
+
+
+        // =====================================================
+        // BUSCAR PAGAMENTO NO MERCADO PAGO
+        // =====================================================
+
+        const paymentUrl =
+            `https://api.mercadopago.com/v1/payments/${paymentId}`;
+
+
+        const paymentProxyUrl =
+            `${window.WORKER_URL}/api/ml/proxy?url=` +
+            `${encodeURIComponent(paymentUrl)}` +
+            `&token=${encodeURIComponent(token)}`;
+
+
+        const paymentResponse =
+            await fetch(
+                paymentProxyUrl,
+                {
+                    cache: 'no-store'
+                }
+            );
+
+
         if (!paymentResponse.ok) {
-            console.warn(`⚠️ Erro ao buscar pagamento ${paymentId}: ${paymentResponse.status}`);
+
+            console.warn(
+                `⚠️ Erro ao buscar pagamento ${paymentId}: ${paymentResponse.status}`
+            );
+
+
             return {
-                valor_produto: valorVenda,
-                valor_frete: 0,
-                total_pago: valorVenda,
-                payment_id: paymentId,
-                desconto_cupom: 0,
-                fonte: 'venda'
+
+                valor_produto:
+                    valorVenda,
+
+                valor_frete:
+                    0,
+
+                total_pago:
+                    valorVenda,
+
+                payment_id:
+                    paymentId,
+
+                desconto_cupom:
+                    0,
+
+                fonte:
+                    'venda',
+
+                valor_venda:
+                    valorVenda,
+
+                valor_mp:
+                    null
             };
         }
-        
-        const paymentData = await paymentResponse.json();
-        console.log('💳 Dados do pagamento (Mercado Pago):', paymentData);
-        
-        let totalPago = parseFloat(paymentData.transaction_amount || paymentData.total_amount || 0);
-        let descontoCupom = parseFloat(paymentData.coupon_amount || 0);
-        let valorFrete = 0;
-        
-        let valorProdutoMP = totalPago - descontoCupom;
-        
-        if (paymentData.additional_info?.shipments?.shipping_amount) {
-            valorFrete = parseFloat(paymentData.additional_info.shipments.shipping_amount) || 0;
-        } else if (paymentData.shipping_amount) {
-            valorFrete = parseFloat(paymentData.shipping_amount) || 0;
-        } else if (orderData.shipping?.cost) {
-            valorFrete = parseFloat(orderData.shipping.cost) || 0;
+
+
+        const paymentData =
+            await paymentResponse.json();
+
+
+        console.log(
+            '💳 Dados do pagamento (Mercado Pago):',
+            paymentData
+        );
+
+
+        // =====================================================
+        // VALORES DO MERCADO PAGO
+        // =====================================================
+
+        const totalPago =
+            parseFloat(
+                paymentData.transaction_amount ??
+                paymentData.total_amount ??
+                0
+            ) || 0;
+
+
+        const descontoCupom =
+            parseFloat(
+                paymentData.coupon_amount ??
+                0
+            ) || 0;
+
+
+        // =====================================================
+        // FRETE
+        //
+        // IMPORTANTE:
+        // O frete continua sendo identificado e armazenado,
+        // porém NÃO será descontado do valor do produto.
+        // =====================================================
+
+        let valorFrete =
+            0;
+
+
+        if (
+            paymentData.additional_info
+                ?.shipments
+                ?.shipping_amount !== undefined &&
+            paymentData.additional_info
+                ?.shipments
+                ?.shipping_amount !== null
+        ) {
+
+            valorFrete =
+                parseFloat(
+                    paymentData
+                        .additional_info
+                        .shipments
+                        .shipping_amount
+                ) || 0;
+
+        } else if (
+            paymentData.shipping_amount !== undefined &&
+            paymentData.shipping_amount !== null
+        ) {
+
+            valorFrete =
+                parseFloat(
+                    paymentData.shipping_amount
+                ) || 0;
+
+        } else if (
+            orderData.shipping?.cost !== undefined &&
+            orderData.shipping?.cost !== null
+        ) {
+
+            valorFrete =
+                parseFloat(
+                    orderData.shipping.cost
+                ) || 0;
         }
-        
-        const totalSemFrete = totalPago - valorFrete;
-        if (valorProdutoMP > totalSemFrete) {
-            valorProdutoMP = totalSemFrete;
+
+
+        // =====================================================
+        // VALOR DO MERCADO PAGO
+        //
+        // Mantemos a lógica existente do desconto/cupom.
+        //
+        // IMPORTANTE:
+        // NÃO SUBTRAIR O FRETE AQUI.
+        // =====================================================
+
+        let valorProdutoMP =
+            totalPago -
+            descontoCupom;
+
+
+        if (
+            !Number.isFinite(valorProdutoMP) ||
+            valorProdutoMP < 0
+        ) {
+
+            valorProdutoMP =
+                0;
         }
-        
-        console.log(`💰 VALORES (Mercado Pago):`);
-        console.log(`   💳 Total pago: R$ ${totalPago.toFixed(2)}`);
-        console.log(`   🎫 Desconto cupom: R$ ${descontoCupom.toFixed(2)}`);
-        console.log(`   📦 Valor do frete: R$ ${valorFrete.toFixed(2)}`);
-        console.log(`   ✅ Valor do produto (MP): R$ ${valorProdutoMP.toFixed(2)}`);
-        console.log(`   📊 Valor da venda (total_amount): R$ ${valorVenda.toFixed(2)}`);
-        
-        // 🔥 PEGAR O MENOR VALOR ENTRE O DA VENDA E O DO MERCADO PAGO
-        let valorProdutoFinal = Math.min(valorProdutoMP, valorVenda);
-        let fonte = valorProdutoMP <= valorVenda ? 'mercado_pago' : 'venda';
-        
-        console.log(`✅ VALOR FINAL (menor): R$ ${valorProdutoFinal.toFixed(2)} (fonte: ${fonte})`);
-        
+
+
+        // =====================================================
+        // LOG DE VALORES
+        // =====================================================
+
+        console.log(
+            '💰 VALORES (Mercado Pago):'
+        );
+
+        console.log(
+            `   💳 Total pago: R$ ${totalPago.toFixed(2)}`
+        );
+
+        console.log(
+            `   🎫 Desconto cupom: R$ ${descontoCupom.toFixed(2)}`
+        );
+
+        console.log(
+            `   📦 Frete informado: R$ ${valorFrete.toFixed(2)}`
+        );
+
+        console.log(
+            `   ✅ Valor considerado MP: R$ ${valorProdutoMP.toFixed(2)}`
+        );
+
+        console.log(
+            `   📊 Valor da venda ML: R$ ${valorVenda.toFixed(2)}`
+        );
+
+
+        // =====================================================
+        // ESCOLHER O MENOR VALOR
+        //
+        // Mercado Livre
+        //        X
+        // Mercado Pago
+        //
+        // O FRETE NÃO PARTICIPA DESTA SUBTRAÇÃO.
+        // =====================================================
+
+        let valorProdutoFinal =
+            valorVenda;
+
+
+        let fonte =
+            'venda';
+
+
+        // Só comparar com MP se tivermos um valor válido.
+        if (
+            valorProdutoMP > 0 &&
+            valorVenda > 0
+        ) {
+
+            valorProdutoFinal =
+                Math.min(
+                    valorProdutoMP,
+                    valorVenda
+                );
+
+
+            fonte =
+                valorProdutoMP <= valorVenda
+                    ? 'mercado_pago'
+                    : 'venda';
+
+        } else if (
+            valorProdutoMP > 0
+        ) {
+
+            valorProdutoFinal =
+                valorProdutoMP;
+
+            fonte =
+                'mercado_pago';
+
+        } else if (
+            valorVenda > 0
+        ) {
+
+            valorProdutoFinal =
+                valorVenda;
+
+            fonte =
+                'venda';
+        }
+
+
+        console.log(
+            `✅ VALOR FINAL DA NF-e: R$ ${valorProdutoFinal.toFixed(2)} (fonte: ${fonte})`
+        );
+
+
+        console.log(
+            `📦 Frete de R$ ${valorFrete.toFixed(2)} identificado, mas NÃO descontado do produto.`
+        );
+
+
+        // =====================================================
+        // RETORNO
+        // =====================================================
+
         return {
-            valor_produto: valorProdutoFinal,
-            valor_frete: valorFrete,
-            total_pago: totalPago,
-            payment_id: paymentId,
-            desconto_cupom: descontoCupom,
-            fonte: fonte,
-            valor_venda: valorVenda,
-            valor_mp: valorProdutoMP
+
+            valor_produto:
+                valorProdutoFinal,
+            valor_frete:
+                valorFrete,
+            total_pago:
+                totalPago,
+            payment_id:
+                paymentId,
+            desconto_cupom:
+                descontoCupom,
+            fonte:
+                fonte,
+            valor_venda:
+                valorVenda,
+            valor_mp:
+                valorProdutoMP
         };
-        
+
+
     } catch (error) {
-        console.error(`❌ Erro ao buscar valor no Mercado Pago:`, error);
+
+        console.error(
+            '❌ Erro ao buscar valor no Mercado Pago:',
+            error
+        );
+
         return null;
     }
 }
