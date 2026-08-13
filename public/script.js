@@ -8429,6 +8429,7 @@ window.abrirSistemaNFE = async function() {
                         <button class="btn btn-outline-primary" id="tabAvulsaBtn" onclick="mostrarAbaNFE('avulsa')">Emitir Avulsa</button>
                         <button class="btn btn-outline-primary" id="tabTransportadorasBtn" onclick="mostrarAbaNFE('transportadoras')">Transportadoras</button>
                         <button class="btn btn-outline-primary" id="tabClientesBtn" onclick="mostrarAbaNFE('clientes')">Clientes</button>
+                        <button id="tabCadastrosBtn" class="btn btn-outline-primary" onclick="mostrarAbaNFE('cadastros')"><i class="fas fa-cogs"></i>Cadastros</button>
                     </div>
                 </div>
             </div>
@@ -8552,6 +8553,41 @@ window.abrirSistemaNFE = async function() {
                     </table>
                 </div>
             </div>
+
+            <div
+                id="abaCadastros"
+                class="hidden"><div class="card">
+                    <h3>
+                        <i class="fas fa-cogs"></i>
+                        Cadastros NF-e
+                    </h3>
+        <div
+            style="display: grid; grid-template-columns: repeat(4, 1fr);
+                gap:15px;
+                margin-top:20px;
+            "><button class="btn btn-primary" onclick="mostrarCadastroNFE('transportadoras')">
+                <i class="fas fa-truck"></i>Transportadoras</button>
+            <button
+                class="btn btn-primary" onclick="mostrarCadastroNFE('clientes')">
+                <i class="fas fa-user"></i>
+                Clientes
+            </button>
+            <button
+                class="btn btn-primary" onclick="mostrarCadastroNFE('naturezas')">
+                <i class="fas fa-file-alt"></i>
+                Natureza da Operação
+            </button>
+            <button
+                class="btn btn-primary"onclick="mostrarCadastroNFE('cfops')">
+                <i class="fas fa-code-branch"></i>
+                CFOP
+            </button>
+        </div>
+        <div
+            id="cadastrosNFEConteudo"
+            style="margin-top:25px;"></div>
+            </div>
+        </div>
 
             <!-- Aba: Clientes -->
             <div id="abaClientes" class="card hidden">
