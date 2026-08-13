@@ -1387,237 +1387,1093 @@ console.log('  await listarNFesParaCancelarSistema()             - Listar NF-es 
 console.log('  await removerNFESistema("CHAVE_DA_NFE")           - Remover apenas o registro');
 
 async function abrirModalEdicaoProdutos(orderId) {
-    console.log('🔧 Abrindo modal único de emissão para venda:', orderId);
+
+    console.log(
+        '🔧 Abrindo modal único de emissão:',
+        orderId
+    );
+
+    // =====================================================
+    // NORMALIZAR ORDER ID
+    // =====================================================
+
+    orderId =
+        normalizarOrderIdML(
+            orderId
+        );
+
+    if (
+        !orderId ||
+        orderId === 'null' ||
+        orderId === 'undefined'
+    ) {
+
+        showToast(
+            '❌ ID da venda inválido',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // REMOVER MODAIS ANTIGOS
+    // =====================================================
 
     const modalClienteAntigo =
-        document.getElementById('modalDadosClienteNFE');
-    if (modalClienteAntigo) {
-        console.log(
-            '🗑️ Removendo modal antigo de cliente'
+        document.getElementById(
+            'modalDadosClienteNFE'
         );
+
+    if (
+        modalClienteAntigo
+    ) {
+
         modalClienteAntigo.remove();
     }
 
-    const modalEmissaoAntigo =
-        document.getElementById('modalEdicaoProdutos');
-    if (modalEmissaoAntigo) {
-        modalEmissaoAntigo.remove();
-    }
-    if (!orderId || orderId === 'null' || orderId === 'undefined') {
-        showToast('❌ ID da venda inválido', 'error');
-        return;
-    }
 
-    vendaIdParaEdicao = orderId;
-    pendingEmitOrderId = orderId;
-
-    let token = localStorage.getItem('ml_access_token');
-
-    if (!token && typeof window.getValidToken === 'function') {
-        const tokenData = await window.getValidToken();
-        token = tokenData?.access_token;
-    }
-    if (!token) {
-        showToast('Token ML não disponível', 'error');
-        return;
-    }
-
-    // Remove modal anterior, caso exista
-    fecharModalEdicaoProdutos();
-
-    try {
-        showToast('🔄 Carregando dados da venda...', 'info');
-
-        // =====================================================
-        // BUSCAR VALOR DA VENDA
-        // =====================================================
-
-        const dadosPagamento = await buscarValorExatoPagamento(orderId);
-
-        console.log(
-            '📊 Dados do pagamento para emissão:',
-            dadosPagamento
+    const modalAnterior =
+        document.getElementById(
+            'modalEdicaoProdutos'
         );
 
+    if (
+        modalAnterior
+    ) {
+
+        modalAnterior.remove();
+    }
+
+
+    // =====================================================
+    // ESTADO GLOBAL
+    // =====================================================
+
+    vendaIdParaEdicao =
+        orderId;
+
+    pendingEmitOrderId =
+        orderId;
+
+
+    // =====================================================
+    // TOKEN ML
+    // =====================================================
+
+    let token =
+        localStorage.getItem(
+            'ml_access_token'
+        );
+
+
+    if (
+        !token &&
+        typeof window.getValidToken ===
+            'function'
+    ) {
+
+        const tokenData =
+            await window
+                .getValidToken();
+
+        token =
+            tokenData
+                ?.access_token;
+    }
+
+
+    if (!token) {
+
+        showToast(
+            '❌ Token ML não disponível',
+            'error'
+        );
+
+        return;
+    }
+
+
+    try {
+
+        showToast(
+            '🔄 Carregando dados da venda...',
+            'info'
+        );
+
+
         // =====================================================
-        // BUSCAR VENDA NO MERCADO LIVRE
+        // LOCALIZAR VENDA ATUAL NA TABELA/CACHE
         // =====================================================
 
-        const orderUrl =
-            `https://api.mercadolibre.com/orders/${orderId}`;
+        const vendasDisponiveis =
+            Array.isArray(
+                vendasPendentes
+            )
+                ? vendasPendentes
+                : [];
 
-        const orderProxyUrl =
-            `${window.WORKER_URL}/api/ml/proxy?url=` +
-            `${encodeURIComponent(orderUrl)}` +
-            `&token=${encodeURIComponent(token)}`;
 
-        const orderResponse = await fetch(orderProxyUrl);
+        let vendaAtual =
+            window._nfeVendaAtual ||
+            vendasDisponiveis.find(
+                venda =>
+                    normalizarOrderIdML(
+                        venda.id_venda_ml ||
+                        venda.id
+                    ) ===
+                    orderId
+            ) ||
+            null;
 
-        if (!orderResponse.ok) {
-            throw new Error(
-                'Erro ao buscar venda no Mercado Livre'
-            );
-        }
-
-        const venda = await orderResponse.json();
-
-        console.log('📦 Venda ML:', venda);
 
         // =====================================================
-        // NÃO PERMITIR VENDA FULL
+        // HELPERS LOCAIS PACK / SHIPMENT
         // =====================================================
+
+        const obterPackIdLocal =
+            venda => {
+
+                if (!venda) {
+                    return null;
+                }
+
+
+                if (
+                    typeof obterPackIdNFE ===
+                    'function'
+                ) {
+
+                    const resultado =
+                        obterPackIdNFE(
+                            venda
+                        );
+
+                    if (resultado) {
+
+                        return String(
+                            resultado
+                        );
+                    }
+                }
+
+
+                let json =
+                    venda.venda_json ||
+                    venda.dados_completos ||
+                    {};
+
+
+                if (
+                    typeof json ===
+                    'string'
+                ) {
+
+                    try {
+
+                        json =
+                            JSON.parse(
+                                json
+                            );
+
+                    } catch {
+
+                        json =
+                            {};
+                    }
+                }
+
+
+                const packId =
+                    venda._pack_id ||
+                    venda.pack_id ||
+                    json.pack_id ||
+                    json.order?.pack_id ||
+                    null;
+
+
+                return (
+                    packId !== null &&
+                    packId !== undefined &&
+                    packId !== ''
+                )
+                    ? String(
+                        packId
+                    )
+                    : null;
+            };
+
+
+        const obterShipmentIdLocal =
+            venda => {
+
+                if (!venda) {
+                    return null;
+                }
+
+
+                if (
+                    typeof obterShipmentIdNFE ===
+                    'function'
+                ) {
+
+                    const resultado =
+                        obterShipmentIdNFE(
+                            venda
+                        );
+
+                    if (resultado) {
+
+                        return String(
+                            resultado
+                        );
+                    }
+                }
+
+
+                const info =
+                    typeof parseInformacoesEnvioNFE ===
+                        'function'
+                        ? parseInformacoesEnvioNFE(
+                            venda
+                        )
+                        : {};
+
+
+                const shipmentId =
+                    venda._shipment_id ||
+                    venda.shipment_id ||
+                    venda.id_envio ||
+                    venda.shipping?.id ||
+                    info?.id ||
+                    null;
+
+
+                return (
+                    shipmentId !== null &&
+                    shipmentId !== undefined &&
+                    shipmentId !== ''
+                )
+                    ? String(
+                        shipmentId
+                    )
+                    : null;
+            };
+
+
+        // =====================================================
+        // DESCOBRIR TODAS AS ORDERS QUE PERTENCEM À NOTA
+        // =====================================================
+
+        let orderIdsDaNFE =
+            [];
+
+
+        // -----------------------------------------------------
+        // 1. SE JÁ FOI AGRUPADO NA TABELA
+        // -----------------------------------------------------
 
         if (
-            typeof isFullByAnyField === 'function' &&
-            isFullByAnyField(venda)
+            vendaAtual &&
+            Array.isArray(
+                vendaAtual._order_ids_pack
+            ) &&
+            vendaAtual._order_ids_pack.length >
+                0
         ) {
-            pendingEmitOrderId = null;
-            vendaIdParaEdicao = null;
+
+            orderIdsDaNFE =
+                vendaAtual
+                    ._order_ids_pack
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(Boolean);
+        }
+
+
+        // -----------------------------------------------------
+        // 2. GLOBAL DEFINIDO PELO HANDLER
+        // -----------------------------------------------------
+
+        if (
+            orderIdsDaNFE.length ===
+                0 &&
+            Array.isArray(
+                window._nfeOrderIdsAtuais
+            ) &&
+            window._nfeOrderIdsAtuais.length >
+                0
+        ) {
+
+            orderIdsDaNFE =
+                window
+                    ._nfeOrderIdsAtuais
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(Boolean);
+        }
+
+
+        // -----------------------------------------------------
+        // 3. PROCURAR MESMO PACK/SHIPMENT NAS VENDAS DA TELA
+        // -----------------------------------------------------
+
+        if (
+            orderIdsDaNFE.length ===
+            0
+        ) {
+
+            const packIdAtual =
+                obterPackIdLocal(
+                    vendaAtual
+                );
+
+
+            const shipmentAtual =
+                obterShipmentIdLocal(
+                    vendaAtual
+                );
+
+
+            if (
+                packIdAtual ||
+                shipmentAtual
+            ) {
+
+                const relacionadas =
+                    vendasDisponiveis.filter(
+                        venda => {
+
+                            if (
+                                detectarVendaFullNFE(
+                                    venda
+                                )
+                            ) {
+
+                                return false;
+                            }
+
+
+                            const id =
+                                normalizarOrderIdML(
+                                    venda.id_venda_ml ||
+                                    venda.id
+                                );
+
+
+                            if (!id) {
+
+                                return false;
+                            }
+
+
+                            const pack =
+                                obterPackIdLocal(
+                                    venda
+                                );
+
+
+                            const shipment =
+                                obterShipmentIdLocal(
+                                    venda
+                                );
+
+
+                            if (
+                                packIdAtual &&
+                                pack
+                            ) {
+
+                                return (
+                                    pack ===
+                                    packIdAtual
+                                );
+                            }
+
+
+                            if (
+                                shipmentAtual &&
+                                shipment
+                            ) {
+
+                                return (
+                                    shipment ===
+                                    shipmentAtual
+                                );
+                            }
+
+
+                            return false;
+                        }
+                    );
+
+
+                orderIdsDaNFE =
+                    relacionadas
+                        .map(
+                            venda =>
+                                normalizarOrderIdML(
+                                    venda.id_venda_ml ||
+                                    venda.id
+                                )
+                        )
+                        .filter(Boolean);
+            }
+        }
+
+
+        // -----------------------------------------------------
+        // 4. FALLBACK
+        // -----------------------------------------------------
+
+        if (
+            orderIdsDaNFE.length ===
+            0
+        ) {
+
+            orderIdsDaNFE = [
+                orderId
+            ];
+        }
+
+
+        // Garantir principal
+        if (
+            !orderIdsDaNFE.includes(
+                orderId
+            )
+        ) {
+
+            orderIdsDaNFE.unshift(
+                orderId
+            );
+        }
+
+
+        orderIdsDaNFE =
+            [
+                ...new Set(
+                    orderIdsDaNFE
+                )
+            ];
+
+
+        window._nfeOrderIdsAtuais =
+            orderIdsDaNFE;
+
+
+        console.log(
+            '📦 Orders da mesma NF-e:',
+            orderIdsDaNFE
+        );
+
+
+        // =====================================================
+        // MEMBROS DO PACK
+        // =====================================================
+
+        const membrosPack =
+            vendasDisponiveis.filter(
+                venda =>
+                    orderIdsDaNFE.includes(
+                        normalizarOrderIdML(
+                            venda.id_venda_ml ||
+                            venda.id
+                        )
+                    )
+            );
+
+
+        if (
+            orderIdsDaNFE.length >
+            1
+        ) {
+
+            window._nfeVendaAtual = {
+
+                ...(vendaAtual || membrosPack[0] || {}),
+
+                _eh_pack:
+                    true,
+
+                _order_ids_pack:
+                    orderIdsDaNFE,
+
+                _membros_pack:
+                    membrosPack
+            };
+
+        } else {
+
+            window._nfeVendaAtual =
+                vendaAtual ||
+                membrosPack[0] ||
+                null;
+        }
+
+
+        // =====================================================
+        // BUSCAR TODAS AS ORDERS NO ML
+        // =====================================================
+
+        const buscarOrderCompleta =
+            async id => {
+
+                const url =
+                    `https://api.mercadolibre.com/orders/${id}`;
+
+
+                const proxy =
+                    `${window.WORKER_URL}/api/ml/proxy?url=` +
+                    `${encodeURIComponent(url)}` +
+                    `&token=${encodeURIComponent(token)}`;
+
+
+                const response =
+                    await fetch(
+                        proxy,
+                        {
+                            cache:
+                                'no-store'
+                        }
+                    );
+
+
+                if (
+                    !response.ok
+                ) {
+
+                    throw new Error(
+                        `Erro ao buscar venda ${id}: HTTP ${response.status}`
+                    );
+                }
+
+
+                const venda =
+                    await response.json();
+
+
+                let pagamento =
+                    null;
+
+
+                try {
+
+                    pagamento =
+                        await buscarValorExatoPagamento(
+                            id
+                        );
+
+                } catch (
+                    error
+                ) {
+
+                    console.warn(
+                        `⚠️ Pagamento ${id}:`,
+                        error
+                    );
+                }
+
+
+                return {
+
+                    id,
+
+                    venda,
+
+                    pagamento
+                };
+            };
+
+
+        const orders =
+            await Promise.all(
+
+                orderIdsDaNFE.map(
+                    buscarOrderCompleta
+                )
+            );
+
+
+        console.log(
+            '📦 Orders carregadas:',
+            orders
+        );
+
+
+        // =====================================================
+        // NÃO PERMITIR FULL
+        // =====================================================
+
+        const possuiFull =
+            orders.some(
+                dados =>
+                    typeof isFullByAnyField ===
+                        'function' &&
+                    isFullByAnyField(
+                        dados.venda
+                    )
+            );
+
+
+        if (
+            possuiFull
+        ) {
+
+            pendingEmitOrderId =
+                null;
+
+            vendaIdParaEdicao =
+                null;
 
             showToast(
-                '🚫 Esta venda é FULL e não permite emissão manual.',
+                '🚫 Este pacote contém venda FULL e não permite emissão manual.',
                 'warning'
             );
 
             return;
         }
 
-        const items = venda.order_items || [];
 
-        if (items.length === 0) {
+        // =====================================================
+        // PRINCIPAL
+        // =====================================================
+
+        const principal =
+            orders.find(
+                item =>
+                    item.id ===
+                    orderId
+            ) ||
+            orders[0];
+
+
+        const venda =
+            principal.venda;
+
+
+        // =====================================================
+        // JUNTAR TODOS OS PRODUTOS
+        // =====================================================
+
+        const items =
+            [];
+
+        let valorTotalProduto =
+            0;
+
+
+        for (
+            const dados
+            of orders
+        ) {
+
+            const order =
+                dados.venda;
+
+
+            const orderItems =
+                Array.isArray(
+                    order.order_items
+                )
+                    ? order.order_items
+                    : [];
+
+
+            if (
+                orderItems.length ===
+                0
+            ) {
+
+                continue;
+            }
+
+
+            const totalOriginal =
+                orderItems.reduce(
+                    (
+                        total,
+                        item
+                    ) =>
+                        total +
+                        (
+                            Number(
+                                item.unit_price ||
+                                0
+                            ) *
+                            Number(
+                                item.quantity ||
+                                1
+                            )
+                        ),
+                    0
+                );
+
+
+            const quantidadeOriginal =
+                orderItems.reduce(
+                    (
+                        total,
+                        item
+                    ) =>
+                        total +
+                        Number(
+                            item.quantity ||
+                            1
+                        ),
+                    0
+                );
+
+
+            let valorOrder =
+                Number(
+                    dados.pagamento
+                        ?.valor_produto ||
+                    0
+                );
+
+
+            if (
+                valorOrder <=
+                0
+            ) {
+
+                valorOrder =
+                    Number(
+                        order.total_amount ||
+                        totalOriginal ||
+                        0
+                    );
+            }
+
+
+            valorTotalProduto +=
+                valorOrder;
+
+
+            for (
+                const item
+                of orderItems
+            ) {
+
+                const quantidade =
+                    Number(
+                        item.quantity ||
+                        1
+                    );
+
+
+                const valorLinhaOriginal =
+                    Number(
+                        item.unit_price ||
+                        0
+                    ) *
+                    quantidade;
+
+
+                let valorUnitarioCorrigido =
+                    Number(
+                        item.unit_price ||
+                        0
+                    );
+
+
+                if (
+                    valorOrder >
+                    0
+                ) {
+
+                    if (
+                        totalOriginal >
+                        0
+                    ) {
+
+                        const proporcao =
+                            valorLinhaOriginal /
+                            totalOriginal;
+
+
+                        const valorLinhaCorrigido =
+                            valorOrder *
+                            proporcao;
+
+
+                        valorUnitarioCorrigido =
+                            valorLinhaCorrigido /
+                            Math.max(
+                                quantidade,
+                                1
+                            );
+
+
+                    } else if (
+                        quantidadeOriginal >
+                        0
+                    ) {
+
+                        valorUnitarioCorrigido =
+                            valorOrder /
+                            quantidadeOriginal;
+                    }
+                }
+
+
+                items.push({
+
+                    ...item,
+
+                    _order_id:
+                        dados.id,
+
+                    _valor_unitario_corrigido:
+                        valorUnitarioCorrigido
+                });
+            }
+        }
+
+
+        if (
+            items.length ===
+            0
+        ) {
+
             showToast(
-                'Nenhum produto encontrado',
+                '⚠️ Nenhum produto encontrado.',
                 'warning'
             );
 
             return;
         }
 
+
+        console.log(
+            '📦 Produtos que entrarão na NF-e:',
+            items.map(
+                item => ({
+                    order:
+                        item._order_id,
+
+                    sku:
+                        item.item?.seller_sku,
+
+                    quantidade:
+                        item.quantity,
+
+                    valor:
+                        item._valor_unitario_corrigido
+                })
+            )
+        );
+
+
         // =====================================================
-        // BUSCAR ENDEREÇO DO SHIPMENT
+        // ENDEREÇO
         // =====================================================
 
-        let address = {};
+        let address =
+            {};
 
-        if (venda.shipping?.id) {
+
+        if (
+            venda.shipping?.id
+        ) {
+
             try {
 
                 const shipUrl =
                     `https://api.mercadolibre.com/shipments/${venda.shipping.id}`;
 
-                const shipProxyUrl =
+
+                const proxy =
                     `${window.WORKER_URL}/api/ml/proxy?url=` +
                     `${encodeURIComponent(shipUrl)}` +
                     `&token=${encodeURIComponent(token)}`;
 
-                const shipResponse =
-                    await fetch(shipProxyUrl);
 
-                if (shipResponse.ok) {
+                const response =
+                    await fetch(
+                        proxy
+                    );
 
-                const shipment =
-                        await shipResponse.json();
 
-                address =
-                        shipment.receiver_address || {};
+                if (
+                    response.ok
+                ) {
+
+                    const shipment =
+                        await response.json();
+
+
+                    address =
+                        shipment.receiver_address ||
+                        {};
                 }
-            } catch (e) {
+
+
+            } catch (
+                error
+            ) {
+
                 console.warn(
-                    '⚠️ Não foi possível buscar endereço do shipment:',
-                    e
+                    '⚠️ Erro buscando endereço:',
+                    error
                 );
             }
         }
 
-        // Fallback
+
         if (
             !address.address_line &&
             !address.street_name &&
             venda.buyer?.address
         ) {
-            address = venda.buyer.address;
+
+            address =
+                venda.buyer.address;
         }
 
+
         // =====================================================
-        // BUSCAR CPF / CNPJ / DADOS DE FATURAMENTO
+        // BILLING INFO
         // =====================================================
 
-        let billingInfo = {};
+        let billingInfo =
+            {};
+
 
         try {
 
             const billingUrl =
                 `https://api.mercadolibre.com/orders/${orderId}/billing_info`;
 
-            const billingProxyUrl =
+
+            const proxy =
                 `${window.WORKER_URL}/api/ml/proxy?url=` +
                 `${encodeURIComponent(billingUrl)}` +
                 `&token=${encodeURIComponent(token)}`;
 
-            const billingResponse =
-                await fetch(billingProxyUrl);
 
-            if (billingResponse.ok) {
+            const response =
+                await fetch(
+                    proxy
+                );
 
-                const billingResult =
-                    await billingResponse.json();
+
+            if (
+                response.ok
+            ) {
+
+                const resultado =
+                    await response.json();
+
 
                 billingInfo =
-                    billingResult?.billing_info ||
-                    billingResult || {};
-                console.log(
-                    '🧾 Billing info obtido:',
-                    billingInfo
-                );
-            } else {
-                console.warn('⚠️ Billing info não disponível:', 
-                billingResponse.status);
+                    resultado?.billing_info ||
+                    resultado ||
+                    {};
             }
-        } catch (e) {
-            console.warn('⚠️ Erro ao buscar billing_info:', e);
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Billing info:',
+                error
+            );
         }
 
+
         // =====================================================
-        // ORGANIZAR ADDITIONAL_INFO
+        // ADDITIONAL INFO
         // =====================================================
 
-        const infoExtra = {};
+        const infoExtra =
+            {};
 
-        if (Array.isArray(billingInfo.additional_info)) {
-            billingInfo.additional_info.forEach(item => {
-                if (item?.type) {
-                    infoExtra[
-                        String(item.type).toUpperCase()
-                    ] = item.value ?? '';
-                }
-            });
+
+        if (
+            Array.isArray(
+                billingInfo.additional_info
+            )
+        ) {
+
+            billingInfo
+                .additional_info
+                .forEach(
+                    item => {
+
+                        if (
+                            item?.type
+                        ) {
+
+                            infoExtra[
+                                String(
+                                    item.type
+                                ).toUpperCase()
+                            ] =
+                                item.value ??
+                                '';
+                        }
+                    }
+                );
         }
 
+
         // =====================================================
-        // DADOS DO CLIENTE
+        // CLIENTE
         // =====================================================
 
-        const buyer = venda.buyer || {};
+        const buyer =
+            venda.buyer ||
+            {};
+
+
         const nomeBuyer =
             `${buyer.first_name || ''} ${buyer.last_name || ''}`
                 .trim();
+
+
         const nomeBilling =
             `${infoExtra.FIRST_NAME || ''} ${infoExtra.LAST_NAME || ''}`
                 .trim();
+
+
         const nomeCliente =
             nomeBilling ||
             nomeBuyer ||
             buyer.nickname ||
             billingInfo.name ||
             '';
-        const documentoCliente = String(
-            infoExtra.DOC_NUMBER ||
-            billingInfo.doc_number ||
-            billingInfo.document_number ||
-            billingInfo.identification?.number ||
-            buyer.identification?.number ||
-            ''
-            ).replace(/\D/g, '');
+
+
+        const documentoCliente =
+            String(
+
+                infoExtra.DOC_NUMBER ||
+
+                billingInfo.doc_number ||
+
+                billingInfo.document_number ||
+
+                billingInfo.identification
+                    ?.number ||
+
+                buyer.identification
+                    ?.number ||
+
+                ''
+
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
+
 
         // =====================================================
         // ENDEREÇO
@@ -1629,12 +2485,13 @@ async function abrirModalEdicaoProdutos(orderId) {
             infoExtra.STREET_NAME ||
             '';
 
+
         let numero =
             address.street_number ||
             infoExtra.STREET_NUMBER ||
             'S/N';
 
-        // Evitar número duplicado no endereço
+
         if (
             logradouro &&
             numero &&
@@ -1642,28 +2499,40 @@ async function abrirModalEdicaoProdutos(orderId) {
         ) {
 
             const numeroEscapado =
-                String(numero).replace(
+                String(
+                    numero
+                ).replace(
                     /[.*+?^${}()|[\]\\]/g,
                     '\\$&'
                 );
 
-            const numeroPattern =
+
+            const pattern =
                 new RegExp(
                     `\\s*[,.]?\\s*${numeroEscapado}\\s*$`
                 );
 
+
             logradouro =
                 logradouro
-                    .replace(numeroPattern, '')
-                    .replace(/,\s*$/, '')
+                    .replace(
+                        pattern,
+                        ''
+                    )
+                    .replace(
+                        /,\s*$/,
+                        ''
+                    )
                     .trim();
         }
+
 
         const bairro =
             address.neighborhood?.name ||
             address.neighborhood ||
             infoExtra.NEIGHBORHOOD ||
             '';
+
 
         const cidade =
             address.city?.name ||
@@ -1672,6 +2541,7 @@ async function abrirModalEdicaoProdutos(orderId) {
             infoExtra.CITY ||
             '';
 
+
         const ufOriginal =
             address.state?.name ||
             address.state ||
@@ -1679,184 +2549,256 @@ async function abrirModalEdicaoProdutos(orderId) {
             infoExtra.STATE ||
             '';
 
-        const uf = mapearUF(ufOriginal);
 
-        const cep = String(
-            address.zip_code ||
-            infoExtra.ZIP_CODE ||
-            ''
-        ).replace(/\D/g, '');
+        const uf =
+            mapearUF(
+                ufOriginal
+            );
 
-        // =====================================================
-        // CALCULAR VALOR TOTAL DOS PRODUTOS
-        // =====================================================
 
-        let valorTotalProduto = 0;
-        let quantidadeTotal = 0;
-
-        for (const item of items) {
-            quantidadeTotal +=
-                item.quantity || 1;
-        }
-
-        if (
-            dadosPagamento &&
-            dadosPagamento.valor_produto > 0
-        ) {
-            valorTotalProduto =
-                dadosPagamento.valor_produto;
-        } else {
-            for (const item of items) {
-                valorTotalProduto +=
-                    (item.unit_price || 0) *
-                    (item.quantity || 1);
-            }
-        }
-
-        // =====================================================
-        // BUSCAR NCM SALVO
-        // =====================================================
-
-        const ncmPorSku = {};
-
-        try {
-
-            const skus =
-                items.map(
-                    item =>
-                        item.item.seller_sku ||
-                        'SEM_SKU'
+        const cep =
+            String(
+                address.zip_code ||
+                infoExtra.ZIP_CODE ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
                 );
 
-            const { data, error } =
-                await window.supabaseClient
-                    .from('produto_ncm')
-                    .select('sku, ncm')
-                    .in('sku', skus);
-
-            if (!error && data) {
-
-                data.forEach(row => {
-
-                    ncmPorSku[row.sku] =
-                        row.ncm;
-
-                });
-            }
-
-        } catch (e) {
-
-            console.warn(
-                '⚠️ Erro ao buscar NCM:',
-                e
-            );
-        }
 
         // =====================================================
-        // MONTAR PRODUTOS EDITÁVEIS
+        // NCM
+        // =====================================================
+
+        const ncmPorSku =
+            {};
+
+
+        const skus =
+            [
+                ...new Set(
+
+                    items
+                        .map(
+                            item =>
+                                item.item
+                                    ?.seller_sku
+                        )
+                        .filter(Boolean)
+                )
+            ];
+
+
+        if (
+            skus.length >
+            0
+        ) {
+
+            try {
+
+                const {
+                    data,
+                    error
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'produto_ncm'
+                        )
+                        .select(
+                            'sku, ncm'
+                        )
+                        .in(
+                            'sku',
+                            skus
+                        );
+
+
+                if (
+                    !error &&
+                    Array.isArray(
+                        data
+                    )
+                ) {
+
+                    data.forEach(
+                        row => {
+
+                            ncmPorSku[
+                                row.sku
+                            ] =
+                                row.ncm;
+                        }
+                    );
+                }
+
+
+            } catch (
+                error
+            ) {
+
+                console.warn(
+                    '⚠️ NCM:',
+                    error
+                );
+            }
+        }
+
+
+        // =====================================================
+        // PRODUTOS EDITÁVEIS
         // =====================================================
 
         produtosEditados =
-            items.map(item => {
+            items.map(
+                item => {
 
-                const sku =
-                    item.item.seller_sku ||
-                    'SEM_SKU';
+                    const sku =
+                        item.item
+                            ?.seller_sku ||
+                        'SEM_SKU';
 
-                const quantidade =
-                    item.quantity || 1;
 
-                let valorUnitario;
+                    return {
 
-                if (
-                    quantidadeTotal > 0 &&
-                    valorTotalProduto > 0
-                ) {
+                        nome:
+                            item.item
+                                ?.title ||
+                            'Produto',
 
-                    valorUnitario =
-                        valorTotalProduto /
-                        quantidadeTotal;
+                        quantidade:
+                            Number(
+                                item.quantity ||
+                                1
+                            ),
 
-                } else {
+                        valor_unitario:
+                            Number(
+                                item._valor_unitario_corrigido ??
+                                item.unit_price ??
+                                0
+                            ),
 
-                    valorUnitario =
-                        item.unit_price || 0;
+                        sku,
+
+                        ncm:
+                            ncmPorSku[sku] ||
+                            '87149990',
+
+                        _order_id:
+                            item._order_id,
+
+                        _valor_original:
+                            Number(
+                                item.unit_price ||
+                                0
+                            )
+                    };
                 }
+            );
 
-                return {
-
-                    nome:
-                        item.item.title ||
-                        'Produto',
-
-                    quantidade,
-
-                    valor_unitario:
-                        valorUnitario,
-
-                    sku,
-
-                    ncm:
-                        ncmPorSku[sku] ||
-                        '87149990',
-
-                    _valor_original:
-                        item.unit_price || 0
-                };
-            });
 
         // =====================================================
-        // CORRIGIR CENTAVOS
+        // CORRIGIR CENTAVOS NO TOTAL
         // =====================================================
 
         const totalCalculado =
             produtosEditados.reduce(
-                (acc, p) =>
-                    acc +
+                (
+                    total,
+                    produto
+                ) =>
+                    total +
                     (
-                        p.valor_unitario *
-                        p.quantidade
+                        Number(
+                            produto.valor_unitario ||
+                            0
+                        ) *
+                        Number(
+                            produto.quantidade ||
+                            1
+                        )
                     ),
                 0
             );
 
+
+        const diferenca =
+            valorTotalProduto -
+            totalCalculado;
+
+
         if (
             Math.abs(
-                totalCalculado -
-                valorTotalProduto
-            ) > 0.01 &&
-            produtosEditados.length > 0 &&
-            valorTotalProduto > 0
+                diferenca
+            ) >=
+                0.005 &&
+            produtosEditados.length >
+                0
         ) {
-
-            const diff =
-                valorTotalProduto -
-                totalCalculado;
 
             const ultimo =
                 produtosEditados[
-                    produtosEditados.length - 1
+                    produtosEditados.length -
+                    1
                 ];
 
+
             ultimo.valor_unitario +=
-                diff /
-                ultimo.quantidade;
+                diferenca /
+                Math.max(
+                    Number(
+                        ultimo.quantidade ||
+                        1
+                    ),
+                    1
+                );
         }
+
 
         // =====================================================
         // ESCAPAR HTML
         // =====================================================
 
-        const esc = value =>
-            String(value ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
+        const esc =
+            valor =>
+                String(
+                    valor ??
+                    ''
+                )
+                    .replace(
+                        /&/g,
+                        '&amp;'
+                    )
+                    .replace(
+                        /</g,
+                        '&lt;'
+                    )
+                    .replace(
+                        />/g,
+                        '&gt;'
+                    )
+                    .replace(
+                        /"/g,
+                        '&quot;'
+                    )
+                    .replace(
+                        /'/g,
+                        '&#039;'
+                    );
+
+
+        const textoOrders =
+            orderIdsDaNFE.length >
+                1
+                ? `Pacote com ${orderIdsDaNFE.length} pedidos: ${orderIdsDaNFE.join(' / ')}`
+                : `Venda Mercado Livre: ${orderId}`;
+
 
         // =====================================================
-        // MODAL ÚNICO
+        // MODAL
         // =====================================================
 
         const modalHTML = `
@@ -1874,6 +2816,7 @@ async function abrirModalEdicaoProdutos(orderId) {
                 inset:0;
             "
         >
+
             <div
                 class="modal-content"
                 style="
@@ -1886,7 +2829,7 @@ async function abrirModalEdicaoProdutos(orderId) {
                     border-radius:10px;
                 "
             >
-                <!-- CABEÇALHO -->
+
                 <div
                     style="
                         display:flex;
@@ -1895,16 +2838,20 @@ async function abrirModalEdicaoProdutos(orderId) {
                         margin-bottom:18px;
                     "
                 >
+
                     <div>
+
                         <h3 style="margin:0;">
                             <i class="fas fa-file-invoice"></i>
                             Emitir NF-e
                         </h3>
+
                         <small style="color:#6c757d;">
-                            Venda Mercado Livre:
-                            ${esc(orderId)}
+                            ${esc(textoOrders)}
                         </small>
+
                     </div>
+
                     <button
                         type="button"
                         onclick="fecharModalEdicaoProdutos()"
@@ -1918,8 +2865,37 @@ async function abrirModalEdicaoProdutos(orderId) {
                     >
                         &times;
                     </button>
+
                 </div>
-                <!-- VALOR -->
+
+
+                ${
+                    orderIdsDaNFE.length > 1
+                        ? `
+                            <div
+                                style="
+                                    background:#e8f4ff;
+                                    border:1px solid #b8daff;
+                                    padding:10px 14px;
+                                    border-radius:7px;
+                                    margin-bottom:15px;
+                                    color:#004085;
+                                "
+                            >
+                                <strong>
+                                    📦 Pacote Mercado Livre
+                                </strong>
+
+                                <br>
+
+                                Os ${orderIdsDaNFE.length} pedidos abaixo serão emitidos em
+                                <strong>uma única NF-e</strong>.
+                            </div>
+                        `
+                        : ''
+                }
+
+
                 <div
                     style="
                         background:#f8f9fa;
@@ -1928,12 +2904,13 @@ async function abrirModalEdicaoProdutos(orderId) {
                         margin-bottom:20px;
                     "
                 >
-                    <strong>
 
+                    <strong>
                         Valor sugerido da nota:
                         R$
                         ${valorTotalProduto.toFixed(2)}
                     </strong>
+
                     <span
                         style="
                             color:#6c757d;
@@ -1941,20 +2918,14 @@ async function abrirModalEdicaoProdutos(orderId) {
                         "
                     >
                         Você pode ajustar os valores abaixo.
-
                     </span>
 
                 </div>
 
 
-                <!-- PRODUTOS -->
-
                 <h4>
-
                     <i class="fas fa-box"></i>
-
                     Produtos
-
                 </h4>
 
 
@@ -1971,19 +2942,12 @@ async function abrirModalEdicaoProdutos(orderId) {
                         <thead>
 
                             <tr>
-
                                 <th>Nome do produto</th>
-
                                 <th>SKU</th>
-
                                 <th>Qtd</th>
-
                                 <th>Valor unit.</th>
-
                                 <th>NCM</th>
-
                                 <th>Subtotal</th>
-
                             </tr>
 
                         </thead>
@@ -1993,110 +2957,93 @@ async function abrirModalEdicaoProdutos(orderId) {
                             id="produtosEditaveisBody"
                         >
 
-                            ${produtosEditados.map(
-                                (p, index) => `
+                            ${
+                                produtosEditados
+                                    .map(
+                                        (
+                                            produto,
+                                            index
+                                        ) => `
 
-                                <tr
-                                    data-index="${index}"
-                                >
-
-                                    <td>
-
-                                        <input
-                                            type="text"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                nome-produto
-                                            "
+                                        <tr
                                             data-index="${index}"
-                                            value="${esc(p.nome)}"
                                         >
 
-                                    </td>
+                                            <td>
 
+                                                <input
+                                                    type="text"
+                                                    class="form-control form-control-sm nome-produto"
+                                                    data-index="${index}"
+                                                    value="${esc(produto.nome)}"
+                                                >
 
-                                    <td>
+                                            </td>
 
-                                        <input
-                                            type="text"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                sku-produto
-                                            "
-                                            data-index="${index}"
-                                            value="${esc(p.sku)}"
-                                        >
+                                            <td>
 
-                                    </td>
+                                                <input
+                                                    type="text"
+                                                    class="form-control form-control-sm sku-produto"
+                                                    data-index="${index}"
+                                                    value="${esc(produto.sku)}"
+                                                >
 
+                                            </td>
 
-                                    <td>
+                                            <td>
 
-                                        <input
-                                            type="number"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                qtd-produto
-                                            "
-                                            data-index="${index}"
-                                            value="${p.quantidade}"
-                                            min="0.01"
-                                            step="0.01"
-                                        >
+                                                <input
+                                                    type="number"
+                                                    class="form-control form-control-sm qtd-produto"
+                                                    data-index="${index}"
+                                                    value="${produto.quantidade}"
+                                                    min="0.01"
+                                                    step="0.01"
+                                                >
 
-                                    </td>
+                                            </td>
 
+                                            <td>
 
-                                    <td>
+                                                <input
+                                                    type="number"
+                                                    class="form-control form-control-sm valor-produto"
+                                                    data-index="${index}"
+                                                    value="${produto.valor_unitario.toFixed(2)}"
+                                                    min="0"
+                                                    step="0.01"
+                                                >
 
-                                        <input
-                                            type="number"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                valor-produto
-                                            "
-                                            data-index="${index}"
-                                            value="${p.valor_unitario.toFixed(2)}"
-                                            min="0"
-                                            step="0.01"
-                                        >
+                                            </td>
 
-                                    </td>
+                                            <td>
 
+                                                <input
+                                                    type="text"
+                                                    class="form-control form-control-sm ncm-produto"
+                                                    data-index="${index}"
+                                                    value="${esc(produto.ncm)}"
+                                                    maxlength="8"
+                                                >
 
-                                    <td>
+                                            </td>
 
-                                        <input
-                                            type="text"
-                                            class="
-                                                form-control
-                                                form-control-sm
-                                                ncm-produto
-                                            "
-                                            data-index="${index}"
-                                            value="${esc(p.ncm)}"
-                                            maxlength="8"
-                                        >
+                                            <td
+                                                class="subtotal-produto"
+                                            >
+                                                R$
+                                                ${(produto.quantidade * produto.valor_unitario).toFixed(2)}
+                                            </td>
 
-                                    </td>
+                                        </tr>
 
-
-                                    <td
-                                        class="subtotal-produto"
-                                    >
-
-                                        R$
-                                        ${(p.quantidade * p.valor_unitario).toFixed(2)}
-
-                                    </td>
-
-                                </tr>
-
-                            `).join('')}
+                                    `
+                                    )
+                                    .join(
+                                        ''
+                                    )
+                            }
 
                         </tbody>
 
@@ -2114,26 +3061,37 @@ async function abrirModalEdicaoProdutos(orderId) {
                                     colspan="5"
                                     style="text-align:right;"
                                 >
-
                                     Total da Nota:
-
                                 </td>
 
                                 <td
                                     id="totalGeralProdutos"
                                 >
-
                                     R$
-                                    ${produtosEditados.reduce(
-                                        (acc, p) =>
-                                            acc +
-                                            (
-                                                p.quantidade *
-                                                p.valor_unitario
-                                            ),
-                                        0
-                                    ).toFixed(2)}
-
+                                    ${
+                                        produtosEditados
+                                            .reduce(
+                                                (
+                                                    total,
+                                                    produto
+                                                ) =>
+                                                    total +
+                                                    (
+                                                        Number(
+                                                            produto.quantidade ||
+                                                            0
+                                                        ) *
+                                                        Number(
+                                                            produto.valor_unitario ||
+                                                            0
+                                                        )
+                                                    ),
+                                                0
+                                            )
+                                            .toFixed(
+                                                2
+                                            )
+                                    }
                                 </td>
 
                             </tr>
@@ -2145,262 +3103,217 @@ async function abrirModalEdicaoProdutos(orderId) {
                 </div>
 
 
-<!-- CLIENTE -->
+                <div
+                    style="
+                        margin-top:20px;
+                        margin-bottom:20px;
+                        padding:16px;
+                        background:#f8f9fa;
+                        border:1px solid #e1e5eb;
+                        border-radius:10px;
+                    "
+                >
 
-<div style="
-    margin-top:20px;
-    margin-bottom:20px;
-    padding:16px;
-    background:#f8f9fa;
-    border:1px solid #e1e5eb;
-    border-radius:10px;
-">
-
-    <h4 style="
-        margin:0 0 14px 0;
-        display:flex;
-        align-items:center;
-        gap:8px;
-    ">
-        <i class="fas fa-user"></i>
-        Dados do cliente
-    </h4>
-
-    <div style="
-        display:grid;
-        grid-template-columns:repeat(12, 1fr);
-        gap:12px;
-        align-items:end;
-    ">
-
-        <!-- NOME -->
-        <div style="grid-column:span 8;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Nome completo *
-            </label>
-
-            <input
-                type="text"
-                id="clienteNome"
-                class="form-control"
-                value="${esc(nomeCliente)}"
-                required
-            >
-        </div>
-
-        <!-- CPF -->
-        <div style="grid-column:span 4;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                CPF / CNPJ *
-            </label>
-
-            <input
-                type="text"
-                id="clienteDocumento"
-                class="form-control"
-                value="${esc(documentoCliente)}"
-                placeholder="CPF/CNPJ"
-                required
-            >
-        </div>
-
-        <!-- ENDEREÇO -->
-        <div style="grid-column:span 6;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Endereço *
-            </label>
-
-            <input
-                type="text"
-                id="clienteEndereco"
-                class="form-control"
-                value="${esc(logradouro)}"
-                required
-            >
-        </div>
-
-        <!-- NÚMERO -->
-        <div style="grid-column:span 2;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Número
-            </label>
-
-            <input
-                type="text"
-                id="clienteNumero"
-                class="form-control"
-                value="${esc(numero || 'S/N')}"
-            >
-        </div>
-
-        <!-- BAIRRO -->
-        <div style="grid-column:span 4;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Bairro
-            </label>
-
-            <input
-                type="text"
-                id="clienteBairro"
-                class="form-control"
-                value="${esc(bairro)}"
-            >
-        </div>
-
-        <!-- CIDADE -->
-        <div style="grid-column:span 6;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                Cidade *
-            </label>
-
-            <input
-                type="text"
-                id="clienteCidade"
-                class="form-control"
-                value="${esc(cidade)}"
-                required
-            >
-        </div>
-
-        <!-- UF -->
-        <div style="grid-column:span 2;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                UF *
-            </label>
-
-            <input
-                type="text"
-                id="clienteUF"
-                class="form-control"
-                value="${esc(uf)}"
-                maxlength="2"
-                required
-            >
-        </div>
-
-        <!-- CEP -->
-        <div style="grid-column:span 4;">
-            <label style="
-                display:block;
-                font-weight:600;
-                margin-bottom:5px;
-            ">
-                CEP
-            </label>
-
-            <input
-                type="text"
-                id="clienteCEP"
-                class="form-control"
-                value="${esc(cep)}"
-                placeholder="00000000"
-            >
-        </div>
-
-    </div>
-</div>
+                    <h4
+                        style="
+                            margin:0 0 14px 0;
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        "
+                    >
+                        <i class="fas fa-user"></i>
+                        Dados do cliente
+                    </h4>
 
 
-                <!-- FISCAL -->
+                    <div
+                        style="
+                            display:grid;
+                            grid-template-columns:repeat(12, 1fr);
+                            gap:12px;
+                            align-items:end;
+                        "
+                    >
 
-                <h4>
+                        <div style="grid-column:span 8;">
 
-                    <i class="fas fa-receipt"></i>
-
-                    Dados fiscais e transporte
-
-                </h4>
-
-
-                <div class="row">
-
-                    <div class="col-md-4">
-
-                        <div class="form-group">
-
-                            <label>CFOP</label>
-
-                            <select
-                                id="nfeCfop"
-                                class="form-control"
+                            <label
+                                style="
+                                    display:block;
+                                    font-weight:600;
+                                    margin-bottom:5px;
+                                "
                             >
+                                Nome completo *
+                            </label>
 
-                                <option
-                                    value="6108"
-                                    selected
-                                >
-
-                                    6108 - Venda interestadual
-
-                                </option>
-
-                                <option value="5102">
-
-                                    5102 - Venda dentro do estado
-
-                                </option>
-
-                                <option value="5405">
-
-                                    5405 - Venda de produção
-
-                                </option>
-
-                            </select>
+                            <input
+                                type="text"
+                                id="clienteNome"
+                                class="form-control"
+                                value="${esc(nomeCliente)}"
+                                required
+                            >
 
                         </div>
 
-                    </div>
 
+                        <div style="grid-column:span 4;">
 
-                    <div class="col-md-8">
-
-                        <div class="form-group">
-
-                            <label>
-                                Transportadora
+                            <label
+                                style="
+                                    display:block;
+                                    font-weight:600;
+                                    margin-bottom:5px;
+                                "
+                            >
+                                CPF / CNPJ *
                             </label>
 
-                            <select
-                                id="nfeTransportadora"
+                            <input
+                                type="text"
+                                id="clienteDocumento"
                                 class="form-control"
+                                value="${esc(documentoCliente)}"
+                                required
                             >
 
-                                <option value="">
+                        </div>
 
-                                    Selecione uma transportadora
 
-                                </option>
+                        <div style="grid-column:span 6;">
 
-                            </select>
+                            <label
+                                style="
+                                    display:block;
+                                    font-weight:600;
+                                    margin-bottom:5px;
+                                "
+                            >
+                                Endereço *
+                            </label>
+
+                            <input
+                                type="text"
+                                id="clienteEndereco"
+                                class="form-control"
+                                value="${esc(logradouro)}"
+                                required
+                            >
+
+                        </div>
+
+
+                        <div style="grid-column:span 2;">
+
+                            <label
+                                style="
+                                    display:block;
+                                    font-weight:600;
+                                    margin-bottom:5px;
+                                "
+                            >
+                                Número
+                            </label>
+
+                            <input
+                                type="text"
+                                id="clienteNumero"
+                                class="form-control"
+                                value="${esc(numero || 'S/N')}"
+                            >
+
+                        </div>
+
+
+                        <div style="grid-column:span 4;">
+
+                            <label
+                                style="
+                                    display:block;
+                                    font-weight:600;
+                                    margin-bottom:5px;
+                                "
+                            >
+                                Bairro
+                            </label>
+
+                            <input
+                                type="text"
+                                id="clienteBairro"
+                                class="form-control"
+                                value="${esc(bairro)}"
+                            >
+
+                        </div>
+
+
+                        <div style="grid-column:span 6;">
+
+                            <label
+                                style="
+                                    display:block;
+                                    font-weight:600;
+                                    margin-bottom:5px;
+                                "
+                            >
+                                Cidade *
+                            </label>
+
+                            <input
+                                type="text"
+                                id="clienteCidade"
+                                class="form-control"
+                                value="${esc(cidade)}"
+                                required
+                            >
+
+                        </div>
+
+
+                        <div style="grid-column:span 2;">
+
+                            <label
+                                style="
+                                    display:block;
+                                    font-weight:600;
+                                    margin-bottom:5px;
+                                "
+                            >
+                                UF *
+                            </label>
+
+                            <input
+                                type="text"
+                                id="clienteUF"
+                                class="form-control"
+                                value="${esc(uf)}"
+                                maxlength="2"
+                                required
+                            >
+
+                        </div>
+
+
+                        <div style="grid-column:span 4;">
+
+                            <label
+                                style="
+                                    display:block;
+                                    font-weight:600;
+                                    margin-bottom:5px;
+                                "
+                            >
+                                CEP
+                            </label>
+
+                            <input
+                                type="text"
+                                id="clienteCEP"
+                                class="form-control"
+                                value="${esc(cep)}"
+                            >
 
                         </div>
 
@@ -2409,15 +3322,103 @@ async function abrirModalEdicaoProdutos(orderId) {
                 </div>
 
 
-                <!-- BOTÕES -->
+                <h4>
+    <i class="fas fa-receipt"></i>
+    Dados fiscais e transporte
+</h4>
+
+
+<div class="row">
+
+    <!-- CFOP -->
+    <div class="col-md-4">
+
+        <div class="form-group">
+
+            <label>
+                CFOP *
+            </label>
+
+            <select
+                id="nfeCfop"
+                class="form-control"
+                required
+            >
+
+                <option value="6108">
+                    6108 - Venda interestadual
+                </option>
+
+                <option value="5102">
+                    5102 - Venda dentro do estado
+                </option>
+
+                <option value="5405">
+                    5405 - Venda de produção
+                </option>
+
+            </select>
+
+        </div>
+
+    </div>
+
+
+    <!-- NATUREZA DA OPERAÇÃO -->
+    <div class="col-md-4">
+
+        <div class="form-group">
+
+            <label>
+                Natureza da Operação *
+            </label>
+
+            <select
+                id="nfeNaturezaOperacao"
+                class="form-control"
+                required
+            >
+
+                <option value="">
+                    Carregando Naturezas...
+                </option>
+
+            </select>
+
+        </div>
+
+    </div>
+
+
+    <!-- TRANSPORTADORA -->
+    <div class="col-md-4">
+
+        <div class="form-group">
+
+            <label>
+                Transportadora
+            </label>
+
+            <select
+                id="nfeTransportadora"
+                class="form-control"
+            >
+
+                <option value="">
+                    Selecione uma transportadora
+                </option>
+
+            </select>
+
+        </div>
+
+    </div>
+
+</div>
+
 
                 <div
-                    class="
-                        d-flex
-                        justify-content-end
-                        gap-2
-                        mt-3
-                    "
+                    class="d-flex justify-content-end gap-2 mt-3"
                 >
 
                     <button
@@ -2425,9 +3426,7 @@ async function abrirModalEdicaoProdutos(orderId) {
                         class="btn btn-secondary"
                         onclick="fecharModalEdicaoProdutos()"
                     >
-
                         Cancelar
-
                     </button>
 
 
@@ -2438,7 +3437,6 @@ async function abrirModalEdicaoProdutos(orderId) {
                     >
 
                         <i class="fas fa-file-invoice"></i>
-
                         Confirmar e Emitir NF-e
 
                     </button>
@@ -2448,167 +3446,241 @@ async function abrirModalEdicaoProdutos(orderId) {
             </div>
 
         </div>
-
         `;
 
-        // =====================================================
-        // ADICIONAR MODAL
-        // =====================================================
 
-        const modalContainer =
-            document.createElement('div');
+        const container =
+            document.createElement(
+                'div'
+            );
 
-        modalContainer.innerHTML =
+
+        container.innerHTML =
             modalHTML;
 
+
         document.body.appendChild(
-            modalContainer.firstElementChild
+            container.firstElementChild
         );
 
-        // Agora que o modal existe no DOM,
-        // carregar a lista de transportadoras.
-
-        await carregarTransportadorasSelect();
 
         // =====================================================
-        // CARREGAR TRANSPORTADORAS
+        // CFOP SUGERIDO
         // =====================================================
 
-        carregarTransportadorasSelect()
-            .catch(error => {
-
-                console.error(
-                    '❌ Erro no carregamento das transportadoras:',
-                    error
-                );
-
-            });
-
-        // CFOP padrão
         const cfopSelect =
-            document.getElementById('nfeCfop');
+            document.getElementById(
+                'nfeCfop'
+            );
 
-        if (cfopSelect) {
-            cfopSelect.value = '6108';
+
+        if (
+            cfopSelect
+        ) {
+
+            cfopSelect.value =
+                uf === 'PR'
+                    ? '5102'
+                    : '6108';
         }
 
-        // Salva token
-        window._mlAccessToken = token;
 
         // =====================================================
-        // RECALCULAR TOTAL
+        // TRANSPORTADORAS
         // =====================================================
 
-        const recalcularTotalGeral = () => {
+        try {
 
-            let total = 0;
+            await carregarTransportadorasSelect();
 
-            produtosEditados.forEach(p => {
+        } catch (
+            error
+        ) {
 
-                total +=
-                    (Number(p.quantidade) || 0) *
-                    (Number(p.valor_unitario) || 0);
+            console.warn(
+                '⚠️ Transportadoras:',
+                error
+            );
+        }
 
-            });
+        // =====================================================
+        // CARREGAR NATUREZAS DA OPERAÇÃO
+        // =====================================================
 
-            const totalCell =
-                document.getElementById(
-                    'totalGeralProdutos'
+        try {
+
+            await preencherSelectNaturezaNFE(
+                'nfeNaturezaOperacao',
+                'ml'
+            );
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Erro carregando Naturezas:',
+                error
+            );
+        }
+
+
+        window._mlAccessToken =
+            token;
+
+
+        // =====================================================
+        // RECALCULAR
+        // =====================================================
+
+        const recalcularTotalGeral =
+            () => {
+
+                let total =
+                    0;
+
+
+                produtosEditados.forEach(
+                    produto => {
+
+                        total +=
+                            Number(
+                                produto.quantidade ||
+                                0
+                            ) *
+                            Number(
+                                produto.valor_unitario ||
+                                0
+                            );
+                    }
                 );
 
-            if (totalCell) {
 
-                totalCell.textContent =
-                    `R$ ${total.toFixed(2)}`;
-            }
-        };
+                const totalCell =
+                    document.getElementById(
+                        'totalGeralProdutos'
+                    );
+
+
+                if (
+                    totalCell
+                ) {
+
+                    totalCell.textContent =
+                        `R$ ${total.toFixed(2)}`;
+                }
+            };
+
 
         // =====================================================
-        // CAMPOS EDITÁVEIS DOS PRODUTOS
+        // INPUTS
         // =====================================================
 
-        document.querySelectorAll(
-            `
-            #modalEdicaoProdutos .nome-produto,
-            #modalEdicaoProdutos .sku-produto,
-            #modalEdicaoProdutos .qtd-produto,
-            #modalEdicaoProdutos .valor-produto,
-            #modalEdicaoProdutos .ncm-produto
-            `
-        ).forEach(input => {
+        document
+            .querySelectorAll(
+                `
+                #modalEdicaoProdutos .nome-produto,
+                #modalEdicaoProdutos .sku-produto,
+                #modalEdicaoProdutos .qtd-produto,
+                #modalEdicaoProdutos .valor-produto,
+                #modalEdicaoProdutos .ncm-produto
+                `
+            )
+            .forEach(
+                input => {
 
-            input.addEventListener(
-                'input',
-                function () {
+                    input.addEventListener(
+                        'input',
+                        function () {
 
-                    const idx =
-                        Number(
-                            this.dataset.index
-                        );
+                            const index =
+                                Number(
+                                    this.dataset.index
+                                );
 
-                    const row =
-                        this.closest('tr');
 
-                    if (
-                        !row ||
-                        !produtosEditados[idx]
-                    ) {
-                        return;
-                    }
+                            const row =
+                                this.closest(
+                                    'tr'
+                                );
 
-                    const p =
-                        produtosEditados[idx];
 
-                    p.nome =
-                        row.querySelector(
-                            '.nome-produto'
-                        )?.value.trim() ||
-                        'Produto';
+                            if (
+                                !row ||
+                                !produtosEditados[index]
+                            ) {
 
-                    p.sku =
-                        row.querySelector(
-                            '.sku-produto'
-                        )?.value.trim() ||
-                        'SEM_SKU';
+                                return;
+                            }
 
-                    p.quantidade =
-                        parseFloat(
-                            row.querySelector(
-                                '.qtd-produto'
-                            )?.value
-                        ) || 0;
 
-                    p.valor_unitario =
-                        parseFloat(
-                            row.querySelector(
-                                '.valor-produto'
-                            )?.value
-                        ) || 0;
+                            const produto =
+                                produtosEditados[index];
 
-                    p.ncm =
-                        row.querySelector(
-                            '.ncm-produto'
-                        )?.value.trim() ||
-                        '87149990';
 
-                    const subtotalCell =
-                        row.querySelector(
-                            '.subtotal-produto'
-                        );
+                            produto.nome =
+                                row.querySelector(
+                                    '.nome-produto'
+                                )?.value.trim() ||
+                                'Produto';
 
-                    if (subtotalCell) {
 
-                        subtotalCell.textContent =
-                            `R$ ${(p.quantidade * p.valor_unitario).toFixed(2)}`;
-                    }
+                            produto.sku =
+                                row.querySelector(
+                                    '.sku-produto'
+                                )?.value.trim() ||
+                                'SEM_SKU';
 
-                    recalcularTotalGeral();
+
+                            produto.quantidade =
+                                parseFloat(
+                                    row.querySelector(
+                                        '.qtd-produto'
+                                    )?.value
+                                ) ||
+                                0;
+
+
+                            produto.valor_unitario =
+                                parseFloat(
+                                    row.querySelector(
+                                        '.valor-produto'
+                                    )?.value
+                                ) ||
+                                0;
+
+
+                            produto.ncm =
+                                row.querySelector(
+                                    '.ncm-produto'
+                                )?.value.trim() ||
+                                '87149990';
+
+
+                            const subtotal =
+                                row.querySelector(
+                                    '.subtotal-produto'
+                                );
+
+
+                            if (
+                                subtotal
+                            ) {
+
+                                subtotal.textContent =
+                                    `R$ ${(produto.quantidade * produto.valor_unitario).toFixed(2)}`;
+                            }
+
+
+                            recalcularTotalGeral();
+                        }
+                    );
                 }
             );
-        });
+
 
         // =====================================================
-        // BOTÃO EMITIR
+        // BOTÃO
         // =====================================================
 
         document
@@ -2617,30 +3689,48 @@ async function abrirModalEdicaoProdutos(orderId) {
             )
             ?.addEventListener(
                 'click',
-                async function (e) {
+                async event => {
 
-                    e.preventDefault();
-                    e.stopPropagation();
+                    event.preventDefault();
+                    event.stopPropagation();
 
                     await confirmarProdutosEditados();
                 }
             );
 
-    } catch (error) {
+
+        console.log(
+            `✅ Modal carregado com ${orderIdsDaNFE.length} order(s) e ${produtosEditados.length} produto(s)`
+        );
+
+
+    } catch (
+        error
+    ) {
 
         console.error(
-            '❌ Erro ao abrir modal de emissão:',
+            '❌ Erro ao abrir modal:',
             error
         );
 
+
         showToast(
-            'Erro ao carregar dados da emissão: ' +
-            error.message,
+            `❌ Erro ao carregar emissão: ${error.message}`,
             'error'
         );
 
-        pendingEmitOrderId = null;
-        vendaIdParaEdicao = null;
+
+        pendingEmitOrderId =
+            null;
+
+        vendaIdParaEdicao =
+            null;
+
+        window._nfeOrderIdsAtuais =
+            null;
+
+        window._nfeVendaAtual =
+            null;
     }
 }
 
@@ -4881,118 +5971,131 @@ async function mostrarAbaNFE(
     aba
 ) {
 
-    const abaVendas =
-        document.getElementById(
-            'abaVendas'
-        );
+    garantirEstruturaCadastrosNFE();
 
-    const abaEmitidas =
-        document.getElementById(
-            'abaEmitidas'
-        );
 
-    const abaAvulsa =
-        document.getElementById(
-            'abaAvulsa'
-        );
+    // =====================================================
+    // CLIENTES / TRANSPORTADORAS SÃO SOMENTE CONSULTA
+    // =====================================================
 
-    const abaTransportadoras =
-        document.getElementById(
-            'abaTransportadoras'
-        );
+    removerBotoesCadastroAbasConsultaNFE();
 
-    const abaClientes =
-        document.getElementById(
-            'abaClientes'
-        );
 
-    if (abaVendas) {
-        abaVendas.classList.add(
-            'hidden'
-        );
-    }
-
-    if (abaEmitidas) {
-        abaEmitidas.classList.add(
-            'hidden'
-        );
-    }
-
-    if (abaAvulsa) {
-        abaAvulsa.classList.add(
-            'hidden'
-        );
-    }
-
-    if (abaTransportadoras) {
-        abaTransportadoras.classList.add(
-            'hidden'
-        );
-    }
-
-    if (abaClientes) {
-        abaClientes.classList.add(
-            'hidden'
-        );
-    }
-
-    const target =
-        document.getElementById(
-            `aba${aba.charAt(0).toUpperCase() + aba.slice(1)}`
-        );
-
-    if (target) {
-
-        target.classList.remove(
-            'hidden'
-        );
-    }
-
-    const botoes = [
+    const nomesAbas = [
         'Vendas',
         'Emitidas',
         'Avulsa',
         'Transportadoras',
-        'Clientes'
+        'Clientes',
+        'Cadastros'
     ];
 
-    botoes.forEach(
-        btn => {
 
-            const el =
+    // =====================================================
+    // ESCONDER TODAS
+    // =====================================================
+
+    nomesAbas.forEach(
+        nome => {
+
+            const elemento =
                 document.getElementById(
-                    `tab${btn}Btn`
+                    `aba${nome}`
                 );
 
-            if (!el) {
+
+            if (
+                elemento
+            ) {
+
+                elemento
+                    .classList
+                    .add(
+                        'hidden'
+                    );
+            }
+        }
+    );
+
+
+    // =====================================================
+    // MOSTRAR ABA
+    // =====================================================
+
+    const nomeCapitalizado =
+        aba.charAt(0)
+            .toUpperCase() +
+        aba.slice(1);
+
+
+    const target =
+        document.getElementById(
+            `aba${nomeCapitalizado}`
+        );
+
+
+    if (
+        target
+    ) {
+
+        target
+            .classList
+            .remove(
+                'hidden'
+            );
+    }
+
+
+    // =====================================================
+    // BOTÕES SUPERIORES
+    // =====================================================
+
+    nomesAbas.forEach(
+        nome => {
+
+            const btn =
+                document.getElementById(
+                    `tab${nome}Btn`
+                );
+
+
+            if (!btn) {
+
                 return;
             }
 
+
             if (
-                btn.toLowerCase() ===
+                nome.toLowerCase() ===
                 aba
             ) {
 
-                el.classList.remove(
+                btn.classList.remove(
                     'btn-outline-primary'
                 );
 
-                el.classList.add(
+                btn.classList.add(
                     'btn-primary'
                 );
+
 
             } else {
 
-                el.classList.remove(
+                btn.classList.remove(
                     'btn-primary'
                 );
 
-                el.classList.add(
+                btn.classList.add(
                     'btn-outline-primary'
                 );
             }
         }
     );
+
+
+    // =====================================================
+    // VENDAS
+    // =====================================================
 
     if (
         aba ===
@@ -5001,10 +6104,32 @@ async function mostrarAbaNFE(
 
         inicializarFiltroDataNFE();
 
+
         await carregarVendasPendentes(
             false
         );
+
+
+        return;
     }
+
+
+    // =====================================================
+    // PARAR MONITOR
+    // =====================================================
+
+    if (
+        typeof pararMonitorVendasNovasNFE ===
+        'function'
+    ) {
+
+        pararMonitorVendasNovasNFE();
+    }
+
+
+    // =====================================================
+    // EMITIDAS
+    // =====================================================
 
     if (
         aba ===
@@ -5012,7 +6137,29 @@ async function mostrarAbaNFE(
     ) {
 
         await carregarNFesEmitidas();
+
+        return;
     }
+
+
+    // =====================================================
+    // AVULSA
+    // =====================================================
+
+    if (
+        aba ===
+        'avulsa'
+    ) {
+
+        await prepararEmissaoAvulsaNFE();
+
+        return;
+    }
+
+
+    // =====================================================
+    // TRANSPORTADORAS
+    // =====================================================
 
     if (
         aba ===
@@ -5020,7 +6167,16 @@ async function mostrarAbaNFE(
     ) {
 
         await carregarTransportadoras();
+
+        removerBotoesCadastroAbasConsultaNFE();
+
+        return;
     }
+
+
+    // =====================================================
+    // CLIENTES
+    // =====================================================
 
     if (
         aba ===
@@ -5028,21 +6184,1942 @@ async function mostrarAbaNFE(
     ) {
 
         await carregarClientes();
+
+        removerBotoesCadastroAbasConsultaNFE();
+
+        return;
+    }
+
+
+    // =====================================================
+    // CADASTROS
+    // =====================================================
+
+    if (
+        aba ===
+        'cadastros'
+    ) {
+
+        await carregarCadastrosNFE();
+
+        return;
     }
 }
+
+// =========================================================
+// NF-e AVULSA - ESTRUTURA E CARREGAMENTOS
+// =========================================================
+
+window._clientesAvulsaNFE =
+    window._clientesAvulsaNFE ||
+    [];
+
+
+// =========================================================
+// ESCAPAR HTML
+// Independente das funções de Cadastros
+// =========================================================
+
+function escaparHTMLAvulsaNFE(valor) {
+
+    return String(
+        valor ??
+        ''
+    )
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+
+function garantirEstruturaAvulsaNFE() {
+
+    const aba =
+        document.getElementById(
+            'abaAvulsa'
+        );
+
+
+    if (!aba) {
+
+        console.error(
+            '❌ abaAvulsa não encontrada'
+        );
+
+        return false;
+    }
+
+
+    // =====================================================
+    // CLIENTE PESQUISÁVEL
+    // =====================================================
+
+    let campoBusca =
+        aba.querySelector(
+            '#avulsaClienteBusca'
+        );
+
+
+    if (!campoBusca) {
+
+        const campoClienteAntigo =
+            aba.querySelector(
+                '#avulsaClienteId'
+            );
+
+
+        if (campoClienteAntigo) {
+
+            const wrapper =
+                document.createElement(
+                    'div'
+                );
+
+
+            wrapper.id =
+                'avulsaClientePesquisaWrapper';
+
+
+            wrapper.style.cssText = `
+                position:relative;
+                width:100%;
+            `;
+
+
+            wrapper.innerHTML = `
+
+                <input
+                    type="text"
+                    id="avulsaClienteBusca"
+                    class="form-control"
+                    placeholder="Digite o nome, CPF ou CNPJ do cliente..."
+                    autocomplete="off"
+                >
+
+                <input
+                    type="hidden"
+                    id="avulsaClienteId"
+                    value=""
+                >
+
+                <div
+                    id="avulsaClienteResultados"
+                    style="
+                        display:none;
+                        position:absolute;
+                        top:100%;
+                        left:0;
+                        right:0;
+                        z-index:12000;
+                        background:#fff;
+                        border:1px solid #ced4da;
+                        border-top:none;
+                        border-radius:0 0 6px 6px;
+                        max-height:300px;
+                        overflow-y:auto;
+                        box-shadow:0 5px 15px rgba(0,0,0,.15);
+                    "
+                ></div>
+
+                <div
+                    id="avulsaClienteSelecionado"
+                    style="
+                        display:none;
+                        margin-top:8px;
+                        padding:10px 12px;
+                        background:#eaf7ee;
+                        border:1px solid #b9dfc3;
+                        border-radius:6px;
+                    "
+                ></div>
+            `;
+
+
+            campoClienteAntigo.replaceWith(
+                wrapper
+            );
+
+        } else {
+
+            console.warn(
+                '⚠️ Campo de cliente não encontrado'
+            );
+        }
+    }
+
+
+    // =====================================================
+    // CFOP
+    //
+    // Se atualmente for INPUT, será convertido em SELECT.
+    // =====================================================
+
+    garantirSelectAvulsaNFE(
+        'avulsaCfop',
+        'CFOP *',
+        'Carregando CFOPs...'
+    );
+
+
+    // =====================================================
+    // NATUREZA DA OPERAÇÃO
+    //
+    // Se atualmente for INPUT, será convertido em SELECT.
+    // =====================================================
+
+    garantirSelectAvulsaNFE(
+        'avulsaNatOp',
+        'Natureza da Operação *',
+        'Carregando Naturezas...'
+    );
+
+
+    // =====================================================
+    // TRANSPORTADORA
+    // =====================================================
+
+    garantirSelectAvulsaNFE(
+        'avulsaTransportadoraId',
+        'Transportadora',
+        'Carregando transportadoras...'
+    );
+
+
+    // =====================================================
+    // MODALIDADE DE FRETE
+    // =====================================================
+
+    let modalidade =
+        aba.querySelector(
+            '#avulsaModFrete'
+        );
+
+
+    if (
+        modalidade &&
+        modalidade.tagName !==
+            'SELECT'
+    ) {
+
+        const select =
+            document.createElement(
+                'select'
+            );
+
+
+        select.id =
+            'avulsaModFrete';
+
+        select.className =
+            modalidade.className ||
+            'form-control';
+
+
+        select.innerHTML = `
+
+            <option value="9">
+                9 - Sem ocorrência de transporte
+            </option>
+
+            <option value="0">
+                0 - Frete por conta do emitente
+            </option>
+
+            <option value="1">
+                1 - Frete por conta do destinatário
+            </option>
+
+            <option value="2">
+                2 - Frete por conta de terceiros
+            </option>
+        `;
+
+
+        modalidade.replaceWith(
+            select
+        );
+
+
+        modalidade =
+            select;
+    }
+
+
+    if (!modalidade) {
+
+        const grupo =
+            document.createElement(
+                'div'
+            );
+
+
+        grupo.className =
+            'form-group';
+
+
+        grupo.innerHTML = `
+
+            <label>
+                Modalidade do Frete
+            </label>
+
+            <select
+                id="avulsaModFrete"
+                class="form-control"
+            >
+
+                <option value="9">
+                    9 - Sem ocorrência de transporte
+                </option>
+
+                <option value="0">
+                    0 - Frete por conta do emitente
+                </option>
+
+                <option value="1">
+                    1 - Frete por conta do destinatário
+                </option>
+
+                <option value="2">
+                    2 - Frete por conta de terceiros
+                </option>
+
+            </select>
+        `;
+
+
+        const produtos =
+            aba.querySelector(
+                '#avulsaProdutos'
+            );
+
+
+        const grupoProdutos =
+            produtos?.closest(
+                '.form-group'
+            ) ||
+            produtos?.parentElement;
+
+
+        if (
+            grupoProdutos &&
+            grupoProdutos.parentElement
+        ) {
+
+            grupoProdutos
+                .parentElement
+                .insertBefore(
+                    grupo,
+                    grupoProdutos
+                );
+
+        } else {
+
+            aba.appendChild(
+                grupo
+            );
+        }
+    }
+
+
+    console.log(
+        '✅ Estrutura da NF-e avulsa pronta:',
+        {
+            cliente:
+                Boolean(
+                    document.getElementById(
+                        'avulsaClienteBusca'
+                    )
+                ),
+
+            cfop:
+                document.getElementById(
+                    'avulsaCfop'
+                )?.tagName,
+
+            natureza:
+                document.getElementById(
+                    'avulsaNatOp'
+                )?.tagName,
+
+            transportadora:
+                document.getElementById(
+                    'avulsaTransportadoraId'
+                )?.tagName
+        }
+    );
+
+
+    return true;
+}
+
+
+// =========================================================
+// CARREGAR CLIENTES
+// =========================================================
+
+async function carregarClientesAvulsaNFE() {
+
+    const busca =
+        document.getElementById(
+            'avulsaClienteBusca'
+        );
+
+
+    const campoId =
+        document.getElementById(
+            'avulsaClienteId'
+        );
+
+
+    const resultados =
+        document.getElementById(
+            'avulsaClienteResultados'
+        );
+
+
+    if (
+        !busca ||
+        !campoId ||
+        !resultados
+    ) {
+
+        console.error(
+            '❌ Estrutura do cliente avulso não encontrada'
+        );
+
+        return false;
+    }
+
+
+    try {
+
+        busca.disabled =
+            true;
+
+
+        busca.placeholder =
+            'Carregando clientes...';
+
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/clientes`,
+                {
+                    method:
+                        'GET',
+
+                    headers: {
+                        'Accept':
+                            'application/json'
+                    },
+
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            data.success ===
+            false
+        ) {
+
+            throw new Error(
+                data.error ||
+                'Erro ao carregar clientes'
+            );
+        }
+
+
+        window._clientesAvulsaNFE =
+            Array.isArray(
+                data.clientes
+            )
+                ? data.clientes
+                : [];
+
+
+        busca.disabled =
+            false;
+
+
+        busca.placeholder =
+            'Digite o nome, CPF ou CNPJ do cliente...';
+
+
+        // Remove evento anterior
+        busca.oninput =
+            null;
+
+
+        busca.onfocus =
+            null;
+
+
+        // Pesquisa
+        busca.oninput =
+            function () {
+
+                // Se começar a digitar depois de selecionar,
+                // limpar ID selecionado.
+                campoId.value =
+                    '';
+
+
+                const selecionado =
+                    document.getElementById(
+                        'avulsaClienteSelecionado'
+                    );
+
+
+                if (selecionado) {
+
+                    selecionado.style.display =
+                        'none';
+
+                    selecionado.innerHTML =
+                        '';
+                }
+
+
+                pesquisarClienteAvulsaNFE(
+                    this.value
+                );
+            };
+
+
+        busca.onfocus =
+            function () {
+
+                if (
+                    this.value.trim()
+                ) {
+
+                    pesquisarClienteAvulsaNFE(
+                        this.value
+                    );
+                }
+            };
+
+
+        console.log(
+            `✅ ${window._clientesAvulsaNFE.length} cliente(s) carregado(s)`
+        );
+
+
+        return true;
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro carregando clientes da NF-e avulsa:',
+            error
+        );
+
+
+        busca.disabled =
+            false;
+
+
+        busca.placeholder =
+            'Erro ao carregar clientes';
+
+
+        return false;
+    }
+}
+
+
+// =========================================================
+// PESQUISAR CLIENTE
+// =========================================================
+
+function pesquisarClienteAvulsaNFE(
+    termo
+) {
+
+    const resultados =
+        document.getElementById(
+            'avulsaClienteResultados'
+        );
+
+
+    if (!resultados) {
+
+        return;
+    }
+
+
+    const texto =
+        String(
+            termo ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    if (
+        texto.length ===
+        0
+    ) {
+
+        resultados.style.display =
+            'none';
+
+
+        resultados.innerHTML =
+            '';
+
+
+        return;
+    }
+
+
+    const numeros =
+        texto.replace(
+            /\D/g,
+            ''
+        );
+
+
+    const clientes =
+        Array.isArray(
+            window._clientesAvulsaNFE
+        )
+            ? window._clientesAvulsaNFE
+            : [];
+
+
+    const filtrados =
+        clientes
+            .filter(
+                cliente => {
+
+                    const nome =
+                        String(
+                            cliente.nome ||
+                            ''
+                        )
+                            .toLowerCase();
+
+
+                    const documento =
+                        String(
+                            cliente.documento ||
+                            ''
+                        )
+                            .replace(
+                                /\D/g,
+                                ''
+                            );
+
+
+                    const cidade =
+                        String(
+                            cliente.cidade ||
+                            ''
+                        )
+                            .toLowerCase();
+
+
+                    return (
+
+                        nome.includes(
+                            texto
+                        ) ||
+
+                        cidade.includes(
+                            texto
+                        ) ||
+
+                        (
+                            numeros.length >
+                                0 &&
+                            documento.includes(
+                                numeros
+                            )
+                        )
+                    );
+                }
+            )
+            .slice(
+                0,
+                20
+            );
+
+
+    if (
+        filtrados.length ===
+        0
+    ) {
+
+        resultados.innerHTML = `
+
+            <div
+                style="
+                    padding:12px;
+                    text-align:center;
+                    color:#6c757d;
+                "
+            >
+                Nenhum cliente encontrado
+            </div>
+        `;
+
+
+        resultados.style.display =
+            'block';
+
+
+        return;
+    }
+
+
+    resultados.innerHTML =
+        filtrados
+            .map(
+                cliente => `
+
+                    <div
+                        style="
+                            padding:10px 12px;
+                            cursor:pointer;
+                            border-bottom:1px solid #eee;
+                        "
+                        onmouseover="
+                            this.style.background='#f5f5f5'
+                        "
+                        onmouseout="
+                            this.style.background='#fff'
+                        "
+                        onclick="
+                            selecionarClienteAvulsaNFE(
+                                ${Number(cliente.id)}
+                            )
+                        "
+                    >
+
+                        <div
+                            style="
+                                font-weight:600;
+                            "
+                        >
+                            ${escaparHTMLAvulsaNFE(
+                                cliente.nome ||
+                                'Cliente'
+                            )}
+                        </div>
+
+
+                        <div
+                            style="
+                                font-size:12px;
+                                color:#6c757d;
+                            "
+                        >
+
+                            ${
+                                escaparHTMLAvulsaNFE(
+                                    cliente.documento ||
+                                    'Sem documento'
+                                )
+                            }
+
+                            ${
+                                cliente.cidade
+                                    ? ` • ${escaparHTMLAvulsaNFE(
+                                        cliente.cidade
+                                    )}/${escaparHTMLAvulsaNFE(
+                                        cliente.uf ||
+                                        ''
+                                    )}`
+                                    : ''
+                            }
+
+                        </div>
+
+                    </div>
+                `
+            )
+            .join(
+                ''
+            );
+
+
+    resultados.style.display =
+        'block';
+}
+
+
+// =========================================================
+// SELECIONAR CLIENTE
+// =========================================================
+
+function selecionarClienteAvulsaNFE(
+    clienteId
+) {
+
+    const cliente =
+        window._clientesAvulsaNFE
+            .find(
+                item =>
+                    String(
+                        item.id
+                    ) ===
+                    String(
+                        clienteId
+                    )
+            );
+
+
+    if (!cliente) {
+
+        showToast(
+            'Cliente não encontrado',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const campoId =
+        document.getElementById(
+            'avulsaClienteId'
+        );
+
+
+    const busca =
+        document.getElementById(
+            'avulsaClienteBusca'
+        );
+
+
+    const resultados =
+        document.getElementById(
+            'avulsaClienteResultados'
+        );
+
+
+    const selecionado =
+        document.getElementById(
+            'avulsaClienteSelecionado'
+        );
+
+
+    if (campoId) {
+
+        campoId.value =
+            String(
+                cliente.id
+            );
+    }
+
+
+    if (busca) {
+
+        busca.value =
+            cliente.nome ||
+            '';
+    }
+
+
+    if (resultados) {
+
+        resultados.innerHTML =
+            '';
+
+        resultados.style.display =
+            'none';
+    }
+
+
+    if (selecionado) {
+
+        selecionado.innerHTML = `
+
+            <div
+                style="
+                    display:flex;
+                    align-items:center;
+                    justify-content:space-between;
+                    gap:10px;
+                "
+            >
+
+                <div>
+
+                    <strong>
+                        <i class="fas fa-check-circle"></i>
+                        ${escaparHTMLAvulsaNFE(
+                            cliente.nome ||
+                            ''
+                        )}
+                    </strong>
+
+                    <div
+                        style="
+                            margin-top:3px;
+                            color:#6c757d;
+                            font-size:12px;
+                        "
+                    >
+
+                        ${escaparHTMLAvulsaNFE(
+                            cliente.documento ||
+                            ''
+                        )}
+
+                        ${
+                            cliente.cidade
+                                ? ` • ${escaparHTMLAvulsaNFE(
+                                    cliente.cidade
+                                )}/${escaparHTMLAvulsaNFE(
+                                    cliente.uf ||
+                                    ''
+                                )}`
+                                : ''
+                        }
+
+                    </div>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    class="btn btn-sm btn-secondary"
+                    onclick="limparClienteSelecionadoAvulsaNFE()"
+                >
+                    Trocar
+                </button>
+
+            </div>
+        `;
+
+
+        selecionado.style.display =
+            'block';
+    }
+
+
+    console.log(
+        '✅ Cliente selecionado:',
+        cliente.nome,
+        cliente.id
+    );
+}
+
+
+// =========================================================
+// LIMPAR CLIENTE
+// =========================================================
+
+function limparClienteSelecionadoAvulsaNFE() {
+
+    const campoId =
+        document.getElementById(
+            'avulsaClienteId'
+        );
+
+
+    const busca =
+        document.getElementById(
+            'avulsaClienteBusca'
+        );
+
+
+    const resultados =
+        document.getElementById(
+            'avulsaClienteResultados'
+        );
+
+
+    const selecionado =
+        document.getElementById(
+            'avulsaClienteSelecionado'
+        );
+
+
+    if (campoId) {
+
+        campoId.value =
+            '';
+    }
+
+
+    if (busca) {
+
+        busca.value =
+            '';
+
+        busca.focus();
+    }
+
+
+    if (resultados) {
+
+        resultados.innerHTML =
+            '';
+
+        resultados.style.display =
+            'none';
+    }
+
+
+    if (selecionado) {
+
+        selecionado.innerHTML =
+            '';
+
+        selecionado.style.display =
+            'none';
+    }
+}
+
+
+// =========================================================
+// CFOP - EXCLUSIVO DA EMISSÃO AVULSA
+//
+// NÃO DEPENDE DE preencherSelectCFOPNFE()
+// =========================================================
+
+async function preencherSelectCFOPAvulsaNFE() {
+
+    const select =
+        document.getElementById(
+            'avulsaCfop'
+        );
+
+
+    if (!select) {
+
+        console.error(
+            '❌ avulsaCfop não encontrado'
+        );
+
+        return false;
+    }
+
+
+    try {
+
+        select.disabled =
+            true;
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Carregando CFOPs...
+            </option>
+        `;
+
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'nfe_cfops'
+                )
+                .select(`
+                    id,
+                    codigo,
+                    descricao,
+                    ativo,
+                    padrao_avulsa
+                `)
+                .eq(
+                    'ativo',
+                    true
+                )
+                .order(
+                    'codigo',
+                    {
+                        ascending:
+                            true
+                    }
+                );
+
+
+        if (error) {
+
+            throw error;
+        }
+
+
+        const cfops =
+            Array.isArray(
+                data
+            )
+                ? data
+                : [];
+
+
+        if (
+            cfops.length ===
+            0
+        ) {
+
+            select.innerHTML = `
+
+                <option value="">
+                    Nenhum CFOP ativo cadastrado
+                </option>
+            `;
+
+
+            select.disabled =
+                false;
+
+
+            return false;
+        }
+
+
+        select.innerHTML =
+            '<option value="">Selecione o CFOP</option>' +
+
+            cfops
+                .map(
+                    cfop => `
+
+                        <option
+                            value="${escaparHTMLAvulsaNFE(
+                                cfop.codigo
+                            )}"
+                        >
+                            ${escaparHTMLAvulsaNFE(
+                                cfop.codigo
+                            )}
+                            -
+                            ${escaparHTMLAvulsaNFE(
+                                cfop.descricao ||
+                                ''
+                            )}
+                        </option>
+                    `
+                )
+                .join(
+                    ''
+                );
+
+
+        const padrao =
+            cfops.find(
+                cfop =>
+                    cfop.padrao_avulsa ===
+                    true
+            ) ||
+            cfops[0];
+
+
+        select.value =
+            padrao.codigo;
+
+
+        select.disabled =
+            false;
+
+
+        console.log(
+            '✅ CFOPs avulsos carregados:',
+            cfops.length,
+            'Padrão:',
+            padrao.codigo
+        );
+
+
+        return true;
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro carregando CFOPs avulsos:',
+            error
+        );
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Erro ao carregar CFOPs
+            </option>
+        `;
+
+
+        select.disabled =
+            false;
+
+
+        return false;
+    }
+}
+
+
+// =========================================================
+// NATUREZA - EXCLUSIVA DA EMISSÃO AVULSA
+// =========================================================
+
+async function preencherSelectNaturezaAvulsaNFE() {
+
+    const select =
+        document.getElementById(
+            'avulsaNatOp'
+        );
+
+
+    if (!select) {
+
+        console.error(
+            '❌ avulsaNatOp não encontrado'
+        );
+
+        return false;
+    }
+
+
+    try {
+
+        select.disabled =
+            true;
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Carregando Naturezas...
+            </option>
+        `;
+
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'nfe_naturezas_operacao'
+                )
+                .select(`
+                    id,
+                    descricao,
+                    ativo,
+                    padrao_avulsa
+                `)
+                .eq(
+                    'ativo',
+                    true
+                )
+                .order(
+                    'descricao',
+                    {
+                        ascending:
+                            true
+                    }
+                );
+
+
+        if (error) {
+
+            throw error;
+        }
+
+
+        const naturezas =
+            Array.isArray(
+                data
+            )
+                ? data
+                : [];
+
+
+        if (
+            naturezas.length ===
+            0
+        ) {
+
+            select.innerHTML = `
+
+                <option value="">
+                    Nenhuma Natureza ativa cadastrada
+                </option>
+            `;
+
+
+            select.disabled =
+                false;
+
+
+            return false;
+        }
+
+
+        select.innerHTML =
+            '<option value="">Selecione a Natureza</option>' +
+
+            naturezas
+                .map(
+                    natureza => `
+
+                        <option
+                            value="${escaparHTMLAvulsaNFE(
+                                natureza.descricao
+                            )}"
+                        >
+                            ${escaparHTMLAvulsaNFE(
+                                natureza.descricao
+                            )}
+                        </option>
+                    `
+                )
+                .join(
+                    ''
+                );
+
+
+        const padrao =
+            naturezas.find(
+                natureza =>
+                    natureza.padrao_avulsa ===
+                    true
+            ) ||
+            naturezas[0];
+
+
+        select.value =
+            padrao.descricao;
+
+
+        select.disabled =
+            false;
+
+
+        console.log(
+            '✅ Naturezas avulsas carregadas:',
+            naturezas.length,
+            'Padrão:',
+            padrao.descricao
+        );
+
+
+        return true;
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro carregando Naturezas avulsas:',
+            error
+        );
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Erro ao carregar Naturezas
+            </option>
+        `;
+
+
+        select.disabled =
+            false;
+
+
+        return false;
+    }
+}
+
+
+// =========================================================
+// TRANSPORTADORA - EMISSÃO AVULSA
+// =========================================================
+
+async function preencherSelectTransportadoraAvulsaNFE() {
+
+    const select =
+        document.getElementById(
+            'avulsaTransportadoraId'
+        );
+
+
+    if (!select) {
+
+        console.error(
+            '❌ avulsaTransportadoraId não encontrado'
+        );
+
+        return false;
+    }
+
+
+    // IMPORTANTE:
+    // avulsaTransportadoraId precisa ser SELECT.
+    if (
+        select.tagName !==
+        'SELECT'
+    ) {
+
+        console.error(
+            '❌ avulsaTransportadoraId existe, mas não é SELECT'
+        );
+
+        return false;
+    }
+
+
+    try {
+
+        select.disabled =
+            true;
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Carregando transportadoras...
+            </option>
+        `;
+
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/transportadoras`,
+                {
+                    method:
+                        'GET',
+
+                    headers: {
+                        'Accept':
+                            'application/json'
+                    },
+
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            data.success ===
+            false
+        ) {
+
+            throw new Error(
+                data.error ||
+                'Erro ao carregar transportadoras'
+            );
+        }
+
+
+        const transportadoras =
+            Array.isArray(
+                data.transportadoras
+            )
+                ? data.transportadoras
+                : [];
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Sem transportadora
+            </option>
+
+            ${
+                transportadoras
+                    .map(
+                        transportadora => `
+
+                            <option
+                                value="${Number(
+                                    transportadora.id
+                                )}"
+                            >
+                                ${escaparHTMLAvulsaNFE(
+                                    transportadora.nome ||
+                                    'Transportadora'
+                                )}
+
+                                ${
+                                    transportadora.cnpj
+                                        ? ` - ${escaparHTMLAvulsaNFE(
+                                            transportadora.cnpj
+                                        )}`
+                                        : ''
+                                }
+                            </option>
+                        `
+                    )
+                    .join(
+                        ''
+                    )
+            }
+        `;
+
+
+        select.disabled =
+            false;
+
+
+        console.log(
+            `✅ ${transportadoras.length} transportadora(s) carregada(s) na Avulsa`
+        );
+
+
+        return true;
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro carregando transportadoras avulsas:',
+            error
+        );
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Erro ao carregar transportadoras
+            </option>
+        `;
+
+
+        select.disabled =
+            false;
+
+
+        return false;
+    }
+}
+
+
+async function prepararEmissaoAvulsaNFE() {
+
+    console.log(
+        '🧾 Preparando NF-e avulsa...'
+    );
+
+
+    try {
+
+        // =================================================
+        // ESTRUTURA GERAL
+        // =================================================
+
+        const estruturaOk =
+            garantirEstruturaAvulsaNFE();
+
+
+        if (!estruturaOk) {
+
+            throw new Error(
+                'Não foi possível preparar a estrutura da emissão avulsa'
+            );
+        }
+
+
+        // =================================================
+        // ESTRUTURA DE PRODUTOS
+        // =================================================
+
+        const produtosOk =
+            garantirEstruturaProdutosAvulsaNFE();
+
+
+        if (!produtosOk) {
+
+            throw new Error(
+                'Não foi possível preparar a área de produtos'
+            );
+        }
+
+
+        // =================================================
+        // CARREGAR DADOS
+        // =================================================
+
+        const resultados =
+            await Promise.all([
+
+                carregarClientesAvulsaNFE(),
+
+                preencherSelectCFOPAvulsaNFE(),
+
+                preencherSelectNaturezaAvulsaNFE(),
+
+                preencherSelectTransportadoraAvulsaNFE(),
+
+                carregarProdutosAvulsaNFE()
+            ]);
+
+
+        console.log(
+            '✅ Emissão avulsa preparada:',
+            {
+                clientes:
+                    resultados[0],
+
+                cfop:
+                    resultados[1],
+
+                natureza:
+                    resultados[2],
+
+                transportadora:
+                    resultados[3],
+
+                produtos:
+                    resultados[4]
+            }
+        );
+
+
+        return true;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro preparando NF-e avulsa:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao preparar emissão avulsa: ${error.message}`,
+            'error'
+        );
+
+
+        return false;
+    }
+}
+
+function garantirSelectAvulsaNFE(
+    id,
+    label,
+    textoInicial
+) {
+
+    const aba =
+        document.getElementById(
+            'abaAvulsa'
+        );
+
+    if (!aba) {
+
+        console.error(
+            '❌ abaAvulsa não encontrada'
+        );
+
+        return null;
+    }
+
+
+    let campo =
+        aba.querySelector(
+            `#${id}`
+        );
+
+
+    // =====================================================
+    // JÁ É SELECT
+    // =====================================================
+
+    if (
+        campo &&
+        campo.tagName ===
+            'SELECT'
+    ) {
+
+        return campo;
+    }
+
+
+    // =====================================================
+    // EXISTE, MAS É INPUT
+    //
+    // Substituir automaticamente por SELECT.
+    // =====================================================
+
+    if (campo) {
+
+        console.log(
+            `🔧 Convertendo ${id} de ${campo.tagName} para SELECT`
+        );
+
+
+        const valorAnterior =
+            campo.value ||
+            '';
+
+
+        const select =
+            document.createElement(
+                'select'
+            );
+
+
+        select.id =
+            id;
+
+
+        select.className =
+            campo.className ||
+            'form-control';
+
+
+        select.name =
+            campo.name ||
+            '';
+
+
+        select.innerHTML = `
+            <option value="">
+                ${textoInicial}
+            </option>
+        `;
+
+
+        // Guardar temporariamente
+        select.dataset.valorAnterior =
+            valorAnterior;
+
+
+        campo.replaceWith(
+            select
+        );
+
+
+        return select;
+    }
+
+
+    // =====================================================
+    // CAMPO NÃO EXISTE
+    // Criar bloco novo
+    // =====================================================
+
+    console.warn(
+        `⚠️ ${id} não existe. Criando SELECT...`
+    );
+
+
+    const grupo =
+        document.createElement(
+            'div'
+        );
+
+
+    grupo.className =
+        'form-group';
+
+
+    grupo.innerHTML = `
+
+        <label>
+            ${label}
+        </label>
+
+        <select
+            id="${id}"
+            class="form-control"
+        >
+
+            <option value="">
+                ${textoInicial}
+            </option>
+
+        </select>
+    `;
+
+
+    const produtos =
+        aba.querySelector(
+            '#avulsaProdutos'
+        );
+
+
+    const grupoProdutos =
+        produtos?.closest(
+            '.form-group'
+        ) ||
+        produtos?.parentElement;
+
+
+    if (
+        grupoProdutos &&
+        grupoProdutos.parentElement
+    ) {
+
+        grupoProdutos
+            .parentElement
+            .insertBefore(
+                grupo,
+                grupoProdutos
+            );
+
+    } else {
+
+        aba.appendChild(
+            grupo
+        );
+    }
+
+
+    return grupo.querySelector(
+        `#${id}`
+    );
+}
+
+
+// =========================================================
+// EXPORTAR
+// =========================================================
+
+window.escaparHTMLAvulsaNFE = escaparHTMLAvulsaNFE;
+window.garantirEstruturaAvulsaNFE = garantirEstruturaAvulsaNFE;
+window.carregarClientesAvulsaNFE = carregarClientesAvulsaNFE;
+window.pesquisarClienteAvulsaNFE = pesquisarClienteAvulsaNFE;
+window.selecionarClienteAvulsaNFE = selecionarClienteAvulsaNFE;
+window.limparClienteSelecionadoAvulsaNFE = limparClienteSelecionadoAvulsaNFE;
+window.preencherSelectCFOPAvulsaNFE = preencherSelectCFOPAvulsaNFE;
+window.preencherSelectNaturezaAvulsaNFE = preencherSelectNaturezaAvulsaNFE;
+window.preencherSelectTransportadoraAvulsaNFE = preencherSelectTransportadoraAvulsaNFE;
+window.prepararEmissaoAvulsaNFE = prepararEmissaoAvulsaNFE;
+window.limparFormAvulsa = limparFormAvulsa;
 
 // =========================================================
 // HANDLERS PARA OS BOTÕES DA TABELA
 // =========================================================
 
 // Handler para emitir NF-e
-function handleEmitirNFEClick(event) {
-    const vendaId = event.currentTarget.dataset.vendaId;
+function handleEmitirNFEClick(
+    event
+) {
+
+    const vendaId =
+        normalizarOrderIdML(
+            event.currentTarget
+                .dataset
+                .vendaId
+        );
+
+
     if (!vendaId) {
-        showToast('❌ ID da venda não encontrado', 'error');
+
+        showToast(
+            '❌ ID da venda não encontrado',
+            'error'
+        );
+
         return;
     }
-    abrirModalEdicaoProdutos(vendaId);
+
+
+    // =====================================================
+    // LOCALIZAR VENDA QUE ESTÁ NA TELA
+    //
+    // vendasPendentes já está agrupado.
+    // =====================================================
+
+    const venda =
+        vendasPendentes.find(
+            item =>
+                normalizarOrderIdML(
+                    item.id_venda_ml ||
+                    item.id
+                ) ===
+                vendaId
+        );
+
+    window._nfeVendaAtual =
+        venda ||
+        null;
+
+    const orderIds =
+        venda?._eh_pack
+            ? venda._order_ids_pack
+            : [
+                vendaId
+            ];
+
+    window._nfeOrderIdsAtuais =
+        [
+            ...new Set(
+
+                orderIds
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(Boolean)
+            )
+        ];
+
+    console.log(
+        '🧾 NF-e selecionada:',
+        {
+            principal:
+                vendaId,
+            pack:
+                Boolean(
+                    venda?._eh_pack
+                ),
+            orders:
+                window
+                    ._nfeOrderIdsAtuais,
+            produtos:
+                venda
+                    ?.order_items
+                    ?.map(
+                        item =>
+                            item.item
+                                ?.seller_sku
+                    )
+        }
+    );
+
+    abrirModalEdicaoProdutos(
+        vendaId
+    );
 }
 
 // Handler para ver NF-e
@@ -5137,6 +8214,769 @@ window.handleEmitirNFEClick = handleEmitirNFEClick;
 window.handleVerNFEClick = handleVerNFEClick;
 window.handleCancelarNFEClick = handleCancelarNFEClick;
 
+function obterPackIdNFE(venda) {
+
+    if (!venda) {
+        return null;
+    }
+
+    let dadosCompletos =
+        venda.dados_completos ||
+        venda.venda_json ||
+        {};
+
+    if (
+        typeof dadosCompletos ===
+        'string'
+    ) {
+
+        try {
+            dadosCompletos =
+                JSON.parse(
+                    dadosCompletos
+                );
+        } catch {
+            dadosCompletos = {};
+        }
+    }
+
+    const packId =
+        venda._pack_id ||
+        venda.pack_id ||
+        dadosCompletos.pack_id ||
+        dadosCompletos.order?.pack_id ||
+        null;
+
+    if (
+        packId === null ||
+        packId === undefined ||
+        packId === ''
+    ) {
+        return null;
+    }
+
+    return String(
+        packId
+    );
+}
+
+
+function obterShipmentIdNFE(venda) {
+
+    if (!venda) {
+        return null;
+    }
+
+    const info =
+        typeof parseInformacoesEnvioNFE ===
+            'function'
+            ? parseInformacoesEnvioNFE(
+                venda
+            )
+            : {};
+
+    let dadosCompletos =
+        venda.dados_completos ||
+        venda.venda_json ||
+        {};
+
+    if (
+        typeof dadosCompletos ===
+        'string'
+    ) {
+
+        try {
+            dadosCompletos =
+                JSON.parse(
+                    dadosCompletos
+                );
+        } catch {
+            dadosCompletos = {};
+        }
+    }
+
+    const shipmentId =
+        venda._shipment_id ||
+        venda.shipment_id ||
+        venda.id_envio ||
+        venda.shipping?.id ||
+        info?.id ||
+        dadosCompletos?.shipping?.id ||
+        dadosCompletos?.shipment_id ||
+        null;
+
+    if (
+        shipmentId === null ||
+        shipmentId === undefined ||
+        shipmentId === ''
+    ) {
+        return null;
+    }
+
+    return String(
+        shipmentId
+    );
+}
+
+
+function obterChaveAgrupamentoNFE(
+    venda
+) {
+
+    const vendaId =
+        normalizarOrderIdML(
+            venda?.id_venda_ml ||
+            venda?.id
+        );
+
+    if (!vendaId) {
+        return null;
+    }
+
+    // FULL não deve entrar no agrupamento manual
+    if (
+        detectarVendaFullNFE(
+            venda
+        )
+    ) {
+
+        return `order:${vendaId}`;
+    }
+
+    const packId =
+        obterPackIdNFE(
+            venda
+        );
+
+    if (packId) {
+
+        return `pack:${packId}`;
+    }
+
+    const shipmentId =
+        obterShipmentIdNFE(
+            venda
+        );
+
+    if (shipmentId) {
+
+        return `shipment:${shipmentId}`;
+    }
+
+    return `order:${vendaId}`;
+}
+
+
+function obterItensVendaParaPackNFE(
+    venda
+) {
+
+    const vendaId =
+        normalizarOrderIdML(
+            venda.id_venda_ml ||
+            venda.id
+        );
+
+    let items =
+        Array.isArray(
+            venda.order_items
+        )
+            ? venda.order_items
+            : [];
+
+    // =====================================================
+    // FALLBACK
+    // =====================================================
+
+    if (
+        items.length === 0 &&
+        venda.sku
+    ) {
+
+        items = [
+            {
+                quantity:
+                    Number(
+                        venda.quantidade ||
+                        venda.quantity ||
+                        1
+                    ),
+
+                unit_price:
+                    Number(
+                        venda._valor_produto ||
+                        venda.valor_total ||
+                        0
+                    ) /
+                    Math.max(
+                        Number(
+                            venda.quantidade ||
+                            venda.quantity ||
+                            1
+                        ),
+                        1
+                    ),
+
+                item: {
+                    seller_sku:
+                        venda.sku,
+
+                    title:
+                        venda.titulo ||
+                        venda.title ||
+                        'Produto'
+                }
+            }
+        ];
+    }
+
+    // =====================================================
+    // VALOR REAL DESTA ORDER
+    // =====================================================
+
+    const valorVenda =
+        Number(
+            venda._valor_produto ??
+            venda.valor_produto ??
+            venda.valor_total ??
+            venda.total_amount ??
+            0
+        );
+
+    const totalOriginal =
+        items.reduce(
+            (
+                total,
+                item
+            ) => {
+
+                return (
+                    total +
+                    (
+                        Number(
+                            item.unit_price ||
+                            0
+                        ) *
+                        Number(
+                            item.quantity ||
+                            1
+                        )
+                    )
+                );
+            },
+            0
+        );
+
+    const quantidadeTotal =
+        items.reduce(
+            (
+                total,
+                item
+            ) =>
+                total +
+                Number(
+                    item.quantity ||
+                    1
+                ),
+            0
+        );
+
+    return items.map(
+        item => {
+
+            let valorUnitarioCorrigido =
+                Number(
+                    item.unit_price ||
+                    0
+                );
+
+            if (
+                valorVenda > 0
+            ) {
+
+                if (
+                    totalOriginal > 0
+                ) {
+
+                    const proporcao =
+                        (
+                            Number(
+                                item.unit_price ||
+                                0
+                            ) *
+                            Number(
+                                item.quantity ||
+                                1
+                            )
+                        ) /
+                        totalOriginal;
+
+                    const valorLinha =
+                        valorVenda *
+                        proporcao;
+
+                    valorUnitarioCorrigido =
+                        valorLinha /
+                        Math.max(
+                            Number(
+                                item.quantity ||
+                                1
+                            ),
+                            1
+                        );
+
+                } else if (
+                    quantidadeTotal > 0
+                ) {
+
+                    valorUnitarioCorrigido =
+                        valorVenda /
+                        quantidadeTotal;
+                }
+            }
+
+            return {
+
+                ...item,
+
+                _order_id:
+                    vendaId,
+
+                _valor_unitario_corrigido:
+                    valorUnitarioCorrigido
+            };
+        }
+    );
+}
+
+
+function agruparVendasEmPacksNFE(
+    vendas
+) {
+
+    if (
+        !Array.isArray(
+            vendas
+        ) ||
+        vendas.length === 0
+    ) {
+
+        return [];
+    }
+
+    const grupos =
+        new Map();
+
+    for (
+        const venda
+        of vendas
+    ) {
+
+        const chave =
+            obterChaveAgrupamentoNFE(
+                venda
+            );
+
+        if (!chave) {
+            continue;
+        }
+
+        if (
+            !grupos.has(
+                chave
+            )
+        ) {
+
+            grupos.set(
+                chave,
+                []
+            );
+        }
+
+        grupos
+            .get(
+                chave
+            )
+            .push(
+                venda
+            );
+    }
+
+
+    const resultado =
+        [];
+
+
+    for (
+        const [
+            chave,
+            membros
+        ]
+        of grupos.entries()
+    ) {
+
+        // =====================================================
+        // VENDA NORMAL
+        // =====================================================
+
+        if (
+            membros.length ===
+            1
+        ) {
+
+            resultado.push(
+                membros[0]
+            );
+
+            continue;
+        }
+
+
+        // =====================================================
+        // PACK
+        // =====================================================
+
+        const principal =
+            membros[0];
+
+
+        const orderIds =
+            [
+                ...new Set(
+
+                    membros
+                        .map(
+                            venda =>
+                                normalizarOrderIdML(
+                                    venda.id_venda_ml ||
+                                    venda.id
+                                )
+                        )
+                        .filter(Boolean)
+                )
+            ];
+
+
+        const todosItems =
+            membros.flatMap(
+                venda =>
+                    obterItensVendaParaPackNFE(
+                        venda
+                    )
+            );
+
+
+        const valorProduto =
+            membros.reduce(
+                (
+                    total,
+                    venda
+                ) =>
+                    total +
+                    Number(
+                        venda._valor_produto ??
+                        venda.valor_produto ??
+                        venda.valor_total ??
+                        venda.total_amount ??
+                        0
+                    ),
+                0
+            );
+
+
+        const valorFrete =
+            membros.reduce(
+                (
+                    total,
+                    venda
+                ) =>
+                    total +
+                    Number(
+                        venda._valor_frete ??
+                        venda.valor_frete ??
+                        0
+                    ),
+                0
+            );
+
+
+        const totalPago =
+            membros.reduce(
+                (
+                    total,
+                    venda
+                ) =>
+                    total +
+                    Number(
+                        venda._total_pago ??
+                        venda.total_pago ??
+                        venda._valor_produto ??
+                        venda.valor_total ??
+                        0
+                    ),
+                0
+            );
+
+
+        // =====================================================
+        // NF-E
+        //
+        // Se UM dos pedidos já possui NF-e, bloqueamos nova
+        // emissão para não correr risco de duplicidade.
+        // =====================================================
+
+        const temNfe =
+            membros.some(
+                venda =>
+                    Boolean(
+                        venda._tem_nfe
+                    )
+            );
+
+
+        // =====================================================
+        // ESTOQUE
+        // =====================================================
+
+        const todosBaixados =
+            membros.every(
+                venda =>
+                    Boolean(
+                        venda._estoque_baixado
+                    )
+            );
+
+
+        let estoqueStatus =
+            'nao_verificado';
+
+
+        if (
+            membros.some(
+                venda =>
+                    venda._estoque_status ===
+                    'sem_cadastro'
+            )
+        ) {
+
+            estoqueStatus =
+                'sem_cadastro';
+
+        } else if (
+            todosBaixados
+        ) {
+
+            estoqueStatus =
+                'baixado';
+
+        } else if (
+            membros.every(
+                venda =>
+                    venda._estoque_status ===
+                    'disponivel'
+            )
+        ) {
+
+            estoqueStatus =
+                'disponivel';
+
+        } else if (
+            membros.some(
+                venda =>
+                    venda._estoque_status ===
+                    'processando'
+            )
+        ) {
+
+            estoqueStatus =
+                'processando';
+        }
+
+
+        const detalhesEstoque =
+            membros.flatMap(
+                venda =>
+                    Array.isArray(
+                        venda._estoque_detalhes
+                    )
+                        ? venda._estoque_detalhes
+                        : []
+            );
+
+
+        const packId =
+            obterPackIdNFE(
+                principal
+            );
+
+
+        const shipmentId =
+            obterShipmentIdNFE(
+                principal
+            );
+
+
+        const agrupada = {
+
+            ...principal,
+
+            // =============================================
+            // IDENTIFICAÇÃO DO PACK
+            // =============================================
+
+            _eh_pack:
+                true,
+
+            _pack_key:
+                chave,
+
+            _pack_id:
+                packId,
+
+            _shipment_id:
+                shipmentId,
+
+            _order_ids_pack:
+                orderIds,
+
+            _membros_pack:
+                membros,
+
+            // =============================================
+            // PRODUTOS
+            // =============================================
+
+            order_items:
+                todosItems,
+
+            // =============================================
+            // VALORES
+            // =============================================
+
+            _valor_produto:
+                valorProduto,
+
+            _valor_frete:
+                valorFrete,
+
+            _total_pago:
+                totalPago,
+
+            total_amount:
+                totalPago,
+
+            // =============================================
+            // STATUS
+            // =============================================
+
+            _tem_nfe:
+                temNfe,
+
+            _estoque_baixado:
+                todosBaixados,
+
+            _estoque_status:
+                estoqueStatus,
+
+            _estoque_detalhes:
+                detalhesEstoque
+        };
+
+
+        console.log(
+            '📦 PACK ML AGRUPADO:',
+            {
+                chave,
+                packId,
+                shipmentId,
+                orderIds,
+                produtos:
+                    todosItems.map(
+                        item =>
+                            item.item
+                                ?.seller_sku
+                    ),
+                valor:
+                    valorProduto
+            }
+        );
+
+
+        resultado.push(
+            agrupada
+        );
+    }
+
+
+    return resultado;
+}
+
+
+function obterOrderIdsVendaAtualNFE(
+    orderId
+) {
+
+    const principal =
+        normalizarOrderIdML(
+            orderId
+        );
+
+
+    const atual =
+        window._nfeVendaAtual;
+
+
+    if (
+        atual &&
+        Array.isArray(
+            atual._order_ids_pack
+        ) &&
+        atual._order_ids_pack.length >
+            0
+    ) {
+
+        return [
+            ...new Set(
+
+                atual._order_ids_pack
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(Boolean)
+            )
+        ];
+    }
+
+
+    if (
+        Array.isArray(
+            window._nfeOrderIdsAtuais
+        ) &&
+        window._nfeOrderIdsAtuais
+            .length >
+            0
+    ) {
+
+        return [
+            ...new Set(
+
+                window._nfeOrderIdsAtuais
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(Boolean)
+            )
+        ];
+    }
+
+
+    return principal
+        ? [
+            principal
+        ]
+        : [];
+}
+
 function renderizarVendasNFETabela(
     vendas
 ) {
@@ -5156,6 +8996,11 @@ function renderizarVendasNFETabela(
     // SEM VENDAS
     // =====================================================
 
+    vendas =
+        agruparVendasEmPacksNFE(
+            vendas
+        );
+
     if (
         !Array.isArray(
             vendas
@@ -5164,8 +9009,7 @@ function renderizarVendasNFETabela(
             0
     ) {
 
-        vendasPendentes =
-            [];
+        vendasPendentes = [];
 
         tbody.innerHTML = `
             <tr>
@@ -9810,19 +13654,814 @@ async function salvarClienteNoBanco(dadosCliente) {
     }
 }
 
+// =========================================================
+// CLIENTES - EMISSÃO AVULSA
+// =========================================================
+
+window._clientesAvulsaNFE =
+    [];
+
+
+async function carregarClientesAvulsaNFE() {
+
+    const busca =
+        document.getElementById(
+            'avulsaClienteBusca'
+        );
+
+    const clienteId =
+        document.getElementById(
+            'avulsaClienteId'
+        );
+
+    const resultados =
+        document.getElementById(
+            'avulsaClienteResultados'
+        );
+
+
+    if (
+        !busca ||
+        !clienteId ||
+        !resultados
+    ) {
+
+        console.warn(
+            '⚠️ Campos de pesquisa de cliente da NF-e avulsa não encontrados'
+        );
+
+        return false;
+    }
+
+
+    try {
+
+        busca.disabled =
+            true;
+
+        busca.placeholder =
+            'Carregando clientes...';
+
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/clientes`,
+                {
+                    method:
+                        'GET',
+
+                    headers: {
+                        'Accept':
+                            'application/json'
+                    },
+
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            data.success ===
+            false
+        ) {
+
+            throw new Error(
+                data.error ||
+                'Erro ao carregar clientes'
+            );
+        }
+
+
+        window._clientesAvulsaNFE =
+            Array.isArray(
+                data.clientes
+            )
+                ? data.clientes
+                : [];
+
+
+        console.log(
+            `👤 ${window._clientesAvulsaNFE.length} cliente(s) disponíveis para NF-e avulsa`
+        );
+
+
+        busca.disabled =
+            false;
+
+        busca.placeholder =
+            'Digite o nome, CPF ou CNPJ do cliente...';
+
+
+        // =============================================
+        // EVENTO DE PESQUISA
+        // =============================================
+
+        busca.oninput =
+            function () {
+
+                pesquisarClienteAvulsaNFE(
+                    this.value
+                );
+            };
+
+
+        busca.onfocus =
+            function () {
+
+                if (
+                    this.value.trim()
+                ) {
+
+                    pesquisarClienteAvulsaNFE(
+                        this.value
+                    );
+                }
+            };
+
+
+        return true;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando clientes para NF-e avulsa:',
+            error
+        );
+
+
+        busca.disabled =
+            false;
+
+        busca.placeholder =
+            'Erro ao carregar clientes';
+
+
+        return false;
+    }
+}
+
+
+function pesquisarClienteAvulsaNFE(
+    termo
+) {
+
+    const resultados =
+        document.getElementById(
+            'avulsaClienteResultados'
+        );
+
+
+    if (!resultados) {
+
+        return;
+    }
+
+
+    const pesquisa =
+        String(
+            termo ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    if (
+        pesquisa.length <
+        1
+    ) {
+
+        resultados.style.display =
+            'none';
+
+        resultados.innerHTML =
+            '';
+
+        return;
+    }
+
+
+    const somenteNumeros =
+        pesquisa.replace(
+            /\D/g,
+            ''
+        );
+
+
+    const clientes =
+        Array.isArray(
+            window._clientesAvulsaNFE
+        )
+            ? window._clientesAvulsaNFE
+            : [];
+
+
+    const encontrados =
+        clientes
+            .filter(
+                cliente => {
+
+                    const nome =
+                        String(
+                            cliente.nome ||
+                            ''
+                        )
+                            .toLowerCase();
+
+
+                    const documento =
+                        String(
+                            cliente.documento ||
+                            ''
+                        )
+                            .replace(
+                                /\D/g,
+                                ''
+                            );
+
+
+                    const cidade =
+                        String(
+                            cliente.cidade ||
+                            ''
+                        )
+                            .toLowerCase();
+
+
+                    return (
+
+                        nome.includes(
+                            pesquisa
+                        ) ||
+
+                        cidade.includes(
+                            pesquisa
+                        ) ||
+
+                        (
+                            somenteNumeros &&
+                            documento.includes(
+                                somenteNumeros
+                            )
+                        )
+                    );
+                }
+            )
+            .slice(
+                0,
+                15
+            );
+
+
+    if (
+        encontrados.length ===
+        0
+    ) {
+
+        resultados.innerHTML = `
+
+            <div
+                style="
+                    padding:12px;
+                    color:#6c757d;
+                    text-align:center;
+                "
+            >
+                Nenhum cliente encontrado.
+            </div>
+        `;
+
+
+        resultados.style.display =
+            'block';
+
+        return;
+    }
+
+
+    resultados.innerHTML =
+        encontrados
+            .map(
+                cliente => {
+
+                    const documento =
+                        escaparHTMLCadastroNFE(
+                            cliente.documento ||
+                            ''
+                        );
+
+                    const cidade =
+                        escaparHTMLCadastroNFE(
+                            cliente.cidade ||
+                            ''
+                        );
+
+                    const uf =
+                        escaparHTMLCadastroNFE(
+                            cliente.uf ||
+                            ''
+                        );
+
+
+                    return `
+
+                        <div
+                            class="resultado-cliente-avulsa"
+                            data-cliente-id="${Number(cliente.id)}"
+                            style="
+                                padding:10px 12px;
+                                cursor:pointer;
+                                border-bottom:1px solid #eee;
+                            "
+                            onmouseover="
+                                this.style.background='#f5f7f9'
+                            "
+                            onmouseout="
+                                this.style.background='white'
+                            "
+                            onclick="
+                                selecionarClienteAvulsaNFE(${Number(cliente.id)})
+                            "
+                        >
+
+                            <div
+                                style="
+                                    font-weight:600;
+                                "
+                            >
+                                ${escaparHTMLCadastroNFE(
+                                    cliente.nome ||
+                                    'Cliente'
+                                )}
+                            </div>
+
+
+                            <div
+                                style="
+                                    font-size:12px;
+                                    color:#6c757d;
+                                    margin-top:2px;
+                                "
+                            >
+
+                                ${documento || 'Sem documento'}
+
+                                ${
+                                    cidade
+                                        ? ` • ${cidade}${uf ? `/${uf}` : ''}`
+                                        : ''
+                                }
+
+                            </div>
+
+                        </div>
+                    `;
+                }
+            )
+            .join(
+                ''
+            );
+
+
+    resultados.style.display =
+        'block';
+}
+
+
+function selecionarClienteAvulsaNFE(
+    id
+) {
+
+    const clientes =
+        Array.isArray(
+            window._clientesAvulsaNFE
+        )
+            ? window._clientesAvulsaNFE
+            : [];
+
+
+    const cliente =
+        clientes.find(
+            item =>
+                String(
+                    item.id
+                ) ===
+                String(
+                    id
+                )
+        );
+
+
+    if (!cliente) {
+
+        showToast(
+            'Cliente não encontrado',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const campoId =
+        document.getElementById(
+            'avulsaClienteId'
+        );
+
+    const busca =
+        document.getElementById(
+            'avulsaClienteBusca'
+        );
+
+    const resultados =
+        document.getElementById(
+            'avulsaClienteResultados'
+        );
+
+    const selecionado =
+        document.getElementById(
+            'avulsaClienteSelecionado'
+        );
+
+
+    if (
+        campoId
+    ) {
+
+        campoId.value =
+            String(
+                cliente.id
+            );
+    }
+
+
+    if (
+        busca
+    ) {
+
+        busca.value =
+            cliente.nome ||
+            '';
+    }
+
+
+    if (
+        resultados
+    ) {
+
+        resultados.style.display =
+            'none';
+
+        resultados.innerHTML =
+            '';
+    }
+
+
+    if (
+        selecionado
+    ) {
+
+        selecionado.innerHTML = `
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    gap:10px;
+                    align-items:center;
+                "
+            >
+
+                <div>
+
+                    <strong>
+                        <i class="fas fa-check-circle"></i>
+                        ${escaparHTMLCadastroNFE(
+                            cliente.nome ||
+                            ''
+                        )}
+                    </strong>
+
+                    <div
+                        style="
+                            color:#6c757d;
+                            margin-top:3px;
+                        "
+                    >
+
+                        ${escaparHTMLCadastroNFE(
+                            cliente.documento ||
+                            ''
+                        )}
+
+                        ${
+                            cliente.cidade
+                                ? ` • ${escaparHTMLCadastroNFE(
+                                    cliente.cidade
+                                )}/${escaparHTMLCadastroNFE(
+                                    cliente.uf ||
+                                    ''
+                                )}`
+                                : ''
+                        }
+
+                    </div>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-secondary"
+                    onclick="limparClienteSelecionadoAvulsaNFE()"
+                >
+                    Trocar
+                </button>
+
+            </div>
+        `;
+
+
+        selecionado.style.display =
+            'block';
+    }
+
+
+    console.log(
+        '✅ Cliente selecionado para NF-e avulsa:',
+        cliente
+    );
+}
+
+
+function limparClienteSelecionadoAvulsaNFE() {
+
+    const campoId =
+        document.getElementById(
+            'avulsaClienteId'
+        );
+
+    const busca =
+        document.getElementById(
+            'avulsaClienteBusca'
+        );
+
+    const resultados =
+        document.getElementById(
+            'avulsaClienteResultados'
+        );
+
+    const selecionado =
+        document.getElementById(
+            'avulsaClienteSelecionado'
+        );
+
+
+    if (
+        campoId
+    ) {
+
+        campoId.value =
+            '';
+    }
+
+
+    if (
+        busca
+    ) {
+
+        busca.value =
+            '';
+
+        busca.focus();
+    }
+
+
+    if (
+        resultados
+    ) {
+
+        resultados.innerHTML =
+            '';
+
+        resultados.style.display =
+            'none';
+    }
+
+
+    if (
+        selecionado
+    ) {
+
+        selecionado.innerHTML =
+            '';
+
+        selecionado.style.display =
+            'none';
+    }
+}
+
+
+// =========================================================
+// TRANSPORTADORAS - EMISSÃO AVULSA
+// =========================================================
+
+async function preencherSelectTransportadoraAvulsaNFE() {
+
+    const select =
+        document.getElementById(
+            'avulsaTransportadoraId'
+        );
+
+
+    if (!select) {
+
+        console.warn(
+            '⚠️ avulsaTransportadoraId não encontrado'
+        );
+
+        return false;
+    }
+
+
+    try {
+
+        select.disabled =
+            true;
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Carregando transportadoras...
+            </option>
+        `;
+
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/transportadoras`,
+                {
+                    method:
+                        'GET',
+
+                    headers: {
+                        'Accept':
+                            'application/json'
+                    },
+
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            data.success ===
+            false
+        ) {
+
+            throw new Error(
+                data.error ||
+                'Erro ao carregar transportadoras'
+            );
+        }
+
+
+        const transportadoras =
+            Array.isArray(
+                data.transportadoras
+            )
+                ? data.transportadoras
+                : [];
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Sem transportadora
+            </option>
+
+            ${
+                transportadoras
+                    .map(
+                        transportadora => `
+
+                            <option
+                                value="${Number(
+                                    transportadora.id
+                                )}"
+                            >
+
+                                ${escaparHTMLCadastroNFE(
+                                    transportadora.nome ||
+                                    'Transportadora'
+                                )}
+
+                                ${
+                                    transportadora.cnpj
+                                        ? ` - ${escaparHTMLCadastroNFE(
+                                            transportadora.cnpj
+                                        )}`
+                                        : ''
+                                }
+
+                            </option>
+
+                        `
+                    )
+                    .join(
+                        ''
+                    )
+            }
+        `;
+
+
+        select.disabled =
+            false;
+
+
+        return true;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando transportadoras para NF-e avulsa:',
+            error
+        );
+
+
+        select.innerHTML = `
+
+            <option value="">
+                Erro ao carregar transportadoras
+            </option>
+        `;
+
+
+        select.disabled =
+            false;
+
+
+        return false;
+    }
+}
+
 async function confirmarEmissaoNFE() {
 
     console.log(
         '🔵 [confirmarEmissaoNFE] INICIADA'
     );
 
+
     let nfeFoiEmitida =
         false;
 
-    const orderId =
-        pendingEmitOrderId;
 
-    if (!orderId) {
+    const orderIdPrincipal =
+        normalizarOrderIdML(
+            pendingEmitOrderId
+        );
+
+
+    if (
+        !orderIdPrincipal
+    ) {
 
         showToast(
             '❌ Nenhuma venda selecionada',
@@ -9834,9 +14473,97 @@ async function confirmarEmissaoNFE() {
         return;
     }
 
+
+    // =====================================================
+    // TODAS AS ORDERS QUE PERTENCEM À MESMA NF-E
+    // =====================================================
+
+    let orderIdsDaNFE =
+        [];
+
+
     if (
-        window
-            ._nfeEmissaoEmAndamento
+        Array.isArray(
+            window._nfeOrderIdsAtuais
+        ) &&
+        window._nfeOrderIdsAtuais.length >
+            0
+    ) {
+
+        orderIdsDaNFE =
+            window
+                ._nfeOrderIdsAtuais
+                .map(
+                    normalizarOrderIdML
+                )
+                .filter(Boolean);
+    }
+
+
+    if (
+        orderIdsDaNFE.length ===
+        0 &&
+        window._nfeVendaAtual &&
+        Array.isArray(
+            window._nfeVendaAtual
+                ._order_ids_pack
+        )
+    ) {
+
+        orderIdsDaNFE =
+            window
+                ._nfeVendaAtual
+                ._order_ids_pack
+                .map(
+                    normalizarOrderIdML
+                )
+                .filter(Boolean);
+    }
+
+
+    if (
+        orderIdsDaNFE.length ===
+        0
+    ) {
+
+        orderIdsDaNFE = [
+            orderIdPrincipal
+        ];
+    }
+
+
+    if (
+        !orderIdsDaNFE.includes(
+            orderIdPrincipal
+        )
+    ) {
+
+        orderIdsDaNFE.unshift(
+            orderIdPrincipal
+        );
+    }
+
+
+    orderIdsDaNFE =
+        [
+            ...new Set(
+                orderIdsDaNFE
+            )
+        ];
+
+
+    console.log(
+        '📦 Orders desta NF-e:',
+        orderIdsDaNFE
+    );
+
+
+    // =====================================================
+    // BLOQUEIO DE DUPLICIDADE DE CLIQUE
+    // =====================================================
+
+    if (
+        window._nfeEmissaoEmAndamento
     ) {
 
         showToast(
@@ -9847,10 +14574,12 @@ async function confirmarEmissaoNFE() {
         return;
     }
 
+
     const modal =
         document.getElementById(
             'modalEdicaoProdutos'
         );
+
 
     if (!modal) {
 
@@ -9862,11 +14591,17 @@ async function confirmarEmissaoNFE() {
         return;
     }
 
+
     const campo =
         seletor =>
             modal.querySelector(
                 seletor
             );
+
+
+    // =====================================================
+    // CLIENTE
+    // =====================================================
 
     const nome =
         campo(
@@ -9874,8 +14609,9 @@ async function confirmarEmissaoNFE() {
         )?.value.trim() ||
         '';
 
+
     const documento =
-        (
+        String(
             campo(
                 '#clienteDocumento'
             )?.value ||
@@ -9886,11 +14622,13 @@ async function confirmarEmissaoNFE() {
                 ''
             );
 
+
     const endereco =
         campo(
             '#clienteEndereco'
         )?.value.trim() ||
         '';
+
 
     const numero =
         campo(
@@ -9898,11 +14636,13 @@ async function confirmarEmissaoNFE() {
         )?.value.trim() ||
         'S/N';
 
+
     const bairro =
         campo(
             '#clienteBairro'
         )?.value.trim() ||
         '';
+
 
     const cidade =
         campo(
@@ -9910,8 +14650,9 @@ async function confirmarEmissaoNFE() {
         )?.value.trim() ||
         '';
 
+
     const uf =
-        (
+        String(
             campo(
                 '#clienteUF'
             )?.value ||
@@ -9920,8 +14661,9 @@ async function confirmarEmissaoNFE() {
             .trim()
             .toUpperCase();
 
+
     const cep =
-        (
+        String(
             campo(
                 '#clienteCEP'
             )?.value ||
@@ -9932,17 +14674,27 @@ async function confirmarEmissaoNFE() {
                 ''
             );
 
+
     const transportadoraId =
         campo(
             '#nfeTransportadora'
         )?.value ||
         null;
 
+
     const cfop =
         campo(
             '#nfeCfop'
         )?.value ||
         '6108';
+
+
+    const naturezaOperacao =
+        campo(
+            '#nfeNaturezaOperacao'
+        )?.value ||
+        'VENDA';
+
 
     // =====================================================
     // VALIDAÇÕES
@@ -9957,6 +14709,7 @@ async function confirmarEmissaoNFE() {
 
         return;
     }
+
 
     if (
         documento.length !==
@@ -9973,6 +14726,7 @@ async function confirmarEmissaoNFE() {
         return;
     }
 
+
     if (!endereco) {
 
         showToast(
@@ -9982,6 +14736,7 @@ async function confirmarEmissaoNFE() {
 
         return;
     }
+
 
     if (!cidade) {
 
@@ -9993,6 +14748,7 @@ async function confirmarEmissaoNFE() {
         return;
     }
 
+
     const ufValidas = [
         'AC','AL','AP','AM','BA','CE',
         'DF','ES','GO','MA','MT','MS',
@@ -10000,6 +14756,7 @@ async function confirmarEmissaoNFE() {
         'RJ','RN','RS','RO','RR','SC',
         'SP','SE','TO'
     ];
+
 
     if (
         !ufValidas.includes(
@@ -10015,16 +14772,146 @@ async function confirmarEmissaoNFE() {
         return;
     }
 
+try {
+
+    console.log(
+        '👤 Garantindo cadastro do cliente após emissão da NF-e...',
+        {
+            nome,
+            documento
+        }
+    );
+
+
+    const resultadoCliente =
+        await salvarClienteNoBanco({
+
+            nome,
+
+            documento,
+
+            // A função aceita endereco ou logradouro
+            endereco,
+
+            logradouro:
+                endereco,
+
+            numero,
+
+            bairro,
+
+            cidade,
+
+            uf,
+
+            cep
+        });
+
+
+    if (
+        resultadoCliente?.success
+    ) {
+
+        if (
+            resultadoCliente.existente
+        ) {
+
+            console.log(
+                `ℹ️ Cliente ${documento} já estava cadastrado`
+            );
+
+        } else {
+
+            console.log(
+                `✅ Cliente ${documento} cadastrado automaticamente após a NF-e`
+            );
+        }
+
+
+        // Atualizar a lista de clientes em memória/tela
+        try {
+
+            await carregarClientes();
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Cliente salvo, mas lista não foi atualizada:',
+                error
+            );
+        }
+
+
+    } else {
+
+        console.warn(
+            '⚠️ NF-e emitida, mas cliente não foi salvo:',
+            resultadoCliente?.error
+        );
+    }
+
+
+} catch (
+    error
+) {
+
+    // =====================================================
+    // MUITO IMPORTANTE:
+    //
+    // A NF-e JÁ FOI EMITIDA.
+    // Erro ao salvar cliente NÃO pode transformar isso
+    // em erro de emissão.
+    // =====================================================
+
+    console.warn(
+        '⚠️ NF-e emitida, mas houve erro ao salvar o cliente:',
+        error
+    );
+}
+
+
+    // =====================================================
+    // PRODUTOS
+    // =====================================================
+
+    const produtos =
+        Array.isArray(
+            window.produtosParaEmissao
+        )
+            ? window.produtosParaEmissao
+            : [];
+
+
+    if (
+        produtos.length ===
+        0
+    ) {
+
+        showToast(
+            '❌ Nenhum produto para emissão',
+            'error'
+        );
+
+        return;
+    }
+
+
     const btn =
         modal.querySelector(
             '#confirmarProdutosFinalBtn'
         );
 
+
     const originalText =
         btn?.innerHTML ||
         '';
 
-    if (btn) {
+
+    if (
+        btn
+    ) {
 
         btn.disabled =
             true;
@@ -10033,16 +14920,18 @@ async function confirmarEmissaoNFE() {
             '<span class="spinner"></span> Emitindo...';
     }
 
-    window
-        ._nfeEmissaoEmAndamento =
-        String(
-            orderId
-        );
+
+    window._nfeEmissaoEmAndamento =
+        orderIdPrincipal;
+
 
     try {
 
         // =====================================================
-        // VERIFICAR DUPLICIDADE
+        // 1. VERIFICAR DUPLICIDADE
+        //
+        // SE QUALQUER ORDER DO PACOTE JÁ TEM NF-E,
+        // NÃO PODE EMITIR NOVAMENTE.
         // =====================================================
 
         const listResponse =
@@ -10054,9 +14943,11 @@ async function confirmarEmissaoNFE() {
                 }
             );
 
+
         const listData =
             await listResponse
                 .json();
+
 
         if (
             listData.success &&
@@ -10069,31 +14960,47 @@ async function confirmarEmissaoNFE() {
                 listData.notas.find(
                     nfe => {
 
-                        const venda =
-                            nfe.venda_id ||
-                            nfe.venda_id_ml ||
-                            nfe.id_venda;
+                        if (
+                            nfe.cancelada
+                        ) {
+
+                            return false;
+                        }
+
+
+                        const vendaNfe =
+                            normalizarOrderIdML(
+
+                                nfe.venda_id ||
+
+                                nfe.venda_id_ml ||
+
+                                nfe.id_venda
+                            );
+
 
                         return (
-                            String(
-                                venda
-                            ) ===
-                            String(
-                                orderId
+                            vendaNfe &&
+                            orderIdsDaNFE.includes(
+                                vendaNfe
                             )
-                        ) &&
-                        !nfe.cancelada;
+                        );
                     }
                 );
 
-            if (existente) {
+
+            if (
+                existente
+            ) {
 
                 showToast(
-                    '🚫 Esta venda já possui NF-e.',
+                    '🚫 Um dos pedidos deste pacote já possui NF-e.',
                     'warning'
                 );
 
+
                 fecharModalEdicaoProdutos();
+
 
                 pendingEmitOrderId =
                     null;
@@ -10101,12 +15008,20 @@ async function confirmarEmissaoNFE() {
                 vendaIdParaEdicao =
                     null;
 
+                window._nfeOrderIdsAtuais =
+                    null;
+
+                window._nfeVendaAtual =
+                    null;
+
+
                 return;
             }
         }
 
+
         // =====================================================
-        // TOKEN
+        // 2. TOKEN
         // =====================================================
 
         let token =
@@ -10114,40 +15029,32 @@ async function confirmarEmissaoNFE() {
                 'ml_access_token'
             );
 
+
         if (
             !token &&
-            typeof window
-                .getValidToken ===
-            'function'
+            typeof window.getValidToken ===
+                'function'
         ) {
 
             const tokenData =
                 await window
                     .getValidToken();
 
+
             token =
                 tokenData
                     ?.access_token;
         }
 
-        const produtos =
-            Array.isArray(
-                window
-                    .produtosParaEmissao
-            )
-                ? window
-                    .produtosParaEmissao
-                : [];
 
-        if (
-            produtos.length ===
-            0
-        ) {
+        const mlToken =
+            window._mlAccessToken ||
+            token;
 
-            throw new Error(
-                'Nenhum produto para emissão'
-            );
-        }
+
+        // =====================================================
+        // 3. NCM
+        // =====================================================
 
         const produtosFinal =
             await Promise.all(
@@ -10159,30 +15066,48 @@ async function confirmarEmissaoNFE() {
                             produto.ncm ||
                             '87149990';
 
+
                         if (
                             produto.sku &&
                             produto.sku !==
                             'SEM_SKU'
                         ) {
 
-                            const salvo =
-                                await buscarNCMporSKU(
-                                    produto.sku
-                                );
+                            try {
 
-                            if (salvo) {
+                                const salvo =
+                                    await buscarNCMporSKU(
+                                        produto.sku
+                                    );
 
-                                ncm =
-                                    salvo;
 
-                            } else {
+                                if (
+                                    salvo
+                                ) {
 
-                                await salvarNCMporSKU(
-                                    produto.sku,
-                                    ncm
+                                    ncm =
+                                        salvo;
+
+                                } else {
+
+                                    await salvarNCMporSKU(
+                                        produto.sku,
+                                        ncm
+                                    );
+                                }
+
+
+                            } catch (
+                                error
+                            ) {
+
+                                console.warn(
+                                    `⚠️ NCM ${produto.sku}:`,
+                                    error
                                 );
                             }
                         }
+
 
                         return {
 
@@ -10194,16 +15119,11 @@ async function confirmarEmissaoNFE() {
                 )
             );
 
-        const mlToken =
-            window
-                ._mlAccessToken ||
-            token;
-
         const payload = {
 
             venda_id:
                 String(
-                    orderId
+                    orderIdPrincipal
                 ),
 
             cliente: {
@@ -10223,7 +15143,7 @@ async function confirmarEmissaoNFE() {
             cfop,
 
             natureza_operacao:
-                'VENDA',
+                naturezaOperacao,
 
             modalidade_frete:
                 transportadoraId
@@ -10237,14 +15157,27 @@ async function confirmarEmissaoNFE() {
                 mlToken
         };
 
+
         console.log(
-            '📤 Payload:',
-            JSON.stringify(
-                payload,
-                null,
-                2
-            )
+            '📤 Payload NF-e PACK:',
+            {
+                orderPrincipal:
+                    orderIdPrincipal,
+
+                todasOrders:
+                    orderIdsDaNFE,
+
+                quantidadeProdutos:
+                    produtosFinal.length,
+
+                payload
+            }
         );
+
+
+        // =====================================================
+        // 5. EMITIR UMA ÚNICA NF-E
+        // =====================================================
 
         const response =
             await fetch(
@@ -10265,64 +15198,90 @@ async function confirmarEmissaoNFE() {
                 }
             );
 
-        const result =
-            await response.json();
+
+        let result =
+            {};
+
+
+        try {
+
+            result =
+                await response.json();
+
+        } catch {
+
+            throw new Error(
+                `API retornou HTTP ${response.status} sem JSON válido`
+            );
+        }
+
 
         if (
+            !response.ok ||
             !result.success
         ) {
 
-            const mensagem =
+            throw new Error(
                 result.error ||
-                'Erro desconhecido';
-
-            showToast(
-                `❌ Erro ao emitir NF-e: ${mensagem}`,
-                'error'
+                result.message ||
+                `Erro HTTP ${response.status} ao emitir NF-e`
             );
-
-            return;
         }
 
+
         // =====================================================
-        // A PARTIR DAQUI NF-E JÁ FOI EMITIDA
+        // A NF-E JÁ EXISTE A PARTIR DAQUI
         // =====================================================
 
         nfeFoiEmitida =
             true;
 
+
+        const chave =
+            result.chaveAcesso ||
+            result.chave_acesso ||
+            result.chave ||
+            null;
+
+
         console.log(
-            '✅ NF-e emitida:',
-            result
+            '✅ NF-e ÚNICA emitida:',
+            {
+                chave,
+                protocolo:
+                    result.protocolo,
+
+                orders:
+                    orderIdsDaNFE,
+
+                resultado:
+                    result
+            }
         );
 
+
         showToast(
-            `✅ NF-e emitida! Protocolo: ${result.protocolo || 'autorizada'}`,
+            orderIdsDaNFE.length >
+                1
+                ? `✅ NF-e única emitida para o pacote com ${orderIdsDaNFE.length} pedidos!`
+                : `✅ NF-e emitida! Protocolo: ${result.protocolo || 'autorizada'}`,
             'success'
         );
 
+
+        // Fechar imediatamente para impedir clique duplicado
         fecharModalEdicaoProdutos();
 
-        pendingEmitOrderId =
-            null;
-
-        vendaIdParaEdicao =
-            null;
-
-        produtosEditados =
-            [];
 
         // =====================================================
-        // SALVAR NF-E
+        // 6. SALVAR UMA ÚNICA NF-E
         // =====================================================
 
         try {
 
-            const chave =
-                result.chave_acesso ||
-                result.chave;
-
-            if (chave) {
+            if (
+                chave
+            ) {
 
                 const {
                     data:
@@ -10342,274 +15301,404 @@ async function confirmarEmissaoNFE() {
                         )
                         .maybeSingle();
 
-                if (!existente) {
 
-                    await window
-                        .supabaseClient
-                        .from(
-                            'nfe_emitidas'
-                        )
-                        .insert({
+                if (
+                    !existente
+                ) {
 
-                            chave_acesso:
-                                chave,
-
-                            venda_id:
-                                orderId,
-
-                            protocolo:
-                                result.protocolo,
-
-                            data_emissao:
-                                new Date()
-                                    .toISOString(),
-
-                            cliente_nome:
-                                nome,
-
-                            valor_total:
-                                produtosFinal.reduce(
-                                    (
-                                        total,
-                                        p
-                                    ) =>
-                                        total +
-                                        (
-                                            Number(
-                                                p.valor_unitario ||
-                                                0
-                                            ) *
-                                            Number(
-                                                p.quantidade ||
-                                                1
-                                            )
-                                        ),
-                                    0
+                    const valorTotal =
+                        produtosFinal.reduce(
+                            (
+                                total,
+                                produto
+                            ) =>
+                                total +
+                                (
+                                    Number(
+                                        produto.valor_unitario ||
+                                        0
+                                    ) *
+                                    Number(
+                                        produto.quantidade ||
+                                        1
+                                    )
                                 ),
+                            0
+                        );
 
-                            xml_assinado:
-                                result.xml ||
-                                null,
 
-                            cancelada:
-                                false
-                        });
+                    const {
+                        error
+                    } =
+                        await window
+                            .supabaseClient
+                            .from(
+                                'nfe_emitidas'
+                            )
+                            .insert({
+
+                                chave_acesso:
+                                    chave,
+
+                                // Apenas order principal
+                                venda_id:
+                                    orderIdPrincipal,
+
+                                protocolo:
+                                    result.protocolo ||
+                                    null,
+
+                                data_emissao:
+                                    new Date()
+                                        .toISOString(),
+
+                                cliente_nome:
+                                    nome,
+
+                                valor_total:
+                                    valorTotal,
+
+                                xml_assinado:
+                                    result.xml ||
+                                    null,
+
+                                cancelada:
+                                    false
+                            });
+
+
+                    if (
+                        error
+                    ) {
+
+                        console.warn(
+                            '⚠️ NF-e emitida, mas registro não foi salvo:',
+                            error
+                        );
+                    }
                 }
             }
 
-        } catch (error) {
+
+        } catch (
+            error
+        ) {
 
             console.warn(
-                '⚠️ NF-e emitida, mas erro ao salvar registro:',
+                '⚠️ Erro salvando NF-e:',
                 error
             );
         }
 
+
         // =====================================================
-        // STATUS vendas_ml
+        // 7. MARCAR TODAS AS ORDERS COMO NF-E EMITIDA
         // =====================================================
+
+        const variantesTodasOrders =
+            [
+                ...new Set(
+
+                    orderIdsDaNFE.flatMap(
+                        id =>
+                            typeof variantesOrderIdML ===
+                                'function'
+                                ? variantesOrderIdML(
+                                    id
+                                )
+                                : [
+                                    id
+                                ]
+                    )
+                )
+            ];
+
+
+        // -----------------------------------------------------
+        // vendas_ml
+        // -----------------------------------------------------
 
         try {
 
-            await window
-                .supabaseClient
-                .from(
-                    'vendas_ml'
-                )
-                .update({
-
-                    nfe_emitida:
-                        true,
-
-                    status_nfe:
-                        'emitida',
-
-                    status_sistema:
-                        'finalizada',
-
-                    updated_at:
-                        new Date()
-                            .toISOString()
-
-                })
-                .eq(
-                    'id_venda_ml',
-                    String(
-                        orderId
+            const {
+                error:
+                    erroCompleto
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_ml'
                     )
+                    .update({
+
+                        nfe_emitida:
+                            true,
+
+                        status_nfe:
+                            'emitida',
+
+                        status_sistema:
+                            'finalizada',
+
+                        updated_at:
+                            new Date()
+                                .toISOString()
+
+                    })
+                    .in(
+                        'id_venda_ml',
+                        variantesTodasOrders
+                    );
+
+
+            // Algumas instalações não possuem todas as colunas
+            if (
+                erroCompleto
+            ) {
+
+                console.warn(
+                    '⚠️ Update completo vendas_ml falhou. Tentando básico:',
+                    erroCompleto
                 );
 
-        } catch (error) {
+
+                const {
+                    error:
+                        erroBasico
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'vendas_ml'
+                        )
+                        .update({
+
+                            nfe_emitida:
+                                true,
+
+                            updated_at:
+                                new Date()
+                                    .toISOString()
+
+                        })
+                        .in(
+                            'id_venda_ml',
+                            variantesTodasOrders
+                        );
+
+
+                if (
+                    erroBasico
+                ) {
+
+                    console.warn(
+                        '⚠️ Update básico vendas_ml também falhou:',
+                        erroBasico
+                    );
+                }
+            }
+
+
+        } catch (
+            error
+        ) {
 
             console.warn(
-                '⚠️ Erro ao atualizar vendas_ml:',
+                '⚠️ Erro atualizando vendas_ml:',
                 error
             );
         }
 
-        // =====================================================
+
+        // -----------------------------------------------------
         // CACHE
-        // SOMENTE MUDA NF-e.
-        // NÃO TOCA EM ESTOQUE.
-        // =====================================================
+        // -----------------------------------------------------
 
         try {
 
-            await window
-                .supabaseClient
-                .from(
-                    'vendas_nfe_cache'
-                )
-                .update({
-
-                    tem_nfe:
-                        true,
-
-                    atualizado_em:
-                        new Date()
-                            .toISOString()
-
-                })
-                .eq(
-                    'id_venda_ml',
-                    String(
-                        orderId
+            const {
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
                     )
+                    .update({
+
+                        tem_nfe:
+                            true,
+
+                        atualizado_em:
+                            new Date()
+                                .toISOString()
+
+                    })
+                    .in(
+                        'id_venda_ml',
+                        orderIdsDaNFE
+                    );
+
+
+            if (
+                error
+            ) {
+
+                console.warn(
+                    '⚠️ Erro marcando cache:',
+                    error
+                );
+            }
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Erro atualizando cache:',
+                error
+            );
+        }
+
+
+        // =====================================================
+        // 8. BAIXA DO ESTOQUE
+        //
+        // UMA NF-E
+        // MAS CADA ORDER PRECISA SER PROCESSADA.
+        // =====================================================
+
+        const resultadosEstoque =
+            [];
+
+
+        for (
+            const idVendaEstoque
+            of orderIdsDaNFE
+        ) {
+
+            try {
+
+                console.log(
+                    `📦 Processando baixa da order ${idVendaEstoque}...`
                 );
 
-                // =====================================================
-// BAIXA AUTOMÁTICA DO ESTOQUE APÓS NF-e
-//
-// REGRA:
-// - se já baixou pelo botão → não faz nada.
-// - se ainda não baixou → baixa agora.
-// - FULL → não mexe.
-// =====================================================
 
-try {
+                const resultadoEstoque =
+                    await garantirBaixaEstoqueVenda(
+                        idVendaEstoque,
+                        'nfe'
+                    );
 
-    const vendaIdEstoque =
-        normalizarOrderIdML(
-            orderId
+
+                resultadosEstoque.push({
+
+                    vendaId:
+                        idVendaEstoque,
+
+                    ...resultadoEstoque
+                });
+
+
+            } catch (
+                error
+            ) {
+
+                console.error(
+                    `❌ Erro na baixa ${idVendaEstoque}:`,
+                    error
+                );
+
+
+                resultadosEstoque.push({
+
+                    vendaId:
+                        idVendaEstoque,
+
+                    success:
+                        false,
+
+                    error:
+                        error.message
+                });
+            }
+        }
+
+
+        console.log(
+            '📦 Resultado das baixas do pacote:',
+            resultadosEstoque
         );
 
-    console.log(
-        `📦 NF-e emitida. Verificando estoque da venda ${vendaIdEstoque}...`
-    );
 
-    const resultadoEstoque =
-        await garantirBaixaEstoqueVenda(
-            vendaIdEstoque,
-            'nfe'
-        );
+        const falhasEstoque =
+            resultadosEstoque.filter(
+                resultado =>
+                    !resultado.success
+            );
 
-    if (
-        resultadoEstoque.success
-    ) {
+
+        const syncPendente =
+            resultadosEstoque.filter(
+                resultado =>
+                    resultado.success &&
+                    resultado.sincronizado ===
+                        false &&
+                    !resultado.full
+            );
+
 
         if (
-            resultadoEstoque.full
+            falhasEstoque.length >
+            0
         ) {
 
-            console.log(
-                'ℹ️ Venda FULL. Nenhuma baixa local necessária.'
+            showToast(
+                `⚠️ NF-e emitida, mas ${falhasEstoque.length} pedido(s) tiveram erro na baixa do estoque.`,
+                'warning'
             );
+
 
         } else if (
-            resultadoEstoque.already
+            syncPendente.length >
+            0
         ) {
 
-            console.log(
-                `✅ Venda ${vendaIdEstoque}: estoque já havia sido baixado anteriormente. NF-e NÃO baixou novamente.`
+            showToast(
+                '⚠️ NF-e emitida e estoque baixado. Existe sincronização com ML pendente.',
+                'warning'
             );
+
 
         } else {
 
             console.log(
-                `✅ Venda ${vendaIdEstoque}: estoque baixado automaticamente após emissão da NF-e.`
-            );
-
-            if (
-                resultadoEstoque.sincronizado
-            ) {
-
-                showToast(
-                    '✅ NF-e emitida e estoque baixado/sincronizado!',
-                    'success'
-                );
-
-            } else {
-
-                showToast(
-                    '⚠️ NF-e emitida e estoque baixado. Sincronização com ML ficou pendente.',
-                    'warning'
-                );
-            }
-        }
-
-    } else {
-
-        // =================================================
-        // IMPORTANTE:
-        //
-        // A NF-e JÁ FOI EMITIDA.
-        // Erro de estoque não pode virar "erro de emissão".
-        // =================================================
-
-        console.warn(
-            `⚠️ NF-e emitida, mas não foi possível baixar estoque:`,
-            resultadoEstoque.error
-        );
-
-        showToast(
-            `⚠️ NF-e emitida, mas o estoque não foi baixado: ${resultadoEstoque.error}`,
-            'warning'
-                    );
-                }
-
-            } catch (
-                estoqueError
-            ) {
-
-                console.error(
-                    '⚠️ NF-e JÁ FOI EMITIDA, mas ocorreu erro na baixa automática:',
-                    estoqueError
-                );
-
-                showToast(
-                    '⚠️ NF-e emitida, mas houve erro ao processar a baixa de estoque.',
-                    'warning'
-                );
-            }
-
-        } catch (error) {
-
-            console.warn(
-                '⚠️ Erro ao atualizar cache:',
-                error
+                '✅ Estoque de todas as orders processado'
             );
         }
+
 
         // =====================================================
-        // XML MERCADO LIVRE
+        // 9. BUSCAR XML
         // =====================================================
 
         try {
 
-            const chave =
-                result.chave_acesso ||
-                result.chave;
-
-            if (chave) {
+            if (
+                chave
+            ) {
 
                 const xmlResponse =
                     await fetch(
                         `${window.API_BASE_URL}/nfe/buscar-xml?chave=${encodeURIComponent(chave)}`
                     );
 
+
                 const xmlData =
                     await xmlResponse
                         .json();
+
 
                 if (
                     xmlData.xml
@@ -10617,6 +15706,7 @@ try {
 
                     let xmlContent =
                         xmlData.xml;
+
 
                     if (
                         !xmlContent.startsWith(
@@ -10628,6 +15718,7 @@ try {
                             '<?xml version="1.0" encoding="UTF-8"?>\n' +
                             xmlContent;
                     }
+
 
                     if (
                         xmlContent.includes(
@@ -10643,21 +15734,31 @@ try {
                                 /<NFe[^>]*>([\s\S]*?)<\/NFe>/
                             );
 
+
                         const protMatch =
                             xmlContent.match(
                                 /<protNFe[^>]*>([\s\S]*?)<\/protNFe>/
                             );
 
-                        if (nfeMatch) {
+
+                        if (
+                            nfeMatch
+                        ) {
 
                             xmlContent =
-                                `<?xml version="1.0" encoding="UTF-8"?>\n` +
-                                `<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">\n` +
-                                `${nfeMatch[0]}\n` +
-                                `${protMatch ? protMatch[0] : ''}\n` +
-                                `</nfeProc>`;
+                                '<?xml version="1.0" encoding="UTF-8"?>\n' +
+                                '<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">\n' +
+                                nfeMatch[0] +
+                                '\n' +
+                                (
+                                    protMatch
+                                        ? protMatch[0]
+                                        : ''
+                                ) +
+                                '\n</nfeProc>';
                         }
                     }
+
 
                     xmlContent =
                         xmlContent
@@ -10670,29 +15771,70 @@ try {
                                 ''
                             );
 
-                    await enviarXMLparaMercadoLivre(
-                        orderId,
-                        xmlContent,
-                        mlToken
-                    );
+
+                    // =============================================
+                    // VINCULAR A MESMA NF-E ÀS ORDERS DO PACOTE
+                    // =============================================
+
+                    for (
+                        const idML
+                        of orderIdsDaNFE
+                    ) {
+
+                        try {
+
+                            console.log(
+                                `📤 Vinculando NF-e à order ${idML}`
+                            );
+
+
+                            const resultadoXML =
+                                await enviarXMLparaMercadoLivre(
+                                    idML,
+                                    xmlContent,
+                                    mlToken
+                                );
+
+
+                            console.log(
+                                `📥 XML order ${idML}:`,
+                                resultadoXML
+                            );
+
+
+                        } catch (
+                            error
+                        ) {
+
+                            console.warn(
+                                `⚠️ XML não vinculado à order ${idML}:`,
+                                error
+                            );
+                        }
+                    }
                 }
             }
 
-        } catch (error) {
+
+        } catch (
+            error
+        ) {
 
             console.warn(
-                '⚠️ NF-e emitida, mas erro no XML ML:',
+                '⚠️ NF-e emitida, mas erro ao processar XML ML:',
                 error
             );
 
+
             showToast(
-                '⚠️ NF-e emitida, mas houve erro ao vincular o XML ao ML.',
+                '⚠️ NF-e emitida, mas houve erro ao vincular o XML ao Mercado Livre.',
                 'warning'
             );
         }
 
+
         // =====================================================
-        // CLIENTE
+        // 10. SALVAR CLIENTE
         // =====================================================
 
         try {
@@ -10708,16 +15850,20 @@ try {
                 cep
             });
 
-        } catch (error) {
+
+        } catch (
+            error
+        ) {
 
             console.warn(
-                '⚠️ NF-e emitida, mas erro ao salvar cliente:',
+                '⚠️ NF-e emitida, mas erro salvando cliente:',
                 error
             );
         }
 
+
         // =====================================================
-        // HISTÓRICO
+        // 11. HISTÓRICO GERAL DA NF-E
         // =====================================================
 
         try {
@@ -10730,13 +15876,16 @@ try {
                 .insert({
 
                     venda_id:
-                        orderId,
+                        orderIdPrincipal,
 
                     tipo:
                         'nfe',
 
                     observacao:
-                        `NF-e emitida - Venda ${orderId} - Cliente: ${nome}`,
+                        orderIdsDaNFE.length >
+                            1
+                            ? `NF-e única emitida para pacote ML - Orders: ${orderIdsDaNFE.join(', ')} - Cliente: ${nome}`
+                            : `NF-e emitida - Venda ${orderIdPrincipal} - Cliente: ${nome}`,
 
                     criado_por:
                         'Sistema NF-e',
@@ -10746,19 +15895,39 @@ try {
                             .toISOString()
                 });
 
-        } catch (error) {
 
+        } catch (
+            error
+        ) {
+
+            // Histórico individual da baixa é feito
+            // pela rotina de estoque.
             console.warn(
-                '⚠️ Erro no histórico:',
+                '⚠️ Histórico geral NF-e:',
                 error
             );
         }
 
-        window
-            .produtosParaEmissao =
+
+        // =====================================================
+        // LIMPAR ESTADO
+        // =====================================================
+
+        window.produtosParaEmissao =
             null;
 
-        // Atualizar apenas a tela/cache
+
+        pendingEmitOrderId =
+            null;
+
+        vendaIdParaEdicao =
+            null;
+
+
+        // =====================================================
+        // 12. RECARREGAR TELA
+        // =====================================================
+
         const data =
             document.getElementById(
                 'filtroDataEnvioNFE'
@@ -10767,6 +15936,7 @@ try {
 
         const vendas =
             await carregarVendasCacheNFE(
+
                 window._nfeFiltroTodas
                     ? null
                     : data
@@ -10777,22 +15947,21 @@ try {
         );
 
         try {
-
             await carregarNFesEmitidas();
-
         } catch {}
-
         showToast(
-            '✅ Processo da NF-e concluído!',
+            orderIdsDaNFE.length >
+                1
+                ? `✅ Processo concluído! 1 NF-e para ${orderIdsDaNFE.length} pedidos.`
+                : '✅ Processo da NF-e concluído!',
             'success'
         );
-
-    } catch (error) {
-
+    } catch (
+        error
+    ) {
         if (
             nfeFoiEmitida
         ) {
-
             console.error(
                 '⚠️ NF-e JÁ FOI EMITIDA. Erro posterior:',
                 error
@@ -10806,18 +15975,15 @@ try {
             fecharModalEdicaoProdutos();
 
         } else {
-
             console.error(
                 '❌ Erro antes da emissão:',
                 error
             );
-
             showToast(
                 `❌ Não foi possível emitir a NF-e: ${error.message}`,
                 'error'
             );
         }
-
     } finally {
 
         if (
@@ -10827,28 +15993,29 @@ try {
                 btn
             )
         ) {
-
             btn.disabled =
                 false;
-
             btn.innerHTML =
                 originalText;
         }
-
         if (
             nfeFoiEmitida
         ) {
 
             fecharModalEdicaoProdutos();
         }
-
-        window
-            ._mlAccessToken =
+        window._mlAccessToken =
             null;
-
-        window
-            ._nfeEmissaoEmAndamento =
+        window._nfeEmissaoEmAndamento =
             null;
+        if (
+            nfeFoiEmitida
+        ) {
+            window._nfeOrderIdsAtuais =
+                null;
+            window._nfeVendaAtual =
+                null;
+        }
     }
 }
 
@@ -12955,96 +18122,2426 @@ window.visualizarCliente = async function(id) {
     }
 };
 
-// ===================== EMISSÃO AVULSA =====================
-async function emitirNFEAvulsa() {
-    const clienteId = document.getElementById('avulsaClienteId').value;
+async function emitirNFEAvulsa(
+    event = null
+) {
+
+    const clienteId =
+        document
+            .getElementById(
+                'avulsaClienteId'
+            )
+            ?.value;
+
+
+    const cfop =
+        document
+            .getElementById(
+                'avulsaCfop'
+            )
+            ?.value;
+
+
+    const naturezaOperacao =
+        document
+            .getElementById(
+                'avulsaNatOp'
+            )
+            ?.value;
+
+
+    const transportadoraId =
+        document
+            .getElementById(
+                'avulsaTransportadoraId'
+            )
+            ?.value ||
+        null;
+
+
+    const modalidadeFrete =
+        document
+            .getElementById(
+                'avulsaModFrete'
+            )
+            ?.value ||
+        '9';
+
+
+    // =====================================================
+    // VALIDAÇÕES
+    // =====================================================
+
     if (!clienteId) {
-        window.showToast('Selecione um cliente', 'warning');
+
+        showToast(
+            'Selecione um cliente',
+            'warning'
+        );
+
+        document
+            .getElementById(
+                'avulsaClienteBusca'
+            )
+            ?.focus();
+
         return;
     }
-    const transportadoraId = document.getElementById('avulsaTransportadoraId').value || null;
-    const cfop = document.getElementById('avulsaCfop').value;
-    const natOp = document.getElementById('avulsaNatOp').value;
-    const modFrete = document.getElementById('avulsaModFrete').value;
+
+
+    if (!cfop) {
+
+        showToast(
+            'Selecione o CFOP',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !naturezaOperacao
+    ) {
+
+        showToast(
+            'Selecione a Natureza da Operação',
+            'warning'
+        );
+
+        return;
+    }
+
+    if (
+    !Array.isArray(
+        window._itensAvulsaNFE
+    ) ||
+    window._itensAvulsaNFE.length === 0
+) {
+
+    showToast(
+        'Adicione pelo menos um produto à NF-e',
+        'warning'
+    );
+
+    document
+        .getElementById(
+            'avulsaProdutoBusca'
+        )
+        ?.focus();
+
+    return;
+}
+
+
+atualizarProdutosJSONAvulsaNFE();
+
+
+    // =====================================================
+    // PRODUTOS
+    // =====================================================
+
     let produtos;
+
+
     try {
-        produtos = JSON.parse(document.getElementById('avulsaProdutos').value);
-        if (!Array.isArray(produtos) || !produtos.length) throw new Error();
-    } catch (e) {
-        window.showToast('Produtos inválidos. Use um array JSON válido.', 'error');
+
+        produtos =
+            JSON.parse(
+                document
+                    .getElementById(
+                        'avulsaProdutos'
+                    )
+                    ?.value ||
+                '[]'
+            );
+
+
+        if (
+            !Array.isArray(
+                produtos
+            ) ||
+            produtos.length ===
+                0
+        ) {
+
+            throw new Error(
+                'Produtos inválidos'
+            );
+        }
+
+
+    } catch (
+        error
+    ) {
+
+        showToast(
+            'Produtos inválidos. Use um array JSON válido.',
+            'error'
+        );
+
         return;
     }
-    const dados = { cliente: { id: clienteId }, produtos, cfop, natureza_operacao: natOp, modalidade_frete: modFrete, transportadora_id: transportadoraId };
-    const btn = event.target;
-    const original = btn.innerHTML;
-    btn.innerHTML = '<span class="spinner"></span> Emitindo...';
-    btn.disabled = true;
+
+
+    // =====================================================
+    // PAYLOAD
+    // =====================================================
+
+    const dados = {
+
+        cliente: {
+
+            id:
+                clienteId
+        },
+
+        produtos,
+
+        cfop,
+
+        natureza_operacao:
+            naturezaOperacao,
+
+        modalidade_frete:
+            modalidadeFrete,
+
+        transportadora_id:
+            transportadoraId
+    };
+
+
+    console.log(
+        '📤 NF-e avulsa:',
+        dados
+    );
+
+
+    // =====================================================
+    // BOTÃO
+    // =====================================================
+
+    const btn =
+        event?.currentTarget ||
+        event?.target ||
+        document.querySelector(
+            '[onclick*="emitirNFEAvulsa"]'
+        );
+
+
+    const original =
+        btn?.innerHTML ||
+        '';
+
+
+    if (
+        btn
+    ) {
+
+        btn.disabled =
+            true;
+
+        btn.innerHTML =
+            '<span class="spinner"></span> Emitindo...';
+    }
+
+
     try {
-        const response = await fetch(`${window.API_BASE_URL}/nfe/emitir-avulsa`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dados)
-        });
-        const result = await response.json();
-        if (result.success) {
-            window.showToast('NF-e avulsa emitida com sucesso!', 'success');
-            limparFormAvulsa();
-            await carregarNFesEmitidas();
-        } else {
-            window.showToast('Erro: ' + result.error, 'error');
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/emitir-avulsa`,
+                {
+                    method:
+                        'POST',
+
+                    headers: {
+                        'Content-Type':
+                            'application/json'
+                    },
+
+                    body:
+                        JSON.stringify(
+                            dados
+                        )
+                }
+            );
+
+
+        let result =
+            {};
+
+
+        try {
+
+            result =
+                await response.json();
+
+        } catch {}
+
+
+        if (
+            !response.ok ||
+            !result.success
+        ) {
+
+            throw new Error(
+                result.error ||
+                result.message ||
+                `Erro HTTP ${response.status}`
+            );
         }
-    } catch (error) {
-        window.showToast('Erro de comunicação', 'error');
+
+
+        showToast(
+            '✅ NF-e avulsa emitida com sucesso!',
+            'success'
+        );
+
+
+        await limparFormAvulsa();
+
+
+        try {
+
+            await carregarNFesEmitidas();
+
+        } catch {}
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro na NF-e avulsa:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao emitir NF-e: ${error.message}`,
+            'error'
+        );
+
+
     } finally {
-        btn.innerHTML = original;
-        btn.disabled = false;
+
+        if (
+            btn
+        ) {
+
+            btn.disabled =
+                false;
+
+            btn.innerHTML =
+                original;
+        }
     }
 }
 
-function limparFormAvulsa() {
-    document.getElementById('avulsaClienteId').value = '';
-    document.getElementById('avulsaTransportadoraId').value = '';
-    document.getElementById('avulsaCfop').value = '5102';
-    document.getElementById('avulsaNatOp').value = 'VENDA';
-    document.getElementById('avulsaModFrete').value = '9';
-    document.getElementById('avulsaProdutos').value = '';
+async function limparFormAvulsa() {
+
+    // =====================================================
+    // CLIENTE
+    // =====================================================
+
+    limparClienteSelecionadoAvulsaNFE();
+
+
+    // =====================================================
+    // PRODUTOS
+    // =====================================================
+
+    window._itensAvulsaNFE =
+        [];
+
+
+    renderizarProdutosAvulsaNFE();
+
+
+    const buscaProduto =
+        document.getElementById(
+            'avulsaProdutoBusca'
+        );
+
+
+    if (
+        buscaProduto
+    ) {
+
+        buscaProduto.value =
+            '';
+    }
+
+
+    const resultadosProduto =
+        document.getElementById(
+            'avulsaProdutoResultados'
+        );
+
+
+    if (
+        resultadosProduto
+    ) {
+
+        resultadosProduto.innerHTML =
+            '';
+
+        resultadosProduto.style.display =
+            'none';
+    }
+
+
+    // =====================================================
+    // TRANSPORTADORA
+    // =====================================================
+
+    const transportadora =
+        document.getElementById(
+            'avulsaTransportadoraId'
+        );
+
+
+    if (
+        transportadora
+    ) {
+
+        transportadora.value =
+            '';
+    }
+
+
+    // =====================================================
+    // FRETE
+    // =====================================================
+
+    const modalidade =
+        document.getElementById(
+            'avulsaModFrete'
+        );
+
+
+    if (
+        modalidade
+    ) {
+
+        modalidade.value =
+            '9';
+    }
+
+
+    // =====================================================
+    // RESTAURAR PADRÕES
+    // =====================================================
+
+    try {
+
+        await Promise.all([
+
+            preencherSelectCFOPAvulsaNFE(),
+
+            preencherSelectNaturezaAvulsaNFE(),
+
+            preencherSelectTransportadoraAvulsaNFE(),
+
+            carregarProdutosAvulsaNFE()
+        ]);
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro restaurando formulário avulso:',
+            error
+        );
+    }
 }
 
 async function sincronizarVendasML() {
-
     await atualizarVendasDataSelecionada();
 }
 
 function inicializarAbaNFE() {
-
     inicializarFiltroDataNFE();
-
     mostrarAbaNFE(
         'vendas'
     );
 }
 
-async function sincronizarProdutosBaixadosNFE(
-    detalhesEstoque
+function garantirEstruturaCadastrosNFE() {
+
+    let aba =
+        document.getElementById(
+            'abaCadastros'
+        );
+
+
+    // =====================================================
+    // CRIAR ABA CASO NÃO EXISTA
+    // =====================================================
+
+    if (!aba) {
+
+        const referencia =
+            document.getElementById(
+                'abaClientes'
+            ) ||
+            document.getElementById(
+                'abaTransportadoras'
+            ) ||
+            document.getElementById(
+                'abaAvulsa'
+            ) ||
+            document.getElementById(
+                'abaVendas'
+            );
+
+
+        if (!referencia) {
+
+            console.error(
+                '❌ Não foi possível localizar a área NF-e para criar Cadastros'
+            );
+
+            return null;
+        }
+
+
+        aba =
+            document.createElement(
+                'div'
+            );
+
+        aba.id =
+            'abaCadastros';
+
+        aba.className =
+            'hidden';
+
+
+        const pai =
+            referencia.parentElement;
+
+
+        pai.appendChild(
+            aba
+        );
+    }
+
+
+    // =====================================================
+    // GARANTIR ESTRUTURA INTERNA
+    //
+    // IMPORTANTE:
+    // não basta #abaCadastros existir.
+    // =====================================================
+
+    if (
+        !aba.querySelector(
+            '#cadastrosNFEConteudo'
+        ) ||
+        !aba.querySelector(
+            '#cadNFEBtnTransportadoras'
+        )
+    ) {
+
+        aba.innerHTML = `
+
+            <div class="card">
+
+                <div
+                    style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        margin-bottom:20px;
+                    "
+                >
+
+                    <div>
+
+                        <h3 style="margin:0;">
+                            <i class="fas fa-cogs"></i>
+                            Cadastros NF-e
+                        </h3>
+
+                        <small style="color:#6c757d;">
+                            Cadastre aqui os dados utilizados
+                            nas emissões de NF-e.
+                        </small>
+
+                    </div>
+
+                </div>
+
+
+                <div
+                    style="
+                        display:grid;
+                        grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
+                        gap:10px;
+                        margin-bottom:22px;
+                    "
+                >
+
+                    <button
+                        type="button"
+                        class="btn btn-outline-primary"
+                        id="cadNFEBtnTransportadoras"
+                        data-tipo="transportadoras"
+                    >
+                        <i class="fas fa-truck"></i>
+                        Transportadoras
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-outline-primary"
+                        id="cadNFEBtnClientes"
+                        data-tipo="clientes"
+                    >
+                        <i class="fas fa-user"></i>
+                        Clientes
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-outline-primary"
+                        id="cadNFEBtnNaturezas"
+                        data-tipo="naturezas"
+                    >
+                        <i class="fas fa-file-alt"></i>
+                        Natureza da Operação
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-outline-primary"
+                        id="cadNFEBtnCFOPs"
+                        data-tipo="cfops"
+                    >
+                        <i class="fas fa-list-ol"></i>
+                        CFOP
+                    </button>
+
+                </div>
+
+
+                <div
+                    id="cadastrosNFEConteudo"
+                ></div>
+
+            </div>
+        `;
+    }
+
+
+    // =====================================================
+    // EVENTOS
+    //
+    // NÃO DEPENDER DE onclick NO HTML.
+    // =====================================================
+
+    const botoes =
+        aba.querySelectorAll(
+            '[data-tipo]'
+        );
+
+
+    botoes.forEach(
+        botao => {
+
+            botao.onclick =
+                async event => {
+
+                    event.preventDefault();
+
+                    const tipo =
+                        botao.dataset.tipo;
+
+
+                    await mostrarCadastroNFE(
+                        tipo
+                    );
+                };
+        }
+    );
+
+
+    return aba;
+}
+
+// =========================================================
+// HELPERS - CADASTROS NF-e
+// =========================================================
+
+function escaparHTMLCadastroNFE(
+    valor
 ) {
+
+    return String(
+        valor ??
+        ''
+    )
+        .replace(
+            /&/g,
+            '&amp;'
+        )
+        .replace(
+            /</g,
+            '&lt;'
+        )
+        .replace(
+            />/g,
+            '&gt;'
+        )
+        .replace(
+            /"/g,
+            '&quot;'
+        )
+        .replace(
+            /'/g,
+            '&#039;'
+        );
+}
+
+
+// =========================================================
+// CADASTRO - TRANSPORTADORAS
+// =========================================================
+
+async function carregarCadastroTransportadorasNFE() {
+
+    const container =
+        document.getElementById(
+            'cadastrosNFEConteudo'
+        );
+
+
+    if (!container) {
+
+        console.error(
+            '❌ cadastrosNFEConteudo não encontrado'
+        );
+
+        return;
+    }
+
+
+    container.innerHTML = `
+
+        <div style="text-align:center; padding:25px;">
+
+            <div class="spinner"></div>
+
+            <div style="margin-top:8px;">
+                Carregando transportadoras...
+            </div>
+
+        </div>
+    `;
+
+
+    try {
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/transportadoras`,
+                {
+                    method:
+                        'GET',
+
+                    headers: {
+                        'Accept':
+                            'application/json'
+                    },
+
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            data.success ===
+            false
+        ) {
+
+            throw new Error(
+                data.error ||
+                'Erro ao carregar transportadoras'
+            );
+        }
+
+
+        const transportadoras =
+            Array.isArray(
+                data.transportadoras
+            )
+                ? data.transportadoras
+                : [];
+
+
+        container.innerHTML = `
+
+            <div>
+
+                <div
+                    style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        gap:10px;
+                        margin-bottom:15px;
+                    "
+                >
+
+                    <div>
+
+                        <h4 style="margin:0;">
+                            <i class="fas fa-truck"></i>
+                            Transportadoras
+                        </h4>
+
+                        <small style="color:#6c757d;">
+                            Cadastre e gerencie as transportadoras utilizadas nas NF-es.
+                        </small>
+
+                    </div>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-success"
+                        onclick="abrirModalTransportadora()"
+                    >
+                        <i class="fas fa-plus"></i>
+                        Nova Transportadora
+                    </button>
+
+                </div>
+
+
+                <div class="table-responsive">
+
+                    <table class="table table-striped">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    Nome
+                                </th>
+
+                                <th>
+                                    CNPJ
+                                </th>
+
+                                <th>
+                                    IE
+                                </th>
+
+                                <th>
+                                    Cidade / UF
+                                </th>
+
+                                <th
+                                    style="width:120px;"
+                                >
+                                    Ações
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            ${
+                                transportadoras.length ===
+                                0
+
+                                    ? `
+
+                                        <tr>
+
+                                            <td
+                                                colspan="5"
+                                                class="text-center"
+                                                style="
+                                                    padding:25px;
+                                                    color:#6c757d;
+                                                "
+                                            >
+                                                Nenhuma transportadora cadastrada.
+                                            </td>
+
+                                        </tr>
+
+                                    `
+
+                                    :
+
+                                    transportadoras
+                                        .map(
+                                            transportadora => `
+
+                                                <tr>
+
+                                                    <td>
+
+                                                        <strong>
+                                                            ${escaparHTMLCadastroNFE(
+                                                                transportadora.nome ||
+                                                                ''
+                                                            )}
+                                                        </strong>
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${escaparHTMLCadastroNFE(
+                                                            transportadora.cnpj ||
+                                                            '-'
+                                                        )}
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${escaparHTMLCadastroNFE(
+                                                            transportadora.ie ||
+                                                            '-'
+                                                        )}
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${escaparHTMLCadastroNFE(
+                                                            transportadora.cidade ||
+                                                            '-'
+                                                        )}
+
+                                                        ${transportadora.uf
+                                                            ? ` / ${escaparHTMLCadastroNFE(
+                                                                transportadora.uf
+                                                            )}`
+                                                            : ''
+                                                        }
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-danger"
+                                                            onclick="excluirTransportadora(${Number(
+                                                                transportadora.id
+                                                            )})"
+                                                            title="Excluir transportadora"
+                                                        >
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+
+                                                    </td>
+
+                                                </tr>
+
+                                            `
+                                        )
+                                        .join(
+                                            ''
+                                        )
+                            }
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+        `;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando cadastro de transportadoras:',
+            error
+        );
+
+
+        container.innerHTML = `
+
+            <div class="alert alert-danger">
+
+                <strong>
+                    Erro ao carregar transportadoras.
+                </strong>
+
+                <br>
+
+                ${escaparHTMLCadastroNFE(
+                    error.message
+                )}
+
+            </div>
+        `;
+    }
+}
+
+
+// =========================================================
+// CADASTRO - CLIENTES
+// =========================================================
+
+async function carregarCadastroClientesNFE() {
+
+    const container =
+        document.getElementById(
+            'cadastrosNFEConteudo'
+        );
+
+
+    if (!container) {
+
+        console.error(
+            '❌ cadastrosNFEConteudo não encontrado'
+        );
+
+        return;
+    }
+
+
+    container.innerHTML = `
+
+        <div style="text-align:center; padding:25px;">
+
+            <div class="spinner"></div>
+
+            <div style="margin-top:8px;">
+                Carregando clientes...
+            </div>
+
+        </div>
+    `;
+
+
+    try {
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/clientes`,
+                {
+                    method:
+                        'GET',
+
+                    headers: {
+                        'Accept':
+                            'application/json'
+                    },
+
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                `HTTP ${response.status}`
+            );
+        }
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            data.success ===
+            false
+        ) {
+
+            throw new Error(
+                data.error ||
+                'Erro ao carregar clientes'
+            );
+        }
+
+
+        const clientes =
+            Array.isArray(
+                data.clientes
+            )
+                ? data.clientes
+                : [];
+
+
+        container.innerHTML = `
+
+            <div>
+
+                <div
+                    style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        gap:10px;
+                        margin-bottom:15px;
+                    "
+                >
+
+                    <div>
+
+                        <h4 style="margin:0;">
+                            <i class="fas fa-users"></i>
+                            Clientes
+                        </h4>
+
+                        <small style="color:#6c757d;">
+                            Cadastre e gerencie os clientes utilizados nas NF-es.
+                        </small>
+
+                    </div>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-success"
+                        onclick="abrirModalCadastroClienteNFE()"
+                    >
+                        <i class="fas fa-user-plus"></i>
+                        Novo Cliente
+                    </button>
+
+                </div>
+
+
+                <div class="table-responsive">
+
+                    <table class="table table-striped">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    Nome
+                                </th>
+
+                                <th>
+                                    CPF / CNPJ
+                                </th>
+
+                                <th>
+                                    Endereço
+                                </th>
+
+                                <th>
+                                    Cidade / UF
+                                </th>
+
+                                <th
+                                    style="width:120px;"
+                                >
+                                    Ações
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            ${
+                                clientes.length ===
+                                0
+
+                                    ? `
+
+                                        <tr>
+
+                                            <td
+                                                colspan="5"
+                                                class="text-center"
+                                                style="
+                                                    padding:25px;
+                                                    color:#6c757d;
+                                                "
+                                            >
+                                                Nenhum cliente cadastrado.
+                                            </td>
+
+                                        </tr>
+
+                                    `
+
+                                    :
+
+                                    clientes
+                                        .map(
+                                            cliente => `
+
+                                                <tr>
+
+                                                    <td>
+
+                                                        <strong>
+                                                            ${escaparHTMLCadastroNFE(
+                                                                cliente.nome ||
+                                                                ''
+                                                            )}
+                                                        </strong>
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${escaparHTMLCadastroNFE(
+                                                            cliente.documento ||
+                                                            '-'
+                                                        )}
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${escaparHTMLCadastroNFE(
+                                                            cliente.logradouro ||
+                                                            ''
+                                                        )}
+
+                                                        ${
+                                                            cliente.numero
+                                                                ? `, ${escaparHTMLCadastroNFE(
+                                                                    cliente.numero
+                                                                )}`
+                                                                : ''
+                                                        }
+
+                                                        ${
+                                                            cliente.bairro
+                                                                ? ` - ${escaparHTMLCadastroNFE(
+                                                                    cliente.bairro
+                                                                )}`
+                                                                : ''
+                                                        }
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${escaparHTMLCadastroNFE(
+                                                            cliente.cidade ||
+                                                            '-'
+                                                        )}
+
+                                                        ${
+                                                            cliente.uf
+                                                                ? ` / ${escaparHTMLCadastroNFE(
+                                                                    cliente.uf
+                                                                )}`
+                                                                : ''
+                                                        }
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-info"
+                                                            onclick="visualizarCliente(${Number(
+                                                                cliente.id
+                                                            )})"
+                                                            title="Visualizar cliente"
+                                                        >
+                                                            <i class="fas fa-eye"></i>
+                                                        </button>
+
+
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-danger"
+                                                            onclick="excluirCliente(${Number(
+                                                                cliente.id
+                                                            )})"
+                                                            title="Excluir cliente"
+                                                        >
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+
+                                                    </td>
+
+                                                </tr>
+
+                                            `
+                                        )
+                                        .join(
+                                            ''
+                                        )
+                            }
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+        `;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando cadastro de clientes:',
+            error
+        );
+
+
+        container.innerHTML = `
+
+            <div class="alert alert-danger">
+
+                <strong>
+                    Erro ao carregar clientes.
+                </strong>
+
+                <br>
+
+                ${escaparHTMLCadastroNFE(
+                    error.message
+                )}
+
+            </div>
+        `;
+    }
+}
+
+
+// =========================================================
+// CADASTRO - CFOP
+// =========================================================
+
+async function carregarCadastroCFOPsNFE() {
+
+    const container =
+        document.getElementById(
+            'cadastrosNFEConteudo'
+        );
+
+
+    if (!container) {
+
+        console.error(
+            '❌ cadastrosNFEConteudo não encontrado'
+        );
+
+        return;
+    }
+
+
+    container.innerHTML = `
+
+        <div style="text-align:center; padding:25px;">
+
+            <div class="spinner"></div>
+
+            <div style="margin-top:8px;">
+                Carregando CFOPs...
+            </div>
+
+        </div>
+    `;
+
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'nfe_cfops'
+                )
+                .select('*')
+                .order(
+                    'codigo',
+                    {
+                        ascending:
+                            true
+                    }
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+        }
+
+
+        const cfops =
+            Array.isArray(
+                data
+            )
+                ? data
+                : [];
+
+
+        container.innerHTML = `
+
+            <div>
+
+                <div
+                    style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        gap:10px;
+                        margin-bottom:15px;
+                    "
+                >
+
+                    <div>
+
+                        <h4 style="margin:0;">
+                            <i class="fas fa-list-ol"></i>
+                            CFOP
+                        </h4>
+
+                        <small style="color:#6c757d;">
+                            CFOPs disponíveis para emissão de NF-e.
+                        </small>
+
+                    </div>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-success"
+                        onclick="abrirModalCFOPNFE()"
+                    >
+                        <i class="fas fa-plus"></i>
+                        Novo CFOP
+                    </button>
+
+                </div>
+
+
+                <div class="table-responsive">
+
+                    <table class="table table-striped">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    Código
+                                </th>
+
+                                <th>
+                                    Descrição
+                                </th>
+
+                                <th>
+                                    Padrão ML
+                                </th>
+
+                                <th>
+                                    Padrão Avulsa
+                                </th>
+
+                                <th>
+                                    Status
+                                </th>
+
+                                <th
+                                    style="width:170px;"
+                                >
+                                    Ações
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            ${
+                                cfops.length ===
+                                0
+
+                                    ? `
+
+                                        <tr>
+
+                                            <td
+                                                colspan="6"
+                                                class="text-center"
+                                                style="
+                                                    padding:25px;
+                                                    color:#6c757d;
+                                                "
+                                            >
+                                                Nenhum CFOP cadastrado.
+                                            </td>
+
+                                        </tr>
+
+                                    `
+
+                                    :
+
+                                    cfops
+                                        .map(
+                                            cfop => `
+
+                                                <tr>
+
+                                                    <td>
+
+                                                        <strong>
+                                                            ${escaparHTMLCadastroNFE(
+                                                                cfop.codigo
+                                                            )}
+                                                        </strong>
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${escaparHTMLCadastroNFE(
+                                                            cfop.descricao ||
+                                                            ''
+                                                        )}
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${
+                                                            cfop.padrao_ml
+
+                                                                ? `
+                                                                    <span class="badge badge-success">
+                                                                        Sim
+                                                                    </span>
+                                                                `
+
+                                                                : '-'
+                                                        }
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${
+                                                            cfop.padrao_avulsa
+
+                                                                ? `
+                                                                    <span class="badge badge-success">
+                                                                        Sim
+                                                                    </span>
+                                                                `
+
+                                                                : '-'
+                                                        }
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${
+                                                            cfop.ativo !==
+                                                            false
+
+                                                                ? `
+                                                                    <span
+                                                                        style="
+                                                                            color:#28a745;
+                                                                            font-weight:600;
+                                                                        "
+                                                                    >
+                                                                        Ativo
+                                                                    </span>
+                                                                `
+
+                                                                : `
+                                                                    <span
+                                                                        style="
+                                                                            color:#dc3545;
+                                                                            font-weight:600;
+                                                                        "
+                                                                    >
+                                                                        Inativo
+                                                                    </span>
+                                                                `
+                                                        }
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-info"
+                                                            onclick="abrirModalCFOPNFE(${Number(
+                                                                cfop.id
+                                                            )})"
+                                                            title="Editar"
+                                                        >
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+
+
+                                                        ${
+                                                            cfop.ativo !==
+                                                            false
+
+                                                                ? `
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-sm btn-warning"
+                                                                        onclick="alterarStatusCFOPNFE(${Number(
+                                                                            cfop.id
+                                                                        )}, false)"
+                                                                        title="Inativar"
+                                                                    >
+                                                                        <i class="fas fa-ban"></i>
+                                                                    </button>
+                                                                `
+
+                                                                : `
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-sm btn-success"
+                                                                        onclick="alterarStatusCFOPNFE(${Number(
+                                                                            cfop.id
+                                                                        )}, true)"
+                                                                        title="Ativar"
+                                                                    >
+                                                                        <i class="fas fa-check"></i>
+                                                                    </button>
+                                                                `
+                                                        }
+
+                                                    </td>
+
+                                                </tr>
+
+                                            `
+                                        )
+                                        .join(
+                                            ''
+                                        )
+                            }
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+        `;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando CFOPs:',
+            error
+        );
+
+
+        container.innerHTML = `
+
+            <div class="alert alert-danger">
+
+                <strong>
+                    Erro ao carregar CFOPs.
+                </strong>
+
+                <br>
+
+                ${escaparHTMLCadastroNFE(
+                    error.message
+                )}
+
+            </div>
+        `;
+    }
+}
+
+
+// =========================================================
+// CADASTRO - NATUREZA DA OPERAÇÃO
+// =========================================================
+
+async function carregarCadastroNaturezasNFE() {
+
+    const container =
+        document.getElementById(
+            'cadastrosNFEConteudo'
+        );
+
+
+    if (!container) {
+
+        console.error(
+            '❌ cadastrosNFEConteudo não encontrado'
+        );
+
+        return;
+    }
+
+
+    container.innerHTML = `
+
+        <div style="text-align:center; padding:25px;">
+
+            <div class="spinner"></div>
+
+            <div style="margin-top:8px;">
+                Carregando Naturezas da Operação...
+            </div>
+
+        </div>
+    `;
+
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'nfe_naturezas_operacao'
+                )
+                .select('*')
+                .order(
+                    'descricao',
+                    {
+                        ascending:
+                            true
+                    }
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+        }
+
+
+        const naturezas =
+            Array.isArray(
+                data
+            )
+                ? data
+                : [];
+
+
+        container.innerHTML = `
+
+            <div>
+
+                <div
+                    style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        gap:10px;
+                        margin-bottom:15px;
+                    "
+                >
+
+                    <div>
+
+                        <h4 style="margin:0;">
+                            <i class="fas fa-file-alt"></i>
+                            Natureza da Operação
+                        </h4>
+
+                        <small style="color:#6c757d;">
+                            Naturezas utilizadas nas emissões de NF-e.
+                        </small>
+
+                    </div>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-success"
+                        onclick="abrirModalNaturezaOperacaoNFE()"
+                    >
+                        <i class="fas fa-plus"></i>
+                        Nova Natureza
+                    </button>
+
+                </div>
+
+
+                <div class="table-responsive">
+
+                    <table class="table table-striped">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    Descrição
+                                </th>
+
+                                <th>
+                                    Padrão ML
+                                </th>
+
+                                <th>
+                                    Padrão Avulsa
+                                </th>
+
+                                <th>
+                                    Status
+                                </th>
+
+                                <th
+                                    style="width:170px;"
+                                >
+                                    Ações
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+
+                            ${
+                                naturezas.length ===
+                                0
+
+                                    ? `
+
+                                        <tr>
+
+                                            <td
+                                                colspan="5"
+                                                class="text-center"
+                                                style="
+                                                    padding:25px;
+                                                    color:#6c757d;
+                                                "
+                                            >
+                                                Nenhuma Natureza da Operação cadastrada.
+                                            </td>
+
+                                        </tr>
+
+                                    `
+
+                                    :
+
+                                    naturezas
+                                        .map(
+                                            natureza => `
+
+                                                <tr>
+
+                                                    <td>
+
+                                                        <strong>
+                                                            ${escaparHTMLCadastroNFE(
+                                                                natureza.descricao ||
+                                                                ''
+                                                            )}
+                                                        </strong>
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${
+                                                            natureza.padrao_ml
+
+                                                                ? `
+                                                                    <span class="badge badge-success">
+                                                                        Sim
+                                                                    </span>
+                                                                `
+
+                                                                : '-'
+                                                        }
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${
+                                                            natureza.padrao_avulsa
+
+                                                                ? `
+                                                                    <span class="badge badge-success">
+                                                                        Sim
+                                                                    </span>
+                                                                `
+
+                                                                : '-'
+                                                        }
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        ${
+                                                            natureza.ativo !==
+                                                            false
+
+                                                                ? `
+                                                                    <span
+                                                                        style="
+                                                                            color:#28a745;
+                                                                            font-weight:600;
+                                                                        "
+                                                                    >
+                                                                        Ativa
+                                                                    </span>
+                                                                `
+
+                                                                : `
+                                                                    <span
+                                                                        style="
+                                                                            color:#dc3545;
+                                                                            font-weight:600;
+                                                                        "
+                                                                    >
+                                                                        Inativa
+                                                                    </span>
+                                                                `
+                                                        }
+
+                                                    </td>
+
+
+                                                    <td>
+
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-info"
+                                                            onclick="abrirModalNaturezaOperacaoNFE(${Number(
+                                                                natureza.id
+                                                            )})"
+                                                            title="Editar"
+                                                        >
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+
+
+                                                        ${
+                                                            natureza.ativo !==
+                                                            false
+
+                                                                ? `
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-sm btn-warning"
+                                                                        onclick="alterarStatusNaturezaNFE(${Number(
+                                                                            natureza.id
+                                                                        )}, false)"
+                                                                        title="Inativar"
+                                                                    >
+                                                                        <i class="fas fa-ban"></i>
+                                                                    </button>
+                                                                `
+
+                                                                : `
+                                                                    <button
+                                                                        type="button"
+                                                                        class="btn btn-sm btn-success"
+                                                                        onclick="alterarStatusNaturezaNFE(${Number(
+                                                                            natureza.id
+                                                                        )}, true)"
+                                                                        title="Ativar"
+                                                                    >
+                                                                        <i class="fas fa-check"></i>
+                                                                    </button>
+                                                                `
+                                                        }
+
+                                                    </td>
+
+                                                </tr>
+
+                                            `
+                                        )
+                                        .join(
+                                            ''
+                                        )
+                            }
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            </div>
+        `;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando Naturezas:',
+            error
+        );
+
+
+        container.innerHTML = `
+
+            <div class="alert alert-danger">
+
+                <strong>
+                    Erro ao carregar Naturezas da Operação.
+                </strong>
+
+                <br>
+
+                ${escaparHTMLCadastroNFE(
+                    error.message
+                )}
+
+            </div>
+        `;
+    }
+}
+
+async function mostrarCadastroNFE(
+    tipo
+) {
+
+    const aba =
+        garantirEstruturaCadastrosNFE();
+
+
+    if (!aba) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // DESTACAR CADASTRO SELECIONADO
+    // =====================================================
+
+    aba
+        .querySelectorAll(
+            '[data-tipo]'
+        )
+        .forEach(
+            botao => {
+
+                if (
+                    botao.dataset.tipo ===
+                    tipo
+                ) {
+
+                    botao.classList.remove(
+                        'btn-outline-primary'
+                    );
+
+                    botao.classList.add(
+                        'btn-primary'
+                    );
+
+                } else {
+
+                    botao.classList.remove(
+                        'btn-primary'
+                    );
+
+                    botao.classList.add(
+                        'btn-outline-primary'
+                    );
+                }
+            }
+        );
+
+
+    try {
+
+        switch (
+            tipo
+        ) {
+
+            case 'transportadoras':
+
+                await carregarCadastroTransportadorasNFE();
+
+                break;
+
+
+            case 'clientes':
+
+                await carregarCadastroClientesNFE();
+
+                break;
+
+
+            case 'naturezas':
+
+                await carregarCadastroNaturezasNFE();
+
+                break;
+
+
+            case 'cfops':
+
+                await carregarCadastroCFOPsNFE();
+
+                break;
+
+
+            default:
+
+                console.warn(
+                    'Cadastro desconhecido:',
+                    tipo
+                );
+        }
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            `❌ Erro abrindo cadastro ${tipo}:`,
+            error
+        );
+
+
+        const container =
+            document.getElementById(
+                'cadastrosNFEConteudo'
+            );
+
+
+        if (container) {
+
+            container.innerHTML = `
+
+                <div class="alert alert-danger">
+
+                    Erro ao abrir cadastro:
+
+                    ${escaparHTMLCadastroNFE(
+                        error.message
+                    )}
+
+                </div>
+            `;
+        }
+    }
+}
+
+function removerBotoesCadastroAbasConsultaNFE() {
+
+    // =====================================================
+    // ABA CLIENTES
+    // =====================================================
+
+    const abaClientes =
+        document.getElementById(
+            'abaClientes'
+        );
+
+
+    if (abaClientes) {
+
+        abaClientes
+            .querySelectorAll(
+                'button, a'
+            )
+            .forEach(
+                elemento => {
+
+                    const onclick =
+                        String(
+                            elemento.getAttribute(
+                                'onclick'
+                            ) ||
+                            ''
+                        )
+                            .toLowerCase();
+
+
+                    const texto =
+                        String(
+                            elemento.textContent ||
+                            ''
+                        )
+                            .trim()
+                            .toLowerCase();
+
+
+                    const ehCadastro =
+                        onclick.includes(
+                            'abrirmodalcadastroclientenfe'
+                        ) ||
+
+                        onclick.includes(
+                            'novocliente'
+                        ) ||
+
+                        texto.includes(
+                            'novo cliente'
+                        ) ||
+
+                        texto.includes(
+                            'cadastrar cliente'
+                        ) ||
+
+                        texto ===
+                            'adicionar cliente';
+
+
+                    if (
+                        ehCadastro
+                    ) {
+
+                        console.log(
+                            '🗑️ Removendo botão de cadastro da aba Clientes'
+                        );
+
+                        elemento.remove();
+                    }
+                }
+            );
+    }
+
+
+    // =====================================================
+    // ABA TRANSPORTADORAS
+    // =====================================================
+
+    const abaTransportadoras =
+        document.getElementById(
+            'abaTransportadoras'
+        );
+
+
+    if (abaTransportadoras) {
+
+        abaTransportadoras
+            .querySelectorAll(
+                'button, a'
+            )
+            .forEach(
+                elemento => {
+
+                    const onclick =
+                        String(
+                            elemento.getAttribute(
+                                'onclick'
+                            ) ||
+                            ''
+                        )
+                            .toLowerCase();
+
+
+                    const texto =
+                        String(
+                            elemento.textContent ||
+                            ''
+                        )
+                            .trim()
+                            .toLowerCase();
+
+
+                    const ehCadastro =
+                        onclick.includes(
+                            'abrirmodaltransportadora'
+                        ) ||
+
+                        texto.includes(
+                            'nova transportadora'
+                        ) ||
+
+                        texto.includes(
+                            'cadastrar transportadora'
+                        ) ||
+
+                        texto ===
+                            'adicionar transportadora';
+
+
+                    if (
+                        ehCadastro
+                    ) {
+
+                        console.log(
+                            '🗑️ Removendo botão de cadastro da aba Transportadoras'
+                        );
+
+                        elemento.remove();
+                    }
+                }
+            );
+    }
+}
+
+async function carregarCadastrosNFE() {
+
+    const aba =
+        garantirEstruturaCadastrosNFE();
+
+
+    if (!aba) {
+
+        return;
+    }
+
+
+    const container =
+        aba.querySelector(
+            '#cadastrosNFEConteudo'
+        );
+
+
+    if (!container) {
+
+        console.error(
+            '❌ cadastrosNFEConteudo não encontrado'
+        );
+
+        return;
+    }
+
+
+    container.innerHTML = `
+
+        <div
+            style="
+                padding:30px;
+                text-align:center;
+                color:#6c757d;
+                border:1px dashed #ced4da;
+                border-radius:8px;
+            "
+        >
+
+            <i
+                class="fas fa-mouse-pointer"
+                style="
+                    font-size:28px;
+                    margin-bottom:10px;
+                "
+            ></i>
+
+            <br>
+
+            Selecione acima o cadastro que deseja gerenciar.
+
+            <div
+                style="
+                    margin-top:8px;
+                    font-size:12px;
+                "
+            >
+                Clientes, Transportadoras, Natureza da Operação e CFOP.
+            </div>
+
+        </div>
+    `;
+}
+
+async function sincronizarProdutosBaixadosNFE(
+        detalhesEstoque
+    ) {
 
     console.log(
         '🔄 [NFE → ESTOQUE] Chamando sincronização existente da Gestão de Estoque...'
     );
-
     if (
         typeof window.sincronizarEstoqueML !==
         'function'
     ) {
-
         console.error(
             '❌ Função window.sincronizarEstoqueML não está disponível'
         );
 
         return false;
     }
-
-
     if (
         !Array.isArray(
             detalhesEstoque
@@ -13052,42 +20549,32 @@ async function sincronizarProdutosBaixadosNFE(
         detalhesEstoque.length ===
             0
     ) {
-
         console.warn(
             '⚠️ Nenhum produto para sincronizar'
         );
-
         return false;
     }
 
-
     let todosSincronizados =
         true;
-
 
     for (
         const item
         of detalhesEstoque
     ) {
-
         if (
             !item ||
             item.encontrado ===
                 false
         ) {
-
             continue;
         }
 
-
         try {
-
             let produto =
                 null;
-
             let erroProduto =
                 null;
-
 
             // =============================================
             // PRIORIDADE: ID DO PRODUTO
@@ -13114,15 +20601,10 @@ async function sincronizarProdutosBaixadosNFE(
                             item.produto_id
                         )
                         .maybeSingle();
-
-
                 produto =
                     data;
-
                 erroProduto =
                     error;
-
-
             // =============================================
             // FALLBACK: SKU
             // =============================================
@@ -13148,16 +20630,12 @@ async function sincronizarProdutosBaixadosNFE(
                             item.sku
                         )
                         .maybeSingle();
-
-
                 produto =
                     data;
 
                 erroProduto =
                     error;
             }
-
-
             if (
                 erroProduto
             ) {
@@ -13172,23 +20650,16 @@ async function sincronizarProdutosBaixadosNFE(
 
                 continue;
             }
-
-
             if (
                 !produto
             ) {
-
                 console.error(
                     `❌ Produto ${item.sku} não encontrado após a baixa`
                 );
-
                 todosSincronizados =
                     false;
-
                 continue;
             }
-
-
             console.log(
                 `🚀 [NFE → ESTOQUE] Sincronizando ${produto.sku} | estoque atual: ${produto.quantidade}`
             );
@@ -13203,14 +20674,10 @@ async function sincronizarProdutosBaixadosNFE(
                     .sincronizarEstoqueML(
                         produto
                     );
-
-
             console.log(
                 `📥 Resultado sincronização ${produto.sku}:`,
                 resultadoSync
             );
-
-
             if (
                 !resultadoSync ||
                 resultadoSync.success ===
@@ -13224,16 +20691,11 @@ async function sincronizarProdutosBaixadosNFE(
                     `⚠️ Sincronização falhou para ${produto.sku}`,
                     resultadoSync
                 );
-
-
             } else {
-
                 console.log(
                     `✅ ${produto.sku} sincronizado pela rotina da Gestão de Estoque`
                 );
             }
-
-
         } catch (
             error
         ) {
@@ -13247,39 +20709,28 @@ async function sincronizarProdutosBaixadosNFE(
             );
         }
     }
-
-
     return todosSincronizados;
 }
 
 async function atualizarListaNFE() {
-
     if (
         window._nfeFiltroTodas
     ) {
-
         const vendas =
             await carregarVendasCacheNFE(
                 null
             );
-
         renderizarVendasNFETabela(
             vendas
         );
-
         return;
     }
-
     await atualizarVendasDataSelecionada();
-
     try {
-
         await carregarNFesEmitidas();
-
     } catch (
         error
     ) {
-
         console.warn(
             '⚠️ Erro carregando NF-es emitidas:',
             error
@@ -13288,6 +20739,4086 @@ async function atualizarListaNFE() {
 }
 
 window.atualizarListaNFE = atualizarListaNFE;
+
+// =========================================================
+// CADASTRO DE CLIENTES
+// =========================================================
+
+function fecharModalCadastroClienteNFE() {
+
+    const modal =
+        document.getElementById(
+            'modalCadastroClienteNFE'
+        );
+
+    if (modal) {
+        modal.remove();
+    }
+}
+
+
+function abrirModalCadastroClienteNFE() {
+
+    fecharModalCadastroClienteNFE();
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+    modal.id =
+        'modalCadastroClienteNFE';
+
+    modal.className =
+        'modal';
+
+    modal.style.cssText = `
+        display:flex;
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.55);
+        z-index:11000;
+        align-items:center;
+        justify-content:center;
+        padding:20px;
+    `;
+
+    modal.innerHTML = `
+
+        <div
+            class="modal-content"
+            style="
+                max-width:760px;
+                width:100%;
+                max-height:90vh;
+                overflow-y:auto;
+                background:#fff;
+                padding:25px;
+                border-radius:10px;
+                box-shadow:0 10px 40px rgba(0,0,0,.25);
+            "
+        >
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    margin-bottom:20px;
+                "
+            >
+
+                <h3 style="margin:0;">
+                    <i class="fas fa-user-plus"></i>
+                    Novo Cliente
+                </h3>
+
+                <button
+                    type="button"
+                    onclick="fecharModalCadastroClienteNFE()"
+                    style="
+                        border:none;
+                        background:none;
+                        font-size:26px;
+                        cursor:pointer;
+                    "
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    Nome / Razão Social *
+                </label>
+
+                <input
+                    type="text"
+                    id="cadClienteNome"
+                    class="form-control"
+                    autocomplete="off"
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    CPF / CNPJ *
+                </label>
+
+                <input
+                    type="text"
+                    id="cadClienteDocumento"
+                    class="form-control"
+                    maxlength="18"
+                    autocomplete="off"
+                    placeholder="Somente números"
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    Logradouro
+                </label>
+
+                <input
+                    type="text"
+                    id="cadClienteLogradouro"
+                    class="form-control"
+                    autocomplete="off"
+                >
+
+            </div>
+
+
+            <div class="row">
+
+                <div class="col-md-3">
+
+                    <div class="form-group">
+
+                        <label>
+                            Número
+                        </label>
+
+                        <input
+                            type="text"
+                            id="cadClienteNumero"
+                            class="form-control"
+                            value="S/N"
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <div class="col-md-9">
+
+                    <div class="form-group">
+
+                        <label>
+                            Bairro
+                        </label>
+
+                        <input
+                            type="text"
+                            id="cadClienteBairro"
+                            class="form-control"
+                        >
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div class="row">
+
+                <div class="col-md-6">
+
+                    <div class="form-group">
+
+                        <label>
+                            Cidade
+                        </label>
+
+                        <input
+                            type="text"
+                            id="cadClienteCidade"
+                            class="form-control"
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <div class="col-md-2">
+
+                    <div class="form-group">
+
+                        <label>
+                            UF
+                        </label>
+
+                        <input
+                            type="text"
+                            id="cadClienteUF"
+                            maxlength="2"
+                            class="form-control"
+                            style="text-transform:uppercase;"
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <div class="col-md-4">
+
+                    <div class="form-group">
+
+                        <label>
+                            CEP
+                        </label>
+
+                        <input
+                            type="text"
+                            id="cadClienteCEP"
+                            maxlength="9"
+                            class="form-control"
+                        >
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <div
+                class="d-flex justify-content-end gap-2"
+                style="margin-top:20px;"
+            >
+
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    onclick="fecharModalCadastroClienteNFE()"
+                >
+                    Cancelar
+                </button>
+
+
+                <button
+                    type="button"
+                    class="btn btn-success"
+                    id="btnSalvarCadastroClienteNFE"
+                    onclick="salvarCadastroClienteNFE()"
+                >
+                    <i class="fas fa-save"></i>
+                    Salvar Cliente
+                </button>
+
+            </div>
+
+        </div>
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    // =====================================================
+    // FORMATOS / LIMITES
+    // =====================================================
+
+    const documento =
+        modal.querySelector(
+            '#cadClienteDocumento'
+        );
+
+    const cep =
+        modal.querySelector(
+            '#cadClienteCEP'
+        );
+
+    const uf =
+        modal.querySelector(
+            '#cadClienteUF'
+        );
+
+
+    documento?.addEventListener(
+        'input',
+        function () {
+
+            this.value =
+                this.value
+                    .replace(/\D/g, '')
+                    .substring(
+                        0,
+                        14
+                    );
+        }
+    );
+
+
+    cep?.addEventListener(
+        'input',
+        function () {
+
+            this.value =
+                this.value
+                    .replace(/\D/g, '')
+                    .substring(
+                        0,
+                        8
+                    );
+        }
+    );
+
+
+    uf?.addEventListener(
+        'input',
+        function () {
+
+            this.value =
+                this.value
+                    .replace(
+                        /[^a-zA-Z]/g,
+                        ''
+                    )
+                    .toUpperCase()
+                    .substring(
+                        0,
+                        2
+                    );
+        }
+    );
+
+
+    // Fechar clicando no fundo
+    modal.addEventListener(
+        'click',
+        event => {
+
+            if (
+                event.target ===
+                modal
+            ) {
+
+                fecharModalCadastroClienteNFE();
+            }
+        }
+    );
+
+
+    setTimeout(
+        () =>
+            documento
+                ?.focus(),
+        50
+    );
+}
+
+
+async function salvarCadastroClienteNFE() {
+
+    const nome =
+        document
+            .getElementById(
+                'cadClienteNome'
+            )
+            ?.value
+            .trim() ||
+        '';
+
+    const documento =
+        String(
+            document
+                .getElementById(
+                    'cadClienteDocumento'
+                )
+                ?.value ||
+            ''
+        )
+            .replace(
+                /\D/g,
+                ''
+            );
+
+    const logradouro =
+        document
+            .getElementById(
+                'cadClienteLogradouro'
+            )
+            ?.value
+            .trim() ||
+        '';
+
+    const numero =
+        document
+            .getElementById(
+                'cadClienteNumero'
+            )
+            ?.value
+            .trim() ||
+        'S/N';
+
+    const bairro =
+        document
+            .getElementById(
+                'cadClienteBairro'
+            )
+            ?.value
+            .trim() ||
+        '';
+
+    const cidade =
+        document
+            .getElementById(
+                'cadClienteCidade'
+            )
+            ?.value
+            .trim() ||
+        '';
+
+    const uf =
+        document
+            .getElementById(
+                'cadClienteUF'
+            )
+            ?.value
+            .trim()
+            .toUpperCase() ||
+        '';
+
+    const cep =
+        String(
+            document
+                .getElementById(
+                    'cadClienteCEP'
+                )
+                ?.value ||
+            ''
+        )
+            .replace(
+                /\D/g,
+                ''
+            );
+
+
+    // =====================================================
+    // VALIDAÇÕES
+    // =====================================================
+
+    if (!nome) {
+
+        showToast(
+            'Informe o nome do cliente',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        documento.length !==
+            11 &&
+        documento.length !==
+            14
+    ) {
+
+        showToast(
+            'CPF/CNPJ deve possuir 11 ou 14 dígitos',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        uf &&
+        uf.length !==
+            2
+    ) {
+
+        showToast(
+            'UF deve possuir 2 letras',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const botao =
+        document.getElementById(
+            'btnSalvarCadastroClienteNFE'
+        );
+
+    const textoOriginal =
+        botao?.innerHTML ||
+        'Salvar';
+
+
+    if (botao) {
+
+        botao.disabled =
+            true;
+
+        botao.innerHTML =
+            '<span class="spinner"></span> Salvando...';
+    }
+
+
+    try {
+
+        // =====================================================
+        // UTILIZA A MESMA FUNÇÃO DO SALVAMENTO AUTOMÁTICO
+        // DA NF-e.
+        //
+        // Ela também impede duplicidade por CPF/CNPJ.
+        // =====================================================
+
+        const resultado =
+            await salvarClienteNoBanco({
+
+                nome,
+
+                documento,
+
+                logradouro,
+
+                endereco:
+                    logradouro,
+
+                numero,
+
+                bairro,
+
+                cidade,
+
+                uf,
+
+                cep
+            });
+
+
+        if (
+            !resultado ||
+            !resultado.success
+        ) {
+
+            throw new Error(
+                resultado?.error ||
+                'Não foi possível cadastrar o cliente'
+            );
+        }
+
+
+        fecharModalCadastroClienteNFE();
+
+
+        // Atualizar gerenciamento
+        try {
+
+            await carregarCadastroClientesNFE();
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Cliente salvo, mas não foi possível atualizar Cadastros:',
+                error
+            );
+        }
+
+
+        // Atualizar aba de consulta
+        try {
+
+            await carregarClientes();
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Cliente salvo, mas não foi possível atualizar lista:',
+                error
+            );
+        }
+
+
+        if (
+            resultado.existente
+        ) {
+
+            showToast(
+                'Cliente já estava cadastrado',
+                'info'
+            );
+
+        } else {
+
+            showToast(
+                'Cliente cadastrado com sucesso!',
+                'success'
+            );
+        }
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro ao salvar cliente:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao cadastrar cliente: ${error.message}`,
+            'error'
+        );
+
+
+    } finally {
+
+        const btnAtual =
+            document.getElementById(
+                'btnSalvarCadastroClienteNFE'
+            );
+
+
+        if (btnAtual) {
+
+            btnAtual.disabled =
+                false;
+
+            btnAtual.innerHTML =
+                textoOriginal;
+        }
+    }
+}
+
+
+// =========================================================
+// CADASTRO DE CFOP
+// =========================================================
+
+function fecharModalCFOPNFE() {
+
+    const modal =
+        document.getElementById(
+            'modalCadastroCFOPNFE'
+        );
+
+    if (modal) {
+
+        modal.remove();
+    }
+}
+
+
+async function abrirModalCFOPNFE(
+    id = null
+) {
+
+    fecharModalCFOPNFE();
+
+
+    if (
+        !window.supabaseClient
+    ) {
+
+        showToast(
+            'Supabase não inicializado',
+            'error'
+        );
+
+        return;
+    }
+
+
+    let registro =
+        null;
+
+
+    // =====================================================
+    // EDIÇÃO
+    // =====================================================
+
+    if (id) {
+
+        try {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_cfops'
+                    )
+                    .select('*')
+                    .eq(
+                        'id',
+                        id
+                    )
+                    .maybeSingle();
+
+
+            if (error) {
+
+                throw error;
+            }
+
+
+            if (!data) {
+
+                throw new Error(
+                    'CFOP não encontrado'
+                );
+            }
+
+
+            registro =
+                data;
+
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                '❌ Erro ao buscar CFOP:',
+                error
+            );
+
+            showToast(
+                `Erro ao buscar CFOP: ${error.message}`,
+                'error'
+            );
+
+            return;
+        }
+    }
+
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalCadastroCFOPNFE';
+
+    modal.className =
+        'modal';
+
+    modal.style.cssText = `
+        display:flex;
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.55);
+        z-index:11000;
+        align-items:center;
+        justify-content:center;
+        padding:20px;
+    `;
+
+
+    modal.innerHTML = `
+
+        <div
+            class="modal-content"
+            style="
+                max-width:620px;
+                width:100%;
+                background:#fff;
+                padding:25px;
+                border-radius:10px;
+                box-shadow:0 10px 40px rgba(0,0,0,.25);
+            "
+        >
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    margin-bottom:20px;
+                "
+            >
+
+                <h3 style="margin:0;">
+                    <i class="fas fa-list-ol"></i>
+                    ${registro ? 'Editar CFOP' : 'Novo CFOP'}
+                </h3>
+
+                <button
+                    type="button"
+                    onclick="fecharModalCFOPNFE()"
+                    style="
+                        border:none;
+                        background:none;
+                        font-size:26px;
+                        cursor:pointer;
+                    "
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <input
+                type="hidden"
+                id="cadCFOPId"
+                value="${registro?.id || ''}"
+            >
+
+
+            <div class="form-group">
+
+                <label>
+                    Código CFOP *
+                </label>
+
+                <input
+                    type="text"
+                    id="cadCFOPCodigo"
+                    class="form-control"
+                    maxlength="4"
+                    inputmode="numeric"
+                    value="${escaparHTMLCadastroNFE(registro?.codigo || '')}"
+                    placeholder="Ex.: 5102"
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    Descrição *
+                </label>
+
+                <input
+                    type="text"
+                    id="cadCFOPDescricao"
+                    class="form-control"
+                    value="${escaparHTMLCadastroNFE(registro?.descricao || '')}"
+                    placeholder="Ex.: Venda de mercadoria adquirida de terceiros"
+                >
+
+            </div>
+
+
+            <hr>
+
+
+            <div class="form-check">
+
+                <input
+                    type="checkbox"
+                    id="cadCFOPAtivo"
+                    class="form-check-input"
+                    ${registro?.ativo !== false ? 'checked' : ''}
+                >
+
+                <label
+                    for="cadCFOPAtivo"
+                    class="form-check-label"
+                >
+                    CFOP ativo
+                </label>
+
+            </div>
+
+
+            <div class="form-check">
+
+                <input
+                    type="checkbox"
+                    id="cadCFOPPadraoML"
+                    class="form-check-input"
+                    ${registro?.padrao_ml ? 'checked' : ''}
+                >
+
+                <label
+                    for="cadCFOPPadraoML"
+                    class="form-check-label"
+                >
+                    Padrão para Mercado Livre
+                </label>
+
+            </div>
+
+
+            <div class="form-check">
+
+                <input
+                    type="checkbox"
+                    id="cadCFOPPadraoAvulsa"
+                    class="form-check-input"
+                    ${registro?.padrao_avulsa ? 'checked' : ''}
+                >
+
+                <label
+                    for="cadCFOPPadraoAvulsa"
+                    class="form-check-label"
+                >
+                    Padrão para NF-e Avulsa
+                </label>
+
+            </div>
+
+
+            <div
+                class="d-flex justify-content-end gap-2"
+                style="margin-top:20px;"
+            >
+
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    onclick="fecharModalCFOPNFE()"
+                >
+                    Cancelar
+                </button>
+
+
+                <button
+                    type="button"
+                    id="btnSalvarCFOPNFE"
+                    class="btn btn-success"
+                    onclick="salvarCFOPNFE()"
+                >
+                    <i class="fas fa-save"></i>
+                    Salvar
+                </button>
+
+            </div>
+
+        </div>
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    const codigo =
+        modal.querySelector(
+            '#cadCFOPCodigo'
+        );
+
+
+    codigo?.addEventListener(
+        'input',
+        function () {
+
+            this.value =
+                this.value
+                    .replace(
+                        /\D/g,
+                        ''
+                    )
+                    .substring(
+                        0,
+                        4
+                    );
+        }
+    );
+
+
+    modal.addEventListener(
+        'click',
+        event => {
+
+            if (
+                event.target ===
+                modal
+            ) {
+
+                fecharModalCFOPNFE();
+            }
+        }
+    );
+
+
+    setTimeout(
+        () =>
+            codigo
+                ?.focus(),
+        50
+    );
+}
+
+
+async function salvarCFOPNFE() {
+
+    if (
+        !window.supabaseClient
+    ) {
+
+        showToast(
+            'Supabase não inicializado',
+            'error'
+        );
+
+        return;
+    }
+
+
+    const idValor =
+        document
+            .getElementById(
+                'cadCFOPId'
+            )
+            ?.value;
+
+
+    const id =
+        idValor
+            ? Number(
+                idValor
+            )
+            : null;
+
+
+    const codigo =
+        String(
+            document
+                .getElementById(
+                    'cadCFOPCodigo'
+                )
+                ?.value ||
+            ''
+        )
+            .replace(
+                /\D/g,
+                ''
+            )
+            .substring(
+                0,
+                4
+            );
+
+
+    const descricao =
+        document
+            .getElementById(
+                'cadCFOPDescricao'
+            )
+            ?.value
+            .trim() ||
+        '';
+
+
+    const ativo =
+        Boolean(
+            document
+                .getElementById(
+                    'cadCFOPAtivo'
+                )
+                ?.checked
+        );
+
+
+    const padraoML =
+        Boolean(
+            document
+                .getElementById(
+                    'cadCFOPPadraoML'
+                )
+                ?.checked
+        );
+
+
+    const padraoAvulsa =
+        Boolean(
+            document
+                .getElementById(
+                    'cadCFOPPadraoAvulsa'
+                )
+                ?.checked
+        );
+
+
+    // =====================================================
+    // VALIDAÇÃO
+    // =====================================================
+
+    if (
+        codigo.length !==
+        4
+    ) {
+
+        showToast(
+            'CFOP deve possuir exatamente 4 dígitos',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (!descricao) {
+
+        showToast(
+            'Informe a descrição do CFOP',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const botao =
+        document.getElementById(
+            'btnSalvarCFOPNFE'
+        );
+
+
+    const textoOriginal =
+        botao?.innerHTML ||
+        'Salvar';
+
+
+    if (botao) {
+
+        botao.disabled =
+            true;
+
+        botao.innerHTML =
+            '<span class="spinner"></span> Salvando...';
+    }
+
+
+    try {
+
+        // =====================================================
+        // PRIMEIRO SALVA O REGISTRO SEM MARCAR PADRÃO
+        //
+        // Isso evita conflito caso exista índice que permita
+        // somente um padrão ML / Avulsa.
+        // =====================================================
+
+        const payloadBase = {
+
+            codigo,
+
+            descricao,
+
+            ativo,
+
+            padrao_ml:
+                false,
+
+            padrao_avulsa:
+                false,
+
+            atualizado_em:
+                new Date()
+                    .toISOString()
+        };
+
+
+        let idSalvo =
+            id;
+
+
+        if (id) {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_cfops'
+                    )
+                    .update(
+                        payloadBase
+                    )
+                    .eq(
+                        'id',
+                        id
+                    )
+                    .select(
+                        'id'
+                    )
+                    .maybeSingle();
+
+
+            if (error) {
+
+                throw error;
+            }
+
+
+            idSalvo =
+                data?.id ||
+                id;
+
+
+        } else {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_cfops'
+                    )
+                    .insert(
+                        payloadBase
+                    )
+                    .select(
+                        'id'
+                    )
+                    .single();
+
+
+            if (error) {
+
+                throw error;
+            }
+
+
+            idSalvo =
+                data.id;
+        }
+
+
+        // =====================================================
+        // DEFINIR PADRÃO MERCADO LIVRE
+        // =====================================================
+
+        if (
+            padraoML
+        ) {
+
+            const {
+                error:
+                    erroLimparML
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_cfops'
+                    )
+                    .update({
+                        padrao_ml:
+                            false
+                    })
+                    .neq(
+                        'id',
+                        idSalvo
+                    );
+
+
+            if (
+                erroLimparML
+            ) {
+
+                throw erroLimparML;
+            }
+
+
+            const {
+                error:
+                    erroPadraoML
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_cfops'
+                    )
+                    .update({
+                        padrao_ml:
+                            true
+                    })
+                    .eq(
+                        'id',
+                        idSalvo
+                    );
+
+
+            if (
+                erroPadraoML
+            ) {
+
+                throw erroPadraoML;
+            }
+        }
+
+
+        // =====================================================
+        // DEFINIR PADRÃO AVULSA
+        // =====================================================
+
+        if (
+            padraoAvulsa
+        ) {
+
+            const {
+                error:
+                    erroLimparAvulsa
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_cfops'
+                    )
+                    .update({
+                        padrao_avulsa:
+                            false
+                    })
+                    .neq(
+                        'id',
+                        idSalvo
+                    );
+
+
+            if (
+                erroLimparAvulsa
+            ) {
+
+                throw erroLimparAvulsa;
+            }
+
+
+            const {
+                error:
+                    erroPadraoAvulsa
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_cfops'
+                    )
+                    .update({
+                        padrao_avulsa:
+                            true
+                    })
+                    .eq(
+                        'id',
+                        idSalvo
+                    );
+
+
+            if (
+                erroPadraoAvulsa
+            ) {
+
+                throw erroPadraoAvulsa;
+            }
+        }
+
+
+        fecharModalCFOPNFE();
+
+
+        await carregarCadastroCFOPsNFE();
+
+
+        showToast(
+            id
+                ? 'CFOP atualizado com sucesso!'
+                : 'CFOP cadastrado com sucesso!',
+            'success'
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro salvando CFOP:',
+            error
+        );
+
+
+        let mensagem =
+            error.message ||
+            'Erro desconhecido';
+
+
+        if (
+            error.code ===
+            '23505'
+        ) {
+
+            mensagem =
+                'Já existe um CFOP com este código.';
+        }
+
+
+        showToast(
+            `Erro ao salvar CFOP: ${mensagem}`,
+            'error'
+        );
+
+
+    } finally {
+
+        const btnAtual =
+            document.getElementById(
+                'btnSalvarCFOPNFE'
+            );
+
+
+        if (btnAtual) {
+
+            btnAtual.disabled =
+                false;
+
+            btnAtual.innerHTML =
+                textoOriginal;
+        }
+    }
+}
+
+
+async function alterarStatusCFOPNFE(
+    id,
+    ativo
+) {
+
+    if (
+        !window.supabaseClient
+    ) {
+
+        showToast(
+            'Supabase não inicializado',
+            'error'
+        );
+
+        return;
+    }
+
+
+    try {
+
+        const payload = {
+
+            ativo:
+                Boolean(
+                    ativo
+                ),
+
+            atualizado_em:
+                new Date()
+                    .toISOString()
+        };
+
+
+        // Se estiver inativando,
+        // também deixa de ser padrão.
+        if (
+            !ativo
+        ) {
+
+            payload.padrao_ml =
+                false;
+
+            payload.padrao_avulsa =
+                false;
+        }
+
+
+        const {
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'nfe_cfops'
+                )
+                .update(
+                    payload
+                )
+                .eq(
+                    'id',
+                    id
+                );
+
+
+        if (error) {
+
+            throw error;
+        }
+
+
+        await carregarCadastroCFOPsNFE();
+
+
+        showToast(
+            ativo
+                ? 'CFOP ativado'
+                : 'CFOP inativado',
+            'success'
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro alterando CFOP:',
+            error
+        );
+
+
+        showToast(
+            `Erro: ${error.message}`,
+            'error'
+        );
+    }
+}
+
+
+// =========================================================
+// NATUREZA DA OPERAÇÃO
+// =========================================================
+
+function fecharModalNaturezaOperacaoNFE() {
+
+    const modal =
+        document.getElementById(
+            'modalNaturezaOperacaoNFE'
+        );
+
+    if (modal) {
+
+        modal.remove();
+    }
+}
+
+
+async function abrirModalNaturezaOperacaoNFE(
+    id = null
+) {
+
+    fecharModalNaturezaOperacaoNFE();
+
+
+    if (
+        !window.supabaseClient
+    ) {
+
+        showToast(
+            'Supabase não inicializado',
+            'error'
+        );
+
+        return;
+    }
+
+
+    let registro =
+        null;
+
+
+    // =====================================================
+    // EDIÇÃO
+    // =====================================================
+
+    if (id) {
+
+        try {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_naturezas_operacao'
+                    )
+                    .select('*')
+                    .eq(
+                        'id',
+                        id
+                    )
+                    .maybeSingle();
+
+
+            if (error) {
+
+                throw error;
+            }
+
+
+            if (!data) {
+
+                throw new Error(
+                    'Natureza da Operação não encontrada'
+                );
+            }
+
+
+            registro =
+                data;
+
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                '❌ Erro buscando Natureza:',
+                error
+            );
+
+
+            showToast(
+                `Erro ao buscar Natureza: ${error.message}`,
+                'error'
+            );
+
+
+            return;
+        }
+    }
+
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalNaturezaOperacaoNFE';
+
+    modal.className =
+        'modal';
+
+    modal.style.cssText = `
+        display:flex;
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.55);
+        z-index:11000;
+        align-items:center;
+        justify-content:center;
+        padding:20px;
+    `;
+
+
+    modal.innerHTML = `
+
+        <div
+            class="modal-content"
+            style="
+                max-width:620px;
+                width:100%;
+                background:#fff;
+                padding:25px;
+                border-radius:10px;
+                box-shadow:0 10px 40px rgba(0,0,0,.25);
+            "
+        >
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    margin-bottom:20px;
+                "
+            >
+
+                <h3 style="margin:0;">
+                    <i class="fas fa-file-alt"></i>
+
+                    ${
+                        registro
+                            ? 'Editar Natureza da Operação'
+                            : 'Nova Natureza da Operação'
+                    }
+
+                </h3>
+
+
+                <button
+                    type="button"
+                    onclick="fecharModalNaturezaOperacaoNFE()"
+                    style="
+                        border:none;
+                        background:none;
+                        font-size:26px;
+                        cursor:pointer;
+                    "
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <input
+                type="hidden"
+                id="cadNaturezaId"
+                value="${registro?.id || ''}"
+            >
+
+
+            <div class="form-group">
+
+                <label>
+                    Descrição *
+                </label>
+
+                <input
+                    type="text"
+                    id="cadNaturezaDescricao"
+                    class="form-control"
+                    value="${escaparHTMLCadastroNFE(registro?.descricao || '')}"
+                    placeholder="Ex.: VENDA"
+                >
+
+            </div>
+
+
+            <hr>
+
+
+            <div class="form-check">
+
+                <input
+                    type="checkbox"
+                    id="cadNaturezaAtivo"
+                    class="form-check-input"
+                    ${registro?.ativo !== false ? 'checked' : ''}
+                >
+
+                <label
+                    class="form-check-label"
+                    for="cadNaturezaAtivo"
+                >
+                    Natureza ativa
+                </label>
+
+            </div>
+
+
+            <div class="form-check">
+
+                <input
+                    type="checkbox"
+                    id="cadNaturezaPadraoML"
+                    class="form-check-input"
+                    ${registro?.padrao_ml ? 'checked' : ''}
+                >
+
+                <label
+                    class="form-check-label"
+                    for="cadNaturezaPadraoML"
+                >
+                    Padrão para Mercado Livre
+                </label>
+
+            </div>
+
+
+            <div class="form-check">
+
+                <input
+                    type="checkbox"
+                    id="cadNaturezaPadraoAvulsa"
+                    class="form-check-input"
+                    ${registro?.padrao_avulsa ? 'checked' : ''}
+                >
+
+                <label
+                    class="form-check-label"
+                    for="cadNaturezaPadraoAvulsa"
+                >
+                    Padrão para NF-e Avulsa
+                </label>
+
+            </div>
+
+
+            <div
+                class="d-flex justify-content-end gap-2"
+                style="margin-top:20px;"
+            >
+
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    onclick="fecharModalNaturezaOperacaoNFE()"
+                >
+                    Cancelar
+                </button>
+
+
+                <button
+                    type="button"
+                    id="btnSalvarNaturezaNFE"
+                    class="btn btn-success"
+                    onclick="salvarNaturezaOperacaoNFE()"
+                >
+                    <i class="fas fa-save"></i>
+                    Salvar
+                </button>
+
+            </div>
+
+        </div>
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    modal.addEventListener(
+        'click',
+        event => {
+
+            if (
+                event.target ===
+                modal
+            ) {
+
+                fecharModalNaturezaOperacaoNFE();
+            }
+        }
+    );
+
+
+    setTimeout(
+        () =>
+            modal
+                .querySelector(
+                    '#cadNaturezaDescricao'
+                )
+                ?.focus(),
+        50
+    );
+}
+
+
+async function salvarNaturezaOperacaoNFE() {
+
+    if (
+        !window.supabaseClient
+    ) {
+
+        showToast(
+            'Supabase não inicializado',
+            'error'
+        );
+
+        return;
+    }
+
+
+    const idValor =
+        document
+            .getElementById(
+                'cadNaturezaId'
+            )
+            ?.value;
+
+
+    const id =
+        idValor
+            ? Number(
+                idValor
+            )
+            : null;
+
+
+    const descricao =
+        document
+            .getElementById(
+                'cadNaturezaDescricao'
+            )
+            ?.value
+            .trim() ||
+        '';
+
+
+    const ativo =
+        Boolean(
+            document
+                .getElementById(
+                    'cadNaturezaAtivo'
+                )
+                ?.checked
+        );
+
+
+    const padraoML =
+        Boolean(
+            document
+                .getElementById(
+                    'cadNaturezaPadraoML'
+                )
+                ?.checked
+        );
+
+
+    const padraoAvulsa =
+        Boolean(
+            document
+                .getElementById(
+                    'cadNaturezaPadraoAvulsa'
+                )
+                ?.checked
+        );
+
+
+    if (!descricao) {
+
+        showToast(
+            'Informe a Natureza da Operação',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const botao =
+        document.getElementById(
+            'btnSalvarNaturezaNFE'
+        );
+
+
+    const textoOriginal =
+        botao?.innerHTML ||
+        'Salvar';
+
+
+    if (botao) {
+
+        botao.disabled =
+            true;
+
+        botao.innerHTML =
+            '<span class="spinner"></span> Salvando...';
+    }
+
+
+    try {
+
+        // =====================================================
+        // SALVAR SEM PADRÃO PRIMEIRO
+        // =====================================================
+
+        const payloadBase = {
+
+            descricao,
+
+            ativo,
+
+            padrao_ml:
+                false,
+
+            padrao_avulsa:
+                false,
+
+            atualizado_em:
+                new Date()
+                    .toISOString()
+        };
+
+
+        let idSalvo =
+            id;
+
+
+        if (id) {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_naturezas_operacao'
+                    )
+                    .update(
+                        payloadBase
+                    )
+                    .eq(
+                        'id',
+                        id
+                    )
+                    .select(
+                        'id'
+                    )
+                    .maybeSingle();
+
+
+            if (error) {
+
+                throw error;
+            }
+
+
+            idSalvo =
+                data?.id ||
+                id;
+
+
+        } else {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_naturezas_operacao'
+                    )
+                    .insert(
+                        payloadBase
+                    )
+                    .select(
+                        'id'
+                    )
+                    .single();
+
+
+            if (error) {
+
+                throw error;
+            }
+
+
+            idSalvo =
+                data.id;
+        }
+
+
+        // =====================================================
+        // PADRÃO ML
+        // =====================================================
+
+        if (
+            padraoML
+        ) {
+
+            const {
+                error:
+                    erroLimparML
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_naturezas_operacao'
+                    )
+                    .update({
+                        padrao_ml:
+                            false
+                    })
+                    .neq(
+                        'id',
+                        idSalvo
+                    );
+
+
+            if (
+                erroLimparML
+            ) {
+
+                throw erroLimparML;
+            }
+
+
+            const {
+                error:
+                    erroPadraoML
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_naturezas_operacao'
+                    )
+                    .update({
+                        padrao_ml:
+                            true
+                    })
+                    .eq(
+                        'id',
+                        idSalvo
+                    );
+
+
+            if (
+                erroPadraoML
+            ) {
+
+                throw erroPadraoML;
+            }
+        }
+
+
+        // =====================================================
+        // PADRÃO AVULSA
+        // =====================================================
+
+        if (
+            padraoAvulsa
+        ) {
+
+            const {
+                error:
+                    erroLimparAvulsa
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_naturezas_operacao'
+                    )
+                    .update({
+                        padrao_avulsa:
+                            false
+                    })
+                    .neq(
+                        'id',
+                        idSalvo
+                    );
+
+
+            if (
+                erroLimparAvulsa
+            ) {
+
+                throw erroLimparAvulsa;
+            }
+
+
+            const {
+                error:
+                    erroPadraoAvulsa
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'nfe_naturezas_operacao'
+                    )
+                    .update({
+                        padrao_avulsa:
+                            true
+                    })
+                    .eq(
+                        'id',
+                        idSalvo
+                    );
+
+
+            if (
+                erroPadraoAvulsa
+            ) {
+
+                throw erroPadraoAvulsa;
+            }
+        }
+
+
+        fecharModalNaturezaOperacaoNFE();
+
+
+        await carregarCadastroNaturezasNFE();
+
+
+        showToast(
+            id
+                ? 'Natureza da Operação atualizada!'
+                : 'Natureza da Operação cadastrada!',
+            'success'
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro salvando Natureza da Operação:',
+            error
+        );
+
+
+        let mensagem =
+            error.message ||
+            'Erro desconhecido';
+
+
+        if (
+            error.code ===
+            '23505'
+        ) {
+
+            mensagem =
+                'Esta Natureza da Operação já está cadastrada.';
+        }
+
+
+        showToast(
+            `Erro ao salvar Natureza: ${mensagem}`,
+            'error'
+        );
+
+
+    } finally {
+
+        const btnAtual =
+            document.getElementById(
+                'btnSalvarNaturezaNFE'
+            );
+
+
+        if (btnAtual) {
+
+            btnAtual.disabled =
+                false;
+
+            btnAtual.innerHTML =
+                textoOriginal;
+        }
+    }
+}
+
+
+async function alterarStatusNaturezaNFE(
+    id,
+    ativo
+) {
+
+    if (
+        !window.supabaseClient
+    ) {
+
+        showToast(
+            'Supabase não inicializado',
+            'error'
+        );
+
+        return;
+    }
+
+
+    try {
+
+        const payload = {
+
+            ativo:
+                Boolean(
+                    ativo
+                ),
+
+            atualizado_em:
+                new Date()
+                    .toISOString()
+        };
+
+
+        // =====================================================
+        // SE INATIVAR, NÃO PODE CONTINUAR SENDO PADRÃO
+        // =====================================================
+
+        if (
+            !ativo
+        ) {
+
+            payload.padrao_ml =
+                false;
+
+            payload.padrao_avulsa =
+                false;
+        }
+
+
+        const {
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'nfe_naturezas_operacao'
+                )
+                .update(
+                    payload
+                )
+                .eq(
+                    'id',
+                    id
+                );
+
+
+        if (error) {
+            throw error;
+        }
+
+        await carregarCadastroNaturezasNFE();
+
+        showToast(
+            ativo
+                ? 'Natureza da Operação ativada'
+                : 'Natureza da Operação inativada',
+            'success'
+        );
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro alterando Natureza:',
+            error
+        );
+
+        showToast(
+            `Erro: ${error.message}`,
+            'error'
+        );
+    }
+}
+
+// =========================================================
+// PRODUTOS - NF-e AVULSA
+// =========================================================
+
+window._produtosEstoqueAvulsaNFE =
+    window._produtosEstoqueAvulsaNFE ||
+    [];
+
+window._itensAvulsaNFE =
+    window._itensAvulsaNFE ||
+    [];
+
+
+// =========================================================
+// GARANTIR ESTRUTURA VISUAL DOS PRODUTOS
+// =========================================================
+
+function garantirEstruturaProdutosAvulsaNFE() {
+
+    const aba =
+        document.getElementById(
+            'abaAvulsa'
+        );
+
+
+    if (!aba) {
+
+        console.error(
+            '❌ abaAvulsa não encontrada'
+        );
+
+        return false;
+    }
+
+
+    // =====================================================
+    // SE JÁ EXISTE NOSSA ESTRUTURA, NÃO CRIAR NOVAMENTE
+    // =====================================================
+
+    if (
+        aba.querySelector(
+            '#avulsaProdutoBusca'
+        )
+    ) {
+
+        return true;
+    }
+
+
+    // =====================================================
+    // LOCALIZAR CAMPO ANTIGO avulsaProdutos
+    // =====================================================
+
+    const campoAntigo =
+        aba.querySelector(
+            '#avulsaProdutos'
+        );
+
+
+    const bloco =
+        document.createElement(
+            'div'
+        );
+
+
+    bloco.id =
+        'blocoProdutosAvulsaNFE';
+
+
+    bloco.style.cssText = `
+        margin-top:20px;
+        margin-bottom:20px;
+    `;
+
+
+    bloco.innerHTML = `
+
+        <h4
+            style="
+                margin-bottom:12px;
+            "
+        >
+            <i class="fas fa-box"></i>
+            Produtos
+        </h4>
+
+
+        <!-- ===============================================
+             PESQUISA
+        ================================================ -->
+
+        <div
+            style="
+                position:relative;
+                margin-bottom:15px;
+            "
+        >
+
+            <label
+                style="
+                    display:block;
+                    font-weight:600;
+                    margin-bottom:5px;
+                "
+            >
+                Pesquisar produto
+            </label>
+
+
+            <input
+                type="text"
+                id="avulsaProdutoBusca"
+                class="form-control"
+                placeholder="Digite o nome ou SKU do produto..."
+                autocomplete="off"
+            >
+
+
+            <div
+                id="avulsaProdutoResultados"
+                style="
+                    display:none;
+                    position:absolute;
+                    top:100%;
+                    left:0;
+                    right:0;
+                    z-index:12000;
+                    background:#fff;
+                    border:1px solid #ced4da;
+                    border-top:none;
+                    max-height:320px;
+                    overflow-y:auto;
+                    box-shadow:0 5px 15px rgba(0,0,0,.15);
+                    border-radius:0 0 6px 6px;
+                "
+            ></div>
+
+        </div>
+
+
+        <!-- ===============================================
+             PRODUTOS SELECIONADOS
+        ================================================ -->
+
+        <div
+            id="avulsaProdutosSelecionadosWrapper"
+        >
+
+            <div
+                class="table-responsive"
+            >
+
+                <table
+                    class="table table-striped"
+                    style="
+                        min-width:900px;
+                    "
+                >
+
+                    <thead>
+
+                        <tr>
+
+                            <th>
+                                Produto
+                            </th>
+
+                            <th>
+                                SKU
+                            </th>
+
+                            <th
+                                style="width:110px;"
+                            >
+                                Qtd
+                            </th>
+
+                            <th
+                                style="width:150px;"
+                            >
+                                Valor unit.
+                            </th>
+
+                            <th
+                                style="width:130px;"
+                            >
+                                NCM
+                            </th>
+
+                            <th
+                                style="width:130px;"
+                            >
+                                Subtotal
+                            </th>
+
+                            <th
+                                style="width:70px;"
+                            >
+                            </th>
+
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody
+                        id="avulsaProdutosSelecionadosBody"
+                    >
+
+                        <tr
+                            id="avulsaSemProdutosRow"
+                        >
+
+                            <td
+                                colspan="7"
+                                class="text-center"
+                                style="
+                                    padding:25px;
+                                    color:#6c757d;
+                                "
+                            >
+                                Nenhum produto adicionado.
+                            </td>
+
+                        </tr>
+
+                    </tbody>
+
+
+                    <tfoot>
+
+                        <tr
+                            style="
+                                background:#f8f9fa;
+                                font-weight:bold;
+                            "
+                        >
+
+                            <td
+                                colspan="5"
+                                style="text-align:right;"
+                            >
+                                Total:
+                            </td>
+
+                            <td
+                                id="avulsaTotalProdutos"
+                            >
+                                R$ 0,00
+                            </td>
+
+                            <td>
+                            </td>
+
+                        </tr>
+
+                    </tfoot>
+
+                </table>
+
+            </div>
+
+        </div>
+
+
+        <!-- ===============================================
+             CAMPO QUE emitirNFEAvulsa() CONTINUA LENDO
+        ================================================ -->
+
+        <input
+            type="hidden"
+            id="avulsaProdutos"
+            value="[]"
+        >
+    `;
+
+
+    // =====================================================
+    // SUBSTITUIR CAMPO ANTIGO
+    // =====================================================
+
+    if (
+        campoAntigo
+    ) {
+
+        const grupoAntigo =
+            campoAntigo.closest(
+                '.form-group'
+            );
+
+
+        if (
+            grupoAntigo &&
+            grupoAntigo.parentElement
+        ) {
+
+            grupoAntigo.replaceWith(
+                bloco
+            );
+
+        } else {
+
+            campoAntigo.replaceWith(
+                bloco
+            );
+        }
+
+
+    } else {
+
+        // =================================================
+        // SE NÃO EXISTIR CAMPO ANTIGO, INSERIR ANTES DO BOTÃO
+        // =================================================
+
+        const botaoEmitir =
+            aba.querySelector(
+                '[onclick*="emitirNFEAvulsa"]'
+            );
+
+
+        if (
+            botaoEmitir
+        ) {
+
+            const containerBotao =
+                botaoEmitir.parentElement;
+
+
+            containerBotao.parentElement
+                .insertBefore(
+                    bloco,
+                    containerBotao
+                );
+
+
+        } else {
+
+            aba.appendChild(
+                bloco
+            );
+        }
+    }
+
+
+    // =====================================================
+    // EVENTO DA BUSCA
+    // =====================================================
+
+    const busca =
+        document.getElementById(
+            'avulsaProdutoBusca'
+        );
+
+
+    if (
+        busca
+    ) {
+
+        busca.oninput =
+            function () {
+
+                pesquisarProdutoAvulsaNFE(
+                    this.value
+                );
+            };
+
+
+        busca.onfocus =
+            function () {
+
+                if (
+                    this.value.trim()
+                ) {
+
+                    pesquisarProdutoAvulsaNFE(
+                        this.value
+                    );
+                }
+            };
+    }
+
+
+    console.log(
+        '✅ Estrutura dos produtos da NF-e avulsa criada'
+    );
+
+
+    return true;
+}
+
+
+// =========================================================
+// CARREGAR PRODUTOS DIRETAMENTE DE produtos_estoque
+// =========================================================
+
+async function carregarProdutosAvulsaNFE() {
+
+    const campoBusca =
+        document.getElementById(
+            'avulsaProdutoBusca'
+        );
+
+
+    if (!campoBusca) {
+
+        console.error(
+            '❌ avulsaProdutoBusca não encontrado'
+        );
+
+        return false;
+    }
+
+
+    if (
+        !window.supabaseClient
+    ) {
+
+        console.error(
+            '❌ Supabase não inicializado'
+        );
+
+        return false;
+    }
+
+
+    try {
+
+        campoBusca.disabled =
+            true;
+
+
+        campoBusca.placeholder =
+            'Carregando produtos do estoque...';
+
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'produtos_estoque'
+                )
+                .select(`
+                    id,
+                    nome,
+                    sku,
+                    quantidade,
+                    preco,
+                    categoria
+                `)
+                .order(
+                    'nome',
+                    {
+                        ascending:
+                            true
+                    }
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+        }
+
+
+        window._produtosEstoqueAvulsaNFE =
+            Array.isArray(
+                data
+            )
+                ? data
+                : [];
+
+
+        campoBusca.disabled =
+            false;
+
+
+        campoBusca.placeholder =
+            'Digite o nome ou SKU do produto...';
+
+
+        console.log(
+            `✅ ${window._produtosEstoqueAvulsaNFE.length} produto(s) disponíveis na emissão avulsa`
+        );
+
+
+        return true;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando produtos para NF-e avulsa:',
+            error
+        );
+
+
+        campoBusca.disabled =
+            false;
+
+
+        campoBusca.placeholder =
+            'Erro ao carregar produtos';
+
+
+        return false;
+    }
+}
+
+
+// =========================================================
+// PESQUISAR PRODUTO
+// =========================================================
+
+function pesquisarProdutoAvulsaNFE(
+    termo
+) {
+
+    const resultados =
+        document.getElementById(
+            'avulsaProdutoResultados'
+        );
+
+
+    if (!resultados) {
+
+        return;
+    }
+
+
+    const pesquisa =
+        String(
+            termo ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    if (
+        pesquisa.length ===
+        0
+    ) {
+
+        resultados.innerHTML =
+            '';
+
+        resultados.style.display =
+            'none';
+
+        return;
+    }
+
+
+    const produtos =
+        Array.isArray(
+            window._produtosEstoqueAvulsaNFE
+        )
+            ? window._produtosEstoqueAvulsaNFE
+            : [];
+
+
+    const encontrados =
+        produtos
+            .filter(
+                produto => {
+
+                    const nome =
+                        String(
+                            produto.nome ||
+                            ''
+                        )
+                            .toLowerCase();
+
+
+                    const sku =
+                        String(
+                            produto.sku ||
+                            ''
+                        )
+                            .toLowerCase();
+
+
+                    const categoria =
+                        String(
+                            produto.categoria ||
+                            ''
+                        )
+                            .toLowerCase();
+
+
+                    return (
+
+                        nome.includes(
+                            pesquisa
+                        ) ||
+
+                        sku.includes(
+                            pesquisa
+                        ) ||
+
+                        categoria.includes(
+                            pesquisa
+                        )
+                    );
+                }
+            )
+            .slice(
+                0,
+                20
+            );
+
+
+    if (
+        encontrados.length ===
+        0
+    ) {
+
+        resultados.innerHTML = `
+
+            <div
+                style="
+                    padding:12px;
+                    text-align:center;
+                    color:#6c757d;
+                "
+            >
+                Nenhum produto encontrado.
+            </div>
+        `;
+
+
+        resultados.style.display =
+            'block';
+
+
+        return;
+    }
+
+
+    resultados.innerHTML =
+        encontrados
+            .map(
+                produto => {
+
+                    const quantidade =
+                        Number(
+                            produto.quantidade ||
+                            0
+                        );
+
+
+                    const preco =
+                        Number(
+                            produto.preco ||
+                            0
+                        );
+
+
+                    const corEstoque =
+                        quantidade >
+                        0
+                            ? '#28a745'
+                            : '#dc3545';
+
+
+                    return `
+
+                        <div
+                            style="
+                                padding:10px 12px;
+                                cursor:pointer;
+                                border-bottom:1px solid #eee;
+                            "
+                            onmouseover="
+                                this.style.background='#f5f7f9'
+                            "
+                            onmouseout="
+                                this.style.background='#fff'
+                            "
+                            onclick="
+                                selecionarProdutoAvulsaNFE(
+                                    ${Number(produto.id)}
+                                )
+                            "
+                        >
+
+                            <div
+                                style="
+                                    display:flex;
+                                    justify-content:space-between;
+                                    gap:15px;
+                                "
+                            >
+
+                                <div>
+
+                                    <div
+                                        style="
+                                            font-weight:600;
+                                        "
+                                    >
+                                        ${escaparHTMLAvulsaNFE(
+                                            produto.nome ||
+                                            'Produto'
+                                        )}
+                                    </div>
+
+
+                                    <div
+                                        style="
+                                            font-size:12px;
+                                            color:#6c757d;
+                                            margin-top:2px;
+                                        "
+                                    >
+
+                                        SKU:
+                                        <strong>
+                                            ${escaparHTMLAvulsaNFE(
+                                                produto.sku ||
+                                                '-'
+                                            )}
+                                        </strong>
+
+                                        ${
+                                            produto.categoria
+                                                ? ` • ${escaparHTMLAvulsaNFE(
+                                                    produto.categoria
+                                                )}`
+                                                : ''
+                                        }
+
+                                    </div>
+
+                                </div>
+
+
+                                <div
+                                    style="
+                                        text-align:right;
+                                        white-space:nowrap;
+                                    "
+                                >
+
+                                    <div
+                                        style="
+                                            font-weight:600;
+                                        "
+                                    >
+                                        R$
+                                        ${preco.toFixed(2)}
+                                    </div>
+
+
+                                    <div
+                                        style="
+                                            font-size:11px;
+                                            color:${corEstoque};
+                                        "
+                                    >
+                                        Estoque:
+                                        ${quantidade}
+                                    </div>
+
+                                </div>
+
+                            </div>
+
+                        </div>
+                    `;
+                }
+            )
+            .join(
+                ''
+            );
+
+
+    resultados.style.display =
+        'block';
+}
+
+
+// =========================================================
+// SELECIONAR PRODUTO
+// =========================================================
+
+async function selecionarProdutoAvulsaNFE(
+    produtoId
+) {
+
+    const produto =
+        window
+            ._produtosEstoqueAvulsaNFE
+            .find(
+                item =>
+                    String(
+                        item.id
+                    ) ===
+                    String(
+                        produtoId
+                    )
+            );
+
+
+    if (!produto) {
+
+        showToast(
+            'Produto não encontrado',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // NÃO ADICIONAR DUPLICADO
+    // =====================================================
+
+    const existente =
+        window
+            ._itensAvulsaNFE
+            .find(
+                item =>
+                    String(
+                        item.produto_id
+                    ) ===
+                    String(
+                        produto.id
+                    )
+            );
+
+
+    if (
+        existente
+    ) {
+
+        existente.quantidade =
+            Number(
+                existente.quantidade ||
+                1
+            ) +
+            1;
+
+
+        renderizarProdutosAvulsaNFE();
+
+
+        showToast(
+            'Quantidade do produto aumentada',
+            'info'
+        );
+
+
+        limparBuscaProdutoAvulsaNFE();
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // NCM
+    // =====================================================
+
+    let ncm =
+        '87149990';
+
+
+    try {
+
+        if (
+            typeof buscarNCMporSKU ===
+                'function' &&
+            produto.sku
+        ) {
+
+            const ncmSalvo =
+                await buscarNCMporSKU(
+                    produto.sku
+                );
+
+
+            if (
+                ncmSalvo
+            ) {
+
+                ncm =
+                    ncmSalvo;
+            }
+        }
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            `⚠️ Erro buscando NCM do SKU ${produto.sku}:`,
+            error
+        );
+    }
+
+
+    // =====================================================
+    // ADICIONAR
+    // =====================================================
+
+    window
+        ._itensAvulsaNFE
+        .push({
+
+            produto_id:
+                produto.id,
+
+            nome:
+                produto.nome ||
+                'Produto',
+
+            sku:
+                produto.sku ||
+                'SEM_SKU',
+
+            quantidade:
+                1,
+
+            valor_unitario:
+                Number(
+                    produto.preco ||
+                    0
+                ),
+
+            ncm,
+
+            estoque_atual:
+                Number(
+                    produto.quantidade ||
+                    0
+                )
+        });
+
+
+    console.log(
+        '✅ Produto adicionado à NF-e avulsa:',
+        produto
+    );
+
+
+    renderizarProdutosAvulsaNFE();
+
+
+    limparBuscaProdutoAvulsaNFE();
+}
+
+
+// =========================================================
+// LIMPAR BUSCA DE PRODUTO
+// =========================================================
+
+function limparBuscaProdutoAvulsaNFE() {
+
+    const busca =
+        document.getElementById(
+            'avulsaProdutoBusca'
+        );
+
+
+    const resultados =
+        document.getElementById(
+            'avulsaProdutoResultados'
+        );
+
+
+    if (
+        busca
+    ) {
+
+        busca.value =
+            '';
+
+        busca.focus();
+    }
+
+
+    if (
+        resultados
+    ) {
+
+        resultados.innerHTML =
+            '';
+
+        resultados.style.display =
+            'none';
+    }
+}
+
+
+// =========================================================
+// RENDERIZAR PRODUTOS SELECIONADOS
+// =========================================================
+
+function renderizarProdutosAvulsaNFE() {
+
+    const tbody =
+        document.getElementById(
+            'avulsaProdutosSelecionadosBody'
+        );
+
+
+    if (!tbody) {
+
+        return;
+    }
+
+
+    const itens =
+        Array.isArray(
+            window._itensAvulsaNFE
+        )
+            ? window._itensAvulsaNFE
+            : [];
+
+
+    if (
+        itens.length ===
+        0
+    ) {
+
+        tbody.innerHTML = `
+
+            <tr
+                id="avulsaSemProdutosRow"
+            >
+
+                <td
+                    colspan="7"
+                    class="text-center"
+                    style="
+                        padding:25px;
+                        color:#6c757d;
+                    "
+                >
+                    Nenhum produto adicionado.
+                </td>
+
+            </tr>
+        `;
+
+
+        atualizarProdutosJSONAvulsaNFE();
+
+
+        return;
+    }
+
+
+    tbody.innerHTML =
+        itens
+            .map(
+                (
+                    item,
+                    index
+                ) => {
+
+                    const subtotal =
+                        Number(
+                            item.quantidade ||
+                            0
+                        ) *
+                        Number(
+                            item.valor_unitario ||
+                            0
+                        );
+
+
+                    return `
+
+                        <tr
+                            data-index="${index}"
+                        >
+
+                            <td>
+
+                                <input
+                                    type="text"
+                                    class="form-control form-control-sm avulsa-item-nome"
+                                    data-index="${index}"
+                                    value="${escaparHTMLAvulsaNFE(
+                                        item.nome
+                                    )}"
+                                >
+
+                                <small
+                                    style="
+                                        color:#6c757d;
+                                    "
+                                >
+                                    Estoque atual:
+                                    ${Number(
+                                        item.estoque_atual ||
+                                        0
+                                    )}
+                                </small>
+
+                            </td>
+
+
+                            <td>
+
+                                <input
+                                    type="text"
+                                    class="form-control form-control-sm avulsa-item-sku"
+                                    data-index="${index}"
+                                    value="${escaparHTMLAvulsaNFE(
+                                        item.sku
+                                    )}"
+                                    readonly
+                                >
+
+                            </td>
+
+
+                            <td>
+
+                                <input
+                                    type="number"
+                                    class="form-control form-control-sm avulsa-item-quantidade"
+                                    data-index="${index}"
+                                    value="${Number(
+                                        item.quantidade ||
+                                        1
+                                    )}"
+                                    min="0.01"
+                                    step="0.01"
+                                >
+
+                            </td>
+
+
+                            <td>
+
+                                <input
+                                    type="number"
+                                    class="form-control form-control-sm avulsa-item-valor"
+                                    data-index="${index}"
+                                    value="${Number(
+                                        item.valor_unitario ||
+                                        0
+                                    ).toFixed(2)}"
+                                    min="0"
+                                    step="0.01"
+                                >
+
+                            </td>
+
+
+                            <td>
+
+                                <input
+                                    type="text"
+                                    class="form-control form-control-sm avulsa-item-ncm"
+                                    data-index="${index}"
+                                    value="${escaparHTMLAvulsaNFE(
+                                        item.ncm ||
+                                        '87149990'
+                                    )}"
+                                    maxlength="8"
+                                >
+
+                            </td>
+
+
+                            <td
+                                class="avulsa-item-subtotal"
+                            >
+
+                                R$
+                                ${subtotal.toFixed(2)}
+
+                            </td>
+
+
+                            <td>
+
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-danger"
+                                    onclick="
+                                        removerProdutoAvulsaNFE(
+                                            ${index}
+                                        )
+                                    "
+                                    title="Remover produto"
+                                >
+
+                                    <i class="fas fa-trash"></i>
+
+                                </button>
+
+                            </td>
+
+                        </tr>
+                    `;
+                }
+            )
+            .join(
+                ''
+            );
+
+
+    // =====================================================
+    // EVENTOS
+    // =====================================================
+
+    tbody
+        .querySelectorAll(
+            `
+            .avulsa-item-nome,
+            .avulsa-item-quantidade,
+            .avulsa-item-valor,
+            .avulsa-item-ncm
+            `
+        )
+        .forEach(
+            input => {
+
+                input.addEventListener(
+                    'input',
+                    function () {
+
+                        atualizarItemProdutoAvulsaNFE(
+                            Number(
+                                this.dataset.index
+                            )
+                        );
+                    }
+                );
+            }
+        );
+
+
+    atualizarProdutosJSONAvulsaNFE();
+}
+
+
+// =========================================================
+// ATUALIZAR ITEM APÓS EDIÇÃO
+// =========================================================
+
+function atualizarItemProdutoAvulsaNFE(
+    index
+) {
+
+    const item =
+        window
+            ._itensAvulsaNFE[
+                index
+            ];
+
+
+    if (!item) {
+
+        return;
+    }
+
+
+    const linha =
+        document.querySelector(
+            `#avulsaProdutosSelecionadosBody tr[data-index="${index}"]`
+        );
+
+
+    if (!linha) {
+
+        return;
+    }
+
+
+    item.nome =
+        linha.querySelector(
+            '.avulsa-item-nome'
+        )?.value.trim() ||
+        'Produto';
+
+
+    item.quantidade =
+        parseFloat(
+            linha.querySelector(
+                '.avulsa-item-quantidade'
+            )?.value
+        ) ||
+        0;
+
+
+    item.valor_unitario =
+        parseFloat(
+            linha.querySelector(
+                '.avulsa-item-valor'
+            )?.value
+        ) ||
+        0;
+
+
+    item.ncm =
+        String(
+            linha.querySelector(
+                '.avulsa-item-ncm'
+            )?.value ||
+            ''
+        )
+            .replace(
+                /\D/g,
+                ''
+            )
+            .substring(
+                0,
+                8
+            ) ||
+        '87149990';
+
+
+    const subtotal =
+        item.quantidade *
+        item.valor_unitario;
+
+
+    const subtotalCell =
+        linha.querySelector(
+            '.avulsa-item-subtotal'
+        );
+
+
+    if (
+        subtotalCell
+    ) {
+
+        subtotalCell.textContent =
+            `R$ ${subtotal.toFixed(2)}`;
+    }
+
+
+    atualizarProdutosJSONAvulsaNFE();
+}
+
+
+// =========================================================
+// REMOVER PRODUTO
+// =========================================================
+
+function removerProdutoAvulsaNFE(
+    index
+) {
+
+    if (
+        !Array.isArray(
+            window._itensAvulsaNFE
+        )
+    ) {
+
+        return;
+    }
+
+
+    window
+        ._itensAvulsaNFE
+        .splice(
+            index,
+            1
+        );
+
+
+    renderizarProdutosAvulsaNFE();
+}
+
+
+// =========================================================
+// GERAR JSON QUE A API JÁ ESPERA
+// =========================================================
+
+function atualizarProdutosJSONAvulsaNFE() {
+
+    const campo =
+        document.getElementById(
+            'avulsaProdutos'
+        );
+
+
+    const totalCell =
+        document.getElementById(
+            'avulsaTotalProdutos'
+        );
+
+
+    const itens =
+        Array.isArray(
+            window._itensAvulsaNFE
+        )
+            ? window._itensAvulsaNFE
+            : [];
+
+
+    const produtosPayload =
+        itens.map(
+            item => ({
+
+                nome:
+                    item.nome ||
+                    'Produto',
+
+                quantidade:
+                    Number(
+                        item.quantidade ||
+                        0
+                    ),
+
+                valor_unitario:
+                    Number(
+                        item.valor_unitario ||
+                        0
+                    ),
+
+                sku:
+                    item.sku ||
+                    'SEM_SKU',
+
+                ncm:
+                    item.ncm ||
+                    '87149990'
+            })
+        );
+
+
+    if (
+        campo
+    ) {
+
+        campo.value =
+            JSON.stringify(
+                produtosPayload
+            );
+    }
+
+
+    const total =
+        produtosPayload.reduce(
+            (
+                acumulado,
+                produto
+            ) =>
+                acumulado +
+                (
+                    produto.quantidade *
+                    produto.valor_unitario
+                ),
+            0
+        );
+
+
+    if (
+        totalCell
+    ) {
+
+        totalCell.textContent =
+            `R$ ${total.toFixed(2)}`;
+    }
+
+
+    console.log(
+        '📦 Produtos NF-e avulsa:',
+        produtosPayload
+    );
+}
+
+async function preencherSelectNaturezaNFE(
+    selectId,
+    contexto = 'ml'
+) {
+
+    const select =
+        document.getElementById(
+            selectId
+        );
+
+
+    if (!select) {
+
+        console.warn(
+            `⚠️ Select ${selectId} não encontrado`
+        );
+
+        return false;
+    }
+
+
+    if (
+        !window.supabaseClient
+    ) {
+
+        console.error(
+            '❌ Supabase não inicializado'
+        );
+
+        select.innerHTML = `
+            <option value="">
+                Erro ao carregar Naturezas
+            </option>
+        `;
+
+        return false;
+    }
+
+
+    try {
+
+        select.disabled =
+            true;
+
+
+        select.innerHTML = `
+            <option value="">
+                Carregando Naturezas...
+            </option>
+        `;
+
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'nfe_naturezas_operacao'
+                )
+                .select(`
+                    id,
+                    descricao,
+                    ativo,
+                    padrao_ml,
+                    padrao_avulsa
+                `)
+                .eq(
+                    'ativo',
+                    true
+                )
+                .order(
+                    'descricao',
+                    {
+                        ascending:
+                            true
+                    }
+                );
+
+
+        if (error) {
+
+            throw error;
+        }
+
+
+        const naturezas =
+            Array.isArray(
+                data
+            )
+                ? data
+                : [];
+
+
+        if (
+            naturezas.length ===
+            0
+        ) {
+
+            select.innerHTML = `
+                <option value="">
+                    Nenhuma Natureza cadastrada
+                </option>
+            `;
+
+            select.disabled =
+                false;
+
+            return false;
+        }
+
+
+        // =====================================================
+        // IDENTIFICAR PADRÃO
+        // =====================================================
+
+        let padrao =
+            null;
+
+
+        if (
+            contexto ===
+            'avulsa'
+        ) {
+
+            padrao =
+                naturezas.find(
+                    item =>
+                        item.padrao_avulsa ===
+                        true
+                );
+
+        } else {
+
+            padrao =
+                naturezas.find(
+                    item =>
+                        item.padrao_ml ===
+                        true
+                );
+        }
+
+
+        // Se nenhum estiver marcado,
+        // selecionar o primeiro ativo.
+        if (!padrao) {
+
+            padrao =
+                naturezas[0];
+        }
+
+
+        // =====================================================
+        // MONTAR SELECT
+        // =====================================================
+
+        select.innerHTML =
+            '';
+
+
+        naturezas.forEach(
+            natureza => {
+
+                const option =
+                    document.createElement(
+                        'option'
+                    );
+
+
+                // O backend espera a descrição:
+                // VENDA, DEVOLUÇÃO, REMESSA etc.
+                option.value =
+                    natureza.descricao;
+
+
+                option.textContent =
+                    natureza.descricao;
+
+
+                if (
+                    padrao &&
+                    natureza.id ===
+                    padrao.id
+                ) {
+
+                    option.selected =
+                        true;
+                }
+
+
+                select.appendChild(
+                    option
+                );
+            }
+        );
+
+
+        select.disabled =
+            false;
+
+
+        console.log(
+            `✅ ${naturezas.length} Natureza(s) carregada(s) para ${contexto}`,
+            {
+                padrao:
+                    padrao?.descricao
+            }
+        );
+
+
+        return true;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando Naturezas da Operação:',
+            error
+        );
+
+
+        select.innerHTML = `
+            <option value="">
+                Erro ao carregar Naturezas
+            </option>
+        `;
+
+
+        select.disabled =
+            false;
+
+
+        return false;
+    }
+}
+
+
+window.preencherSelectNaturezaNFE = preencherSelectNaturezaNFE;
 
 // =========================================================
 // FUNÇÕES PARA BAIXAR XML COMPLETO (UPLOAD MANUAL)
@@ -13364,21 +24895,21 @@ async function baixarXMLCompletoML(orderId) {
         
         const temProt = xmlContent.includes('<nProt>');
         alert(`
-📁 XML BAIXADO!
+        📁 XML BAIXADO!
 
-📋 Venda: ${orderId}
-📁 Arquivo: ${nomeArquivo}
-✅ Protocolo no XML: ${temProt ? '✅ SIM' : '❌ NÃO'}
+        📋 Venda: ${orderId}
+        📁 Arquivo: ${nomeArquivo}
+        ✅ Protocolo no XML: ${temProt ? '✅ SIM' : '❌ NÃO'}
 
-${temProt ? 
-'✅ O XML está completo com protocolo. Pode enviar ao ML!' : 
-'⚠️ O XML NÃO tem protocolo. O ML pode rejeitar.'}
+        ${temProt ? 
+        '✅ O XML está completo com protocolo. Pode enviar ao ML!' : 
+        '⚠️ O XML NÃO tem protocolo. O ML pode rejeitar.'}
 
-📌 No Mercado Livre:
-1. Abra a venda
-2. Clique em "Anexar Nota Fiscal"
-3. Selecione o arquivo ${nomeArquivo}
-4. Confirme
+        📌 No Mercado Livre:
+        1. Abra a venda
+        2. Clique em "Anexar Nota Fiscal"
+        3. Selecione o arquivo ${nomeArquivo}
+        4. Confirme
         `);
         
     } catch (error) {
@@ -13432,6 +24963,49 @@ window.sincronizarEstoqueVendaManual = sincronizarEstoqueVendaManual;
 window.sincronizarEstoqueComML = sincronizarEstoqueComML;
 window.atualizarListaNFE = atualizarListaNFE;
 window.sincronizarVendasML = sincronizarVendasML;
+window.garantirEstruturaCadastrosNFE = garantirEstruturaCadastrosNFE;
+window.removerBotoesCadastroAbasConsultaNFE = removerBotoesCadastroAbasConsultaNFE;
+window.carregarCadastrosNFE = carregarCadastrosNFE;
+window.mostrarCadastroNFE = mostrarCadastroNFE;
+window.abrirModalCadastroClienteNFE = abrirModalCadastroClienteNFE;
+window.fecharModalCadastroClienteNFE = fecharModalCadastroClienteNFE;
+window.salvarCadastroClienteNFE = salvarCadastroClienteNFE;
+window.abrirModalTransportadora = abrirModalTransportadora;
+window.fecharModalTransportadora = fecharModalTransportadora;
+window.salvarNovaTransportadora = salvarNovaTransportadora;
+window.excluirTransportadora = excluirTransportadora;
+window.excluirCliente = excluirCliente;
+window.abrirModalCFOPNFE = abrirModalCFOPNFE;
+window.fecharModalCFOPNFE = fecharModalCFOPNFE;
+window.salvarCFOPNFE = salvarCFOPNFE;
+window.alterarStatusCFOPNFE = alterarStatusCFOPNFE;
+window.abrirModalNaturezaOperacaoNFE = abrirModalNaturezaOperacaoNFE;
+window.fecharModalNaturezaOperacaoNFE = fecharModalNaturezaOperacaoNFE;
+window.salvarNaturezaOperacaoNFE = salvarNaturezaOperacaoNFE;
+window.alterarStatusNaturezaNFE = alterarStatusNaturezaNFE;
+window.escaparHTMLCadastroNFE = escaparHTMLCadastroNFE;
+window.carregarCadastroTransportadorasNFE = carregarCadastroTransportadorasNFE;
+window.carregarCadastroClientesNFE = carregarCadastroClientesNFE;
+window.carregarCadastroCFOPsNFE = carregarCadastroCFOPsNFE;
+window.carregarCadastroNaturezasNFE = carregarCadastroNaturezasNFE;
+window.carregarClientesAvulsaNFE = carregarClientesAvulsaNFE;
+window.pesquisarClienteAvulsaNFE = pesquisarClienteAvulsaNFE;
+window.selecionarClienteAvulsaNFE = selecionarClienteAvulsaNFE;
+window.limparClienteSelecionadoAvulsaNFE = limparClienteSelecionadoAvulsaNFE;
+window.preencherSelectTransportadoraAvulsaNFE = preencherSelectTransportadoraAvulsaNFE;
+window.prepararEmissaoAvulsaNFE = prepararEmissaoAvulsaNFE;
+window.emitirNFEAvulsa = emitirNFEAvulsa;
+window.limparFormAvulsa = limparFormAvulsa;
+window.garantirSelectAvulsaNFE = garantirSelectAvulsaNFE;
+window.garantirEstruturaProdutosAvulsaNFE = garantirEstruturaProdutosAvulsaNFE;
+window.carregarProdutosAvulsaNFE = carregarProdutosAvulsaNFE;
+window.pesquisarProdutoAvulsaNFE = pesquisarProdutoAvulsaNFE;
+window.selecionarProdutoAvulsaNFE = selecionarProdutoAvulsaNFE;
+window.limparBuscaProdutoAvulsaNFE = limparBuscaProdutoAvulsaNFE;
+window.renderizarProdutosAvulsaNFE = renderizarProdutosAvulsaNFE;
+window.atualizarItemProdutoAvulsaNFE = atualizarItemProdutoAvulsaNFE;
+window.removerProdutoAvulsaNFE = removerProdutoAvulsaNFE;
+window.atualizarProdutosJSONAvulsaNFE = atualizarProdutosJSONAvulsaNFE;
 
 // ===================== INICIALIZAR =====================
 document.addEventListener('DOMContentLoaded', function() {
