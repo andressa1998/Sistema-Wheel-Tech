@@ -345,31 +345,354 @@ R$ ${federais.toFixed(2)} federais
 R$ ${estaduais.toFixed(2)} estaduais
 Fonte: IBPT/empresometro.com.br 92589A`;
 
-        // ========== GERAR XML ==========
-        const tokenCSRT = AMBIENTE === 'producao' ? CSRT_TOKEN_PRODUCAO : CSRT_TOKEN_HOMOLOGACAO;
-        const idCSRT = AMBIENTE === 'producao' ? '04' : '03';
+        // =========================================================
+// GERAR XML
+// =========================================================
 
-        const xml = gerarXmlNfe({
-            nNF,
-            serie,
-            tpAmb: AMBIENTE === 'producao' ? '1' : '2',
-            destinatario,
-            produtos,
+const tokenCSRT =
+    AMBIENTE === 'producao'
+        ? CSRT_TOKEN_PRODUCAO
+        : CSRT_TOKEN_HOMOLOGACAO;
+
+
+const idCSRT =
+    AMBIENTE === 'producao'
+        ? '04'
+        : '03';
+
+
+// =========================================================
+// GERAR XML BASE
+// =========================================================
+
+let xml = gerarXmlNfe({
+
+    nNF,
+
+    serie,
+
+    tpAmb:
+        AMBIENTE === 'producao'
+            ? '1'
+            : '2',
+
+    destinatario,
+
+    produtos,
+
+    cfop,
+
+    natOp:
+        natureza_operacao ||
+        'Venda',
+
+
+    // =====================================================
+    // RESPEITAR MODALIDADE ESCOLHIDA NO FRONT
+    //
+    // Antes estava FIXO em 2 = terceiros.
+    //
+    // 9 = sem frete
+    // =====================================================
+
+    modFrete:
+        modalidade_frete ||
+        '9',
+
+    transportadora:
+        transportadoraDados,
+
+    volumes:
+        {
+            qVol: 1,
+            pesoL: 0,
+            pesoB: 0
+        },
+
+    fatura:
+        null,
+
+    infAdic:
+        infAdic,
+
+    respTec: {
+
+        CNPJ:
+            '32830261000125',
+
+        xContato:
+            'WHEEL TECH BICYCLING LTDA',
+
+        email:
+            'wheeltechbicycling@gmail.com.br',
+
+        fone:
+            '4131501230',
+
+        tokenCSRT:
+            tokenCSRT
+    }
+});
+
+
+// =========================================================
+// AJUSTAR XML QUANDO FOR DEVOLUÇÃO
+//
+// O xmlBuilder atual foi construído pensando em VENDA:
+//
+// tpNF   = 1
+// finNFe = 1
+//
+// Para entrada de devolução:
+//
+// tpNF   = 0
+// finNFe = 4
+// NFref/refNFe = chave da NF-e original
+// =========================================================
+
+if (ehDevolucao) {
+
+    console.log(
+        '↩️ Ajustando XML para ENTRADA DE DEVOLUÇÃO...'
+    );
+
+
+    const chaveReferenciada =
+        String(
+            dados.chave_nfe_referenciada ||
+            ''
+        )
+            .replace(
+                /\D/g,
+                ''
+            );
+
+
+    // =====================================================
+    // VALIDAR CHAVE
+    // =====================================================
+
+    if (
+        chaveReferenciada.length !== 44
+    ) {
+
+        throw new Error(
+            'NF-e de devolução exige chave referenciada com 44 dígitos.'
+        );
+    }
+
+
+    // =====================================================
+    // tpNF
+    //
+    // 0 = Entrada
+    // 1 = Saída
+    // =====================================================
+
+    if (
+        /<tpNF>\d<\/tpNF>/.test(
+            xml
+        )
+    ) {
+
+        xml =
+            xml.replace(
+                /<tpNF>\d<\/tpNF>/,
+                '<tpNF>0</tpNF>'
+            );
+
+    } else {
+
+        throw new Error(
+            'Tag <tpNF> não encontrada no XML gerado.'
+        );
+    }
+
+
+    // =====================================================
+    // finNFe
+    //
+    // 1 = Normal
+    // 4 = Devolução
+    // =====================================================
+
+    if (
+        /<finNFe>\d<\/finNFe>/.test(
+            xml
+        )
+    ) {
+
+        xml =
+            xml.replace(
+                /<finNFe>\d<\/finNFe>/,
+                '<finNFe>4</finNFe>'
+            );
+
+    } else {
+
+        throw new Error(
+            'Tag <finNFe> não encontrada no XML gerado.'
+        );
+    }
+
+
+    // =====================================================
+    // REMOVER REFERÊNCIA ANTIGA, CASO EXISTA
+    // =====================================================
+
+    xml =
+        xml.replace(
+            /<NFref>[\s\S]*?<\/NFref>/g,
+            ''
+        );
+
+
+    // =====================================================
+    // ADICIONAR NF-e REFERENCIADA
+    //
+    // Inserimos antes do fechamento de <ide>.
+    // =====================================================
+
+    const xmlReferencia =
+        `<NFref>` +
+            `<refNFe>${chaveReferenciada}</refNFe>` +
+        `</NFref>`;
+
+
+    if (
+        xml.includes(
+            '</ide>'
+        )
+    ) {
+
+        xml =
+            xml.replace(
+                '</ide>',
+                `${xmlReferencia}</ide>`
+            );
+
+    } else {
+
+        throw new Error(
+            'Tag </ide> não encontrada no XML gerado.'
+        );
+    }
+
+
+    // =====================================================
+    // LOG DE CONFERÊNCIA
+    // =====================================================
+
+    const tpNFXml =
+        xml.match(
+            /<tpNF>([^<]+)<\/tpNF>/
+        )?.[1];
+
+
+    const finNFeXml =
+        xml.match(
+            /<finNFe>([^<]+)<\/finNFe>/
+        )?.[1];
+
+
+    const refNFeXml =
+        xml.match(
+            /<refNFe>(\d{44})<\/refNFe>/
+        )?.[1];
+
+
+    console.log(
+        '✅ XML DEVOLUÇÃO AJUSTADO:',
+        {
+            tpNF:
+                tpNFXml,
+
+            finNFe:
+                finNFeXml,
+
+            refNFe:
+                refNFeXml,
+
             cfop,
-            natOp: natureza_operacao || 'Venda',
-            modFrete: '2', // sempre terceiros
-            transportadora: transportadoraDados,
-            volumes: { qVol: 1, pesoL: 0, pesoB: 0 },
-            fatura: null,
-            infAdic: infAdic,
-            respTec: {
-                CNPJ: '32830261000125',
-                xContato: 'WHEEL TECH BICYCLING LTDA',
-                email: 'wheeltechbicycling@gmail.com.br',
-                fone: '4131501230',
-                tokenCSRT: tokenCSRT
-            }
-        });
+
+            ufCliente:
+                buyerUF
+        }
+    );
+
+
+    // =====================================================
+    // SEGURANÇA
+    // =====================================================
+
+    if (
+        tpNFXml !== '0'
+    ) {
+
+        throw new Error(
+            `Erro interno: NF-e de devolução ficou com tpNF=${tpNFXml}. Esperado: 0.`
+        );
+    }
+
+
+    if (
+        finNFeXml !== '4'
+    ) {
+
+        throw new Error(
+            `Erro interno: NF-e de devolução ficou com finNFe=${finNFeXml}. Esperado: 4.`
+        );
+    }
+
+
+    if (
+        refNFeXml !==
+        chaveReferenciada
+    ) {
+
+        throw new Error(
+            'Erro interno: chave referenciada não foi inserida corretamente no XML.'
+        );
+    }
+}
+
+
+// =========================================================
+// DEBUG FINAL ANTES DE ASSINAR
+// =========================================================
+
+console.log(
+    '🧾 DADOS FISCAIS DO XML:',
+    {
+        operacao:
+            ehDevolucao
+                ? 'ENTRADA DE DEVOLUÇÃO'
+                : 'VENDA',
+
+        cfop,
+
+        tpNF:
+            xml.match(
+                /<tpNF>([^<]+)<\/tpNF>/
+            )?.[1],
+
+        finNFe:
+            xml.match(
+                /<finNFe>([^<]+)<\/finNFe>/
+            )?.[1],
+
+        refNFe:
+            xml.match(
+                /<refNFe>(\d{44})<\/refNFe>/
+            )?.[1] ||
+            null,
+
+        modFrete:
+            xml.match(
+                /<modFrete>([^<]+)<\/modFrete>/
+            )?.[1]
+    }
+);
 
         // ========== ASSINAR XML ==========
         const certData = loadCertificates();
