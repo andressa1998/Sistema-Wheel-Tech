@@ -4062,45 +4062,352 @@ function extrairSkuDoItem(item) {
     return null;
 }
 
-    // =========================================================
-// FUNÇÃO ENCONTRAR VARIAÇÃO POR SKU - VERSÃO CORRIGIDA
 // =========================================================
+// BUSCAR PRODUTO DO ESTOQUE PELO SKU REAL
+// =========================================================
+function encontrarProdutoEstoquePorSkuReal(skuReal) {
+    if (!skuReal || !Array.isArray(produtosEstoque)) return null;
+
+    const skuNormalizado = String(skuReal).trim().toUpperCase();
+
+    // Primeiro tenta o SKU completo.
+    // Isso evita interpretar, por exemplo, 032RIJ255PT
+    // como quantidade 032 + SKU RIJ255PT.
+    const exato = produtosEstoque.find(p =>
+        String(p.sku || '').trim().toUpperCase() === skuNormalizado
+    );
+
+    if (exato) return exato;
+
+    // Fallback: mantém a regra do sistema pelos 8 primeiros caracteres.
+    const base = extrairSkuBaseSistema(skuNormalizado);
+
+    if (!base) return null;
+
+    return produtosEstoque.find(p =>
+        extrairSkuBaseSistema(p.sku) === base
+    ) || null;
+}
+
+
+// =========================================================
+// INTERPRETAR UMA PARTE DO SKU DO ANÚNCIO
+//
+// Exemplos:
+//
+// 032RIJ255PT
+// -> SKU real 032RIJ255PT
+// -> quantidade 1
+//
+// 001032RIJ255PT
+// -> SKU real 032RIJ255PT
+// -> quantidade 1
+//
+// 002032RIJ255PT
+// -> SKU real 032RIJ255PT
+// -> quantidade 2
+//
+// A função PRIMEIRO verifica se o SKU inteiro existe.
+// Só depois tenta interpretar os 3 primeiros dígitos
+// como quantidade.
+// =========================================================
+function interpretarParteSkuAnuncio(parte) {
+
+    const original = String(parte || '').trim();
+
+    if (!original) {
+        return {
+            original: '',
+            skuReal: '',
+            quantidadePorKit: 1,
+            produtoEstoque: null,
+            usouPrefixoQuantidade: false
+        };
+    }
+
+    // =====================================================
+    // 1. TENTA O SKU COMPLETO
+    // =====================================================
+
+    const produtoDireto = encontrarProdutoEstoquePorSkuReal(original);
+
+    if (produtoDireto) {
+
+        return {
+            original: original,
+            skuReal: original,
+            quantidadePorKit: 1,
+            produtoEstoque: produtoDireto,
+            usouPrefixoQuantidade: false
+        };
+
+    }
+
+
+    // =====================================================
+    // 2. TENTA INTERPRETAR 3 PRIMEIROS DÍGITOS COMO QUANTIDADE
+    // =====================================================
+
+    const matchPrefixo = original.match(/^(\d{3})(.+)$/);
+
+    if (matchPrefixo) {
+
+        const quantidade = parseInt(matchPrefixo[1], 10) || 1;
+
+        const semPrefixo = matchPrefixo[2].trim();
+
+        const produtoSemPrefixo =
+            encontrarProdutoEstoquePorSkuReal(semPrefixo);
+
+
+        if (produtoSemPrefixo) {
+
+            return {
+                original: original,
+                skuReal: semPrefixo,
+                quantidadePorKit: quantidade,
+                produtoEstoque: produtoSemPrefixo,
+                usouPrefixoQuantidade: true
+            };
+
+        }
+    }
+
+
+    // =====================================================
+    // 3. NÃO CONSEGUIU INTERPRETAR
+    // =====================================================
+
+    return {
+        original: original,
+        skuReal: original,
+        quantidadePorKit: 1,
+        produtoEstoque: null,
+        usouPrefixoQuantidade: false
+    };
+}
+
+
+// =========================================================
+// VERIFICAR SE UMA PARTE DO SKU DA VARIAÇÃO
+// CORRESPONDE AO PRODUTO QUE ESTAMOS SINCRONIZANDO
+// =========================================================
+function parteSkuCorrespondeAoProduto(parte, skuProduto) {
+
+    if (!parte || !skuProduto) return false;
+
+
+    const alvoNormalizado =
+        String(skuProduto)
+            .trim()
+            .toUpperCase();
+
+
+    const baseAlvo =
+        extrairSkuBaseSistema(alvoNormalizado);
+
+
+    const info =
+        interpretarParteSkuAnuncio(parte);
+
+
+    // =====================================================
+    // SE CONSEGUIU IDENTIFICAR O PRODUTO NO ESTOQUE
+    // =====================================================
+
+    if (info.produtoEstoque) {
+
+        const skuInterpretado =
+            String(info.skuReal || '')
+                .trim()
+                .toUpperCase();
+
+
+        if (skuInterpretado === alvoNormalizado) {
+            return true;
+        }
+
+
+        if (
+            extrairSkuBaseSistema(skuInterpretado) === baseAlvo
+        ) {
+            return true;
+        }
+
+
+        return false;
+    }
+
+
+    // =====================================================
+    // FALLBACK
+    // =====================================================
+
+    const original =
+        String(parte)
+            .trim()
+            .toUpperCase();
+
+
+    if (original === alvoNormalizado) {
+        return true;
+    }
+
+
+    if (
+        extrairSkuBaseSistema(original) === baseAlvo
+    ) {
+        return true;
+    }
+
+
+    // =====================================================
+    // TENTA SEM PREFIXO DE QUANTIDADE
+    // =====================================================
+
+    const matchPrefixo =
+        original.match(/^(\d{3})(.+)$/);
+
+
+    if (matchPrefixo) {
+
+        const semPrefixo =
+            matchPrefixo[2]
+                .trim()
+                .toUpperCase();
+
+
+        if (semPrefixo === alvoNormalizado) {
+            return true;
+        }
+
+
+        if (
+            extrairSkuBaseSistema(semPrefixo) === baseAlvo
+        ) {
+            return true;
+        }
+
+    }
+
+
+    return false;
+}
+
+
+// =========================================================
+// ENCONTRAR TODAS AS VARIAÇÕES QUE CONTÊM O SKU
+//
+// ESTA É A PRINCIPAL CORREÇÃO.
+//
+// Antes:
+// encontrou uma -> return.
+//
+// Agora:
+// percorre TODAS as variações.
+//
+// Também divide por "." para procurar o SKU
+// em qualquer posição do KIT.
+// =========================================================
+function encontrarVariacoesPorSKU(item, skuProduto) {
+
+    if (
+        !item ||
+        !item.variations ||
+        item.variations.length === 0
+    ) {
+        return [];
+    }
+
+
+    const encontradas = [];
+
+
+    console.log(
+        `🔍 Procurando TODAS as variações que contêm o SKU "${skuProduto}"...`
+    );
+
+
+    for (const variacao of item.variations) {
+
+        const identificador =
+            extrairSkuDaVariacao(variacao);
+
+
+        if (!identificador) {
+            continue;
+        }
+
+
+        // =================================================
+        // IMPORTANTE:
+        // quebra KIT por ponto
+        //
+        // Ex:
+        // 032RIJ260PT.032RIJ255PT
+        //
+        // vira:
+        //
+        // 032RIJ260PT
+        // 032RIJ255PT
+        // =================================================
+
+        const partes =
+            String(identificador)
+                .split('.')
+                .map(p => p.trim())
+                .filter(Boolean);
+
+
+        const contemSku =
+            partes.some(parte =>
+                parteSkuCorrespondeAoProduto(
+                    parte,
+                    skuProduto
+                )
+            );
+
+
+        console.log(
+            `   Variação ${variacao.id}: "${identificador}" -> ${
+                contemSku
+                    ? '✅ CONTÉM'
+                    : '❌ NÃO CONTÉM'
+            } ${skuProduto}`
+        );
+
+
+        if (contemSku) {
+
+            encontradas.push(
+                variacao
+            );
+
+        }
+
+    }
+
+
+    console.log(
+        `✅ Total de variações encontradas para ${skuProduto}: ${encontradas.length}`
+    );
+
+
+    return encontradas;
+}
+
 function encontrarVariacaoPorSKU(item, skuProduto) {
-    if (!item.variations || item.variations.length === 0) return null;
-    
-    // 🔥 USA extrairSkuBaseSistema (NÃO REMOVE NADA)
-    const skuBase = extrairSkuBaseSistema(skuProduto);
-    if (!skuBase) return null;
-    
-    console.log(`🔍 Buscando variação com base: "${skuBase}"`);
-    
-    for (const v of item.variations) {
-        let identificador = extrairSkuDaVariacao(v);
-        if (identificador) {
-            // 🔥 USA extrairSkuBaseAnuncio (REMOVE 3 DÍGITOS)
-            const variacaoBase = extrairSkuBaseAnuncio(identificador);
-            console.log(`   Comparando: "${variacaoBase}" vs "${skuBase}"`);
-            if (variacaoBase === skuBase) {
-                console.log(`✅ Variação encontrada: ${identificador}`);
-                return v;
-            }
-        }
-    }
-    
-    // Fallback: busca por SKU exato (comparação direta)
-    const skuExato = skuProduto ? skuProduto.trim().toUpperCase() : '';
-    if (skuExato) {
-        for (const v of item.variations) {
-            let identificador = extrairSkuDaVariacao(v);
-            if (identificador && identificador.toUpperCase() === skuExato) {
-                console.log(`✅ Variação encontrada por SKU exato: ${identificador}`);
-                return v;
-            }
-        }
-    }
-    
-    console.log(`⚠️ Nenhuma variação encontrada para base: "${skuBase}"`);
-    return null;
+
+    const encontradas =
+        encontrarVariacoesPorSKU(
+            item,
+            skuProduto
+        );
+
+
+    return encontradas.length > 0
+        ? encontradas[0]
+        : null;
 }
 
     // ===== OBTER SKU DO ANÚNCIO =====
@@ -4163,210 +4470,405 @@ function extrairSkuBaseAnuncio(sku) {
 }
 
 // =========================================================
-// FUNÇÃO CALCULAR QUANTIDADE COM REGRAS - VERSÃO CORRIGIDA
+// CALCULAR QUANTIDADE COM REGRAS
+// VERSÃO PARA MÚLTIPLAS VARIAÇÕES / KITS
 // =========================================================
-function calcularQuantidadeComRegras(quantidadeBase, categoria, item, skuProduto, marcaProduto, modeloProduto, produto, skusFilhos, skuAnuncio) {
-    console.log(`📊 [calcularQuantidadeComRegras] SKU: ${skuProduto}, Estoque: ${quantidadeBase}, Categoria: ${categoria}`);
-    console.log(`📊 SKU do anúncio: ${skuAnuncio}`);
-    
-    // 🔥 USA extrairSkuBaseSistema (NÃO REMOVE NADA)
-    const skuBaseSistema = extrairSkuBaseSistema(skuProduto);
-    console.log(`📊 Base do SKU do sistema (8 caracteres): "${skuBaseSistema}"`);
-    
+function calcularQuantidadeComRegras(
+    quantidadeBase,
+    categoria,
+    item,
+    skuProduto,
+    marcaProduto,
+    modeloProduto,
+    produto,
+    skusFilhos,
+    skuAnuncio
+) {
+
+    console.log(
+        `📊 [calcularQuantidadeComRegras] SKU: ${skuProduto}, Estoque: ${quantidadeBase}, Categoria: ${categoria}`
+    );
+
+    console.log(
+        `📊 SKU do anúncio/variação: ${skuAnuncio}`
+    );
+
+
     let quantidadeFinal = 0;
-    
-    // 🔥 VERIFICA SE É KIT PELO SKU DO ANÚNCIO (tem ponto)
-    const ehKit = skuAnuncio && skuAnuncio.includes('.');
-    console.log(`📊 É um KIT? ${ehKit ? '✅ SIM' : '❌ NÃO'}`);
-    
-    // 🔥 SE FOR KIT (tem ponto no SKU do anúncio)
+
+
+    const ehKit =
+        !!(
+            skuAnuncio &&
+            String(skuAnuncio).includes('.')
+        );
+
+
+    console.log(
+        `📊 É um KIT? ${
+            ehKit
+                ? '✅ SIM'
+                : '❌ NÃO'
+        }`
+    );
+
+
+    // =====================================================
+    // KIT
+    // =====================================================
+
     if (ehKit) {
-        console.log(`📊 PROCESSANDO COMO KIT...`);
-        
-        const skusDoKit = skuAnuncio.split('.');
-        console.log(`📊 SKUs do kit:`, skusDoKit);
-        
-        let kitsPossiveis = Infinity;
-        const quantidadesPorKit = [];
-        
-        for (const skuComPrefixo of skusDoKit) {
-            // 🔥 REMOVE 3 DÍGITOS DO SKU DO ANÚNCIO
-            let skuReal = skuComPrefixo;
-            let prefixo = 1;
-            
-            const match = skuComPrefixo.match(/^(\d{3})(.+)$/);
-            if (match) {
-                prefixo = parseInt(match[1]) || 1;
-                skuReal = match[2];
-                console.log(`📊 Produto: "${skuComPrefixo}" → Prefixo: ${prefixo}, SKU Real: "${skuReal}"`);
-            } else {
-                console.log(`📊 Produto sem prefixo: "${skuComPrefixo}"`);
-                skuReal = skuComPrefixo;
-            }
-            
-            // 🔥 USA extrairSkuBaseAnuncio (REMOVE 3 DÍGITOS) - MAS O SKU JÁ FOI LIMPO
-            // Usamos extrairSkuBaseSistema porque já removemos o prefixo
-            const skuBaseReal = extrairSkuBaseSistema(skuReal);
-            console.log(`📊 Base do SKU real (8 caracteres): "${skuBaseReal}"`);
-            
-            // 🔥 COMPARA PELA BASE DE 8 CARACTERES
-            let produtoEstoque = null;
-            if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-                produtoEstoque = produtosEstoque.find(p => {
-                    const baseSistema = extrairSkuBaseSistema(p.sku);
-                    return baseSistema === skuBaseReal;
-                });
-            }
-            
-            if (!produtoEstoque) {
-                console.log(`❌ Produto não encontrado no estoque: ${skuReal} (base: ${skuBaseReal})`);
-                // Tenta buscar pelo SKU completo
-                if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-                    const fallback = produtosEstoque.find(p => p.sku === skuReal);
-                    if (fallback) {
-                        console.log(`✅ Produto encontrado por SKU completo: ${fallback.sku}`);
-                        const kitsDoProduto = Math.floor(fallback.quantidade / prefixo);
-                        quantidadesPorKit.push({
-                            sku: fallback.sku,
-                            estoque: fallback.quantidade,
-                            prefixo: prefixo,
-                            kits: kitsDoProduto
-                        });
-                        if (kitsDoProduto < kitsPossiveis) {
-                            kitsPossiveis = kitsDoProduto;
-                        }
-                        continue;
-                    }
-                }
+
+        console.log(
+            '📊 PROCESSANDO COMO KIT...'
+        );
+
+
+        const partes =
+            String(skuAnuncio)
+                .split('.')
+                .map(p => p.trim())
+                .filter(Boolean);
+
+
+        // =================================================
+        // AGRUPAR NECESSIDADE POR SKU
+        //
+        // Isso também resolve um SKU aparecendo duas vezes
+        // dentro do mesmo kit.
+        // =================================================
+
+        const necessidadePorSku =
+            new Map();
+
+
+        for (const parte of partes) {
+
+            const info =
+                interpretarParteSkuAnuncio(
+                    parte
+                );
+
+
+            if (!info.produtoEstoque) {
+
+                console.error(
+                    `❌ SKU do kit não encontrado no estoque: "${parte}"`
+                );
+
                 return 0;
             }
-            
-            console.log(`📊 ${skuReal} → ${produtoEstoque.sku} tem ${produtoEstoque.quantidade} unidades em estoque`);
-            
-            const kitsDoProduto = Math.floor(produtoEstoque.quantidade / prefixo);
-            console.log(`📊 ${produtoEstoque.sku} → ${produtoEstoque.quantidade} / ${prefixo} = ${kitsDoProduto} kits`);
-            
-            quantidadesPorKit.push({
-                sku: produtoEstoque.sku,
-                estoque: produtoEstoque.quantidade,
-                prefixo: prefixo,
-                kits: kitsDoProduto
-            });
-            
-            if (kitsDoProduto < kitsPossiveis) {
-                kitsPossiveis = kitsDoProduto;
-            }
+
+
+            const chave =
+                String(
+                    info.produtoEstoque.sku ||
+                    info.skuReal
+                )
+                    .trim()
+                    .toUpperCase();
+
+
+            const atual =
+                necessidadePorSku.get(chave) ||
+                {
+                    produto: info.produtoEstoque,
+                    quantidadeNecessaria: 0,
+                    partes: []
+                };
+
+
+            atual.quantidadeNecessaria +=
+                Math.max(
+                    1,
+                    Number(
+                        info.quantidadePorKit
+                    ) || 1
+                );
+
+
+            atual.partes.push(
+                parte
+            );
+
+
+            necessidadePorSku.set(
+                chave,
+                atual
+            );
+
+
+            console.log(
+                `📦 Parte "${parte}" -> SKU ${info.produtoEstoque.sku} | qtd por kit: ${info.quantidadePorKit}`
+            );
+
         }
-        
-        console.log(`📊 Total de kits completos possíveis: ${kitsPossiveis}`);
-        quantidadeFinal = kitsPossiveis;
-        
-        console.log(`📊 RESUMO DO KIT:`);
-        quantidadesPorKit.forEach(q => {
-            console.log(`  - ${q.sku}: ${q.estoque} uni. → ${q.prefixo} por kit → ${q.kits} kits`);
-        });
-        console.log(`  📦 Total de kits completos: ${quantidadeFinal}`);
-    } 
-    // 🔥 PRODUTO NORMAL (sem ponto no SKU)
+
+
+        // =================================================
+        // CALCULAR QUANTOS KITS COMPLETOS PODEM SER VENDIDOS
+        // =================================================
+
+        let kitsPossiveis =
+            Infinity;
+
+
+        for (
+            const [, necessidade]
+            of necessidadePorSku
+        ) {
+
+            const estoque =
+                Number(
+                    necessidade.produto.quantidade
+                ) || 0;
+
+
+            const precisa =
+                Math.max(
+                    1,
+                    necessidade.quantidadeNecessaria
+                );
+
+
+            const kitsDoProduto =
+                Math.floor(
+                    estoque / precisa
+                );
+
+
+            console.log(
+                `📊 ${necessidade.produto.sku}: estoque ${estoque} / precisa ${precisa} = ${kitsDoProduto} kit(s)`
+            );
+
+
+            kitsPossiveis =
+                Math.min(
+                    kitsPossiveis,
+                    kitsDoProduto
+                );
+
+        }
+
+
+        quantidadeFinal =
+            kitsPossiveis === Infinity
+                ? 0
+                : kitsPossiveis;
+
+
+        console.log(
+            `📦 Total de kits completos possíveis: ${quantidadeFinal}`
+        );
+
+    }
+
+    // =====================================================
+    // PRODUTO NORMAL
+    // =====================================================
+
     else {
-        console.log(`📊 PRODUTO NORMAL (não é kit)`);
-        
-        // 🔥 REMOVE 3 DÍGITOS DO SKU DO ANÚNCIO
-        let skuReal = skuAnuncio || skuProduto;
-        let prefixo = 1;
-        
-        const match = skuAnuncio ? skuAnuncio.match(/^(\d{3})(.+)$/) : null;
-        if (match) {
-            prefixo = parseInt(match[1]) || 1;
-            skuReal = match[2];
-            console.log(`📊 SKU com prefixo: Prefixo: ${prefixo}, SKU Real: ${skuReal}`);
+
+        console.log(
+            '📊 PROCESSANDO COMO PRODUTO NORMAL...'
+        );
+
+
+        const codigo =
+            skuAnuncio ||
+            skuProduto;
+
+
+        const info =
+            interpretarParteSkuAnuncio(
+                codigo
+            );
+
+
+        const produtoEstoque =
+            info.produtoEstoque ||
+            encontrarProdutoEstoquePorSkuReal(
+                skuProduto
+            ) ||
+            produto ||
+            null;
+
+
+        if (!produtoEstoque) {
+
+            console.warn(
+                `⚠️ Produto não encontrado no estoque para cálculo: ${codigo}`
+            );
+
+            quantidadeFinal = 0;
+
         } else {
-            console.log(`📊 Sem prefixo, usando SKU original: ${skuReal}`);
+
+            const divisor =
+                Math.max(
+                    1,
+                    Number(
+                        info.quantidadePorKit
+                    ) || 1
+                );
+
+
+            const estoque =
+                Number(
+                    produtoEstoque.quantidade
+                ) || 0;
+
+
+            quantidadeFinal =
+                Math.floor(
+                    estoque / divisor
+                );
+
+
+            console.log(
+                `📊 ${produtoEstoque.sku}: estoque ${estoque} / quantidade por anúncio ${divisor} = ${quantidadeFinal}`
+            );
+
         }
-        
-        // 🔥 USA extrairSkuBaseSistema (NÃO REMOVE NADA) - porque já removemos o prefixo
-        const skuBaseReal = extrairSkuBaseSistema(skuReal);
-        console.log(`📊 Base do SKU real (8 caracteres): "${skuBaseReal}"`);
-        
-        // 🔥 COMPARA PELA BASE DE 8 CARACTERES
-        let produtoEstoque = null;
-        if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-            produtoEstoque = produtosEstoque.find(p => {
-                const baseSistema = extrairSkuBaseSistema(p.sku);
-                return baseSistema === skuBaseReal;
-            });
-        }
-        
-        if (produtoEstoque) {
-            const quantidadeCalculada = Math.floor(produtoEstoque.quantidade / prefixo);
-            console.log(`📊 ${produtoEstoque.sku} → ${produtoEstoque.quantidade} / ${prefixo} = ${quantidadeCalculada}`);
-            quantidadeFinal = quantidadeCalculada;
-        } else {
-            // Tenta buscar pelo SKU completo
-            if (typeof produtosEstoque !== 'undefined' && Array.isArray(produtosEstoque)) {
-                const fallback = produtosEstoque.find(p => p.sku === skuReal);
-                if (fallback) {
-                    console.log(`✅ Produto encontrado por SKU completo: ${fallback.sku}`);
-                    const quantidadeCalculada = Math.floor(fallback.quantidade / prefixo);
-                    quantidadeFinal = quantidadeCalculada;
-                } else {
-                    console.log(`⚠️ Produto não encontrado: ${skuReal} (base: ${skuBaseReal})`);
-                    quantidadeFinal = 0;
-                }
-            } else {
-                console.log(`⚠️ Produto não encontrado: ${skuReal} (base: ${skuBaseReal})`);
-                quantidadeFinal = 0;
-            }
-        }
+
     }
-    
-    // ===== OBTER PREÇO DO ANÚNCIO =====
+
+
+    // =====================================================
+    // PREÇO DA VARIAÇÃO
+    // =====================================================
+
     let precoAnuncio = 0;
-    if (item.variations && item.variations.length > 0) {
-        const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
+
+
+    if (
+        item.variations &&
+        item.variations.length > 0
+    ) {
+
+        const variacaoAlvo =
+            encontrarVariacaoPorSKU(
+                item,
+                skuProduto
+            );
+
+
         if (variacaoAlvo) {
-            precoAnuncio = variacaoAlvo.price || 0;
+
+            precoAnuncio =
+                variacaoAlvo.price ||
+                item.price ||
+                0;
+
         } else {
-            precoAnuncio = item.variations[0]?.price || item.price || 0;
+
+            precoAnuncio =
+                item.variations[0]?.price ||
+                item.price ||
+                0;
+
         }
+
     } else {
-        precoAnuncio = item.price || 0;
+
+        precoAnuncio =
+            item.price || 0;
+
     }
-    console.log(`📊 Preço do anúncio: R$ ${precoAnuncio}`);
-    
-    // ===== CALCULAR ESTOQUE MÁXIMO PERMITIDO PELA REGRA DA CATEGORIA =====
-    const estoqueMaximo = calcularEstoqueMaximo({ 
-        preco: precoAnuncio, 
-        categoria: categoria,
-        sku: skuProduto
-    });
-    console.log(`📊 Estoque máximo permitido (regra do modal): ${estoqueMaximo}`);
-    
-    // ===== APLICAR LIMITE MÁXIMO =====
-    if (quantidadeFinal > estoqueMaximo) {
-        console.log(`📊 Aplicando limite do modal: ${quantidadeFinal} → ${estoqueMaximo}`);
-        quantidadeFinal = estoqueMaximo;
+
+
+    console.log(
+        `📊 Preço usado na regra: R$ ${precoAnuncio}`
+    );
+
+
+    // =====================================================
+    // REGRA DE ESTOQUE MÁXIMO
+    // =====================================================
+
+    const estoqueMaximo =
+        calcularEstoqueMaximo({
+
+            preco: precoAnuncio,
+
+            categoria:
+                categoria,
+
+            sku:
+                skuProduto
+
+        });
+
+
+    console.log(
+        `📊 Estoque máximo permitido: ${estoqueMaximo}`
+    );
+
+
+    if (
+        quantidadeFinal >
+        estoqueMaximo
+    ) {
+
+        console.log(
+            `📊 Aplicando limite: ${quantidadeFinal} -> ${estoqueMaximo}`
+        );
+
+
+        quantidadeFinal =
+            estoqueMaximo;
+
     }
-    
-    // ===== REGRA ESPECÍFICA PARA RAIOS =====
-    if (categoria === 'Raios') {
-        const regra = obterRegraRaios(marcaProduto, modeloProduto);
-        if (regra && regra.max_kits !== undefined) {
-            console.log(`📊 Aplicando regra de Raios: ${quantidadeFinal} → ${regra.max_kits}`);
-            quantidadeFinal = Math.min(quantidadeFinal, regra.max_kits);
+
+
+    // =====================================================
+    // REGRA ESPECÍFICA PARA RAIOS
+    // =====================================================
+
+    if (
+        categoria === 'Raios'
+    ) {
+
+        const regra =
+            obterRegraRaios(
+                marcaProduto,
+                modeloProduto
+            );
+
+
+        if (
+            regra &&
+            regra.max_kits !== undefined
+        ) {
+
+            console.log(
+                `📊 Aplicando regra de Raios: ${quantidadeFinal} -> ${regra.max_kits}`
+            );
+
+
+            quantidadeFinal =
+                Math.min(
+                    quantidadeFinal,
+                    regra.max_kits
+                );
+
         }
+
     }
-    
-    // ===== GARANTIR QUE RESPEITA O ESTOQUE MÁXIMO =====
-    if (quantidadeFinal > estoqueMaximo) {
-        console.log(`📊 Reforçando limite: ${quantidadeFinal} → ${estoqueMaximo}`);
-        quantidadeFinal = estoqueMaximo;
-    }
-    
-    // ===== GARANTIR QUE NUNCA SEJA NEGATIVO =====
-    quantidadeFinal = Math.max(0, quantidadeFinal);
-    
-    console.log(`✅ Quantidade final: ${quantidadeFinal}`);
+
+
+    quantidadeFinal =
+        Math.max(
+            0,
+            quantidadeFinal
+        );
+
+
+    console.log(
+        `✅ Quantidade final desta variação: ${quantidadeFinal}`
+    );
+
+
     return quantidadeFinal;
 }
 
@@ -4671,82 +5173,642 @@ function calcularQuantidadeComRegras(quantidadeBase, categoria, item, skuProduto
                 continue;
             }
 
-            // ===== ITEM NORMAL =====
-            console.log(`📦 Item ${itemId} é NORMAL (não é FULL).`);
+// ===== ITEM NORMAL =====
+console.log(
+    `📦 Item ${itemId} é NORMAL (não é FULL).`
+);
 
-            if (item.tags?.includes('has_price_by_rule')) {
-                console.warn(`⚠️ Item ${itemId} tem preço automático.`);
-                results.push({ codigo: itemId, success: false, reason: 'oferta_ativa' });
-                continue;
-            }
 
-            const skuAnuncioLocal = obterSkuAnuncio(item, skuProduto);
+// =========================================================
+// ANÚNCIO COM PREÇO AUTOMÁTICO
+// =========================================================
+if (
+    item.tags?.includes(
+        'has_price_by_rule'
+    )
+) {
 
-            let quantidadeParaEnviar = calcularQuantidadeComRegras(
-                quantidadeReal, categoria, item, skuProduto, 
-                marcaProduto, modeloProduto, produto, skusFilhos,
-                skuAnuncioLocal
+    console.warn(
+        `⚠️ Item ${itemId} tem preço automático.`
+    );
+
+    results.push({
+        codigo: itemId,
+        success: false,
+        reason: 'oferta_ativa'
+    });
+
+    continue;
+}
+
+
+// =========================================================
+// ANÚNCIO COM VARIAÇÕES
+// =========================================================
+if (
+    item.variations &&
+    item.variations.length > 0
+) {
+
+    // =====================================================
+    // CORREÇÃO PRINCIPAL
+    //
+    // BUSCA TODAS AS VARIAÇÕES.
+    //
+    // Não existe mais:
+    //
+    // "achei uma -> parei"
+    // =====================================================
+
+    const variacoesAlvo =
+        encontrarVariacoesPorSKU(
+            item,
+            skuProduto
+        );
+
+
+    if (
+        variacoesAlvo.length === 0
+    ) {
+
+        console.warn(
+            `⚠️ Nenhuma variação de ${itemId} contém o SKU ${skuProduto}`
+        );
+
+
+        results.push({
+
+            codigo:
+                itemId,
+
+            success:
+                false,
+
+            reason:
+                'sem_variacao',
+
+            sku:
+                skuProduto
+
+        });
+
+
+        continue;
+    }
+
+
+    console.log(
+        `📦 ${itemId}: ${variacoesAlvo.length} variação(ões) precisam ser sincronizadas para ${skuProduto}`
+    );
+
+
+    // =====================================================
+    // PERCORRE TODAS AS VARIAÇÕES ENCONTRADAS
+    // =====================================================
+
+    for (
+        const variacaoAlvo
+        of variacoesAlvo
+    ) {
+
+        const varId =
+            variacaoAlvo.id;
+
+
+        const skuVariacao =
+            extrairSkuDaVariacao(
+                variacaoAlvo
             );
 
-            if (item.variations && item.variations.length > 0) {
-                const variacaoAlvo = encontrarVariacaoPorSKU(item, skuProduto);
-                if (!variacaoAlvo) {
-                    console.warn(`⚠️ Nenhuma variação para ${itemId}`);
-                    results.push({ codigo: itemId, success: false, reason: 'sem_variacao' });
-                    continue;
-                }
-                const varId = variacaoAlvo.id;
-                const targetUrl = `https://api.mercadolibre.com/items/${itemId}/variations/${varId}`;
-                const putProxy = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(targetUrl)}&token=${encodeURIComponent(token)}`;
-                console.log(`📦 Atualizando variação ${varId} para ${quantidadeParaEnviar}`);
-                
-                const putRes = await fetch(putProxy, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ available_quantity: quantidadeParaEnviar })
-                });
-                const responseText = await putRes.text();
-                let respData;
-                try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
-                
-                if (putRes.ok) {
-                    let newQty = null;
-                    if (Array.isArray(respData)) {
-                        const updatedVar = respData.find(v => v.id == varId);
-                        if (updatedVar) newQty = updatedVar.available_quantity;
-                    } else {
-                        newQty = respData.available_quantity;
+
+        console.log(
+            `🔄 Processando variação ${varId}: "${skuVariacao}"`
+        );
+
+
+        // =================================================
+        // Cria um item temporário contendo somente
+        // a variação atual.
+        //
+        // Isso garante que o preço/regra usados sejam
+        // justamente os desta variação.
+        // =================================================
+
+        const itemDaVariacao = {
+
+            ...item,
+
+            variations: [
+                variacaoAlvo
+            ]
+
+        };
+
+
+        // =================================================
+        // CALCULAR ESTOQUE DESTA VARIAÇÃO
+        // =================================================
+
+        const quantidadeParaEnviar =
+            calcularQuantidadeComRegras(
+
+                quantidadeReal,
+
+                categoria,
+
+                itemDaVariacao,
+
+                skuProduto,
+
+                marcaProduto,
+
+                modeloProduto,
+
+                produto,
+
+                skusFilhos,
+
+                skuVariacao
+            );
+
+
+        console.log(
+            `📊 ${itemId} / variação ${varId} -> estoque calculado: ${quantidadeParaEnviar}`
+        );
+
+
+        // =================================================
+        // ENDPOINT DA VARIAÇÃO
+        // =================================================
+
+        const targetUrl =
+            `https://api.mercadolibre.com/items/${itemId}/variations/${varId}`;
+
+
+        const putProxy =
+            `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(targetUrl)}&token=${encodeURIComponent(token)}`;
+
+
+        console.log(
+            `📦 Atualizando ${itemId} / variação ${varId} / SKU "${skuVariacao}" -> ${quantidadeParaEnviar}`
+        );
+
+
+        try {
+
+            const putRes =
+                await fetch(
+                    putProxy,
+                    {
+
+                        method:
+                            'PUT',
+
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                        body:
+                            JSON.stringify({
+
+                                available_quantity:
+                                    quantidadeParaEnviar
+
+                            })
+
                     }
-                    if (newQty === quantidadeParaEnviar) {
-                        console.log(`✅ Variação ${varId} atualizada para ${newQty}`);
-                        results.push({ codigo: itemId, success: true, variation_id: varId });
-                    } else {
-                        console.warn(`⚠️ Estoque não mudou. Esperado: ${quantidadeParaEnviar}, Recebido: ${newQty}`);
-                        results.push({ codigo: itemId, success: false, reason: 'estoque_ignorado', details: respData });
-                    }
-                } else {
-                    console.error(`❌ Falha: ${putRes.status} - ${responseText}`);
-                    results.push({ codigo: itemId, success: false, error: `HTTP ${putRes.status}` });
-                }
+                );
+
+
+            const responseText =
+                await putRes.text();
+
+
+            let respData;
+
+
+            try {
+
+                respData =
+                    JSON.parse(
+                        responseText
+                    );
+
+            } catch (e) {
+
+                respData = {
+                    raw: responseText
+                };
+
             }
+
+
+            // =================================================
+            // SUCESSO
+            // =================================================
+
+            if (putRes.ok) {
+
+                let newQty =
+                    null;
+
+
+                if (
+                    Array.isArray(
+                        respData
+                    )
+                ) {
+
+                    const updatedVar =
+                        respData.find(
+                            v =>
+                                v.id == varId
+                        );
+
+
+                    if (
+                        updatedVar
+                    ) {
+
+                        newQty =
+                            updatedVar.available_quantity;
+
+                    }
+
+                } else {
+
+                    newQty =
+                        respData.available_quantity;
+
+                }
+
+
+                // Algumas respostas do ML não retornam
+                // available_quantity.
+                //
+                // Se o PUT foi aceito, consideramos sucesso
+                // quando não existir quantidade na resposta.
+
+                const confirmouQuantidade =
+
+                    newQty === null ||
+
+                    newQty === undefined ||
+
+                    Number(
+                        newQty
+                    ) ===
+                    Number(
+                        quantidadeParaEnviar
+                    );
+
+
+                if (
+                    confirmouQuantidade
+                ) {
+
+                    console.log(
+                        `✅ Variação ${varId} sincronizada para ${quantidadeParaEnviar}`
+                    );
+
+
+                    results.push({
+
+                        codigo:
+                            itemId,
+
+                        success:
+                            true,
+
+                        variation_id:
+                            varId,
+
+                        sku_variacao:
+                            skuVariacao,
+
+                        estoque_enviado:
+                            quantidadeParaEnviar
+
+                    });
+
+                } else {
+
+                    console.warn(
+                        `⚠️ Variação ${varId}: esperado ${quantidadeParaEnviar}, recebido ${newQty}`
+                    );
+
+
+                    results.push({
+
+                        codigo:
+                            itemId,
+
+                        success:
+                            false,
+
+                        variation_id:
+                            varId,
+
+                        sku_variacao:
+                            skuVariacao,
+
+                        reason:
+                            'estoque_ignorado',
+
+                        esperado:
+                            quantidadeParaEnviar,
+
+                        recebido:
+                            newQty,
+
+                        details:
+                            respData
+
+                    });
+
+                }
+
+            }
+
+            // =================================================
+            // ERRO HTTP
+            // =================================================
+
             else {
-                console.log(`📦 Atualizando item principal para ${quantidadeParaEnviar}`);
-                const putRes = await fetch(proxyUrl, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ available_quantity: quantidadeParaEnviar })
+
+                console.error(
+                    `❌ Falha ao atualizar variação ${varId}: ${putRes.status} - ${responseText}`
+                );
+
+
+                results.push({
+
+                    codigo:
+                        itemId,
+
+                    success:
+                        false,
+
+                    variation_id:
+                        varId,
+
+                    sku_variacao:
+                        skuVariacao,
+
+                    error:
+                        `HTTP ${putRes.status}`,
+
+                    details:
+                        respData
+
                 });
-                const responseText = await putRes.text();
-                let respData;
-                try { respData = JSON.parse(responseText); } catch(e) { respData = { raw: responseText }; }
-                if (putRes.ok && respData.available_quantity === quantidadeParaEnviar) {
-                    console.log(`✅ Item ${itemId} atualizado`);
-                    results.push({ codigo: itemId, success: true });
-                } else {
-                    console.warn(`⚠️ Falha item: ${putRes.status}`);
-                    results.push({ codigo: itemId, success: false, reason: 'estoque_ignorado', details: respData });
-                }
+
             }
+
+        }
+
+        // =====================================================
+        // ERRO DA VARIAÇÃO
+        // =====================================================
+
+        catch (
+            erroVariacao
+        ) {
+
+            console.error(
+                `❌ Erro ao atualizar ${itemId} / variação ${varId}:`,
+                erroVariacao
+            );
+
+
+            results.push({
+
+                codigo:
+                    itemId,
+
+                success:
+                    false,
+
+                variation_id:
+                    varId,
+
+                sku_variacao:
+                    skuVariacao,
+
+                error:
+                    erroVariacao.message
+
+            });
+
+        }
+
+
+        // =====================================================
+        // PEQUENO INTERVALO ENTRE PUTS
+        // =====================================================
+
+        await new Promise(
+            r =>
+                setTimeout(
+                    r,
+                    100
+                )
+        );
+
+    }
+
+}
+
+// =========================================================
+// ANÚNCIO SEM VARIAÇÕES
+// =========================================================
+else {
+
+    const skuAnuncioLocal =
+        extrairSkuDoItem(item) ||
+        skuProduto;
+
+
+    const quantidadeParaEnviar =
+        calcularQuantidadeComRegras(
+
+            quantidadeReal,
+
+            categoria,
+
+            item,
+
+            skuProduto,
+
+            marcaProduto,
+
+            modeloProduto,
+
+            produto,
+
+            skusFilhos,
+
+            skuAnuncioLocal
+
+        );
+
+
+    console.log(
+        `📦 Atualizando item principal ${itemId} para ${quantidadeParaEnviar}`
+    );
+
+
+    const putRes =
+        await fetch(
+            proxyUrl,
+            {
+
+                method:
+                    'PUT',
+
+                headers: {
+                    'Content-Type':
+                        'application/json'
+                },
+
+                body:
+                    JSON.stringify({
+
+                        available_quantity:
+                            quantidadeParaEnviar
+
+                    })
+
+            }
+        );
+
+
+    const responseText =
+        await putRes.text();
+
+
+    let respData;
+
+
+    try {
+
+        respData =
+            JSON.parse(
+                responseText
+            );
+
+    } catch (e) {
+
+        respData = {
+            raw:
+                responseText
+        };
+
+    }
+
+
+    if (
+        putRes.ok
+    ) {
+
+        const recebido =
+            respData.available_quantity;
+
+
+        const confirmouQuantidade =
+
+            recebido === undefined ||
+
+            recebido === null ||
+
+            Number(
+                recebido
+            ) ===
+            Number(
+                quantidadeParaEnviar
+            );
+
+
+        if (
+            confirmouQuantidade
+        ) {
+
+            console.log(
+                `✅ Item ${itemId} atualizado`
+            );
+
+
+            results.push({
+
+                codigo:
+                    itemId,
+
+                success:
+                    true,
+
+                estoque_enviado:
+                    quantidadeParaEnviar
+
+            });
+
+        } else {
+
+            console.warn(
+                `⚠️ Item ${itemId}: esperado ${quantidadeParaEnviar}, recebido ${recebido}`
+            );
+
+
+            results.push({
+
+                codigo:
+                    itemId,
+
+                success:
+                    false,
+
+                reason:
+                    'estoque_ignorado',
+
+                esperado:
+                    quantidadeParaEnviar,
+
+                recebido:
+                    recebido,
+
+                details:
+                    respData
+
+            });
+
+        }
+
+    } else {
+
+        console.warn(
+            `⚠️ Falha item ${itemId}: ${putRes.status}`
+        );
+
+
+        results.push({
+
+            codigo:
+                itemId,
+
+            success:
+                false,
+
+            error:
+                `HTTP ${putRes.status}`,
+
+            details:
+                respData
+
+        });
+
+    }
+
+}
 
         } catch (error) {
             console.error(`❌ Erro ${itemId}:`, error);
