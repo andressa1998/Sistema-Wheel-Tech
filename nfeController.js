@@ -105,780 +105,1780 @@ async function buscarTransportadoraPorId(id) {
 
 // ===================== EMISSÃO DE NF-e =====================
 async function emitirNFe(req, res) {
+
     console.log('📨 Requisição de emissão recebida');
+
     try {
-        const dados = req.body;
-        const { venda_id, cliente, produtos, cfop, natureza_operacao, modalidade_frete, transportadora_id, ml_access_token } = dados;
 
-        // Validações iniciais
-        if (!cliente) throw new Error('Cliente não informado');
-        if (!produtos || produtos.length === 0) throw new Error('Nenhum produto informado');
+        // =====================================================
+        // DADOS RECEBIDOS
+        // =====================================================
 
-        // =========================================================
-// IDENTIFICAR OPERAÇÃO
-// =========================================================
-
-const SELLER_UF =
-    'PR';
+        const dados =
+            req.body || {};
 
 
-const buyerUF =
-    String(
-        cliente.uf ||
-        ''
-    )
-        .trim()
-        .toUpperCase();
+        const {
+            venda_id,
+            cliente,
+            produtos,
+            cfop,
+            natureza_operacao,
+            modalidade_frete,
+            transportadora_id,
+            ml_access_token,
+
+            // NF-e avulsa / devolução
+            emissao_avulsa,
+            eh_devolucao,
+            finalidade_nfe,
+            tp_nf,
+            chave_nfe_referenciada
+
+        } = dados;
 
 
-if (
-    !buyerUF ||
-    buyerUF.length !== 2
-) {
+        // =====================================================
+        // VALIDAÇÕES INICIAIS
+        // =====================================================
 
-    throw new Error(
-        'UF do cliente não informada ou inválida.'
-    );
-}
+        if (!cliente) {
 
-
-const naturezaNormalizada =
-    String(
-        natureza_operacao ||
-        ''
-    )
-        .normalize(
-            'NFD'
-        )
-        .replace(
-            /[\u0300-\u036f]/g,
-            ''
-        )
-        .trim()
-        .toLowerCase();
-
-
-const ehDevolucao =
-    dados.eh_devolucao ===
-        true ||
-
-    String(
-        dados.finalidade_nfe ||
-        ''
-    ) ===
-        '4' ||
-
-    naturezaNormalizada.includes(
-        'devolucao'
-    );
-
-
-// =========================================================
-// DEVOLUÇÃO
-// =========================================================
-
-if (ehDevolucao) {
-
-    const cfopEsperado =
-        buyerUF ===
-        SELLER_UF
-
-            ? '1202'
-
-            : '2202';
-
-
-    if (
-        String(cfop) !==
-        cfopEsperado
-    ) {
-
-        throw new Error(
-
-            buyerUF ===
-            SELLER_UF
-
-                ? `Entrada de Devolução dentro do PR exige CFOP ${cfopEsperado}.`
-
-                : `Entrada de Devolução do estado ${buyerUF} exige CFOP ${cfopEsperado}.`
-        );
-    }
-
-
-// =========================================================
-// VENDA NORMAL
-// =========================================================
-
-} else {
-
-    if (
-        buyerUF ===
-            SELLER_UF &&
-        String(cfop) !==
-            '5102'
-    ) {
-
-        throw new Error(
-            `Venda dentro do estado (${buyerUF}) exige CFOP 5102.`
-        );
-    }
-
-
-    if (
-        buyerUF !==
-            SELLER_UF &&
-        String(cfop) !==
-            '6108'
-    ) {
-
-        throw new Error(
-            `Venda fora do estado (${buyerUF}) exige CFOP 6108.`
-        );
-    }
-}
-
-        // ========== TRATAMENTO DO CPF/CNPJ ==========
-        let documento = (cliente.documento || '').replace(/\D/g, '');
-        if (!documento || (documento.length !== 11 && documento.length !== 14)) {
-            console.warn('⚠️ Documento inválido, usando CPF genérico para homologação');
-            documento = '99999999999';
-        }
-        let tipoDoc = (documento.length === 14) ? 'CNPJ' : 'CPF';
-
-        // ========== DADOS DO DESTINATÁRIO ==========
-        const logradouro = cliente.endereco || cliente.logradouro || 'NÃO INFORMADO';
-        const numero = cliente.numero || 'S/N';
-        const bairro = cliente.bairro || 'CENTRO';
-        let cidade = cliente.cidade || 'ARAUCARIA';
-        let uf = buyerUF;
-        let cep = (cliente.cep || '83702090').replace(/\D/g, '');
-        if (cep.length !== 8) cep = '83702090';
-
-        let codigoIbge = DEFAULT_IBGE;
-        try {
-            codigoIbge = await obterCodigoMunicipio(cidade, uf, cep);
-        } catch (err) {
-            console.warn('Erro ao obter IBGE, usando padrão:', err.message);
+            throw new Error(
+                'Cliente não informado'
+            );
         }
 
-        const destinatario = {
-            xNome: cliente.nome || 'Consumidor Final',
-            xLgr: logradouro,
-            nro: numero,
-            xBairro: bairro,
-            xMun: cidade,
-            UF: uf,
-            CEP: cep,
-            cMun: codigoIbge
-        };
-        if (tipoDoc === 'CPF') {
-            destinatario.CPF = documento;
+
+        if (
+            !Array.isArray(produtos) ||
+            produtos.length === 0
+        ) {
+
+            throw new Error(
+                'Nenhum produto informado'
+            );
+        }
+
+
+        if (!cfop) {
+
+            throw new Error(
+                'CFOP não informado'
+            );
+        }
+
+
+        // =====================================================
+        // IDENTIFICAR OPERAÇÃO
+        // =====================================================
+
+        const SELLER_UF =
+            'PR';
+
+
+        const buyerUF =
+            String(
+                cliente.uf ||
+                ''
+            )
+                .trim()
+                .toUpperCase();
+
+
+        if (
+            !buyerUF ||
+            buyerUF.length !== 2
+        ) {
+
+            throw new Error(
+                'UF do cliente não informada ou inválida.'
+            );
+        }
+
+
+        const naturezaNormalizada =
+            String(
+                natureza_operacao ||
+                ''
+            )
+                .normalize('NFD')
+                .replace(
+                    /[\u0300-\u036f]/g,
+                    ''
+                )
+                .trim()
+                .toLowerCase();
+
+
+        const ehDevolucao =
+            eh_devolucao === true ||
+
+            String(
+                finalidade_nfe ||
+                ''
+            ) === '4' ||
+
+            naturezaNormalizada.includes(
+                'devolucao'
+            );
+
+
+        console.log(
+            '🧾 Tipo da operação:',
+            {
+                ehDevolucao,
+                natureza_operacao,
+                finalidade_nfe,
+                tp_nf,
+                cfop,
+                buyerUF
+            }
+        );
+
+
+        // =====================================================
+        // VALIDAR CFOP
+        // =====================================================
+
+        if (ehDevolucao) {
+
+            // =================================================
+            // ENTRADA DE DEVOLUÇÃO
+            //
+            // PR → PR = 1202
+            // Outro estado → PR = 2202
+            // =================================================
+
+            const cfopEsperado =
+                buyerUF === SELLER_UF
+                    ? '1202'
+                    : '2202';
+
+
+            if (
+                String(cfop) !==
+                cfopEsperado
+            ) {
+
+                throw new Error(
+
+                    buyerUF === SELLER_UF
+
+                        ? `Entrada de Devolução dentro do PR exige CFOP ${cfopEsperado}.`
+
+                        : `Entrada de Devolução do estado ${buyerUF} exige CFOP ${cfopEsperado}.`
+                );
+            }
+
+
+            const chaveReferenciada =
+                String(
+                    chave_nfe_referenciada ||
+                    ''
+                )
+                    .replace(
+                        /\D/g,
+                        ''
+                    );
+
+
+            if (
+                chaveReferenciada.length !==
+                44
+            ) {
+
+                throw new Error(
+                    'Entrada de Devolução exige a chave de acesso da NF-e original com 44 dígitos.'
+                );
+            }
+
+
+            console.log(
+                '↩️ DEVOLUÇÃO VALIDADA:',
+                {
+                    buyerUF,
+                    cfop,
+                    finalidade_nfe: '4',
+                    tpNF: '0',
+                    chaveReferenciada
+                }
+            );
+
+
         } else {
-            destinatario.CNPJ = documento;
-        }
 
-        // ========== CONTROLE SEQUENCIAL DA NF ==========
-        const serie = 3;
-        let nNF = null;
-        for (let i = 0; i < 5; i++) {
-            try {
-                const { data: controle } = await supabase
-                    .from('controle_nfe')
-                    .select('ultimo_numero')
-                    .eq('serie', serie)
-                    .maybeSingle();
-                const proximo = (controle?.ultimo_numero || 50000) + 1;
-                const { error } = await supabase
-                    .from('controle_nfe')
-                    .upsert({ serie, ultimo_numero: proximo }, { onConflict: 'serie' });
-                if (!error) {
-                    nNF = proximo;
-                    console.log(`✅ Número NF alocado: ${nNF}`);
-                    break;
-                }
-            } catch (err) { console.warn(err); }
-            await new Promise(r => setTimeout(r, 200));
-        }
-        if (!nNF) nNF = Math.floor(Math.random() * 900000000) + 100000000;
+            // =================================================
+            // VENDA NORMAL
+            // =================================================
 
-        // ========== BUSCAR TRANSPORTADORA ==========
-        let transportadoraDados = null;
-        if (transportadora_id) {
-            try {
-                const { data: transp, error } = await supabase
-                    .from('transportadoras')
-                    .select('*')
-                    .eq('id', transportadora_id)
-                    .maybeSingle();
-                if (!error && transp) {
-                    const cnpjLimpo = (transp.cnpj || '').replace(/\D/g, '');
-                    if (cnpjLimpo.length === 14) {
-                        transportadoraDados = {
-                            CNPJ: cnpjLimpo,
-                            xNome: transp.nome || 'Transportadora não informada',
-                            IE: transp.ie || 'ISENTO',
-                            xEnder: transp.endereco || '',
-                            xMun: transp.cidade || '',
-                            UF: transp.uf || '',
-                        };
-                        console.log(`✅ Transportadora carregada: ${transp.nome}`);
-                    } else {
-                        console.warn(`⚠️ CNPJ da transportadora inválido: ${transp.cnpj} - Ignorando.`);
-                    }
-                }
-            } catch (err) {
-                console.warn('⚠️ Erro ao buscar transportadora:', err.message);
+            if (
+                buyerUF === SELLER_UF &&
+                String(cfop) !== '5102'
+            ) {
+
+                throw new Error(
+                    `Venda dentro do estado (${buyerUF}) exige CFOP 5102.`
+                );
+            }
+
+
+            if (
+                buyerUF !== SELLER_UF &&
+                String(cfop) !== '6108'
+            ) {
+
+                throw new Error(
+                    `Venda fora do estado (${buyerUF}) exige CFOP 6108.`
+                );
             }
         }
 
-        // ========== CÁLCULO DO VALOR TOTAL E INFORMAÇÕES ADICIONAIS ==========
-        const valorTotal = produtos.reduce((sum, p) => sum + (p.quantidade * p.valor_unitario), 0);
-        const percentualTributos = 0.15;
-        const totalTributos = valorTotal * percentualTributos;
-        const federais = totalTributos * 0.4;
-        const estaduais = totalTributos * 0.6;
 
-        const infAdic = `INFORMAÇÕES COMPLEMENTARES
+        // =====================================================
+        // CPF / CNPJ
+        // =====================================================
+
+        let documento =
+            String(
+                cliente.documento ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
+
+
+        if (
+            !documento ||
+            (
+                documento.length !== 11 &&
+                documento.length !== 14
+            )
+        ) {
+
+            console.warn(
+                '⚠️ Documento inválido, usando CPF genérico para homologação'
+            );
+
+
+            documento =
+                '99999999999';
+        }
+
+
+        const tipoDoc =
+            documento.length === 14
+                ? 'CNPJ'
+                : 'CPF';
+
+
+        // =====================================================
+        // DADOS DESTINATÁRIO
+        // =====================================================
+
+        const logradouro =
+            cliente.endereco ||
+            cliente.logradouro ||
+            'NÃO INFORMADO';
+
+
+        const numero =
+            cliente.numero ||
+            'S/N';
+
+
+        const bairro =
+            cliente.bairro ||
+            'CENTRO';
+
+
+        const cidade =
+            String(
+                cliente.cidade ||
+                'ARAUCARIA'
+            )
+                .trim();
+
+
+        const uf =
+            buyerUF;
+
+
+        let cep =
+            String(
+                cliente.cep ||
+                '83702090'
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
+
+
+        if (
+            cep.length !== 8
+        ) {
+
+            cep =
+                '83702090';
+        }
+
+
+        // =====================================================
+        // IBGE
+        // =====================================================
+
+        let codigoIbge =
+            DEFAULT_IBGE;
+
+
+        try {
+
+            codigoIbge =
+                await obterCodigoMunicipio(
+                    cidade,
+                    uf,
+                    cep
+                );
+
+        } catch (err) {
+
+            console.warn(
+                'Erro ao obter IBGE, usando padrão:',
+                err.message
+            );
+        }
+
+
+        // =====================================================
+        // DESTINATÁRIO XML
+        // =====================================================
+
+        const destinatario = {
+
+            xNome:
+                cliente.nome ||
+                'Consumidor Final',
+
+            xLgr:
+                logradouro,
+
+            nro:
+                numero,
+
+            xBairro:
+                bairro,
+
+            xMun:
+                cidade,
+
+            UF:
+                uf,
+
+            CEP:
+                cep,
+
+            cMun:
+                codigoIbge
+        };
+
+
+        if (
+            tipoDoc === 'CPF'
+        ) {
+
+            destinatario.CPF =
+                documento;
+
+        } else {
+
+            destinatario.CNPJ =
+                documento;
+        }
+
+
+        // =====================================================
+        // CONTROLE SEQUENCIAL DA NF
+        // =====================================================
+
+        const serie =
+            3;
+
+
+        let nNF =
+            null;
+
+
+        for (
+            let i = 0;
+            i < 5;
+            i++
+        ) {
+
+            try {
+
+                const {
+                    data: controle
+                } =
+                    await supabase
+                        .from(
+                            'controle_nfe'
+                        )
+                        .select(
+                            'ultimo_numero'
+                        )
+                        .eq(
+                            'serie',
+                            serie
+                        )
+                        .maybeSingle();
+
+
+                const proximo =
+                    (
+                        controle
+                            ?.ultimo_numero ||
+                        50000
+                    ) + 1;
+
+
+                const {
+                    error
+                } =
+                    await supabase
+                        .from(
+                            'controle_nfe'
+                        )
+                        .upsert(
+                            {
+                                serie,
+                                ultimo_numero:
+                                    proximo
+                            },
+                            {
+                                onConflict:
+                                    'serie'
+                            }
+                        );
+
+
+                if (!error) {
+
+                    nNF =
+                        proximo;
+
+
+                    console.log(
+                        `✅ Número NF alocado: ${nNF}`
+                    );
+
+
+                    break;
+                }
+
+
+            } catch (err) {
+
+                console.warn(
+                    err
+                );
+            }
+
+
+            await new Promise(
+                resolve =>
+                    setTimeout(
+                        resolve,
+                        200
+                    )
+            );
+        }
+
+
+        if (!nNF) {
+
+            nNF =
+                Math.floor(
+                    Math.random() *
+                    900000000
+                ) +
+                100000000;
+        }
+
+
+        // =====================================================
+        // TRANSPORTADORA
+        // =====================================================
+
+        let transportadoraDados =
+            null;
+
+
+        if (transportadora_id) {
+
+            try {
+
+                const {
+                    data: transp,
+                    error
+                } =
+                    await supabase
+                        .from(
+                            'transportadoras'
+                        )
+                        .select('*')
+                        .eq(
+                            'id',
+                            transportadora_id
+                        )
+                        .maybeSingle();
+
+
+                if (
+                    !error &&
+                    transp
+                ) {
+
+                    const cnpjLimpo =
+                        String(
+                            transp.cnpj ||
+                            ''
+                        )
+                            .replace(
+                                /\D/g,
+                                ''
+                            );
+
+
+                    if (
+                        cnpjLimpo.length ===
+                        14
+                    ) {
+
+                        transportadoraDados = {
+
+                            CNPJ:
+                                cnpjLimpo,
+
+                            xNome:
+                                transp.nome ||
+                                'Transportadora não informada',
+
+                            IE:
+                                transp.ie ||
+                                'ISENTO',
+
+                            xEnder:
+                                transp.endereco ||
+                                '',
+
+                            xMun:
+                                transp.cidade ||
+                                '',
+
+                            UF:
+                                transp.uf ||
+                                ''
+                        };
+
+
+                        console.log(
+                            `✅ Transportadora carregada: ${transp.nome}`
+                        );
+
+                    } else {
+
+                        console.warn(
+                            `⚠️ CNPJ da transportadora inválido: ${transp.cnpj} - Ignorando.`
+                        );
+                    }
+                }
+
+
+            } catch (err) {
+
+                console.warn(
+                    '⚠️ Erro ao buscar transportadora:',
+                    err.message
+                );
+            }
+        }
+
+
+        // =====================================================
+        // VALOR TOTAL
+        // =====================================================
+
+        const valorTotal =
+            produtos.reduce(
+                (
+                    sum,
+                    produto
+                ) => {
+
+                    const quantidade =
+                        Number(
+                            produto.quantidade ||
+                            0
+                        );
+
+
+                    const valorUnitario =
+                        Number(
+                            produto.valor_unitario ||
+                            0
+                        );
+
+
+                    return (
+                        sum +
+                        (
+                            quantidade *
+                            valorUnitario
+                        )
+                    );
+                },
+                0
+            );
+
+
+        // =====================================================
+        // TRIBUTOS APROXIMADOS
+        // =====================================================
+
+        const percentualTributos =
+            0.15;
+
+
+        const totalTributos =
+            valorTotal *
+            percentualTributos;
+
+
+        const federais =
+            totalTributos *
+            0.4;
+
+
+        const estaduais =
+            totalTributos *
+            0.6;
+
+
+        const infAdic =
+`INFORMAÇÕES COMPLEMENTARES
 I - "DOCUMENTO EMITIDO POR ME OU EPP OPTANTE PELO SIMPLES NACIONAL";II - "NAO GERA DIREITO A CREDITO FISCAL DE ICMS, DE ISS E DE IPI".
 Valor aproximado dos tributos:
 R$ ${federais.toFixed(2)} federais
 R$ ${estaduais.toFixed(2)} estaduais
 Fonte: IBPT/empresometro.com.br 92589A`;
 
-        // =========================================================
-// GERAR XML
-// =========================================================
 
-const tokenCSRT =
-    AMBIENTE === 'producao'
-        ? CSRT_TOKEN_PRODUCAO
-        : CSRT_TOKEN_HOMOLOGACAO;
+        // =====================================================
+        // CSRT
+        // =====================================================
 
-
-const idCSRT =
-    AMBIENTE === 'producao'
-        ? '04'
-        : '03';
+        const tokenCSRT =
+            AMBIENTE === 'producao'
+                ? CSRT_TOKEN_PRODUCAO
+                : CSRT_TOKEN_HOMOLOGACAO;
 
 
-// =========================================================
-// GERAR XML BASE
-// =========================================================
+        // =====================================================
+        // MODALIDADE FRETE
+        //
+        // Venda ML mantém 2 como fallback.
+        // Avulsa mantém 9 como fallback.
+        // =====================================================
 
-let xml = gerarXmlNfe({
-
-    nNF,
-
-    serie,
-
-    tpAmb:
-        AMBIENTE === 'producao'
-            ? '1'
-            : '2',
-
-    destinatario,
-
-    produtos,
-
-    cfop,
-
-    natOp:
-        natureza_operacao ||
-        'Venda',
-
-
-    // =====================================================
-    // RESPEITAR MODALIDADE ESCOLHIDA NO FRONT
-    //
-    // Antes estava FIXO em 2 = terceiros.
-    //
-    // 9 = sem frete
-    // =====================================================
-
-    modFrete:
-        modalidade_frete ||
-        '9',
-
-    transportadora:
-        transportadoraDados,
-
-    volumes:
-        {
-            qVol: 1,
-            pesoL: 0,
-            pesoB: 0
-        },
-
-    fatura:
-        null,
-
-    infAdic:
-        infAdic,
-
-    respTec: {
-
-        CNPJ:
-            '32830261000125',
-
-        xContato:
-            'WHEEL TECH BICYCLING LTDA',
-
-        email:
-            'wheeltechbicycling@gmail.com.br',
-
-        fone:
-            '4131501230',
-
-        tokenCSRT:
-            tokenCSRT
-    }
-});
-
-
-// =========================================================
-// AJUSTAR XML QUANDO FOR DEVOLUÇÃO
-//
-// O xmlBuilder atual foi construído pensando em VENDA:
-//
-// tpNF   = 1
-// finNFe = 1
-//
-// Para entrada de devolução:
-//
-// tpNF   = 0
-// finNFe = 4
-// NFref/refNFe = chave da NF-e original
-// =========================================================
-
-if (ehDevolucao) {
-
-    console.log(
-        '↩️ Ajustando XML para ENTRADA DE DEVOLUÇÃO...'
-    );
-
-
-    const chaveReferenciada =
-        String(
-            dados.chave_nfe_referenciada ||
-            ''
-        )
-            .replace(
-                /\D/g,
-                ''
+        const modFreteFinal =
+            String(
+                modalidade_frete ??
+                (
+                    emissao_avulsa
+                        ? '9'
+                        : '2'
+                )
             );
 
 
-    // =====================================================
-    // VALIDAR CHAVE
-    // =====================================================
+        // =====================================================
+        // GERAR XML BASE
+        // =====================================================
 
-    if (
-        chaveReferenciada.length !== 44
-    ) {
+        let xml =
+            gerarXmlNfe({
 
-        throw new Error(
-            'NF-e de devolução exige chave referenciada com 44 dígitos.'
-        );
-    }
+                nNF,
+
+                serie,
+
+                tpAmb:
+                    AMBIENTE ===
+                    'producao'
+                        ? '1'
+                        : '2',
+
+                destinatario,
+
+                produtos,
+
+                cfop,
+
+                natOp:
+                    natureza_operacao ||
+                    'Venda',
+
+                modFrete:
+                    modFreteFinal,
+
+                transportadora:
+                    transportadoraDados,
+
+                volumes: {
+                    qVol: 1,
+                    pesoL: 0,
+                    pesoB: 0
+                },
+
+                fatura:
+                    null,
+
+                infAdic,
+
+                respTec: {
+
+                    CNPJ:
+                        '32830261000125',
+
+                    xContato:
+                        'WHEEL TECH BICYCLING LTDA',
+
+                    email:
+                        'wheeltechbicycling@gmail.com.br',
+
+                    fone:
+                        '4131501230',
+
+                    tokenCSRT
+                }
+            });
 
 
-    // =====================================================
-    // tpNF
-    //
-    // 0 = Entrada
-    // 1 = Saída
-    // =====================================================
+        // =====================================================
+        // AJUSTAR XML PARA DEVOLUÇÃO
+        // =====================================================
 
-    if (
-        /<tpNF>\d<\/tpNF>/.test(
-            xml
-        )
-    ) {
+        if (ehDevolucao) {
 
-        xml =
-            xml.replace(
-                /<tpNF>\d<\/tpNF>/,
-                '<tpNF>0</tpNF>'
+            console.log(
+                '↩️ Ajustando XML para ENTRADA DE DEVOLUÇÃO...'
             );
 
-    } else {
 
-        throw new Error(
-            'Tag <tpNF> não encontrada no XML gerado.'
-        );
-    }
-
-
-    // =====================================================
-    // finNFe
-    //
-    // 1 = Normal
-    // 4 = Devolução
-    // =====================================================
-
-    if (
-        /<finNFe>\d<\/finNFe>/.test(
-            xml
-        )
-    ) {
-
-        xml =
-            xml.replace(
-                /<finNFe>\d<\/finNFe>/,
-                '<finNFe>4</finNFe>'
-            );
-
-    } else {
-
-        throw new Error(
-            'Tag <finNFe> não encontrada no XML gerado.'
-        );
-    }
+            const chaveReferenciada =
+                String(
+                    chave_nfe_referenciada ||
+                    ''
+                )
+                    .replace(
+                        /\D/g,
+                        ''
+                    );
 
 
-    // =====================================================
-    // REMOVER REFERÊNCIA ANTIGA, CASO EXISTA
-    // =====================================================
+            if (
+                chaveReferenciada.length !==
+                44
+            ) {
 
-    xml =
-        xml.replace(
-            /<NFref>[\s\S]*?<\/NFref>/g,
-            ''
-        );
-
-
-    // =====================================================
-    // ADICIONAR NF-e REFERENCIADA
-    //
-    // Inserimos antes do fechamento de <ide>.
-    // =====================================================
-
-    const xmlReferencia =
-        `<NFref>` +
-            `<refNFe>${chaveReferenciada}</refNFe>` +
-        `</NFref>`;
-
-
-    if (
-        xml.includes(
-            '</ide>'
-        )
-    ) {
-
-        xml =
-            xml.replace(
-                '</ide>',
-                `${xmlReferencia}</ide>`
-            );
-
-    } else {
-
-        throw new Error(
-            'Tag </ide> não encontrada no XML gerado.'
-        );
-    }
-
-
-    // =====================================================
-    // LOG DE CONFERÊNCIA
-    // =====================================================
-
-    const tpNFXml =
-        xml.match(
-            /<tpNF>([^<]+)<\/tpNF>/
-        )?.[1];
-
-
-    const finNFeXml =
-        xml.match(
-            /<finNFe>([^<]+)<\/finNFe>/
-        )?.[1];
-
-
-    const refNFeXml =
-        xml.match(
-            /<refNFe>(\d{44})<\/refNFe>/
-        )?.[1];
-
-
-    console.log(
-        '✅ XML DEVOLUÇÃO AJUSTADO:',
-        {
-            tpNF:
-                tpNFXml,
-
-            finNFe:
-                finNFeXml,
-
-            refNFe:
-                refNFeXml,
-
-            cfop,
-
-            ufCliente:
-                buyerUF
-        }
-    );
-
-
-    // =====================================================
-    // SEGURANÇA
-    // =====================================================
-
-    if (
-        tpNFXml !== '0'
-    ) {
-
-        throw new Error(
-            `Erro interno: NF-e de devolução ficou com tpNF=${tpNFXml}. Esperado: 0.`
-        );
-    }
-
-
-    if (
-        finNFeXml !== '4'
-    ) {
-
-        throw new Error(
-            `Erro interno: NF-e de devolução ficou com finNFe=${finNFeXml}. Esperado: 4.`
-        );
-    }
-
-
-    if (
-        refNFeXml !==
-        chaveReferenciada
-    ) {
-
-        throw new Error(
-            'Erro interno: chave referenciada não foi inserida corretamente no XML.'
-        );
-    }
-}
-
-
-// =========================================================
-// DEBUG FINAL ANTES DE ASSINAR
-// =========================================================
-
-console.log(
-    '🧾 DADOS FISCAIS DO XML:',
-    {
-        operacao:
-            ehDevolucao
-                ? 'ENTRADA DE DEVOLUÇÃO'
-                : 'VENDA',
-
-        cfop,
-
-        tpNF:
-            xml.match(
-                /<tpNF>([^<]+)<\/tpNF>/
-            )?.[1],
-
-        finNFe:
-            xml.match(
-                /<finNFe>([^<]+)<\/finNFe>/
-            )?.[1],
-
-        refNFe:
-            xml.match(
-                /<refNFe>(\d{44})<\/refNFe>/
-            )?.[1] ||
-            null,
-
-        modFrete:
-            xml.match(
-                /<modFrete>([^<]+)<\/modFrete>/
-            )?.[1]
-    }
-);
-
-        // ========== ASSINAR XML ==========
-        const certData = loadCertificates();
-        console.log('🔑 Certificado carregado?', !!certData.privateKey, !!certData.cert);
-        const xmlAssinado = assinarXml(xml, { privateKey: certData.privateKey, cert: certData.cert });
-
-        // ===== SALVAR XML ASSINADO PARA INSPEÇÃO =====
-        const xmlPath = path.join(__dirname, 'xml_gerado', `nfe_${nNF}_${Date.now()}.xml`);
-        const dir = path.dirname(xmlPath);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(xmlPath, xmlAssinado, 'utf8');
-        console.log(`📁 XML assinado salvo em: ${xmlPath}`);
-
-        // ========== ENVIAR PARA SEFAZ ==========
-        const nfeService = new NFEService(AMBIENTE);
-        const respostaSefaz = await nfeService.sendNFe(xmlAssinado, certData);
-        console.log('📨 RESPOSTA SEFAZ (COMPLETA):', respostaSefaz);
-
-        // ========== EXTRAIR PROTOCOLO E CHAVE ==========
-        const protocolo = extrairProtocolo(respostaSefaz);
-        const chaveMatch = respostaSefaz.match(/<chNFe>(\d+)<\/chNFe>/);
-        let chaveAcesso;
-        if (chaveMatch) {
-            chaveAcesso = chaveMatch[1];
-            console.log(`✅ Chave extraída da resposta SEFAZ: ${chaveAcesso}`);
-        } else {
-            chaveAcesso = extrairChaveAcesso(xmlAssinado);
-            console.log(`⚠️ Chave extraída do XML: ${chaveAcesso}`);
-        }
-
-        if (!protocolo) throw new Error('SEFAZ não retornou protocolo');
-        console.log('✅ NF-e autorizada. Protocolo:', protocolo);
-
-        // ========== GERAR XML NO FORMATO <nfeProc> PARA MERCADO LIVRE ==========
-        let xmlParaML = null;
-        let mlXmlPath = null;
-        try {
-            const protNFeMatch = respostaSefaz.match(/<protNFe[^>]*>([\s\S]*?)<\/protNFe>/);
-            let protNFe = '';
-            if (protNFeMatch) {
-                protNFe = protNFeMatch[0];
+                throw new Error(
+                    'NF-e de devolução exige chave referenciada com 44 dígitos.'
+                );
             }
-            let xmlAssinadoSemDeclaracao = xmlAssinado.replace(/^<\?xml[^?]*\?>/, '').trim();
-            const nfeProcXML = `<?xml version="1.0" encoding="UTF-8"?>
+
+
+            // =================================================
+            // tpNF
+            //
+            // 0 = Entrada
+            // =================================================
+
+            if (
+                /<tpNF>\d<\/tpNF>/.test(
+                    xml
+                )
+            ) {
+
+                xml =
+                    xml.replace(
+                        /<tpNF>\d<\/tpNF>/,
+                        '<tpNF>0</tpNF>'
+                    );
+
+            } else {
+
+                throw new Error(
+                    'Tag <tpNF> não encontrada no XML gerado.'
+                );
+            }
+
+
+            // =================================================
+            // finNFe
+            //
+            // 4 = Devolução
+            // =================================================
+
+            if (
+                /<finNFe>\d<\/finNFe>/.test(
+                    xml
+                )
+            ) {
+
+                xml =
+                    xml.replace(
+                        /<finNFe>\d<\/finNFe>/,
+                        '<finNFe>4</finNFe>'
+                    );
+
+            } else {
+
+                throw new Error(
+                    'Tag <finNFe> não encontrada no XML gerado.'
+                );
+            }
+
+
+            // =================================================
+            // NF-e REFERENCIADA
+            // =================================================
+
+            xml =
+                xml.replace(
+                    /<NFref>[\s\S]*?<\/NFref>/g,
+                    ''
+                );
+
+
+            const xmlReferencia =
+                `<NFref>` +
+                    `<refNFe>${chaveReferenciada}</refNFe>` +
+                `</NFref>`;
+
+
+            if (
+                xml.includes(
+                    '</ide>'
+                )
+            ) {
+
+                xml =
+                    xml.replace(
+                        '</ide>',
+                        `${xmlReferencia}</ide>`
+                    );
+
+            } else {
+
+                throw new Error(
+                    'Tag </ide> não encontrada no XML gerado.'
+                );
+            }
+
+
+            // =================================================
+            // PAGAMENTO DA DEVOLUÇÃO
+            //
+            // tPag = 90 = Sem Pagamento
+            // vPag = 0.00
+            // =================================================
+
+            const xmlPagamentoDevolucao =
+                `<pag>` +
+                    `<detPag>` +
+                        `<tPag>90</tPag>` +
+                        `<vPag>0.00</vPag>` +
+                    `</detPag>` +
+                `</pag>`;
+
+
+            // =================================================
+            // SUBSTITUI PAGAMENTO EXISTENTE
+            // =================================================
+
+            if (
+                /<pag>[\s\S]*?<\/pag>/.test(
+                    xml
+                )
+            ) {
+
+                xml =
+                    xml.replace(
+                        /<pag>[\s\S]*?<\/pag>/,
+                        xmlPagamentoDevolucao
+                    );
+
+
+            // =================================================
+            // CASO NÃO EXISTA <pag>
+            // =================================================
+
+            } else if (
+                xml.includes(
+                    '<infAdic>'
+                )
+            ) {
+
+                xml =
+                    xml.replace(
+                        '<infAdic>',
+                        `${xmlPagamentoDevolucao}<infAdic>`
+                    );
+
+
+            } else if (
+                xml.includes(
+                    '<infRespTec>'
+                )
+            ) {
+
+                xml =
+                    xml.replace(
+                        '<infRespTec>',
+                        `${xmlPagamentoDevolucao}<infRespTec>`
+                    );
+
+
+            } else if (
+                xml.includes(
+                    '</infNFe>'
+                )
+            ) {
+
+                xml =
+                    xml.replace(
+                        '</infNFe>',
+                        `${xmlPagamentoDevolucao}</infNFe>`
+                    );
+
+
+            } else {
+
+                throw new Error(
+                    'Não foi possível inserir o grupo de pagamento da devolução.'
+                );
+            }
+
+
+            // =================================================
+            // CONFERÊNCIA
+            // =================================================
+
+            const tpNFXml =
+                xml.match(
+                    /<tpNF>([^<]+)<\/tpNF>/
+                )?.[1];
+
+
+            const finNFeXml =
+                xml.match(
+                    /<finNFe>([^<]+)<\/finNFe>/
+                )?.[1];
+
+
+            const refNFeXml =
+                xml.match(
+                    /<refNFe>(\d{44})<\/refNFe>/
+                )?.[1];
+
+
+            const tPagXml =
+                xml.match(
+                    /<tPag>([^<]+)<\/tPag>/
+                )?.[1];
+
+
+            const vPagXml =
+                xml.match(
+                    /<vPag>([^<]+)<\/vPag>/
+                )?.[1];
+
+
+            console.log(
+                '✅ XML DEVOLUÇÃO AJUSTADO:',
+                {
+                    tpNF:
+                        tpNFXml,
+
+                    finNFe:
+                        finNFeXml,
+
+                    refNFe:
+                        refNFeXml,
+
+                    tPag:
+                        tPagXml,
+
+                    vPag:
+                        vPagXml,
+
+                    cfop,
+
+                    ufCliente:
+                        buyerUF,
+
+                    modFrete:
+                        modFreteFinal
+                }
+            );
+
+
+            // =================================================
+            // VALIDAÇÕES INTERNAS
+            // =================================================
+
+            if (
+                tpNFXml !== '0'
+            ) {
+
+                throw new Error(
+                    `Erro interno: devolução ficou com tpNF=${tpNFXml}. Esperado 0.`
+                );
+            }
+
+
+            if (
+                finNFeXml !== '4'
+            ) {
+
+                throw new Error(
+                    `Erro interno: devolução ficou com finNFe=${finNFeXml}. Esperado 4.`
+                );
+            }
+
+
+            if (
+                refNFeXml !==
+                chaveReferenciada
+            ) {
+
+                throw new Error(
+                    'Erro interno: a chave da NF-e referenciada não foi inserida corretamente.'
+                );
+            }
+
+
+            if (
+                tPagXml !== '90'
+            ) {
+
+                throw new Error(
+                    `Erro interno: devolução ficou com tPag=${tPagXml}. Esperado 90.`
+                );
+            }
+
+
+            if (
+                Number(
+                    vPagXml ||
+                    0
+                ) !== 0
+            ) {
+
+                throw new Error(
+                    `Erro interno: devolução ficou com vPag=${vPagXml}. Esperado 0.00.`
+                );
+            }
+        }
+
+
+        // =====================================================
+        // DEBUG FISCAL FINAL
+        // =====================================================
+
+        console.log(
+            '🧾 DADOS FISCAIS DO XML:',
+            {
+                operacao:
+                    ehDevolucao
+                        ? 'ENTRADA DE DEVOLUÇÃO'
+                        : 'VENDA',
+
+                cfop,
+
+                buyerUF,
+
+                tpNF:
+                    xml.match(
+                        /<tpNF>([^<]+)<\/tpNF>/
+                    )?.[1],
+
+                finNFe:
+                    xml.match(
+                        /<finNFe>([^<]+)<\/finNFe>/
+                    )?.[1],
+
+                refNFe:
+                    xml.match(
+                        /<refNFe>(\d{44})<\/refNFe>/
+                    )?.[1] ||
+                    null,
+
+                modFrete:
+                    xml.match(
+                        /<modFrete>([^<]+)<\/modFrete>/
+                    )?.[1],
+
+                tPag:
+                    xml.match(
+                        /<tPag>([^<]+)<\/tPag>/
+                    )?.[1],
+
+                vPag:
+                    xml.match(
+                        /<vPag>([^<]+)<\/vPag>/
+                    )?.[1]
+            }
+        );
+
+
+        // =====================================================
+        // ASSINAR XML
+        // =====================================================
+
+        const certData =
+            loadCertificates();
+
+
+        console.log(
+            '🔑 Certificado carregado?',
+            !!certData.privateKey,
+            !!certData.cert
+        );
+
+
+        const xmlAssinado =
+            assinarXml(
+                xml,
+                {
+                    privateKey:
+                        certData.privateKey,
+
+                    cert:
+                        certData.cert
+                }
+            );
+
+
+        // =====================================================
+        // SALVAR XML ASSINADO
+        // =====================================================
+
+        const xmlPath =
+            path.join(
+                __dirname,
+                'xml_gerado',
+                `nfe_${nNF}_${Date.now()}.xml`
+            );
+
+
+        const dir =
+            path.dirname(
+                xmlPath
+            );
+
+
+        if (
+            !fs.existsSync(
+                dir
+            )
+        ) {
+
+            fs.mkdirSync(
+                dir,
+                {
+                    recursive:
+                        true
+                }
+            );
+        }
+
+
+        fs.writeFileSync(
+            xmlPath,
+            xmlAssinado,
+            'utf8'
+        );
+
+
+        console.log(
+            `📁 XML assinado salvo em: ${xmlPath}`
+        );
+
+
+        // =====================================================
+        // ENVIAR SEFAZ
+        // =====================================================
+
+        const nfeService =
+            new NFEService(
+                AMBIENTE
+            );
+
+
+        const respostaSefaz =
+            await nfeService
+                .sendNFe(
+                    xmlAssinado,
+                    certData
+                );
+
+
+        console.log(
+            '📨 RESPOSTA SEFAZ (COMPLETA):',
+            respostaSefaz
+        );
+
+
+        // =====================================================
+        // PROTOCOLO / CHAVE
+        // =====================================================
+
+        const protocolo =
+            extrairProtocolo(
+                respostaSefaz
+            );
+
+
+        const chaveMatch =
+            respostaSefaz
+                .match(
+                    /<chNFe>(\d+)<\/chNFe>/
+                );
+
+
+        let chaveAcesso;
+
+
+        if (chaveMatch) {
+
+            chaveAcesso =
+                chaveMatch[1];
+
+
+            console.log(
+                `✅ Chave extraída da resposta SEFAZ: ${chaveAcesso}`
+            );
+
+        } else {
+
+            chaveAcesso =
+                extrairChaveAcesso(
+                    xmlAssinado
+                );
+
+
+            console.log(
+                `⚠️ Chave extraída do XML: ${chaveAcesso}`
+            );
+        }
+
+
+        if (!protocolo) {
+
+            throw new Error(
+                'SEFAZ não retornou protocolo'
+            );
+        }
+
+
+        console.log(
+            '✅ NF-e autorizada. Protocolo:',
+            protocolo
+        );
+
+
+        // =====================================================
+        // XML nfeProc
+        // =====================================================
+
+        let xmlParaML =
+            null;
+
+
+        let mlXmlPath =
+            null;
+
+
+        try {
+
+            const protNFeMatch =
+                respostaSefaz
+                    .match(
+                        /<protNFe[^>]*>([\s\S]*?)<\/protNFe>/
+                    );
+
+
+            let protNFe =
+                '';
+
+
+            if (protNFeMatch) {
+
+                protNFe =
+                    protNFeMatch[0];
+            }
+
+
+            const xmlAssinadoSemDeclaracao =
+                xmlAssinado
+                    .replace(
+                        /^<\?xml[^?]*\?>/,
+                        ''
+                    )
+                    .trim();
+
+
+            const nfeProcXML =
+`<?xml version="1.0" encoding="UTF-8"?>
 <nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
 ${xmlAssinadoSemDeclaracao}
 ${protNFe}
 </nfeProc>`;
-            mlXmlPath = path.join(__dirname, 'xml_gerado', `nfe_${nNF}_ml.xml`);
-            fs.writeFileSync(mlXmlPath, nfeProcXML, 'utf8');
-            xmlParaML = nfeProcXML;
-            console.log(`📁 XML para ML salvo em: ${mlXmlPath}`);
+
+
+            mlXmlPath =
+                path.join(
+                    __dirname,
+                    'xml_gerado',
+                    `nfe_${nNF}_ml.xml`
+                );
+
+
+            fs.writeFileSync(
+                mlXmlPath,
+                nfeProcXML,
+                'utf8'
+            );
+
+
+            xmlParaML =
+                nfeProcXML;
+
+
+            console.log(
+                `📁 XML para ML salvo em: ${mlXmlPath}`
+            );
+
+
         } catch (err) {
-            console.warn('⚠️ Erro ao gerar XML para ML (não crítico):', err.message);
+
+            console.warn(
+                '⚠️ Erro ao gerar XML para ML (não crítico):',
+                err.message
+            );
         }
 
-        // ========== SALVAR NF-e NO SUPABASE ==========
+
+        // =====================================================
+        // SALVAR NF-e SUPABASE
+        // =====================================================
+
         const dadosInsert = {
-            data_emissao: new Date().toISOString(),
-            numero_nf: String(nNF),
-            protocolo: protocolo,
-            xml_assinado: xmlAssinado,
-            chave_acesso: chaveAcesso,
-            venda_id: venda_id || null,
-            // 🔥 NOVOS CAMPOS
-            cliente_nome: cliente?.nome || null,
-            produto_nome: produtos.map(p => p.nome).join(', '),
-            valor_total: valorTotal,
-            status: 'autorizada',
-            cancelada: false
+
+            data_emissao:
+                new Date()
+                    .toISOString(),
+
+            numero_nf:
+                String(
+                    nNF
+                ),
+
+            protocolo,
+
+            xml_assinado:
+                xmlAssinado,
+
+            chave_acesso:
+                chaveAcesso,
+
+            venda_id:
+                venda_id ||
+                null,
+
+            cliente_nome:
+                cliente?.nome ||
+                null,
+
+            produto_nome:
+                produtos
+                    .map(
+                        produto =>
+                            produto.nome
+                    )
+                    .join(
+                        ', '
+                    ),
+
+            valor_total:
+                valorTotal,
+
+            status:
+                'autorizada',
+
+            cancelada:
+                false
         };
 
-        const { error: insertError } = await supabase
-            .from('nfe_emitidas')
-            .insert(dadosInsert);
+
+        const {
+            error: insertError
+        } =
+            await supabase
+                .from(
+                    'nfe_emitidas'
+                )
+                .insert(
+                    dadosInsert
+                );
+
 
         if (insertError) {
-            console.error('❌ Erro ao salvar NF-e no Supabase:', insertError);
+
+            console.error(
+                '❌ Erro ao salvar NF-e no Supabase:',
+                insertError
+            );
+
         } else {
-            console.log('✅ NF-e salva no Supabase com sucesso.');
+
+            console.log(
+                '✅ NF-e salva no Supabase com sucesso.'
+            );
         }
 
-        // ========== ATUALIZAR VENDA E ENVIAR PARA ML ==========
-        if (venda_id) {
-            try {
-                // Atualiza a venda com os dados da NF-e
-                await supabase
-                    .from('vendas_ml')
-                    .update({
-                        nfe_emitida: true,
-                        nfe_chave: chaveAcesso,
-                        nfe_protocolo: protocolo,
-                        data_emissao: new Date().toISOString()
-                    })
-                    .eq('id', venda_id);
 
-                // Busca shipment_id e token ML
-                let shipmentId = null;
-                let tokenML = ml_access_token;
+        // =====================================================
+        // VENDA MERCADO LIVRE
+        // =====================================================
+
+        if (venda_id) {
+
+            try {
+
+                await supabase
+                    .from(
+                        'vendas_ml'
+                    )
+                    .update({
+
+                        nfe_emitida:
+                            true,
+
+                        nfe_chave:
+                            chaveAcesso,
+
+                        nfe_protocolo:
+                            protocolo,
+
+                        data_emissao:
+                            new Date()
+                                .toISOString()
+                    })
+                    .eq(
+                        'id',
+                        venda_id
+                    );
+
+
+                // =============================================
+                // TOKEN / SHIPMENT
+                // =============================================
+
+                let shipmentId =
+                    null;
+
+
+                let tokenML =
+                    ml_access_token;
+
 
                 if (!tokenML) {
-                    const { data: tokenData } = await supabase
-                        .from('vendas_ml')
-                        .select('ml_access_token')
-                        .eq('id', venda_id)
+
+                    const {
+                        data: tokenData
+                    } =
+                        await supabase
+                            .from(
+                                'vendas_ml'
+                            )
+                            .select(
+                                'ml_access_token'
+                            )
+                            .eq(
+                                'id',
+                                venda_id
+                            )
+                            .single();
+
+
+                    tokenML =
+                        tokenData
+                            ?.ml_access_token;
+                }
+
+
+                if (
+                    !tokenML &&
+                    typeof getValidToken ===
+                    'function'
+                ) {
+
+                    const tokenObj =
+                        await getValidToken();
+
+
+                    tokenML =
+                        tokenObj
+                            ?.access_token;
+                }
+
+
+                const {
+                    data: venda
+                } =
+                    await supabase
+                        .from(
+                            'vendas_ml'
+                        )
+                        .select(
+                            'shipment_id'
+                        )
+                        .eq(
+                            'id',
+                            venda_id
+                        )
                         .single();
-                    tokenML = tokenData?.ml_access_token;
-                }
 
-                if (!tokenML && typeof window?.getValidToken === 'function') {
-                    const tokenObj = await getValidToken();
-                    tokenML = tokenObj?.access_token;
-                }
 
-                const { data: venda } = await supabase
-                    .from('vendas_ml')
-                    .select('shipment_id')
-                    .eq('id', venda_id)
-                    .single();
+                shipmentId =
+                    venda
+                        ?.shipment_id;
 
-                shipmentId = venda?.shipment_id;
 
-                // Se não tiver shipment_id no banco, buscar da API do ML
-                if (!shipmentId && tokenML) {
-                    console.log(`🔍 Buscando shipment_id para venda ${venda_id}...`);
+                // =============================================
+                // BUSCAR SHIPMENT NO ML
+                // =============================================
+
+                if (
+                    !shipmentId &&
+                    tokenML
+                ) {
+
+                    console.log(
+                        `🔍 Buscando shipment_id para venda ${venda_id}...`
+                    );
+
+
                     try {
-                        const orderUrl = `https://api.mercadolibre.com/orders/${venda_id}`;
-                        const proxyUrl = `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${encodeURIComponent(tokenML)}`;
-                        const orderRes = await fetch(proxyUrl);
-                        if (orderRes.ok) {
-                            const order = await orderRes.json();
-                            shipmentId = order.shipping?.id || null;
+
+                        const orderUrl =
+                            `https://api.mercadolibre.com/orders/${venda_id}`;
+
+
+                        const proxyUrl =
+                            `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${encodeURIComponent(tokenML)}`;
+
+
+                        const orderRes =
+                            await fetch(
+                                proxyUrl
+                            );
+
+
+                        if (
+                            orderRes.ok
+                        ) {
+
+                            const order =
+                                await orderRes
+                                    .json();
+
+
+                            shipmentId =
+                                order.shipping
+                                    ?.id ||
+                                null;
+
+
                             if (shipmentId) {
+
                                 await supabase
-                                    .from('vendas_ml')
-                                    .update({ shipment_id: shipmentId })
-                                    .eq('id', venda_id);
-                                console.log(`✅ shipment_id ${shipmentId} obtido e salvo.`);
+                                    .from(
+                                        'vendas_ml'
+                                    )
+                                    .update({
+                                        shipment_id:
+                                            shipmentId
+                                    })
+                                    .eq(
+                                        'id',
+                                        venda_id
+                                    );
+
+
+                                console.log(
+                                    `✅ shipment_id ${shipmentId} obtido e salvo.`
+                                );
                             }
                         }
-                    } catch (e) {
-                        console.warn('⚠️ Erro ao buscar shipment_id:', e.message);
+
+
+                    } catch (error) {
+
+                        console.warn(
+                            '⚠️ Erro ao buscar shipment_id:',
+                            error.message
+                        );
                     }
                 }
 
-                // Enviar XML para ML se tiver shipment_id e token
-                if (shipmentId && tokenML && xmlParaML) {
-                    const isFull = await verificarSeVendaFull(venda_id, tokenML);
-                    if (isFull) {
-                        console.log(`ℹ️ Venda FULL - não é necessário importar NF-e.`);
-                    } else {
-                        console.log(`📤 Enviando NF-e para ML - Shipment: ${shipmentId}`);
-                        const resultado = await importarNFEnoML(
-                            shipmentId,
-                            xmlParaML,
+
+                // =============================================
+                // ENVIAR XML PARA ML
+                // =============================================
+
+                if (
+                    shipmentId &&
+                    tokenML &&
+                    xmlParaML
+                ) {
+
+                    const isFull =
+                        await verificarSeVendaFull(
+                            venda_id,
                             tokenML
                         );
-                        if (resultado.ok) {
-                            console.log('✅ NF-e enviada ao ML com sucesso!');
+
+
+                    if (isFull) {
+
+                        console.log(
+                            'ℹ️ Venda FULL - não é necessário importar NF-e.'
+                        );
+
+                    } else {
+
+                        console.log(
+                            `📤 Enviando NF-e para ML - Shipment: ${shipmentId}`
+                        );
+
+
+                        const resultado =
+                            await importarNFEnoML(
+                                shipmentId,
+                                xmlParaML,
+                                tokenML
+                            );
+
+
+                        if (
+                            resultado.ok
+                        ) {
+
+                            console.log(
+                                '✅ NF-e enviada ao ML com sucesso!'
+                            );
+
+
                             await supabase
-                                .from('vendas_ml')
-                                .update({ nfe_importada_ml: true })
-                                .eq('id', venda_id);
+                                .from(
+                                    'vendas_ml'
+                                )
+                                .update({
+                                    nfe_importada_ml:
+                                        true
+                                })
+                                .eq(
+                                    'id',
+                                    venda_id
+                                );
+
                         } else {
-                            console.warn('⚠️ Falha ao enviar NF-e ao ML (não crítico)');
+
+                            console.warn(
+                                '⚠️ Falha ao enviar NF-e ao ML (não crítico)'
+                            );
                         }
                     }
+
                 } else {
-                    console.warn(`⚠️ Não foi possível enviar NF-e ao ML: shipmentId=${shipmentId}, token=${!!tokenML}, xml=${!!xmlParaML}`);
+
+                    console.warn(
+                        `⚠️ Não foi possível enviar NF-e ao ML: shipmentId=${shipmentId}, token=${!!tokenML}, xml=${!!xmlParaML}`
+                    );
                 }
-            } catch (err) {
-                console.error('❌ Erro ao processar integração com ML:', err.message);
+
+
+            } catch (error) {
+
+                console.error(
+                    '❌ Erro ao processar integração com ML:',
+                    error.message
+                );
             }
         }
 
-        // ========== RETORNO PARA O CLIENTE ==========
-        res.json({
-            success: true,
+
+        // =====================================================
+        // RETORNO
+        // =====================================================
+
+        return res.json({
+
+            success:
+                true,
+
             protocolo,
+
             chaveAcesso,
-            xml_ml: mlXmlPath ? true : false
+
+            chave_acesso:
+                chaveAcesso,
+
+            xml_ml:
+                !!mlXmlPath,
+
+            devolucao:
+                ehDevolucao
         });
 
+
     } catch (error) {
-        console.error('❌ Erro na emissão:', error);
-        res.status(500).json({ success: false, error: error.message });
+
+        console.error(
+            '❌ Erro na emissão:',
+            error
+        );
+
+
+        return res
+            .status(
+                500
+            )
+            .json({
+
+                success:
+                    false,
+
+                error:
+                    error?.message ||
+                    'Erro interno na emissão da NF-e'
+            });
     }
 }
 
@@ -1053,9 +2053,15 @@ async function listarClientes(req, res) {
 // ===================== EMISSÃO AVULSA =====================
 async function emitirNFEAvulsa(req, res) {
 
-    console.log('📨 Requisição de emissão AVULSA recebida');
+    console.log(
+        '📨 Requisição de emissão AVULSA recebida'
+    );
 
     try {
+
+        // =====================================================
+        // PAYLOAD
+        // =====================================================
 
         const {
             cliente,
@@ -1066,21 +2072,28 @@ async function emitirNFEAvulsa(req, res) {
             transportadora_id,
             finalidade_nfe,
             chave_nfe_referenciada
+
         } = req.body || {};
 
 
-        console.log('📦 Payload NF-e avulsa recebido:', {
-            cliente,
-            quantidade_produtos: Array.isArray(produtos)
-                ? produtos.length
-                : 0,
-            cfop,
-            natureza_operacao,
-            modalidade_frete,
-            transportadora_id,
-            finalidade_nfe,
-            chave_nfe_referenciada
-        });
+        console.log(
+            '📦 Payload NF-e avulsa:',
+            {
+                cliente,
+                produtos:
+                    Array.isArray(
+                        produtos
+                    )
+                        ? produtos.length
+                        : 0,
+                cfop,
+                natureza_operacao,
+                modalidade_frete,
+                transportadora_id,
+                finalidade_nfe,
+                chave_nfe_referenciada
+            }
+        );
 
 
         // =====================================================
@@ -1124,17 +2137,15 @@ async function emitirNFEAvulsa(req, res) {
 
         // =====================================================
         // BUSCAR CLIENTE COMPLETO
-        //
-        // O FRONT MANDA:
-        // cliente: { id: "16" }
-        //
-        // Precisamos transformar isso no cadastro completo.
         // =====================================================
 
-        let clienteCompleto = null;
+        let clienteCompleto =
+            null;
 
 
-        if (cliente?.id) {
+        if (
+            cliente?.id
+        ) {
 
             console.log(
                 `👤 Buscando cliente completo ID ${cliente.id}...`
@@ -1144,11 +2155,17 @@ async function emitirNFEAvulsa(req, res) {
             const {
                 data,
                 error
-            } = await supabase
-                .from('clientes')
-                .select('*')
-                .eq('id', cliente.id)
-                .maybeSingle();
+            } =
+                await supabase
+                    .from(
+                        'clientes'
+                    )
+                    .select('*')
+                    .eq(
+                        'id',
+                        cliente.id
+                    )
+                    .maybeSingle();
 
 
             if (error) {
@@ -1173,7 +2190,8 @@ async function emitirNFEAvulsa(req, res) {
             }
 
 
-            clienteCompleto = data;
+            clienteCompleto =
+                data;
 
         } else {
 
@@ -1184,7 +2202,7 @@ async function emitirNFEAvulsa(req, res) {
 
 
         // =====================================================
-        // NORMALIZAÇÃO CLIENTE
+        // NORMALIZAR CLIENTE
         // =====================================================
 
         clienteCompleto.uf =
@@ -1226,6 +2244,18 @@ async function emitirNFEAvulsa(req, res) {
                 );
 
 
+        if (
+            !clienteCompleto.uf ||
+            clienteCompleto.uf.length !==
+                2
+        ) {
+
+            throw new Error(
+                `UF inválida no cadastro do cliente ${clienteCompleto.nome || cliente.id}.`
+            );
+        }
+
+
         console.log(
             '👤 CLIENTE AVULSA COMPLETO:',
             {
@@ -1248,17 +2278,6 @@ async function emitirNFEAvulsa(req, res) {
                     clienteCompleto.cep
             }
         );
-
-
-        if (
-            !clienteCompleto.uf ||
-            clienteCompleto.uf.length !== 2
-        ) {
-
-            throw new Error(
-                `UF inválida no cadastro do cliente ${clienteCompleto.nome || cliente.id}.`
-            );
-        }
 
 
         // =====================================================
@@ -1312,7 +2331,8 @@ async function emitirNFEAvulsa(req, res) {
         if (ehDevolucao) {
 
             if (
-                chaveReferenciada.length !== 44
+                chaveReferenciada.length !==
+                44
             ) {
 
                 throw new Error(
@@ -1322,7 +2342,8 @@ async function emitirNFEAvulsa(req, res) {
 
 
             const cfopEsperado =
-                clienteCompleto.uf === 'PR'
+                clienteCompleto.uf ===
+                'PR'
                     ? '1202'
                     : '2202';
 
@@ -1333,15 +2354,19 @@ async function emitirNFEAvulsa(req, res) {
             ) {
 
                 throw new Error(
-                    clienteCompleto.uf === 'PR'
+
+                    clienteCompleto.uf ===
+                    'PR'
+
                         ? `Entrada de Devolução dentro do PR exige CFOP ${cfopEsperado}.`
+
                         : `Entrada de Devolução do estado ${clienteCompleto.uf} exige CFOP ${cfopEsperado}.`
                 );
             }
 
 
             console.log(
-                '✅ DEVOLUÇÃO VALIDADA:',
+                '✅ DEVOLUÇÃO AVULSA VALIDADA:',
                 {
                     ufCliente:
                         clienteCompleto.uf,
@@ -1361,31 +2386,101 @@ async function emitirNFEAvulsa(req, res) {
 
 
         // =====================================================
-        // PRODUTOS
+        // CONVERSÃO NUMÉRICA
+        // =====================================================
+
+        const converterNumero =
+            valor => {
+
+                if (
+                    typeof valor ===
+                    'number'
+                ) {
+
+                    return valor;
+                }
+
+
+                let texto =
+                    String(
+                        valor ??
+                        ''
+                    )
+                        .trim();
+
+
+                if (!texto) {
+
+                    return 0;
+                }
+
+
+                if (
+                    texto.includes(',') &&
+                    texto.includes('.')
+                ) {
+
+                    texto =
+                        texto
+                            .replace(
+                                /\./g,
+                                ''
+                            )
+                            .replace(
+                                ',',
+                                '.'
+                            );
+
+                } else if (
+                    texto.includes(',')
+                ) {
+
+                    texto =
+                        texto.replace(
+                            ',',
+                            '.'
+                        );
+                }
+
+
+                const numero =
+                    Number(
+                        texto
+                    );
+
+
+                return Number.isFinite(
+                    numero
+                )
+                    ? numero
+                    : 0;
+            };
+
+
+        // =====================================================
+        // NORMALIZAR PRODUTOS
         // =====================================================
 
         const produtosNormalizados =
             produtos.map(
-                (produto, index) => {
+                (
+                    produto,
+                    index
+                ) => {
 
                     const quantidade =
-                        Number(
-                            produto.quantidade ||
-                            0
+                        converterNumero(
+                            produto.quantidade
                         );
 
 
                     const valorUnitario =
-                        Number(
-                            produto.valor_unitario ||
-                            0
+                        converterNumero(
+                            produto.valor_unitario
                         );
 
 
                     if (
-                        !Number.isFinite(
-                            quantidade
-                        ) ||
                         quantidade <= 0
                     ) {
 
@@ -1396,9 +2491,6 @@ async function emitirNFEAvulsa(req, res) {
 
 
                     if (
-                        !Number.isFinite(
-                            valorUnitario
-                        ) ||
                         valorUnitario < 0
                     ) {
 
@@ -1421,7 +2513,8 @@ async function emitirNFEAvulsa(req, res) {
                             String(
                                 produto.sku ||
                                 'SEM_SKU'
-                            ),
+                            )
+                                .trim(),
 
                         ncm:
                             String(
@@ -1442,7 +2535,7 @@ async function emitirNFEAvulsa(req, res) {
 
 
         // =====================================================
-        // DADOS PARA emitirNFe
+        // PAYLOAD INTERNO PARA emitirNFe
         // =====================================================
 
         const dados = {
@@ -1457,26 +2550,31 @@ async function emitirNFEAvulsa(req, res) {
                 produtosNormalizados,
 
             cfop:
-                String(cfop),
+                String(
+                    cfop
+                ),
 
             natureza_operacao:
                 natureza_operacao,
 
             modalidade_frete:
-                modalidade_frete ||
-                '9',
+                String(
+                    modalidade_frete ||
+                    '9'
+                ),
 
             transportadora_id:
                 transportadora_id ||
                 null,
 
 
-            // NF-e avulsa
+            // =============================================
+            // IDENTIFICADORES
+            // =============================================
+
             emissao_avulsa:
                 true,
 
-
-            // devolução
             eh_devolucao:
                 ehDevolucao,
 
@@ -1501,7 +2599,7 @@ async function emitirNFEAvulsa(req, res) {
 
 
         console.log(
-            '📤 DADOS ENVIADOS PARA emitirNFe:',
+            '📤 Dados finais para emitirNFe:',
             {
                 cliente: {
                     id:
@@ -1517,11 +2615,17 @@ async function emitirNFEAvulsa(req, res) {
                         dados.cliente.uf
                 },
 
+                produtos:
+                    dados.produtos.length,
+
                 cfop:
                     dados.cfop,
 
                 natureza_operacao:
                     dados.natureza_operacao,
+
+                modalidade_frete:
+                    dados.modalidade_frete,
 
                 eh_devolucao:
                     dados.eh_devolucao,
@@ -1539,7 +2643,7 @@ async function emitirNFEAvulsa(req, res) {
 
 
         // =====================================================
-        // CHAMAR emitirNFe
+        // RESPOSTA INTERNA
         // =====================================================
 
         const emitResult =
@@ -1549,7 +2653,7 @@ async function emitirNFEAvulsa(req, res) {
                     reject
                 ) => {
 
-                    let terminou =
+                    let finalizado =
                         false;
 
 
@@ -1558,22 +2662,27 @@ async function emitirNFEAvulsa(req, res) {
                         json:
                             objeto => {
 
-                                if (terminou) {
+                                if (
+                                    finalizado
+                                ) {
+
                                     return objeto;
                                 }
 
 
-                                terminou =
+                                finalizado =
                                     true;
 
 
                                 if (
-                                    objeto?.success === false
+                                    objeto?.success ===
+                                    false
                                 ) {
 
                                     const erro =
                                         new Error(
                                             objeto.error ||
+                                            objeto.message ||
                                             'Erro na emissão da NF-e'
                                         );
 
@@ -1582,9 +2691,16 @@ async function emitirNFEAvulsa(req, res) {
                                         500;
 
 
-                                    return reject(
+                                    erro.payload =
+                                        objeto;
+
+
+                                    reject(
                                         erro
                                     );
+
+
+                                    return objeto;
                                 }
 
 
@@ -1603,12 +2719,15 @@ async function emitirNFEAvulsa(req, res) {
                                 json:
                                     objeto => {
 
-                                        if (terminou) {
+                                        if (
+                                            finalizado
+                                        ) {
+
                                             return objeto;
                                         }
 
 
-                                        terminou =
+                                        finalizado =
                                             true;
 
 
@@ -1653,10 +2772,13 @@ async function emitirNFEAvulsa(req, res) {
                         .catch(
                             error => {
 
-                                if (!terminou) {
+                                if (
+                                    !finalizado
+                                ) {
 
-                                    terminou =
+                                    finalizado =
                                         true;
+
 
                                     reject(
                                         error
@@ -1687,13 +2809,15 @@ async function emitirNFEAvulsa(req, res) {
         );
 
 
-        const status =
-            Number(
-                error?.status
-            ) >= 400 &&
-            Number(
-                error?.status
-            ) <= 599
+        const statusCode =
+            (
+                Number(
+                    error?.status
+                ) >= 400 &&
+                Number(
+                    error?.status
+                ) <= 599
+            )
                 ? Number(
                     error.status
                 )
@@ -1702,7 +2826,7 @@ async function emitirNFEAvulsa(req, res) {
 
         return res
             .status(
-                status
+                statusCode
             )
             .json({
 
