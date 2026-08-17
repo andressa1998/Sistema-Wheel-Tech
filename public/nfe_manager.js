@@ -20888,72 +20888,581 @@ async function garantirBaixaEstoqueVenda(
     }
 }
 
-// =========================================================
-// NF-ES EMITIDAS
-// =========================================================
-
 async function carregarNFesEmitidas() {
-    const tbody = document.getElementById('nfesEmitidasBody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+
+    const tbody =
+        document.getElementById(
+            'nfesEmitidasBody'
+        );
+
+
+    if (!tbody) {
+
+        return;
+    }
+
+
+    tbody.innerHTML = `
+        <tr>
+            <td
+                colspan="8"
+                class="text-center"
+            >
+                <div class="spinner"></div>
+                Carregando...
+            </td>
+        </tr>
+    `;
+
+
     try {
-        const response = await fetch(`${window.API_BASE_URL}/nfe/listar-nfes`);
-        const data = await response.json();
-        if (!data.success) throw new Error(data.error);
-        const nfes = data.notas || [];
-        if (!nfes.length) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center">Nenhuma NF-e emitida</td></tr>';
+
+        // =====================================================
+        // BUSCAR NOTAS
+        // =====================================================
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/listar-nfes`
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !response.ok ||
+            !data.success
+        ) {
+
+            throw new Error(
+                data.error ||
+                'Erro ao carregar NF-es'
+            );
+        }
+
+
+        const nfes =
+            Array.isArray(
+                data.notas
+            )
+                ? data.notas
+                : [];
+
+
+        if (
+            nfes.length === 0
+        ) {
+
+            tbody.innerHTML = `
+                <tr>
+                    <td
+                        colspan="8"
+                        class="text-center"
+                    >
+                        Nenhuma NF-e emitida
+                    </td>
+                </tr>
+            `;
+
+
             return;
         }
-        tbody.innerHTML = nfes.map(nfe => {
-            const chave = nfe.chave_acesso || nfe.chave || 'N/A';
-            const protocolo = nfe.protocolo || '-';
-            const dataEmissao = nfe.data_emissao ? new Date(nfe.data_emissao).toLocaleDateString('pt-BR') : '-';
-            
-            let clienteNome = nfe.cliente_nome || nfe.cliente?.nome || '-';
-            let valorTotal = nfe.valor_total ? parseFloat(nfe.valor_total).toFixed(2) : '—';
-            
-            if (clienteNome === '-' || valorTotal === '—') {
-                try {
-                    if (nfe.xml_assinado) {
-                        const parser = new DOMParser();
-                        const xmlDoc = parser.parseFromString(nfe.xml_assinado, 'application/xml');
-                        const infNFe = xmlDoc.querySelector('infNFe');
-                        if (infNFe) {
-                            const dest = infNFe.querySelector('dest');
-                            if (dest) {
-                                const xNome = dest.querySelector('xNome');
-                                if (xNome) clienteNome = xNome.textContent || '-';
-                            }
-                            const ICMSTot = infNFe.querySelector('ICMSTot');
-                            if (ICMSTot) {
-                                const vNF = ICMSTot.querySelector('vNF');
-                                if (vNF) valorTotal = parseFloat(vNF.textContent || '0').toFixed(2);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.warn('Erro ao extrair dados do XML:', e);
-                }
-            }
 
-            return `
-            <tr>
-                <td><small>${chave}</small></td>
-                <td>${protocolo}</td>
-                <td>${clienteNome}</td>
-                <td>R$ ${valorTotal}</td>
-                <td>${dataEmissao}</td>
-                <td>
-                    <button class="btn btn-sm btn-info" onclick="visualizarNFE('${chave}')">Visualizar</button>
-                    <button class="btn btn-sm btn-secondary" onclick="baixarXMLNFE('${chave}')">XML</button>
-                    ${!nfe.cancelada ? `<button class="btn btn-sm btn-danger" onclick="cancelarNFE('${chave}')">Cancelar</button>` : '<span class="badge badge-danger">Cancelada</span>'}
-                </td>
-            </tr>`;
-        }).join('');
+
+        // =====================================================
+        // MONTAR TABELA
+        // =====================================================
+
+        tbody.innerHTML =
+            nfes
+                .map(
+                    nfe => {
+
+                        // =====================================
+                        // DADOS BÁSICOS
+                        // =====================================
+
+                        const chave =
+                            nfe.chave_acesso ||
+                            nfe.chave ||
+                            'N/A';
+
+
+                        const protocolo =
+                            nfe.protocolo ||
+                            '-';
+
+
+                        const dataEmissao =
+                            nfe.data_emissao
+                                ? new Date(
+                                    nfe.data_emissao
+                                )
+                                    .toLocaleDateString(
+                                        'pt-BR'
+                                    )
+                                : '-';
+
+
+                        let clienteNome =
+                            nfe.cliente_nome ||
+                            nfe.cliente?.nome ||
+                            '-';
+
+
+                        let produtoNome =
+                            nfe.produto_nome ||
+                            '-';
+
+
+                        let naturezaOperacao =
+                            nfe.natureza_operacao ||
+                            nfe.natureza ||
+                            '-';
+
+
+                        let valorTotal =
+                            Number(
+                                nfe.valor_total
+                            );
+
+
+                        // =====================================
+                        // LER XML
+                        //
+                        // Serve também para NF-es antigas que
+                        // não possuem natureza salva no banco.
+                        // =====================================
+
+                        try {
+
+                            if (
+                                nfe.xml_assinado
+                            ) {
+
+                                const parser =
+                                    new DOMParser();
+
+
+                                const xmlDoc =
+                                    parser
+                                        .parseFromString(
+                                            nfe.xml_assinado,
+                                            'application/xml'
+                                        );
+
+
+                                const infNFe =
+                                    xmlDoc
+                                        .querySelector(
+                                            'infNFe'
+                                        );
+
+
+                                if (infNFe) {
+
+                                    // =========================
+                                    // NATUREZA
+                                    // =========================
+
+                                    const natOp =
+                                        infNFe
+                                            .querySelector(
+                                                'natOp'
+                                            )
+                                            ?.textContent
+                                            ?.trim();
+
+
+                                    if (natOp) {
+
+                                        naturezaOperacao =
+                                            natOp;
+                                    }
+
+
+                                    // =========================
+                                    // CLIENTE
+                                    // =========================
+
+                                    if (
+                                        !clienteNome ||
+                                        clienteNome === '-'
+                                    ) {
+
+                                        const nomeXML =
+                                            infNFe
+                                                .querySelector(
+                                                    'dest xNome'
+                                                )
+                                                ?.textContent
+                                                ?.trim();
+
+
+                                        if (nomeXML) {
+
+                                            clienteNome =
+                                                nomeXML;
+                                        }
+                                    }
+
+
+                                    // =========================
+                                    // PRODUTOS
+                                    // =========================
+
+                                    if (
+                                        !produtoNome ||
+                                        produtoNome === '-'
+                                    ) {
+
+                                        const produtosXML =
+                                            Array
+                                                .from(
+                                                    infNFe
+                                                        .querySelectorAll(
+                                                            'det prod xProd'
+                                                        )
+                                                )
+                                                .map(
+                                                    elemento =>
+                                                        elemento
+                                                            .textContent
+                                                            ?.trim()
+                                                )
+                                                .filter(
+                                                    Boolean
+                                                );
+
+
+                                        if (
+                                            produtosXML.length >
+                                            0
+                                        ) {
+
+                                            produtoNome =
+                                                produtosXML
+                                                    .join(
+                                                        ', '
+                                                    );
+                                        }
+                                    }
+
+
+                                    // =========================
+                                    // VALOR
+                                    // =========================
+
+                                    if (
+                                        !Number.isFinite(
+                                            valorTotal
+                                        )
+                                    ) {
+
+                                        const valorXML =
+                                            parseFloat(
+                                                infNFe
+                                                    .querySelector(
+                                                        'ICMSTot vNF'
+                                                    )
+                                                    ?.textContent ||
+                                                '0'
+                                            );
+
+
+                                        if (
+                                            Number.isFinite(
+                                                valorXML
+                                            )
+                                        ) {
+
+                                            valorTotal =
+                                                valorXML;
+                                        }
+                                    }
+                                }
+                            }
+
+
+                        } catch (error) {
+
+                            console.warn(
+                                `⚠️ Erro lendo XML da NF-e ${chave}:`,
+                                error
+                            );
+                        }
+
+
+                        // =====================================
+                        // FALLBACK NATUREZA
+                        // =====================================
+
+                        if (
+                            !naturezaOperacao ||
+                            naturezaOperacao === '-'
+                        ) {
+
+                            naturezaOperacao =
+                                'Não informada';
+                        }
+
+
+                        // =====================================
+                        // FORMATAÇÃO VALOR
+                        // =====================================
+
+                        const valorFormatado =
+                            Number.isFinite(
+                                valorTotal
+                            )
+                                ? valorTotal
+                                    .toLocaleString(
+                                        'pt-BR',
+                                        {
+                                            minimumFractionDigits:
+                                                2,
+
+                                            maximumFractionDigits:
+                                                2
+                                        }
+                                    )
+                                : '—';
+
+
+                        // =====================================
+                        // VISUAL DA NATUREZA
+                        // =====================================
+
+                        const naturezaNormalizada =
+                            String(
+                                naturezaOperacao
+                            )
+                                .normalize(
+                                    'NFD'
+                                )
+                                .replace(
+                                    /[\u0300-\u036f]/g,
+                                    ''
+                                )
+                                .toLowerCase();
+
+
+                        const ehDevolucao =
+                            naturezaNormalizada
+                                .includes(
+                                    'devolucao'
+                                );
+
+
+                        const htmlNatureza =
+                            ehDevolucao
+
+                                ? `
+                                    <span
+                                        style="
+                                            display:inline-block;
+                                            background:#fff3cd;
+                                            color:#856404;
+                                            border:1px solid #ffeeba;
+                                            border-radius:6px;
+                                            padding:4px 8px;
+                                            font-size:12px;
+                                            font-weight:600;
+                                            white-space:nowrap;
+                                        "
+                                    >
+                                        ${escaparHTMLNFE(
+                                            naturezaOperacao
+                                        )}
+                                    </span>
+                                `
+
+                                : `
+                                    <span
+                                        style="
+                                            display:inline-block;
+                                            background:#e8f4ff;
+                                            color:#0b5ed7;
+                                            border:1px solid #b6dfff;
+                                            border-radius:6px;
+                                            padding:4px 8px;
+                                            font-size:12px;
+                                            font-weight:600;
+                                            white-space:nowrap;
+                                        "
+                                    >
+                                        ${escaparHTMLNFE(
+                                            naturezaOperacao
+                                        )}
+                                    </span>
+                                `;
+
+
+                        // =====================================
+                        // PRODUTO
+                        // =====================================
+
+                        const produtoHTML =
+                            produtoNome &&
+                            produtoNome !== '-'
+
+                                ? escaparHTMLNFE(
+                                    produtoNome
+                                )
+
+                                : '-';
+
+
+                        // =====================================
+                        // STATUS / AÇÕES
+                        // =====================================
+
+                        const htmlStatus =
+                            !nfe.cancelada
+
+                                ? `
+                                    <button
+                                        class="btn btn-sm btn-danger"
+                                        onclick="cancelarNFE('${chave}')"
+                                    >
+                                        Cancelar
+                                    </button>
+                                `
+
+                                : `
+                                    <span
+                                        class="badge badge-danger"
+                                    >
+                                        Cancelada
+                                    </span>
+                                `;
+
+
+                        // =====================================
+                        // LINHA
+                        // =====================================
+
+                        return `
+                            <tr>
+
+                                <td>
+                                    <small>
+                                        ${escaparHTMLNFE(
+                                            chave
+                                        )}
+                                    </small>
+                                </td>
+
+
+                                <td>
+                                    ${escaparHTMLNFE(
+                                        protocolo
+                                    )}
+                                </td>
+
+
+                                <td>
+                                    ${escaparHTMLNFE(
+                                        clienteNome
+                                    )}
+                                </td>
+
+
+                                <td>
+                                    ${htmlNatureza}
+                                </td>
+
+
+                                <td>
+                                    ${produtoHTML}
+                                </td>
+
+
+                                <td
+                                    style="
+                                        white-space:nowrap;
+                                    "
+                                >
+                                    R$ ${valorFormatado}
+                                </td>
+
+
+                                <td
+                                    style="
+                                        white-space:nowrap;
+                                    "
+                                >
+                                    ${escaparHTMLNFE(
+                                        dataEmissao
+                                    )}
+                                </td>
+
+
+                                <td>
+                                    <div
+                                        style="
+                                            display:flex;
+                                            flex-wrap:wrap;
+                                            gap:4px;
+                                            align-items:center;
+                                        "
+                                    >
+
+                                        <button
+                                            class="btn btn-sm btn-info"
+                                            onclick="visualizarNFE('${chave}')"
+                                        >
+                                            Visualizar
+                                        </button>
+
+
+                                        <button
+                                            class="btn btn-sm btn-secondary"
+                                            onclick="baixarXMLNFE('${chave}')"
+                                        >
+                                            XML
+                                        </button>
+
+
+                                        ${htmlStatus}
+
+                                    </div>
+                                </td>
+
+                            </tr>
+                        `;
+                    }
+                )
+                .join(
+                    ''
+                );
+
+
+        console.log(
+            `✅ ${nfes.length} NF-e(s) carregada(s) na tabela`
+        );
+
+
     } catch (error) {
-        console.error(error);
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Erro ao carregar NF-es</td></tr>';
+
+        console.error(
+            '❌ Erro ao carregar NF-es emitidas:',
+            error
+        );
+
+
+        tbody.innerHTML = `
+            <tr>
+                <td
+                    colspan="8"
+                    class="text-center text-danger"
+                >
+                    Erro ao carregar NF-es
+                </td>
+            </tr>
+        `;
     }
 }
 

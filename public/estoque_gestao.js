@@ -6399,6 +6399,7 @@ function extrairSkuBase(sku) {
 
 // =========================================================
 // EXPORTAR ESTOQUE PARA EXCEL
+// COM DESCRIÇÃO / OBSERVAÇÕES
 // =========================================================
 
 function exportarEstoqueExcel() {
@@ -6409,30 +6410,160 @@ function exportarEstoqueExcel() {
         return;
     }
     
-    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
+    const podeVerCusto = currentUser && (
+        currentUser.username === 'andressamiotto' ||
+        currentUser.username === 'ronald'
+    );
     
     const dados = [];
     
-    const cabecalho = ['ID', 'Nome', 'SKU', 'Prefixo (5 chars)', 'Categoria', 'Quantidade', 'Preço Venda'];
+    // =====================================================
+    // CABEÇALHO
+    // =====================================================
+    
+    const cabecalho = [
+        'ID',
+        'Nome',
+        'SKU',
+        'Prefixo (5 chars)',
+        'Categoria',
+        'Quantidade',
+        'Preço Venda'
+    ];
+    
     if (podeVerCusto) {
-        cabecalho.push('Último Custo', 'Custo Médio');
+        cabecalho.push(
+            'Último Custo',
+            'Custo Médio'
+        );
     }
-    cabecalho.push('Atributos', 'MLB Codes', 'Sync ML Bloqueado');
+    
+    // 🔥 NOVA COLUNA
+    cabecalho.push(
+        'Descrição / Observações',
+        'Atributos',
+        'MLB Codes',
+        'Sync ML Bloqueado'
+    );
+    
     dados.push(cabecalho);
     
+    
+    // =====================================================
+    // PRODUTOS
+    // =====================================================
+    
     produtos.forEach(prod => {
-        const atributos = prod.dados_extra ? Object.entries(prod.dados_extra)
-            .filter(([key]) => key !== 'mlb_codes' && key !== 'historico_custos' && key !== 'bloquear_sync_ml')
-            .map(([key, value]) => `${key}: ${value}`)
-            .join('; ') : '';
         
-        const mlbCodes = prod.mlb_codes || prod.dados_extra?.mlb_codes;
-        const mlbString = mlbCodes && Array.isArray(mlbCodes) 
-            ? mlbCodes.join(', ') 
-            : (mlbCodes || '');
+        // =================================================
+        // ATRIBUTOS
+        // =================================================
         
-        const syncBloqueado = prod.bloquear_sync_ml || prod.dados_extra?.bloquear_sync_ml || false;
-        const prefixo = prod.sku ? prod.sku.substring(0, 5).toUpperCase() : '-';
+        const atributos = prod.dados_extra
+            ? Object.entries(prod.dados_extra)
+                .filter(([key]) =>
+                    key !== 'mlb_codes' &&
+                    key !== 'historico_custos' &&
+                    key !== 'bloquear_sync_ml' &&
+                    key !== 'observacoes_adicionais'
+                )
+                .map(([key, value]) => {
+                    
+                    // Array
+                    if (Array.isArray(value)) {
+                        return `${key}: ${value.join(', ')}`;
+                    }
+                    
+                    // Objeto
+                    if (
+                        typeof value === 'object' &&
+                        value !== null
+                    ) {
+                        return `${key}: ${JSON.stringify(value)}`;
+                    }
+                    
+                    return `${key}: ${value}`;
+                })
+                .join('; ')
+            : '';
+        
+        
+        // =================================================
+        // OBSERVAÇÕES
+        // =================================================
+        
+        const observacoes = [];
+        
+        // Campo principal "Descrição / Observações"
+        if (
+            prod.descricao &&
+            String(prod.descricao).trim()
+        ) {
+            observacoes.push(
+                String(prod.descricao).trim()
+            );
+        }
+        
+        // Também verifica o campo dinâmico observacoes_adicionais
+        if (
+            prod.dados_extra?.observacoes_adicionais &&
+            String(prod.dados_extra.observacoes_adicionais).trim()
+        ) {
+            const obsAdicional =
+                String(
+                    prod.dados_extra.observacoes_adicionais
+                ).trim();
+            
+            // Evita duplicar caso os dois tenham exatamente
+            // o mesmo conteúdo
+            if (!observacoes.includes(obsAdicional)) {
+                observacoes.push(obsAdicional);
+            }
+        }
+        
+        const observacoesString =
+            observacoes.join(' | ');
+        
+        
+        // =================================================
+        // MLB
+        // =================================================
+        
+        const mlbCodes =
+            prod.mlb_codes ||
+            prod.dados_extra?.mlb_codes;
+        
+        const mlbString =
+            mlbCodes && Array.isArray(mlbCodes)
+                ? mlbCodes.join(', ')
+                : (mlbCodes || '');
+        
+        
+        // =================================================
+        // SINCRONIZAÇÃO
+        // =================================================
+        
+        const syncBloqueado =
+            prod.bloquear_sync_ml ||
+            prod.dados_extra?.bloquear_sync_ml ||
+            false;
+        
+        
+        // =================================================
+        // PREFIXO
+        // =================================================
+        
+        const prefixo =
+            prod.sku
+                ? prod.sku
+                    .substring(0, 5)
+                    .toUpperCase()
+                : '-';
+        
+        
+        // =================================================
+        // LINHA
+        // =================================================
         
         const linha = [
             prod.id || '',
@@ -6444,40 +6575,122 @@ function exportarEstoqueExcel() {
             prod.preco || 0
         ];
         
-        if (podeVerCusto) {
-            const ultimoCusto = prod.ultimo_custo || prod.dados_extra?.ultimo_custo || 0;
-            const custoMedio = prod.custo_medio || prod.dados_extra?.custo_medio || 0;
-            linha.push(ultimoCusto);
-            linha.push(custoMedio);
-        }
         
-        linha.push(atributos);
-        linha.push(mlbString);
-        linha.push(syncBloqueado ? 'Sim' : 'Não');
+        // =================================================
+        // CUSTOS
+        // =================================================
+        
+        if (podeVerCusto) {
+            
+            const ultimoCusto =
+                prod.ultimo_custo ||
+                prod.dados_extra?.ultimo_custo ||
+                0;
+            
+            const custoMedio =
+                prod.custo_medio ||
+                prod.dados_extra?.custo_medio ||
+                0;
+            
+            linha.push(
+                ultimoCusto,
+                custoMedio
+            );
+        }
+                
+        // =================================================
+        // DEMAIS CAMPOS
+        // =================================================
+        
+        linha.push(
+            observacoesString,
+            atributos,
+            mlbString,
+            syncBloqueado ? 'Sim' : 'Não'
+        );
+        
         dados.push(linha);
     });
+        
+    // =====================================================
+    // CRIAR EXCEL
+    // =====================================================
     
-    const wb = XLSX.utils.book_new();
+    const wb = XLSX.utils.book_new();   
     const ws = XLSX.utils.aoa_to_sheet(dados);
+       
+    // =====================================================
+    // LARGURA DAS COLUNAS
+    // =====================================================
     
     const colunas = [
-        { wch: 8 }, { wch: 35 }, { wch: 25 }, { wch: 12 },
-        { wch: 15 }, { wch: 12 }, { wch: 12 }
+        { wch: 8 },   // ID
+        { wch: 35 },  // Nome
+        { wch: 25 },  // SKU
+        { wch: 15 },  // Prefixo
+        { wch: 18 },  // Categoria
+        { wch: 12 },  // Quantidade
+        { wch: 12 }   // Preço
     ];
+       
     if (podeVerCusto) {
-        colunas.push({ wch: 12 }, { wch: 12 });
+        colunas.push(
+            { wch: 14 }, // Último Custo
+            { wch: 14 }  // Custo Médio
+        );
     }
-    colunas.push({ wch: 40 }, { wch: 30 }, { wch: 15 });
+    
+    colunas.push(
+        { wch: 50 }, // 🔥 Descrição / Observações
+        { wch: 45 }, // Atributos
+        { wch: 30 }, // MLB
+        { wch: 18 }  // Sync
+    );
+    
+    
     ws['!cols'] = colunas;
     
-    XLSX.utils.book_append_sheet(wb, ws, 'Estoque');
+    
+    // =====================================================
+    // ADICIONAR PLANILHA
+    // =====================================================
+    
+    XLSX.utils.book_append_sheet(
+        wb,
+        ws,
+        'Estoque'
+    );
+    
+    
+    // =====================================================
+    // NOME DO ARQUIVO
+    // =====================================================
     
     const data = new Date();
-    const dataStr = `${data.getFullYear()}-${String(data.getMonth()+1).padStart(2,'0')}-${String(data.getDate()).padStart(2,'0')}`;
-    const filename = `estoque_${dataStr}.xlsx`;
     
-    XLSX.writeFile(wb, filename);
-    showToast(`✅ ${produtos.length} produtos exportados com sucesso!`, 'success');
+    const dataStr =
+        `${data.getFullYear()}-${String(
+            data.getMonth() + 1
+        ).padStart(2, '0')}-${String(
+            data.getDate()
+        ).padStart(2, '0')}`;
+    
+    const filename =
+        `estoque_${dataStr}.xlsx`;
+    
+    
+    // =====================================================
+    // BAIXAR
+    // =====================================================
+    
+    XLSX.writeFile(
+        wb,
+        filename
+    );
+    showToast(
+        `✅ ${produtos.length} produtos exportados com observações!`,
+        'success'
+    );
 }
 
 // ===== MODAL DE REGRAS =====
