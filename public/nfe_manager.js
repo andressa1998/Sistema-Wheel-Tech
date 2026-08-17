@@ -11564,162 +11564,74 @@ async function registrarHistoricoBaixaEstoqueNFE(
     }
 
 
-    try {
+    // =====================================================
+    // O HISTÓRICO REAL DOS PRODUTOS É REGISTRADO EM
+    // estoque_movimentacoes PELA FUNÇÃO
+    // registrarMovimentacoesProdutosBaixaNFE().
+    //
+    // NÃO USAR estoque_historico, pois essa tabela não existe.
+    // =====================================================
 
-        const produtos =
-            Array.isArray(
-                detalhesEstoque
+    const produtos =
+        Array.isArray(
+            detalhesEstoque
+        )
+            ? detalhesEstoque
+            : [];
+
+
+    const descricao =
+        produtos
+
+            .filter(
+                item =>
+                    item &&
+                    item.encontrado !==
+                        false &&
+                    item.sku
             )
-                ? detalhesEstoque
-                : [];
 
+            .map(
+                item => {
 
-        const descricaoProdutos =
-            produtos
-
-                .filter(
-                    item =>
-                        item?.sku &&
-                        item.encontrado !==
-                            false
-                )
-
-                .map(
-                    item => {
-
-                        const quantidade =
-                            Number(
-                                item.quantidade_venda ||
-                                1
-                            );
-
-
-                        return (
-                            `${item.sku} x${quantidade}`
+                    const quantidade =
+                        Number(
+                            item.quantidade_venda ||
+                            1
                         );
-                    }
-                )
-
-                .join(
-                    ' | '
-                );
 
 
-        const origemTexto =
-            origem === 'nfe'
+                    return (
+                        `${item.sku} x${quantidade}`
+                    );
+                }
+            )
 
-                ? 'automática após emissão da NF-e'
-
-                : 'manual pelo botão Dar baixa';
-
-
-        let observacao =
-            `Baixa de estoque ${origemTexto} - Venda ML ${vendaId}`;
-
-
-        if (
-            descricaoProdutos
-        ) {
-
-            observacao +=
-                ` - Produtos: ${descricaoProdutos}`;
-        }
-
-
-        console.log(
-            '📝 Registrando histórico geral da baixa:',
-            observacao
-        );
-
-
-        const {
-            data,
-            error
-        } =
-            await window
-                .supabaseClient
-                .from(
-                    'estoque_historico'
-                )
-                .insert({
-
-                    venda_id:
-                        vendaId,
-
-                    tipo:
-                        'venda',
-
-                    observacao,
-
-                    criado_por:
-                        origem === 'nfe'
-                            ? 'Emissão NF-e'
-                            : 'Sistema NF-e',
-
-                    criado_em:
-                        new Date()
-                            .toISOString()
-
-                })
-                .select();
-
-
-        if (
-            error
-        ) {
-
-            console.error(
-                '❌ SUPABASE recusou histórico geral:',
-                error
+            .join(
+                ' | '
             );
 
 
-            return {
-
-                success: false,
-
-                error:
-                    error.message ||
-                    'Erro ao gravar histórico',
-
-                detalhe:
-                    error
-            };
+    console.log(
+        `📝 [NFE] Baixa da venda ${vendaId} registrada nos históricos individuais.`,
+        {
+            origem,
+            produtos:
+                descricao
         }
+    );
 
 
-        console.log(
-            '✅ Histórico geral gravado:',
-            data
-        );
+    return {
 
+        success:
+            true,
 
-        return {
+        vendaId,
 
-            success: true,
-
-            data
-        };
-
-
-    } catch (
-        error
-    ) {
-
-        console.error(
-            '❌ Erro no histórico geral:',
-            error
-        );
-
-
-        return {
-
-            success: false,
-
-            error:
-                error.message
-        };
-    }
+        produtos:
+            descricao
+    };
 }
 
 async function darBaixaEstoqueVenda(
@@ -17835,23 +17747,39 @@ if (resultadoCliente.success) {
         // 7. MARCAR TODAS AS ORDERS COMO NF-E EMITIDA
         // =====================================================
 
-        const variantesTodasOrders =
-            [
-                ...new Set(
+// =====================================================
+// IDs DO BANCO
+//
+// vendas_ml trabalha com o ID numérico da order.
+// NÃO enviar "ML2000..."
+// =====================================================
 
-                    orderIdsDaNFE.flatMap(
-                        id =>
-                            typeof variantesOrderIdML ===
-                                'function'
-                                ? variantesOrderIdML(
-                                    id
-                                )
-                                : [
-                                    id
-                                ]
-                    )
+const idsVendasMLBanco =
+    [
+        ...new Set(
+
+            orderIdsDaNFE
+                .map(
+                    id =>
+                        normalizarOrderIdML(
+                            id
+                        )
                 )
-            ];
+                .filter(
+                    id =>
+                        id &&
+                        /^\d+$/.test(
+                            String(id)
+                        )
+                )
+        )
+    ];
+
+
+console.log(
+    '🧾 IDs vendas_ml que serão atualizados:',
+    idsVendasMLBanco
+);
 
 
         // -----------------------------------------------------
@@ -17886,9 +17814,9 @@ if (resultadoCliente.success) {
 
                     })
                     .in(
-                        'id_venda_ml',
-                        variantesTodasOrders
-                    );
+    'id_venda_ml',
+    idsVendasMLBanco
+);
 
 
             // Algumas instalações não possuem todas as colunas
@@ -17922,9 +17850,9 @@ if (resultadoCliente.success) {
 
                         })
                         .in(
-                            'id_venda_ml',
-                            variantesTodasOrders
-                        );
+    'id_venda_ml',
+    idsVendasMLBanco
+);
 
 
                 if (
@@ -18297,53 +18225,6 @@ if (resultadoCliente.success) {
 
             console.warn(
                 '⚠️ NF-e emitida, mas erro salvando cliente:',
-                error
-            );
-        }
-
-
-        // =====================================================
-        // 11. HISTÓRICO GERAL DA NF-E
-        // =====================================================
-
-        try {
-
-            await window
-                .supabaseClient
-                .from(
-                    'estoque_historico'
-                )
-                .insert({
-
-                    venda_id:
-                        orderIdPrincipal,
-
-                    tipo:
-                        'nfe',
-
-                    observacao:
-                        orderIdsDaNFE.length >
-                            1
-                            ? `NF-e única emitida para pacote ML - Orders: ${orderIdsDaNFE.join(', ')} - Cliente: ${nome}`
-                            : `NF-e emitida - Venda ${orderIdPrincipal} - Cliente: ${nome}`,
-
-                    criado_por:
-                        'Sistema NF-e',
-
-                    criado_em:
-                        new Date()
-                            .toISOString()
-                });
-
-
-        } catch (
-            error
-        ) {
-
-            // Histórico individual da baixa é feito
-            // pela rotina de estoque.
-            console.warn(
-                '⚠️ Histórico geral NF-e:',
                 error
             );
         }
