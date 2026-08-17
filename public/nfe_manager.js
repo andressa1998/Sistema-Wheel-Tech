@@ -5941,11 +5941,141 @@ async function verificarEstoqueVenda(
 
     try {
 
-        const itensParaVerificar =
+        console.log(
+            '🔎 [NFE] Verificando estoque da venda:',
+            {
+                id:
+                    venda.id_venda_ml ||
+                    venda.id,
+
+                sku:
+                    venda.sku,
+
+                eh_kit:
+                    venda.eh_kit,
+
+                skus_kit:
+                    venda.skus_kit
+            }
+        );
+
+
+        let itensParaVerificar =
             [];
 
+
         // =====================================================
-        // KIT JÁ CONFIGURADO NA ABA VENDAS ML
+        // FUNÇÃO INTERNA
+        //
+        // RECEBE UM SKU QUE PODE SER:
+        //
+        // 00100972ROLCXDIR45,3-35-7,3
+        //
+        // OU:
+        //
+        // 00100872ROL-S16250000.00200972ROLCXDIR45,3-35-7,3
+        //
+        // E TRANSFORMA EM PRODUTOS FÍSICOS.
+        // =====================================================
+
+        const adicionarSku =
+            (
+                skuOriginal,
+                quantidadeBase = 1
+            ) => {
+
+                quantidadeBase =
+                    Number(
+                        quantidadeBase ||
+                        1
+                    );
+
+
+                if (
+                    !skuOriginal ||
+                    skuOriginal ===
+                        'SEM_SKU' ||
+                    skuOriginal ===
+                        'N/A'
+                ) {
+
+                    itensParaVerificar.push({
+
+                        sku:
+                            'SEM_SKU',
+
+                        sku_original:
+                            skuOriginal ||
+                            'SEM_SKU',
+
+                        quantidade_venda:
+                            quantidadeBase
+                    });
+
+                    return;
+                }
+
+
+                // =============================================
+                // ESTA FUNÇÃO JÁ EXISTE NO SEU CÓDIGO
+                //
+                // Ela:
+                // - separa pelo ponto
+                // - lê os 3 primeiros caracteres
+                // - remove o prefixo
+                // - calcula a quantidade
+                // =============================================
+
+                const componentes =
+                    decomporSkuCompostoNFE(
+                        skuOriginal,
+                        quantidadeBase
+                    );
+
+
+                if (
+                    componentes.length ===
+                    0
+                ) {
+
+                    itensParaVerificar.push({
+
+                        sku:
+                            'SEM_SKU',
+
+                        sku_original:
+                            skuOriginal,
+
+                        quantidade_venda:
+                            quantidadeBase
+                    });
+
+                    return;
+                }
+
+
+                for (
+                    const componente
+                    of componentes
+                ) {
+
+                    itensParaVerificar.push({
+
+                        ...componente,
+
+                        quantidade_venda:
+                            Number(
+                                componente
+                                    .quantidade_venda ||
+                                1
+                            )
+                    });
+                }
+            };
+
+
+        // =====================================================
+        // 1. KIT JÁ CONFIGURADO NA ABA VENDAS ML
         // =====================================================
 
         if (
@@ -5957,87 +6087,70 @@ async function verificarEstoqueVenda(
                 0
         ) {
 
+            console.log(
+                `📦 [NFE] KIT configurado com ${venda.skus_kit.length} item(ns)`
+            );
+
+
             for (
                 const item
                 of venda.skus_kit
             ) {
 
-                const {
-                    sku,
-                    multiplicador
-                } =
-                    extrairSkuEQuantidade(
-                        item.sku
-                    );
-
-                itensParaVerificar.push({
-
-                    sku,
-
-                    sku_original:
-                        item.sku,
-
-                    quantidade_venda:
-                        (
-                            Number(
-                                item.estoque ||
-                                1
-                            ) *
-                            Number(
-                                venda.quantidade ||
-                                1
-                            ) *
-                            Number(
-                                multiplicador ||
-                                1
-                            )
-                        )
-                });
-            }
-
-        // =====================================================
-        // FORMATO DA ABA VENDAS ML
-        // =====================================================
-
-        } else if (
-            venda.sku
-        ) {
-
-            const {
-                sku,
-                multiplicador
-            } =
-                extrairSkuEQuantidade(
-                    venda.sku
-                );
-
-            itensParaVerificar.push({
-
-                sku,
-
-                sku_original:
-                    venda.sku,
-
-                quantidade_venda:
+                const quantidadeBase =
+                    Number(
+                        item.estoque ||
+                        item.quantidade ||
+                        1
+                    ) *
                     Number(
                         venda.quantidade ||
                         venda.quantity ||
                         1
-                    ) *
-                    Number(
-                        multiplicador ||
-                        1
-                    )
-            });
+                    );
+
+
+                adicionarSku(
+                    item.sku,
+                    quantidadeBase
+                );
+            }
+
 
         // =====================================================
-        // FALLBACK: ORDER ORIGINAL
+        // 2. SKU DIRETO DA VENDA
+        //
+        // PODE SER SIMPLES OU COMPOSTO.
+        // =====================================================
+
+        } else if (
+            venda.sku &&
+            venda.sku !==
+                'SEM_SKU'
+        ) {
+
+            adicionarSku(
+
+                venda.sku,
+
+                Number(
+                    venda.quantidade ||
+                    venda.quantity ||
+                    1
+                )
+            );
+
+
+        // =====================================================
+        // 3. FALLBACK PARA ORDER_ITEMS DO MERCADO LIVRE
         // =====================================================
 
         } else if (
             Array.isArray(
                 venda.order_items
-            )
+            ) &&
+            venda.order_items.length >
+                0
         ) {
 
             for (
@@ -6045,52 +6158,29 @@ async function verificarEstoqueVenda(
                 of venda.order_items
             ) {
 
-                const skuOriginal =
+                adicionarSku(
+
                     item.item
-                        ?.seller_sku;
+                        ?.seller_sku,
 
-                if (!skuOriginal) {
-
-                    itensParaVerificar.push({
-
-                        sku:
-                            'SEM_SKU',
-
-                        quantidade_venda:
-                            item.quantity ||
-                            1
-                    });
-
-                    continue;
-                }
-
-                const {
-                    sku,
-                    multiplicador
-                } =
-                    extrairSkuEQuantidade(
-                        skuOriginal
-                    );
-
-                itensParaVerificar.push({
-
-                    sku,
-
-                    sku_original:
-                        skuOriginal,
-
-                    quantidade_venda:
-                        Number(
-                            item.quantity ||
-                            1
-                        ) *
-                        Number(
-                            multiplicador ||
-                            1
-                        )
-                });
+                    Number(
+                        item.quantity ||
+                        1
+                    )
+                );
             }
         }
+
+
+        console.log(
+            '🧩 [NFE] Componentes identificados:',
+            itensParaVerificar
+        );
+
+
+        // =====================================================
+        // NENHUM PRODUTO IDENTIFICADO
+        // =====================================================
 
         if (
             itensParaVerificar.length ===
@@ -6107,12 +6197,26 @@ async function verificarEstoqueVenda(
             };
         }
 
+
         // =====================================================
-        // CONSULTAR CADASTRO
+        // CONSOLIDAR PRODUTOS REPETIDOS
+        //
+        // A CHAVE É SEMPRE OS 8 PRIMEIROS CARACTERES.
+        //
+        // Ex.:
+        // 001ABC...
+        // 001ABC...
+        //
+        // Soma as quantidades.
         // =====================================================
 
-        const resultado =
-            [];
+        const mapaProdutos =
+            new Map();
+
+
+        let contadorSemSku =
+            0;
+
 
         for (
             const item
@@ -6122,7 +6226,125 @@ async function verificarEstoqueVenda(
             if (
                 !item.sku ||
                 item.sku ===
-                'SEM_SKU'
+                    'SEM_SKU' ||
+                item.sku ===
+                    'N/A'
+            ) {
+
+                mapaProdutos.set(
+                    `SEM_SKU_${contadorSemSku++}`,
+                    {
+                        ...item
+                    }
+                );
+
+                continue;
+            }
+
+
+            const chave =
+                chaveCadastroSkuNFE(
+                    item.sku
+                );
+
+
+            if (
+                mapaProdutos.has(
+                    chave
+                )
+            ) {
+
+                const existente =
+                    mapaProdutos.get(
+                        chave
+                    );
+
+
+                existente
+                    .quantidade_venda +=
+                    Number(
+                        item.quantidade_venda ||
+                        0
+                    );
+
+
+                existente
+                    .skus_origem =
+                    [
+                        ...(
+                            existente
+                                .skus_origem ||
+                            [
+                                existente
+                                    .sku_original
+                            ]
+                        ),
+
+                        item.sku_original
+                    ];
+
+
+            } else {
+
+                mapaProdutos.set(
+                    chave,
+                    {
+                        ...item,
+
+                        chave_cadastro:
+                            chave,
+
+                        quantidade_venda:
+                            Number(
+                                item.quantidade_venda ||
+                                1
+                            ),
+
+                        skus_origem:
+                            [
+                                item.sku_original
+                            ]
+                    }
+                );
+            }
+        }
+
+
+        const itensConsolidados =
+            [
+                ...mapaProdutos.values()
+            ];
+
+
+        console.log(
+            '📦 [NFE] Produtos físicos consolidados:',
+            itensConsolidados
+        );
+
+
+        // =====================================================
+        // CONSULTAR CADA PRODUTO NO CADASTRO
+        // =====================================================
+
+        const resultado =
+            [];
+
+
+        for (
+            const item
+            of itensConsolidados
+        ) {
+
+            // =============================================
+            // SEM SKU
+            // =============================================
+
+            if (
+                !item.sku ||
+                item.sku ===
+                    'SEM_SKU' ||
+                item.sku ===
+                    'N/A'
             ) {
 
                 resultado.push({
@@ -6139,25 +6361,19 @@ async function verificarEstoqueVenda(
                 continue;
             }
 
-            const {
-                data:
-                    produto,
 
+            // =============================================
+            // BUSCAR PELOS 8 PRIMEIROS CARACTERES
+            // =============================================
+
+            const {
+                produto,
                 error
             } =
-                await window
-                    .supabaseClient
-                    .from(
-                        'produtos_estoque'
-                    )
-                    .select(
-                        'id, sku, nome, quantidade'
-                    )
-                    .eq(
-                        'sku',
-                        item.sku
-                    )
-                    .maybeSingle();
+                await buscarProdutoEstoquePorSkuNFE(
+                    item.sku
+                );
+
 
             if (
                 error ||
@@ -6172,15 +6388,37 @@ async function verificarEstoqueVenda(
                         false,
 
                     motivo:
-                        'SKU não cadastrado'
+                        `SKU não cadastrado pela chave ${chaveCadastroSkuNFE(item.sku)}`
                 });
 
                 continue;
             }
 
+
+            // =============================================
+            // PRODUTO ENCONTRADO
+            //
+            // IMPORTANTE:
+            // "sku" passa a ser o SKU REAL DO CADASTRO.
+            //
+            // Isso deixa a baixa, histórico e sync trabalhando
+            // com o produto correto.
+            // =============================================
+
             resultado.push({
 
                 ...item,
+
+                sku_detectado:
+                    item.sku,
+
+                sku:
+                    produto.sku,
+
+                chave_cadastro:
+                    chaveCadastroSkuNFE(
+                        produto.sku
+                    ),
 
                 encontrado:
                     true,
@@ -6195,17 +6433,44 @@ async function verificarEstoqueVenda(
                     Number(
                         produto.quantidade ||
                         0
+                    ),
+
+                quantidade_venda:
+                    Number(
+                        item.quantidade_venda ||
+                        1
                     )
             });
         }
+
+
+        // =====================================================
+        // TODOS PRECISAM ESTAR CADASTRADOS
+        // =====================================================
 
         const todosEncontrados =
             resultado.length >
                 0 &&
             resultado.every(
-                produto =>
-                    produto.encontrado
+                item =>
+                    item.encontrado ===
+                    true
             );
+
+
+        console.log(
+            '✅ [NFE] Resultado final da verificação:',
+            {
+                status:
+                    todosEncontrados
+                        ? 'disponivel'
+                        : 'sem_cadastro',
+
+                produtos:
+                    resultado
+            }
+        );
+
 
         return {
 
@@ -6218,12 +6483,16 @@ async function verificarEstoqueVenda(
                 resultado
         };
 
-    } catch (error) {
+
+    } catch (
+        error
+    ) {
 
         console.error(
             '❌ Erro ao verificar estoque:',
             error
         );
+
 
         return {
 
@@ -6625,6 +6894,220 @@ function decomporSkuCompostoNFE(
     }
 
     return resultado;
+}
+
+// =========================================================
+// NORMALIZAR SKU PARA CONSULTA NO CADASTRO
+// =========================================================
+
+function normalizarSkuCadastroNFE(sku) {
+
+    return String(
+        sku || ''
+    )
+        .trim()
+        .toUpperCase();
+}
+
+
+// =========================================================
+// CHAVE DO PRODUTO = 8 PRIMEIROS CARACTERES DO SKU REAL
+// =========================================================
+
+function chaveCadastroSkuNFE(sku) {
+
+    return normalizarSkuCadastroNFE(
+        sku
+    ).substring(
+        0,
+        8
+    );
+}
+
+
+// =========================================================
+// BUSCAR PRODUTO NO ESTOQUE PELOS 8 PRIMEIROS CARACTERES
+// =========================================================
+
+async function buscarProdutoEstoquePorSkuNFE(
+    skuFisico
+) {
+
+    const skuNormalizado =
+        normalizarSkuCadastroNFE(
+            skuFisico
+        );
+
+
+    const chave =
+        chaveCadastroSkuNFE(
+            skuFisico
+        );
+
+
+    if (!chave) {
+
+        return {
+            produto: null,
+            error: null
+        };
+    }
+
+
+    console.log(
+        `🔎 [NFE] Buscando produto: SKU=${skuFisico} | chave=${chave}`
+    );
+
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'produtos_estoque'
+                )
+                .select(`
+                    id,
+                    sku,
+                    nome,
+                    quantidade
+                `)
+                .ilike(
+                    'sku',
+                    `${chave}%`
+                )
+                .limit(
+                    50
+                );
+
+
+        if (error) {
+
+            console.error(
+                `❌ [NFE] Erro buscando SKU ${skuFisico}:`,
+                error
+            );
+
+            return {
+                produto: null,
+                error
+            };
+        }
+
+
+        // =====================================================
+        // GARANTIR QUE OS 8 PRIMEIROS CARACTERES SÃO IGUAIS
+        // =====================================================
+
+        const candidatos =
+            (
+                Array.isArray(data)
+                    ? data
+                    : []
+            )
+                .filter(
+                    produto =>
+                        chaveCadastroSkuNFE(
+                            produto.sku
+                        ) ===
+                        chave
+                );
+
+
+        if (
+            candidatos.length ===
+            0
+        ) {
+
+            console.warn(
+                `⚠️ [NFE] Nenhum produto encontrado para a chave ${chave}`
+            );
+
+            return {
+                produto: null,
+                error: null
+            };
+        }
+
+
+        // =====================================================
+        // SE EXISTIR O SKU COMPLETO EXATO, ELE TEM PRIORIDADE
+        // =====================================================
+
+        const produtoExato =
+            candidatos.find(
+                produto =>
+                    normalizarSkuCadastroNFE(
+                        produto.sku
+                    ) ===
+                    skuNormalizado
+            );
+
+
+        const produto =
+            produtoExato ||
+            candidatos[0];
+
+
+        if (
+            candidatos.length >
+                1 &&
+            !produtoExato
+        ) {
+
+            console.warn(
+                `⚠️ [NFE] Mais de um produto possui a chave ${chave}. Utilizando:`,
+                produto
+            );
+        }
+
+
+        console.log(
+            `✅ [NFE] Produto encontrado pela chave ${chave}:`,
+            {
+                skuVenda:
+                    skuFisico,
+
+                skuCadastro:
+                    produto.sku,
+
+                produtoId:
+                    produto.id,
+
+                nome:
+                    produto.nome,
+
+                quantidade:
+                    produto.quantidade
+            }
+        );
+
+
+        return {
+            produto,
+            error: null
+        };
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            `❌ [NFE] Erro inesperado buscando ${skuFisico}:`,
+            error
+        );
+
+
+        return {
+            produto: null,
+            error
+        };
+    }
 }
 
 // =========================================================
