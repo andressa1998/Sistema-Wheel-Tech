@@ -71,7 +71,7 @@ function popularSelectUsuarios() {
   if (usuarios.length > 0) {
     nomes = usuarios.map(u => u.name);
   } else {
-    nomes = ['Elaine', 'Arthur', 'Laura', 'Ronald', 'Bruna', 'Andressa', 'Thalyta', 'Leticia', 'Mirella'];
+    nomes = ['Elaine', 'Arthur', 'Laura', 'Ronald', 'Bruna', 'Andressa', 'Thalyta', 'Leticia', 'Mirella', 'Suelen'];
   }
   nomes.forEach(n => {
     select.innerHTML += `<option value="${n}">${n}</option>`;
