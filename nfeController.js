@@ -114,12 +114,128 @@ async function emitirNFe(req, res) {
         if (!cliente) throw new Error('Cliente não informado');
         if (!produtos || produtos.length === 0) throw new Error('Nenhum produto informado');
 
-        const SELLER_UF = 'PR';
-        let buyerUF = (cliente.uf || 'PR').toUpperCase();
-        if (buyerUF === SELLER_UF && cfop !== '5102')
-            throw new Error(`Venda dentro do estado (${buyerUF}) exige CFOP 5102.`);
-        if (buyerUF !== SELLER_UF && cfop !== '6108')
-            throw new Error(`Venda fora do estado (${buyerUF}) exige CFOP 6108.`);
+        // =========================================================
+// IDENTIFICAR OPERAÇÃO
+// =========================================================
+
+const SELLER_UF =
+    'PR';
+
+
+const buyerUF =
+    String(
+        cliente.uf ||
+        ''
+    )
+        .trim()
+        .toUpperCase();
+
+
+if (
+    !buyerUF ||
+    buyerUF.length !== 2
+) {
+
+    throw new Error(
+        'UF do cliente não informada ou inválida.'
+    );
+}
+
+
+const naturezaNormalizada =
+    String(
+        natureza_operacao ||
+        ''
+    )
+        .normalize(
+            'NFD'
+        )
+        .replace(
+            /[\u0300-\u036f]/g,
+            ''
+        )
+        .trim()
+        .toLowerCase();
+
+
+const ehDevolucao =
+    dados.eh_devolucao ===
+        true ||
+
+    String(
+        dados.finalidade_nfe ||
+        ''
+    ) ===
+        '4' ||
+
+    naturezaNormalizada.includes(
+        'devolucao'
+    );
+
+
+// =========================================================
+// DEVOLUÇÃO
+// =========================================================
+
+if (ehDevolucao) {
+
+    const cfopEsperado =
+        buyerUF ===
+        SELLER_UF
+
+            ? '1202'
+
+            : '2202';
+
+
+    if (
+        String(cfop) !==
+        cfopEsperado
+    ) {
+
+        throw new Error(
+
+            buyerUF ===
+            SELLER_UF
+
+                ? `Entrada de Devolução dentro do PR exige CFOP ${cfopEsperado}.`
+
+                : `Entrada de Devolução do estado ${buyerUF} exige CFOP ${cfopEsperado}.`
+        );
+    }
+
+
+// =========================================================
+// VENDA NORMAL
+// =========================================================
+
+} else {
+
+    if (
+        buyerUF ===
+            SELLER_UF &&
+        String(cfop) !==
+            '5102'
+    ) {
+
+        throw new Error(
+            `Venda dentro do estado (${buyerUF}) exige CFOP 5102.`
+        );
+    }
+
+
+    if (
+        buyerUF !==
+            SELLER_UF &&
+        String(cfop) !==
+            '6108'
+    ) {
+
+        throw new Error(
+            `Venda fora do estado (${buyerUF}) exige CFOP 6108.`
+        );
+    }
+}
 
         // ========== TRATAMENTO DO CPF/CNPJ ==========
         let documento = (cliente.documento || '').replace(/\D/g, '');
@@ -613,32 +729,667 @@ async function listarClientes(req, res) {
 
 // ===================== EMISSÃO AVULSA =====================
 async function emitirNFEAvulsa(req, res) {
+
+    console.log('📨 Requisição de emissão AVULSA recebida');
+
     try {
-        const { cliente, produtos, cfop, natureza_operacao, modalidade_frete, transportadora_id } = req.body;
-        if (!cliente || !produtos || !produtos.length) throw new Error('Dados incompletos');
-        const dados = {
-            venda_id: null,
+
+        const {
             cliente,
             produtos,
             cfop,
-            natureza_operacao: natureza_operacao || 'Venda',
-            modalidade_frete: modalidade_frete || '9',
-            transportadora_id
-        };
-        const emitResult = await new Promise((resolve, reject) => {
-            emitirNFe({
-                body: dados,
-                json: resolve,
-                status: (code) => ({ json: (obj) => reject({ status: code, ...obj }) })
-            }, {
-                json: resolve,
-                status: (code) => ({ json: (obj) => reject({ status: code, ...obj }) })
-            }).catch(reject);
+            natureza_operacao,
+            modalidade_frete,
+            transportadora_id,
+            finalidade_nfe,
+            chave_nfe_referenciada
+        } = req.body || {};
+
+
+        console.log('📦 Payload NF-e avulsa recebido:', {
+            cliente,
+            quantidade_produtos: Array.isArray(produtos)
+                ? produtos.length
+                : 0,
+            cfop,
+            natureza_operacao,
+            modalidade_frete,
+            transportadora_id,
+            finalidade_nfe,
+            chave_nfe_referenciada
         });
-        res.json(emitResult);
+
+
+        // =====================================================
+        // VALIDAÇÕES
+        // =====================================================
+
+        if (!cliente) {
+
+            throw new Error(
+                'Cliente não informado'
+            );
+        }
+
+
+        if (
+            !Array.isArray(produtos) ||
+            produtos.length === 0
+        ) {
+
+            throw new Error(
+                'Nenhum produto informado'
+            );
+        }
+
+
+        if (!cfop) {
+
+            throw new Error(
+                'CFOP não informado'
+            );
+        }
+
+
+        if (!natureza_operacao) {
+
+            throw new Error(
+                'Natureza da operação não informada'
+            );
+        }
+
+
+        // =====================================================
+        // BUSCAR CLIENTE COMPLETO
+        //
+        // O FRONT MANDA:
+        // cliente: { id: "16" }
+        //
+        // Precisamos transformar isso no cadastro completo.
+        // =====================================================
+
+        let clienteCompleto = null;
+
+
+        if (cliente?.id) {
+
+            console.log(
+                `👤 Buscando cliente completo ID ${cliente.id}...`
+            );
+
+
+            const {
+                data,
+                error
+            } = await supabase
+                .from('clientes')
+                .select('*')
+                .eq('id', cliente.id)
+                .maybeSingle();
+
+
+            if (error) {
+
+                console.error(
+                    '❌ Erro buscando cliente:',
+                    error
+                );
+
+
+                throw new Error(
+                    `Erro ao buscar cliente: ${error.message}`
+                );
+            }
+
+
+            if (!data) {
+
+                throw new Error(
+                    `Cliente ID ${cliente.id} não encontrado`
+                );
+            }
+
+
+            clienteCompleto = data;
+
+        } else {
+
+            clienteCompleto = {
+                ...cliente
+            };
+        }
+
+
+        // =====================================================
+        // NORMALIZAÇÃO CLIENTE
+        // =====================================================
+
+        clienteCompleto.uf =
+            String(
+                clienteCompleto.uf ||
+                ''
+            )
+                .trim()
+                .toUpperCase();
+
+
+        clienteCompleto.cidade =
+            String(
+                clienteCompleto.cidade ||
+                ''
+            )
+                .trim();
+
+
+        clienteCompleto.cep =
+            String(
+                clienteCompleto.cep ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
+
+
+        clienteCompleto.documento =
+            String(
+                clienteCompleto.documento ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
+
+
+        console.log(
+            '👤 CLIENTE AVULSA COMPLETO:',
+            {
+                id:
+                    clienteCompleto.id,
+
+                nome:
+                    clienteCompleto.nome,
+
+                documento:
+                    clienteCompleto.documento,
+
+                cidade:
+                    clienteCompleto.cidade,
+
+                uf:
+                    clienteCompleto.uf,
+
+                cep:
+                    clienteCompleto.cep
+            }
+        );
+
+
+        if (
+            !clienteCompleto.uf ||
+            clienteCompleto.uf.length !== 2
+        ) {
+
+            throw new Error(
+                `UF inválida no cadastro do cliente ${clienteCompleto.nome || cliente.id}.`
+            );
+        }
+
+
+        // =====================================================
+        // IDENTIFICAR DEVOLUÇÃO
+        // =====================================================
+
+        const naturezaNormalizada =
+            String(
+                natureza_operacao ||
+                ''
+            )
+                .normalize('NFD')
+                .replace(
+                    /[\u0300-\u036f]/g,
+                    ''
+                )
+                .trim()
+                .toLowerCase();
+
+
+        const ehDevolucao =
+            String(
+                finalidade_nfe ||
+                ''
+            ) === '4' ||
+
+            naturezaNormalizada.includes(
+                'devolucao'
+            );
+
+
+        // =====================================================
+        // CHAVE REFERENCIADA
+        // =====================================================
+
+        const chaveReferenciada =
+            String(
+                chave_nfe_referenciada ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
+
+
+        // =====================================================
+        // VALIDAR DEVOLUÇÃO
+        // =====================================================
+
+        if (ehDevolucao) {
+
+            if (
+                chaveReferenciada.length !== 44
+            ) {
+
+                throw new Error(
+                    'Entrada de Devolução exige a chave de acesso da NF-e original com 44 dígitos.'
+                );
+            }
+
+
+            const cfopEsperado =
+                clienteCompleto.uf === 'PR'
+                    ? '1202'
+                    : '2202';
+
+
+            if (
+                String(cfop) !==
+                cfopEsperado
+            ) {
+
+                throw new Error(
+                    clienteCompleto.uf === 'PR'
+                        ? `Entrada de Devolução dentro do PR exige CFOP ${cfopEsperado}.`
+                        : `Entrada de Devolução do estado ${clienteCompleto.uf} exige CFOP ${cfopEsperado}.`
+                );
+            }
+
+
+            console.log(
+                '✅ DEVOLUÇÃO VALIDADA:',
+                {
+                    ufCliente:
+                        clienteCompleto.uf,
+
+                    cfop,
+
+                    finalidade_nfe:
+                        '4',
+
+                    tp_nf:
+                        '0',
+
+                    chaveReferenciada
+                }
+            );
+        }
+
+
+        // =====================================================
+        // PRODUTOS
+        // =====================================================
+
+        const produtosNormalizados =
+            produtos.map(
+                (produto, index) => {
+
+                    const quantidade =
+                        Number(
+                            produto.quantidade ||
+                            0
+                        );
+
+
+                    const valorUnitario =
+                        Number(
+                            produto.valor_unitario ||
+                            0
+                        );
+
+
+                    if (
+                        !Number.isFinite(
+                            quantidade
+                        ) ||
+                        quantidade <= 0
+                    ) {
+
+                        throw new Error(
+                            `Quantidade inválida no produto ${index + 1}`
+                        );
+                    }
+
+
+                    if (
+                        !Number.isFinite(
+                            valorUnitario
+                        ) ||
+                        valorUnitario < 0
+                    ) {
+
+                        throw new Error(
+                            `Valor inválido no produto ${index + 1}`
+                        );
+                    }
+
+
+                    return {
+
+                        ...produto,
+
+                        quantidade,
+
+                        valor_unitario:
+                            valorUnitario,
+
+                        sku:
+                            String(
+                                produto.sku ||
+                                'SEM_SKU'
+                            ),
+
+                        ncm:
+                            String(
+                                produto.ncm ||
+                                '87149990'
+                            )
+                                .replace(
+                                    /\D/g,
+                                    ''
+                                )
+                                .substring(
+                                    0,
+                                    8
+                                )
+                    };
+                }
+            );
+
+
+        // =====================================================
+        // DADOS PARA emitirNFe
+        // =====================================================
+
+        const dados = {
+
+            venda_id:
+                null,
+
+            cliente:
+                clienteCompleto,
+
+            produtos:
+                produtosNormalizados,
+
+            cfop:
+                String(cfop),
+
+            natureza_operacao:
+                natureza_operacao,
+
+            modalidade_frete:
+                modalidade_frete ||
+                '9',
+
+            transportadora_id:
+                transportadora_id ||
+                null,
+
+
+            // NF-e avulsa
+            emissao_avulsa:
+                true,
+
+
+            // devolução
+            eh_devolucao:
+                ehDevolucao,
+
+            finalidade_nfe:
+                ehDevolucao
+                    ? '4'
+                    : String(
+                        finalidade_nfe ||
+                        '1'
+                    ),
+
+            tp_nf:
+                ehDevolucao
+                    ? '0'
+                    : '1',
+
+            chave_nfe_referenciada:
+                ehDevolucao
+                    ? chaveReferenciada
+                    : null
+        };
+
+
+        console.log(
+            '📤 DADOS ENVIADOS PARA emitirNFe:',
+            {
+                cliente: {
+                    id:
+                        dados.cliente.id,
+
+                    nome:
+                        dados.cliente.nome,
+
+                    cidade:
+                        dados.cliente.cidade,
+
+                    uf:
+                        dados.cliente.uf
+                },
+
+                cfop:
+                    dados.cfop,
+
+                natureza_operacao:
+                    dados.natureza_operacao,
+
+                eh_devolucao:
+                    dados.eh_devolucao,
+
+                finalidade_nfe:
+                    dados.finalidade_nfe,
+
+                tp_nf:
+                    dados.tp_nf,
+
+                chave_nfe_referenciada:
+                    dados.chave_nfe_referenciada
+            }
+        );
+
+
+        // =====================================================
+        // CHAMAR emitirNFe
+        // =====================================================
+
+        const emitResult =
+            await new Promise(
+                (
+                    resolve,
+                    reject
+                ) => {
+
+                    let terminou =
+                        false;
+
+
+                    const respostaInterna = {
+
+                        json:
+                            objeto => {
+
+                                if (terminou) {
+                                    return objeto;
+                                }
+
+
+                                terminou =
+                                    true;
+
+
+                                if (
+                                    objeto?.success === false
+                                ) {
+
+                                    const erro =
+                                        new Error(
+                                            objeto.error ||
+                                            'Erro na emissão da NF-e'
+                                        );
+
+
+                                    erro.status =
+                                        500;
+
+
+                                    return reject(
+                                        erro
+                                    );
+                                }
+
+
+                                resolve(
+                                    objeto
+                                );
+
+
+                                return objeto;
+                            },
+
+
+                        status:
+                            statusCode => ({
+
+                                json:
+                                    objeto => {
+
+                                        if (terminou) {
+                                            return objeto;
+                                        }
+
+
+                                        terminou =
+                                            true;
+
+
+                                        const erro =
+                                            new Error(
+                                                objeto?.error ||
+                                                objeto?.message ||
+                                                `Erro HTTP ${statusCode}`
+                                            );
+
+
+                                        erro.status =
+                                            statusCode;
+
+
+                                        erro.payload =
+                                            objeto;
+
+
+                                        reject(
+                                            erro
+                                        );
+
+
+                                        return objeto;
+                                    }
+
+                            })
+                    };
+
+
+                    Promise
+                        .resolve(
+                            emitirNFe(
+                                {
+                                    body:
+                                        dados
+                                },
+                                respostaInterna
+                            )
+                        )
+                        .catch(
+                            error => {
+
+                                if (!terminou) {
+
+                                    terminou =
+                                        true;
+
+                                    reject(
+                                        error
+                                    );
+                                }
+                            }
+                        );
+                }
+            );
+
+
+        console.log(
+            '✅ NF-e AVULSA CONCLUÍDA:',
+            emitResult
+        );
+
+
+        return res.json(
+            emitResult
+        );
+
+
     } catch (error) {
-        console.error('Erro na emissão avulsa:', error);
-        res.status(500).json({ success: false, error: error.message });
+
+        console.error(
+            '❌ Erro na emissão avulsa:',
+            error
+        );
+
+
+        const status =
+            Number(
+                error?.status
+            ) >= 400 &&
+            Number(
+                error?.status
+            ) <= 599
+                ? Number(
+                    error.status
+                )
+                : 500;
+
+
+        return res
+            .status(
+                status
+            )
+            .json({
+
+                success:
+                    false,
+
+                error:
+                    error?.message ||
+                    'Erro interno na emissão da NF-e avulsa'
+            });
     }
 }
 

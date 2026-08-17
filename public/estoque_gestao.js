@@ -3220,7 +3220,7 @@ function gerarCamposDinamicos(categoria) {
 
         function toggleAngulos(valorAplicacao) {
             if (!angulosDiv) return;
-            const shouldShow = (valorAplicacao === 'Cubo/Caixa de Direção');
+            const shouldShow = (valorAplicacao === 'Caixa de Direção');
             angulosDiv.style.display = shouldShow ? 'block' : 'none';
             const angInt = document.getElementById('campo_angulo_interno');
             const angExt = document.getElementById('campo_angulo_externo');
@@ -7183,7 +7183,7 @@ function abrirModalProdutoEstoque(produto = null) {
             if (anguloInt && dadosExtra.angulo_interno) anguloInt.value = dadosExtra.angulo_interno;
             if (anguloExt && dadosExtra.angulo_externo) anguloExt.value = dadosExtra.angulo_externo;
             const aplicacao = document.getElementById('campo_aplicaçao');
-            if (aplicacao && aplicacao.value === 'Cubo/Caixa de Direção') {
+            if (aplicacao && aplicacao.value === 'Caixa de Direção') {
                 const angulosDiv = document.getElementById('camposAngulosRolamento');
                 if (angulosDiv) angulosDiv.style.display = 'block';
             }

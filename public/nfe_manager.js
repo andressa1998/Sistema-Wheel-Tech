@@ -97,12 +97,12 @@ async function buscarValorExatoPagamento(orderId) {
 
 
         console.log(
-            `🔍 Buscando pagamento da venda ${orderId}...`
+            `🔍 Buscando TODOS os pagamentos da venda ${orderId}...`
         );
 
 
         // =====================================================
-        // TOKEN ML
+        // TOKEN
         // =====================================================
 
         let token =
@@ -139,7 +139,7 @@ async function buscarValorExatoPagamento(orderId) {
 
 
         // =====================================================
-        // BUSCAR ORDER NO MERCADO LIVRE
+        // BUSCAR ORDER
         // =====================================================
 
         const orderUrl =
@@ -156,8 +156,7 @@ async function buscarValorExatoPagamento(orderId) {
             await fetch(
                 orderProxyUrl,
                 {
-                    cache:
-                        'no-store'
+                    cache: 'no-store'
                 }
             );
 
@@ -173,8 +172,7 @@ async function buscarValorExatoPagamento(orderId) {
 
 
         const orderData =
-            await orderResponse
-                .json();
+            await orderResponse.json();
 
 
         console.log(
@@ -184,7 +182,7 @@ async function buscarValorExatoPagamento(orderId) {
 
 
         // =====================================================
-        // VALOR DA VENDA ML
+        // VALOR DA VENDA
         // =====================================================
 
         const valorVenda =
@@ -201,143 +199,114 @@ async function buscarValorExatoPagamento(orderId) {
 
 
         // =====================================================
-        // PAYMENT ID
+        // LOCALIZAR TODOS OS PAYMENT IDS
         // =====================================================
 
-        let paymentId =
-            null;
+        const paymentIds =
+            [];
 
+
+        // -----------------------------------------------------
+        // FORMATO NORMAL DO ML
+        // -----------------------------------------------------
 
         if (
             Array.isArray(
                 orderData.payments
-            ) &&
-            orderData.payments.length >
-                0
+            )
         ) {
 
-            paymentId =
-                orderData
-                    .payments[0]
-                    ?.id;
+            for (
+                const payment
+                of orderData.payments
+            ) {
 
-        } else if (
+                if (
+                    payment?.id
+                ) {
+
+                    paymentIds.push(
+                        String(
+                            payment.id
+                        )
+                    );
+                }
+            }
+        }
+
+
+        // -----------------------------------------------------
+        // FALLBACK payment_id
+        // -----------------------------------------------------
+
+        if (
             orderData.payment_id
         ) {
 
-            paymentId =
-                orderData
-                    .payment_id;
+            paymentIds.push(
+                String(
+                    orderData.payment_id
+                )
+            );
+        }
 
-        } else if (
+
+        // -----------------------------------------------------
+        // FALLBACK payment_ids
+        // -----------------------------------------------------
+
+        if (
             Array.isArray(
                 orderData.payment_ids
-            ) &&
-            orderData.payment_ids.length >
-                0
+            )
         ) {
 
-            paymentId =
-                orderData
-                    .payment_ids[0];
-        }
+            for (
+                const id
+                of orderData.payment_ids
+            ) {
 
+                if (id) {
 
-        // =====================================================
-        // SEM PAYMENT ID
-        // =====================================================
-
-        if (!paymentId) {
-
-            console.warn(
-                `⚠️ Payment ID não encontrado para venda ${orderId}`
-            );
-
-
-            return {
-
-                valor_produto:
-                    valorVenda,
-
-                valor_frete:
-                    0,
-
-                total_pago:
-                    valorVenda,
-
-                payment_id:
-                    null,
-
-                desconto_cupom:
-                    0,
-
-                fonte:
-                    'venda',
-
-                valor_venda:
-                    valorVenda,
-
-                valor_mp:
-                    null,
-
-                metodo_pagamento_id:
-                    null,
-
-                tipo_pagamento:
-                    null,
-
-                metodo_pagamento_nome:
-                    'Não informado',
-
-                parcelas:
-                    null,
-
-                parcelamento_nome:
-                    null,
-
-                valor_parcela:
-                    null
-            };
-        }
-
-
-        console.log(
-            `💳 Payment ID: ${paymentId}`
-        );
-
-
-        // =====================================================
-        // BUSCAR PAGAMENTO NO MERCADO PAGO
-        // =====================================================
-
-        const paymentUrl =
-            `https://api.mercadopago.com/v1/payments/${paymentId}`;
-
-
-        const paymentProxyUrl =
-            `${window.WORKER_URL}/api/ml/proxy?url=` +
-            `${encodeURIComponent(paymentUrl)}` +
-            `&token=${encodeURIComponent(token)}`;
-
-
-        const paymentResponse =
-            await fetch(
-                paymentProxyUrl,
-                {
-                    cache:
-                        'no-store'
+                    paymentIds.push(
+                        String(id)
+                    );
                 }
-            );
+            }
+        }
 
 
         // =====================================================
-        // ERRO MERCADO PAGO
+        // REMOVER DUPLICADOS
         // =====================================================
 
-        if (!paymentResponse.ok) {
+        const paymentIdsUnicos =
+            [
+                ...new Set(
+                    paymentIds.filter(
+                        Boolean
+                    )
+                )
+            ];
+
+
+        console.log(
+            `💳 ${paymentIdsUnicos.length} pagamento(s) encontrado(s):`,
+            paymentIdsUnicos
+        );
+
+
+        // =====================================================
+        // SEM PAGAMENTO
+        // =====================================================
+
+        if (
+            paymentIdsUnicos.length ===
+            0
+        ) {
 
             console.warn(
-                `⚠️ Erro ao buscar pagamento ${paymentId}: HTTP ${paymentResponse.status}`
+                `⚠️ Nenhum Payment ID encontrado para ${orderId}`
             );
 
 
@@ -353,7 +322,10 @@ async function buscarValorExatoPagamento(orderId) {
                     valorVenda,
 
                 payment_id:
-                    paymentId,
+                    null,
+
+                payment_ids:
+                    [],
 
                 desconto_cupom:
                     0,
@@ -383,171 +355,16 @@ async function buscarValorExatoPagamento(orderId) {
                     null,
 
                 valor_parcela:
-                    null
+                    null,
+
+                pagamentos_detalhes:
+                    []
             };
         }
 
 
         // =====================================================
-        // DADOS MERCADO PAGO
-        // =====================================================
-
-        const paymentData =
-            await paymentResponse
-                .json();
-
-
-        console.log(
-            '💳 Dados Mercado Pago:',
-            paymentData
-        );
-
-
-        // =====================================================
-        // VALORES
-        // =====================================================
-
-        const totalPago =
-            parseFloat(
-                paymentData
-                    .transaction_amount ??
-                paymentData
-                    .total_amount ??
-                0
-            ) ||
-            0;
-
-
-        const descontoCupom =
-            parseFloat(
-                paymentData
-                    .coupon_amount ??
-                0
-            ) ||
-            0;
-
-
-        // =====================================================
-        // FRETE
-        //
-        // SOMENTE INFORMAÇÃO.
-        //
-        // NÃO SUBTRAIR DO VALOR DO PRODUTO.
-        // =====================================================
-
-        let valorFrete =
-            0;
-
-
-        if (
-            paymentData
-                .additional_info
-                ?.shipments
-                ?.shipping_amount !==
-                    undefined &&
-            paymentData
-                .additional_info
-                ?.shipments
-                ?.shipping_amount !==
-                    null
-        ) {
-
-            valorFrete =
-                parseFloat(
-                    paymentData
-                        .additional_info
-                        .shipments
-                        .shipping_amount
-                ) ||
-                0;
-
-        } else if (
-            paymentData
-                .shipping_amount !==
-                    undefined &&
-            paymentData
-                .shipping_amount !==
-                    null
-        ) {
-
-            valorFrete =
-                parseFloat(
-                    paymentData
-                        .shipping_amount
-                ) ||
-                0;
-
-        } else if (
-            orderData
-                .shipping
-                ?.cost !==
-                    undefined &&
-            orderData
-                .shipping
-                ?.cost !==
-                    null
-        ) {
-
-            valorFrete =
-                parseFloat(
-                    orderData
-                        .shipping
-                        .cost
-                ) ||
-                0;
-        }
-
-
-        // =====================================================
-        // VALOR DO MERCADO PAGO
-        //
-        // FRETE NÃO É DESCONTADO.
-        // =====================================================
-
-        let valorProdutoMP =
-            totalPago -
-            descontoCupom;
-
-
-        if (
-            !Number.isFinite(
-                valorProdutoMP
-            ) ||
-            valorProdutoMP <
-                0
-        ) {
-
-            valorProdutoMP =
-                0;
-        }
-
-
-        // =====================================================
-        // MÉTODO DE PAGAMENTO
-        // =====================================================
-
-        const metodoPagamentoId =
-            String(
-                paymentData
-                    .payment_method_id ||
-                ''
-            )
-                .trim()
-                .toLowerCase();
-
-
-        const tipoPagamento =
-            String(
-                paymentData
-                    .payment_type_id ||
-                ''
-            )
-                .trim()
-                .toLowerCase();
-
-
-        // =====================================================
-        // NOMES DE BANDEIRAS
+        // NOMES DE CARTÕES
         // =====================================================
 
         const nomesCartoes = {
@@ -576,221 +393,619 @@ async function buscarValorExatoPagamento(orderId) {
         // NOME AMIGÁVEL
         // =====================================================
 
-        let metodoPagamentoNome =
-            'Não informado';
+        const obterNomePagamento =
+            (
+                metodoPagamentoId,
+                tipoPagamento
+            ) => {
+
+                metodoPagamentoId =
+                    String(
+                        metodoPagamentoId ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
 
 
-        if (
-            metodoPagamentoId ===
-            'pix'
-        ) {
-
-            metodoPagamentoNome =
-                'Pix';
-
-        } else if (
-            tipoPagamento ===
-            'credit_card'
-        ) {
-
-            const bandeira =
-                nomesCartoes[
-                    metodoPagamentoId
-                ] ||
-                metodoPagamentoId;
+                tipoPagamento =
+                    String(
+                        tipoPagamento ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
 
 
-            metodoPagamentoNome =
-                bandeira
-
-                    ? `Cartão de crédito - ${bandeira}`
-
-                    : 'Cartão de crédito';
-
-        } else if (
-            tipoPagamento ===
-            'debit_card'
-        ) {
-
-            const bandeira =
-                nomesCartoes[
-                    metodoPagamentoId
-                ] ||
-                metodoPagamentoId;
-
-
-            metodoPagamentoNome =
-                bandeira
-
-                    ? `Cartão de débito - ${bandeira}`
-
-                    : 'Cartão de débito';
-
-        } else if (
-            tipoPagamento ===
-            'prepaid_card'
-        ) {
-
-            metodoPagamentoNome =
-                'Cartão pré-pago';
-
-        } else if (
-            tipoPagamento ===
-            'account_money'
-        ) {
-
-            metodoPagamentoNome =
-                'Saldo Mercado Pago';
-
-        } else if (
-            tipoPagamento ===
-            'ticket'
-        ) {
-
-            metodoPagamentoNome =
-                'Boleto';
-
-        } else if (
-            tipoPagamento ===
-            'bank_transfer'
-        ) {
-
-            metodoPagamentoNome =
-                metodoPagamentoId ===
+                if (
+                    metodoPagamentoId ===
                     'pix'
+                ) {
 
-                    ? 'Pix'
+                    return 'Pix';
+                }
 
-                    : 'Transferência bancária';
 
-        } else if (
-            metodoPagamentoId
-        ) {
+                if (
+                    tipoPagamento ===
+                    'credit_card'
+                ) {
 
-            metodoPagamentoNome =
-                metodoPagamentoId;
-        }
+                    const bandeira =
+                        nomesCartoes[
+                            metodoPagamentoId
+                        ] ||
+                        metodoPagamentoId;
+
+
+                    return bandeira
+
+                        ? `Cartão de crédito - ${bandeira}`
+
+                        : 'Cartão de crédito';
+                }
+
+
+                if (
+                    tipoPagamento ===
+                    'debit_card'
+                ) {
+
+                    const bandeira =
+                        nomesCartoes[
+                            metodoPagamentoId
+                        ] ||
+                        metodoPagamentoId;
+
+
+                    return bandeira
+
+                        ? `Cartão de débito - ${bandeira}`
+
+                        : 'Cartão de débito';
+                }
+
+
+                if (
+                    tipoPagamento ===
+                    'prepaid_card'
+                ) {
+
+                    return 'Cartão pré-pago';
+                }
+
+
+                if (
+                    tipoPagamento ===
+                    'account_money'
+                ) {
+
+                    return 'Saldo Mercado Pago';
+                }
+
+
+                if (
+                    tipoPagamento ===
+                    'ticket'
+                ) {
+
+                    return 'Boleto';
+                }
+
+
+                if (
+                    tipoPagamento ===
+                    'bank_transfer'
+                ) {
+
+                    return metodoPagamentoId ===
+                        'pix'
+
+                        ? 'Pix'
+
+                        : 'Transferência bancária';
+                }
+
+
+                return (
+                    metodoPagamentoId ||
+                    'Não informado'
+                );
+            };
 
 
         // =====================================================
-        // PARCELAMENTO
+        // BUSCAR CADA PAGAMENTO
         // =====================================================
 
-        let parcelas =
-            null;
+        const pagamentosDetalhes =
+            [];
 
 
-        let valorParcela =
-            null;
+        let valorFrete =
+            0;
 
 
-        let parcelamentoNome =
-            null;
-
-
-        // Só faz sentido tratar parcelas para cartão de crédito
-        if (
-            tipoPagamento ===
-            'credit_card'
+        for (
+            const paymentId
+            of paymentIdsUnicos
         ) {
 
-            parcelas =
-                Number(
-                    paymentData
-                        .installments ??
-                    1
+            try {
+
+                console.log(
+                    `💳 Consultando pagamento ${paymentId}...`
                 );
 
 
-            if (
-                !Number.isFinite(
-                    parcelas
-                ) ||
-                parcelas <=
-                    0
-            ) {
-
-                parcelas =
-                    1;
-            }
+                const paymentUrl =
+                    `https://api.mercadopago.com/v1/payments/${paymentId}`;
 
 
-            // =================================================
-            // VALOR DA PARCELA
-            //
-            // Primeiro tenta pegar do MP.
-            // Caso não venha, calcula pelo total.
-            // =================================================
+                const paymentProxyUrl =
+                    `${window.WORKER_URL}/api/ml/proxy?url=` +
+                    `${encodeURIComponent(paymentUrl)}` +
+                    `&token=${encodeURIComponent(token)}`;
 
-            valorParcela =
-                parseFloat(
+
+                const paymentResponse =
+                    await fetch(
+                        paymentProxyUrl,
+                        {
+                            cache:
+                                'no-store'
+                        }
+                    );
+
+
+                if (
+                    !paymentResponse.ok
+                ) {
+
+                    console.warn(
+                        `⚠️ Erro buscando pagamento ${paymentId}: HTTP ${paymentResponse.status}`
+                    );
+
+                    continue;
+                }
+
+
+                const paymentData =
+                    await paymentResponse
+                        .json();
+
+
+                console.log(
+                    `💳 Dados pagamento ${paymentId}:`,
                     paymentData
-                        .transaction_details
-                        ?.installment_amount ??
-                    0
-                ) ||
-                0;
+                );
 
 
-            if (
-                !valorParcela &&
-                parcelas >
+                // =============================================
+                // IGNORAR PAGAMENTOS CANCELADOS/REJEITADOS
+                // =============================================
+
+                const status =
+                    String(
+                        paymentData.status ||
+                        ''
+                    )
+                        .toLowerCase();
+
+
+                if (
+                    [
+                        'rejected',
+                        'cancelled',
+                        'cancelled_by_admin',
+                        'charged_back'
+                    ].includes(
+                        status
+                    )
+                ) {
+
+                    console.log(
+                        `ℹ️ Pagamento ${paymentId} ignorado por status: ${status}`
+                    );
+
+                    continue;
+                }
+
+
+                // =============================================
+                // VALOR
+                // =============================================
+
+                const valorPagamento =
+                    parseFloat(
+                        paymentData
+                            .transaction_amount ??
+                        paymentData
+                            .total_amount ??
+                        0
+                    ) ||
+                    0;
+
+
+                const descontoCupom =
+                    parseFloat(
+                        paymentData
+                            .coupon_amount ??
+                        0
+                    ) ||
+                    0;
+
+
+                // =============================================
+                // FRETE
+                //
+                // NÃO SOMAR FRETE ENTRE PAGAMENTOS.
+                // Ele pode aparecer repetido.
+                // =============================================
+
+                if (
+                    valorFrete ===
                     0
+                ) {
+
+                    if (
+                        paymentData
+                            .additional_info
+                            ?.shipments
+                            ?.shipping_amount !==
+                            undefined &&
+                        paymentData
+                            .additional_info
+                            ?.shipments
+                            ?.shipping_amount !==
+                            null
+                    ) {
+
+                        valorFrete =
+                            parseFloat(
+                                paymentData
+                                    .additional_info
+                                    .shipments
+                                    .shipping_amount
+                            ) ||
+                            0;
+
+                    } else if (
+                        paymentData
+                            .shipping_amount !==
+                            undefined &&
+                        paymentData
+                            .shipping_amount !==
+                            null
+                    ) {
+
+                        valorFrete =
+                            parseFloat(
+                                paymentData
+                                    .shipping_amount
+                            ) ||
+                            0;
+                    }
+                }
+
+
+                // =============================================
+                // MÉTODO
+                // =============================================
+
+                const metodoPagamentoId =
+                    String(
+                        paymentData
+                            .payment_method_id ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
+
+
+                const tipoPagamento =
+                    String(
+                        paymentData
+                            .payment_type_id ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
+
+
+                const metodoPagamentoNome =
+                    obterNomePagamento(
+                        metodoPagamentoId,
+                        tipoPagamento
+                    );
+
+
+                // =============================================
+                // PARCELAMENTO
+                // =============================================
+
+                let parcelas =
+                    null;
+
+
+                let valorParcela =
+                    null;
+
+
+                let parcelamentoNome =
+                    null;
+
+
+                if (
+                    tipoPagamento ===
+                    'credit_card'
+                ) {
+
+                    parcelas =
+                        Number(
+                            paymentData
+                                .installments ??
+                            1
+                        );
+
+
+                    if (
+                        !Number.isFinite(
+                            parcelas
+                        ) ||
+                        parcelas <=
+                        0
+                    ) {
+
+                        parcelas =
+                            1;
+                    }
+
+
+                    valorParcela =
+                        parseFloat(
+                            paymentData
+                                .transaction_details
+                                ?.installment_amount ??
+                            0
+                        ) ||
+                        0;
+
+
+                    if (
+                        !valorParcela &&
+                        parcelas >
+                        0
+                    ) {
+
+                        valorParcela =
+                            valorPagamento /
+                            parcelas;
+                    }
+
+
+                    if (
+                        parcelas ===
+                        1
+                    ) {
+
+                        parcelamentoNome =
+                            '1x (À vista)';
+
+                    } else {
+
+                        parcelamentoNome =
+                            `${parcelas}x de R$ ${valorParcela.toFixed(2)}`;
+                    }
+                }
+
+
+                // =============================================
+                // ADICIONAR PAGAMENTO
+                // =============================================
+
+                pagamentosDetalhes.push({
+
+                    payment_id:
+                        paymentId,
+
+                    status,
+
+                    metodo_pagamento_id:
+                        metodoPagamentoId ||
+                        null,
+
+                    tipo_pagamento:
+                        tipoPagamento ||
+                        null,
+
+                    metodo_pagamento_nome:
+                        metodoPagamentoNome,
+
+                    valor:
+                        valorPagamento,
+
+                    desconto_cupom:
+                        descontoCupom,
+
+                    parcelas,
+
+                    valor_parcela:
+                        valorParcela,
+
+                    parcelamento_nome:
+                        parcelamentoNome
+                });
+
+
+            } catch (
+                error
             ) {
 
-                valorParcela =
-                    totalPago /
-                    parcelas;
-            }
-
-
-            // =================================================
-            // TEXTO
-            // =================================================
-
-            if (
-                parcelas ===
-                1
-            ) {
-
-                parcelamentoNome =
-                    '1x (À vista)';
-
-            } else {
-
-                parcelamentoNome =
-                    `${parcelas}x de R$ ${valorParcela.toFixed(2)}`;
+                console.warn(
+                    `⚠️ Erro processando pagamento ${paymentId}:`,
+                    error
+                );
             }
         }
 
 
         // =====================================================
-        // LOG
+        // FALLBACK DE FRETE DA ORDER
         // =====================================================
 
+        if (
+            valorFrete ===
+            0 &&
+            orderData.shipping
+                ?.cost !==
+                undefined &&
+            orderData.shipping
+                ?.cost !==
+                null
+        ) {
+
+            valorFrete =
+                parseFloat(
+                    orderData
+                        .shipping
+                        .cost
+                ) ||
+                0;
+        }
+
+
+        // =====================================================
+        // NENHUM PAGAMENTO CONSEGUIU SER CONSULTADO
+        // =====================================================
+
+        if (
+            pagamentosDetalhes.length ===
+            0
+        ) {
+
+            return {
+
+                valor_produto:
+                    valorVenda,
+
+                valor_frete:
+                    valorFrete,
+
+                total_pago:
+                    valorVenda,
+
+                payment_id:
+                    paymentIdsUnicos[0] ||
+                    null,
+
+                payment_ids:
+                    paymentIdsUnicos,
+
+                desconto_cupom:
+                    0,
+
+                fonte:
+                    'venda',
+
+                valor_venda:
+                    valorVenda,
+
+                valor_mp:
+                    null,
+
+                metodo_pagamento_id:
+                    null,
+
+                tipo_pagamento:
+                    null,
+
+                metodo_pagamento_nome:
+                    'Não informado',
+
+                parcelas:
+                    null,
+
+                parcelamento_nome:
+                    null,
+
+                valor_parcela:
+                    null,
+
+                pagamentos_detalhes:
+                    []
+            };
+        }
+
+
+        // =====================================================
+        // SOMAR TODOS OS PAGAMENTOS
+        // =====================================================
+
+        const totalPago =
+            pagamentosDetalhes.reduce(
+                (
+                    total,
+                    pagamento
+                ) =>
+                    total +
+                    Number(
+                        pagamento.valor ||
+                        0
+                    ),
+                0
+            );
+
+
+        const descontoCupom =
+            pagamentosDetalhes.reduce(
+                (
+                    total,
+                    pagamento
+                ) =>
+                    total +
+                    Number(
+                        pagamento.desconto_cupom ||
+                        0
+                    ),
+                0
+            );
+
+
         console.log(
-            '💳 PAGAMENTO IDENTIFICADO:',
-            {
-
-                paymentId,
-
-                metodoPagamentoId,
-
-                tipoPagamento,
-
-                metodoPagamentoNome,
-
-                parcelas,
-
-                valorParcela,
-
-                parcelamentoNome
-            }
+            `💰 SOMA DOS PAGAMENTOS: R$ ${totalPago.toFixed(2)}`
         );
 
 
         // =====================================================
-        // MENOR VALOR ENTRE ML E MP
+        // VALOR MP
+        //
+        // MANTÉM SUA REGRA ATUAL:
+        // total dos pagamentos - cupom
+        //
+        // FRETE NÃO É SUBTRAÍDO.
+        // =====================================================
+
+        let valorProdutoMP =
+            totalPago -
+            descontoCupom;
+
+
+        if (
+            !Number.isFinite(
+                valorProdutoMP
+            ) ||
+            valorProdutoMP <
+            0
+        ) {
+
+            valorProdutoMP =
+                0;
+        }
+
+
+        // =====================================================
+        // VALOR FINAL
         // =====================================================
 
         let valorProdutoFinal =
@@ -803,9 +1018,9 @@ async function buscarValorExatoPagamento(orderId) {
 
         if (
             valorProdutoMP >
-                0 &&
+            0 &&
             valorVenda >
-                0
+            0
         ) {
 
             valorProdutoFinal =
@@ -825,7 +1040,7 @@ async function buscarValorExatoPagamento(orderId) {
 
         } else if (
             valorProdutoMP >
-                0
+            0
         ) {
 
             valorProdutoFinal =
@@ -835,46 +1050,150 @@ async function buscarValorExatoPagamento(orderId) {
             fonte =
                 'mercado_pago';
 
-        } else if (
-            valorVenda >
-                0
-        ) {
+        } else {
 
             valorProdutoFinal =
                 valorVenda;
-
-
-            fonte =
-                'venda';
         }
 
 
         // =====================================================
-        // LOG FINAL
+        // CAMPOS RESUMIDOS
+        //
+        // Mantemos compatibilidade com o restante do sistema.
         // =====================================================
 
-        console.log(
-            `✅ VALOR FINAL NF-e: R$ ${valorProdutoFinal.toFixed(2)}`
-        );
+        const multiplosPagamentos =
+            pagamentosDetalhes.length >
+            1;
 
 
-        console.log(
-            `💳 Método: ${metodoPagamentoNome}`
-        );
+        let metodoPagamentoId =
+            null;
+
+
+        let tipoPagamento =
+            null;
+
+
+        let metodoPagamentoNome =
+            'Não informado';
+
+
+        let parcelas =
+            null;
+
+
+        let parcelamentoNome =
+            null;
+
+
+        let valorParcela =
+            null;
 
 
         if (
-            parcelamentoNome
+            multiplosPagamentos
         ) {
 
-            console.log(
-                `💳 Parcelamento: ${parcelamentoNome}`
-            );
+            metodoPagamentoId =
+                'multiplos';
+
+
+            tipoPagamento =
+                'multiple';
+
+
+            metodoPagamentoNome =
+                pagamentosDetalhes
+                    .map(
+                        pagamento => {
+
+                            let texto =
+                                `${pagamento.metodo_pagamento_nome} - R$ ${Number(
+                                    pagamento.valor ||
+                                    0
+                                ).toFixed(2)}`;
+
+
+                            if (
+                                pagamento
+                                    .parcelamento_nome
+                            ) {
+
+                                texto +=
+                                    ` (${pagamento.parcelamento_nome})`;
+                            }
+
+
+                            return texto;
+                        }
+                    )
+                    .join(
+                        ' + '
+                    );
+
+        } else {
+
+            const pagamento =
+                pagamentosDetalhes[0];
+
+
+            metodoPagamentoId =
+                pagamento
+                    .metodo_pagamento_id;
+
+
+            tipoPagamento =
+                pagamento
+                    .tipo_pagamento;
+
+
+            metodoPagamentoNome =
+                pagamento
+                    .metodo_pagamento_nome;
+
+
+            parcelas =
+                pagamento
+                    .parcelas;
+
+
+            parcelamentoNome =
+                pagamento
+                    .parcelamento_nome;
+
+
+            valorParcela =
+                pagamento
+                    .valor_parcela;
         }
 
 
+        // =====================================================
+        // LOG
+        // =====================================================
+
         console.log(
-            `📦 Frete: R$ ${valorFrete.toFixed(2)} - NÃO descontado`
+            '💳 PAGAMENTOS IDENTIFICADOS:',
+            pagamentosDetalhes
+        );
+
+
+        console.log(
+            '💳 RESUMO:',
+            {
+                quantidade:
+                    pagamentosDetalhes.length,
+
+                metodoPagamentoNome,
+
+                totalPago,
+
+                descontoCupom,
+
+                valorProdutoFinal
+            }
         );
 
 
@@ -884,74 +1203,67 @@ async function buscarValorExatoPagamento(orderId) {
 
         return {
 
-            // =============================================
-            // VALORES
-            // =============================================
-
             valor_produto:
                 valorProdutoFinal,
-
 
             valor_frete:
                 valorFrete,
 
-
             total_pago:
                 totalPago,
-
 
             desconto_cupom:
                 descontoCupom,
 
-
-            fonte:
-                fonte,
-
+            fonte,
 
             valor_venda:
                 valorVenda,
-
 
             valor_mp:
                 valorProdutoMP,
 
 
             // =============================================
-            // PAGAMENTO
+            // IDS
             // =============================================
 
             payment_id:
-                paymentId,
+                paymentIdsUnicos[0] ||
+                null,
 
+            payment_ids:
+                paymentIdsUnicos,
+
+
+            // =============================================
+            // RESUMO COMPATÍVEL COM O SISTEMA ANTIGO
+            // =============================================
 
             metodo_pagamento_id:
-                metodoPagamentoId ||
-                null,
-
+                metodoPagamentoId,
 
             tipo_pagamento:
-                tipoPagamento ||
-                null,
-
+                tipoPagamento,
 
             metodo_pagamento_nome:
                 metodoPagamentoNome,
 
-
-            // =============================================
-            // PARCELAMENTO
-            // =============================================
-
-            parcelas:
-                parcelas,
-
+            parcelas,
 
             parcelamento_nome:
                 parcelamentoNome,
 
-
             valor_parcela:
-                valorParcela
+                valorParcela,
+
+
+            // =============================================
+            // TODOS OS MÉTODOS
+            // =============================================
+
+            pagamentos_detalhes:
+                pagamentosDetalhes
         };
 
 
@@ -960,7 +1272,7 @@ async function buscarValorExatoPagamento(orderId) {
     ) {
 
         console.error(
-            '❌ Erro ao buscar valor no Mercado Pago:',
+            '❌ Erro ao buscar pagamentos no Mercado Pago:',
             error
         );
 
@@ -7626,6 +7938,12 @@ function garantirEstruturaAvulsaNFE() {
         'Carregando Naturezas...'
     );
 
+    // =====================================================
+    // CAMPO DE NF-E REFERENCIADA PARA DEVOLUÇÃO
+    // =====================================================
+
+    garantirCampoReferenciaDevolucaoAvulsaNFE();
+
 
     // =====================================================
     // TRANSPORTADORA
@@ -8475,6 +8793,19 @@ async function preencherSelectCFOPAvulsaNFE() {
         select.disabled =
             true;
 
+            // =====================================================
+            // MOSTRAR/OCULTAR CHAVE REFERENCIADA
+            // =====================================================
+
+            select.onchange =
+                function () {
+
+                    atualizarCampoReferenciaDevolucaoAvulsaNFE();
+                };
+
+
+            atualizarCampoReferenciaDevolucaoAvulsaNFE();
+
 
         select.innerHTML = `
 
@@ -8628,10 +8959,389 @@ async function preencherSelectCFOPAvulsaNFE() {
     }
 }
 
+// =========================================================
+// DEVOLUÇÃO - NF-E REFERENCIADA
+// =========================================================
+
+function normalizarTextoAvulsaNFE(valor) {
+
+    return String(
+        valor || ''
+    )
+        .normalize('NFD')
+        .replace(
+            /[\u0300-\u036f]/g,
+            ''
+        )
+        .trim()
+        .toLowerCase();
+}
+
 
 // =========================================================
-// NATUREZA - EXCLUSIVA DA EMISSÃO AVULSA
+// VERIFICA SE A NATUREZA É ENTRADA DE DEVOLUÇÃO
 // =========================================================
+
+function ehEntradaDevolucaoAvulsaNFE() {
+
+    const natureza =
+        document
+            .getElementById(
+                'avulsaNatOp'
+            )
+            ?.value ||
+        '';
+
+
+    const texto =
+        normalizarTextoAvulsaNFE(
+            natureza
+        );
+
+
+    return (
+        texto.includes(
+            'entrada'
+        ) &&
+        texto.includes(
+            'devolucao'
+        )
+    );
+}
+
+
+// =========================================================
+// GARANTIR CAMPO DA CHAVE REFERENCIADA
+// =========================================================
+
+function garantirCampoReferenciaDevolucaoAvulsaNFE() {
+
+    const aba =
+        document.getElementById(
+            'abaAvulsa'
+        );
+
+
+    if (!aba) {
+
+        console.error(
+            '❌ abaAvulsa não encontrada'
+        );
+
+        return null;
+    }
+
+
+    // =====================================================
+    // SE JÁ EXISTIR, NÃO DUPLICAR
+    // =====================================================
+
+    let grupo =
+        document.getElementById(
+            'avulsaReferenciaDevolucaoGrupo'
+        );
+
+
+    if (grupo) {
+
+        atualizarCampoReferenciaDevolucaoAvulsaNFE();
+
+        return grupo;
+    }
+
+
+    // =====================================================
+    // CRIAR CAMPO
+    // =====================================================
+
+    grupo =
+        document.createElement(
+            'div'
+        );
+
+
+    grupo.id =
+        'avulsaReferenciaDevolucaoGrupo';
+
+
+    grupo.className =
+        'form-group';
+
+
+    grupo.style.cssText = `
+        display:none;
+        margin-top:15px;
+        margin-bottom:15px;
+    `;
+
+
+    grupo.innerHTML = `
+
+        <label
+            for="avulsaChaveNFeReferenciada"
+            style="
+                display:block;
+                margin-bottom:7px;
+                font-weight:500;
+            "
+        >
+            Chave de acesso da NF-e de saída *
+        </label>
+
+        <input
+            type="text"
+            id="avulsaChaveNFeReferenciada"
+            class="form-control"
+            maxlength="44"
+            inputmode="numeric"
+            autocomplete="off"
+            placeholder="Digite os 44 números da chave da NF-e original"
+        >
+
+        <small
+            style="
+                display:block;
+                margin-top:5px;
+                color:#6c757d;
+            "
+        >
+            Informe a chave da NF-e de saída referente a esta devolução.
+        </small>
+
+        <div
+            id="avulsaChaveNFeReferenciadaContador"
+            style="
+                margin-top:4px;
+                font-size:12px;
+                color:#6c757d;
+            "
+        >
+            0 / 44 dígitos
+        </div>
+    `;
+
+
+    // =====================================================
+    // COLOCAR LOGO DEPOIS DA NATUREZA
+    // =====================================================
+
+    const selectNatureza =
+        document.getElementById(
+            'avulsaNatOp'
+        );
+
+
+    let grupoNatureza =
+        selectNatureza
+            ?.closest(
+                '.form-group'
+            );
+
+
+    // Caso o HTML não use .form-group
+    if (!grupoNatureza) {
+
+        grupoNatureza =
+            selectNatureza
+                ?.parentElement;
+    }
+
+
+    if (
+        grupoNatureza &&
+        grupoNatureza.parentElement
+    ) {
+
+        grupoNatureza.insertAdjacentElement(
+            'afterend',
+            grupo
+        );
+
+    } else {
+
+        // =================================================
+        // FALLBACK:
+        // colocar antes da modalidade de frete
+        // =================================================
+
+        const modalidade =
+            document.getElementById(
+                'avulsaModFrete'
+            );
+
+
+        const grupoModalidade =
+            modalidade
+                ?.closest(
+                    '.form-group'
+                ) ||
+            modalidade
+                ?.parentElement;
+
+
+        if (
+            grupoModalidade &&
+            grupoModalidade.parentElement
+        ) {
+
+            grupoModalidade
+                .parentElement
+                .insertBefore(
+                    grupo,
+                    grupoModalidade
+                );
+
+        } else {
+
+            aba.appendChild(
+                grupo
+            );
+        }
+    }
+
+
+    // =====================================================
+    // PERMITIR APENAS NÚMEROS
+    // =====================================================
+
+    const input =
+        document.getElementById(
+            'avulsaChaveNFeReferenciada'
+        );
+
+
+    if (input) {
+
+        input.oninput =
+            function () {
+
+                this.value =
+                    String(
+                        this.value || ''
+                    )
+                        .replace(
+                            /\D/g,
+                            ''
+                        )
+                        .substring(
+                            0,
+                            44
+                        );
+
+
+                const contador =
+                    document.getElementById(
+                        'avulsaChaveNFeReferenciadaContador'
+                    );
+
+
+                if (contador) {
+
+                    contador.textContent =
+                        `${this.value.length} / 44 dígitos`;
+
+
+                    contador.style.color =
+                        this.value.length === 44
+                            ? '#198754'
+                            : '#6c757d';
+                }
+            };
+    }
+
+
+    atualizarCampoReferenciaDevolucaoAvulsaNFE();
+
+
+    console.log(
+        '✅ Campo de NF-e referenciada criado'
+    );
+
+
+    return grupo;
+}
+
+
+// =========================================================
+// MOSTRAR / ESCONDER CAMPO
+// =========================================================
+
+function atualizarCampoReferenciaDevolucaoAvulsaNFE() {
+
+    const grupo =
+        document.getElementById(
+            'avulsaReferenciaDevolucaoGrupo'
+        );
+
+
+    const input =
+        document.getElementById(
+            'avulsaChaveNFeReferenciada'
+        );
+
+
+    if (
+        !grupo ||
+        !input
+    ) {
+
+        return;
+    }
+
+
+    const ehDevolucao =
+        ehEntradaDevolucaoAvulsaNFE();
+
+
+    console.log(
+        '🔎 Natureza NF-e avulsa:',
+        document
+            .getElementById(
+                'avulsaNatOp'
+            )
+            ?.value,
+        '| É devolução:',
+        ehDevolucao
+    );
+
+
+    if (ehDevolucao) {
+
+        grupo.style.display =
+            'block';
+
+        input.required =
+            true;
+
+    } else {
+
+        grupo.style.display =
+            'none';
+
+        input.required =
+            false;
+
+        input.value =
+            '';
+
+
+        const contador =
+            document.getElementById(
+                'avulsaChaveNFeReferenciadaContador'
+            );
+
+
+        if (contador) {
+
+            contador.textContent =
+                '0 / 44 dígitos';
+
+            contador.style.color =
+                '#6c757d';
+        }
+    }
+}
+
 
 async function preencherSelectNaturezaAvulsaNFE() {
 
@@ -8658,7 +9368,6 @@ async function preencherSelectNaturezaAvulsaNFE() {
 
 
         select.innerHTML = `
-
             <option value="">
                 Carregando Naturezas...
             </option>
@@ -8713,7 +9422,6 @@ async function preencherSelectNaturezaAvulsaNFE() {
         ) {
 
             select.innerHTML = `
-
                 <option value="">
                     Nenhuma Natureza ativa cadastrada
                 </option>
@@ -8728,6 +9436,10 @@ async function preencherSelectNaturezaAvulsaNFE() {
         }
 
 
+        // =====================================================
+        // OPÇÕES
+        // =====================================================
+
         select.innerHTML =
             '<option value="">Selecione a Natureza</option>' +
 
@@ -8740,9 +9452,11 @@ async function preencherSelectNaturezaAvulsaNFE() {
                                 natureza.descricao
                             )}"
                         >
+
                             ${escaparHTMLAvulsaNFE(
                                 natureza.descricao
                             )}
+
                         </option>
                     `
                 )
@@ -8750,6 +9464,10 @@ async function preencherSelectNaturezaAvulsaNFE() {
                     ''
                 );
 
+
+        // =====================================================
+        // PADRÃO
+        // =====================================================
 
         const padrao =
             naturezas.find(
@@ -8766,6 +9484,37 @@ async function preencherSelectNaturezaAvulsaNFE() {
 
         select.disabled =
             false;
+
+
+        // =====================================================
+        // CRIAR CAMPO DE REFERÊNCIA
+        // =====================================================
+
+        garantirCampoReferenciaDevolucaoAvulsaNFE();
+
+
+        // =====================================================
+        // EVENTO DE ALTERAÇÃO
+        // =====================================================
+
+        select.onchange =
+            function () {
+
+                console.log(
+                    '🔄 Natureza alterada:',
+                    this.value
+                );
+
+
+                atualizarCampoReferenciaDevolucaoAvulsaNFE();
+            };
+
+
+        // =====================================================
+        // VERIFICAR VALOR ATUAL
+        // =====================================================
+
+        atualizarCampoReferenciaDevolucaoAvulsaNFE();
 
 
         console.log(
@@ -8788,7 +9537,6 @@ async function preencherSelectNaturezaAvulsaNFE() {
 
 
         select.innerHTML = `
-
             <option value="">
                 Erro ao carregar Naturezas
             </option>
@@ -8979,6 +9727,271 @@ async function preencherSelectTransportadoraAvulsaNFE() {
     }
 }
 
+// =========================================================
+// NF-E AVULSA - REFERÊNCIA DE DEVOLUÇÃO
+// =========================================================
+
+function normalizarNaturezaAvulsaNFE(valor) {
+
+    return String(
+        valor || ''
+    )
+        .normalize('NFD')
+        .replace(
+            /[\u0300-\u036f]/g,
+            ''
+        )
+        .trim()
+        .toLowerCase();
+}
+
+
+function ehEntradaDevolucaoAvulsaNFE() {
+
+    const natureza =
+        document
+            .getElementById(
+                'avulsaNatOp'
+            )
+            ?.value ||
+        '';
+
+
+    return (
+        normalizarNaturezaAvulsaNFE(
+            natureza
+        ) ===
+        'entrada de devolucao'
+    );
+}
+
+
+function garantirCampoReferenciaDevolucaoAvulsaNFE() {
+
+    const aba =
+        document.getElementById(
+            'abaAvulsa'
+        );
+
+
+    if (!aba) {
+
+        return false;
+    }
+
+
+    let grupo =
+        document.getElementById(
+            'avulsaReferenciaDevolucaoGrupo'
+        );
+
+
+    if (!grupo) {
+
+        grupo =
+            document.createElement(
+                'div'
+            );
+
+
+        grupo.id =
+            'avulsaReferenciaDevolucaoGrupo';
+
+
+        grupo.className =
+            'form-group';
+
+
+        grupo.style.display =
+            'none';
+
+
+        grupo.innerHTML = `
+
+            <label for="avulsaChaveNFeReferenciada">
+                Chave de acesso da NF-e de saída *
+            </label>
+
+            <input
+                type="text"
+                id="avulsaChaveNFeReferenciada"
+                class="form-control"
+                maxlength="44"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="Digite os 44 números da chave de acesso"
+            >
+
+            <small
+                style="
+                    color:#6c757d;
+                    display:block;
+                    margin-top:4px;
+                "
+            >
+                Informe a chave da NF-e original que está sendo devolvida.
+            </small>
+
+            <div
+                id="avulsaChaveNFeReferenciadaContador"
+                style="
+                    margin-top:3px;
+                    font-size:11px;
+                    color:#6c757d;
+                "
+            >
+                0 / 44 dígitos
+            </div>
+        `;
+
+
+        const selectNatureza =
+            document.getElementById(
+                'avulsaNatOp'
+            );
+
+
+        const grupoNatureza =
+            selectNatureza
+                ?.closest(
+                    '.form-group'
+                );
+
+
+        if (
+            grupoNatureza &&
+            grupoNatureza.parentElement
+        ) {
+
+            grupoNatureza
+                .parentElement
+                .insertBefore(
+                    grupo,
+                    grupoNatureza.nextSibling
+                );
+
+        } else {
+
+            aba.appendChild(
+                grupo
+            );
+        }
+    }
+
+
+    const input =
+        document.getElementById(
+            'avulsaChaveNFeReferenciada'
+        );
+
+
+    if (input) {
+
+        input.oninput =
+            function () {
+
+                this.value =
+                    String(
+                        this.value || ''
+                    )
+                        .replace(
+                            /\D/g,
+                            ''
+                        )
+                        .substring(
+                            0,
+                            44
+                        );
+
+
+                const contador =
+                    document.getElementById(
+                        'avulsaChaveNFeReferenciadaContador'
+                    );
+
+
+                if (contador) {
+
+                    contador.textContent =
+                        `${this.value.length} / 44 dígitos`;
+
+
+                    contador.style.color =
+                        this.value.length === 44
+                            ? '#28a745'
+                            : '#6c757d';
+                }
+            };
+    }
+
+
+    atualizarCampoReferenciaDevolucaoAvulsaNFE();
+
+
+    return true;
+}
+
+
+function atualizarCampoReferenciaDevolucaoAvulsaNFE() {
+
+    const grupo =
+        document.getElementById(
+            'avulsaReferenciaDevolucaoGrupo'
+        );
+
+
+    const input =
+        document.getElementById(
+            'avulsaChaveNFeReferenciada'
+        );
+
+
+    if (
+        !grupo ||
+        !input
+    ) {
+
+        return;
+    }
+
+
+    const devolucao =
+        ehEntradaDevolucaoAvulsaNFE();
+
+
+    grupo.style.display =
+        devolucao
+            ? 'block'
+            : 'none';
+
+
+    input.required =
+        devolucao;
+
+
+    if (!devolucao) {
+
+        input.value =
+            '';
+
+
+        const contador =
+            document.getElementById(
+                'avulsaChaveNFeReferenciadaContador'
+            );
+
+
+        if (contador) {
+
+            contador.textContent =
+                '0 / 44 dígitos';
+
+            contador.style.color =
+                '#6c757d';
+        }
+    }
+}
+
 
 async function prepararEmissaoAvulsaNFE() {
 
@@ -9038,6 +10051,14 @@ async function prepararEmissaoAvulsaNFE() {
 
                 carregarProdutosAvulsaNFE()
             ]);
+
+            // =================================================
+            // GARANTIR CAMPO DE REFERÊNCIA DA DEVOLUÇÃO
+            // =================================================
+
+            garantirCampoReferenciaDevolucaoAvulsaNFE();
+
+            atualizarCampoReferenciaDevolucaoAvulsaNFE();
 
 
         console.log(
@@ -10433,6 +11454,256 @@ function renderizarVendasNFETabela(
 
     const htmlPagamento =
         venda => {
+
+                        // =============================================
+            // MÚLTIPLOS PAGAMENTOS
+            // =============================================
+
+            const pagamentosDetalhes =
+                Array.isArray(
+                    venda._pagamentos_detalhes
+                )
+                    ? venda._pagamentos_detalhes
+                    : (
+                        Array.isArray(
+                            venda.pagamentos_detalhes
+                        )
+                            ? venda.pagamentos_detalhes
+                            : []
+                    );
+
+
+            if (
+                pagamentosDetalhes.length >
+                0
+            ) {
+
+                const totalPagamentos =
+                    pagamentosDetalhes.reduce(
+                        (
+                            total,
+                            pagamento
+                        ) =>
+                            total +
+                            Number(
+                                pagamento.valor ||
+                                0
+                            ),
+                        0
+                    );
+
+
+                const htmlMetodos =
+                    pagamentosDetalhes
+                        .map(
+                            pagamento => {
+
+                                const nome =
+                                    pagamento
+                                        .metodo_pagamento_nome ||
+                                    'Não informado';
+
+
+                                const tipo =
+                                    String(
+                                        pagamento
+                                            .tipo_pagamento ||
+                                        ''
+                                    )
+                                        .toLowerCase();
+
+
+                                const metodoId =
+                                    String(
+                                        pagamento
+                                            .metodo_pagamento_id ||
+                                        ''
+                                    )
+                                        .toLowerCase();
+
+
+                                const valor =
+                                    Number(
+                                        pagamento.valor ||
+                                        0
+                                    );
+
+
+                                const parcelamento =
+                                    pagamento
+                                        .parcelamento_nome ||
+                                    '';
+
+
+                                let icone =
+                                    'fa-wallet';
+
+
+                                let fundo =
+                                    '#6c757d';
+
+
+                                if (
+                                    metodoId ===
+                                    'pix'
+                                ) {
+
+                                    icone =
+                                        'fa-qrcode';
+
+                                    fundo =
+                                        '#28a745';
+
+                                } else if (
+                                    tipo ===
+                                    'credit_card'
+                                ) {
+
+                                    icone =
+                                        'fa-credit-card';
+
+                                    fundo =
+                                        '#007bff';
+
+                                } else if (
+                                    tipo ===
+                                    'debit_card'
+                                ) {
+
+                                    icone =
+                                        'fa-credit-card';
+
+                                    fundo =
+                                        '#17a2b8';
+
+                                } else if (
+                                    tipo ===
+                                    'account_money'
+                                ) {
+
+                                    icone =
+                                        'fa-wallet';
+
+                                    fundo =
+                                        '#ffc107';
+
+                                } else if (
+                                    tipo ===
+                                    'ticket'
+                                ) {
+
+                                    icone =
+                                        'fa-barcode';
+
+                                    fundo =
+                                        '#6f42c1';
+                                }
+
+
+                                return `
+                                    <div
+                                        style="
+                                            margin-bottom:5px;
+                                        "
+                                    >
+                                        <span
+                                            style="
+                                                background:${fundo};
+                                                color:${
+                                                    tipo === 'account_money'
+                                                        ? '#212529'
+                                                        : 'white'
+                                                };
+                                                padding:4px 7px;
+                                                border-radius:5px;
+                                                font-size:11px;
+                                                display:inline-block;
+                                            "
+                                        >
+                                            <i class="fas ${icone}"></i>
+
+                                            ${escaparHTMLNFE(
+                                                nome
+                                            )}
+                                        </span>
+
+                                        <div
+                                            style="
+                                                font-size:10px;
+                                                margin-top:2px;
+                                                color:#495057;
+                                                font-weight:600;
+                                            "
+                                        >
+                                            R$ ${valor.toLocaleString(
+                                                'pt-BR',
+                                                {
+                                                    minimumFractionDigits:
+                                                        2,
+
+                                                    maximumFractionDigits:
+                                                        2
+                                                }
+                                            )}
+
+                                            ${
+                                                parcelamento
+
+                                                    ? ` • ${escaparHTMLNFE(
+                                                        parcelamento
+                                                    )}`
+
+                                                    : ''
+                                            }
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                        )
+                        .join(
+                            ''
+                        );
+
+
+                const htmlTotal =
+                    pagamentosDetalhes.length >
+                    1
+
+                        ? `
+                            <div
+                                style="
+                                    border-top:1px solid #dee2e6;
+                                    margin-top:4px;
+                                    padding-top:4px;
+                                    font-size:10px;
+                                    font-weight:700;
+                                    white-space:nowrap;
+                                "
+                            >
+                                Total pago:
+                                R$ ${totalPagamentos.toLocaleString(
+                                    'pt-BR',
+                                    {
+                                        minimumFractionDigits:
+                                            2,
+
+                                        maximumFractionDigits:
+                                            2
+                                    }
+                                )}
+                            </div>
+                        `
+
+                        : '';
+
+
+                return `
+                    <div>
+                        ${htmlMetodos}
+                        ${htmlTotal}
+                    </div>
+                `;
+            }
 
             const metodoPagamento =
                 venda._metodo_pagamento_nome ||
@@ -13421,106 +14692,392 @@ async function processarVendaParaNFE(
         venda.valor_parcela ??
         null;
 
+        let pagamentosDetalhes =
+    Array.isArray(
+        venda._pagamentos_detalhes
+    )
+        ? venda._pagamentos_detalhes
+        : (
+            Array.isArray(
+                venda.pagamentos_detalhes
+            )
+                ? venda.pagamentos_detalhes
+                : []
+        );
 
-    // =====================================================
-    // FULL
-    // =====================================================
 
-    if (isFull) {
+// =====================================================
+// FULL
+//
+// FULL NÃO TEM BAIXA LOCAL,
+// MAS PRECISA BUSCAR:
+// - método(s) de pagamento
+// - valor de cada pagamento
+// - total pago
+// - parcelamento
+// =====================================================
 
-        const valor =
-            Number(
-                venda.valor_total ??
-                venda.total_amount ??
-                venda._valor_produto ??
-                0
+if (isFull) {
+
+    let valor =
+        Number(
+            venda.valor_total ??
+            venda.total_amount ??
+            venda._valor_produto ??
+            0
+        );
+
+
+    let valorFreteFull =
+        Number(
+            venda._valor_frete ??
+            venda.valor_frete ??
+            0
+        );
+
+
+    let totalPagoFull =
+        Number(
+            venda._total_pago ??
+            venda.total_pago ??
+            valor
+        );
+
+
+    // =================================================
+    // DADOS DE PAGAMENTO JÁ EXISTENTES
+    // =================================================
+
+    let metodoPagamentoIdFull =
+        venda._metodo_pagamento_id ??
+        venda.metodo_pagamento_id ??
+        metodoPagamentoId ??
+        null;
+
+
+    let tipoPagamentoFull =
+        venda._tipo_pagamento ??
+        venda.tipo_pagamento ??
+        tipoPagamento ??
+        null;
+
+
+    let metodoPagamentoNomeFull =
+        venda._metodo_pagamento_nome ??
+        venda.metodo_pagamento_nome ??
+        metodoPagamentoNome ??
+        null;
+
+
+    let parcelasFull =
+        venda._parcelas ??
+        venda.parcelas ??
+        parcelas ??
+        null;
+
+
+    let parcelamentoNomeFull =
+        venda._parcelamento_nome ??
+        venda.parcelamento_nome ??
+        parcelamentoNome ??
+        null;
+
+
+    let valorParcelaFull =
+        venda._valor_parcela ??
+        venda.valor_parcela ??
+        valorParcela ??
+        null;
+
+
+    let pagamentosDetalhesFull =
+        Array.isArray(
+            venda._pagamentos_detalhes
+        )
+            ? venda._pagamentos_detalhes
+
+            : (
+                Array.isArray(
+                    venda.pagamentos_detalhes
+                )
+                    ? venda.pagamentos_detalhes
+
+                    : []
             );
 
 
-        return {
+    // =================================================
+    // BUSCAR PAGAMENTO TAMBÉM PARA FULL
+    // =================================================
 
-            ...venda,
+    try {
 
-            id:
-                idVenda,
+        console.log(
+            `💳 [FULL] Buscando pagamento da venda ${idVenda}...`
+        );
 
-            id_venda_ml:
-                idVenda,
 
-            _logistic_type:
-                tipoEnvio ||
-                'FULL',
+        const pagamento =
+            await buscarValorExatoPagamento(
+                idVenda
+            );
 
-            _shipping_mode:
-                info.tipo ||
-                tipoEnvio ||
-                'FULL',
 
-            _is_full:
-                true,
+        if (pagamento) {
 
-            // FULL = NF-e automática ML
-            _tem_nfe:
-                true,
+            // =============================================
+            // VALORES
+            // =============================================
 
-            _data_envio:
-                null,
-
-            _prazo_envio:
-                null,
-
-            _valor_produto:
-                valor,
-
-            _valor_frete:
+            valor =
                 Number(
-                    venda._valor_frete ??
-                    venda.valor_frete ??
-                    0
-                ),
-
-            _total_pago:
-                Number(
-                    venda._total_pago ??
-                    venda.total_pago ??
+                    pagamento.valor_produto ??
                     valor
-                ),
+                );
+
+
+            valorFreteFull =
+                Number(
+                    pagamento.valor_frete ??
+                    valorFreteFull ??
+                    0
+                );
+
+
+            totalPagoFull =
+                Number(
+                    pagamento.total_pago ??
+                    totalPagoFull ??
+                    valor
+                );
 
 
             // =============================================
-            // PAGAMENTO
+            // MÉTODO
             // =============================================
 
-            _metodo_pagamento_id:
-                metodoPagamentoId,
+            metodoPagamentoIdFull =
+                pagamento.metodo_pagamento_id ??
+                metodoPagamentoIdFull ??
+                null;
 
-            _tipo_pagamento:
-                tipoPagamento,
 
-            _metodo_pagamento_nome:
-                metodoPagamentoNome,
+            tipoPagamentoFull =
+                pagamento.tipo_pagamento ??
+                tipoPagamentoFull ??
+                null;
 
-            _parcelas:
-                parcelas,
 
-            _parcelamento_nome:
-                parcelamentoNome,
-
-            _valor_parcela:
-                valorParcela,
+            metodoPagamentoNomeFull =
+                pagamento.metodo_pagamento_nome ??
+                metodoPagamentoNomeFull ??
+                null;
 
 
             // =============================================
-            // ESTOQUE
+            // PARCELAMENTO
             // =============================================
 
-            _estoque_status:
-                'full',
+            parcelasFull =
+                pagamento.parcelas ??
+                parcelasFull ??
+                null;
 
-            _estoque_detalhes:
-                []
-        };
+
+            parcelamentoNomeFull =
+                pagamento.parcelamento_nome ??
+                parcelamentoNomeFull ??
+                null;
+
+
+            valorParcelaFull =
+                pagamento.valor_parcela ??
+                valorParcelaFull ??
+                null;
+
+
+            // =============================================
+            // TODOS OS PAGAMENTOS
+            // =============================================
+
+            pagamentosDetalhesFull =
+                Array.isArray(
+                    pagamento.pagamentos_detalhes
+                )
+                    ? pagamento.pagamentos_detalhes
+
+                    : pagamentosDetalhesFull;
+
+
+            console.log(
+                `✅ [FULL] Pagamento processado da venda ${idVenda}:`,
+                {
+                    metodoPagamentoId:
+                        metodoPagamentoIdFull,
+
+                    tipoPagamento:
+                        tipoPagamentoFull,
+
+                    metodoPagamentoNome:
+                        metodoPagamentoNomeFull,
+
+                    parcelas:
+                        parcelasFull,
+
+                    parcelamentoNome:
+                        parcelamentoNomeFull,
+
+                    valorParcela:
+                        valorParcelaFull,
+
+                    totalPago:
+                        totalPagoFull,
+
+                    pagamentosDetalhes:
+                        pagamentosDetalhesFull
+                }
+            );
+        }
+
+
+    } catch (
+        error
+    ) {
+
+        // =================================================
+        // ERRO DE PAGAMENTO NÃO DEVE IMPEDIR VENDA FULL
+        // =================================================
+
+        console.warn(
+            `⚠️ [FULL] Erro buscando pagamento da venda ${idVenda}:`,
+            error
+        );
     }
+
+
+    // =================================================
+    // RETORNO FULL
+    // =================================================
+
+    return {
+
+        ...venda,
+
+        id:
+            idVenda,
+
+        id_venda_ml:
+            idVenda,
+
+
+        // =============================================
+        // LOGÍSTICA
+        // =============================================
+
+        _logistic_type:
+            tipoEnvio ||
+            'FULL',
+
+        _shipping_mode:
+            info.tipo ||
+            tipoEnvio ||
+            'FULL',
+
+        _is_full:
+            true,
+
+
+        // =============================================
+        // NF-E
+        //
+        // FULL = NF-e automática pelo ML
+        // =============================================
+
+        _tem_nfe:
+            true,
+
+
+        // =============================================
+        // ENVIO
+        // =============================================
+
+        _data_envio:
+            extrairDataEnvioML(
+                venda
+            ),
+
+        _prazo_envio:
+            extrairPrazoEnvioCompletoML(
+                venda
+            ),
+
+
+        // =============================================
+        // VALORES
+        // =============================================
+
+        _valor_produto:
+            valor,
+
+        _valor_frete:
+            valorFreteFull,
+
+        _total_pago:
+            totalPagoFull,
+
+
+        // =============================================
+        // PAGAMENTO
+        // =============================================
+
+        _metodo_pagamento_id:
+            metodoPagamentoIdFull,
+
+        _tipo_pagamento:
+            tipoPagamentoFull,
+
+        _metodo_pagamento_nome:
+            metodoPagamentoNomeFull,
+
+
+        // =============================================
+        // PARCELAMENTO
+        // =============================================
+
+        _parcelas:
+            parcelasFull,
+
+        _parcelamento_nome:
+            parcelamentoNomeFull,
+
+        _valor_parcela:
+            valorParcelaFull,
+
+
+        // =============================================
+        // TODOS OS MÉTODOS DE PAGAMENTO
+        // =============================================
+
+        _pagamentos_detalhes:
+            pagamentosDetalhesFull,
+
+        pagamentos_detalhes:
+            pagamentosDetalhesFull,
+
+
+        // =============================================
+        // ESTOQUE
+        //
+        // FULL NÃO TEM BAIXA NO ESTOQUE LOCAL
+        // =============================================
+
+        _estoque_status:
+            'full',
+
+        _estoque_detalhes:
+            []
+    };
+}
 
 
     // =====================================================
@@ -13591,6 +15148,18 @@ async function processarVendaParaNFE(
                     totalPago ??
                     valorProduto
                 );
+
+            valorParcela =
+                    pagamento.valor_parcela ??
+                    valorParcela ??
+                    null;
+
+                    pagamentosDetalhes =
+                        Array.isArray(
+                            pagamento.pagamentos_detalhes
+                        )
+                            ? pagamento.pagamentos_detalhes
+                            : pagamentosDetalhes;
 
 
             // =============================================
@@ -13887,6 +15456,9 @@ async function processarVendaParaNFE(
 
         _valor_parcela:
             valorParcela,
+
+        _pagamentos_detalhes:
+            pagamentosDetalhes,
 
 
         // =================================================
@@ -20470,6 +22042,29 @@ async function emitirNFEAvulsa(
             )
             ?.value;
 
+            const entradaDevolucao =
+    (
+        normalizarNaturezaAvulsaNFE(
+            naturezaOperacao
+        ) ===
+        'entrada de devolucao'
+    );
+
+
+const chaveNFeReferenciada =
+    String(
+        document
+            .getElementById(
+                'avulsaChaveNFeReferenciada'
+            )
+            ?.value ||
+        ''
+    )
+        .replace(
+            /\D/g,
+            ''
+        );
+
 
     const transportadoraId =
         document
@@ -20532,6 +22127,32 @@ async function emitirNFEAvulsa(
 
         return;
     }
+
+    // =====================================================
+// DEVOLUÇÃO PRECISA REFERENCIAR A NF-E ORIGINAL
+// =====================================================
+
+if (
+    entradaDevolucao &&
+    chaveNFeReferenciada.length !==
+        44
+) {
+
+    showToast(
+        'Informe os 44 dígitos da chave de acesso da NF-e de saída que está sendo devolvida.',
+        'warning'
+    );
+
+
+    document
+        .getElementById(
+            'avulsaChaveNFeReferenciada'
+        )
+        ?.focus();
+
+
+    return;
+}
 
     if (
     !Array.isArray(
@@ -20609,27 +22230,42 @@ atualizarProdutosJSONAvulsaNFE();
     // PAYLOAD
     // =====================================================
 
-    const dados = {
+const dados = {
 
-        cliente: {
+    cliente: {
 
-            id:
-                clienteId
-        },
+        id:
+            clienteId
+    },
 
-        produtos,
+    produtos,
 
-        cfop,
+    cfop,
 
-        natureza_operacao:
-            naturezaOperacao,
+    natureza_operacao:
+        naturezaOperacao,
 
-        modalidade_frete:
-            modalidadeFrete,
+    modalidade_frete:
+        modalidadeFrete,
 
-        transportadora_id:
-            transportadoraId
-    };
+    transportadora_id:
+        transportadoraId,
+
+
+    // =================================================
+    // DEVOLUÇÃO
+    // =================================================
+
+    finalidade_nfe:
+        entradaDevolucao
+            ? '4'
+            : '1',
+
+    chave_nfe_referenciada:
+        entradaDevolucao
+            ? chaveNFeReferenciada
+            : null
+};
 
 
     console.log(
@@ -20689,29 +22325,97 @@ atualizarProdutosJSONAvulsaNFE();
             );
 
 
-        let result =
-            {};
+// =====================================================
+// LER RESPOSTA COMPLETA DO BACKEND
+// =====================================================
 
+const respostaTexto =
+    await response.text();
+
+
+let result =
+    {};
+
+
+if (
+    respostaTexto
+) {
+
+    try {
+
+        result =
+            JSON.parse(
+                respostaTexto
+            );
+
+    } catch {
+
+        result = {
+            raw:
+                respostaTexto
+        };
+    }
+}
+
+
+console.log(
+    '📥 Resposta /nfe/emitir-avulsa:',
+    {
+        status:
+            response.status,
+
+        ok:
+            response.ok,
+
+        result,
+
+        respostaTexto
+    }
+);
+
+
+if (
+    !response.ok ||
+    result.success ===
+        false
+) {
+
+    let detalheErro =
+        result.error ||
+        result.message ||
+        result.details ||
+        result.detail ||
+        result.raw ||
+        respostaTexto ||
+        `Erro HTTP ${response.status}`;
+
+
+    if (
+        typeof detalheErro ===
+        'object'
+    ) {
 
         try {
 
-            result =
-                await response.json();
+            detalheErro =
+                JSON.stringify(
+                    detalheErro
+                );
 
-        } catch {}
+        } catch {
 
-
-        if (
-            !response.ok ||
-            !result.success
-        ) {
-
-            throw new Error(
-                result.error ||
-                result.message ||
-                `Erro HTTP ${response.status}`
-            );
+            detalheErro =
+                String(
+                    detalheErro
+                );
         }
+    }
+
+
+    throw new Error(
+        `HTTP ${response.status}: ${detalheErro}`
+    );
+}
 
 
         showToast(
@@ -27327,6 +29031,10 @@ window.renderizarProdutosAvulsaNFE = renderizarProdutosAvulsaNFE;
 window.atualizarItemProdutoAvulsaNFE = atualizarItemProdutoAvulsaNFE;
 window.removerProdutoAvulsaNFE = removerProdutoAvulsaNFE;
 window.atualizarProdutosJSONAvulsaNFE = atualizarProdutosJSONAvulsaNFE;
+window.normalizarTextoAvulsaNFE = normalizarTextoAvulsaNFE;
+window.ehEntradaDevolucaoAvulsaNFE = ehEntradaDevolucaoAvulsaNFE;
+window.garantirCampoReferenciaDevolucaoAvulsaNFE = garantirCampoReferenciaDevolucaoAvulsaNFE;
+window.atualizarCampoReferenciaDevolucaoAvulsaNFE = atualizarCampoReferenciaDevolucaoAvulsaNFE;
 
 // ===================== INICIALIZAR =====================
 document.addEventListener('DOMContentLoaded', function() {
