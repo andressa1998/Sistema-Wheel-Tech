@@ -8419,7 +8419,7 @@ window.abrirSistemaNFE = async function() {
             </div>
         </header>
 
-        <div class="container">
+        <div class="container nfe-container-largo">
             <!-- Abas -->
             <div class="card mb-4">
                 <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
