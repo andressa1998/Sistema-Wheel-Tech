@@ -5,6 +5,14 @@ window.showToast = window.showToast || showToast;
 if (!window.WORKER_URL) window.WORKER_URL = 'https://purple-bonus-3b1c.andmiotto1998.workers.dev';
 if (!window.API_BASE_URL) window.API_BASE_URL = 'https://sistema-wheel-tech.onrender.com';
 
+// =========================================================
+// TRAVAS DE SEGURANÇA - EMISSÃO DE NF-E
+// =========================================================
+
+// Impede clique duplo no botão de confirmação
+window._nfeConfirmacaoCliqueTravada = false;
+window._nfePromiseEmissao = null;
+
 let vendasPendentes = [];
 let pendingEmitOrderId = null;
 let produtosEditados = [];
@@ -6833,105 +6841,237 @@ async function confirmarProdutosEditados() {
         '🔵 [confirmarProdutosEditados] MODAL ÚNICO'
     );
 
-    const vendaId =
-        vendaIdParaEdicao ||
-        pendingEmitOrderId;
-
-    if (!vendaId) {
-
-        showToast(
-            '❌ ID da venda não encontrado',
-            'error'
-        );
-
-        return;
-    }
 
     // =====================================================
-    // CAPTURAR VALORES VISÍVEIS DA TABELA
-    // =====================================================
-
-    document
-        .querySelectorAll(
-            '#modalEdicaoProdutos #produtosEditaveisBody tr'
-        )
-        .forEach(
-            (row, index) => {
-
-                if (!produtosEditados[index]) {
-                    return;
-                }
-
-                produtosEditados[index].nome =
-                    row.querySelector(
-                        '.nome-produto'
-                    )?.value.trim() ||
-                    'Produto';
-
-                produtosEditados[index].sku =
-                    row.querySelector(
-                        '.sku-produto'
-                    )?.value.trim() ||
-                    'SEM_SKU';
-
-                produtosEditados[index].quantidade =
-                    parseFloat(
-                        row.querySelector(
-                            '.qtd-produto'
-                        )?.value
-                    ) || 0;
-
-                produtosEditados[index].valor_unitario =
-                    parseFloat(
-                        row.querySelector(
-                            '.valor-produto'
-                        )?.value
-                    ) || 0;
-
-                produtosEditados[index].ncm =
-                    row.querySelector(
-                        '.ncm-produto'
-                    )?.value.trim() ||
-                    '87149990';
-            }
-        );
-
-    // =====================================================
-    // VALIDAR PRODUTOS
+    // TRAVA IMEDIATA DE CLIQUE
+    //
+    // IMPORTANTE:
+    // Esta trava acontece ANTES de qualquer await.
+    // Portanto dois cliques rápidos não conseguem iniciar
+    // dois processos.
     // =====================================================
 
     if (
-        !produtosEditados ||
-        produtosEditados.length === 0
+        window._nfeConfirmacaoCliqueTravada
     ) {
 
-        showToast(
-            '❌ Nenhum produto para emitir',
-            'error'
+        console.warn(
+            '🚫 Clique duplicado bloqueado - confirmação já em andamento'
         );
 
-        return;
-    }
-
-    const produtoInvalido =
-        produtosEditados.find(
-            p =>
-                !p.nome ||
-                p.quantidade <= 0 ||
-                p.valor_unitario < 0
-        );
-
-    if (produtoInvalido) {
 
         showToast(
-            '⚠️ Revise nome, quantidade e valor dos produtos.',
+            '⏳ A emissão já está sendo processada. Aguarde.',
             'warning'
         );
 
+
         return;
     }
 
+
+    window._nfeConfirmacaoCliqueTravada =
+        true;
+
+
+    // =====================================================
+    // BOTÃO
+    // =====================================================
+
+    const btnConfirmar =
+        document.getElementById(
+            'confirmarProdutosFinalBtn'
+        );
+
+
+    let textoOriginalBotao =
+        '';
+
+
+    if (
+        btnConfirmar
+    ) {
+
+        textoOriginalBotao =
+            btnConfirmar.innerHTML;
+
+
+        // Guardar texto original
+        if (
+            !btnConfirmar.dataset
+                .textoOriginalNfe
+        ) {
+
+            btnConfirmar.dataset
+                .textoOriginalNfe =
+                textoOriginalBotao;
+        }
+
+
+        // BLOQUEAR IMEDIATAMENTE
+        btnConfirmar.disabled =
+            true;
+
+
+        btnConfirmar.style.pointerEvents =
+            'none';
+
+
+        btnConfirmar.setAttribute(
+            'aria-busy',
+            'true'
+        );
+
+
+        btnConfirmar.innerHTML = `
+            <span class="spinner"></span>
+            Processando...
+        `;
+    }
+
+
     try {
+
+        // =====================================================
+        // VENDA
+        // =====================================================
+
+        const vendaId =
+            vendaIdParaEdicao ||
+            pendingEmitOrderId;
+
+
+        if (!vendaId) {
+
+            showToast(
+                '❌ ID da venda não encontrado',
+                'error'
+            );
+
+
+            return;
+        }
+
+
+        // =====================================================
+        // CAPTURAR VALORES VISÍVEIS DA TABELA
+        // =====================================================
+
+        document
+            .querySelectorAll(
+                '#modalEdicaoProdutos #produtosEditaveisBody tr'
+            )
+            .forEach(
+                (
+                    row,
+                    index
+                ) => {
+
+                    if (
+                        !produtosEditados[
+                            index
+                        ]
+                    ) {
+
+                        return;
+                    }
+
+
+                    produtosEditados[
+                        index
+                    ].nome =
+                        row.querySelector(
+                            '.nome-produto'
+                        )?.value.trim() ||
+                        'Produto';
+
+
+                    produtosEditados[
+                        index
+                    ].sku =
+                        row.querySelector(
+                            '.sku-produto'
+                        )?.value.trim() ||
+                        'SEM_SKU';
+
+
+                    produtosEditados[
+                        index
+                    ].quantidade =
+                        parseFloat(
+                            row.querySelector(
+                                '.qtd-produto'
+                            )?.value
+                        ) ||
+                        0;
+
+
+                    produtosEditados[
+                        index
+                    ].valor_unitario =
+                        parseFloat(
+                            row.querySelector(
+                                '.valor-produto'
+                            )?.value
+                        ) ||
+                        0;
+
+
+                    produtosEditados[
+                        index
+                    ].ncm =
+                        row.querySelector(
+                            '.ncm-produto'
+                        )?.value.trim() ||
+                        '87149990';
+                }
+            );
+
+
+        // =====================================================
+        // VALIDAR PRODUTOS
+        // =====================================================
+
+        if (
+            !produtosEditados ||
+            produtosEditados.length ===
+                0
+        ) {
+
+            showToast(
+                '❌ Nenhum produto para emitir',
+                'error'
+            );
+
+
+            return;
+        }
+
+
+        const produtoInvalido =
+            produtosEditados.find(
+                p =>
+                    !p.nome ||
+                    p.quantidade <=
+                        0 ||
+                    p.valor_unitario <
+                        0
+            );
+
+
+        if (
+            produtoInvalido
+        ) {
+
+            showToast(
+                '⚠️ Revise nome, quantidade e valor dos produtos.',
+                'warning'
+            );
+
+
+            return;
+        }
+
 
         // =====================================================
         // SALVAR NCM
@@ -6943,7 +7083,8 @@ async function confirmarProdutosEditados() {
 
                     if (
                         p.sku &&
-                        p.sku !== 'SEM_SKU' &&
+                        p.sku !==
+                            'SEM_SKU' &&
                         p.ncm
                     ) {
 
@@ -6967,16 +7108,20 @@ async function confirmarProdutosEditados() {
                             );
                     }
 
-                    return Promise.resolve();
+
+                    return Promise
+                        .resolve();
                 }
             );
+
 
         await Promise.all(
             ncmPromises
         );
 
+
         // =====================================================
-        // PRODUTOS QUE SERÃO ENVIADOS PARA A NF-E
+        // PRODUTOS PARA NF-E
         // =====================================================
 
         window.produtosParaEmissao =
@@ -7005,24 +7150,115 @@ async function confirmarProdutosEditados() {
                 })
             );
 
+
         pendingEmitOrderId =
             vendaId;
 
+
         // =====================================================
-        // EMITIR DIRETAMENTE
+        // ALTERAR VISUAL PARA EMISSÃO
+        // =====================================================
+
+        const btnAtual =
+            document.getElementById(
+                'confirmarProdutosFinalBtn'
+            );
+
+
+        if (
+            btnAtual
+        ) {
+
+            btnAtual.disabled =
+                true;
+
+
+            btnAtual.style.pointerEvents =
+                'none';
+
+
+            btnAtual.innerHTML = `
+                <span class="spinner"></span>
+                Emitindo NF-e...
+            `;
+        }
+
+
+        console.log(
+            `🔒 Emissão da venda ${vendaId} bloqueada contra clique duplicado`
+        );
+
+
+        // =====================================================
+        // EMITIR
         // =====================================================
 
         await confirmarEmissaoNFE();
-             } catch (error) {
+
+
+    } catch (
+        error
+    ) {
+
         console.error(
             '❌ Erro em confirmarProdutosEditados:',
             error
         );
+
+
         showToast(
             '❌ Erro ao confirmar produtos: ' +
             error.message,
             'error'
         );
+
+
+    } finally {
+
+        // =====================================================
+        // LIBERAR TRAVA DE CLIQUE
+        //
+        // Se emitiu com sucesso, o modal já terá sido removido.
+        // Se deu erro antes da emissão, o botão volta ao normal.
+        // =====================================================
+
+        window._nfeConfirmacaoCliqueTravada =
+            false;
+
+
+        const btnAtual =
+            document.getElementById(
+                'confirmarProdutosFinalBtn'
+            );
+
+
+        if (
+            btnAtual
+        ) {
+
+            btnAtual.disabled =
+                false;
+
+
+            btnAtual.style.pointerEvents =
+                '';
+
+
+            btnAtual.setAttribute(
+                'aria-busy',
+                'false'
+            );
+
+
+            btnAtual.innerHTML =
+                btnAtual.dataset
+                    .textoOriginalNfe ||
+                textoOriginalBotao ||
+                `
+                    <i class="fas fa-file-invoice"></i>
+                    Confirmar e Emitir NF-e
+                `;
+        }
     }
 }
 
@@ -18368,7 +18604,88 @@ async function preencherSelectTransportadoraAvulsaNFE() {
     }
 }
 
+// =========================================================
+// TRAVA GLOBAL DE EMISSÃO
+//
+// Garante que confirmarEmissaoNFE nunca execute
+// duas emissões simultaneamente no mesmo navegador.
+//
+// Se houver uma emissão rodando, qualquer nova chamada
+// reutiliza a Promise já existente.
+// =========================================================
+
 async function confirmarEmissaoNFE() {
+
+    // =====================================================
+    // JÁ EXISTE UMA EMISSÃO RODANDO
+    // =====================================================
+
+    if (
+        window._nfePromiseEmissao
+    ) {
+
+        console.warn(
+            '🚫 Tentativa de emissão duplicada bloqueada'
+        );
+
+
+        showToast(
+            '⏳ Já existe uma NF-e sendo emitida. Aguarde a conclusão.',
+            'warning'
+        );
+
+
+        return window
+            ._nfePromiseEmissao;
+    }
+
+
+    console.log(
+        '🔐 Criando trava global da emissão de NF-e'
+    );
+
+
+    // =====================================================
+    // CRIAR UMA ÚNICA PROMISE
+    // =====================================================
+
+    const promiseEmissao =
+        confirmarEmissaoNFEInterna();
+
+
+    window._nfePromiseEmissao =
+        promiseEmissao;
+
+
+    try {
+
+        return await promiseEmissao;
+
+
+    } finally {
+
+        // =================================================
+        // SOMENTE DEPOIS QUE TODO O PROCESSO TERMINOU
+        // OUTRA EMISSÃO PODERÁ COMEÇAR
+        // =================================================
+
+        if (
+            window._nfePromiseEmissao ===
+            promiseEmissao
+        ) {
+
+            window._nfePromiseEmissao =
+                null;
+        }
+
+
+        console.log(
+            '🔓 Trava global da emissão liberada'
+        );
+    }
+}
+
+async function confirmarEmissaoNFEInterna() {
 
     console.log(
         '🔵 [confirmarEmissaoNFE] INICIADA'

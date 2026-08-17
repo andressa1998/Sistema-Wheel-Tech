@@ -3098,7 +3098,6 @@ function exportarRelatorioCompletoExcel() {
                 'Dimensões (CxLxA)': `${comprimento}x${largura}x${altura}cm`,
                 'Peso Volumétrico (m³)': pesoVol.toFixed(4),
                 'Data Venda': item.data_venda ? new Date(item.data_venda).toLocaleDateString('pt-BR') : '-',
-                'Tipo Envio': item.tipo_envio || 'N/I',
                 'Fonte Frete': item.fonte_frete || 'N/A',
                 'Nº Reclamação': item.ultimaReclamacao?.numero_reclamacao || '',
                 'Nº Operação': item.ultimaReclamacao?.numero_operacao || '',
