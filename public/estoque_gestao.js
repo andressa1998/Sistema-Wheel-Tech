@@ -2794,6 +2794,2059 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
 }
 
 // =========================================================
+// ABRIR EDIÇÃO INDIVIDUAL DE SKUS EM MASSA
+// =========================================================
+
+function abrirModalEdicaoSKUsMassa() {
+
+    const ids =
+        Array.from(
+            produtosSelecionadosMassa
+        );
+
+
+    if (
+        ids.length === 0
+    ) {
+
+        showToast(
+            '⚠️ Selecione pelo menos um produto.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const produtos =
+        produtosEstoque
+            .filter(
+                produto =>
+                    produtosSelecionadosMassa.has(
+                        String(
+                            produto.id
+                        )
+                    )
+            )
+            .sort(
+                (a, b) =>
+                    String(
+                        a.sku || ''
+                    ).localeCompare(
+                        String(
+                            b.sku || ''
+                        ),
+                        'pt-BR'
+                    )
+            );
+
+
+    if (
+        produtos.length === 0
+    ) {
+
+        showToast(
+            'Produtos selecionados não encontrados.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // REMOVER MODAL ANTERIOR
+    // =====================================================
+
+    document
+        .getElementById(
+            'modalEdicaoSKUsMassa'
+        )
+        ?.remove();
+
+
+    // =====================================================
+    // LINHAS
+    // =====================================================
+
+    let linhasHtml = '';
+
+
+    produtos.forEach(
+        produto => {
+
+            const skuAtual =
+                String(
+                    produto.sku ||
+                    ''
+                );
+
+
+            const baseAtual =
+                skuAtual
+                    .substring(
+                        0,
+                        8
+                    )
+                    .toUpperCase();
+
+
+            linhasHtml += `
+
+                <tr
+                    data-produto-id="${produto.id}"
+                    data-sku-antigo="${escapeHtml(skuAtual)}"
+                    style="
+                        border-bottom:
+                            1px solid #eeeeee;
+                    "
+                >
+
+                    <td
+                        style="
+                            padding: 8px;
+                            color: #6c757d;
+                            width: 65px;
+                        "
+                    >
+                        ${produto.id}
+                    </td>
+
+
+                    <td
+                        style="
+                            padding: 8px;
+                            min-width: 250px;
+                        "
+                    >
+
+                        <strong>
+                            ${escapeHtml(
+                                produto.nome
+                            )}
+                        </strong>
+
+                        <br>
+
+                        <small
+                            style="
+                                color:#6c757d;
+                            "
+                        >
+                            ${escapeHtml(
+                                produto.categoria ||
+                                ''
+                            )}
+                        </small>
+
+                    </td>
+
+
+                    <td
+                        style="
+                            padding: 8px;
+                            min-width: 190px;
+                        "
+                    >
+
+                        <code>
+                            ${escapeHtml(
+                                skuAtual
+                            )}
+                        </code>
+
+                        <br>
+
+                        <small
+                            style="
+                                color:#6c757d;
+                            "
+                        >
+                            Base:
+                            ${escapeHtml(
+                                baseAtual
+                            )}
+                        </small>
+
+                    </td>
+
+
+                    <td
+                        style="
+                            padding: 8px;
+                            min-width: 260px;
+                        "
+                    >
+
+                        <input
+                            type="text"
+                            class="
+                                form-control
+                                massa-novo-sku
+                            "
+                            data-produto-id="${produto.id}"
+                            data-sku-antigo="${escapeHtml(skuAtual)}"
+                            value="${escapeHtml(skuAtual)}"
+                            oninput="
+                                validarLinhaSKUMassa(
+                                    this
+                                )
+                            "
+                            style="
+                                font-family:
+                                    monospace;
+                            "
+                        >
+
+
+                        <div
+                            class="massa-sku-info"
+                            style="
+                                font-size:10px;
+                                color:#6c757d;
+                                margin-top:3px;
+                            "
+                        >
+
+                            Base:
+                            <strong>
+                                ${escapeHtml(
+                                    baseAtual
+                                )}
+                            </strong>
+
+                        </div>
+
+                    </td>
+
+
+                    <td
+                        class="massa-status-sku"
+                        style="
+                            padding: 8px;
+                            min-width: 130px;
+                        "
+                    >
+
+                        <span
+                            style="
+                                color:#6c757d;
+                            "
+                        >
+                            Sem alteração
+                        </span>
+
+                    </td>
+
+                </tr>
+
+            `;
+
+        }
+    );
+
+
+    // =====================================================
+    // MODAL
+    // =====================================================
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalEdicaoSKUsMassa';
+
+
+    modal.style.cssText = `
+
+        position: fixed;
+        inset: 0;
+
+        background:
+            rgba(
+                0,
+                0,
+                0,
+                .55
+            );
+
+        z-index: 100030;
+
+        display: flex;
+
+        align-items: center;
+        justify-content: center;
+
+    `;
+
+
+    modal.innerHTML = `
+
+        <div
+            style="
+                background:white;
+                width:96%;
+                max-width:1300px;
+                max-height:94vh;
+                overflow-y:auto;
+                border-radius:12px;
+                padding:20px;
+                box-shadow:
+                    0 20px 60px
+                    rgba(0,0,0,.3);
+            "
+        >
+
+            <!-- ========================================== -->
+            <!-- CABEÇALHO -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:
+                        space-between;
+                    align-items:center;
+                    border-bottom:
+                        1px solid #dee2e6;
+                    padding-bottom:12px;
+                    margin-bottom:15px;
+                "
+            >
+
+                <div>
+
+                    <h3
+                        style="
+                            margin:0;
+                            color:#00ADEE;
+                        "
+                    >
+
+                        <i
+                            class="fas fa-barcode"
+                        ></i>
+
+                        Editar SKUs em Massa
+
+                    </h3>
+
+
+                    <div
+                        style="
+                            margin-top:4px;
+                            color:#6c757d;
+                            font-size:12px;
+                        "
+                    >
+
+                        ${produtos.length}
+                        produto(s)
+
+                    </div>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    onclick="
+                        fecharModalEdicaoSKUsMassa()
+                    "
+                    style="
+                        border:none;
+                        background:transparent;
+                        font-size:26px;
+                        cursor:pointer;
+                    "
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- AVISO -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    background:#fff3cd;
+                    border-left:
+                        4px solid #ffc107;
+                    padding:11px 14px;
+                    border-radius:6px;
+                    margin-bottom:15px;
+                    font-size:12px;
+                "
+            >
+
+                <strong>
+                    Regra do sistema:
+                </strong>
+
+                os primeiros
+                <strong>
+                    8 caracteres
+                </strong>
+                de cada SKU precisam ser únicos.
+
+                <br>
+
+                O sistema verificará todos os SKUs antes
+                de gravar qualquer alteração.
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- PESQUISA -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    margin-bottom:12px;
+                "
+            >
+
+                <input
+                    type="text"
+                    id="buscaEdicaoSKUMassa"
+                    class="form-control"
+                    placeholder="
+                        🔍 Buscar produto ou SKU...
+                    "
+                    oninput="
+                        filtrarTabelaSKUsMassa(
+                            this.value
+                        )
+                    "
+                >
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- CONTADOR -->
+            <!-- ========================================== -->
+
+            <div
+                id="resumoEdicaoSKUsMassa"
+                style="
+                    background:#f8f9fa;
+                    padding:8px 12px;
+                    border-radius:6px;
+                    margin-bottom:10px;
+                    font-size:12px;
+                    color:#495057;
+                "
+            >
+
+                <strong>
+                    ${produtos.length}
+                </strong>
+
+                produtos
+
+                &bull;
+
+                <span
+                    id="qtdSKUsAlteradosMassa"
+                >
+                    0
+                </span>
+
+                SKU(s) alterado(s)
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- TABELA -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    overflow:auto;
+                    max-height:58vh;
+                    border:
+                        1px solid #dee2e6;
+                    border-radius:8px;
+                "
+            >
+
+                <table
+                    id="tabelaEdicaoSKUsMassa"
+                    style="
+                        width:100%;
+                        border-collapse:
+                            collapse;
+                        font-size:12px;
+                    "
+                >
+
+                    <thead
+                        style="
+                            position:sticky;
+                            top:0;
+                            background:#f8f9fa;
+                            z-index:2;
+                            border-bottom:
+                                2px solid #dee2e6;
+                        "
+                    >
+
+                        <tr>
+
+                            <th
+                                style="
+                                    padding:8px;
+                                    text-align:left;
+                                "
+                            >
+                                ID
+                            </th>
+
+                            <th
+                                style="
+                                    padding:8px;
+                                    text-align:left;
+                                "
+                            >
+                                Produto
+                            </th>
+
+                            <th
+                                style="
+                                    padding:8px;
+                                    text-align:left;
+                                "
+                            >
+                                SKU atual
+                            </th>
+
+                            <th
+                                style="
+                                    padding:8px;
+                                    text-align:left;
+                                "
+                            >
+                                Novo SKU
+                            </th>
+
+                            <th
+                                style="
+                                    padding:8px;
+                                    text-align:left;
+                                "
+                            >
+                                Status
+                            </th>
+
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        ${linhasHtml}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- BOTÕES -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:flex-end;
+                    gap:10px;
+                    margin-top:18px;
+                    border-top:
+                        1px solid #dee2e6;
+                    padding-top:15px;
+                "
+            >
+
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    onclick="
+                        fecharModalEdicaoSKUsMassa()
+                    "
+                >
+                    Cancelar
+                </button>
+
+
+                <button
+                    type="button"
+                    class="btn btn-success"
+                    id="btnSalvarSKUsMassa"
+                    onclick="
+                        salvarSKUsMassa()
+                    "
+                >
+
+                    <i
+                        class="fas fa-save"
+                    ></i>
+
+                    Salvar Todos
+
+                </button>
+
+            </div>
+
+        </div>
+
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+}
+
+// =========================================================
+// SALVAR SKUS EM MASSA
+// =========================================================
+
+async function salvarSKUsMassa() {
+
+    const inputs =
+        Array.from(
+            document.querySelectorAll(
+                '.massa-novo-sku'
+            )
+        );
+
+
+    if (
+        inputs.length === 0
+    ) {
+
+        showToast(
+            'Nenhum produto para alterar.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // MONTAR ALTERAÇÕES
+    // =====================================================
+
+    const propostas =
+        inputs.map(
+            input => {
+
+                const id =
+                    String(
+                        input.dataset
+                            .produtoId
+                    );
+
+
+                const skuAntigo =
+                    String(
+                        input.dataset
+                            .skuAntigo ||
+                        ''
+                    ).trim();
+
+
+                const skuNovo =
+                    String(
+                        input.value ||
+                        ''
+                    ).trim();
+
+
+                const produto =
+                    produtosEstoque.find(
+                        p =>
+                            String(
+                                p.id
+                            ) ===
+                            id
+                    );
+
+
+                return {
+
+                    id,
+
+                    produto,
+
+                    skuAntigo,
+
+                    skuNovo,
+
+                    alterado:
+                        skuAntigo !==
+                        skuNovo
+
+                };
+
+            }
+        );
+
+
+    const alteracoes =
+        propostas.filter(
+            item =>
+                item.alterado
+        );
+
+
+    if (
+        alteracoes.length === 0
+    ) {
+
+        showToast(
+            'ℹ️ Nenhum SKU foi alterado.',
+            'info'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // 1. VALIDAR CAMPOS
+    // =====================================================
+
+    for (
+        const item
+        of propostas
+    ) {
+
+        if (
+            !item.skuNovo
+        ) {
+
+            showToast(
+                `❌ SKU vazio no produto ${item.produto?.nome || item.id}`,
+                'error'
+            );
+
+            return;
+        }
+
+
+        if (
+            item.skuNovo.length <
+            8
+        ) {
+
+            showToast(
+                `❌ SKU "${item.skuNovo}" possui menos de 8 caracteres.`,
+                'error'
+            );
+
+            return;
+        }
+
+    }
+
+
+    // =====================================================
+    // 2. VALIDAR ESTADO FINAL DE TODOS OS SKUS
+    //
+    // Importante:
+    //
+    // Não verifica apenas contra o estado atual.
+    // Simula primeiro como ficará TODO o estoque.
+    //
+    // Isso permite inclusive trocar SKUs entre produtos
+    // selecionados sem acusar falso positivo.
+    // =====================================================
+
+    const novoSkuPorId =
+        new Map();
+
+
+    propostas.forEach(
+        item => {
+
+            novoSkuPorId.set(
+                String(
+                    item.id
+                ),
+                item.skuNovo
+            );
+
+        }
+    );
+
+
+    const basesFinais =
+        new Map();
+
+
+    for (
+        const produto
+        of produtosEstoque
+    ) {
+
+        const skuFinal =
+            novoSkuPorId.has(
+                String(
+                    produto.id
+                )
+            )
+
+                ? novoSkuPorId.get(
+                    String(
+                        produto.id
+                    )
+                )
+
+                : String(
+                    produto.sku ||
+                    ''
+                ).trim();
+
+
+        if (
+            !skuFinal
+        ) {
+            continue;
+        }
+
+
+        const base =
+            skuFinal
+                .substring(
+                    0,
+                    8
+                )
+                .toUpperCase();
+
+
+        if (
+            base.length < 8
+        ) {
+            continue;
+        }
+
+
+        if (
+            basesFinais.has(
+                base
+            )
+        ) {
+
+            const outro =
+                basesFinais.get(
+                    base
+                );
+
+
+            showToast(
+                `❌ Duplicidade: a base "${base}" ficaria em "${outro.skuFinal}" e "${skuFinal}".`,
+                'error'
+            );
+
+
+            return;
+        }
+
+
+        basesFinais.set(
+            base,
+            {
+
+                id:
+                    produto.id,
+
+                nome:
+                    produto.nome,
+
+                skuFinal
+
+            }
+        );
+
+    }
+
+
+    // =====================================================
+    // MAPA SKU ANTIGO → NOVO
+    // =====================================================
+
+    const mapaSku =
+        new Map();
+
+
+    alteracoes.forEach(
+        item => {
+
+            mapaSku.set(
+                item.skuAntigo,
+                item.skuNovo
+            );
+
+        }
+    );
+
+
+    // =====================================================
+    // CONFIRMAÇÃO
+    // =====================================================
+
+    const confirmar =
+        confirm(
+
+            `Alterar ${alteracoes.length} SKU(s)?\n\n` +
+
+            `O sistema também atualizará automaticamente:\n` +
+
+            `• SKU pai dos kits\n` +
+
+            `• SKU filho dos kits\n` +
+
+            `• Regras individuais de estoque\n\n` +
+
+            `Deseja continuar?`
+
+        );
+
+
+    if (
+        !confirmar
+    ) {
+        return;
+    }
+
+
+    const botao =
+        document.getElementById(
+            'btnSalvarSKUsMassa'
+        );
+
+
+    if (
+        botao
+    ) {
+
+        botao.disabled =
+            true;
+
+
+        botao.innerHTML = `
+
+            <i
+                class="fas fa-spinner fa-spin"
+            ></i>
+
+            Preparando...
+
+        `;
+
+    }
+
+
+    // =====================================================
+    // SNAPSHOT DAS REGRAS
+    // =====================================================
+
+    const regrasOriginais =
+        JSON.parse(
+            JSON.stringify(
+                regrasEstoqueIndividuais ||
+                {}
+            )
+        );
+
+
+    // =====================================================
+    // SNAPSHOT DOS RELACIONAMENTOS DE KIT
+    // =====================================================
+
+    let relacionamentosOriginais =
+        [];
+
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await window.supabaseClient
+                .from(
+                    'produto_skus_kit'
+                )
+                .select(
+                    '*'
+                );
+
+
+        if (
+            error
+        ) {
+            throw error;
+        }
+
+
+        relacionamentosOriginais =
+            data || [];
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando relações de kit:',
+            error
+        );
+
+
+        if (
+            botao
+        ) {
+
+            botao.disabled =
+                false;
+
+            botao.innerHTML =
+                'Salvar Todos';
+
+        }
+
+
+        showToast(
+            '❌ Não foi possível carregar as relações de kit. Nenhum SKU foi alterado.',
+            'error'
+        );
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // CALCULAR COMO OS KITS DEVEM FICAR
+    // =====================================================
+
+    const relacionamentosAfetados =
+        relacionamentosOriginais.filter(
+            rel =>
+
+                mapaSku.has(
+                    rel.sku_pai
+                )
+                ||
+                mapaSku.has(
+                    rel.sku_filho
+                )
+
+        );
+
+
+    const relacionamentosNovosMap =
+        new Map();
+
+
+    for (
+        const rel
+        of relacionamentosAfetados
+    ) {
+
+        const novoPai =
+            mapaSku.get(
+                rel.sku_pai
+            ) ||
+            rel.sku_pai;
+
+
+        const novoFilho =
+            mapaSku.get(
+                rel.sku_filho
+            ) ||
+            rel.sku_filho;
+
+
+        const chave =
+            `${novoPai}|||${novoFilho}`;
+
+
+        if (
+            relacionamentosNovosMap.has(
+                chave
+            )
+        ) {
+
+            const anterior =
+                relacionamentosNovosMap.get(
+                    chave
+                );
+
+
+            if (
+                Number(
+                    anterior.quantidade
+                ) !==
+                Number(
+                    rel.quantidade
+                )
+            ) {
+
+                if (
+                    botao
+                ) {
+
+                    botao.disabled =
+                        false;
+
+
+                    botao.innerHTML =
+                        'Salvar Todos';
+
+                }
+
+
+                showToast(
+                    `❌ A alteração criaria conflito no kit ${novoPai} → ${novoFilho}.`,
+                    'error'
+                );
+
+
+                return;
+            }
+
+
+            continue;
+        }
+
+
+        relacionamentosNovosMap.set(
+            chave,
+            {
+
+                sku_pai:
+                    novoPai,
+
+                sku_filho:
+                    novoFilho,
+
+                quantidade:
+                    rel.quantidade ||
+                    1
+
+            }
+        );
+
+    }
+
+
+    const relacionamentosNovos =
+        Array.from(
+            relacionamentosNovosMap
+                .values()
+        );
+
+
+    // =====================================================
+    // CALCULAR REGRAS INDIVIDUAIS NOVAS
+    // =====================================================
+
+    const regrasNovas = {};
+
+
+    for (
+        const [
+            skuRegra,
+            regra
+        ]
+        of Object.entries(
+            regrasOriginais
+        )
+    ) {
+
+        const novoSkuRegra =
+            mapaSku.get(
+                skuRegra
+            ) ||
+            skuRegra;
+
+
+        if (
+            regrasNovas[
+                novoSkuRegra
+            ]
+        ) {
+
+            showToast(
+                `❌ Conflito de regra individual no SKU ${novoSkuRegra}.`,
+                'error'
+            );
+
+
+            if (
+                botao
+            ) {
+
+                botao.disabled =
+                    false;
+
+                botao.innerHTML =
+                    'Salvar Todos';
+
+            }
+
+
+            return;
+        }
+
+
+        regrasNovas[
+            novoSkuRegra
+        ] =
+            regra;
+
+    }
+
+
+    // =====================================================
+    // FUNÇÃO INTERNA DE ROLLBACK DE SKUS
+    // =====================================================
+
+    async function rollbackProdutos() {
+
+        try {
+
+            const stamp =
+                Date.now();
+
+
+            // Primeiro joga todos para temporário,
+            // evitando colisões durante o rollback.
+
+            for (
+                const item
+                of alteracoes
+            ) {
+
+                await window
+                    .supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update({
+
+                        sku:
+                            `__ROLLBACK_${item.id}_${stamp}`
+
+                    })
+                    .eq(
+                        'id',
+                        item.id
+                    );
+
+            }
+
+
+            // Depois volta para o SKU original.
+
+            for (
+                const item
+                of alteracoes
+            ) {
+
+                await window
+                    .supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update({
+
+                        sku:
+                            item.skuAntigo
+
+                    })
+                    .eq(
+                        'id',
+                        item.id
+                    );
+
+            }
+
+        } catch (
+            rollbackError
+        ) {
+
+            console.error(
+                '❌ ERRO NO ROLLBACK DOS SKUS:',
+                rollbackError
+            );
+
+        }
+    }
+
+
+    try {
+
+        // =================================================
+        // ETAPA 1
+        //
+        // COLOCAR SKUS ALTERADOS EM VALORES TEMPORÁRIOS
+        //
+        // Isso permite:
+        //
+        // A -> B
+        // B -> C
+        // C -> A
+        //
+        // sem conflito de unique.
+        // =================================================
+
+        const stamp =
+            Date.now();
+
+
+        if (
+            botao
+        ) {
+
+            botao.innerHTML = `
+
+                <i
+                    class="fas fa-spinner fa-spin"
+                ></i>
+
+                Preparando SKUs...
+
+            `;
+
+        }
+
+
+        for (
+            let i = 0;
+            i <
+            alteracoes.length;
+            i++
+        ) {
+
+            const item =
+                alteracoes[i];
+
+
+            const temporario =
+                `__TMP_SKU_${item.id}_${stamp}`;
+
+
+            const {
+                error
+            } =
+                await window.supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update({
+
+                        sku:
+                            temporario
+
+                    })
+                    .eq(
+                        'id',
+                        item.id
+                    );
+
+
+            if (
+                error
+            ) {
+                throw error;
+            }
+
+        }
+
+
+        // =================================================
+        // ETAPA 2
+        //
+        // GRAVAR SKUS DEFINITIVOS
+        // =================================================
+
+        for (
+            let i = 0;
+            i <
+            alteracoes.length;
+            i++
+        ) {
+
+            const item =
+                alteracoes[i];
+
+
+            if (
+                botao
+            ) {
+
+                botao.innerHTML =
+                    `<i class="fas fa-spinner fa-spin"></i> SKUs ${i + 1}/${alteracoes.length}`;
+
+            }
+
+
+            const {
+                error
+            } =
+                await window.supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update({
+
+                        sku:
+                            item.skuNovo
+
+                    })
+                    .eq(
+                        'id',
+                        item.id
+                    );
+
+
+            if (
+                error
+            ) {
+                throw error;
+            }
+
+        }
+
+
+        // =================================================
+        // ETAPA 3
+        //
+        // MIGRAR RELAÇÕES DOS KITS
+        // =================================================
+
+        if (
+            relacionamentosAfetados.length >
+            0
+        ) {
+
+            if (
+                botao
+            ) {
+
+                botao.innerHTML = `
+
+                    <i
+                        class="fas fa-spinner fa-spin"
+                    ></i>
+
+                    Atualizando kits...
+
+                `;
+
+            }
+
+
+            // =============================================
+            // APAGAR SOMENTE AS RELAÇÕES ANTIGAS AFETADAS
+            // =============================================
+
+            for (
+                const rel
+                of relacionamentosAfetados
+            ) {
+
+                const {
+                    error
+                } =
+                    await window.supabaseClient
+                        .from(
+                            'produto_skus_kit'
+                        )
+                        .delete()
+                        .eq(
+                            'sku_pai',
+                            rel.sku_pai
+                        )
+                        .eq(
+                            'sku_filho',
+                            rel.sku_filho
+                        );
+
+
+                if (
+                    error
+                ) {
+                    throw error;
+                }
+
+            }
+
+
+            // =============================================
+            // CRIAR RELAÇÕES COM SKUS NOVOS
+            // =============================================
+
+            for (
+                const rel
+                of relacionamentosNovos
+            ) {
+
+                const {
+                    error
+                } =
+                    await window.supabaseClient
+                        .from(
+                            'produto_skus_kit'
+                        )
+                        .upsert({
+
+                            sku_pai:
+                                rel.sku_pai,
+
+                            sku_filho:
+                                rel.sku_filho,
+
+                            quantidade:
+                                rel.quantidade
+
+                        }, {
+
+                            onConflict:
+                                'sku_pai, sku_filho'
+
+                        });
+
+
+                if (
+                    error
+                ) {
+                    throw error;
+                }
+
+            }
+
+        }
+
+
+        // =================================================
+        // ETAPA 4
+        //
+        // MIGRAR REGRAS INDIVIDUAIS
+        // =================================================
+
+        if (
+            botao
+        ) {
+
+            botao.innerHTML = `
+
+                <i
+                    class="fas fa-spinner fa-spin"
+                ></i>
+
+                Atualizando regras...
+
+            `;
+
+        }
+
+
+        await salvarRegrasIndividuais(
+            regrasNovas
+        );
+
+
+        // =================================================
+        // FINAL
+        // =================================================
+
+        await carregarProdutosEstoque();
+
+
+        limparSelecaoEstoqueMassa();
+
+
+        fecharModalEdicaoSKUsMassa();
+
+
+        showToast(
+            `✅ ${alteracoes.length} SKU(s) alterado(s) com sucesso!`,
+            'success'
+        );
+
+
+        console.log(
+            '✅ Alterações de SKU:',
+            alteracoes
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ ERRO NA ALTERAÇÃO DE SKUS:',
+            error
+        );
+
+
+        // =================================================
+        // TENTAR RESTAURAR PRODUTOS
+        // =================================================
+
+        await rollbackProdutos();
+
+
+        // =================================================
+        // RESTAURAR KIT
+        // =================================================
+
+        try {
+
+            // Apagar possíveis novos registros
+
+            for (
+                const rel
+                of relacionamentosNovos
+            ) {
+
+                await window
+                    .supabaseClient
+                    .from(
+                        'produto_skus_kit'
+                    )
+                    .delete()
+                    .eq(
+                        'sku_pai',
+                        rel.sku_pai
+                    )
+                    .eq(
+                        'sku_filho',
+                        rel.sku_filho
+                    );
+
+            }
+
+
+            // Restaurar registros antigos
+
+            for (
+                const rel
+                of relacionamentosAfetados
+            ) {
+
+                await window
+                    .supabaseClient
+                    .from(
+                        'produto_skus_kit'
+                    )
+                    .upsert({
+
+                        sku_pai:
+                            rel.sku_pai,
+
+                        sku_filho:
+                            rel.sku_filho,
+
+                        quantidade:
+                            rel.quantidade ||
+                            1
+
+                    }, {
+
+                        onConflict:
+                            'sku_pai, sku_filho'
+
+                    });
+
+            }
+
+        } catch (
+            erroKit
+        ) {
+
+            console.error(
+                '❌ Erro restaurando kits:',
+                erroKit
+            );
+
+        }
+
+
+        // =================================================
+        // RESTAURAR REGRAS
+        // =================================================
+
+        try {
+
+            await salvarRegrasIndividuais(
+                regrasOriginais
+            );
+
+        } catch (
+            erroRegra
+        ) {
+
+            console.error(
+                '❌ Erro restaurando regras individuais:',
+                erroRegra
+            );
+
+        }
+
+
+        await carregarProdutosEstoque();
+
+
+        if (
+            botao
+        ) {
+
+            botao.disabled =
+                false;
+
+
+            botao.innerHTML = `
+
+                <i
+                    class="fas fa-save"
+                ></i>
+
+                Salvar Todos
+
+            `;
+
+        }
+
+
+        showToast(
+            `❌ Não foi possível salvar os SKUs. O sistema tentou restaurar os dados anteriores. Consulte o console.`,
+            'error'
+        );
+
+    }
+}
+
+function fecharModalEdicaoSKUsMassa() {
+
+    document
+        .getElementById(
+            'modalEdicaoSKUsMassa'
+        )
+        ?.remove();
+}
+
+// =========================================================
+// VALIDAR LINHA DE SKU EM MASSA
+// =========================================================
+
+function validarLinhaSKUMassa(
+    input
+) {
+
+    const novoSku =
+        String(
+            input.value ||
+            ''
+        ).trim();
+
+
+    const antigoSku =
+        String(
+            input.dataset.skuAntigo ||
+            ''
+        ).trim();
+
+
+    const linha =
+        input.closest(
+            'tr'
+        );
+
+
+    const info =
+        linha?.querySelector(
+            '.massa-sku-info'
+        );
+
+
+    const status =
+        linha?.querySelector(
+            '.massa-status-sku'
+        );
+
+
+    const base =
+        novoSku
+            .substring(
+                0,
+                8
+            )
+            .toUpperCase();
+
+
+    if (
+        info
+    ) {
+
+        info.innerHTML = `
+
+            Base:
+
+            <strong>
+                ${escapeHtml(base)}
+            </strong>
+
+        `;
+
+    }
+
+
+    input.style.borderColor =
+        '';
+
+
+    // =====================================================
+    // VAZIO
+    // =====================================================
+
+    if (
+        !novoSku
+    ) {
+
+        input.style.borderColor =
+            '#dc3545';
+
+
+        if (
+            status
+        ) {
+
+            status.innerHTML = `
+
+                <span
+                    style="
+                        color:#dc3545;
+                        font-weight:600;
+                    "
+                >
+                    ❌ SKU vazio
+                </span>
+
+            `;
+
+        }
+
+
+        atualizarContadorSKUsMassa();
+
+        return;
+    }
+
+
+    // =====================================================
+    // MENOS DE 8
+    // =====================================================
+
+    if (
+        novoSku.length < 8
+    ) {
+
+        input.style.borderColor =
+            '#dc3545';
+
+
+        if (
+            status
+        ) {
+
+            status.innerHTML = `
+
+                <span
+                    style="
+                        color:#dc3545;
+                        font-weight:600;
+                    "
+                >
+                    ❌ Menos de 8
+                </span>
+
+            `;
+
+        }
+
+
+        atualizarContadorSKUsMassa();
+
+        return;
+    }
+
+
+    // =====================================================
+    // NÃO ALTEROU
+    // =====================================================
+
+    if (
+        novoSku ===
+        antigoSku
+    ) {
+
+        if (
+            status
+        ) {
+
+            status.innerHTML = `
+
+                <span
+                    style="
+                        color:#6c757d;
+                    "
+                >
+                    Sem alteração
+                </span>
+
+            `;
+
+        }
+
+
+        atualizarContadorSKUsMassa();
+
+        return;
+    }
+
+
+    // =====================================================
+    // ALTERADO
+    // =====================================================
+
+    if (
+        status
+    ) {
+
+        status.innerHTML = `
+
+            <span
+                style="
+                    color:#007bff;
+                    font-weight:600;
+                "
+            >
+                ✏️ Alterado
+            </span>
+
+        `;
+
+    }
+
+
+    atualizarContadorSKUsMassa();
+}
+
+
+// =========================================================
+// CONTADOR
+// =========================================================
+
+function atualizarContadorSKUsMassa() {
+
+    const inputs =
+        Array.from(
+            document.querySelectorAll(
+                '.massa-novo-sku'
+            )
+        );
+
+
+    const alterados =
+        inputs.filter(
+            input =>
+                String(
+                    input.value ||
+                    ''
+                ).trim() !==
+                String(
+                    input.dataset
+                        .skuAntigo ||
+                    ''
+                ).trim()
+        );
+
+
+    const contador =
+        document.getElementById(
+            'qtdSKUsAlteradosMassa'
+        );
+
+
+    if (
+        contador
+    ) {
+
+        contador.textContent =
+            alterados.length;
+
+    }
+}
+
+function filtrarTabelaSKUsMassa(
+    termo
+) {
+
+    termo =
+        String(
+            termo ||
+            ''
+        )
+        .trim()
+        .toLowerCase();
+
+
+    document
+        .querySelectorAll(
+            '#tabelaEdicaoSKUsMassa tbody tr'
+        )
+        .forEach(
+            linha => {
+
+                const texto =
+                    linha.textContent
+                        .toLowerCase();
+
+
+                linha.style.display =
+                    !termo ||
+                    texto.includes(
+                        termo
+                    )
+
+                        ? ''
+
+                        : 'none';
+
+            }
+        );
+}
+
+// =========================================================
 // ABRIR MODAL DE AJUSTE EM MASSA
 // =========================================================
 
@@ -22986,6 +25039,11 @@ window.fecharModalAjusteMassaEstoque = fecharModalAjusteMassaEstoque;
 window.salvarAjusteMassaEstoque = salvarAjusteMassaEstoque;
 window.gerarCamposAtributosMassa = gerarCamposAtributosMassa;
 window.toggleCategoriaMassa = toggleCategoriaMassa;
+window.abrirModalEdicaoSKUsMassa = abrirModalEdicaoSKUsMassa;
+window.fecharModalEdicaoSKUsMassa = fecharModalEdicaoSKUsMassa;
+window.validarLinhaSKUMassa = validarLinhaSKUMassa;
+window.filtrarTabelaSKUsMassa = filtrarTabelaSKUsMassa;
+window.salvarSKUsMassa = salvarSKUsMassa;
 // =========================================================
 // INICIALIZAR REGRAS PARA CATEGORIAS CUSTOMIZADAS
 // =========================================================
