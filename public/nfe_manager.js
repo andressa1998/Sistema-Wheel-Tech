@@ -12544,6 +12544,11 @@ function renderizarVendasNFETabela(
                             venda._tem_nfe
                         );
 
+                    const dataHoraVenda =
+                        formatarDataHoraVendaNFE(
+                            venda
+                        );    
+
 
                     // =================================================
                     // DATA
@@ -12819,6 +12824,37 @@ function renderizarVendasNFETabela(
                                 <strong>
                                     ${escaparHTMLNFE(vendaId)}
                                 </strong>
+                                    <div
+                                            style="
+                                                color:#6c757d;
+                                                font-size:10px;
+                                                margin-top:3px;
+                                                white-space:nowrap;
+                                            "
+                                        >
+                                            <i
+                                                class="far fa-clock"
+                                                style="
+                                                    font-size:9px;
+                                                    margin-right:2px;
+                                                "
+                                            ></i>
+
+                                            Venda:
+                                            ${escaparHTMLNFE(
+                                                dataHoraVenda.data
+                                            )}
+
+                                            ${
+                                                dataHoraVenda.hora
+                                                    ? ` às ${escaparHTMLNFE(
+                                                        dataHoraVenda.hora
+                                                    )}`
+                                                    : ''
+                                            }
+
+                                        </div>
+
                             </td>
 
 
@@ -22555,6 +22591,126 @@ function obterDataVendaNFE(venda) {
     return match
         ? match[1]
         : null;
+}
+
+// =========================================================
+// DATA E HORA EM QUE A VENDA FOI REALIZADA
+// =========================================================
+
+function formatarDataHoraVendaNFE(venda) {
+
+    const valor =
+        venda?.date_created ||
+        venda?.data_venda ||
+        venda?.created_at ||
+        null;
+
+
+    if (!valor) {
+
+        return {
+            data: '-',
+            hora: ''
+        };
+    }
+
+
+    try {
+
+        const texto =
+            String(valor).trim();
+
+
+        // =====================================================
+        // SE VIER APENAS YYYY-MM-DD
+        // =====================================================
+
+        const somenteData =
+            texto.match(
+                /^(\d{4})-(\d{2})-(\d{2})$/
+            );
+
+
+        if (somenteData) {
+
+            return {
+
+                data:
+                    `${somenteData[3]}/${somenteData[2]}/${somenteData[1]}`,
+
+                hora:
+                    ''
+            };
+        }
+
+
+        // =====================================================
+        // DATA/HORA COMPLETA DO MERCADO LIVRE
+        // =====================================================
+
+        const data =
+            new Date(
+                texto
+            );
+
+
+        if (
+            Number.isNaN(
+                data.getTime()
+            )
+        ) {
+
+            return {
+                data: '-',
+                hora: ''
+            };
+        }
+
+
+        return {
+
+            data:
+                data.toLocaleDateString(
+                    'pt-BR',
+                    {
+                        timeZone:
+                            'America/Sao_Paulo'
+                    }
+                ),
+
+            hora:
+                data.toLocaleTimeString(
+                    'pt-BR',
+                    {
+                        hour:
+                            '2-digit',
+
+                        minute:
+                            '2-digit',
+
+                        timeZone:
+                            'America/Sao_Paulo'
+                    }
+                )
+        };
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro formatando data da venda:',
+            valor,
+            error
+        );
+
+
+        return {
+            data: '-',
+            hora: ''
+        };
+    }
 }
 
 async function carregarTransportadorasSelect() {
