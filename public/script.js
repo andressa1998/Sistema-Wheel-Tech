@@ -115,17 +115,88 @@ async function handleLogin(e) {
         
         showToast(`✅ Bem-vindo(a), ${foundUser.name}!`, 'success');
         
-        setTimeout(() => {
-            if (supabaseClient) testSupabaseConnection();
-            else {
-                updateCounters();
-                renderOrdersTable();
-                updateOSNotificationBell();
+        setTimeout(
+    async () => {
+
+        try {
+
+            // ================================================
+            // GARANTIR SUPABASE
+            // ================================================
+
+            if (!supabaseClient) {
+
+                initSupabase();
             }
-            const reembolsosBtn = document.getElementById('reembolsosBtn');
-            if (reembolsosBtn) reembolsosBtn.onclick = () => abrirSistemaReembolsos();
-            if (logoutBtn) logoutBtn.onclick = handleLogout;
-        }, 500);
+
+
+            // ================================================
+            // CONECTAR E CARREGAR
+            // testSupabaseConnection agora já chama a meta
+            // ================================================
+
+            if (supabaseClient) {
+
+                await testSupabaseConnection();
+
+            } else {
+
+                updateCounters();
+
+                renderOrdersTable();
+
+                updateOSNotificationBell();
+
+
+                console.error(
+                    '❌ Supabase não disponível após login'
+                );
+            }
+
+
+            // ================================================
+            // MENU
+            // ================================================
+
+            atualizarVisibilidadeMenu();
+
+
+            // ================================================
+            // BOTÕES
+            // ================================================
+
+            const reembolsosBtn =
+                document.getElementById(
+                    'reembolsosBtn'
+                );
+
+
+            if (reembolsosBtn) {
+
+                reembolsosBtn.onclick =
+                    () =>
+                        abrirSistemaReembolsos();
+            }
+
+
+            if (logoutBtn) {
+
+                logoutBtn.onclick =
+                    handleLogout;
+            }
+
+
+        } catch (error) {
+
+            console.error(
+                '❌ Erro pós-login:',
+                error
+            );
+        }
+
+    },
+    500
+);
         
     } else {
         showToast('❌ Usuário ou senha incorretos', 'error');
@@ -145,6 +216,3108 @@ let salesSyncStatus = {
     lastSync: null,
     totalSynced: 0
 };
+
+// ============================================================
+// META DE CONFERÊNCIA DE OS - RONALD
+// ============================================================
+
+const META_RONALD_CONFIG = {
+
+    username:
+        'ronald',
+
+    nome:
+        'Ronald',
+
+    adminUsername:
+        'andressamiotto',
+
+    metaDiariaPadrao:
+        15,
+
+    maxIgnoradasDia:
+        3,
+
+    maxDiasIgnorarSemana:
+        3,
+
+    intervaloVerificacao:
+        30 * 60 * 1000, // 30 minutos
+
+    intervaloPollBloqueio:
+        30 * 1000 // verifica desbloqueio da Andressa a cada 30s
+};
+
+
+let bloqueioMetaRonaldAtivo =
+    false;
+
+
+let verificacaoMetaRonaldEmAndamento =
+    false;
+
+
+let ultimoStatusMetaRonald =
+    null;
+
+
+let timerPollBloqueioMetaRonald =
+    null;
+
+
+let guardMetaRonaldInstalado =
+    false;
+
+
+// ============================================================
+// UTILIDADES DE DATA
+// ============================================================
+
+function dataLocalISO(data = new Date()) {
+
+    const d =
+        new Date(data);
+
+
+    const ano =
+        d.getFullYear();
+
+
+    const mes =
+        String(
+            d.getMonth() + 1
+        ).padStart(2, '0');
+
+
+    const dia =
+        String(
+            d.getDate()
+        ).padStart(2, '0');
+
+
+    return `${ano}-${mes}-${dia}`;
+}
+
+
+function criarDataLocalMetaRonald(
+    dataString
+) {
+
+    const partes =
+        String(
+            dataString
+        )
+            .split('-')
+            .map(Number);
+
+
+    return new Date(
+        partes[0],
+        partes[1] - 1,
+        partes[2],
+        12,
+        0,
+        0,
+        0
+    );
+}
+
+
+// ============================================================
+// DIAS QUE POSSUEM META
+//
+// Atualmente:
+// segunda a sexta.
+//
+// Se quiser incluir sábado depois:
+// return dia >= 1 && dia <= 6;
+// ============================================================
+
+function ehDiaDeMetaRonald(
+    data
+) {
+
+    const dia =
+        new Date(
+            data
+        ).getDay();
+
+
+    return (
+        dia >= 1 &&
+        dia <= 5
+    );
+}
+
+
+// ============================================================
+// INÍCIO DA SEMANA = SEGUNDA
+// ============================================================
+
+function inicioSemanaMetaRonald(
+    data = new Date()
+) {
+
+    const d =
+        new Date(
+            data
+        );
+
+
+    d.setHours(
+        12,
+        0,
+        0,
+        0
+    );
+
+
+    const diaSemana =
+        d.getDay();
+
+
+    const diferenca =
+        (
+            diaSemana + 6
+        ) % 7;
+
+
+    d.setDate(
+        d.getDate() -
+        diferenca
+    );
+
+
+    return dataLocalISO(
+        d
+    );
+}
+
+
+// ============================================================
+// FIM DA SEMANA = DOMINGO
+// ============================================================
+
+function fimSemanaMetaRonald(
+    data = new Date()
+) {
+
+    const inicio =
+        criarDataLocalMetaRonald(
+            inicioSemanaMetaRonald(
+                data
+            )
+        );
+
+
+    inicio.setDate(
+        inicio.getDate() +
+        6
+    );
+
+
+    return dataLocalISO(
+        inicio
+    );
+}
+
+
+// ============================================================
+// ESCAPE HTML LOCAL
+// ============================================================
+
+function escapeHtmlMetaRonald(
+    valor
+) {
+
+    return String(
+        valor ?? ''
+    )
+        .replace(
+            /&/g,
+            '&amp;'
+        )
+        .replace(
+            /</g,
+            '&lt;'
+        )
+        .replace(
+            />/g,
+            '&gt;'
+        )
+        .replace(
+            /"/g,
+            '&quot;'
+        )
+        .replace(
+            /'/g,
+            '&#039;'
+        );
+}
+
+
+// ============================================================
+// AGUARDAR SUPABASE
+// ============================================================
+
+async function aguardarSupabaseMetaRonald(
+    tentativas = 20
+) {
+
+    for (
+        let i = 0;
+        i < tentativas;
+        i++
+    ) {
+
+        if (supabaseClient) {
+            return true;
+        }
+
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    250
+                )
+        );
+    }
+
+
+    return false;
+}
+
+
+// ============================================================
+// CARREGAR SITUAÇÃO ATUAL DA META
+//
+// Essa função pode ser usada pelo Ronald
+// e também pelo painel da Andressa.
+// ============================================================
+
+async function carregarStatusMetaRonald() {
+
+    const conectado =
+        await aguardarSupabaseMetaRonald();
+
+
+    if (!conectado) {
+
+        throw new Error(
+            'Supabase ainda não está disponível'
+        );
+    }
+
+
+    // ========================================================
+    // CONFIGURAÇÃO
+    // ========================================================
+
+    const {
+        data: config,
+        error: configError
+    } =
+        await supabaseClient
+            .from(
+                'os_conferencia_meta_config'
+            )
+            .select('*')
+            .eq(
+                'username',
+                META_RONALD_CONFIG.username
+            )
+            .maybeSingle();
+
+
+    if (configError) {
+        throw configError;
+    }
+
+
+    if (
+        !config ||
+        config.ativo === false
+    ) {
+
+        return {
+
+            ativo:
+                false
+
+        };
+    }
+
+
+    const metaDiaria =
+        Number(
+            config.meta_diaria
+        ) ||
+        META_RONALD_CONFIG.metaDiariaPadrao;
+
+
+    const dataInicio =
+        config.data_inicio;
+
+
+    const hoje =
+        dataLocalISO(
+            new Date()
+        );
+
+
+    // ========================================================
+    // BUSCAR TODAS AS CONFERÊNCIAS
+    // DESDE O INÍCIO DA META
+    // ========================================================
+
+    const dataInicialJS =
+        criarDataLocalMetaRonald(
+            dataInicio
+        );
+
+
+    dataInicialJS.setHours(
+        0,
+        0,
+        0,
+        0
+    );
+
+
+    const {
+        data: logs,
+        error: logError
+    } =
+        await supabaseClient
+            .from(
+                'os_conferencia_meta_log'
+            )
+            .select(
+                'id, os_id, resultado, data_conferencia'
+            )
+            .eq(
+                'username',
+                META_RONALD_CONFIG.username
+            )
+            .gte(
+                'data_conferencia',
+                dataInicialJS.toISOString()
+            )
+            .lte(
+                'data_conferencia',
+                new Date().toISOString()
+            );
+
+
+    if (logError) {
+        throw logError;
+    }
+
+
+    // ========================================================
+    // AGRUPAR CONFERÊNCIAS POR DIA
+    // ========================================================
+
+    const conferenciasPorDia =
+        {};
+
+
+    (
+        logs ||
+        []
+    ).forEach(
+        item => {
+
+            const chave =
+                dataLocalISO(
+                    new Date(
+                        item.data_conferencia
+                    )
+                );
+
+
+            if (
+                !conferenciasPorDia[
+                    chave
+                ]
+            ) {
+
+                conferenciasPorDia[
+                    chave
+                ] = 0;
+            }
+
+
+            conferenciasPorDia[
+                chave
+            ]++;
+
+        }
+    );
+
+
+    // ========================================================
+    // CALCULAR PENDÊNCIA ACUMULADA
+    //
+    // IMPORTANTE:
+    // excesso de um dia NÃO vira crédito para outro.
+    //
+    // Exemplo:
+    // segunda meta 15, fez 20
+    // terça continua precisando de 15.
+    // ========================================================
+
+    let pendenciaAnterior =
+        0;
+
+
+    let metaBaseHoje =
+        0;
+
+
+    let exigenciaTotalHoje =
+        0;
+
+
+    let conferidasHoje =
+        conferenciasPorDia[
+            hoje
+        ] ||
+        0;
+
+
+    let faltamHoje =
+        0;
+
+
+    const cursor =
+        criarDataLocalMetaRonald(
+            dataInicio
+        );
+
+
+    const hojeData =
+        criarDataLocalMetaRonald(
+            hoje
+        );
+
+
+    let seguranca =
+        0;
+
+
+    while (
+        cursor <= hojeData &&
+        seguranca < 5000
+    ) {
+
+        seguranca++;
+
+
+        const chave =
+            dataLocalISO(
+                cursor
+            );
+
+
+        const feitasNesseDia =
+            conferenciasPorDia[
+                chave
+            ] ||
+            0;
+
+
+        const metaDesteDia =
+            ehDiaDeMetaRonald(
+                cursor
+            )
+                ? metaDiaria
+                : 0;
+
+
+        const ehHoje =
+            chave === hoje;
+
+
+        if (ehHoje) {
+
+            metaBaseHoje =
+                metaDesteDia;
+
+
+            exigenciaTotalHoje =
+                pendenciaAnterior +
+                metaBaseHoje;
+
+
+            faltamHoje =
+                Math.max(
+                    0,
+                    exigenciaTotalHoje -
+                    feitasNesseDia
+                );
+
+
+            break;
+        }
+
+
+        pendenciaAnterior =
+            Math.max(
+                0,
+                pendenciaAnterior +
+                metaDesteDia -
+                feitasNesseDia
+            );
+
+
+        cursor.setDate(
+            cursor.getDate() +
+            1
+        );
+    }
+
+
+    // ========================================================
+    // CONTROLE DE IGNORADAS DE HOJE
+    // ========================================================
+
+    const {
+        data: controleHoje,
+        error: controleError
+    } =
+        await supabaseClient
+            .from(
+                'os_conferencia_meta_diaria'
+            )
+            .select('*')
+            .eq(
+                'username',
+                META_RONALD_CONFIG.username
+            )
+            .eq(
+                'data',
+                hoje
+            )
+            .maybeSingle();
+
+
+    if (controleError) {
+        throw controleError;
+    }
+
+
+    const ignoradasHoje =
+        Number(
+            controleHoje?.ignoradas
+        ) ||
+        0;
+
+
+    // ========================================================
+    // DIAS DA SEMANA EM QUE ELE JÁ USOU "IGNORAR"
+    // ========================================================
+
+    const semanaInicio =
+        inicioSemanaMetaRonald();
+
+
+    const semanaFim =
+        fimSemanaMetaRonald();
+
+
+    const {
+        data: controlesSemana,
+        error: semanaError
+    } =
+        await supabaseClient
+            .from(
+                'os_conferencia_meta_diaria'
+            )
+            .select(
+                'data, ignoradas'
+            )
+            .eq(
+                'username',
+                META_RONALD_CONFIG.username
+            )
+            .gte(
+                'data',
+                semanaInicio
+            )
+            .lte(
+                'data',
+                semanaFim
+            )
+            .gt(
+                'ignoradas',
+                0
+            );
+
+
+    if (semanaError) {
+        throw semanaError;
+    }
+
+
+    const diasIgnoradosSemana =
+        new Set(
+            (
+                controlesSemana ||
+                []
+            ).map(
+                item =>
+                    item.data
+            )
+        ).size;
+
+
+    const hojeJaIgnorou =
+        ignoradasHoje > 0;
+
+
+    // ========================================================
+    // ESTADO GLOBAL DO BLOQUEIO
+    // ========================================================
+
+    const {
+        data: estado,
+        error: estadoError
+    } =
+        await supabaseClient
+            .from(
+                'os_conferencia_meta_estado'
+            )
+            .select('*')
+            .eq(
+                'username',
+                META_RONALD_CONFIG.username
+            )
+            .maybeSingle();
+
+
+    if (estadoError) {
+        throw estadoError;
+    }
+
+
+    const agora =
+        new Date();
+
+
+    const overrideAte =
+        estado?.desbloqueado_admin_ate
+            ? new Date(
+                estado.desbloqueado_admin_ate
+            )
+            : null;
+
+
+    const overrideAtivo =
+        !!(
+            overrideAte &&
+            overrideAte >
+            agora
+        );
+
+
+    const overrideExpirado =
+        !!(
+            overrideAte &&
+            overrideAte <=
+            agora
+        );
+
+
+    // ========================================================
+    // QUANTIDADE DE OS DISPONÍVEIS PARA CONFERÊNCIA
+    // ========================================================
+
+    let osDisponiveis =
+        0;
+
+
+    try {
+
+        const {
+            count,
+            error: countError
+        } =
+            await supabaseClient
+                .from(
+                    'ordens_service'
+                )
+                .select(
+                    'id',
+                    {
+                        count:
+                            'exact',
+
+                        head:
+                            true
+                    }
+                )
+                .eq(
+                    'status',
+                    'concluida'
+                )
+                .eq(
+                    'conferido',
+                    false
+                );
+
+
+        if (!countError) {
+
+            osDisponiveis =
+                Number(
+                    count
+                ) ||
+                0;
+        }
+
+    } catch (
+        countException
+    ) {
+
+        console.warn(
+            'Não foi possível contar OS não conferidas:',
+            countException
+        );
+    }
+
+
+    const diasEquivalentesPendentes =
+        faltamHoje > 0
+            ? Math.ceil(
+                faltamHoje /
+                metaDiaria
+            )
+            : 0;
+
+
+    const diasAcumuladosAnteriores =
+        pendenciaAnterior > 0
+            ? Math.ceil(
+                pendenciaAnterior /
+                metaDiaria
+            )
+            : 0;
+
+
+    return {
+
+        ativo:
+            true,
+
+        metaDiaria,
+
+        dataInicio,
+
+        hoje,
+
+        metaBaseHoje,
+
+        pendenciaAnterior,
+
+        exigenciaTotalHoje,
+
+        conferidasHoje,
+
+        faltamHoje,
+
+        diasEquivalentesPendentes,
+
+        diasAcumuladosAnteriores,
+
+        ignoradasHoje,
+
+        diasIgnoradosSemana,
+
+        hojeJaIgnorou,
+
+        semanaInicio,
+
+        semanaFim,
+
+        osDisponiveis,
+
+        estado:
+            estado || {
+
+                username:
+                    META_RONALD_CONFIG.username,
+
+                bloqueado:
+                    false
+            },
+
+        overrideAtivo,
+
+        overrideExpirado
+    };
+}
+
+
+// ============================================================
+// FECHAR AVISO DE META
+// ============================================================
+
+function fecharModalMetaRonald() {
+
+    const modal =
+        document.getElementById(
+            'modalAvisoMetaRonald'
+        );
+
+
+    if (modal) {
+        modal.remove();
+    }
+}
+
+
+// ============================================================
+// ABRIR AVISO DA META
+// ============================================================
+
+function mostrarModalMetaRonald(
+    status
+) {
+
+    if (
+        !status ||
+        status.faltamHoje <= 0
+    ) {
+
+        fecharModalMetaRonald();
+
+        return;
+    }
+
+
+    fecharModalMetaRonald();
+
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalAvisoMetaRonald';
+
+
+    modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.62);
+        z-index: 999999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    `;
+
+
+    const acumulado =
+        status.pendenciaAnterior > 0;
+
+
+    const limiteDiaProximo =
+        status.ignoradasHoje >=
+        META_RONALD_CONFIG.maxIgnoradasDia;
+
+
+    const limiteSemanaProximo =
+        (
+            !status.hojeJaIgnorou &&
+            status.diasIgnoradosSemana >=
+            META_RONALD_CONFIG.maxDiasIgnorarSemana
+        );
+
+
+    let avisoLimite =
+        '';
+
+
+    if (limiteDiaProximo) {
+
+        avisoLimite = `
+            <div style="
+                background:#ffebee;
+                border:1px solid #ef9a9a;
+                color:#b71c1c;
+                padding:12px;
+                border-radius:8px;
+                margin-top:15px;
+                font-weight:700;
+            ">
+                <i class="fas fa-lock"></i>
+                Você já ignorou 3 vezes hoje.
+                Se tentar ignorar novamente,
+                seu acesso será bloqueado.
+            </div>
+        `;
+
+    } else if (
+        limiteSemanaProximo
+    ) {
+
+        avisoLimite = `
+            <div style="
+                background:#ffebee;
+                border:1px solid #ef9a9a;
+                color:#b71c1c;
+                padding:12px;
+                border-radius:8px;
+                margin-top:15px;
+                font-weight:700;
+            ">
+                <i class="fas fa-lock"></i>
+                Você já utilizou o recurso de ignorar
+                em 3 dias diferentes nesta semana.
+                Se tentar ignorar hoje,
+                seu acesso será bloqueado.
+            </div>
+        `;
+    }
+
+
+    modal.innerHTML = `
+
+        <div style="
+            width:100%;
+            max-width:620px;
+            background:white;
+            border-radius:14px;
+            overflow:hidden;
+            box-shadow:0 20px 60px rgba(0,0,0,.35);
+        ">
+
+            <div style="
+                padding:22px 25px;
+                background:linear-gradient(
+                    135deg,
+                    #ff9800,
+                    #f57c00
+                );
+                color:white;
+            ">
+
+                <div style="
+                    font-size:21px;
+                    font-weight:800;
+                ">
+                    <i class="fas fa-clipboard-check"></i>
+                    Meta de conferência pendente
+                </div>
+
+                <div style="
+                    margin-top:5px;
+                    opacity:.95;
+                ">
+                    Ronald, sua meta de conferência ainda não foi concluída.
+                </div>
+
+            </div>
+
+
+            <div style="
+                padding:25px;
+            ">
+
+                ${
+                    acumulado
+                        ? `
+                            <div style="
+                                background:#fff3cd;
+                                border:1px solid #ffe69c;
+                                color:#664d03;
+                                padding:14px;
+                                border-radius:8px;
+                                margin-bottom:18px;
+                            ">
+                                <strong>
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    Há meta acumulada.
+                                </strong>
+
+                                <div style="margin-top:6px;">
+                                    Você trouxe
+                                    <strong>${status.pendenciaAnterior}</strong>
+                                    conferência(ões) pendente(s)
+                                    de dias anteriores.
+
+                                    Isso equivale a aproximadamente
+                                    <strong>
+                                        ${status.diasAcumuladosAnteriores}
+                                        dia(s) de meta
+                                    </strong>.
+                                </div>
+                            </div>
+                        `
+                        : ''
+                }
+
+
+                <div style="
+                    display:grid;
+                    grid-template-columns:
+                        repeat(2, minmax(0,1fr));
+                    gap:10px;
+                ">
+
+                    <div style="
+                        background:#f8f9fa;
+                        padding:14px;
+                        border-radius:8px;
+                    ">
+                        <div style="
+                            font-size:12px;
+                            color:#6c757d;
+                        ">
+                            Meta base do dia
+                        </div>
+
+                        <strong style="
+                            font-size:24px;
+                        ">
+                            ${status.metaBaseHoje}
+                        </strong>
+                    </div>
+
+
+                    <div style="
+                        background:#f8f9fa;
+                        padding:14px;
+                        border-radius:8px;
+                    ">
+                        <div style="
+                            font-size:12px;
+                            color:#6c757d;
+                        ">
+                            Pendência anterior
+                        </div>
+
+                        <strong style="
+                            font-size:24px;
+                        ">
+                            ${status.pendenciaAnterior}
+                        </strong>
+                    </div>
+
+
+                    <div style="
+                        background:#e8f5e9;
+                        padding:14px;
+                        border-radius:8px;
+                    ">
+                        <div style="
+                            font-size:12px;
+                            color:#2e7d32;
+                        ">
+                            Conferidas hoje
+                        </div>
+
+                        <strong style="
+                            font-size:24px;
+                            color:#2e7d32;
+                        ">
+                            ${status.conferidasHoje}
+                        </strong>
+                    </div>
+
+
+                    <div style="
+                        background:#ffebee;
+                        padding:14px;
+                        border-radius:8px;
+                    ">
+                        <div style="
+                            font-size:12px;
+                            color:#c62828;
+                        ">
+                            Ainda faltam
+                        </div>
+
+                        <strong style="
+                            font-size:24px;
+                            color:#c62828;
+                        ">
+                            ${status.faltamHoje}
+                        </strong>
+                    </div>
+
+                </div>
+
+
+                <div style="
+                    margin-top:18px;
+                    background:#e3f2fd;
+                    padding:14px;
+                    border-radius:8px;
+                    color:#0d47a1;
+                ">
+
+                    <strong>Meta exigida hoje:</strong>
+
+                    ${status.exigenciaTotalHoje}
+                    conferência(ões).
+
+                    <br>
+
+                    <strong>
+                        OS atualmente disponíveis:
+                    </strong>
+
+                    ${status.osDisponiveis}
+
+                </div>
+
+
+                <div style="
+                    margin-top:15px;
+                    display:grid;
+                    grid-template-columns:
+                        repeat(2, minmax(0,1fr));
+                    gap:10px;
+                    font-size:13px;
+                ">
+
+                    <div style="
+                        border:1px solid #ddd;
+                        padding:10px;
+                        border-radius:8px;
+                    ">
+                        Ignoradas hoje:
+                        <strong>
+                            ${status.ignoradasHoje}
+                            /
+                            ${META_RONALD_CONFIG.maxIgnoradasDia}
+                        </strong>
+                    </div>
+
+
+                    <div style="
+                        border:1px solid #ddd;
+                        padding:10px;
+                        border-radius:8px;
+                    ">
+                        Dias com ignorar na semana:
+                        <strong>
+                            ${status.diasIgnoradosSemana}
+                            /
+                            ${META_RONALD_CONFIG.maxDiasIgnorarSemana}
+                        </strong>
+                    </div>
+
+                </div>
+
+
+                ${avisoLimite}
+
+
+                <div style="
+                    display:flex;
+                    gap:10px;
+                    margin-top:22px;
+                    flex-wrap:wrap;
+                ">
+
+                    <button
+                        onclick="irParaConferenciaMetaRonald()"
+                        style="
+                            flex:1;
+                            min-width:220px;
+                            border:none;
+                            background:#28a745;
+                            color:white;
+                            padding:13px;
+                            border-radius:8px;
+                            cursor:pointer;
+                            font-weight:700;
+                            font-size:14px;
+                        "
+                    >
+                        <i class="fas fa-check-double"></i>
+                        Ir para Não Conferidas
+                    </button>
+
+
+                    <button
+                        onclick="ignorarAvisoMetaRonald()"
+                        style="
+                            flex:1;
+                            min-width:180px;
+                            border:none;
+                            background:#6c757d;
+                            color:white;
+                            padding:13px;
+                            border-radius:8px;
+                            cursor:pointer;
+                            font-weight:700;
+                            font-size:14px;
+                        "
+                    >
+                        <i class="fas fa-clock"></i>
+                        Ignorar por enquanto
+                    </button>
+
+                </div>
+
+
+                <div style="
+                    margin-top:15px;
+                    color:#6c757d;
+                    font-size:12px;
+                    line-height:1.5;
+                ">
+                    O aviso volta a aparecer a cada
+                    30 minutos enquanto a meta estiver pendente.
+                    A meta não desaparece ao sair do sistema.
+                </div>
+
+            </div>
+
+        </div>
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+}
+
+
+// ============================================================
+// IR DIRETO PARA "NÃO CONFERIDAS"
+// ============================================================
+
+window.irParaConferenciaMetaRonald =
+    async function() {
+
+        fecharModalMetaRonald();
+
+
+        if (
+            typeof window.abrirSistemaOS ===
+            'function'
+        ) {
+
+            window.abrirSistemaOS();
+        }
+
+
+        paginaAtualOS =
+            1;
+
+
+        currentFilter =
+            'nao_conferidas';
+
+
+        toggleFiltroDataConcluidas(
+            false
+        );
+
+
+        setTimeout(
+            () => {
+
+                renderOrdersTable();
+
+                highlightActiveFilterButton();
+
+
+                if (
+                    bloqueioMetaRonaldAtivo
+                ) {
+
+                    aplicarRestricaoVisualMetaRonald();
+                }
+
+            },
+            350
+        );
+    };
+
+
+// ============================================================
+// IGNORAR AVISO
+// ============================================================
+
+window.ignorarAvisoMetaRonald =
+    async function() {
+
+        if (
+            !currentUser ||
+            currentUser.username !==
+            META_RONALD_CONFIG.username
+        ) {
+            return;
+        }
+
+
+        try {
+
+            // Buscar novamente para evitar usar
+            // informação desatualizada.
+            const status =
+                await carregarStatusMetaRonald();
+
+
+            if (
+                status.faltamHoje <= 0
+            ) {
+
+                fecharModalMetaRonald();
+
+                showToast(
+                    '✅ Sua meta já foi concluída.',
+                    'success'
+                );
+
+                return;
+            }
+
+
+            if (
+                status.overrideAtivo
+            ) {
+
+                fecharModalMetaRonald();
+
+                return;
+            }
+
+
+            // =================================================
+            // 4ª TENTATIVA NO MESMO DIA
+            // =================================================
+
+            if (
+                status.ignoradasHoje >=
+                META_RONALD_CONFIG.maxIgnoradasDia
+            ) {
+
+                await bloquearMetaRonald(
+                    'Limite de 3 avisos ignorados no mesmo dia excedido.',
+                    status
+                );
+
+                return;
+            }
+
+
+            // =================================================
+            // TENTATIVA NO 4º DIA DIFERENTE DA SEMANA
+            // =================================================
+
+            if (
+                !status.hojeJaIgnorou &&
+                status.diasIgnoradosSemana >=
+                META_RONALD_CONFIG.maxDiasIgnorarSemana
+            ) {
+
+                await bloquearMetaRonald(
+                    'Tentativa de ignorar a meta no 4º dia diferente da semana.',
+                    status
+                );
+
+                return;
+            }
+
+
+            const novaQuantidade =
+                status.ignoradasHoje +
+                1;
+
+
+            const {
+                error
+            } =
+                await supabaseClient
+                    .from(
+                        'os_conferencia_meta_diaria'
+                    )
+                    .upsert(
+                        {
+
+                            username:
+                                META_RONALD_CONFIG.username,
+
+                            data:
+                                status.hoje,
+
+                            ignoradas:
+                                novaQuantidade,
+
+                            atualizado_em:
+                                new Date()
+                                    .toISOString()
+
+                        },
+                        {
+
+                            onConflict:
+                                'username,data'
+
+                        }
+                    );
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            fecharModalMetaRonald();
+
+
+            showToast(
+                `⚠️ Aviso ignorado (${novaQuantidade}/${META_RONALD_CONFIG.maxIgnoradasDia} hoje)`,
+                'warning'
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                'Erro ao ignorar aviso da meta:',
+                error
+            );
+
+
+            showToast(
+                '❌ Não foi possível registrar o aviso ignorado.',
+                'error'
+            );
+        }
+    };
+
+
+// ============================================================
+// BLOQUEAR RONALD
+// ============================================================
+
+async function bloquearMetaRonald(
+    motivo,
+    statusAtual = null
+) {
+
+    if (
+        !supabaseClient
+    ) {
+        return;
+    }
+
+
+    const agora =
+        new Date()
+            .toISOString();
+
+
+    const {
+        error
+    } =
+        await supabaseClient
+            .from(
+                'os_conferencia_meta_estado'
+            )
+            .upsert(
+                {
+
+                    username:
+                        META_RONALD_CONFIG.username,
+
+                    bloqueado:
+                        true,
+
+                    bloqueado_em:
+                        agora,
+
+                    motivo_bloqueio:
+                        motivo,
+
+                    desbloqueado_admin_ate:
+                        null,
+
+                    desbloqueado_por:
+                        null,
+
+                    atualizado_em:
+                        agora
+
+                },
+                {
+
+                    onConflict:
+                        'username'
+
+                }
+            );
+
+
+    if (error) {
+
+        console.error(
+            'Erro ao bloquear Ronald:',
+            error
+        );
+
+        throw error;
+    }
+
+
+    const status =
+        statusAtual ||
+        await carregarStatusMetaRonald();
+
+
+    status.estado = {
+
+        ...(
+            status.estado ||
+            {}
+        ),
+
+        bloqueado:
+            true,
+
+        bloqueado_em:
+            agora,
+
+        motivo_bloqueio:
+            motivo,
+
+        desbloqueado_admin_ate:
+            null,
+
+        desbloqueado_por:
+            null
+    };
+
+
+    status.overrideAtivo =
+        false;
+
+
+    ativarBloqueioVisualMetaRonald(
+        status,
+        motivo
+    );
+}
+
+
+// ============================================================
+// DESBLOQUEIO AUTOMÁTICO POR META CUMPRIDA
+// ============================================================
+
+async function desbloquearAutomaticamenteMetaRonald() {
+
+    if (
+        !supabaseClient
+    ) {
+        return;
+    }
+
+
+    const {
+        error
+    } =
+        await supabaseClient
+            .from(
+                'os_conferencia_meta_estado'
+            )
+            .upsert(
+                {
+
+                    username:
+                        META_RONALD_CONFIG.username,
+
+                    bloqueado:
+                        false,
+
+                    bloqueado_em:
+                        null,
+
+                    motivo_bloqueio:
+                        null,
+
+                    desbloqueado_admin_ate:
+                        null,
+
+                    desbloqueado_por:
+                        null,
+
+                    atualizado_em:
+                        new Date()
+                            .toISOString()
+
+                },
+                {
+
+                    onConflict:
+                        'username'
+
+                }
+            );
+
+
+    if (error) {
+
+        console.error(
+            'Erro ao retirar bloqueio automático:',
+            error
+        );
+
+        return;
+    }
+
+
+    desativarBloqueioVisualMetaRonald();
+
+
+    fecharModalMetaRonald();
+}
+
+
+// ============================================================
+// BANNER DE BLOQUEIO
+// ============================================================
+
+function atualizarBannerBloqueioMetaRonald(
+    status,
+    motivo
+) {
+
+    let banner =
+        document.getElementById(
+            'ronaldMetaBloqueioBanner'
+        );
+
+
+    if (!banner) {
+
+        banner =
+            document.createElement(
+                'div'
+            );
+
+
+        banner.id =
+            'ronaldMetaBloqueioBanner';
+
+
+        document.body.appendChild(
+            banner
+        );
+    }
+
+
+    banner.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 999998;
+        background: linear-gradient(
+            135deg,
+            #b71c1c,
+            #d32f2f
+        );
+        color: white;
+        padding: 12px 20px;
+        box-shadow: 0 4px 18px rgba(0,0,0,.30);
+        text-align: center;
+        font-size: 14px;
+    `;
+
+
+    banner.innerHTML = `
+
+        <div style="
+            font-weight:800;
+            font-size:16px;
+        ">
+            <i class="fas fa-lock"></i>
+            SISTEMA BLOQUEADO — META DE CONFERÊNCIA PENDENTE
+        </div>
+
+        <div style="
+            margin-top:4px;
+        ">
+            Conferidas hoje:
+            <strong>
+                ${status.conferidasHoje}
+            </strong>
+
+            &nbsp; | &nbsp;
+
+            Faltam:
+            <strong>
+                ${status.faltamHoje}
+            </strong>
+
+            &nbsp; | &nbsp;
+
+            Meta exigida:
+            <strong>
+                ${status.exigenciaTotalHoje}
+            </strong>
+        </div>
+
+        ${
+            motivo
+                ? `
+                    <div style="
+                        font-size:11px;
+                        opacity:.9;
+                        margin-top:3px;
+                    ">
+                        ${escapeHtmlMetaRonald(
+                            motivo
+                        )}
+                    </div>
+                `
+                : ''
+        }
+
+        <div style="
+            font-size:11px;
+            opacity:.9;
+            margin-top:3px;
+        ">
+            Somente a conferência de OS está liberada.
+            Andressa pode realizar desbloqueio administrativo.
+        </div>
+    `;
+}
+
+
+// ============================================================
+// RESTRIÇÃO VISUAL DA TABELA
+// ============================================================
+
+function aplicarRestricaoVisualMetaRonald() {
+
+    if (
+        !bloqueioMetaRonaldAtivo ||
+        !currentUser ||
+        currentUser.username !==
+        META_RONALD_CONFIG.username
+    ) {
+
+        return;
+    }
+
+
+    // ========================================================
+    // ESCONDER AÇÕES QUE NÃO FAZEM PARTE DA CONFERÊNCIA
+    // ========================================================
+
+    document
+        .querySelectorAll(
+            '#osTableBody button'
+        )
+        .forEach(
+            btn => {
+
+                const onclick =
+                    btn.getAttribute(
+                        'onclick'
+                    ) ||
+                    '';
+
+
+                const permitido =
+                    onclick.includes(
+                        'conferirOS'
+                    ) ||
+
+                    onclick.includes(
+                        'viewOrderDetails'
+                    ) ||
+
+                    onclick.includes(
+                        'viewOrderPhotos'
+                    ) ||
+
+                    onclick.includes(
+                        'abrirRejeitarModal'
+                    );
+
+
+                if (!permitido) {
+
+                    if (
+                        !btn.hasAttribute(
+                            'data-meta-ronald-display'
+                        )
+                    ) {
+
+                        btn.setAttribute(
+                            'data-meta-ronald-display',
+                            btn.style.display ||
+                            ''
+                        );
+                    }
+
+
+                    btn.style.display =
+                        'none';
+                }
+
+            }
+        );
+
+
+    // ========================================================
+    // FILTROS: DEIXAR SÓ NÃO CONFERIDAS
+    // ========================================================
+
+    document
+        .querySelectorAll(
+            '.filter-group button'
+        )
+        .forEach(
+            btn => {
+
+                const onclick =
+                    btn.getAttribute(
+                        'onclick'
+                    ) ||
+                    '';
+
+
+                if (
+                    !onclick.includes(
+                        "'nao_conferidas'"
+                    )
+                ) {
+
+                    if (
+                        !btn.hasAttribute(
+                            'data-meta-ronald-display'
+                        )
+                    ) {
+
+                        btn.setAttribute(
+                            'data-meta-ronald-display',
+                            btn.style.display ||
+                            ''
+                        );
+                    }
+
+
+                    btn.style.display =
+                        'none';
+                }
+
+            }
+        );
+
+
+    const selectOS =
+        document.getElementById(
+            'selectOSBtn'
+        );
+
+
+    if (selectOS) {
+
+        if (
+            !selectOS.hasAttribute(
+                'data-meta-ronald-display'
+            )
+        ) {
+
+            selectOS.setAttribute(
+                'data-meta-ronald-display',
+                selectOS.style.display ||
+                ''
+            );
+        }
+
+
+        selectOS.style.display =
+            'none';
+    }
+}
+
+
+// ============================================================
+// RESTAURAR INTERFACE
+// ============================================================
+
+function restaurarInterfaceMetaRonald() {
+
+    document
+        .querySelectorAll(
+            '[data-meta-ronald-display]'
+        )
+        .forEach(
+            elemento => {
+
+                elemento.style.display =
+                    elemento.getAttribute(
+                        'data-meta-ronald-display'
+                    ) ||
+                    '';
+
+
+                elemento.removeAttribute(
+                    'data-meta-ronald-display'
+                );
+
+            }
+        );
+}
+
+
+// ============================================================
+// ATIVAR BLOQUEIO VISUAL
+// ============================================================
+
+function ativarBloqueioVisualMetaRonald(
+    status,
+    motivo = null
+) {
+
+    if (
+        !currentUser ||
+        currentUser.username !==
+        META_RONALD_CONFIG.username
+    ) {
+
+        return;
+    }
+
+
+    const jaEstavaBloqueado =
+        bloqueioMetaRonaldAtivo;
+
+
+    bloqueioMetaRonaldAtivo =
+        true;
+
+
+    ultimoStatusMetaRonald =
+        status;
+
+
+    fecharModalMetaRonald();
+
+
+    if (
+        !jaEstavaBloqueado
+    ) {
+
+        if (
+            typeof window.abrirSistemaOS ===
+            'function'
+        ) {
+
+            window.abrirSistemaOS();
+        }
+    }
+
+
+    currentFilter =
+        'nao_conferidas';
+
+
+    paginaAtualOS =
+        1;
+
+
+    toggleFiltroDataConcluidas(
+        false
+    );
+
+
+    setTimeout(
+        () => {
+
+            renderOrdersTable();
+
+            highlightActiveFilterButton();
+
+            aplicarRestricaoVisualMetaRonald();
+
+        },
+        300
+    );
+
+
+    atualizarBannerBloqueioMetaRonald(
+        status,
+        motivo ||
+        status.estado
+            ?.motivo_bloqueio ||
+        'Meta de conferência pendente'
+    );
+
+
+    // ========================================================
+    // ENQUANTO BLOQUEADO:
+    // CONSULTAR A CADA 30s SE ANDRESSA DESBLOQUEOU
+    // ========================================================
+
+    if (
+        !timerPollBloqueioMetaRonald
+    ) {
+
+        timerPollBloqueioMetaRonald =
+            setInterval(
+                () => {
+
+                    if (
+                        currentUser &&
+                        currentUser.username ===
+                        META_RONALD_CONFIG.username &&
+                        bloqueioMetaRonaldAtivo
+                    ) {
+
+                        verificarMetaRonald(
+                            {
+
+                                mostrarAviso:
+                                    false,
+
+                                motivo:
+                                    'poll_bloqueio'
+
+                            }
+                        );
+                    }
+
+                },
+                META_RONALD_CONFIG
+                    .intervaloPollBloqueio
+            );
+    }
+}
+
+
+// ============================================================
+// DESATIVAR BLOQUEIO VISUAL
+// ============================================================
+
+function desativarBloqueioVisualMetaRonald() {
+
+    bloqueioMetaRonaldAtivo =
+        false;
+
+
+    const banner =
+        document.getElementById(
+            'ronaldMetaBloqueioBanner'
+        );
+
+
+    if (banner) {
+        banner.remove();
+    }
+
+
+    restaurarInterfaceMetaRonald();
+
+
+    if (
+        timerPollBloqueioMetaRonald
+    ) {
+
+        clearInterval(
+            timerPollBloqueioMetaRonald
+        );
+
+
+        timerPollBloqueioMetaRonald =
+            null;
+    }
+}
+
+
+// ============================================================
+// VERIFICAR META
+// ============================================================
+
+async function verificarMetaRonald(
+    {
+        mostrarAviso = true,
+        motivo = 'verificacao'
+    } = {}
+) {
+
+    if (
+        !currentUser ||
+        currentUser.username !==
+        META_RONALD_CONFIG.username
+    ) {
+
+        return null;
+    }
+
+
+    if (
+        verificacaoMetaRonaldEmAndamento
+    ) {
+
+        return ultimoStatusMetaRonald;
+    }
+
+
+    verificacaoMetaRonaldEmAndamento =
+        true;
+
+
+    try {
+
+        const status =
+            await carregarStatusMetaRonald();
+
+
+        ultimoStatusMetaRonald =
+            status;
+
+
+        if (
+            !status ||
+            status.ativo === false
+        ) {
+
+            desativarBloqueioVisualMetaRonald();
+
+            fecharModalMetaRonald();
+
+            return status;
+        }
+
+
+        // ====================================================
+        // META CONCLUÍDA
+        // ====================================================
+
+        if (
+            status.faltamHoje <= 0
+        ) {
+
+            if (
+                status.estado
+                    ?.bloqueado ||
+
+                bloqueioMetaRonaldAtivo ||
+
+                status.estado
+                    ?.desbloqueado_admin_ate
+            ) {
+
+                await desbloquearAutomaticamenteMetaRonald();
+            }
+
+
+            fecharModalMetaRonald();
+
+
+            return status;
+        }
+
+
+        // ====================================================
+        // ANDRESSA LIBEROU TEMPORARIAMENTE
+        // ====================================================
+
+        if (
+            status.overrideAtivo
+        ) {
+
+            desativarBloqueioVisualMetaRonald();
+
+            fecharModalMetaRonald();
+
+
+            return status;
+        }
+
+
+        // ====================================================
+        // DESBLOQUEIO ADMINISTRATIVO EXPIROU
+        //
+        // A pendência não foi apagada.
+        // ====================================================
+
+        if (
+            status.overrideExpirado &&
+            !status.estado
+                ?.bloqueado
+        ) {
+
+            await bloquearMetaRonald(
+                'O desbloqueio administrativo expirou e a meta continua pendente.',
+                status
+            );
+
+
+            return status;
+        }
+
+
+        // ====================================================
+        // JÁ ESTÁ BLOQUEADO NO BANCO
+        // ====================================================
+
+        if (
+            status.estado
+                ?.bloqueado
+        ) {
+
+            ativarBloqueioVisualMetaRonald(
+                status,
+                status.estado
+                    ?.motivo_bloqueio
+            );
+
+
+            return status;
+        }
+
+
+        // ====================================================
+        // NÃO BLOQUEADO:
+        // APENAS MOSTRA AVISO
+        // ====================================================
+
+        desativarBloqueioVisualMetaRonald();
+
+
+        if (
+            mostrarAviso
+        ) {
+
+            mostrarModalMetaRonald(
+                status
+            );
+        }
+
+
+        return status;
+
+
+    } catch (error) {
+
+        console.error(
+            `❌ Erro verificando meta Ronald (${motivo}):`,
+            error
+        );
+
+
+        return null;
+
+
+    } finally {
+
+        verificacaoMetaRonaldEmAndamento =
+            false;
+    }
+}
+
+
+// ============================================================
+// INICIAR CONTROLE QUANDO RONALD ENTRA
+// ============================================================
+
+async function inicializarControleMetaRonald() {
+
+    if (
+        !currentUser ||
+        currentUser.username !==
+        META_RONALD_CONFIG.username
+    ) {
+
+        return;
+    }
+
+
+    const conectado =
+        await aguardarSupabaseMetaRonald();
+
+
+    if (!conectado) {
+
+        console.warn(
+            'Supabase indisponível para controle da meta Ronald'
+        );
+
+        return;
+    }
+
+
+    await verificarMetaRonald(
+        {
+
+            mostrarAviso:
+                true,
+
+            motivo:
+                'login'
+
+        }
+    );
+}
+
+
+// ============================================================
+// ENCERRAR CONTROLE AO FAZER LOGOUT
+// ============================================================
+
+function finalizarControleMetaRonaldSessao() {
+
+    fecharModalMetaRonald();
+
+    desativarBloqueioVisualMetaRonald();
+
+
+    const painel =
+        document.getElementById(
+            'painelMetaRonaldModal'
+        );
+
+
+    if (painel) {
+        painel.remove();
+    }
+
+
+    ultimoStatusMetaRonald =
+        null;
+
+
+    verificacaoMetaRonaldEmAndamento =
+        false;
+}
+
+
+// ============================================================
+// BLOQUEAR QUALQUER OUTRA AÇÃO ENQUANTO RONALD ESTIVER BLOQUEADO
+// ============================================================
+
+function elementoPermitidoDuranteBloqueioMetaRonald(
+    elemento
+) {
+
+    if (!elemento) {
+        return true;
+    }
+
+
+    // ========================================================
+    // MODAIS QUE FAZEM PARTE DA CONFERÊNCIA
+    // ========================================================
+
+    if (
+        elemento.closest(
+            '#viewOSModal'
+        ) ||
+
+        elemento.closest(
+            '#photoViewerModal'
+        ) ||
+
+        elemento.closest(
+            '#rejeitarOSModal'
+        ) ||
+
+        elemento.closest(
+            '#ronaldMetaBloqueioBanner'
+        )
+    ) {
+
+        return true;
+    }
+
+
+    // ========================================================
+    // LOGOUT CONTINUA PERMITIDO
+    // ========================================================
+
+    if (
+        elemento.id ===
+        'logoutBtn'
+    ) {
+
+        return true;
+    }
+
+
+    const acionavel =
+        elemento.closest(
+            'button, a, input, select, textarea, [onclick]'
+        );
+
+
+    if (!acionavel) {
+
+        return true;
+    }
+
+
+    if (
+        acionavel.id ===
+            'buscaOS' ||
+
+        acionavel.id ===
+            'btnOSAnterior' ||
+
+        acionavel.id ===
+            'btnOSProxima' ||
+
+        acionavel.id ===
+            'itensPorPaginaOS'
+    ) {
+
+        return true;
+    }
+
+
+    const onclick =
+        acionavel.getAttribute(
+            'onclick'
+        ) ||
+        '';
+
+
+    const permitidos = [
+
+        'conferirOS',
+
+        'viewOrderDetails',
+
+        'viewOrderPhotos',
+
+        'abrirRejeitarModal',
+
+        'confirmarRejeicaoOS',
+
+        'closeRejeitarModal',
+
+        'closeViewOSModal',
+
+        'closePhotoViewer',
+
+        "'nao_conferidas'",
+
+        'mudarItensPorPaginaOS'
+
+    ];
+
+
+    if (
+        permitidos.some(
+            item =>
+                onclick.includes(
+                    item
+                )
+        )
+    ) {
+
+        return true;
+    }
+
+
+    return false;
+}
+
+
+// ============================================================
+// INSTALAR GUARD GLOBAL
+// ============================================================
+
+function instalarGuardMetaRonald() {
+
+    if (
+        guardMetaRonaldInstalado
+    ) {
+
+        return;
+    }
+
+
+    guardMetaRonaldInstalado =
+        true;
+
+
+    document.addEventListener(
+        'click',
+        function (
+            event
+        ) {
+
+            if (
+                !bloqueioMetaRonaldAtivo ||
+                !currentUser ||
+                currentUser.username !==
+                    META_RONALD_CONFIG.username
+            ) {
+
+                return;
+            }
+
+
+            if (
+                elementoPermitidoDuranteBloqueioMetaRonald(
+                    event.target
+                )
+            ) {
+
+                return;
+            }
+
+
+            event.preventDefault();
+
+            event.stopPropagation();
+
+            event.stopImmediatePropagation();
+
+
+            showToast(
+                '🔒 Sistema bloqueado. Finalize sua meta de conferência.',
+                'error'
+            );
+
+        },
+        true
+    );
+
+
+    document.addEventListener(
+        'submit',
+        function (
+            event
+        ) {
+
+            if (
+                !bloqueioMetaRonaldAtivo ||
+                !currentUser ||
+                currentUser.username !==
+                    META_RONALD_CONFIG.username
+            ) {
+
+                return;
+            }
+
+
+            if (
+                event.target.closest(
+                    '#rejeitarOSModal'
+                )
+            ) {
+
+                return;
+            }
+
+
+            event.preventDefault();
+
+            event.stopImmediatePropagation();
+
+        },
+        true
+    );
+
+
+    // Bloqueia atalhos como Ctrl+S / Ctrl+P
+    document.addEventListener(
+        'keydown',
+        function (
+            event
+        ) {
+
+            if (
+                !bloqueioMetaRonaldAtivo ||
+                !currentUser ||
+                currentUser.username !==
+                    META_RONALD_CONFIG.username
+            ) {
+
+                return;
+            }
+
+
+            // ESC continua permitido para fechar visualizações
+            if (
+                event.key ===
+                'Escape'
+            ) {
+
+                return;
+            }
+
+
+            if (
+                event.ctrlKey ||
+                event.metaKey
+            ) {
+
+                event.preventDefault();
+
+                event.stopImmediatePropagation();
+            }
+
+        },
+        true
+    );
+}
+
+
+instalarGuardMetaRonald();
+
+
+// ============================================================
+// PAINEL ADMINISTRATIVO DA ANDRESSA
+// ============================================================
+
+window.abrirPainelMetaRonald =
+    async function() {
+
+        if (
+            !currentUser ||
+            currentUser.username !==
+            META_RONALD_CONFIG.adminUsername
+        ) {
+
+            showToast(
+                '⛔ Somente Andressa possui acesso a este controle.',
+                'error'
+            );
+
+            return;
+        }
+
+
+        try {
+
+            const status =
+                await carregarStatusMetaRonald();
+
+
+            let modal =
+                document.getElementById(
+                    'painelMetaRonaldModal'
+                );
+
+
+            if (modal) {
+                modal.remove();
+            }
+
+
+            modal =
+                document.createElement(
+                    'div'
+                );
+
+
+            modal.id =
+                'painelMetaRonaldModal';
+
+
+            modal.style.cssText = `
+                position:fixed;
+                inset:0;
+                background:rgba(0,0,0,.58);
+                z-index:999999;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                padding:20px;
+            `;
+
+
+            const bloqueado =
+                !!status.estado
+                    ?.bloqueado;
+
+
+            let liberacao =
+                'Não';
+
+
+            if (
+                status.overrideAtivo
+            ) {
+
+                liberacao =
+                    new Date(
+                        status.estado
+                            .desbloqueado_admin_ate
+                    ).toLocaleString(
+                        'pt-BR'
+                    );
+            }
+
+
+            modal.innerHTML = `
+
+                <div style="
+                    background:white;
+                    width:100%;
+                    max-width:620px;
+                    border-radius:14px;
+                    overflow:hidden;
+                    box-shadow:0 20px 60px rgba(0,0,0,.3);
+                ">
+
+                    <div style="
+                        padding:20px 24px;
+                        background:linear-gradient(
+                            135deg,
+                            #ff9800,
+                            #f57c00
+                        );
+                        color:white;
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                    ">
+
+                        <div>
+                            <strong style="
+                                font-size:20px;
+                            ">
+                                <i class="fas fa-user-shield"></i>
+                                Controle da Meta — Ronald
+                            </strong>
+                        </div>
+
+
+                        <button
+                            onclick="fecharPainelMetaRonald()"
+                            style="
+                                border:none;
+                                background:transparent;
+                                color:white;
+                                font-size:26px;
+                                cursor:pointer;
+                            "
+                        >
+                            &times;
+                        </button>
+
+                    </div>
+
+
+                    <div style="
+                        padding:24px;
+                    ">
+
+                        <div style="
+                            display:grid;
+                            grid-template-columns:
+                                repeat(2,minmax(0,1fr));
+                            gap:10px;
+                        ">
+
+                            <div style="
+                                background:#f8f9fa;
+                                padding:14px;
+                                border-radius:8px;
+                            ">
+                                Meta diária
+                                <br>
+                                <strong style="font-size:24px;">
+                                    ${status.metaDiaria}
+                                </strong>
+                            </div>
+
+
+                            <div style="
+                                background:#f8f9fa;
+                                padding:14px;
+                                border-radius:8px;
+                            ">
+                                Conferidas hoje
+                                <br>
+                                <strong style="font-size:24px;">
+                                    ${status.conferidasHoje}
+                                </strong>
+                            </div>
+
+
+                            <div style="
+                                background:#fff3cd;
+                                padding:14px;
+                                border-radius:8px;
+                            ">
+                                Pendência anterior
+                                <br>
+                                <strong style="font-size:24px;">
+                                    ${status.pendenciaAnterior}
+                                </strong>
+                            </div>
+
+
+                            <div style="
+                                background:#ffebee;
+                                padding:14px;
+                                border-radius:8px;
+                            ">
+                                Faltam
+                                <br>
+                                <strong style="
+                                    font-size:24px;
+                                    color:#c62828;
+                                ">
+                                    ${status.faltamHoje}
+                                </strong>
+                            </div>
+
+                        </div>
+
+
+                        <div style="
+                            margin-top:15px;
+                            border:1px solid #ddd;
+                            border-radius:8px;
+                            padding:14px;
+                            line-height:1.8;
+                        ">
+
+                            <strong>Meta exigida hoje:</strong>
+                            ${status.exigenciaTotalHoje}
+
+                            <br>
+
+                            <strong>Ignoradas hoje:</strong>
+                            ${status.ignoradasHoje}/3
+
+                            <br>
+
+                            <strong>Dias ignorados na semana:</strong>
+                            ${status.diasIgnoradosSemana}/3
+
+                            <br>
+
+                            <strong>OS disponíveis:</strong>
+                            ${status.osDisponiveis}
+
+                            <br>
+
+                            <strong>Status:</strong>
+
+                            ${
+                                bloqueado
+                                    ? `
+                                        <span style="
+                                            color:#d32f2f;
+                                            font-weight:800;
+                                        ">
+                                            BLOQUEADO
+                                        </span>
+                                    `
+                                    : `
+                                        <span style="
+                                            color:#28a745;
+                                            font-weight:800;
+                                        ">
+                                            LIBERADO
+                                        </span>
+                                    `
+                            }
+
+                            <br>
+
+                            <strong>
+                                Liberação administrativa ativa até:
+                            </strong>
+
+                            ${liberacao}
+
+                        </div>
+
+
+                        ${
+                            bloqueado
+                                ? `
+                                    <button
+                                        onclick="desbloquearRonaldAdmin()"
+                                        style="
+                                            width:100%;
+                                            border:none;
+                                            background:#28a745;
+                                            color:white;
+                                            padding:14px;
+                                            border-radius:8px;
+                                            margin-top:18px;
+                                            cursor:pointer;
+                                            font-weight:800;
+                                            font-size:15px;
+                                        "
+                                    >
+                                        <i class="fas fa-unlock"></i>
+                                        Desbloquear Ronald até o fim do dia
+                                    </button>
+                                `
+                                : ''
+                        }
+
+
+                        <div style="
+                            font-size:12px;
+                            color:#6c757d;
+                            margin-top:15px;
+                        ">
+                            O desbloqueio administrativo não apaga
+                            a pendência de OS. Ele apenas libera
+                            excepcionalmente o sistema até o fim do dia.
+                        </div>
+
+                    </div>
+
+                </div>
+            `;
+
+
+            document.body.appendChild(
+                modal
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                'Erro abrindo painel da meta Ronald:',
+                error
+            );
+
+
+            showToast(
+                '❌ Erro ao carregar controle da meta.',
+                'error'
+            );
+        }
+    };
+
+
+// ============================================================
+// FECHAR PAINEL
+// ============================================================
+
+window.fecharPainelMetaRonald =
+    function() {
+
+        const modal =
+            document.getElementById(
+                'painelMetaRonaldModal'
+            );
+
+
+        if (modal) {
+            modal.remove();
+        }
+    };
+
+
+// ============================================================
+// ANDRESSA DESBLOQUEAR RONALD
+// ============================================================
+
+window.desbloquearRonaldAdmin =
+    async function() {
+
+        if (
+            !currentUser ||
+            currentUser.username !==
+            META_RONALD_CONFIG.adminUsername
+        ) {
+
+            showToast(
+                '⛔ Somente Andressa pode desbloquear Ronald.',
+                'error'
+            );
+
+            return;
+        }
+
+
+        if (
+            !confirm(
+                'Deseja realmente desbloquear Ronald?\n\n' +
+                'A liberação valerá até o final de hoje.\n' +
+                'A pendência de conferências NÃO será apagada.'
+            )
+        ) {
+
+            return;
+        }
+
+
+        try {
+
+            const fimHoje =
+                new Date();
+
+
+            fimHoje.setHours(
+                23,
+                59,
+                59,
+                999
+            );
+
+
+            const {
+                error
+            } =
+                await supabaseClient
+                    .rpc(
+                        'desbloquear_meta_ronald',
+                        {
+
+                            p_admin_username:
+                                currentUser.username,
+
+                            p_ate:
+                                fimHoje
+                                    .toISOString()
+
+                        }
+                    );
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            fecharPainelMetaRonald();
+
+
+            showToast(
+                '🔓 Ronald foi desbloqueado até o fim do dia.',
+                'success'
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                'Erro desbloqueando Ronald:',
+                error
+            );
+
+
+            showToast(
+                '❌ Não foi possível desbloquear Ronald: ' +
+                error.message,
+                'error'
+            );
+        }
+    };
 
 // ===== VARIÁVEIS GLOBAIS =====
 let currentUser = null;
@@ -339,29 +3512,73 @@ document.addEventListener('DOMContentLoaded', function() {
         atualizarVisibilidadeRelatorioColaborador();
         
         // Carregar dados
-        setTimeout(() => {
+        setTimeout(
+    async () => {
+
+        try {
+
+            if (!supabaseClient) {
+
+                initSupabase();
+            }
+
+
             if (supabaseClient) {
-                testSupabaseConnection();
+
+                await testSupabaseConnection();
+
             } else {
+
                 updateCounters();
+
                 renderOrdersTable();
-                // NOVO: Destacar botão de pendentes após renderizar
-                setTimeout(() => highlightActiveFilterButton(), 100);
+
+                setTimeout(
+                    () =>
+                        highlightActiveFilterButton(),
+                    100
+                );
             }
-            
-            // Configurar botões
-            const reembolsosBtn = document.getElementById('reembolsosBtn');
+
+
+            atualizarVisibilidadeMenu();
+
+
+            const reembolsosBtn =
+                document.getElementById(
+                    'reembolsosBtn'
+                );
+
+
             if (reembolsosBtn) {
-                reembolsosBtn.onclick = function() {
-                    abrirSistemaReembolsos();
-                };
+
+                reembolsosBtn.onclick =
+                    function() {
+
+                        abrirSistemaReembolsos();
+
+                    };
             }
-            
+
+
             if (logoutBtn) {
-                logoutBtn.onclick = handleLogout;
+
+                logoutBtn.onclick =
+                    handleLogout;
             }
-            
-        }, 500);
+
+
+        } catch (error) {
+
+            console.error(
+                '❌ Erro restaurando sessão:',
+                error
+            );
+        }
+
+    },
+    500
+);
         
     } else {
 
@@ -670,35 +3887,184 @@ function clearSessionStorage() {
 }
 
 function startSessionTimer() {
+
     // Limpar timers anteriores
     if (sessionTimer) {
-        clearTimeout(sessionTimer);
+
+        clearTimeout(
+            sessionTimer
+        );
+
+        sessionTimer =
+            null;
     }
+
+
     if (refreshTokenInterval) {
-        clearInterval(refreshTokenInterval);
+
+        clearInterval(
+            refreshTokenInterval
+        );
+
+        refreshTokenInterval =
+            null;
     }
-    
-    // Timer para logout automático após 24 horas
-    sessionTimer = setTimeout(() => {
-        showToast('⏰ Sua sessão expirou por inatividade', 'warning');
-        handleLogout();
-    }, SESSION_TIMEOUT);
-    
-    // Atualizar sessão a cada 30 minutos para manter ativa
-    refreshTokenInterval = setInterval(() => {
-        if (currentUser) {
-            console.log('🔄 Atualizando sessão...');
-            saveSessionToStorage();
-            
-            // Mostrar notificação a cada 4 horas
-            const hoursOnline = Math.floor((Date.now() - JSON.parse(localStorage.getItem('wheeltech_session')).loginTime) / (1000 * 60 * 60));
-            if (hoursOnline > 0 && hoursOnline % 4 === 0) {
-                showToast(`⏰ Você está online há ${hoursOnline} horas`, 'info');
-            }
-        }
-    }, 30 * 60 * 1000); // 30 minutos
-    
-    console.log('⏰ Timer de sessão iniciado (24 horas)');
+
+
+    // ========================================================
+    // TIMER DE EXPIRAÇÃO DA SESSÃO
+    // ========================================================
+
+    sessionTimer =
+        setTimeout(
+            () => {
+
+                showToast(
+                    '⏰ Sua sessão expirou por inatividade',
+                    'warning'
+                );
+
+
+                handleLogout();
+
+            },
+            SESSION_TIMEOUT
+        );
+
+
+    // ========================================================
+    // VERIFICAÇÃO INICIAL DA META
+    //
+    // Como startSessionTimer é chamado tanto no login
+    // quanto na restauração de sessão,
+    // isso cobre os dois casos.
+    // ========================================================
+
+    if (
+        currentUser &&
+        currentUser.username ===
+        META_RONALD_CONFIG.username
+    ) {
+
+        setTimeout(
+            () => {
+
+                inicializarControleMetaRonald();
+
+            },
+            1200
+        );
+    }
+
+
+    // ========================================================
+    // INTERVALO A CADA 30 MINUTOS
+    // ========================================================
+
+    refreshTokenInterval =
+        setInterval(
+            async () => {
+
+                if (!currentUser) {
+                    return;
+                }
+
+
+                console.log(
+                    '🔄 Atualizando sessão...'
+                );
+
+
+                saveSessionToStorage();
+
+
+                // =================================================
+                // META RONALD
+                // =================================================
+
+                if (
+                    currentUser.username ===
+                    META_RONALD_CONFIG.username
+                ) {
+
+                    await verificarMetaRonald(
+                        {
+
+                            mostrarAviso:
+                                true,
+
+                            motivo:
+                                '30_minutos'
+
+                        }
+                    );
+                }
+
+
+                // =================================================
+                // MENSAGEM ANTIGA DE TEMPO ONLINE
+                // =================================================
+
+                try {
+
+                    const sessao =
+                        JSON.parse(
+                            localStorage.getItem(
+                                'wheeltech_session'
+                            )
+                        );
+
+
+                    if (
+                        sessao &&
+                        sessao.loginTime
+                    ) {
+
+                        const hoursOnline =
+                            Math.floor(
+                                (
+                                    Date.now() -
+                                    sessao.loginTime
+                                ) /
+                                (
+                                    1000 *
+                                    60 *
+                                    60
+                                )
+                            );
+
+
+                        if (
+                            hoursOnline > 0 &&
+                            hoursOnline % 4 === 0
+                        ) {
+
+                            showToast(
+                                `⏰ Você está online há ${hoursOnline} horas`,
+                                'info'
+                            );
+                        }
+                    }
+
+                } catch (
+                    error
+                ) {
+
+                    console.warn(
+                        'Erro calculando tempo online:',
+                        error
+                    );
+                }
+
+            },
+            META_RONALD_CONFIG
+                .intervaloVerificacao
+        );
+
+
+    console.log(
+        '⏰ Timer de sessão e meta iniciado'
+    );
 }
 
 function resetSessionTimer() {
@@ -3260,90 +6626,274 @@ function abrirSistemaReembolsos() {
     showToast('💰 Sistema de Reclamações carregado', 'info');
 }
 
-// ============================================
-// FUNÇÃO DE LOGOUT (ATUALIZADA)
-// ============================================
-function handleLogout() {
-    if (confirm('Deseja realmente sair do sistema?')) {
-        // Limpar timers
-        if (sessionTimer) {
-            clearTimeout(sessionTimer);
-            sessionTimer = null;
-        }
-        if (sessionWarningTimer) {
-            clearTimeout(sessionWarningTimer);
-            sessionWarningTimer = null;
-        }
-        if (refreshTokenInterval) {
-            clearInterval(refreshTokenInterval);
-            refreshTokenInterval = null;
-        }
-        
-        isSessionExpiring = false;
-        
-        // Remover modal de aviso se existir
-        const warningModal = document.getElementById('sessionWarningModal');
-        if (warningModal) warningModal.remove();
-        
-        // Limpar localStorage
-        clearSessionStorage();
-        
-        // Limpar variáveis globais
-        currentUser = null;
-        window.currentUser = null;
-        orders = [];
-        selectedPhotos = [];
-        
-        // Limpar tokens do Mercado Livre
-        localStorage.removeItem('ml_access_token');
-        localStorage.removeItem('ml_refresh_token');
-        localStorage.removeItem('ml_token_expiry');
-        localStorage.removeItem('ml_token_data');
-        localStorage.removeItem('ml_vendas');
-        
-        // --- CORREÇÃO AQUI ---
-        // 1. Esconder TODOS os sistemas, inclusive o menu
-        const sistemas = [
-            'menuSystem', 'mainSystem', 'salesSystem', 'reembolsosSystem',
-            'caixaSystem', 'precificacaoSystem', 'reviewsSystem',
-            'folgasSystem', 'shippingSystem', 'estoqueSystem', 'entradasSystem',
-            'estoqueGestaoSystem', 'perguntasSystem', 'feedbackSystem',
-            'nfeSystem', 'historicoAcessosScreen', 'promocoesSystem'
-        ];
-        sistemas.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.classList.add('hidden');
-        });
-        
-        // 2. Mostrar a tela de login
-        const loginScreen = document.getElementById('loginScreen');
-        if (loginScreen) loginScreen.classList.remove('hidden');
-        
-        // 3. Ativar o fundo de login
-        document.body.classList.add('login-active');
-        // -------------------------------------------------
-        
-        // Fechar modais abertos
-        closeAllModals();
-        
-        // Limpar formulário de login
-        const loginForm = document.getElementById('loginForm');
-        if (loginForm) loginForm.reset();
-        
-        // Foco no usuário
-        const usernameInput = document.getElementById('username');
-        if (usernameInput) setTimeout(() => usernameInput.focus(), 100);
-        
-        showToast('👋 Até logo!', 'info');
-    }
-}
+// ============================================================
+// LOGOUT
+// ============================================================
 
-// Adicionar ao final do setupEventListeners
-setInterval(() => {
-    if (currentUser && document.getElementById('mlTokenStatusUI')) {
-        updateMLTokenStatusUI();
+function handleLogout() {
+
+    if (
+        !confirm(
+            'Deseja realmente sair do sistema?'
+        )
+    ) {
+
+        return;
     }
-}, 60000); // Atualizar a cada minuto
+
+
+    // ========================================================
+    // LIMPAR CONTROLE VISUAL DA META
+    //
+    // IMPORTANTE:
+    // NÃO altera o bloqueio do banco.
+    // ========================================================
+
+    finalizarControleMetaRonaldSessao();
+
+
+    // ========================================================
+    // TIMERS DA SESSÃO
+    // ========================================================
+
+    if (sessionTimer) {
+
+        clearTimeout(
+            sessionTimer
+        );
+
+
+        sessionTimer =
+            null;
+    }
+
+
+    if (sessionWarningTimer) {
+
+        clearTimeout(
+            sessionWarningTimer
+        );
+
+
+        sessionWarningTimer =
+            null;
+    }
+
+
+    if (refreshTokenInterval) {
+
+        clearInterval(
+            refreshTokenInterval
+        );
+
+
+        refreshTokenInterval =
+            null;
+    }
+
+
+    isSessionExpiring =
+        false;
+
+
+    // Remover modal antigo de sessão
+    const warningModal =
+        document.getElementById(
+            'sessionWarningModal'
+        );
+
+
+    if (warningModal) {
+        warningModal.remove();
+    }
+
+
+    // ========================================================
+    // LOCAL STORAGE
+    // ========================================================
+
+    clearSessionStorage();
+
+
+    // ========================================================
+    // VARIÁVEIS
+    // ========================================================
+
+    currentUser =
+        null;
+
+
+    window.currentUser =
+        null;
+
+
+    orders =
+        [];
+
+
+    selectedPhotos =
+        [];
+
+
+    // ========================================================
+    // MERCADO LIVRE
+    // ========================================================
+
+    localStorage.removeItem(
+        'ml_access_token'
+    );
+
+
+    localStorage.removeItem(
+        'ml_refresh_token'
+    );
+
+
+    localStorage.removeItem(
+        'ml_token_expiry'
+    );
+
+
+    localStorage.removeItem(
+        'ml_token_data'
+    );
+
+
+    localStorage.removeItem(
+        'ml_vendas'
+    );
+
+
+    // ========================================================
+    // ESCONDER SISTEMAS
+    // ========================================================
+
+    const sistemas = [
+
+        'menuSystem',
+
+        'mainSystem',
+
+        'salesSystem',
+
+        'reembolsosSystem',
+
+        'caixaSystem',
+
+        'precificacaoSystem',
+
+        'reviewsSystem',
+
+        'folgasSystem',
+
+        'shippingSystem',
+
+        'estoqueSystem',
+
+        'entradasSystem',
+
+        'estoqueGestaoSystem',
+
+        'perguntasSystem',
+
+        'feedbackSystem',
+
+        'nfeSystem',
+
+        'historicoAcessosScreen',
+
+        'promocoesSystem'
+
+    ];
+
+
+    sistemas.forEach(
+        id => {
+
+            const el =
+                document.getElementById(
+                    id
+                );
+
+
+            if (el) {
+
+                el.classList.add(
+                    'hidden'
+                );
+            }
+
+        }
+    );
+
+
+    // ========================================================
+    // LOGIN
+    // ========================================================
+
+    const telaLogin =
+        document.getElementById(
+            'loginScreen'
+        );
+
+
+    if (telaLogin) {
+
+        telaLogin.classList.remove(
+            'hidden'
+        );
+    }
+
+
+    document.body.classList.add(
+        'login-active'
+    );
+
+
+    // ========================================================
+    // MODAIS
+    // ========================================================
+
+    closeAllModals();
+
+
+    // ========================================================
+    // FORM LOGIN
+    // ========================================================
+
+    const formLogin =
+        document.getElementById(
+            'loginForm'
+        );
+
+
+    if (formLogin) {
+
+        formLogin.reset();
+    }
+
+
+    const usernameInput =
+        document.getElementById(
+            'username'
+        );
+
+
+    if (usernameInput) {
+
+        setTimeout(
+            () =>
+                usernameInput.focus(),
+            100
+        );
+    }
+
+
+    showToast(
+        '👋 Até logo!',
+        'info'
+    );
+}
 
 function closeAllModals() {
     const modals = [
@@ -3364,140 +6914,434 @@ function closeAllModals() {
 }
 
 // ============================================
-// FUNÇÃO TESTAR CONEXÃO SUPABASE
+// TESTAR CONEXÃO SUPABASE
+// + CARREGAR OS
+// + VERIFICAR META RONALD
 // ============================================
+
 async function testSupabaseConnection() {
-    showToast('🔗 Testando conexão...', 'info');
+
+    showToast(
+        '🔗 Testando conexão...',
+        'info'
+    );
+
+
     if (testSupabaseBtn) {
-        testSupabaseBtn.innerHTML = '<span class="spinner"></span> Testando...';
-        testSupabaseBtn.disabled = true;
+
+        testSupabaseBtn.innerHTML =
+            '<span class="spinner"></span> Testando...';
+
+        testSupabaseBtn.disabled =
+            true;
     }
-    
+
+
     try {
+
+        // ====================================================
+        // GARANTIR SUPABASE
+        // ====================================================
+
         if (!supabaseClient) {
+
             initSupabase();
         }
-        
-        const { data, error } = await supabaseClient
-            .from('ordens_service')
-            .select('id')
-            .limit(1);
-        
-        if (error) throw error;
-        
-        showToast('✅ Conexão estabelecida!', 'success');
-        if (syncStatus) {
-            syncStatus.textContent = 'Conectado';
-            syncStatus.className = 'badge badge-success ml-2';
+
+
+        if (!supabaseClient) {
+
+            throw new Error(
+                'Supabase não inicializado'
+            );
         }
-        
+
+
+        // ====================================================
+        // TESTAR BANCO
+        // ====================================================
+
+        const {
+            data,
+            error
+        } =
+            await supabaseClient
+                .from(
+                    'ordens_service'
+                )
+                .select('id')
+                .limit(1);
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        showToast(
+            '✅ Conexão estabelecida!',
+            'success'
+        );
+
+
+        if (syncStatus) {
+
+            syncStatus.textContent =
+                'Conectado';
+
+            syncStatus.className =
+                'badge badge-success ml-2';
+        }
+
+
+        // ====================================================
+        // CARREGAR OS
+        // ====================================================
+
         await loadOrders();
-        
-    } catch (error) {
-        console.error('❌ Erro de conexão:', error);
-        showToast('❌ Falha na conexão', 'error');
-        if (syncStatus) {
-            syncStatus.textContent = 'Desconectado';
-            syncStatus.className = 'badge badge-danger ml-2';
+
+
+        // ====================================================
+        // ATUALIZAR MENU
+        // ====================================================
+
+        atualizarVisibilidadeMenu();
+
+
+        // ====================================================
+        // VERIFICAR META DO RONALD
+        //
+        // AGORA A VERIFICAÇÃO ACONTECE SOMENTE
+        // DEPOIS DO SUPABASE ESTAR REALMENTE CONECTADO.
+        // ====================================================
+
+        if (
+            currentUser &&
+            String(
+                currentUser.username
+            )
+                .toLowerCase() ===
+                'ronald'
+        ) {
+
+            console.log(
+                '🎯 Login do Ronald detectado. Verificando meta...'
+            );
+
+
+            const statusMeta =
+                await verificarMetaRonald(
+                    {
+
+                        mostrarAviso:
+                            true,
+
+                        motivo:
+                            'apos_conexao_supabase'
+
+                    }
+                );
+
+
+            console.log(
+                '🎯 Resultado da meta Ronald:',
+                statusMeta
+            );
         }
-        
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro de conexão:',
+            error
+        );
+
+
+        showToast(
+            '❌ Falha na conexão',
+            'error'
+        );
+
+
+        if (syncStatus) {
+
+            syncStatus.textContent =
+                'Desconectado';
+
+            syncStatus.className =
+                'badge badge-danger ml-2';
+        }
+
+
         updateCounters();
+
         renderOrdersTable();
+
+
     } finally {
+
         if (testSupabaseBtn) {
-            testSupabaseBtn.innerHTML = '<i class="fas fa-database"></i> Testar Conexão';
-            testSupabaseBtn.disabled = false;
+
+            testSupabaseBtn.innerHTML =
+                '<i class="fas fa-database"></i> Testar Conexão';
+
+            testSupabaseBtn.disabled =
+                false;
         }
     }
 }
 
 // ============================================
-// FUNÇÃO CARREGAR ORDENS (ATUALIZADA COM FOTOS)
+// CARREGAR ORDENS
 // ============================================
 async function loadOrders() {
+
     if (!currentUser) {
-        showToast('⚠️ Faça login primeiro', 'warning');
+
+        showToast(
+            '⚠️ Faça login primeiro',
+            'warning'
+        );
+
         return;
     }
-    
-    showToast('🔄 Carregando ordens...', 'info');
+
+
+    showToast(
+        '🔄 Carregando ordens...',
+        'info'
+    );
+
+
     if (reloadBtn) {
-        reloadBtn.innerHTML = '<span class="spinner"></span> Carregando...';
+
+        reloadBtn.innerHTML =
+            '<span class="spinner"></span> Carregando...';
+
         reloadBtn.disabled = true;
     }
-    
+
+
     try {
+
         if (!supabaseClient) {
-            throw new Error('Supabase não conectado');
+
+            throw new Error(
+                'Supabase não conectado'
+            );
         }
-        
-        const { data, error } = await supabaseClient
-            .from('ordens_service')
-            .select('*')
-            .order('data_criacao', { ascending: false });
-        
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-            orders = data.map(order => ({
-                id: order.id,
-                user_notified: order.user_notified || false,
-                code: order.codigo || `OS-${order.id.toString().padStart(4, '0')}`,
-                productName: order.produto_nome || 'Sem nome',
-                linkAnuncio: order.link_anuncio || '',
-                responsibleName: order.responsavel || currentUser.name,
-                urgency: order.urgencia || 'normal',
-                osType: order.tipo_os || 'normal',
-                status: order.status || 'pendente',
-                photoType: order.tipo_foto || 'estudio',
-                skus: order.skus || [],
-                observations: order.observacoes || '',
-                photos: order.fotos || [],
-                photosTaken: order.qtd_fotos || 0,
-                editsMade: order.qtd_edicoes || 0,
-                createdBy: order.criado_por || 'Sistema',
-                createdAt: order.data_criacao,
-                completionDate: order.data_conclusao,
-                updatedAt: order.ultima_atualizacao || order.data_criacao,
-                conferido: order.conferido || false,
-                conferidoPor: order.conferido_por || null,
-                dataConferencia: order.data_conferencia || null,
-                valorAnuncio: order.valor_anuncio || 0,
-                descricaoAnuncio: order.descricao_anuncio || '',
-                linkNovoAnuncio: order.link_novo_anuncio || '',
-                precisaFoto: order.precisa_foto || 'nao',
-                prazo_horas: order.prazo_horas || null,
-                motivo_rejeicao: order.motivo_rejeicao || null,
-                rejeitado_por: order.rejeitado_por || null,
-                data_rejeicao: order.data_rejeicao || null,
-                // NOVOS CAMPOS
-                prazo_esperado: order.prazo_esperado || null,
-                anuncio_criado: order.anuncio_criado || false,
-                anuncio_criado_por: order.anuncio_criado_por || null,
-                anuncio_criado_data: order.anuncio_criado_data || null
-            }));
-            
-            orderCounter = orders.length > 0 ? Math.max(...orders.map(o => parseInt(o.id))) + 1 : 1;
-            
+
+
+        const {
+            data,
+            error
+        } =
+            await supabaseClient
+                .from('ordens_service')
+                .select('*')
+                .order(
+                    'data_criacao',
+                    {
+                        ascending: false
+                    }
+                );
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        if (
+            data &&
+            data.length > 0
+        ) {
+
+            orders =
+                data.map(order => ({
+
+                    id:
+                        order.id,
+
+                    user_notified:
+                        order.user_notified || false,
+
+                    code:
+                        order.codigo ||
+                        `OS-${order.id
+                            .toString()
+                            .padStart(4, '0')}`,
+
+                    productName:
+                        order.produto_nome ||
+                        'Sem nome',
+
+                    linkAnuncio:
+                        order.link_anuncio || '',
+
+                    responsibleName:
+                        order.responsavel ||
+                        currentUser.name,
+
+                    urgency:
+                        order.urgencia ||
+                        'normal',
+
+                    osType:
+                        order.tipo_os ||
+                        'normal',
+
+                    status:
+                        order.status ||
+                        'pendente',
+
+                    photoType:
+                        order.tipo_foto ||
+                        'estudio',
+
+                    skus:
+                        order.skus || [],
+
+                    observations:
+                        order.observacoes || '',
+
+                    photos:
+                        order.fotos || [],
+
+                    photosTaken:
+                        Number(
+                            order.qtd_fotos
+                        ) || 0,
+
+                    editsMade:
+                        Number(
+                            order.qtd_edicoes
+                        ) || 0,
+
+                    createdBy:
+                        order.criado_por ||
+                        'Sistema',
+
+                    createdAt:
+                        order.data_criacao,
+
+                    // NOVO
+                    startedAt:
+                        order.data_inicio ||
+                        null,
+
+                    completionDate:
+                        order.data_conclusao ||
+                        null,
+
+                    updatedAt:
+                        order.ultima_atualizacao ||
+                        order.data_criacao,
+
+                    conferido:
+                        order.conferido ||
+                        false,
+
+                    conferidoPor:
+                        order.conferido_por ||
+                        null,
+
+                    dataConferencia:
+                        order.data_conferencia ||
+                        null,
+
+                    valorAnuncio:
+                        order.valor_anuncio ||
+                        0,
+
+                    descricaoAnuncio:
+                        order.descricao_anuncio ||
+                        '',
+
+                    linkNovoAnuncio:
+                        order.link_novo_anuncio ||
+                        '',
+
+                    precisaFoto:
+                        order.precisa_foto ||
+                        'nao',
+
+                    prazo_horas:
+                        order.prazo_horas ||
+                        null,
+
+                    motivo_rejeicao:
+                        order.motivo_rejeicao ||
+                        null,
+
+                    rejeitado_por:
+                        order.rejeitado_por ||
+                        null,
+
+                    data_rejeicao:
+                        order.data_rejeicao ||
+                        null,
+
+                    prazo_esperado:
+                        order.prazo_esperado ||
+                        null,
+
+                    anuncio_criado:
+                        order.anuncio_criado ||
+                        false,
+
+                    anuncio_criado_por:
+                        order.anuncio_criado_por ||
+                        null,
+
+                    anuncio_criado_data:
+                        order.anuncio_criado_data ||
+                        null
+
+                }));
+
+
+            orderCounter =
+                orders.length > 0
+                    ? Math.max(
+                        ...orders.map(
+                            o => parseInt(o.id)
+                        )
+                    ) + 1
+                    : 1;
+
+
             updateOSNotificationBell();
-            showToast(`✅ ${orders.length} ordens carregadas`, 'success');
+
+
+            showToast(
+                `✅ ${orders.length} ordens carregadas`,
+                'success'
+            );
+
         } else {
             orders = [];
             showToast('📭 Nenhuma ordem encontrada', 'info');
         }
-        
+
         updateCounters();
         renderOrdersTable();
-        
+
+
     } catch (error) {
         console.error('❌ Erro ao carregar ordens:', error);
         showToast('❌ Erro ao carregar ordens', 'error');
+
         orders = [];
+
         updateCounters();
         renderOrdersTable();
+
     } finally {
         if (reloadBtn) {
-            reloadBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Recarregar';
+            reloadBtn.innerHTML =
+                '<i class="fas fa-sync-alt"></i> Recarregar';
             reloadBtn.disabled = false;
         }
     }
@@ -3722,136 +7566,507 @@ async function salvarHistoricoOS(osId, dadosAntes, dadosDepois, alteradoPor) {
     if (error) console.error('Erro ao salvar histórico:', error);
 }
 
+// ============================================
+// SALVAR OS NO SUPABASE
+// ============================================
 async function saveOrderToSupabase(order) {
+
     try {
-        // Preparar fotos para salvar
+
         let fotosParaSalvar = [];
-        if (order.photos && order.photos.length > 0) {
-            fotosParaSalvar = order.photos.map(photo => ({
-                name: photo.name,
-                size: photo.size,
-                type: photo.type,
-                data: photo.data,
-                isLink: photo.isLink || false
-            }));
+
+
+        if (
+            order.photos &&
+            order.photos.length > 0
+        ) {
+
+            fotosParaSalvar =
+                order.photos.map(
+                    photo => ({
+
+                        name:
+                            photo.name,
+
+                        size:
+                            photo.size,
+
+                        type:
+                            photo.type,
+
+                        data:
+                            photo.data,
+
+                        isLink:
+                            photo.isLink || false
+
+                    })
+                );
         }
-        
+
+
         const orderData = {
-            codigo: order.code,
-            produto_nome: order.productName,
-            responsavel: order.responsibleName,
-            link_anuncio: order.linkAnuncio || '',
-            criado_por: order.createdBy,
-            urgencia: order.urgency,
-            tipo_os: order.osType,
-            status: order.status,
-            tipo_foto: order.photoType,
-            observacoes: order.observations,
-            skus: order.skus,
-            fotos: fotosParaSalvar,
-            qtd_fotos: order.photosTaken,
-            user_notified: order.user_notified !== undefined ? order.user_notified : false,
-            qtd_edicoes: order.editsMade,
-            conferido: order.conferido || false,
-            conferido_por: order.conferidoPor || null,
-            data_conferencia: order.dataConferencia || null,
-            valor_anuncio: order.valorAnuncio || 0,
-            descricao_anuncio: order.descricaoAnuncio || '',
-            link_novo_anuncio: order.linkNovoAnuncio || '',
-            precisa_foto: order.precisaFoto || 'nao',
-            data_criacao: new Date().toISOString(),
-            ultima_atualizacao: new Date().toISOString(),
-            // NOVOS CAMPOS
-            prazo_esperado: order.prazo_esperado || null,
-            anuncio_criado: order.anuncio_criado || false,
-            prazo_horas: order.prazo_horas || null,
-            prazo_esperado: order.prazo_esperado || null,
-            anuncio_criado_por: order.anuncio_criado_por || null,
-            anuncio_criado_data: order.anuncio_criado_data || null
+
+            codigo:
+                order.code,
+
+            produto_nome:
+                order.productName,
+
+            responsavel:
+                order.responsibleName,
+
+            link_anuncio:
+                order.linkAnuncio || '',
+
+            criado_por:
+                order.createdBy,
+
+            urgencia:
+                order.urgency,
+
+            tipo_os:
+                order.osType,
+
+            status:
+                order.status,
+
+            tipo_foto:
+                order.photoType,
+
+            observacoes:
+                order.observations,
+
+            skus:
+                order.skus,
+
+            fotos:
+                fotosParaSalvar,
+
+            qtd_fotos:
+                Number(
+                    order.photosTaken
+                ) || 0,
+
+            qtd_edicoes:
+                Number(
+                    order.editsMade
+                ) || 0,
+
+            user_notified:
+                order.user_notified !== undefined
+                    ? order.user_notified
+                    : false,
+
+            conferido:
+                order.conferido || false,
+
+            conferido_por:
+                order.conferidoPor || null,
+
+            data_conferencia:
+                order.dataConferencia || null,
+
+            valor_anuncio:
+                order.valorAnuncio || 0,
+
+            descricao_anuncio:
+                order.descricaoAnuncio || '',
+
+            link_novo_anuncio:
+                order.linkNovoAnuncio || '',
+
+            precisa_foto:
+                order.precisaFoto || 'nao',
+
+            // PRESERVA A DATA ORIGINAL
+            data_criacao:
+                order.createdAt ||
+                new Date().toISOString(),
+
+            data_conclusao:
+                order.completionDate ||
+                null,
+
+            ultima_atualizacao:
+                new Date().toISOString(),
+
+            prazo_horas:
+                order.prazo_horas ||
+                null,
+
+            prazo_esperado:
+                order.prazo_esperado ||
+                null,
+
+            anuncio_criado:
+                order.anuncio_criado ||
+                false,
+
+            anuncio_criado_por:
+                order.anuncio_criado_por ||
+                null,
+
+            anuncio_criado_data:
+                order.anuncio_criado_data ||
+                null
         };
-        
+
+
+        // Só mexe em data_inicio
+        // quando o objeto realmente possui esse campo.
+        //
+        // Isso evita apagar data_inicio
+        // durante uma edição antiga.
+        if (
+            Object.prototype
+                .hasOwnProperty
+                .call(
+                    order,
+                    'startedAt'
+                )
+        ) {
+
+            orderData.data_inicio =
+                order.startedAt || null;
+        }
+
+
         let result;
-        
+
+
         if (editingOrderId) {
-            const { data, error } = await supabaseClient
-                .from('ordens_service')
-                .update(orderData)
-                .eq('id', editingOrderId)
-                .select();
-            
-            if (error) throw error;
-            result = { success: true, data };
+
+            const {
+                data,
+                error
+            } =
+                await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .update(
+                        orderData
+                    )
+                    .eq(
+                        'id',
+                        editingOrderId
+                    )
+                    .select();
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            result = {
+                success: true,
+                data
+            };
+
+
         } else {
-            const { data, error } = await supabaseClient
-                .from('ordens_service')
-                .insert([orderData])
-                .select();
-            
-            if (error) throw error;
-            result = { success: true, data };
-            
-            if (data && data[0]) {
-                order.id = data[0].id;
+
+            // Nova OS ainda não iniciou
+            orderData.data_inicio =
+                order.startedAt ||
+                null;
+
+
+            const {
+                data,
+                error
+            } =
+                await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .insert([
+                        orderData
+                    ])
+                    .select();
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            result = {
+                success: true,
+                data
+            };
+
+
+            if (
+                data &&
+                data[0]
+            ) {
+
+                order.id =
+                    data[0].id;
             }
         }
-        
+
+
         return result;
-        
+
+
     } catch (error) {
-        console.error('❌ Erro no Supabase:', error);
-        return { success: false, error: error.message };
+
+        console.error(
+            '❌ Erro no Supabase:',
+            error
+        );
+
+
+        return {
+
+            success: false,
+
+            error:
+                error.message
+
+        };
     }
 }
 
-// ============================================
-// FUNÇÃO PARA CONFERIR OS
-// ============================================
-window.conferirOS = async function(orderId) {
-    const order = orders.find(o => o.id == orderId);
-    
-    if (!order) {
-        showToast('Ordem não encontrada', 'error');
-        return;
-    }
-    
-    // Verificar se a OS está concluída
-    if (order.status !== 'concluida') {
-        showToast('⚠️ Apenas OS concluídas podem ser conferidas', 'warning');
-        return;
-    }
-    
-    // Verificar se já foi conferida
-    if (order.conferido) {
-        showToast('⚠️ Esta OS já foi conferida', 'warning');
-        return;
-    }
-    
-    if (confirm(`Deseja marcar a OS "${order.productName}" como conferida?\n\nVocê não poderá desfazer esta ação.`)) {
-        try {
-            if (supabaseClient) {
-                await supabaseClient.from('ordens_service')
-                    .update({ 
-                        conferido: true,
-                        conferido_por: currentUser.name,
-                        data_conferencia: new Date().toISOString(),
-                        ultima_atualizacao: new Date().toISOString()
-                    })
-                    .eq('id', orderId);
-            }
-            
-            order.conferido = true;
-            order.conferidoPor = currentUser.name;
-            order.dataConferencia = new Date().toISOString();
-            
-            updateCounters();
-            renderOrdersTable();
-            showToast(`✅ OS conferida por ${currentUser.name}`, 'success');
-        } catch (error) {
-            console.error('❌ Erro ao conferir OS:', error);
-            showToast('❌ Erro ao conferir OS', 'error');
+// ============================================================
+// CONFERIR OS
+// ============================================================
+
+window.conferirOS =
+    async function(orderId) {
+
+        // ====================================================
+        // SOMENTE RONALD
+        // ====================================================
+
+        if (
+            !currentUser ||
+            currentUser.username !==
+            META_RONALD_CONFIG.username
+        ) {
+
+            showToast(
+                '⚠️ A conferência das OS é responsabilidade do Ronald.',
+                'warning'
+            );
+
+            return;
         }
-    }
-};
+
+
+        const order =
+            orders.find(
+                o =>
+                    String(o.id) ===
+                    String(orderId)
+            );
+
+
+        if (!order) {
+
+            showToast(
+                'Ordem não encontrada',
+                'error'
+            );
+
+            return;
+        }
+
+
+        if (
+            order.status !==
+            'concluida'
+        ) {
+
+            showToast(
+                '⚠️ Apenas OS concluídas podem ser conferidas',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        if (
+            order.conferido
+        ) {
+
+            showToast(
+                '⚠️ Esta OS já foi conferida',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        if (
+            !confirm(
+                `Deseja marcar a OS "${order.productName}" como conferida?\n\nVocê não poderá desfazer esta ação.`
+            )
+        ) {
+
+            return;
+        }
+
+
+        try {
+
+            if (!supabaseClient) {
+
+                throw new Error(
+                    'Supabase não conectado'
+                );
+            }
+
+
+            // =================================================
+            // ATUALIZA OS + REGISTRA PONTO DA META
+            // EM UMA ÚNICA TRANSAÇÃO
+            // =================================================
+
+            const {
+                data,
+                error
+            } =
+                await supabaseClient
+                    .rpc(
+                        'processar_conferencia_os_ronald',
+                        {
+
+                            p_os_id:
+                                String(
+                                    orderId
+                                ),
+
+                            p_username:
+                                currentUser.username,
+
+                            p_nome:
+                                currentUser.name,
+
+                            p_resultado:
+                                'conferida',
+
+                            p_motivo:
+                                null
+
+                        }
+                    );
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            const agoraISO =
+                data
+                    ?.data_evento ||
+                new Date()
+                    .toISOString();
+
+
+            // =================================================
+            // ATUALIZAR LOCALMENTE
+            // =================================================
+
+            order.conferido =
+                true;
+
+
+            order.conferidoPor =
+                currentUser.name;
+
+
+            order.dataConferencia =
+                agoraISO;
+
+
+            order.updatedAt =
+                agoraISO;
+
+
+            updateCounters();
+
+            renderOrdersTable();
+
+
+            // =================================================
+            // RECALCULAR META
+            // =================================================
+
+            const status =
+                await verificarMetaRonald(
+                    {
+
+                        mostrarAviso:
+                            false,
+
+                        motivo:
+                            'conferencia_realizada'
+
+                    }
+                );
+
+
+            if (
+                status &&
+                status.faltamHoje > 0
+            ) {
+
+                showToast(
+                    `✅ OS conferida. Faltam ${status.faltamHoje} para concluir sua meta.`,
+                    'success'
+                );
+
+
+                if (
+                    bloqueioMetaRonaldAtivo
+                ) {
+
+                    atualizarBannerBloqueioMetaRonald(
+                        status,
+                        status.estado
+                            ?.motivo_bloqueio
+                    );
+
+
+                    setTimeout(
+                        aplicarRestricaoVisualMetaRonald,
+                        0
+                    );
+                }
+
+
+            } else {
+
+                showToast(
+                    '🎯 OS conferida. Meta de conferência concluída!',
+                    'success'
+                );
+            }
+
+
+        } catch (error) {
+
+            console.error(
+                '❌ Erro ao conferir OS:',
+                error
+            );
+
+
+            showToast(
+                '❌ Erro ao conferir OS: ' +
+                error.message,
+                'error'
+            );
+        }
+    };
 
 // ============================================
 // FUNÇÕES DO FORMULÁRIO (ATUALIZADAS COM FOTOS)
@@ -3915,17 +8130,92 @@ function clearForm() {
 }
 
 function atualizarVisibilidadeMenu() {
-    const historicoCard = document.getElementById('historicoMenuCard');
-    if (!historicoCard) return;
-    
-    const usuariosPermitidos = ['ronald', 'andressamiotto'];
-    if (currentUser && usuariosPermitidos.includes(currentUser.username)) {
-        historicoCard.style.display = '';       // volta ao normal (ou 'block'/'flex')
-        console.log('Card de histórico VISÍVEL para', currentUser.username);
-    } else {
-        historicoCard.style.display = 'none';
-        console.log('Card de histórico OCULTO');
+
+    if (!currentUser) {
+        return;
     }
+
+
+    const username =
+        String(
+            currentUser.username || ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    // ========================================================
+    // HISTÓRICO DE ACESSOS
+    // Ronald + Andressa
+    // ========================================================
+
+    const historicoCard =
+        document.getElementById(
+            'historicoMenuCard'
+        );
+
+
+    if (historicoCard) {
+
+        const usuariosPermitidos = [
+            'ronald',
+            'andressamiotto'
+        ];
+
+
+        historicoCard.style.display =
+            usuariosPermitidos.includes(
+                username
+            )
+                ? ''
+                : 'none';
+    }
+
+
+    // ========================================================
+    // CARD META RONALD
+    // SOMENTE ANDRESSAMIOTTO
+    // ========================================================
+
+    const metaRonaldMenuCard =
+        document.getElementById(
+            'metaRonaldMenuCard'
+        );
+
+
+    if (metaRonaldMenuCard) {
+
+        metaRonaldMenuCard.style.display =
+            username === 'andressamiotto'
+                ? ''
+                : 'none';
+    }
+
+
+    // ========================================================
+    // BOTÃO DENTRO DA ABA OS
+    // CASO VOCÊ TENHA MANTIDO O BOTÃO ANTERIOR
+    // ========================================================
+
+    const btnMetaRonald =
+        document.getElementById(
+            'btnMetaRonald'
+        );
+
+
+    if (btnMetaRonald) {
+
+        btnMetaRonald.style.display =
+            username === 'andressamiotto'
+                ? 'inline-block'
+                : 'none';
+    }
+
+
+    console.log(
+        '👤 Visibilidade de menu atualizada:',
+        username
+    );
 }
 
 function cancelEdit() {
@@ -4179,311 +8469,2120 @@ function paginarOS(direcao) {
     }
 }
 
-// ===== FUNÇÃO RENDER ORDERS TABLE - COM PAGINAÇÃO CORRIGIDA =====
-function renderOrdersTable() {
-    console.log('📊 Renderizando tabela OS - Página:', paginaAtualOS);
-    
-    if (!osTableBody) return;
-    
-    osTableBody.innerHTML = '';
-    
-    if (!currentUser) {
-        if (emptyMessage) emptyMessage.classList.remove('hidden');
-        return;
+// ============================================
+// CONTROLE DE TEMPO ÚTIL DAS ORDENS DE SERVIÇO
+// HORÁRIO COMERCIAL: SEGUNDA A SEXTA - 07:00 ÀS 16:00
+// ============================================
+
+const OS_HORA_INICIO = 7;
+const OS_HORA_FIM = 16;
+
+let intervaloRelogioOS = null;
+
+
+// ============================================
+// VERIFICA SE É DIA ÚTIL
+// ============================================
+function ehDiaUtilOS(data) {
+    const dia = data.getDay();
+
+    // 0 = domingo
+    // 6 = sábado
+    return dia >= 1 && dia <= 5;
+}
+
+
+// ============================================
+// VERIFICA SE ESTÁ DENTRO DO HORÁRIO COMERCIAL
+// ============================================
+function estaNoHorarioComercialOS(data = new Date()) {
+
+    const d = new Date(data);
+
+    if (isNaN(d.getTime())) {
+        return false;
     }
-    
-    // --- FILTRAGEM ---
-    let userOrders = filterOrdersByUser(orders);
-    let filteredOrders = [];
-    
-    switch (currentFilter) {
-        case 'todos':
-            filteredOrders = userOrders;
+
+    if (!ehDiaUtilOS(d)) {
+        return false;
+    }
+
+    const inicio = new Date(d);
+    inicio.setHours(OS_HORA_INICIO, 0, 0, 0);
+
+    const fim = new Date(d);
+    fim.setHours(OS_HORA_FIM, 0, 0, 0);
+
+    return d >= inicio && d < fim;
+}
+
+
+// ============================================
+// AJUSTA UMA DATA PARA O PRÓXIMO MOMENTO ÚTIL
+// ============================================
+function ajustarParaHorarioUtilOS(data) {
+
+    let resultado = new Date(data);
+
+    if (isNaN(resultado.getTime())) {
+        return null;
+    }
+
+    let seguranca = 0;
+
+    while (seguranca < 20) {
+
+        seguranca++;
+
+        const diaSemana = resultado.getDay();
+
+        // DOMINGO
+        if (diaSemana === 0) {
+
+            resultado.setDate(resultado.getDate() + 1);
+            resultado.setHours(OS_HORA_INICIO, 0, 0, 0);
+
+            continue;
+        }
+
+        // SÁBADO
+        if (diaSemana === 6) {
+
+            resultado.setDate(resultado.getDate() + 2);
+            resultado.setHours(OS_HORA_INICIO, 0, 0, 0);
+
+            continue;
+        }
+
+        const inicioDia = new Date(resultado);
+        inicioDia.setHours(OS_HORA_INICIO, 0, 0, 0);
+
+        const fimDia = new Date(resultado);
+        fimDia.setHours(OS_HORA_FIM, 0, 0, 0);
+
+
+        // Antes das 07h
+        if (resultado < inicioDia) {
+
+            resultado = inicioDia;
+
+            return resultado;
+        }
+
+
+        // Depois das 16h
+        if (resultado >= fimDia) {
+
+            resultado.setDate(resultado.getDate() + 1);
+            resultado.setHours(OS_HORA_INICIO, 0, 0, 0);
+
+            continue;
+        }
+
+
+        // Já está dentro do horário comercial
+        return resultado;
+    }
+
+    return resultado;
+}
+
+
+// ============================================
+// CALCULA MINUTOS ÚTEIS ENTRE DUAS DATAS
+// ============================================
+function calcularMinutosUteisOS(dataInicio, dataFim) {
+
+    if (!dataInicio || !dataFim) {
+        return 0;
+    }
+
+    const inicioOriginal = new Date(dataInicio);
+    const fimOriginal = new Date(dataFim);
+
+    if (
+        isNaN(inicioOriginal.getTime()) ||
+        isNaN(fimOriginal.getTime())
+    ) {
+        return 0;
+    }
+
+    if (fimOriginal <= inicioOriginal) {
+        return 0;
+    }
+
+
+    let cursor = ajustarParaHorarioUtilOS(inicioOriginal);
+
+    if (!cursor) {
+        return 0;
+    }
+
+
+    let minutosTotais = 0;
+
+    let seguranca = 0;
+
+
+    while (
+        cursor < fimOriginal &&
+        seguranca < 5000
+    ) {
+
+        seguranca++;
+
+
+        // Caso por algum motivo caia em fim de semana
+        if (!ehDiaUtilOS(cursor)) {
+
+            cursor = ajustarParaHorarioUtilOS(cursor);
+
+            continue;
+        }
+
+
+        const fimExpediente = new Date(cursor);
+
+        fimExpediente.setHours(
+            OS_HORA_FIM,
+            0,
+            0,
+            0
+        );
+
+
+        const limiteHoje =
+            fimOriginal < fimExpediente
+                ? fimOriginal
+                : fimExpediente;
+
+
+        if (limiteHoje > cursor) {
+
+            minutosTotais +=
+                (limiteHoje - cursor) /
+                (1000 * 60);
+        }
+
+
+        // Já chegamos ao fim informado
+        if (fimOriginal <= fimExpediente) {
             break;
-        case 'pendente':
-            filteredOrders = userOrders.filter(o => 
-                o.status === 'pendente' && (!o.motivo_rejeicao || o.motivo_rejeicao === '')
+        }
+
+
+        // Avança para o próximo dia
+        cursor.setDate(cursor.getDate() + 1);
+
+        cursor.setHours(
+            OS_HORA_INICIO,
+            0,
+            0,
+            0
+        );
+
+
+        cursor = ajustarParaHorarioUtilOS(cursor);
+
+        if (!cursor) {
+            break;
+        }
+    }
+
+
+    return Math.max(
+        0,
+        Math.round(minutosTotais)
+    );
+}
+
+
+// ============================================
+// ADICIONA MINUTOS ÚTEIS A UMA DATA
+// USADO PARA PRAZO DA OS
+// ============================================
+function adicionarMinutosUteisOS(dataInicio, minutosAdicionar) {
+
+    let minutosRestantes =
+        Math.max(
+            0,
+            Number(minutosAdicionar) || 0
+        );
+
+
+    let cursor =
+        ajustarParaHorarioUtilOS(
+            new Date(dataInicio)
+        );
+
+
+    if (!cursor) {
+        return null;
+    }
+
+
+    if (minutosRestantes === 0) {
+        return cursor;
+    }
+
+
+    let seguranca = 0;
+
+
+    while (
+        minutosRestantes > 0 &&
+        seguranca < 5000
+    ) {
+
+        seguranca++;
+
+
+        cursor =
+            ajustarParaHorarioUtilOS(
+                cursor
             );
-            break;
-        case 'andamento':
-            filteredOrders = userOrders.filter(o => o.status === 'andamento');
-            break;
-        case 'nao_conferidas':
-            filteredOrders = userOrders.filter(o => 
-                o.status === 'concluida' && !o.conferido
+
+
+        const fimExpediente =
+            new Date(cursor);
+
+
+        fimExpediente.setHours(
+            OS_HORA_FIM,
+            0,
+            0,
+            0
+        );
+
+
+        const minutosDisponiveisHoje =
+            Math.max(
+                0,
+                Math.floor(
+                    (fimExpediente - cursor) /
+                    (1000 * 60)
+                )
             );
-            break;
-        case 'revisao':
-            filteredOrders = userOrders.filter(o => 
-                o.status === 'pendente' && o.motivo_rejeicao && o.motivo_rejeicao !== ''
+
+
+        if (
+            minutosRestantes <=
+            minutosDisponiveisHoje
+        ) {
+
+            cursor.setMinutes(
+                cursor.getMinutes() +
+                minutosRestantes
             );
+
+            minutosRestantes = 0;
+
             break;
-        case 'concluida': {
-            let base = userOrders.filter(o => o.status === 'concluida' && o.conferido === true);
-            const dataInput = document.getElementById('dataFiltroConcluidas');
-            if (dataInput && dataInput.value) {
-                const dataSelecionada = new Date(dataInput.value);
-                dataSelecionada.setHours(0,0,0,0);
-                base = base.filter(o => {
-                    if (!o.completionDate) return false;
-                    const compDate = new Date(o.completionDate);
-                    compDate.setHours(0,0,0,0);
-                    return compDate.getTime() === dataSelecionada.getTime();
-                });
+        }
+
+
+        minutosRestantes -=
+            minutosDisponiveisHoje;
+
+
+        cursor.setDate(
+            cursor.getDate() + 1
+        );
+
+
+        cursor.setHours(
+            OS_HORA_INICIO,
+            0,
+            0,
+            0
+        );
+    }
+
+
+    return cursor;
+}
+
+
+// ============================================
+// FORMATA MINUTOS EM TEXTO
+// ============================================
+function formatarDuracaoOS(minutos) {
+
+    minutos =
+        Math.max(
+            0,
+            Math.round(
+                Number(minutos) || 0
+            )
+        );
+
+
+    if (minutos < 60) {
+        return `${minutos} min`;
+    }
+
+
+    const horas =
+        Math.floor(minutos / 60);
+
+
+    const minutosRestantes =
+        minutos % 60;
+
+
+    if (minutosRestantes === 0) {
+        return `${horas}h`;
+    }
+
+
+    return `${horas}h ${minutosRestantes}min`;
+}
+
+
+// ============================================
+// INÍCIO REAL DE EXECUÇÃO DA OS
+// ============================================
+function obterInicioExecucaoOS(order) {
+
+    if (!order) {
+        return null;
+    }
+
+
+    // NOVAS OS
+    if (order.startedAt) {
+        return order.startedAt;
+    }
+
+
+    // Compatibilidade caso outro código utilize esse nome
+    if (order.dataInicio) {
+        return order.dataInicio;
+    }
+
+
+    // OS antigas
+    return order.createdAt || null;
+}
+
+
+// ============================================
+// QUANTIDADE DE FOTOS UTILIZADA PARA MÉDIA
+//
+// Usamos o MAIOR valor entre:
+// - fotos tiradas
+// - fotos editadas
+//
+// Isso evita contar a mesma foto duas vezes.
+// ============================================
+function obterQuantidadeFotosBaseOS(order) {
+
+    const tiradas =
+        Number(order?.photosTaken) || 0;
+
+
+    const editadas =
+        Number(order?.editsMade) || 0;
+
+
+    return Math.max(
+        tiradas,
+        editadas
+    );
+}
+
+
+// ============================================
+// CALCULA O TEMPO DA OS
+// ============================================
+function calcularTempoExecucaoOS(
+    order,
+    dataReferencia = new Date()
+) {
+
+    if (!order) {
+        return 0;
+    }
+
+
+    const inicio =
+        obterInicioExecucaoOS(order);
+
+
+    if (!inicio) {
+        return 0;
+    }
+
+
+    let fim = null;
+
+
+    if (
+        order.status === 'concluida' &&
+        order.completionDate
+    ) {
+
+        fim =
+            new Date(
+                order.completionDate
+            );
+
+    } else if (
+        order.status === 'andamento'
+    ) {
+
+        fim =
+            new Date(
+                dataReferencia
+            );
+
+    } else {
+
+        return 0;
+    }
+
+
+    return calcularMinutosUteisOS(
+        inicio,
+        fim
+    );
+}
+
+
+// ============================================
+// MÉDIA DE TEMPO POR FOTO
+// ============================================
+function calcularMediaTempoPorFotoOS(
+    order,
+    minutosExecucao = null
+) {
+
+    const qtdFotos =
+        obterQuantidadeFotosBaseOS(order);
+
+
+    if (qtdFotos <= 0) {
+        return null;
+    }
+
+
+    const minutos =
+        minutosExecucao !== null
+            ? minutosExecucao
+            : calcularTempoExecucaoOS(order);
+
+
+    const media =
+        minutos / qtdFotos;
+
+
+    return media;
+}
+
+
+// ============================================
+// FORMATA MÉDIA POR FOTO
+// ============================================
+function formatarMediaFotoOS(
+    order,
+    minutosExecucao = null
+) {
+
+    const media =
+        calcularMediaTempoPorFotoOS(
+            order,
+            minutosExecucao
+        );
+
+
+    if (
+        media === null ||
+        !isFinite(media)
+    ) {
+
+        return '-';
+    }
+
+
+    return `${formatarDuracaoOS(media)} / foto`;
+}
+
+
+// ============================================
+// HTML DO TEMPO NA TABELA
+// ============================================
+function montarTempoExecucaoHTML(
+    order,
+    agora = new Date()
+) {
+
+    if (
+        !order ||
+        order.status === 'pendente'
+    ) {
+
+        return `
+            <span style="color:#adb5bd;">
+                -
+            </span>
+        `;
+    }
+
+
+    const minutos =
+        calcularTempoExecucaoOS(
+            order,
+            agora
+        );
+
+
+    if (order.status === 'concluida') {
+
+        return `
+            <strong>
+                ${formatarDuracaoOS(minutos)}
+            </strong>
+
+            <div style="
+                font-size:10px;
+                color:#28a745;
+            ">
+                <i class="fas fa-check"></i>
+                Finalizado
+            </div>
+        `;
+    }
+
+
+    const emHorario =
+        estaNoHorarioComercialOS(agora);
+
+
+    if (emHorario) {
+
+        return `
+            <strong>
+                ${formatarDuracaoOS(minutos)}
+            </strong>
+
+            <div style="
+                font-size:10px;
+                color:#28a745;
+            ">
+                <i class="fas fa-play"></i>
+                contando
+            </div>
+        `;
+
+    }
+
+
+    return `
+        <strong>
+            ${formatarDuracaoOS(minutos)}
+        </strong>
+
+        <div style="
+            font-size:10px;
+            color:#ff9800;
+        ">
+            <i class="fas fa-pause"></i>
+            pausado
+        </div>
+    `;
+}
+
+
+// ============================================
+// ATUALIZA APENAS OS RELÓGIOS DA TABELA
+// ============================================
+function atualizarRelogiosOSTabela() {
+
+    const agora =
+        new Date();
+
+
+    document
+        .querySelectorAll('[data-os-tempo-id]')
+        .forEach(elemento => {
+
+            const orderId =
+                elemento.getAttribute(
+                    'data-os-tempo-id'
+                );
+
+
+            const order =
+                orders.find(
+                    o =>
+                        String(o.id) ===
+                        String(orderId)
+                );
+
+
+            if (!order) {
+                return;
             }
-            filteredOrders = base;
-            break;
-        }
-        case 'fotos_atualizar':
-            filteredOrders = userOrders.filter(o => o.photoType === 'fotos_para_atualizar');
-            break;
-        default:
-            filteredOrders = userOrders;
+
+
+            elemento.innerHTML =
+                montarTempoExecucaoHTML(
+                    order,
+                    agora
+                );
+
+        });
+}
+
+
+// ============================================
+// RELÓGIO AUTOMÁTICO
+// ============================================
+function iniciarRelogioOSTabela() {
+
+    if (intervaloRelogioOS) {
+        clearInterval(
+            intervaloRelogioOS
+        );
     }
-    
-    // --- ORDENAÇÃO ---
-    filteredOrders.sort((a, b) => {
-        const aIsNotChecked = (a.status === 'concluida' && !a.conferido);
-        const bIsNotChecked = (b.status === 'concluida' && !b.conferido);
-        if (aIsNotChecked && !bIsNotChecked) return -1;
-        if (!aIsNotChecked && bIsNotChecked) return 1;
-        
-        const aIsRevision = (a.status === 'pendente' && a.motivo_rejeicao);
-        const bIsRevision = (b.status === 'pendente' && b.motivo_rejeicao);
-        if (aIsRevision && !bIsRevision) return -1;
-        if (!aIsRevision && bIsRevision) return 1;
-        
-        return new Date(b.updatedAt) - new Date(a.updatedAt);
-    });
-    
-    // --- SALVAR TOTAL FILTRADO ---
-    todasOSFiltradas = filteredOrders;
-    
-    // --- CALCULAR PAGINAÇÃO ---
-    const totalItens = filteredOrders.length;
-    const totalPaginas = Math.max(1, Math.ceil(totalItens / itensPorPaginaOS));
-    
-    // Ajustar página atual
-    if (paginaAtualOS > totalPaginas) paginaAtualOS = totalPaginas;
-    if (paginaAtualOS < 1) paginaAtualOS = 1;
-    
-    const inicio = (paginaAtualOS - 1) * itensPorPaginaOS;
-    const fim = Math.min(inicio + itensPorPaginaOS, totalItens);
-    const paginaItens = filteredOrders.slice(inicio, fim);
-    
-    // --- ATUALIZAR INFORMAÇÕES DE PAGINAÇÃO ---
-    const infoEl = document.getElementById('osInfo');
-    if (infoEl) {
-        if (totalItens === 0) {
-            infoEl.textContent = 'Nenhum registro encontrado';
-        } else {
-            infoEl.textContent = `Mostrando ${inicio + 1}-${fim} de ${totalItens}`;
-        }
+
+
+    atualizarRelogiosOSTabela();
+
+
+    intervaloRelogioOS =
+        setInterval(() => {
+
+            atualizarRelogiosOSTabela();
+
+        }, 60000);
+}
+
+
+// ============================================
+// BUSCA DE OS
+// ============================================
+function filtrarBuscaOS() {
+
+    paginaAtualOS = 1;
+
+
+    const input =
+        document.getElementById(
+            'buscaOS'
+        );
+
+
+    const btnLimpar =
+        document.getElementById(
+            'btnLimparBuscaOS'
+        );
+
+
+    if (btnLimpar) {
+
+        btnLimpar.style.display =
+            input &&
+            input.value.trim()
+                ? 'block'
+                : 'none';
     }
-    
-    const paginaInfoEl = document.getElementById('osPaginaInfo');
-    if (paginaInfoEl) {
-        paginaInfoEl.textContent = `Página ${paginaAtualOS} de ${totalPaginas}`;
+
+
+    renderOrdersTable();
+}
+
+
+// ============================================
+// LIMPAR PESQUISA
+// ============================================
+function limparBuscaOS() {
+
+    const input =
+        document.getElementById(
+            'buscaOS'
+        );
+
+
+    if (input) {
+
+        input.value = '';
+
+        input.focus();
     }
-    
-    const btnAnterior = document.getElementById('btnOSAnterior');
-    const btnProxima = document.getElementById('btnOSProxima');
-    if (btnAnterior) btnAnterior.disabled = (paginaAtualOS <= 1 || totalItens === 0);
-    if (btnProxima) btnProxima.disabled = (paginaAtualOS >= totalPaginas || totalItens === 0);
-    
-    // --- SE NÃO HOUVER ITENS ---
-    if (paginaItens.length === 0 && totalItens > 0) {
-        paginaAtualOS = totalPaginas;
-        renderOrdersTable();
+
+
+    const btn =
+        document.getElementById(
+            'btnLimparBuscaOS'
+        );
+
+
+    if (btn) {
+        btn.style.display = 'none';
+    }
+
+
+    paginaAtualOS = 1;
+
+    renderOrdersTable();
+}
+
+
+// ============================================
+// INICIAR ATUALIZAÇÃO AUTOMÁTICA
+// ============================================
+document.addEventListener(
+    'DOMContentLoaded',
+    function () {
+
+        iniciarRelogioOSTabela();
+
+    }
+);
+
+// ============================================
+// RENDERIZAR TABELA DE OS
+// COM PAGINAÇÃO + BUSCA + TEMPO ÚTIL
+// ============================================
+function renderOrdersTable() {
+
+    console.log(
+        '📊 Renderizando tabela OS - Página:',
+        paginaAtualOS
+    );
+
+
+    if (!osTableBody) {
         return;
     }
-    
-    if (paginaItens.length === 0) {
+
+
+    osTableBody.innerHTML = '';
+
+
+    if (!currentUser) {
+
+        if (emptyMessage) {
+            emptyMessage.classList.remove(
+                'hidden'
+            );
+        }
+
+        return;
+    }
+
+
+    // ========================================
+    // FILTRO DE USUÁRIO
+    // ========================================
+
+    let userOrders =
+        filterOrdersByUser(
+            orders
+        );
+
+
+    let filteredOrders = [];
+
+
+    // ========================================
+    // FILTRO DE STATUS
+    // ========================================
+
+    switch (currentFilter) {
+
+        case 'todos':
+
+            filteredOrders =
+                [...userOrders];
+
+            break;
+
+
+        case 'pendente':
+
+            filteredOrders =
+                userOrders.filter(
+                    o =>
+                        o.status === 'pendente' &&
+                        (
+                            !o.motivo_rejeicao ||
+                            o.motivo_rejeicao === ''
+                        )
+                );
+
+            break;
+
+
+        case 'andamento':
+
+            filteredOrders =
+                userOrders.filter(
+                    o =>
+                        o.status === 'andamento'
+                );
+
+            break;
+
+
+        case 'nao_conferidas':
+
+            filteredOrders =
+                userOrders.filter(
+                    o =>
+                        o.status === 'concluida' &&
+                        !o.conferido
+                );
+
+            break;
+
+
+        case 'revisao':
+
+            filteredOrders =
+                userOrders.filter(
+                    o =>
+                        o.status === 'pendente' &&
+                        o.motivo_rejeicao &&
+                        o.motivo_rejeicao !== ''
+                );
+
+            break;
+
+
+        case 'concluida': {
+
+            let base =
+                userOrders.filter(
+                    o =>
+                        o.status === 'concluida' &&
+                        o.conferido === true
+                );
+
+
+            const dataInput =
+                document.getElementById(
+                    'dataFiltroConcluidas'
+                );
+
+
+            if (
+                dataInput &&
+                dataInput.value
+            ) {
+
+                const dataSelecionada =
+                    new Date(
+                        dataInput.value +
+                        'T00:00:00'
+                    );
+
+
+                base =
+                    base.filter(
+                        o => {
+
+                            if (
+                                !o.completionDate
+                            ) {
+                                return false;
+                            }
+
+
+                            const compDate =
+                                new Date(
+                                    o.completionDate
+                                );
+
+
+                            return (
+                                compDate.getFullYear() ===
+                                    dataSelecionada.getFullYear() &&
+
+                                compDate.getMonth() ===
+                                    dataSelecionada.getMonth() &&
+
+                                compDate.getDate() ===
+                                    dataSelecionada.getDate()
+                            );
+                        }
+                    );
+            }
+
+
+            filteredOrders =
+                base;
+
+            break;
+        }
+
+
+        case 'fotos_atualizar':
+
+            filteredOrders =
+                userOrders.filter(
+                    o =>
+                        o.photoType ===
+                        'fotos_para_atualizar'
+                );
+
+            break;
+
+
+        default:
+
+            filteredOrders =
+                [...userOrders];
+
+            break;
+    }
+
+
+    // ========================================
+    // PESQUISA
+    // ========================================
+
+    const campoBusca =
+        document.getElementById(
+            'buscaOS'
+        );
+
+
+    const termoBusca =
+        (
+            campoBusca?.value ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    if (termoBusca) {
+
+        filteredOrders =
+            filteredOrders.filter(
+                order => {
+
+                    const skusTexto =
+                        Array.isArray(
+                            order.skus
+                        )
+                            ? order.skus.join(
+                                ' '
+                            )
+                            : (
+                                order.skus ||
+                                ''
+                            );
+
+
+                    const campos =
+                        [
+                            order.code,
+                            order.id,
+                            order.productName,
+                            order.responsibleName,
+                            order.createdBy,
+                            order.status,
+                            order.urgency,
+                            order.osType,
+                            order.photoType,
+                            order.observations,
+                            skusTexto,
+                            order.linkAnuncio,
+                            order.linkNovoAnuncio
+                        ];
+
+
+                    return campos.some(
+                        valor =>
+                            String(
+                                valor || ''
+                            )
+                                .toLowerCase()
+                                .includes(
+                                    termoBusca
+                                )
+                    );
+                }
+            );
+    }
+
+
+    // ========================================
+    // ORDENAÇÃO
+    // ========================================
+
+    filteredOrders.sort(
+        (a, b) => {
+
+            const aIsNotChecked =
+                (
+                    a.status ===
+                    'concluida' &&
+                    !a.conferido
+                );
+
+
+            const bIsNotChecked =
+                (
+                    b.status ===
+                    'concluida' &&
+                    !b.conferido
+                );
+
+
+            if (
+                aIsNotChecked &&
+                !bIsNotChecked
+            ) {
+                return -1;
+            }
+
+
+            if (
+                !aIsNotChecked &&
+                bIsNotChecked
+            ) {
+                return 1;
+            }
+
+
+            const aIsRevision =
+                (
+                    a.status ===
+                    'pendente' &&
+                    a.motivo_rejeicao
+                );
+
+
+            const bIsRevision =
+                (
+                    b.status ===
+                    'pendente' &&
+                    b.motivo_rejeicao
+                );
+
+
+            if (
+                aIsRevision &&
+                !bIsRevision
+            ) {
+                return -1;
+            }
+
+
+            if (
+                !aIsRevision &&
+                bIsRevision
+            ) {
+                return 1;
+            }
+
+
+            return (
+                new Date(
+                    b.updatedAt ||
+                    b.createdAt
+                ) -
+                new Date(
+                    a.updatedAt ||
+                    a.createdAt
+                )
+            );
+        }
+    );
+
+
+    todasOSFiltradas =
+        filteredOrders;
+
+
+    // ========================================
+    // PAGINAÇÃO
+    // ========================================
+
+    const totalItens =
+        filteredOrders.length;
+
+
+    const totalPaginas =
+        Math.max(
+            1,
+            Math.ceil(
+                totalItens /
+                itensPorPaginaOS
+            )
+        );
+
+
+    if (
+        paginaAtualOS >
+        totalPaginas
+    ) {
+
+        paginaAtualOS =
+            totalPaginas;
+    }
+
+
+    if (
+        paginaAtualOS < 1
+    ) {
+
+        paginaAtualOS = 1;
+    }
+
+
+    const inicio =
+        (
+            paginaAtualOS - 1
+        ) *
+        itensPorPaginaOS;
+
+
+    const fim =
+        Math.min(
+            inicio +
+            itensPorPaginaOS,
+
+            totalItens
+        );
+
+
+    const paginaItens =
+        filteredOrders.slice(
+            inicio,
+            fim
+        );
+
+
+    // ========================================
+    // INFORMAÇÕES DA PAGINAÇÃO
+    // ========================================
+
+    const infoEl =
+        document.getElementById(
+            'osInfo'
+        );
+
+
+    if (infoEl) {
+
+        if (totalItens === 0) {
+
+            infoEl.textContent =
+                termoBusca
+                    ? 'Nenhuma OS encontrada na pesquisa'
+                    : 'Nenhum registro encontrado';
+
+        } else {
+
+            infoEl.textContent =
+                `Mostrando ${inicio + 1}-${fim} de ${totalItens}`;
+        }
+    }
+
+
+    const paginaInfoEl =
+        document.getElementById(
+            'osPaginaInfo'
+        );
+
+
+    if (paginaInfoEl) {
+
+        paginaInfoEl.textContent =
+            `Página ${paginaAtualOS} de ${totalPaginas}`;
+    }
+
+
+    const btnAnterior =
+        document.getElementById(
+            'btnOSAnterior'
+        );
+
+
+    const btnProxima =
+        document.getElementById(
+            'btnOSProxima'
+        );
+
+
+    if (btnAnterior) {
+
+        btnAnterior.disabled =
+            (
+                paginaAtualOS <= 1 ||
+                totalItens === 0
+            );
+    }
+
+
+    if (btnProxima) {
+
+        btnProxima.disabled =
+            (
+                paginaAtualOS >=
+                    totalPaginas ||
+
+                totalItens === 0
+            );
+    }
+
+
+    // ========================================
+    // SEM RESULTADOS
+    // ========================================
+
+    if (
+        paginaItens.length === 0
+    ) {
+
         osTableBody.innerHTML = `
             <tr>
-                <td colspan="8" class="text-center" style="padding: 40px;">
-                    <i class="fas fa-user-lock fa-3x" style="color: #6c757d; opacity: 0.5; margin-bottom: 15px;"></i>
-                    <h4 style="color: #6c757d;">Nenhuma ordem disponível</h4>
+                <td
+                    colspan="9"
+                    class="text-center"
+                    style="padding:40px;"
+                >
+                    <i
+                        class="fas fa-search fa-3x"
+                        style="
+                            color:#6c757d;
+                            opacity:0.4;
+                            margin-bottom:15px;
+                        "
+                    ></i>
+
+                    <h4 style="color:#6c757d;">
+                        ${
+                            termoBusca
+                                ? 'Nenhuma OS encontrada'
+                                : 'Nenhuma ordem disponível'
+                        }
+                    </h4>
+
+                    ${
+                        termoBusca
+                            ? `
+                                <p style="color:#adb5bd;">
+                                    Pesquisa:
+                                    <strong>${escapeHtml(termoBusca)}</strong>
+                                </p>
+                            `
+                            : ''
+                    }
                 </td>
             </tr>
         `;
+
         return;
     }
-    
-    // --- RENDERIZAR ITENS DA PÁGINA ATUAL ---
-    const now = new Date();
-    paginaItens.forEach(order => {
-        const row = document.createElement('tr');
-        const hasPermission = checkOrderPermission(order);
-        const isAdmin = currentUser.role === 'Administrador';
-        
-        const isRejectedPending = (order.status === 'pendente' && order.motivo_rejeicao && order.motivo_rejeicao.trim() !== '');
-        const isNotChecked = (order.status === 'concluida' && !order.conferido);
-        
-        let atrasado = false;
-        if (order.status !== 'concluida' && order.prazo_esperado) {
-            const prazo = new Date(order.prazo_esperado);
-            if (prazo < now) atrasado = true;
-        }
-        
-        // Estilos de linha
-        if (isRejectedPending) {
-            row.style.backgroundColor = '#fff3cd';
-            row.style.borderLeft = '4px solid #ffc107';
-        } else if (isNotChecked) {
-            row.style.backgroundColor = '#fff5f5';
-            row.style.borderLeft = '4px solid #dc3545';
-        } else if (order.urgency === 'alta') {
-            row.style.backgroundColor = '#ffe5e5';
-        }
-        
-        // --- LINKS ---
-        let linksHtml = '';
-        if (order.linkAnuncio && order.linkAnuncio.trim() !== '') {
-            linksHtml += `
-                <a href="${order.linkAnuncio}" target="_blank" rel="noopener noreferrer" 
-                   class="link-anuncio" title="Link do anúncio original">
-                    <i class="fas fa-link" style="color:#00ADEE;"></i> Anúncio
-                </a>
-            `;
-        }
-        if (order.linkNovoAnuncio && order.linkNovoAnuncio.trim() !== '') {
-            linksHtml += `
-                <a href="${order.linkNovoAnuncio}" target="_blank" rel="noopener noreferrer" 
-                   class="link-anuncio" title="Link do novo anúncio">
-                    <i class="fas fa-link" style="color:#28a745;"></i> Novo
-                </a>
-            `;
-        }
-        if (!linksHtml) {
-            linksHtml = '<span style="color:#adb5bd; font-size:11px;">Sem link</span>';
-        }
-        
-        // --- BADGES ---
-        let conferenciaBadge = '';
-        if (order.status === 'concluida') {
-            if (order.conferido) {
-                conferenciaBadge = `<span class="badge badge-success"><i class="fas fa-check-double"></i> Conferido</span>`;
+
+
+    const agora =
+        new Date();
+
+
+    // ========================================
+    // RENDERIZAÇÃO
+    // ========================================
+
+    paginaItens.forEach(
+        order => {
+
+            const row =
+                document.createElement(
+                    'tr'
+                );
+
+
+            const hasPermission =
+                checkOrderPermission(
+                    order
+                );
+
+
+            const isAdmin =
+                currentUser.role ===
+                'Administrador';
+
+
+            const isRejectedPending =
+                (
+                    order.status ===
+                    'pendente' &&
+
+                    order.motivo_rejeicao &&
+
+                    order.motivo_rejeicao
+                        .trim() !== ''
+                );
+
+
+            const isNotChecked =
+                (
+                    order.status ===
+                    'concluida' &&
+                    !order.conferido
+                );
+
+
+            // =================================
+            // PRAZO
+            // =================================
+
+            let atrasado =
+                false;
+
+
+            if (
+                order.status !==
+                'concluida'
+            ) {
+
+                let prazoCalculado =
+                    null;
+
+
+                // Recalcula usando 07h-16h
+                if (
+                    order.createdAt &&
+                    order.prazo_horas
+                ) {
+
+                    prazoCalculado =
+                        calcularPrazoPorPrioridade(
+                            new Date(
+                                order.createdAt
+                            ),
+                            null,
+                            Number(
+                                order.prazo_horas
+                            )
+                        );
+
+                } else if (
+                    order.prazo_esperado
+                ) {
+
+                    prazoCalculado =
+                        new Date(
+                            order.prazo_esperado
+                        );
+                }
+
+
+                if (
+                    prazoCalculado &&
+                    prazoCalculado <
+                        agora
+                ) {
+
+                    atrasado = true;
+                }
+            }
+
+
+            // =================================
+            // COR DA LINHA
+            // =================================
+
+            if (isRejectedPending) {
+
+                row.style.backgroundColor =
+                    '#fff3cd';
+
+                row.style.borderLeft =
+                    '4px solid #ffc107';
+
+
+            } else if (isNotChecked) {
+
+                row.style.backgroundColor =
+                    '#fff5f5';
+
+                row.style.borderLeft =
+                    '4px solid #dc3545';
+
+
+            } else if (
+                order.urgency === 'alta'
+            ) {
+
+                row.style.backgroundColor =
+                    '#ffe5e5';
+            }
+
+
+            // =================================
+            // LINKS
+            // =================================
+
+            let linksHtml = '';
+
+
+            if (
+                order.linkAnuncio &&
+                order.linkAnuncio.trim()
+            ) {
+
+                linksHtml += `
+                    <a
+                        href="${order.linkAnuncio}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="link-anuncio"
+                        title="Link do anúncio"
+                    >
+                        <i
+                            class="fas fa-link"
+                            style="color:#00ADEE;"
+                        ></i>
+
+                        Anúncio
+                    </a>
+                `;
+            }
+
+
+            if (
+                order.linkNovoAnuncio &&
+                order.linkNovoAnuncio.trim()
+            ) {
+
+                linksHtml += `
+                    <a
+                        href="${order.linkNovoAnuncio}"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="link-anuncio"
+                        title="Novo anúncio"
+                    >
+                        <i
+                            class="fas fa-link"
+                            style="color:#28a745;"
+                        ></i>
+
+                        Novo
+                    </a>
+                `;
+            }
+
+
+            if (!linksHtml) {
+
+                linksHtml = `
+                    <span
+                        style="
+                            color:#adb5bd;
+                            font-size:11px;
+                        "
+                    >
+                        Sem link
+                    </span>
+                `;
+            }
+
+
+            // =================================
+            // BADGES
+            // =================================
+
+            let conferenciaBadge = '';
+
+
+            if (
+                order.status ===
+                'concluida'
+            ) {
+
+                if (order.conferido) {
+
+                    conferenciaBadge = `
+                        <span class="badge badge-success">
+                            <i class="fas fa-check-double"></i>
+                            Conferido
+                        </span>
+                    `;
+
+                } else {
+
+                    conferenciaBadge = `
+                        <span class="badge badge-warning">
+                            <i class="fas fa-exclamation-circle"></i>
+                            Aguardando conferência
+                        </span>
+                    `;
+                }
+            }
+
+
+            let ajusteBadge = '';
+
+
+            if (isRejectedPending) {
+
+                ajusteBadge = `
+                    <span
+                        class="badge badge-warning"
+                        style="
+                            background:#ffc107;
+                            color:#856404;
+                        "
+                    >
+                        Ajustes
+                    </span>
+
+                    <span class="badge badge-danger">
+                        Não autorizado
+                    </span>
+                `;
+            }
+
+
+            const atrasoBadge =
+                atrasado
+                    ? `
+                        <span class="badge badge-danger">
+                            <i class="fas fa-clock"></i>
+                            Atrasada
+                        </span>
+                    `
+                    : '';
+
+
+            let anuncioBadge = '';
+
+
+            const isAnuncio =
+                (
+                    order.photoType ===
+                        'criar_anuncio' ||
+
+                    order.photoType ===
+                        'replicar_anuncio'
+                );
+
+
+            if (
+                isAnuncio &&
+                !order.anuncio_criado
+            ) {
+
+                anuncioBadge = `
+                    <span
+                        class="badge badge-warning"
+                        style="
+                            background:#ff9800;
+                            color:white;
+                        "
+                    >
+                        <i class="fas fa-ad"></i>
+                        Aguardando anúncio
+                    </span>
+                `;
+            }
+
+
+            const permissionBadge =
+                isAdmin
+                    ? `
+                        <span class="badge badge-danger">
+                            <i class="fas fa-crown"></i>
+                            Admin
+                        </span>
+                    `
+                    : '';
+
+
+            let urgencyBadge = '';
+
+
+            if (
+                order.urgency ===
+                'alta'
+            ) {
+
+                urgencyBadge =
+                    '<span class="badge badge-danger">Alta (2h)</span>';
+
+
+            } else if (
+                order.urgency ===
+                'normal'
+            ) {
+
+                urgencyBadge =
+                    '<span class="badge badge-warning">Normal (48h)</span>';
+
+
             } else {
-                conferenciaBadge = `<span class="badge badge-warning"><i class="fas fa-exclamation-circle"></i> Aguardando conferência</span>`;
+
+                urgencyBadge =
+                    '<span class="badge badge-success">Baixa (36h)</span>';
             }
-        }
-        
-        let ajusteBadge = '';
-        if (isRejectedPending) {
-            ajusteBadge = `
-                <span class="badge badge-warning" style="background:#ffc107;color:#856404;">Ajustes</span>
-                <span class="badge badge-danger">Não autorizado</span>
+
+
+            let statusBadge = '';
+
+
+            if (
+                order.status ===
+                'pendente'
+            ) {
+
+                statusBadge =
+                    '<span class="badge badge-secondary">Pendente</span>';
+
+
+            } else if (
+                order.status ===
+                'andamento'
+            ) {
+
+                statusBadge =
+                    '<span class="badge badge-info">Em Andamento</span>';
+
+
+            } else {
+
+                statusBadge =
+                    '<span class="badge badge-success">Concluída</span>';
+            }
+
+
+            // =================================
+            // DATA
+            // =================================
+
+            const createdDate =
+                order.createdAt
+                    ? new Date(
+                        order.createdAt
+                    )
+                    : null;
+
+
+            const formattedDate =
+                createdDate &&
+                !isNaN(
+                    createdDate.getTime()
+                )
+                    ? createdDate
+                        .toLocaleString(
+                            'pt-BR',
+                            {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                            }
+                        )
+                    : '-';
+
+
+            // =================================
+            // AÇÕES
+            // =================================
+
+            let actionButtons = '';
+
+
+            if (
+                hasPermission ||
+                isAdmin
+            ) {
+
+                actionButtons += `
+                    <button
+                        class="btn btn-primary btn-sm"
+                        onclick="viewOrderDetails('${order.id}')"
+                        title="Visualizar OS"
+                    >
+                        <i class="fas fa-eye"></i>
+                    </button>
+                `;
+            }
+
+
+            if (
+                order.photos &&
+                order.photos.length > 0 &&
+                (
+                    hasPermission ||
+                    isAdmin
+                )
+            ) {
+
+                actionButtons += `
+                    <button
+                        class="btn btn-info btn-sm"
+                        onclick="viewOrderPhotos('${order.id}')"
+                        title="Ver Fotos"
+                    >
+                        <i class="fas fa-images"></i>
+                        ${order.photos.length}
+                    </button>
+                `;
+            }
+
+
+            if (
+                order.status ===
+                    'concluida' &&
+
+                !order.conferido &&
+
+                (
+                    hasPermission ||
+                    isAdmin
+                )
+            ) {
+
+                actionButtons += `
+                    <button
+                        class="btn btn-success btn-sm"
+                        onclick="conferirOS('${order.id}')"
+                        title="Conferir"
+                    >
+                        <i class="fas fa-check-double"></i>
+                    </button>
+                `;
+
+
+                actionButtons += `
+                    <button
+                        class="btn btn-danger btn-sm"
+                        onclick="abrirRejeitarModal('${order.id}')"
+                        title="Não Autorizado"
+                    >
+                        <i class="fas fa-ban"></i>
+                        Não Autorizado
+                    </button>
+                `;
+            }
+
+
+            if (
+                isRejectedPending &&
+                (
+                    hasPermission ||
+                    isAdmin
+                )
+            ) {
+
+                actionButtons += `
+                    <button
+                        class="btn btn-success btn-sm"
+                        onclick="marcarAlteracoesFeitas('${order.id}')"
+                        title="Alterações feitas"
+                    >
+                        <i class="fas fa-check-double"></i>
+                        OK
+                    </button>
+                `;
+            }
+
+
+            if (
+                hasPermission ||
+                isAdmin
+            ) {
+
+                if (
+                    order.status ===
+                        'pendente' &&
+
+                    !order.motivo_rejeicao
+                ) {
+
+                    actionButtons += `
+                        <button
+                            class="btn btn-success btn-sm"
+                            onclick="startOrder('${order.id}')"
+                            title="Iniciar OS"
+                        >
+                            <i class="fas fa-play"></i>
+                        </button>
+                    `;
+
+
+                } else if (
+                    order.status ===
+                    'andamento'
+                ) {
+
+                    actionButtons += `
+                        <button
+                            class="btn btn-info btn-sm"
+                            onclick="openCompleteModal('${order.id}')"
+                            title="Finalizar OS"
+                        >
+                            <i class="fas fa-flag-checkered"></i>
+                        </button>
+                    `;
+                }
+            }
+
+
+            if (
+                hasPermission ||
+                isAdmin
+            ) {
+
+                actionButtons += `
+                    <button
+                        class="btn btn-warning btn-sm"
+                        onclick="abrirModalEdicaoOS('${order.id}')"
+                        title="Editar OS"
+                    >
+                        <i class="fas fa-edit"></i>
+                    </button>
+                `;
+            }
+
+
+            actionButtons += `
+                <button
+                    class="btn btn-primary btn-sm"
+                    onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})"
+                    title="Imprimir OS"
+                >
+                    <i class="fas fa-print"></i>
+                </button>
             `;
-        }
-        
-        let atrasoBadge = atrasado ? `<span class="badge badge-danger"><i class="fas fa-clock"></i> Atrasada</span>` : '';
-        let anuncioBadge = '';
-        const isAnuncio = (order.photoType === 'criar_anuncio' || order.photoType === 'replicar_anuncio');
-        if (isAnuncio && !order.anuncio_criado) {
-            anuncioBadge = `<span class="badge badge-warning" style="background:#ff9800;color:white;"><i class="fas fa-ad"></i> Aguardando anúncio</span>`;
-        }
-        
-        let permissionBadge = isAdmin ? `<span class="badge badge-danger"><i class="fas fa-crown"></i> Admin</span>` : '';
-        
-        let urgencyBadge = '';
-        if (order.urgency === 'alta') urgencyBadge = '<span class="badge badge-danger">Alta (2h)</span>';
-        else if (order.urgency === 'normal') urgencyBadge = '<span class="badge badge-warning">Normal (48h)</span>';
-        else urgencyBadge = '<span class="badge badge-success">Baixa (36h)</span>';
-        
-        let statusBadge = '';
-        if (order.status === 'pendente') statusBadge = '<span class="badge badge-secondary">Pendente</span>';
-        else if (order.status === 'andamento') statusBadge = '<span class="badge badge-info">Em Andamento</span>';
-        else statusBadge = '<span class="badge badge-success">Concluída</span>';
-        
-        const createdDate = order.createdAt ? new Date(order.createdAt) : new Date();
-        const formattedDate = createdDate.toLocaleDateString('pt-BR') + ' ' + 
-                             createdDate.toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
-        
-        // --- AÇÕES ---
-        let actionButtons = '';
-        if (hasPermission || isAdmin) {
-            actionButtons += `<button class="btn btn-primary btn-sm" onclick="viewOrderDetails('${order.id}')" title="Visualizar OS"><i class="fas fa-eye"></i></button>`;
-        }
-        if (order.photos && order.photos.length > 0 && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-info btn-sm" onclick="viewOrderPhotos('${order.id}')" title="Ver Fotos"><i class="fas fa-images"></i> ${order.photos.length}</button>`;
-        }
-        if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-success btn-sm" onclick="conferirOS('${order.id}')" title="Conferir"><i class="fas fa-check-double"></i></button>`;
-        }
-        // Botão "Não Autorizado" - aparece apenas para OS concluídas e não conferidas
-        if (order.status === 'concluida' && !order.conferido && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-danger btn-sm" onclick="abrirRejeitarModal('${order.id}')" title="Não Autorizado">
-                <i class="fas fa-ban"></i> Não Autorizado
-            </button>`;
-        }
-        if (isRejectedPending && (hasPermission || isAdmin)) {
-            actionButtons += `<button class="btn btn-success btn-sm" onclick="marcarAlteracoesFeitas('${order.id}')" title="Alterações feitas">
-                <i class="fas fa-check-double"></i> OK
-            </button>`;
-        }
-        if (hasPermission || isAdmin) {
-            if (order.status === 'pendente' && !order.motivo_rejeicao) {
-                actionButtons += `<button class="btn btn-success btn-sm" onclick="startOrder('${order.id}')" title="Iniciar OS"><i class="fas fa-play"></i></button>`;
-            } else if (order.status === 'andamento') {
-                actionButtons += `<button class="btn btn-info btn-sm" onclick="openCompleteModal('${order.id}')" title="Finalizar OS"><i class="fas fa-flag-checkered"></i></button>`;
+
+
+            if (
+                isAdmin ||
+                order.createdBy
+                    ?.toLowerCase()
+                    .includes(
+                        currentUser.name
+                            .toLowerCase()
+                    )
+            ) {
+
+                actionButtons += `
+                    <button
+                        class="btn btn-danger btn-sm"
+                        onclick="deleteOrderPrompt('${order.id}')"
+                        title="Excluir OS"
+                    >
+                        <i class="fas fa-trash"></i>
+                    </button>
+                `;
             }
+
+
+            // =================================
+            // LINHA
+            // =================================
+
+            row.innerHTML = `
+
+                <td>
+
+                    <strong>
+                        ${escapeHtml(
+                            String(
+                                order.code ||
+                                order.id
+                            )
+                        )}
+                    </strong>
+
+                    <div style="
+                        display:flex;
+                        flex-wrap:wrap;
+                        gap:2px;
+                        margin-top:3px;
+                    ">
+                        ${conferenciaBadge}
+                        ${ajusteBadge}
+                        ${atrasoBadge}
+                        ${anuncioBadge}
+                        ${permissionBadge}
+                    </div>
+
+                </td>
+
+
+                <td>
+                    ${escapeHtml(
+                        order.productName ||
+                        '-'
+                    )}
+                </td>
+
+
+                <td>
+
+                    <div>
+                        ${escapeHtml(
+                            order.responsibleName ||
+                            '-'
+                        )}
+                    </div>
+
+                    <small style="
+                        color:#6c757d;
+                        font-size:10px;
+                    ">
+                        <i class="fas fa-user-plus"></i>
+
+                        Criado por:
+                        ${escapeHtml(
+                            order.createdBy ||
+                            'Sistema'
+                        )}
+                    </small>
+
+                </td>
+
+
+                <td>
+                    ${urgencyBadge}
+                </td>
+
+
+                <td>
+                    ${statusBadge}
+                </td>
+
+
+                <!-- TEMPO EXEC. -->
+                <td
+                    style="
+                        white-space:nowrap;
+                        min-width:100px;
+                    "
+                >
+                    <div
+                        data-os-tempo-id="${order.id}"
+                    >
+                        ${montarTempoExecucaoHTML(
+                            order,
+                            agora
+                        )}
+                    </div>
+                </td>
+
+
+                <!-- CRIADO EM -->
+                <td style="white-space:nowrap;">
+                    ${formattedDate}
+                </td>
+
+
+                <td>
+
+                    <div style="
+                        display:flex;
+                        flex-wrap:wrap;
+                        gap:3px;
+                        align-items:center;
+                    ">
+                        ${linksHtml}
+                    </div>
+
+                </td>
+
+
+                <td style="min-width:380px;">
+
+                    <div
+                        class="d-flex gap-1 flex-wrap"
+                        style="gap:3px;"
+                    >
+                        ${actionButtons}
+                    </div>
+
+                </td>
+            `;
+
+
+            osTableBody.appendChild(
+                row
+            );
         }
-        if (hasPermission || isAdmin) {
-            actionButtons += `<button class="btn btn-warning btn-sm" onclick="abrirModalEdicaoOS('${order.id}')" title="Editar OS"><i class="fas fa-edit"></i></button>`;
-        }
-        actionButtons += `<button class="btn btn-primary btn-sm" onclick="openPrintModal(${JSON.stringify(order).replace(/"/g, '&quot;')})" title="Imprimir OS"><i class="fas fa-print"></i></button>`;
-        if (isAdmin || order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase())) {
-            actionButtons += `<button class="btn btn-danger btn-sm" onclick="deleteOrderPrompt('${order.id}')" title="Excluir OS"><i class="fas fa-trash"></i></button>`;
-        }
-        
-        row.innerHTML = `
-            <td>
-                <strong>${order.code}</strong>
-                <div style="display: flex; flex-wrap: wrap; gap: 2px; margin-top: 3px;">
-                    ${conferenciaBadge}
-                    ${ajusteBadge}
-                    ${atrasoBadge}
-                    ${anuncioBadge}
-                    ${permissionBadge}
-                </div>
-            </td>
-            <td>${order.productName}</td>
-            <td>
-                <div>${order.responsibleName}</div>
-                <small style="color: #6c757d; font-size: 10px;"><i class="fas fa-user-plus"></i> Criado por: ${order.createdBy || 'Sistema'}</small>
-            </td>
-            <td>${urgencyBadge}</td>
-            <td>${statusBadge}</td>
-            <td style="white-space: nowrap;">${formattedDate}</td>
-            <td>
-                <div style="display: flex; flex-wrap: wrap; gap: 3px; align-items: center;">
-                    ${linksHtml}
-                </div>
-            </td>
-            <td style="min-width: 380px;">
-                <div class="d-flex gap-1 flex-wrap" style="gap: 3px;">
-                    ${actionButtons}
-                </div>
-            </td>
-        `;
-        
-        osTableBody.appendChild(row);
-    });
-    
+    );
+
+
     updateCounters();
-    console.log('✅ Tabela renderizada com', paginaItens.length, 'itens na página', paginaAtualOS);
+
+    atualizarRelogiosOSTabela();
+
+
+    console.log(
+        '✅ Tabela renderizada com',
+        paginaItens.length,
+        'itens'
+    );
 }
 
-// ============================================
-// FUNÇÕES DE AÇÃO (GLOBAIS)
-// ============================================
 window.filterOS = function(filter) {
-    currentFilter = filter;
-    // Mostra ou oculta o campo de data conforme o filtro
-    toggleFiltroDataConcluidas(filter === 'concluida');
+
+    // ========================================================
+    // RONALD BLOQUEADO:
+    // SOMENTE NÃO CONFERIDAS
+    // ========================================================
+
+    if (
+        bloqueioMetaRonaldAtivo &&
+        currentUser &&
+        currentUser.username ===
+        META_RONALD_CONFIG.username &&
+        filter !==
+        'nao_conferidas'
+    ) {
+
+        showToast(
+            '🔒 Você precisa finalizar a meta de conferência antes de acessar outros filtros.',
+            'error'
+        );
+
+
+        filter =
+            'nao_conferidas';
+    }
+
+
+    currentFilter =
+        filter;
+
+
+    paginaAtualOS =
+        1;
+
+
+    toggleFiltroDataConcluidas(
+        filter ===
+        'concluida'
+    );
+
+
     renderOrdersTable();
+
+
     highlightActiveFilterButton();
+
+
+    if (
+        bloqueioMetaRonaldAtivo &&
+        currentUser?.username ===
+        META_RONALD_CONFIG.username
+    ) {
+
+        setTimeout(
+            aplicarRestricaoVisualMetaRonald,
+            0
+        );
+    }
 };
 
 // Mostrar mensagem do filtro ativo
@@ -4790,23 +10889,143 @@ function closePhotoViewer() {
     document.getElementById('photoViewerModal').classList.add('hidden');
 }
 
+// ============================================
+// INICIAR ORDEM DE SERVIÇO
+// ============================================
 window.startOrder = async function(orderId) {
-    const order = orders.find(o => o.id == orderId);
-    if (order && checkOrderPermission(order) && confirm(`Iniciar "${order.productName}"?`)) {
-        try {
-            if (supabaseClient) {
-                await supabaseClient.from('ordens_service')
-                    .update({ status: 'andamento', ultima_atualizacao: new Date().toISOString() })
-                    .eq('id', orderId);
+
+    const order =
+        orders.find(
+            o =>
+                String(o.id) ===
+                String(orderId)
+        );
+
+
+    if (!order) {
+
+        showToast(
+            '❌ OS não encontrada',
+            'error'
+        );
+
+        return;
+    }
+
+
+    if (!checkOrderPermission(order)) {
+
+        showToast(
+            '⚠️ Sem permissão para iniciar esta OS',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !confirm(
+            `Iniciar "${order.productName}"?`
+        )
+    ) {
+
+        return;
+    }
+
+
+    try {
+
+        const agoraISO =
+            new Date().toISOString();
+
+
+        // Se já teve início anteriormente,
+        // preserva o primeiro início.
+        //
+        // Isso é importante para OS que
+        // voltaram para revisão.
+        const inicioExecucao =
+            order.startedAt ||
+            agoraISO;
+
+
+        if (supabaseClient) {
+
+            const dadosAtualizacao = {
+
+                status:
+                    'andamento',
+
+                ultima_atualizacao:
+                    agoraISO
+            };
+
+
+            // Só grava data_inicio
+            // se ainda não existir.
+            if (!order.startedAt) {
+
+                dadosAtualizacao.data_inicio =
+                    inicioExecucao;
             }
-            
-            order.status = 'andamento';
-            updateCounters();
-            renderOrdersTable();
-            showToast(`✅ OS iniciada`, 'success');
-        } catch (error) {
-            showToast('❌ Erro ao iniciar', 'error');
+
+
+            const {
+                error
+            } =
+                await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .update(
+                        dadosAtualizacao
+                    )
+                    .eq(
+                        'id',
+                        orderId
+                    );
+
+
+            if (error) {
+                throw error;
+            }
         }
+
+        order.status =
+            'andamento';
+
+        if (!order.startedAt) {
+
+            order.startedAt =
+                inicioExecucao;
+        }
+
+        order.updatedAt =
+            agoraISO;
+
+        updateCounters();
+        renderOrdersTable();
+
+        showToast(
+            '✅ OS iniciada - cronômetro de horário útil iniciado',
+            'success'
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro ao iniciar OS:',
+            error
+        );
+
+
+        showToast(
+            '❌ Erro ao iniciar OS: ' +
+            error.message,
+            'error'
+        );
     }
 };
 
@@ -4826,63 +11045,240 @@ window.closeCompleteModal = function() {
     if (completeModal) completeModal.classList.add('hidden');
 };
 
+// ============================================
+// FINALIZAR ORDEM DE SERVIÇO
+// ============================================
 async function completeOrder() {
-    const orderId = completeOSId.value;
-    const order = orders.find(o => o.id == orderId);
-    
-    if (!order || !checkOrderPermission(order)) {
-        showToast('⚠️ Sem permissão', 'warning');
+
+    const orderId =
+        completeOSId.value;
+
+
+    const order =
+        orders.find(
+            o =>
+                String(o.id) ===
+                String(orderId)
+        );
+
+
+    if (
+        !order ||
+        !checkOrderPermission(order)
+    ) {
+
+        showToast(
+            '⚠️ Sem permissão',
+            'warning'
+        );
+
         return;
     }
-    
-    // 🔥 REMOVIDA a validação de anuncio_criado
-    // Agora qualquer OS em andamento pode ser finalizada
-    
-    const photosTakenInput = document.getElementById('photosTaken');
-    const editsMadeInput = document.getElementById('editsMade');
-    
-    const photosTaken = photosTakenInput ? parseInt(photosTakenInput.value) || 0 : 0;
-    const editsMade = editsMadeInput ? parseInt(editsMadeInput.value) || 0 : 0;
-    
+
+
+    const photosTakenInput =
+        document.getElementById(
+            'photosTaken'
+        );
+
+
+    const editsMadeInput =
+        document.getElementById(
+            'editsMade'
+        );
+
+
+    const photosTaken =
+        photosTakenInput
+            ? Math.max(
+                0,
+                parseInt(
+                    photosTakenInput.value
+                ) || 0
+            )
+            : 0;
+
+
+    const editsMade =
+        editsMadeInput
+            ? Math.max(
+                0,
+                parseInt(
+                    editsMadeInput.value
+                ) || 0
+            )
+            : 0;
+
+
     try {
+
+        const agoraISO =
+            new Date().toISOString();
+
+
         if (supabaseClient) {
-            await supabaseClient.from('ordens_service')
-                .update({ 
-                    status: 'concluida',
-                    qtd_fotos: photosTaken,
-                    qtd_edicoes: editsMade,
-                    data_conclusao: new Date().toISOString(),
-                    conferido: false,
-                    conferido_por: null,
-                    data_conferencia: null,
-                    ultima_atualizacao: new Date().toISOString()
-                })
-                .eq('id', orderId);
+
+            const {
+                error
+            } =
+                await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .update({
+
+                        status:
+                            'concluida',
+
+                        qtd_fotos:
+                            photosTaken,
+
+                        qtd_edicoes:
+                            editsMade,
+
+                        data_conclusao:
+                            agoraISO,
+
+                        conferido:
+                            false,
+
+                        conferido_por:
+                            null,
+
+                        data_conferencia:
+                            null,
+
+                        ultima_atualizacao:
+                            agoraISO
+
+                    })
+                    .eq(
+                        'id',
+                        orderId
+                    );
+
+
+            if (error) {
+                throw error;
+            }
         }
-        
-        order.status = 'concluida';
-        order.photosTaken = photosTaken;
-        order.editsMade = editsMade;
-        order.completionDate = new Date().toISOString();
-        order.conferido = false;
-        order.conferidoPor = null;
-        order.dataConferencia = null;
-        
-        // Notificar criador
-        const criador = order.createdBy;
-        if (criador && criador !== currentUser.name) {
-            const assunto = `✅ OS Concluída: ${order.code}`;
-            const mensagem = `...`; // (mantenha a mensagem original)
-            await enviarNotificacaoEmail(criador, assunto, mensagem);
+
+
+        order.status =
+            'concluida';
+
+
+        order.photosTaken =
+            photosTaken;
+
+
+        order.editsMade =
+            editsMade;
+
+
+        order.completionDate =
+            agoraISO;
+
+
+        order.updatedAt =
+            agoraISO;
+
+
+        order.conferido =
+            false;
+
+
+        order.conferidoPor =
+            null;
+
+
+        order.dataConferencia =
+            null;
+
+
+        const tempoMinutos =
+            calcularTempoExecucaoOS(
+                order
+            );
+
+
+        const mediaFoto =
+            formatarMediaFotoOS(
+                order,
+                tempoMinutos
+            );
+
+
+        // NOTIFICAR CRIADOR
+        const criador =
+            order.createdBy;
+
+
+        if (
+            criador &&
+            criador !== currentUser.name
+        ) {
+
+            const assunto =
+                `✅ OS Concluída: ${order.code}`;
+
+
+            const mensagem = `
+OS concluída com sucesso.
+
+OS: ${order.code}
+Produto: ${order.productName}
+Responsável: ${order.responsibleName}
+
+Fotos tiradas: ${photosTaken}
+Fotos editadas: ${editsMade}
+
+Tempo útil de execução:
+${formatarDuracaoOS(tempoMinutos)}
+
+Tempo médio por foto:
+${mediaFoto}
+
+Horário considerado:
+Segunda a sexta-feira, das 07:00 às 16:00.
+            `;
+
+
+            await enviarNotificacaoEmail(
+                criador,
+                assunto,
+                mensagem,
+                order
+            );
         }
-        
+
+
         updateCounters();
+
         renderOrdersTable();
+
         closeCompleteModal();
-        showToast(`✅ OS finalizada!`, 'success');
+
+
+        showToast(
+            `✅ OS finalizada! Tempo útil: ${formatarDuracaoOS(tempoMinutos)}`,
+            'success'
+        );
+
+
     } catch (error) {
-        console.error('❌ Erro ao finalizar:', error);
-        showToast('❌ Erro ao finalizar', 'error');
+
+        console.error(
+            '❌ Erro ao finalizar:',
+            error
+        );
+
+
+        showToast(
+            '❌ Erro ao finalizar: ' +
+            error.message,
+            'error'
+        );
     }
 }
 
@@ -9684,87 +16080,314 @@ window.closeRejeitarModal = function() {
     }
 };
 
-window.confirmarRejeicaoOS = async function() {
-    console.log('🔴 Confirmando rejeição da OS');
-    
-    const orderId = document.getElementById('rejeitarOSId').value;
-    const motivo = document.getElementById('motivoRejeicao').value.trim();
-    
-    if (!orderId) {
-        showToast('❌ ID da OS não encontrado', 'error');
-        return;
-    }
-    
-    if (!motivo) {
-        showToast('⚠️ Informe o motivo da não autorização', 'warning');
-        document.getElementById('motivoRejeicao').focus();
-        return;
-    }
-    
-    if (!confirm(`⚠️ Tem certeza que deseja NÃO AUTORIZAR esta OS?\n\nMotivo: ${motivo}\n\nA OS voltará para REVISÃO e o criador será notificado.`)) {
-        return;
-    }
-    
-    try {
-        if (!supabaseClient) throw new Error('Supabase não conectado');
-        
-        const { error } = await supabaseClient
-            .from('ordens_service')
-            .update({
-                status: 'pendente',
-                motivo_rejeicao: motivo,
-                rejeitado_por: currentUser.name,
-                data_rejeicao: new Date().toISOString(),
-                conferido: false,
-                conferido_por: null,
-                data_conferencia: null,
-                ultima_atualizacao: new Date().toISOString()
-            })
-            .eq('id', orderId);
-        
-        if (error) throw error;
-        
-        // Atualiza a OS na lista local
-        const index = orders.findIndex(o => o.id == orderId);
-        if (index !== -1) {
-            orders[index].status = 'pendente';
-            orders[index].motivo_rejeicao = motivo;
-            orders[index].rejeitado_por = currentUser.name;
-            orders[index].data_rejeicao = new Date().toISOString();
-            orders[index].conferido = false;
-            orders[index].conferidoPor = null;
-            orders[index].dataConferencia = null;
+window.confirmarRejeicaoOS =
+    async function() {
+
+        console.log(
+            '🔴 Confirmando rejeição da OS'
+        );
+
+
+        // ====================================================
+        // SOMENTE RONALD
+        // ====================================================
+
+        if (
+            !currentUser ||
+            currentUser.username !==
+            META_RONALD_CONFIG.username
+        ) {
+
+            showToast(
+                '⚠️ A conferência das OS é responsabilidade do Ronald.',
+                'warning'
+            );
+
+            return;
         }
-        
-        // Notificar o criador da OS
-        const order = orders.find(o => o.id == orderId);
-        if (order && order.createdBy && order.createdBy !== currentUser.name) {
-            const assunto = `📋 OS não autorizada: ${order.code}`;
-            const mensagem = `
-                Olá ${order.createdBy},
-                
-                A OS ${order.code} - ${order.productName} não foi autorizada.
-                
-                Motivo: ${motivo}
-                
-                Por favor, verifique o sistema para mais detalhes.
-                
-                Sistema Wheel Tech
-            `;
-            await enviarNotificacaoEmail(order.createdBy, assunto, mensagem);
-            showToast(`📧 Notificação enviada para ${order.createdBy}`, 'info');
+
+
+        const orderId =
+            document.getElementById(
+                'rejeitarOSId'
+            )?.value;
+
+
+        const motivo =
+            document.getElementById(
+                'motivoRejeicao'
+            )?.value
+                ?.trim() ||
+            '';
+
+
+        if (!orderId) {
+
+            showToast(
+                '❌ ID da OS não encontrado',
+                'error'
+            );
+
+            return;
         }
-        
-        showToast('✅ OS rejeitada e movida para REVISÃO', 'success');
-        closeRejeitarModal();
-        updateCounters();
-        renderOrdersTable();
-        
-    } catch (error) {
-        console.error('❌ Erro ao rejeitar OS:', error);
-        showToast('❌ Erro: ' + error.message, 'error');
-    }
-};
+
+
+        if (!motivo) {
+
+            showToast(
+                '⚠️ Informe o motivo da não autorização',
+                'warning'
+            );
+
+
+            document
+                .getElementById(
+                    'motivoRejeicao'
+                )
+                ?.focus();
+
+
+            return;
+        }
+
+
+        const order =
+            orders.find(
+                o =>
+                    String(o.id) ===
+                    String(orderId)
+            );
+
+
+        if (!order) {
+
+            showToast(
+                '❌ OS não encontrada',
+                'error'
+            );
+
+            return;
+        }
+
+
+        if (
+            !confirm(
+                `⚠️ Tem certeza que deseja NÃO AUTORIZAR esta OS?\n\nMotivo: ${motivo}\n\nA OS voltará para REVISÃO e esta análise contará para sua meta de conferência.`
+            )
+        ) {
+
+            return;
+        }
+
+
+        try {
+
+            if (!supabaseClient) {
+
+                throw new Error(
+                    'Supabase não conectado'
+                );
+            }
+
+
+            // =================================================
+            // REJEITA + REGISTRA A CONFERÊNCIA
+            // =================================================
+
+            const {
+                data,
+                error
+            } =
+                await supabaseClient
+                    .rpc(
+                        'processar_conferencia_os_ronald',
+                        {
+
+                            p_os_id:
+                                String(
+                                    orderId
+                                ),
+
+                            p_username:
+                                currentUser.username,
+
+                            p_nome:
+                                currentUser.name,
+
+                            p_resultado:
+                                'nao_autorizada',
+
+                            p_motivo:
+                                motivo
+
+                        }
+                    );
+
+
+            if (error) {
+                throw error;
+            }
+
+
+            const agoraISO =
+                data
+                    ?.data_evento ||
+                new Date()
+                    .toISOString();
+
+
+            // =================================================
+            // ATUALIZAR LOCALMENTE
+            // =================================================
+
+            order.status =
+                'pendente';
+
+
+            order.motivo_rejeicao =
+                motivo;
+
+
+            order.rejeitado_por =
+                currentUser.name;
+
+
+            order.data_rejeicao =
+                agoraISO;
+
+
+            order.conferido =
+                false;
+
+
+            order.conferidoPor =
+                null;
+
+
+            order.dataConferencia =
+                null;
+
+
+            order.updatedAt =
+                agoraISO;
+
+
+            // =================================================
+            // NOTIFICAR CRIADOR
+            // =================================================
+
+            if (
+                order.createdBy &&
+                order.createdBy !==
+                currentUser.name
+            ) {
+
+                const assunto =
+                    `📋 OS não autorizada: ${order.code}`;
+
+
+                const mensagem = `
+
+Olá ${order.createdBy},
+
+A OS ${order.code} - ${order.productName} não foi autorizada.
+
+Motivo:
+${motivo}
+
+Por favor, verifique o sistema para mais detalhes.
+
+Sistema Wheel Tech
+                `;
+
+
+                await enviarNotificacaoEmail(
+                    order.createdBy,
+                    assunto,
+                    mensagem
+                );
+            }
+
+
+            closeRejeitarModal();
+
+
+            updateCounters();
+
+            renderOrdersTable();
+
+
+            // =================================================
+            // RECALCULAR META
+            // =================================================
+
+            const status =
+                await verificarMetaRonald(
+                    {
+
+                        mostrarAviso:
+                            false,
+
+                        motivo:
+                            'os_nao_autorizada'
+
+                    }
+                );
+
+
+            if (
+                status &&
+                status.faltamHoje > 0
+            ) {
+
+                showToast(
+                    `✅ OS não autorizada e contabilizada. Faltam ${status.faltamHoje} conferências.`,
+                    'success'
+                );
+
+
+                if (
+                    bloqueioMetaRonaldAtivo
+                ) {
+
+                    atualizarBannerBloqueioMetaRonald(
+                        status,
+                        status.estado
+                            ?.motivo_bloqueio
+                    );
+
+
+                    setTimeout(
+                        aplicarRestricaoVisualMetaRonald,
+                        0
+                    );
+                }
+
+
+            } else {
+
+                showToast(
+                    '🎯 OS não autorizada e meta de conferência concluída!',
+                    'success'
+                );
+            }
+
+
+        } catch (error) {
+
+            console.error(
+                '❌ Erro ao rejeitar OS:',
+                error
+            );
+
+
+            showToast(
+                '❌ Erro: ' +
+                error.message,
+                'error'
+            );
+        }
+    };
 
 // ============================================
 // RELATÓRIO DE OS
@@ -9917,57 +16540,66 @@ function switchRelatorioTab(tab) {
     }
 }
 
-// Calcula data/hora limite com base em horas úteis (dias úteis, 8h-18h)
-// Calcula a data/hora limite baseada em horas úteis (dias úteis 8h-18h)
-function calcularPrazoPorPrioridade(dataCriacao, prioridade, horasPersonalizadas = null) {
-    let horasUteis = horasPersonalizadas;
-    if (horasUteis === null) {
+// ============================================
+// CALCULAR PRAZO DA OS
+// HORÁRIO ÚTIL: SEGUNDA A SEXTA - 07h ÀS 16h
+// ============================================
+function calcularPrazoPorPrioridade(
+    dataCriacao,
+    prioridade,
+    horasPersonalizadas = null
+) {
+
+    let horasUteis =
+        horasPersonalizadas;
+
+
+    if (
+        horasUteis === null ||
+        horasUteis === undefined
+    ) {
+
         switch (prioridade) {
-            case 'alta': horasUteis = 2; break;
-            case 'normal': horasUteis = 48; break;
-            case 'baixa': horasUteis = 36; break;
-            default: return null;
+
+            case 'alta':
+                horasUteis = 2;
+                break;
+
+            case 'normal':
+                horasUteis = 48;
+                break;
+
+            case 'baixa':
+                horasUteis = 36;
+                break;
+
+            default:
+                return null;
         }
     }
-    
-    let resultado = new Date(dataCriacao);
-    let horasAcumuladas = 0;
-    
-    while (horasAcumuladas < horasUteis) {
-        let horaAtual = resultado.getHours();
-        let diaSemana = resultado.getDay(); // 0=domingo, 6=sábado
-        
-        if (diaSemana === 0 || diaSemana === 6) {
-            resultado.setDate(resultado.getDate() + (diaSemana === 0 ? 1 : 2));
-            resultado.setHours(8, 0, 0, 0);
-            continue;
-        }
-        
-        if (horaAtual >= 18) {
-            resultado.setDate(resultado.getDate() + 1);
-            resultado.setHours(8, 0, 0, 0);
-            continue;
-        }
-        
-        if (horaAtual < 8) {
-            resultado.setHours(8, 0, 0, 0);
-        }
-        
-        let fimDia = new Date(resultado);
-        fimDia.setHours(18, 0, 0, 0);
-        let minutosRestantesHoje = (fimDia - resultado) / (1000 * 60);
-        let horasRestantesHoje = minutosRestantesHoje / 60;
-        
-        if (horasRestantesHoje >= (horasUteis - horasAcumuladas)) {
-            resultado.setMinutes(resultado.getMinutes() + (horasUteis - horasAcumuladas) * 60);
-            horasAcumuladas = horasUteis;
-        } else {
-            horasAcumuladas += horasRestantesHoje;
-            resultado.setDate(resultado.getDate() + 1);
-            resultado.setHours(8, 0, 0, 0);
-        }
+
+
+    horasUteis =
+        Number(horasUteis);
+
+
+    if (
+        !isFinite(horasUteis) ||
+        horasUteis <= 0
+    ) {
+
+        return null;
     }
-    return resultado;
+
+
+    const minutos =
+        horasUteis * 60;
+
+
+    return adicionarMinutosUteisOS(
+        dataCriacao,
+        minutos
+    );
 }
 
 window.marcarAnuncioCriado = async function(orderId) {
@@ -10087,230 +16719,1155 @@ function calcularPrazoPorPrioridade(dataCriacao, prioridade, horasPersonalizadas
     return resultado;
 }
 
-function atualizarGraficosOSComDados(dadosFiltrados) {
-    console.log('📊 Atualizando gráfico com dados filtrados. Total:', dadosFiltrados.length);
-    
-    if (!dadosFiltrados || dadosFiltrados.length === 0) {
-        if (window.barrasChart) window.barrasChart.destroy();
+// ============================================
+// GRÁFICO DE PRODUTIVIDADE DA OS
+// ============================================
+function atualizarGraficosOSComDados(
+    dadosFiltrados
+) {
+
+    console.log(
+        '📊 Atualizando gráfico:',
+        dadosFiltrados?.length ||
+        0
+    );
+
+
+    if (
+        !dadosFiltrados ||
+        dadosFiltrados.length === 0
+    ) {
+
+        if (
+            window.barrasChart
+        ) {
+
+            window.barrasChart.destroy();
+
+            window.barrasChart =
+                null;
+        }
+
         return;
     }
-    
-    // Coletar usuários responsáveis
-    const usuarios = new Set();
-    dadosFiltrados.forEach(order => {
-        if (order.responsibleName && order.responsibleName.trim()) {
-            usuarios.add(order.responsibleName.trim());
-        }
-    });
-    const usuariosList = Array.from(usuarios).sort();
-    
-    const quantidades = [];
-    const temposMedios = [];
-    
-    usuariosList.forEach(user => {
-        const osDoUsuario = dadosFiltrados.filter(o => o.responsibleName === user);
-        quantidades.push(osDoUsuario.length);
-        
-        // Filtrar apenas OS concluídas com datas válidas (conclusão > criação)
-        const osConcluidasValidas = osDoUsuario.filter(o => 
-            o.status === 'concluida' && 
-            o.completionDate && 
-            o.createdAt &&
-            new Date(o.completionDate) > new Date(o.createdAt)
+
+
+    const canvas =
+        document.getElementById(
+            'graficoBarrasOS'
         );
-        
-        if (osConcluidasValidas.length > 0) {
-            let somaDias = 0;
-            osConcluidasValidas.forEach(o => {
-                const diffMs = new Date(o.completionDate) - new Date(o.createdAt);
-                const diffDias = diffMs / (1000 * 60 * 60 * 24);
-                somaDias += diffDias;
-            });
-            const media = +(somaDias / osConcluidasValidas.length).toFixed(1);
-            temposMedios.push(media);
-        } else {
-            temposMedios.push(0);
-        }
-    });
-    
-    // Destruir gráfico anterior se existir
-    if (window.barrasChart) {
-        window.barrasChart.destroy();
+
+
+    if (!canvas) {
+
+        console.warn(
+            'Canvas graficoBarrasOS não encontrado'
+        );
+
+        return;
     }
-    
-    const ctx = document.getElementById('graficoBarrasOS').getContext('2d');
-    window.barrasChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: usuariosList,
-            datasets: [
-                {
-                    label: 'Quantidade de OS',
-                    data: quantidades,
-                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1,
-                    yAxisID: 'y',
-                    borderRadius: 5
-                },
-                {
-                    label: 'Tempo médio (dias)',
-                    data: temposMedios,
-                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                    borderColor: 'rgba(75, 192, 192, 1)',
-                    borderWidth: 1,
-                    yAxisID: 'y1',
-                    borderRadius: 5
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    title: { display: true, text: 'Quantidade de OS' }
-                },
-                y1: {
-                    position: 'right',
-                    beginAtZero: true,
-                    title: { display: true, text: 'Tempo médio (dias)' },
-                    grid: { drawOnChartArea: false }
-                }
-            },
-            plugins: {
-                tooltip: {
-                    mode: 'index',
-                    intersect: false,
-                    callbacks: {
-                        label: function(context) {
-                            let label = context.dataset.label || '';
-                            let value = context.raw;
-                            if (context.dataset.label.includes('Tempo')) {
-                                return `${label}: ${value} dias`;
-                            }
-                            return `${label}: ${value}`;
-                        }
-                    }
-                },
-                legend: { position: 'top' }
+
+
+    const usuarios =
+        new Set();
+
+
+    dadosFiltrados.forEach(
+        order => {
+
+            if (
+                order.responsibleName &&
+                order.responsibleName.trim()
+            ) {
+
+                usuarios.add(
+                    order.responsibleName.trim()
+                );
             }
         }
-    });
+    );
+
+
+    const usuariosList =
+        Array.from(
+            usuarios
+        ).sort();
+
+
+    const quantidadesOS = [];
+
+    const quantidadesFotos = [];
+
+    const quantidadesEdicoes = [];
+
+    const temposMediosHoras = [];
+
+
+    usuariosList.forEach(
+        user => {
+
+            const osDoUsuario =
+                dadosFiltrados.filter(
+                    order =>
+                        order.responsibleName ===
+                        user
+                );
+
+
+            quantidadesOS.push(
+                osDoUsuario.length
+            );
+
+
+            const totalFotos =
+                osDoUsuario.reduce(
+                    (total, order) =>
+
+                        total +
+                        (
+                            Number(
+                                order.photosTaken
+                            ) || 0
+                        ),
+
+                    0
+                );
+
+
+            const totalEdicoes =
+                osDoUsuario.reduce(
+                    (total, order) =>
+
+                        total +
+                        (
+                            Number(
+                                order.editsMade
+                            ) || 0
+                        ),
+
+                    0
+                );
+
+
+            quantidadesFotos.push(
+                totalFotos
+            );
+
+
+            quantidadesEdicoes.push(
+                totalEdicoes
+            );
+
+
+            const concluidas =
+                osDoUsuario.filter(
+                    order =>
+
+                        order.status ===
+                            'concluida' &&
+
+                        order.completionDate &&
+
+                        obterInicioExecucaoOS(
+                            order
+                        )
+                );
+
+
+            if (
+                concluidas.length > 0
+            ) {
+
+                const totalMinutos =
+                    concluidas.reduce(
+                        (total, order) =>
+
+                            total +
+                            calcularTempoExecucaoOS(
+                                order
+                            ),
+
+                        0
+                    );
+
+
+                const mediaHoras =
+                    (
+                        totalMinutos /
+                        concluidas.length
+                    ) /
+                    60;
+
+
+                temposMediosHoras.push(
+                    Number(
+                        mediaHoras.toFixed(
+                            2
+                        )
+                    )
+                );
+
+
+            } else {
+
+                temposMediosHoras.push(
+                    0
+                );
+            }
+        }
+    );
+
+
+    if (
+        window.barrasChart
+    ) {
+
+        window.barrasChart.destroy();
+    }
+
+
+    const ctx =
+        canvas.getContext(
+            '2d'
+        );
+
+
+    window.barrasChart =
+        new Chart(
+            ctx,
+            {
+
+                type:
+                    'bar',
+
+                data: {
+
+                    labels:
+                        usuariosList,
+
+                    datasets: [
+
+                        {
+                            label:
+                                'Quantidade de OS',
+
+                            data:
+                                quantidadesOS,
+
+                            backgroundColor:
+                                'rgba(54, 162, 235, 0.60)',
+
+                            borderColor:
+                                'rgba(54, 162, 235, 1)',
+
+                            borderWidth:
+                                1,
+
+                            yAxisID:
+                                'y'
+                        },
+
+
+                        {
+                            label:
+                                'Fotos tiradas',
+
+                            data:
+                                quantidadesFotos,
+
+                            backgroundColor:
+                                'rgba(40, 167, 69, 0.60)',
+
+                            borderColor:
+                                'rgba(40, 167, 69, 1)',
+
+                            borderWidth:
+                                1,
+
+                            yAxisID:
+                                'y'
+                        },
+
+
+                        {
+                            label:
+                                'Fotos editadas',
+
+                            data:
+                                quantidadesEdicoes,
+
+                            backgroundColor:
+                                'rgba(255, 193, 7, 0.60)',
+
+                            borderColor:
+                                'rgba(255, 193, 7, 1)',
+
+                            borderWidth:
+                                1,
+
+                            yAxisID:
+                                'y'
+                        },
+
+
+                        {
+                            label:
+                                'Tempo médio útil (h)',
+
+                            data:
+                                temposMediosHoras,
+
+                            backgroundColor:
+                                'rgba(111, 66, 193, 0.60)',
+
+                            borderColor:
+                                'rgba(111, 66, 193, 1)',
+
+                            borderWidth:
+                                1,
+
+                            yAxisID:
+                                'y1'
+                        }
+
+                    ]
+                },
+
+
+                options: {
+
+                    responsive:
+                        true,
+
+                    maintainAspectRatio:
+                        true,
+
+
+                    interaction: {
+
+                        mode:
+                            'index',
+
+                        intersect:
+                            false
+                    },
+
+
+                    scales: {
+
+                        y: {
+
+                            beginAtZero:
+                                true,
+
+                            title: {
+
+                                display:
+                                    true,
+
+                                text:
+                                    'Quantidade'
+                            }
+                        },
+
+
+                        y1: {
+
+                            position:
+                                'right',
+
+                            beginAtZero:
+                                true,
+
+                            title: {
+
+                                display:
+                                    true,
+
+                                text:
+                                    'Horas úteis'
+                            },
+
+                            grid: {
+
+                                drawOnChartArea:
+                                    false
+                            }
+                        }
+                    },
+
+
+                    plugins: {
+
+                        legend: {
+
+                            position:
+                                'top'
+                        },
+
+
+                        tooltip: {
+
+                            callbacks: {
+
+                                label:
+                                    function (
+                                        context
+                                    ) {
+
+                                        const label =
+                                            context
+                                                .dataset
+                                                .label ||
+                                            '';
+
+
+                                        const valor =
+                                            context.raw;
+
+
+                                        if (
+                                            label.includes(
+                                                'Tempo médio'
+                                            )
+                                        ) {
+
+                                            return `${label}: ${valor} h`;
+                                        }
+
+
+                                        return `${label}: ${valor}`;
+                                    }
+                            }
+                        }
+                    }
+                }
+            }
+        );
 }
 
 function fecharModalRelatorioOS() {
     document.getElementById('relatorioOSModal').classList.add('hidden');
 }
 
+// ============================================
+// GERAR RELATÓRIO COMPLETO DE OS
+// ============================================
 async function gerarRelatorioOS() {
-    console.log('📊 Gerando relatório de OS...');
-    
-    if (!orders || orders.length === 0) {
-        showToast('Nenhuma OS carregada. Aguarde alguns segundos e tente novamente.', 'warning');
-        if (typeof loadOrders === 'function') {
+
+    console.log(
+        '📊 Gerando relatório de OS...'
+    );
+
+
+    if (
+        !orders ||
+        orders.length === 0
+    ) {
+
+        showToast(
+            'Nenhuma OS carregada. Carregando...',
+            'warning'
+        );
+
+
+        if (
+            typeof loadOrders ===
+            'function'
+        ) {
+
             await loadOrders();
-            if (!orders || orders.length === 0) {
-                showToast('Falha ao carregar OS. Verifique o console.', 'error');
-                return;
-            }
-        } else {
+        }
+
+
+        if (
+            !orders ||
+            orders.length === 0
+        ) {
+
+            showToast(
+                'Nenhuma OS disponível',
+                'error'
+            );
+
             return;
         }
     }
-    
-    const dataInicio = document.getElementById('relDataInicio')?.value || '';
-    const dataFim = document.getElementById('relDataFim')?.value || '';
-    const tipoPeriodo = document.getElementById('relTipoPeriodo')?.value || 'criacao';
-    const statusFiltro = document.getElementById('relStatus')?.value || 'todas';
-    
-    const usuariosSelecionados = [];
-    document.querySelectorAll('.usuario-checkbox:checked').forEach(cb => {
-        usuariosSelecionados.push(cb.value);
-    });
-    const todosUsuarios = document.getElementById('usuarioTodos')?.checked || false;
-    const filtroUsuarios = todosUsuarios ? null : usuariosSelecionados;
-    
-    let dados = [...orders];
-    
-    // Filtrar por data
-    if (dataInicio && dataFim) {
-        const inicio = new Date(dataInicio);
-        const fim = new Date(dataFim);
-        fim.setHours(23, 59, 59);
-        dados = dados.filter(order => {
-            let dataRef = tipoPeriodo === 'criacao' ? order.createdAt : order.completionDate;
-            if (!dataRef) return false;
-            const data = new Date(dataRef);
-            return data >= inicio && data <= fim;
-        });
+
+
+    const dataInicio =
+        document
+            .getElementById(
+                'relDataInicio'
+            )
+            ?.value || '';
+
+
+    const dataFim =
+        document
+            .getElementById(
+                'relDataFim'
+            )
+            ?.value || '';
+
+
+    const tipoPeriodo =
+        document
+            .getElementById(
+                'relTipoPeriodo'
+            )
+            ?.value ||
+        'criacao';
+
+
+    const statusFiltro =
+        document
+            .getElementById(
+                'relStatus'
+            )
+            ?.value ||
+        'todas';
+
+
+    // ========================================
+    // USUÁRIOS
+    // ========================================
+
+    const usuariosSelecionados =
+        [];
+
+
+    document
+        .querySelectorAll(
+            '.usuario-checkbox:checked'
+        )
+        .forEach(
+            cb => {
+
+                usuariosSelecionados.push(
+                    cb.value
+                );
+
+            }
+        );
+
+
+    const todosUsuarios =
+        document
+            .getElementById(
+                'usuarioTodos'
+            )
+            ?.checked ||
+        false;
+
+
+    const filtroUsuarios =
+        todosUsuarios
+            ? null
+            : usuariosSelecionados;
+
+
+    let dados =
+        [...orders];
+
+
+    // ========================================
+    // DATA
+    // ========================================
+
+    if (
+        dataInicio &&
+        dataFim
+    ) {
+
+        const inicio =
+            new Date(
+                dataInicio +
+                'T00:00:00'
+            );
+
+
+        const fim =
+            new Date(
+                dataFim +
+                'T23:59:59.999'
+            );
+
+
+        dados =
+            dados.filter(
+                order => {
+
+                    const dataRef =
+                        tipoPeriodo ===
+                        'criacao'
+                            ? order.createdAt
+                            : order.completionDate;
+
+
+                    if (!dataRef) {
+                        return false;
+                    }
+
+
+                    const data =
+                        new Date(
+                            dataRef
+                        );
+
+
+                    return (
+                        data >= inicio &&
+                        data <= fim
+                    );
+                }
+            );
     }
-    
-    // Filtrar por status
-    if (statusFiltro === 'concluida') {
-        dados = dados.filter(order => order.status === 'concluida');
+
+
+    // ========================================
+    // STATUS
+    // ========================================
+
+    if (
+        statusFiltro ===
+        'concluida'
+    ) {
+
+        dados =
+            dados.filter(
+                order =>
+                    order.status ===
+                    'concluida'
+            );
     }
-    
-    // Filtrar por usuário
-    if (filtroUsuarios && filtroUsuarios.length > 0) {
-        dados = dados.filter(order => 
-            filtroUsuarios.includes(order.responsibleName) || 
-            filtroUsuarios.includes(order.createdBy)
+
+
+    // ========================================
+    // USUÁRIO
+    // ========================================
+
+    if (
+        filtroUsuarios &&
+        filtroUsuarios.length > 0
+    ) {
+
+        dados =
+            dados.filter(
+                order =>
+
+                    filtroUsuarios.includes(
+                        order.responsibleName
+                    ) ||
+
+                    filtroUsuarios.includes(
+                        order.createdBy
+                    )
+            );
+    }
+
+
+    const tbody =
+        document.getElementById(
+            'relatorioOSBody'
+        );
+
+
+    if (!tbody) {
+        return;
+    }
+
+
+    tbody.innerHTML = '';
+
+
+    // ========================================
+    // SEM REGISTROS
+    // ========================================
+
+    if (
+        dados.length === 0
+    ) {
+
+        tbody.innerHTML = `
+            <tr>
+                <td
+                    colspan="13"
+                    class="text-center"
+                >
+                    Nenhuma OS encontrada no período
+                </td>
+            </tr>
+        `;
+
+
+        atualizarResumoRelatorioOS(
+            []
+        );
+
+
+        ultimosDadosFiltrados =
+            [];
+
+
+        window.ultimosDadosFiltrados =
+            [];
+
+
+        return;
+    }
+
+
+    // ========================================
+    // TABELA
+    // ========================================
+
+    const agora =
+        new Date();
+
+
+    dados.forEach(
+        order => {
+
+            const criacao =
+                order.createdAt
+                    ? new Date(
+                        order.createdAt
+                    ).toLocaleString(
+                        'pt-BR'
+                    )
+                    : '-';
+
+
+            const inicioReal =
+                obterInicioExecucaoOS(
+                    order
+                );
+
+
+            const inicioTexto =
+                inicioReal
+                    ? new Date(
+                        inicioReal
+                    ).toLocaleString(
+                        'pt-BR'
+                    )
+                    : '-';
+
+
+            let conclusao =
+                '-';
+
+
+            if (
+                order.completionDate &&
+                order.status ===
+                    'concluida'
+            ) {
+
+                conclusao =
+                    new Date(
+                        order.completionDate
+                    ).toLocaleString(
+                        'pt-BR'
+                    );
+            }
+
+
+            const minutos =
+                calcularTempoExecucaoOS(
+                    order,
+                    agora
+                );
+
+
+            const tempoTexto =
+                (
+                    order.status ===
+                        'andamento' ||
+
+                    order.status ===
+                        'concluida'
+                )
+                    ? formatarDuracaoOS(
+                        minutos
+                    )
+                    : '-';
+
+
+            const fotos =
+                Number(
+                    order.photosTaken
+                ) || 0;
+
+
+            const edicoes =
+                Number(
+                    order.editsMade
+                ) || 0;
+
+
+            const mediaFoto =
+                (
+                    order.status ===
+                        'andamento' ||
+
+                    order.status ===
+                        'concluida'
+                )
+                    ? formatarMediaFotoOS(
+                        order,
+                        minutos
+                    )
+                    : '-';
+
+
+            let statusText =
+                'Pendente';
+
+
+            if (
+                order.status ===
+                'andamento'
+            ) {
+
+                statusText =
+                    'Em andamento';
+
+
+            } else if (
+                order.status ===
+                'concluida'
+            ) {
+
+                statusText =
+                    'Concluída';
+            }
+
+
+            const urgencyMap = {
+
+                alta:
+                    'Alta',
+
+                normal:
+                    'Normal',
+
+                baixa:
+                    'Baixa'
+            };
+
+
+            const row =
+                tbody.insertRow();
+
+
+            row.innerHTML = `
+
+                <td>
+                    <strong>
+                        ${escapeHtml(
+                            String(
+                                order.code ||
+                                order.id
+                            )
+                        )}
+                    </strong>
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        order.productName ||
+                        '-'
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        order.createdBy ||
+                        '-'
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        order.responsibleName ||
+                        '-'
+                    )}
+                </td>
+
+                <td style="white-space:nowrap;">
+                    ${criacao}
+                </td>
+
+                <td style="white-space:nowrap;">
+                    ${inicioTexto}
+
+                    ${
+                        !order.startedAt &&
+                        order.createdAt
+                            ? `
+                                <div
+                                    style="
+                                        font-size:9px;
+                                        color:#999;
+                                    "
+                                    title="OS antiga sem data_inicio. Foi usada a data de criação."
+                                >
+                                    legado
+                                </div>
+                            `
+                            : ''
+                    }
+                </td>
+
+                <td style="white-space:nowrap;">
+                    ${conclusao}
+                </td>
+
+                <td style="text-align:center;">
+                    <strong>
+                        ${fotos}
+                    </strong>
+                </td>
+
+                <td style="text-align:center;">
+                    <strong>
+                        ${edicoes}
+                    </strong>
+                </td>
+
+                <td style="white-space:nowrap;">
+                    <strong>
+                        ${tempoTexto}
+                    </strong>
+                </td>
+
+                <td style="white-space:nowrap;">
+                    ${mediaFoto}
+                </td>
+
+                <td>
+                    ${
+                        urgencyMap[
+                            order.urgency
+                        ] ||
+                        order.urgency ||
+                        '-'
+                    }
+                </td>
+
+                <td>
+                    ${statusText}
+                </td>
+            `;
+        }
+    );
+
+
+    // ========================================
+    // RESUMO
+    // ========================================
+
+    atualizarResumoRelatorioOS(
+        dados
+    );
+
+
+    // ========================================
+    // GRÁFICOS
+    // ========================================
+
+    if (
+        typeof atualizarGraficosOSComDados ===
+        'function'
+    ) {
+
+        atualizarGraficosOSComDados(
+            dados
         );
     }
-    
-    // Preencher tabela
-    const tbody = document.getElementById('relatorioOSBody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
-    
-    if (dados.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhuma OS encontrada no período</td</tr>';
-    } else {
-        dados.forEach(order => {
-            const criacao = order.createdAt ? new Date(order.createdAt).toLocaleString('pt-BR') : '-';
-            let conclusao = '-';
-            let tempo = '-';
-            
-            if (order.completionDate) {
-                const dataConclusao = new Date(order.completionDate);
-                const dataCriacao = new Date(order.createdAt);
-                if (dataConclusao > dataCriacao) {
-                    conclusao = dataConclusao.toLocaleString('pt-BR');
-                    const diffMs = dataConclusao - dataCriacao;
-                    tempo = (diffMs / (1000 * 60 * 60)).toFixed(1) + ' h';
-                } else {
-                    conclusao = 'Data inválida (anterior à criação)';
-                    tempo = 'Inválido';
-                }
-            } else if (order.status === 'concluida') {
-                conclusao = 'Data não registrada';
+
+
+    ultimosDadosFiltrados =
+        dados;
+
+
+    window.ultimosDadosFiltrados =
+        dados;
+
+
+    showToast(
+        `✅ Relatório gerado: ${dados.length} OS`,
+        'success'
+    );
+}
+
+// ============================================
+// CARDS DE RESUMO DO RELATÓRIO
+// ============================================
+function atualizarResumoRelatorioOS(
+    dados
+) {
+
+    dados =
+        Array.isArray(dados)
+            ? dados
+            : [];
+
+
+    const concluidas =
+        dados.filter(
+            order =>
+
+                order.status ===
+                    'concluida' &&
+
+                order.completionDate &&
+
+                obterInicioExecucaoOS(
+                    order
+                )
+        );
+
+
+    const totalFotos =
+        dados.reduce(
+            (total, order) =>
+
+                total +
+                (
+                    Number(
+                        order.photosTaken
+                    ) || 0
+                ),
+
+            0
+        );
+
+
+    const totalEdicoes =
+        dados.reduce(
+            (total, order) =>
+
+                total +
+                (
+                    Number(
+                        order.editsMade
+                    ) || 0
+                ),
+
+            0
+        );
+
+
+    let totalMinutos =
+        0;
+
+
+    let totalFotosBase =
+        0;
+
+
+    concluidas.forEach(
+        order => {
+
+            const minutos =
+                calcularTempoExecucaoOS(
+                    order
+                );
+
+
+            totalMinutos +=
+                minutos;
+
+
+            totalFotosBase +=
+                obterQuantidadeFotosBaseOS(
+                    order
+                );
+        }
+    );
+
+
+    const mediaOS =
+        concluidas.length > 0
+            ? totalMinutos /
+                concluidas.length
+            : 0;
+
+
+    const mediaFoto =
+        totalFotosBase > 0
+            ? totalMinutos /
+                totalFotosBase
+            : 0;
+
+
+    const setText =
+        (
+            id,
+            valor
+        ) => {
+
+            const el =
+                document.getElementById(
+                    id
+                );
+
+
+            if (el) {
+
+                el.textContent =
+                    valor;
             }
-            
-            const statusText = order.status === 'concluida' ? 'Concluída' : (order.status === 'andamento' ? 'Em andamento' : 'Pendente');
-            const row = tbody.insertRow();
-            row.innerHTML = `
-                <td>${order.code || order.id}</td>
-                <td>${order.productName || '-'}</td>
-                <td>${order.createdBy || '-'}</td>
-                <td>${order.responsibleName || '-'}</td>
-                <td>${criacao}</td>
-                <td>${conclusao}</td>
-                <td>${tempo}</td>
-                <td>${order.urgency || '-'}</td>
-                <td>${statusText}</td>
-            `;
-        });
-    }
-    
-    // Atualizar gráficos (somente com dados válidos)
-    if (typeof atualizarGraficosOSComDados === 'function') {
-        atualizarGraficosOSComDados(dados);
-    }
-    
-    window.ultimosDadosFiltrados = dados;
-    showToast(`✅ Relatório gerado: ${dados.length} OS`, 'success');
+        };
+
+
+    setText(
+        'relResumoTotalOS',
+        dados.length
+    );
+
+
+    setText(
+        'relResumoFotos',
+        totalFotos
+    );
+
+
+    setText(
+        'relResumoEdicoes',
+        totalEdicoes
+    );
+
+
+    setText(
+        'relResumoTempoTotal',
+        formatarDuracaoOS(
+            totalMinutos
+        )
+    );
+
+
+    setText(
+        'relResumoTempoMedioOS',
+        concluidas.length > 0
+            ? formatarDuracaoOS(
+                mediaOS
+            )
+            : '-'
+    );
+
+
+    setText(
+        'relResumoTempoMedioFoto',
+        totalFotosBase > 0
+            ? formatarDuracaoOS(
+                mediaFoto
+            )
+            : '-'
+    );
 }
 
 let ultimosDadosFiltrados = [];
@@ -10390,15 +17947,101 @@ function atualizarGraficosOS() {
     });
 }
 
+// ============================================
+// EXPORTAR RELATÓRIO DE OS PARA EXCEL
+// ============================================
 function exportarRelatorioOSExcel() {
-    const table = document.getElementById('relatorioOSTable');
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.table_to_sheet(table, { raw: true });
-    // Ajustar largura das colunas (opcional)
-    ws['!cols'] = [{wch:15},{wch:30},{wch:15},{wch:15},{wch:20},{wch:20},{wch:15},{wch:10},{wch:12}];
-    XLSX.utils.book_append_sheet(wb, ws, 'Relatorio_OS');
-    XLSX.writeFile(wb, `relatorio_os_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.xlsx`);
-    showToast('Relatório exportado com sucesso!', 'success');
+
+    const table =
+        document.getElementById(
+            'relatorioOSTable'
+        );
+
+
+    if (!table) {
+
+        showToast(
+            'Tabela do relatório não encontrada',
+            'error'
+        );
+
+        return;
+    }
+
+
+    const wb =
+        XLSX.utils.book_new();
+
+
+    const ws =
+        XLSX.utils.table_to_sheet(
+            table,
+            {
+                raw: true
+            }
+        );
+
+
+    ws['!cols'] = [
+
+        { wch: 18 }, // código
+
+        { wch: 40 }, // produto
+
+        { wch: 18 }, // criado por
+
+        { wch: 18 }, // responsável
+
+        { wch: 22 }, // criação
+
+        { wch: 22 }, // início
+
+        { wch: 22 }, // conclusão
+
+        { wch: 14 }, // fotos
+
+        { wch: 15 }, // editadas
+
+        { wch: 18 }, // tempo
+
+        { wch: 20 }, // média foto
+
+        { wch: 12 }, // urgência
+
+        { wch: 18 }  // status
+    ];
+
+
+    XLSX.utils.book_append_sheet(
+        wb,
+        ws,
+        'Relatorio_OS'
+    );
+
+
+    const agora =
+        new Date()
+            .toISOString()
+            .slice(
+                0,
+                19
+            )
+            .replace(
+                /:/g,
+                '-'
+            );
+
+
+    XLSX.writeFile(
+        wb,
+        `relatorio_os_${agora}.xlsx`
+    );
+
+
+    showToast(
+        '✅ Relatório exportado com sucesso!',
+        'success'
+    );
 }
 
 // ===== MODAL DE EDIÇÃO =====

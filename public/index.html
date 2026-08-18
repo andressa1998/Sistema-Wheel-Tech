@@ -1204,6 +1204,23 @@ body > * {
                 <h3>Histórico de Acessos</h3>
                 <p>IP, data e hora dos logins</p>
             </div>
+            <!-- CONTROLE DA META DE CONFERÊNCIA DO RONALD -->
+            <div
+                class="menu-card"
+                id="metaRonaldMenuCard"
+                onclick="abrirPainelMetaRonald()"
+                style="display:none;"
+            >
+                <div class="menu-icon">
+                    <i class="fas fa-user-shield"></i>
+                </div>
+
+                <h3>Meta Ronald</h3>
+
+                <p>
+                    Conferências, pendências e desbloqueio
+                </p>
+            </div>
             <div class="menu-card" onclick="abrirSistemaPrecificacao()">
             <div class="menu-icon"><i class="fas fa-tags"></i></div>
             <h3>Precificação Novos Anúncios</h3>
@@ -1482,52 +1499,186 @@ body > * {
             
             <!-- Lista de Ordens de Serviço -->
             <div class="card">
-                <div class="card-header">
-                    <h2 class="card-title">
-                        <i class="fas fa-list"></i> Minhas Ordens de Serviço
-                    </h2>
-                    
-                    <div class="d-flex flex-wrap gap-2" style="align-items: center;">
-                        <div class="filter-group" style="display: flex; gap: 5px;">
-                            <div class="filter-group">
-    <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">
-        Pendentes <span class="badge" id="countPending">0</span>
-    </button>
-    <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">
-        Andamento <span class="badge" id="countProgress">0</span>
-    </button>
-    <button class="btn btn-secondary btn-sm" onclick="filterOS('nao_conferidas')">
-        Não Conferidas <span class="badge" id="countNotChecked">0</span>
-    </button>
-    <button class="btn btn-danger btn-sm" onclick="filterOS('revisao')">
-        Revisão <span class="badge" id="countRevision">0</span>
-    </button>
-    <button class="btn btn-info btn-sm" onclick="filterOS('fotos_atualizar')">
-    Atualizar Fotos <span class="badge" id="countFotosAtualizar">0</span>
-    </button>
-    <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
-        Concluídas <span class="badge" id="countCompleted">0</span>
-    </button>
-    <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
-        Todas <span class="badge" id="countTotal">0</span>
-    </button>
-</div>
+                <div class="card-header" style="display: flex; flex-direction: column; align-items: stretch; gap: 15px;">
 
-<div id="filtroDataConcluidas" class="hidden" style="display: inline-flex; align-items: center; gap: 5px; margin-left: 10px;">
-    <label for="dataFiltroConcluidas" style="font-size: 12px;">Data de conclusão:</label>
-    <input type="date" id="dataFiltroConcluidas" class="form-control form-control-sm" style="width: 140px;">
-    <button class="btn btn-sm btn-primary" onclick="aplicarFiltroDataConcluidas()">Aplicar</button>
-    <button class="btn btn-sm btn-secondary" onclick="limparFiltroDataConcluidas()">Limpar</button>
+    <!-- TÍTULO + BUSCA -->
+    <div style="
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 15px;
+        flex-wrap: wrap;
+    ">
+        <h2 class="card-title" style="margin: 0;">
+            <i class="fas fa-list"></i> Minhas Ordens de Serviço
+        </h2>
+
+        <div style="
+            position: relative;
+            width: 100%;
+            max-width: 420px;
+        ">
+            <i class="fas fa-search"
+               style="
+                   position: absolute;
+                   left: 13px;
+                   top: 50%;
+                   transform: translateY(-50%);
+                   color: #6c757d;
+                   pointer-events: none;
+               ">
+            </i>
+
+            <input
+                type="text"
+                id="buscaOS"
+                class="form-control"
+                placeholder="Pesquisar OS, produto, SKU, responsável..."
+                oninput="filtrarBuscaOS()"
+                autocomplete="off"
+                style="
+                    width: 100%;
+                    padding-left: 38px !important;
+                "
+            >
+
+            <button
+                type="button"
+                id="btnLimparBuscaOS"
+                onclick="limparBuscaOS()"
+                title="Limpar pesquisa"
+                style="
+                    display: none;
+                    position: absolute;
+                    right: 8px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    border: none;
+                    background: transparent;
+                    color: #6c757d;
+                    cursor: pointer;
+                    font-size: 16px;
+                "
+            >
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- FILTROS -->
+    <div class="d-flex flex-wrap gap-2" style="align-items: center;">
+
+        <div class="filter-group" style="display: flex; gap: 5px; flex-wrap: wrap;">
+
+            <button class="btn btn-warning btn-sm" onclick="filterOS('pendente')">
+                Pendentes
+                <span class="badge" id="countPending">0</span>
+            </button>
+
+            <button class="btn btn-info btn-sm" onclick="filterOS('andamento')">
+                Andamento
+                <span class="badge" id="countProgress">0</span>
+            </button>
+
+            <button class="btn btn-secondary btn-sm" onclick="filterOS('nao_conferidas')">
+                Não Conferidas
+                <span class="badge" id="countNotChecked">0</span>
+            </button>
+
+            <button class="btn btn-danger btn-sm" onclick="filterOS('revisao')">
+                Revisão
+                <span class="badge" id="countRevision">0</span>
+            </button>
+
+            <button class="btn btn-info btn-sm" onclick="filterOS('fotos_atualizar')">
+                Atualizar Fotos
+                <span class="badge" id="countFotosAtualizar">0</span>
+            </button>
+
+            <button class="btn btn-success btn-sm" onclick="filterOS('concluida')">
+                Concluídas
+                <span class="badge" id="countCompleted">0</span>
+            </button>
+
+            <button class="btn btn-primary btn-sm" onclick="filterOS('todos')">
+                Todas
+                <span class="badge" id="countTotal">0</span>
+            </button>
+
+        </div>
+
+        <div
+            id="filtroDataConcluidas"
+            class="hidden"
+            style="
+                display: inline-flex;
+                align-items: center;
+                gap: 5px;
+                margin-left: 10px;
+            "
+        >
+            <label for="dataFiltroConcluidas" style="font-size: 12px;">
+                Data de conclusão:
+            </label>
+
+            <input
+                type="date"
+                id="dataFiltroConcluidas"
+                class="form-control form-control-sm"
+                style="width: 140px;"
+            >
+
+            <button
+                class="btn btn-sm btn-primary"
+                onclick="aplicarFiltroDataConcluidas()"
+            >
+                Aplicar
+            </button>
+
+            <button
+                class="btn btn-sm btn-secondary"
+                onclick="limparFiltroDataConcluidas()"
+            >
+                Limpar
+            </button>
+        </div>
+
+        <button
+            class="btn btn-success"
+            id="selectOSBtn"
+            onclick="ativarModoSelecaoOS()"
+        >
+            <i class="fas fa-check-double"></i>
+            Selecionar OS
+        </button>
+
+        <button
+            class="btn btn-info"
+            onclick="abrirModalRelatorioOS()"
+        >
+            <i class="fas fa-chart-line"></i>
+            Relatórios
+        </button>
+
+        <button
+    class="btn btn-warning"
+    id="btnMetaRonald"
+    onclick="abrirPainelMetaRonald()"
+    style="
+        margin-left: 10px;
+        display: none;
+        background: #ff9800;
+        color: white;
+        border-color: #ff9800;
+    "
+>
+    <i class="fas fa-user-shield"></i>
+    Meta Ronald
+</button>
+
+    </div>
+
 </div>
-                        </div>
-                        <button class="btn btn-success" id="selectOSBtn" onclick="ativarModoSelecaoOS()">
-                            <i class="fas fa-check-double"></i> Selecionar OS
-                        </button>
-                        <button class="btn btn-info" onclick="abrirModalRelatorioOS()" style="margin-left: 10px;">
-                        <i class="fas fa-chart-line"></i> Relatórios
-                        </button>
-                    </div>
-                </div>
                 
                 <div id="selectedOSBar" class="selected-os-bar hidden">
                     <div style="background: #f0f0f0; padding: 10px 20px; margin: 10px 0; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; border-left: 4px solid #00ADEE;">
@@ -3434,132 +3585,438 @@ body > * {
         </div>
     </div>
 
-    <!-- Modal de Relatório de OS -->
+    <!-- ============================================
+     MODAL RELATÓRIO DE ORDENS DE SERVIÇO
+     ============================================ -->
 <div id="relatorioOSModal" class="modal hidden">
-    <div class="modal-content" style="max-width: 1100px; max-height: 90vh; padding: 0;">
-        <!-- Cabeçalho -->
-        <div style="background: linear-gradient(135deg, #00ADEE, #80D6F7); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="margin:0;"><i class="fas fa-chart-bar"></i> Relatório de Ordens de Serviço</h3>
-            <button onclick="fecharModalRelatorioOS()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer;">&times;</button>
+
+    <div
+        class="modal-content"
+        style="
+            max-width: 1500px;
+            width: 96%;
+            max-height: 94vh;
+            padding: 0;
+        "
+    >
+
+        <!-- CABEÇALHO -->
+        <div style="
+            background: linear-gradient(135deg, #00ADEE, #80D6F7);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        ">
+            <h3 style="margin: 0;">
+                <i class="fas fa-chart-bar"></i>
+                Relatório de Ordens de Serviço
+            </h3>
+
+            <button
+                onclick="fecharModalRelatorioOS()"
+                style="
+                    background: none;
+                    border: none;
+                    color: white;
+                    font-size: 24px;
+                    cursor: pointer;
+                "
+            >
+                &times;
+            </button>
         </div>
 
-        <!-- Corpo com filtros -->
-        <div style="padding: 20px;">
-            <!-- Filtros -->
+        <div style="
+            padding: 20px;
+            overflow-y: auto;
+            max-height: calc(94vh - 70px);
+        ">
+
+            <!-- FILTROS -->
             <div class="card mb-4">
-                <h4><i class="fas fa-filter"></i> Filtros</h4>
+
+                <h4>
+                    <i class="fas fa-filter"></i>
+                    Filtros
+                </h4>
+
                 <div class="row">
+
                     <div class="col-md-6">
                         <div class="form-group">
                             <label>Tipo de período</label>
+
                             <select id="relTipoPeriodo" class="form-control">
-                                <option value="criacao">Data de criação</option>
-                                <option value="conclusao">Data de conclusão</option>
+                                <option value="criacao">
+                                    Data de criação
+                                </option>
+
+                                <option value="conclusao">
+                                    Data de conclusão
+                                </option>
                             </select>
                         </div>
                     </div>
+
                     <div class="col-md-3">
                         <div class="form-group">
                             <label>Data inicial</label>
-                            <input type="date" id="relDataInicio" class="form-control">
+
+                            <input
+                                type="date"
+                                id="relDataInicio"
+                                class="form-control"
+                            >
                         </div>
                     </div>
+
                     <div class="col-md-3">
                         <div class="form-group">
                             <label>Data final</label>
-                            <input type="date" id="relDataFim" class="form-control">
+
+                            <input
+                                type="date"
+                                id="relDataFim"
+                                class="form-control"
+                            >
                         </div>
                     </div>
+
                 </div>
+
                 <div class="row">
+
                     <div class="col-md-6">
+
                         <div class="form-group">
-                            <label><i class="fas fa-users"></i> Usuário(s) (Ctrl+Clique para múltiplos)</label>
-                            <div id="relUsuarioContainer" class="form-control" style="padding: 10px; max-height: 200px; overflow-y: auto; border: 1px solid #ced4da; border-radius: 4px;">
-    <div class="form-check">
-        <input type="checkbox" class="form-check-input" id="usuarioTodos" value="" checked>
-        <label class="form-check-label" for="usuarioTodos">Todos</label>
-    </div>
-    <div id="usuariosCheckboxes"></div>
-</div>
-<input type="hidden" id="relUsuario" value="">
-                            <small class="text-muted">Segure Ctrl e clique para selecionar mais de um</small>
+
+                            <label>
+                                <i class="fas fa-users"></i>
+                                Usuário(s)
+                            </label>
+
+                            <div
+                                id="relUsuarioContainer"
+                                class="form-control"
+                                style="
+                                    padding: 10px;
+                                    max-height: 200px;
+                                    overflow-y: auto;
+                                    border: 1px solid #ced4da;
+                                    border-radius: 4px;
+                                "
+                            >
+
+                                <div class="form-check">
+
+                                    <input
+                                        type="checkbox"
+                                        class="form-check-input"
+                                        id="usuarioTodos"
+                                        value=""
+                                        checked
+                                    >
+
+                                    <label
+                                        class="form-check-label"
+                                        for="usuarioTodos"
+                                    >
+                                        Todos
+                                    </label>
+
+                                </div>
+
+                                <div id="usuariosCheckboxes"></div>
+
+                            </div>
+
+                            <input
+                                type="hidden"
+                                id="relUsuario"
+                                value=""
+                            >
+
                         </div>
+
                     </div>
+
                     <div class="col-md-6">
+
                         <div class="form-group">
+
                             <label>Status</label>
-                            <select id="relStatus" class="form-control">
-                                <option value="concluida">Apenas concluídas</option>
-                                <option value="todas">Todas</option>
+
+                            <select
+                                id="relStatus"
+                                class="form-control"
+                            >
+                                <option value="concluida">
+                                    Apenas concluídas
+                                </option>
+
+                                <option value="todas">
+                                    Todas
+                                </option>
                             </select>
+
                         </div>
+
                     </div>
+
                 </div>
+
                 <div class="d-flex justify-content-end mt-3">
-                    <button onclick="gerarRelatorioOS()" class="btn btn-primary">
-                        <i class="fas fa-chart-bar"></i> Gerar Relatório
+
+                    <button
+                        onclick="gerarRelatorioOS()"
+                        class="btn btn-primary"
+                    >
+                        <i class="fas fa-chart-bar"></i>
+                        Gerar Relatório
                     </button>
+
                 </div>
+
             </div>
 
-            <!-- Abas de resultados -->
-            <div class="card">
-                <div class="card-header" style="display: flex; gap: 10px; border-bottom: 2px solid #f1f3f5;">
-                    <button class="btn btn-sm btn-primary active" id="tabTabelaBtn" onclick="switchRelatorioTab('tabela')">
-                        <i class="fas fa-table"></i> Tabela
-                    </button>
-                    <button class="btn btn-sm btn-outline-primary" id="tabGraficosBtn" onclick="switchRelatorioTab('graficos')">
-                        <i class="fas fa-chart-bar"></i> Gráficos
-                    </button>
+
+            <!-- RESUMO -->
+            <div
+                id="resumoRelatorioOS"
+                style="
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+                    gap: 12px;
+                    margin-bottom: 20px;
+                "
+            >
+
+                <div class="card" style="padding: 15px; margin: 0; text-align: center;">
+                    <div style="font-size: 12px; color: #6c757d;">
+                        OS no período
+                    </div>
+
+                    <div
+                        id="relResumoTotalOS"
+                        style="font-size: 26px; font-weight: bold;"
+                    >
+                        0
+                    </div>
                 </div>
-                <!-- Painel Tabela -->
-                <div id="relatorioTabelaPanel" style="padding: 15px;">
+
+
+                <div class="card" style="padding: 15px; margin: 0; text-align: center;">
+                    <div style="font-size: 12px; color: #6c757d;">
+                        Fotos tiradas
+                    </div>
+
+                    <div
+                        id="relResumoFotos"
+                        style="font-size: 26px; font-weight: bold;"
+                    >
+                        0
+                    </div>
+                </div>
+
+
+                <div class="card" style="padding: 15px; margin: 0; text-align: center;">
+                    <div style="font-size: 12px; color: #6c757d;">
+                        Fotos editadas
+                    </div>
+
+                    <div
+                        id="relResumoEdicoes"
+                        style="font-size: 26px; font-weight: bold;"
+                    >
+                        0
+                    </div>
+                </div>
+
+
+                <div class="card" style="padding: 15px; margin: 0; text-align: center;">
+                    <div style="font-size: 12px; color: #6c757d;">
+                        Tempo útil total
+                    </div>
+
+                    <div
+                        id="relResumoTempoTotal"
+                        style="font-size: 21px; font-weight: bold;"
+                    >
+                        0 min
+                    </div>
+                </div>
+
+
+                <div class="card" style="padding: 15px; margin: 0; text-align: center;">
+                    <div style="font-size: 12px; color: #6c757d;">
+                        Tempo médio / OS
+                    </div>
+
+                    <div
+                        id="relResumoTempoMedioOS"
+                        style="font-size: 21px; font-weight: bold;"
+                    >
+                        -
+                    </div>
+                </div>
+
+
+                <div class="card" style="padding: 15px; margin: 0; text-align: center;">
+                    <div style="font-size: 12px; color: #6c757d;">
+                        Tempo médio / foto
+                    </div>
+
+                    <div
+                        id="relResumoTempoMedioFoto"
+                        style="font-size: 21px; font-weight: bold;"
+                    >
+                        -
+                    </div>
+                </div>
+
+            </div>
+
+
+            <!-- RESULTADOS -->
+            <div class="card">
+
+                <div
+                    class="card-header"
+                    style="
+                        display: flex;
+                        gap: 10px;
+                        border-bottom: 2px solid #f1f3f5;
+                    "
+                >
+
+                    <button
+                        class="btn btn-sm btn-primary active"
+                        id="tabTabelaBtn"
+                        onclick="switchRelatorioTab('tabela')"
+                    >
+                        <i class="fas fa-table"></i>
+                        Tabela
+                    </button>
+
+                    <button
+                        class="btn btn-sm btn-outline-primary"
+                        id="tabGraficosBtn"
+                        onclick="switchRelatorioTab('graficos')"
+                    >
+                        <i class="fas fa-chart-bar"></i>
+                        Gráficos
+                    </button>
+
+                </div>
+
+
+                <!-- TABELA -->
+                <div
+                    id="relatorioTabelaPanel"
+                    style="padding: 15px;"
+                >
+
                     <div class="table-responsive">
-                        <table class="table table-striped" id="relatorioOSTable">
+
+                        <table
+                            class="table table-striped"
+                            id="relatorioOSTable"
+                            style="min-width: 1500px;"
+                        >
+
                             <thead>
+
                                 <tr>
                                     <th>Código</th>
                                     <th>Produto</th>
                                     <th>Criado por</th>
                                     <th>Responsável</th>
                                     <th>Data criação</th>
-                                    <th>Data conclusão</th>
-                                    <th>Tempo resolução</th>
+                                    <th>Início execução</th>
+                                    <th>Conclusão</th>
+                                    <th>Fotos tiradas</th>
+                                    <th>Fotos editadas</th>
+                                    <th>Tempo útil</th>
+                                    <th>Média / foto</th>
                                     <th>Urgência</th>
                                     <th>Status</th>
                                 </tr>
+
                             </thead>
+
                             <tbody id="relatorioOSBody">
-                                <tr><td colspan="9" class="text-center">Clique em "Gerar Relatório"</td></tr>
+
+                                <tr>
+                                    <td
+                                        colspan="13"
+                                        class="text-center"
+                                    >
+                                        Clique em "Gerar Relatório"
+                                    </td>
+                                </tr>
+
                             </tbody>
+
                         </table>
+
                     </div>
+
+
                     <div class="d-flex justify-content-end mt-3">
-                        <button onclick="exportarRelatorioOSExcel()" class="btn btn-success">
-                            <i class="fas fa-file-excel"></i> Exportar Excel
+
+                        <button
+                            onclick="exportarRelatorioOSExcel()"
+                            class="btn btn-success"
+                        >
+                            <i class="fas fa-file-excel"></i>
+                            Exportar Excel
                         </button>
+
                     </div>
+
                 </div>
-                <!-- Painel Gráficos -->
-                <div id="relatorioGraficosPanel" style="padding: 15px; display: none;">
-                    <div class="row">
-                        <div class="col-md-7">
-                            <h5><i class="fas fa-chart-bar"></i> Quantidade e Tempo Médio por Usuário</h5>
-                            <canvas id="graficoBarrasOS" height="250"></canvas>
-                        </div>
-                        <div class="col-md-12">
-                        <h5><i class="fas fa-chart-bar"></i> Quantidade e Tempo Médio por Usuário</h5>
-                        <canvas id="graficoBarrasOS" height="300"></canvas>
+
+
+                <!-- GRÁFICO -->
+                <div
+                    id="relatorioGraficosPanel"
+                    style="
+                        padding: 20px;
+                        display: none;
+                    "
+                >
+
+                    <h5 style="margin-bottom: 15px;">
+                        <i class="fas fa-chart-bar"></i>
+                        Produtividade por responsável
+                    </h5>
+
+                    <div style="
+                        width: 100%;
+                        min-height: 350px;
+                    ">
+                        <canvas
+                            id="graficoBarrasOS"
+                            height="120"
+                        ></canvas>
                     </div>
-                    </div>
+
                     <div class="mt-3 text-muted">
-                        <i class="fas fa-info-circle"></i> O tempo médio de resolução considera apenas OS concluídas no período.
+                        <i class="fas fa-info-circle"></i>
+                        O tempo considera somente horário comercial:
+                        segunda a sexta-feira, das 07:00 às 16:00.
                     </div>
+
                 </div>
+
             </div>
+
         </div>
+
     </div>
+
 </div>
 
 <!-- ===== SISTEMA DE PRECIFICAÇÃO DE NOVOS ANÚNCIOS ===== -->
