@@ -14,6 +14,10 @@ let fullConfirmados = new Set();
 // ===== VARIÁVEIS DE ORDENAÇÃO =====
 let ordemColunaEstoque = { coluna: 'id', direcao: 'asc' };
 
+let produtosSelecionadosMassa = new Set();
+
+let produtosPaginaAtualMassa = [];
+
 // ===== USUÁRIOS AUTORIZADOS A MODIFICAR SINCRONIZAÇÃO =====
 const usuariosAutorizadosSync = ['andressamiotto', 'ronald', 'bruna', 'arthur'];
 
@@ -134,6 +138,322 @@ function verificarDuplicidadeSKU(novoSKU, idIgnorar = null) {
     }
     
     return { duplicado: false };
+}
+
+// =========================================================
+// SELEÇÃO EM MASSA
+// =========================================================
+
+function alterarSelecaoProdutoMassa(
+    produtoId,
+    selecionado
+) {
+
+    const id =
+        String(
+            produtoId
+        );
+
+
+    if (
+        selecionado
+    ) {
+
+        produtosSelecionadosMassa
+            .add(id);
+
+    } else {
+
+        produtosSelecionadosMassa
+            .delete(id);
+
+    }
+
+
+    atualizarBarraAcoesMassaEstoque();
+}
+
+
+// =========================================================
+// SELECIONAR PÁGINA ATUAL
+// =========================================================
+
+function selecionarPaginaEstoqueMassa(
+    selecionado
+) {
+
+    for (
+        const produto
+        of produtosPaginaAtualMassa
+    ) {
+
+        const id =
+            String(
+                produto.id
+            );
+
+
+        if (
+            selecionado
+        ) {
+
+            produtosSelecionadosMassa
+                .add(id);
+
+        } else {
+
+            produtosSelecionadosMassa
+                .delete(id);
+
+        }
+
+    }
+
+
+    document
+        .querySelectorAll(
+            '.check-produto-massa'
+        )
+        .forEach(
+            check => {
+
+                check.checked =
+                    selecionado;
+
+            }
+        );
+
+
+    atualizarBarraAcoesMassaEstoque();
+}
+
+
+// =========================================================
+// SELECIONAR TODOS QUE ESTÃO NO FILTRO
+//
+// Não somente a página atual.
+// =========================================================
+
+function selecionarTodosFiltradosEstoqueMassa() {
+
+    const produtos =
+        produtosFiltradosAtuais ||
+        [];
+
+
+    if (
+        produtos.length === 0
+    ) {
+
+        showToast(
+            'Nenhum produto no filtro atual.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    produtos.forEach(
+        produto => {
+
+            produtosSelecionadosMassa.add(
+                String(
+                    produto.id
+                )
+            );
+
+        }
+    );
+
+
+    document
+        .querySelectorAll(
+            '.check-produto-massa'
+        )
+        .forEach(
+            check => {
+
+                check.checked =
+                    true;
+
+            }
+        );
+
+
+    const master =
+        document.getElementById(
+            'checkSelecionarPaginaEstoque'
+        );
+
+
+    if (master) {
+        master.checked = true;
+    }
+
+
+    atualizarBarraAcoesMassaEstoque();
+
+
+    showToast(
+        `✅ ${produtos.length} produto(s) filtrado(s) selecionado(s).`,
+        'success'
+    );
+}
+
+
+// =========================================================
+// LIMPAR
+// =========================================================
+
+function limparSelecaoEstoqueMassa() {
+
+    produtosSelecionadosMassa.clear();
+
+
+    document
+        .querySelectorAll(
+            '.check-produto-massa'
+        )
+        .forEach(
+            check => {
+
+                check.checked =
+                    false;
+
+            }
+        );
+
+
+    const master =
+        document.getElementById(
+            'checkSelecionarPaginaEstoque'
+        );
+
+
+    if (master) {
+        master.checked = false;
+    }
+
+
+    atualizarBarraAcoesMassaEstoque();
+}
+
+
+// =========================================================
+// ATUALIZAR BARRA
+// =========================================================
+
+function atualizarBarraAcoesMassaEstoque() {
+
+    const barra =
+        document.getElementById(
+            'barraAcoesMassaEstoque'
+        );
+
+
+    const contador =
+        document.getElementById(
+            'contadorSelecionadosEstoque'
+        );
+
+
+    const info =
+        document.getElementById(
+            'infoSelecionadosFiltrados'
+        );
+
+
+    if (
+        !barra ||
+        !contador
+    ) {
+        return;
+    }
+
+
+    const quantidade =
+        produtosSelecionadosMassa.size;
+
+
+    if (
+        quantidade === 0
+    ) {
+
+        barra.style.display =
+            'none';
+
+    } else {
+
+        barra.style.display =
+            'flex';
+
+    }
+
+
+    contador.textContent =
+        `${quantidade} produto(s) selecionado(s)`;
+
+
+    if (info) {
+
+        const totalFiltrados =
+            produtosFiltradosAtuais
+                ?.length || 0;
+
+
+        info.textContent =
+            totalFiltrados > 0
+                ? `${totalFiltrados} produto(s) no filtro atual`
+                : '';
+
+    }
+
+
+    // =====================================================
+    // CHECK MASTER
+    // =====================================================
+
+    const master =
+        document.getElementById(
+            'checkSelecionarPaginaEstoque'
+        );
+
+
+    if (
+        master &&
+        produtosPaginaAtualMassa.length > 0
+    ) {
+
+        const totalPagina =
+            produtosPaginaAtualMassa.length;
+
+
+        const selecionadosPagina =
+            produtosPaginaAtualMassa
+                .filter(
+                    produto =>
+                        produtosSelecionadosMassa
+                            .has(
+                                String(
+                                    produto.id
+                                )
+                            )
+                )
+                .length;
+
+
+        master.checked =
+            selecionadosPagina ===
+            totalPagina;
+
+
+        master.indeterminate =
+            selecionadosPagina > 0 &&
+            selecionadosPagina <
+            totalPagina;
+
+    }
 }
 
 // =========================================================
@@ -939,19 +1259,12 @@ function atualizarSelectCategorias() {
                     'option'
                 );
 
-
-            optionOutros.value =
-                'outros';
-
-
-            optionOutros.textContent =
-                'Outros';
-
+            optionOutros.value = 'outros';
+            optionOutros.textContent = 'Outros';
 
             select.appendChild(
                 optionOutros
             );
-
 
             // =================================================
             // RESTAURAR VALOR ANTERIOR
@@ -1310,6 +1623,13 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     const inicio = (paginaAtualEstoque - 1) * itensPorPaginaEstoque;
     const fim = Math.min(inicio + itensPorPaginaEstoque, produtosOrdenados.length);
     const produtosPagina = produtosOrdenados.slice(inicio, fim);
+
+    // =========================================================
+    // GUARDAR PRODUTOS DA PÁGINA PARA SELEÇÃO EM MASSA
+    // =========================================================
+
+    produtosPaginaAtualMassa =
+        [...produtosPagina];
     
     tbody.innerHTML = '';
     
@@ -1404,6 +1724,1465 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
     
     atualizarPaginacaoEstoque(produtosOrdenados.length);
     console.log('✅ [renderizarTabelaProdutos] Renderização concluída!');
+}
+
+// =========================================================
+// ABRIR MODAL DE AJUSTE EM MASSA
+// =========================================================
+
+function abrirModalAjusteMassaEstoque() {
+
+    const ids =
+        Array.from(
+            produtosSelecionadosMassa
+        );
+
+
+    if (
+        ids.length === 0
+    ) {
+
+        showToast(
+            'Selecione pelo menos um produto.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const produtos =
+        produtosEstoque.filter(
+            produto =>
+                produtosSelecionadosMassa
+                    .has(
+                        String(
+                            produto.id
+                        )
+                    )
+        );
+
+
+    if (
+        produtos.length === 0
+    ) {
+
+        showToast(
+            'Produtos selecionados não encontrados.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // CATEGORIAS DOS PRODUTOS
+    // =====================================================
+
+    const categorias =
+        [
+            ...new Set(
+                produtos.map(
+                    p =>
+                        p.categoria ||
+                        ''
+                )
+            )
+        ];
+
+
+    const mesmaCategoria =
+        categorias.length === 1
+            ? categorias[0]
+            : '';
+
+
+    // =====================================================
+    // CRIAR MODAL
+    // =====================================================
+
+    document
+        .getElementById(
+            'modalAjusteMassaEstoque'
+        )
+        ?.remove();
+
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalAjusteMassaEstoque';
+
+
+    modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.55);
+        z-index: 100020;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    `;
+
+
+    modal.innerHTML = `
+
+        <div
+            style="
+                width: 94%;
+                max-width: 900px;
+                max-height: 92vh;
+                overflow-y: auto;
+                background: white;
+                border-radius: 12px;
+                padding: 22px;
+                box-shadow: 0 20px 60px rgba(0,0,0,.3);
+            "
+        >
+
+            <div
+                style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-bottom: 1px solid #dee2e6;
+                    padding-bottom: 12px;
+                    margin-bottom: 15px;
+                "
+            >
+
+                <div>
+
+                    <h3
+                        style="
+                            margin: 0;
+                            color: #00ADEE;
+                        "
+                    >
+
+                        <i class="fas fa-edit"></i>
+                        Ajustar Produtos em Massa
+
+                    </h3>
+
+
+                    <div
+                        style="
+                            font-size: 12px;
+                            color: #6c757d;
+                            margin-top: 4px;
+                        "
+                    >
+
+                        ${produtos.length}
+                        produto(s) selecionado(s)
+
+                    </div>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    onclick="fecharModalAjusteMassaEstoque()"
+                    style="
+                        border: none;
+                        background: transparent;
+                        font-size: 25px;
+                        cursor: pointer;
+                    "
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <div
+                style="
+                    background: #fff3cd;
+                    border-left: 4px solid #ffc107;
+                    padding: 11px 14px;
+                    margin-bottom: 18px;
+                    border-radius: 5px;
+                    font-size: 12px;
+                "
+            >
+
+                <strong>Importante:</strong>
+
+                somente os campos que você marcar como
+                <strong>Alterar</strong>
+                serão modificados.
+
+                Todos os outros dados permanecem exatamente
+                como estão.
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- CATEGORIA -->
+            <!-- ========================================== -->
+
+            ${criarCampoMassaCategoria(
+                mesmaCategoria
+            )}
+
+
+            <!-- ========================================== -->
+            <!-- PREÇO -->
+            <!-- ========================================== -->
+
+            ${criarCampoMassaSimples({
+                id: 'Preco',
+                label: 'Preço de venda',
+                tipo: 'number',
+                placeholder: 'Ex: 99,90'
+            })}
+
+
+            <!-- ========================================== -->
+            <!-- DESCRIÇÃO -->
+            <!-- ========================================== -->
+
+            ${criarCampoMassaSimples({
+                id: 'Descricao',
+                label: 'Descrição / Observações',
+                tipo: 'textarea',
+                placeholder: 'Nova descrição para os produtos selecionados'
+            })}
+
+
+            <!-- ========================================== -->
+            <!-- SINCRONIZAÇÃO -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    border: 1px solid #dee2e6;
+                    border-radius: 8px;
+                    padding: 13px;
+                    margin-bottom: 10px;
+                "
+            >
+
+                <label
+                    style="
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        font-weight: 600;
+                        margin-bottom: 10px;
+                    "
+                >
+
+                    <input
+                        type="checkbox"
+                        id="massaAlterarSync"
+                        onchange="
+                            document
+                                .getElementById('massaValorSync')
+                                .disabled = !this.checked
+                        "
+                    >
+
+                    Alterar sincronização com Mercado Livre
+
+                </label>
+
+
+                <select
+                    id="massaValorSync"
+                    class="form-control"
+                    disabled
+                >
+
+                    <option value="ativo">
+                        Sincronização ATIVA
+                    </option>
+
+                    <option value="bloqueado">
+                        Sincronização BLOQUEADA
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- ATRIBUTOS -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    margin-top: 20px;
+                    border-top: 1px solid #dee2e6;
+                    padding-top: 15px;
+                "
+            >
+
+                <h4
+                    style="
+                        font-size: 15px;
+                        margin-bottom: 5px;
+                    "
+                >
+
+                    <i
+                        class="fas fa-sliders-h"
+                        style="color:#00ADEE;"
+                    ></i>
+
+                    Atributos da Categoria
+
+                </h4>
+
+
+                <div
+                    style="
+                        font-size: 11px;
+                        color: #6c757d;
+                        margin-bottom: 12px;
+                    "
+                >
+
+                    Escolha uma categoria acima para
+                    visualizar seus atributos.
+
+                </div>
+
+
+                <div
+                    id="camposAtributosMassa"
+                ></div>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- BOTÕES -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 10px;
+                    margin-top: 20px;
+                    border-top: 1px solid #dee2e6;
+                    padding-top: 15px;
+                "
+            >
+
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    onclick="fecharModalAjusteMassaEstoque()"
+                >
+                    Cancelar
+                </button>
+
+
+                <button
+                    type="button"
+                    class="btn btn-primary"
+                    id="btnSalvarAjusteMassa"
+                    onclick="salvarAjusteMassaEstoque()"
+                >
+
+                    <i class="fas fa-save"></i>
+
+                    Aplicar em
+                    ${produtos.length}
+                    Produto(s)
+
+                </button>
+
+            </div>
+
+        </div>
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    // =====================================================
+    // PREENCHER SELECT DE CATEGORIA
+    // =====================================================
+
+    preencherSelectCategoriaMassa(
+        mesmaCategoria
+    );
+
+
+    if (
+        mesmaCategoria
+    ) {
+
+        gerarCamposAtributosMassa(
+            mesmaCategoria
+        );
+
+    }
+}
+
+function criarCampoMassaCategoria(
+    categoriaAtual
+) {
+
+    return `
+
+        <div
+            style="
+                border:1px solid #dee2e6;
+                border-radius:8px;
+                padding:13px;
+                margin-bottom:10px;
+            "
+        >
+
+            <label
+                style="
+                    display:flex;
+                    align-items:center;
+                    gap:8px;
+                    font-weight:600;
+                    margin-bottom:10px;
+                "
+            >
+
+                <input
+                    type="checkbox"
+                    id="massaAlterarCategoria"
+                    onchange="toggleCategoriaMassa(this.checked)"
+                >
+
+                Alterar categoria
+
+            </label>
+
+
+            <select
+                id="massaCategoria"
+                class="form-control"
+                disabled
+                onchange="
+                    gerarCamposAtributosMassa(
+                        this.value
+                    )
+                "
+            ></select>
+
+
+            ${
+                categoriaAtual
+                    ? `
+
+                    <small
+                        style="
+                            display:block;
+                            margin-top:5px;
+                            color:#6c757d;
+                        "
+                    >
+                        Categoria atual dos selecionados:
+                        <strong>
+                            ${escapeHtml(categoriaAtual)}
+                        </strong>
+                    </small>
+
+                    `
+                    : `
+
+                    <small
+                        style="
+                            display:block;
+                            margin-top:5px;
+                            color:#856404;
+                        "
+                    >
+                        Os produtos selecionados possuem
+                        categorias diferentes.
+                    </small>
+
+                    `
+            }
+
+        </div>
+    `;
+}
+
+
+// =========================================================
+
+function criarCampoMassaSimples({
+    id,
+    label,
+    tipo,
+    placeholder
+}) {
+
+    const controle =
+        tipo === 'textarea'
+
+            ? `
+
+                <textarea
+                    id="massaValor${id}"
+                    class="form-control"
+                    rows="3"
+                    placeholder="${placeholder || ''}"
+                    disabled
+                ></textarea>
+
+            `
+
+            : `
+
+                <input
+                    type="${tipo}"
+                    id="massaValor${id}"
+                    class="form-control"
+                    placeholder="${placeholder || ''}"
+                    ${tipo === 'number' ? 'step="0.01"' : ''}
+                    disabled
+                >
+
+            `;
+
+
+    return `
+
+        <div
+            style="
+                border:1px solid #dee2e6;
+                border-radius:8px;
+                padding:13px;
+                margin-bottom:10px;
+            "
+        >
+
+            <label
+                style="
+                    display:flex;
+                    align-items:center;
+                    gap:8px;
+                    font-weight:600;
+                    margin-bottom:10px;
+                "
+            >
+
+                <input
+                    type="checkbox"
+                    id="massaAlterar${id}"
+                    onchange="
+                        document
+                            .getElementById('massaValor${id}')
+                            .disabled = !this.checked
+                    "
+                >
+
+                Alterar ${label}
+
+            </label>
+
+
+            ${controle}
+
+        </div>
+    `;
+}
+
+
+// =========================================================
+
+function toggleCategoriaMassa(
+    ativo
+) {
+
+    const select =
+        document.getElementById(
+            'massaCategoria'
+        );
+
+
+    if (
+        select
+    ) {
+
+        select.disabled =
+            !ativo;
+
+    }
+}
+
+function preencherSelectCategoriaMassa(
+    categoriaAtual = ''
+) {
+
+    const select =
+        document.getElementById(
+            'massaCategoria'
+        );
+
+
+    if (!select) {
+        return;
+    }
+
+
+    select.innerHTML = `
+
+        <option value="">
+            Selecione uma categoria
+        </option>
+
+    `;
+
+
+    const categoriasPadrao = [
+        'Eixos',
+        'Parafusos',
+        'Rolamentos',
+        'Raios',
+        'Arruelas',
+        'Porcas',
+        'CapacetesEPartes',
+        'outros'
+    ];
+
+
+    const todas =
+        [
+            ...new Set([
+                ...categoriasPadrao,
+                ...Object.keys(
+                    categoriasCustomizadas ||
+                    {}
+                )
+            ])
+        ];
+
+
+    todas.sort(
+        (
+            a,
+            b
+        ) =>
+            a.localeCompare(
+                b,
+                'pt-BR'
+            )
+    );
+
+
+    todas.forEach(
+        categoria => {
+
+            const option =
+                document.createElement(
+                    'option'
+                );
+
+
+            option.value =
+                categoria;
+
+
+            option.textContent =
+                categoriasCustomizadas[
+                    categoria
+                ]
+                    ? `${categoria} ★`
+                    : categoria;
+
+
+            select.appendChild(
+                option
+            );
+
+        }
+    );
+
+
+    if (
+        categoriaAtual &&
+        Array.from(
+            select.options
+        ).some(
+            o =>
+                o.value ===
+                categoriaAtual
+        )
+    ) {
+
+        select.value =
+            categoriaAtual;
+
+    }
+}
+
+function gerarCamposAtributosMassa(
+    categoria
+) {
+
+    const container =
+        document.getElementById(
+            'camposAtributosMassa'
+        );
+
+
+    if (!container) {
+        return;
+    }
+
+
+    if (!categoria) {
+
+        container.innerHTML = `
+
+            <div
+                style="
+                    padding:15px;
+                    color:#6c757d;
+                    background:#f8f9fa;
+                    border-radius:6px;
+                    text-align:center;
+                "
+            >
+                Selecione uma categoria.
+            </div>
+
+        `;
+
+
+        return;
+    }
+
+
+    const campos =
+        getCamposPorCategoria(
+            categoria
+        ) || [];
+
+
+    // MLB não deve ser colocado igual em vários produtos.
+    const permitidos =
+        campos.filter(
+            campo =>
+                campo.nome !==
+                'mlb_codes'
+        );
+
+
+    if (
+        permitidos.length === 0
+    ) {
+
+        container.innerHTML = `
+
+            <div
+                style="
+                    padding:15px;
+                    color:#6c757d;
+                "
+            >
+                Esta categoria não possui atributos
+                editáveis em massa.
+            </div>
+
+        `;
+
+
+        return;
+    }
+
+
+    let html = `
+
+        <div
+            style="
+                display:grid;
+                grid-template-columns:
+                    repeat(
+                        auto-fit,
+                        minmax(280px,1fr)
+                    );
+                gap:10px;
+            "
+        >
+
+    `;
+
+
+    permitidos.forEach(
+        campo => {
+
+            let inputHtml = '';
+
+
+            if (
+                campo.tipo ===
+                'select'
+            ) {
+
+                inputHtml = `
+
+                    <select
+                        id="massaAtributo_${campo.nome}"
+                        class="form-control"
+                        disabled
+                    >
+
+                        <option value="">
+                            Selecione...
+                        </option>
+
+                        ${(campo.opcoes || [])
+                            .map(
+                                opcao => `
+
+                                <option
+                                    value="${escapeHtml(String(opcao))}"
+                                >
+                                    ${escapeHtml(String(opcao))}
+                                </option>
+
+                            `
+                            )
+                            .join('')}
+
+                    </select>
+
+                `;
+
+            }
+
+            else if (
+                campo.tipo ===
+                'textarea'
+            ) {
+
+                inputHtml = `
+
+                    <textarea
+                        id="massaAtributo_${campo.nome}"
+                        class="form-control"
+                        rows="${campo.rows || 2}"
+                        disabled
+                    ></textarea>
+
+                `;
+
+            }
+
+            else if (
+                campo.tipo ===
+                'checkbox'
+            ) {
+
+                inputHtml = `
+
+                    <select
+                        id="massaAtributo_${campo.nome}"
+                        class="form-control"
+                        disabled
+                    >
+                        <option value="true">
+                            Sim
+                        </option>
+
+                        <option value="false">
+                            Não
+                        </option>
+                    </select>
+
+                `;
+
+            }
+
+            else {
+
+                inputHtml = `
+
+                    <input
+                        id="massaAtributo_${campo.nome}"
+                        type="${
+                            campo.tipo === 'number'
+                                ? 'number'
+                                : 'text'
+                        }"
+                        class="form-control"
+                        ${
+                            campo.tipo === 'number'
+                                ? 'step="0.01"'
+                                : ''
+                        }
+                        disabled
+                    >
+
+                `;
+
+            }
+
+
+            html += `
+
+                <div
+                    style="
+                        border:1px solid #e9ecef;
+                        border-radius:7px;
+                        padding:10px;
+                    "
+                >
+
+                    <label
+                        style="
+                            display:flex;
+                            align-items:center;
+                            gap:6px;
+                            font-weight:600;
+                            font-size:12px;
+                            margin-bottom:7px;
+                        "
+                    >
+
+                        <input
+                            type="checkbox"
+                            class="massa-check-atributo"
+                            data-campo="${campo.nome}"
+                            data-tipo="${campo.tipo || 'text'}"
+                            onchange="
+                                document
+                                    .getElementById(
+                                        'massaAtributo_${campo.nome}'
+                                    )
+                                    .disabled = !this.checked
+                            "
+                        >
+
+                        ${escapeHtml(
+                            campo.label ||
+                            campo.nome
+                        )}
+
+                    </label>
+
+
+                    ${inputHtml}
+
+                </div>
+
+            `;
+
+        }
+    );
+
+
+    html += '</div>';
+
+
+    container.innerHTML =
+        html;
+}
+
+async function salvarAjusteMassaEstoque() {
+
+    const ids =
+        Array.from(
+            produtosSelecionadosMassa
+        );
+
+
+    if (
+        ids.length === 0
+    ) {
+        return;
+    }
+
+
+    // =====================================================
+    // O QUE FOI MARCADO
+    // =====================================================
+
+    const alterarCategoria =
+        document.getElementById(
+            'massaAlterarCategoria'
+        )?.checked;
+
+
+    const alterarPreco =
+        document.getElementById(
+            'massaAlterarPreco'
+        )?.checked;
+
+
+    const alterarDescricao =
+        document.getElementById(
+            'massaAlterarDescricao'
+        )?.checked;
+
+
+    const alterarSync =
+        document.getElementById(
+            'massaAlterarSync'
+        )?.checked;
+
+
+    const categoria =
+        document.getElementById(
+            'massaCategoria'
+        )?.value || '';
+
+
+    const preco =
+        parseFloat(
+            document.getElementById(
+                'massaValorPreco'
+            )?.value
+        );
+
+
+    const descricao =
+        document.getElementById(
+            'massaValorDescricao'
+        )?.value ?? '';
+
+
+    const syncValor =
+        document.getElementById(
+            'massaValorSync'
+        )?.value;
+
+
+    const atributosAlterar = {};
+
+
+    document
+        .querySelectorAll(
+            '.massa-check-atributo:checked'
+        )
+        .forEach(
+            check => {
+
+                const campo =
+                    check.dataset.campo;
+
+
+                const tipo =
+                    check.dataset.tipo;
+
+
+                const input =
+                    document.getElementById(
+                        `massaAtributo_${campo}`
+                    );
+
+
+                if (!input) {
+                    return;
+                }
+
+
+                let valor =
+                    input.value;
+
+
+                if (
+                    tipo ===
+                    'number'
+                ) {
+
+                    valor =
+                        valor === ''
+                            ? ''
+                            : parseFloat(
+                                valor
+                            );
+
+                }
+
+
+                if (
+                    tipo ===
+                    'checkbox'
+                ) {
+
+                    valor =
+                        valor ===
+                        'true';
+
+                }
+
+
+                atributosAlterar[
+                    campo
+                ] =
+                    valor;
+
+            }
+        );
+
+
+    // =====================================================
+    // NADA MARCADO
+    // =====================================================
+
+    if (
+        !alterarCategoria &&
+        !alterarPreco &&
+        !alterarDescricao &&
+        !alterarSync &&
+        Object.keys(
+            atributosAlterar
+        ).length === 0
+    ) {
+
+        showToast(
+            '⚠️ Marque pelo menos um campo para alterar.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        alterarCategoria &&
+        !categoria
+    ) {
+
+        showToast(
+            '⚠️ Selecione a nova categoria.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        alterarPreco &&
+        (
+            isNaN(preco) ||
+            preco < 0
+        )
+    ) {
+
+        showToast(
+            '⚠️ Informe um preço válido.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const confirmar =
+        confirm(
+            `Aplicar as alterações em ${ids.length} produto(s)?`
+        );
+
+
+    if (!confirmar) {
+        return;
+    }
+
+
+    const botao =
+        document.getElementById(
+            'btnSalvarAjusteMassa'
+        );
+
+
+    if (botao) {
+
+        botao.disabled =
+            true;
+
+
+        botao.innerHTML =
+            '<i class="fas fa-spinner fa-spin"></i> Atualizando...';
+
+    }
+
+
+    let atualizados =
+        0;
+
+
+    const erros =
+        [];
+
+
+    // =====================================================
+    // PRODUTO POR PRODUTO
+    //
+    // Escolhi individualmente para que se um falhar,
+    // os demais continuem.
+    // =====================================================
+
+    for (
+        let i = 0;
+        i < ids.length;
+        i++
+    ) {
+
+        const id =
+            ids[i];
+
+
+        const produto =
+            produtosEstoque.find(
+                p =>
+                    String(
+                        p.id
+                    ) ===
+                    String(id)
+            );
+
+
+        if (!produto) {
+
+            erros.push(
+                `ID ${id}: produto não encontrado`
+            );
+
+            continue;
+        }
+
+
+        try {
+
+            const atualizacao = {};
+
+
+            // =============================================
+            // CATEGORIA
+            // =============================================
+
+            if (
+                alterarCategoria
+            ) {
+
+                atualizacao.categoria =
+                    categoria;
+
+            }
+
+
+            // =============================================
+            // PREÇO
+            // =============================================
+
+            if (
+                alterarPreco
+            ) {
+
+                atualizacao.preco =
+                    preco;
+
+            }
+
+
+            // =============================================
+            // DESCRIÇÃO
+            // =============================================
+
+            if (
+                alterarDescricao
+            ) {
+
+                atualizacao.descricao =
+                    descricao;
+
+            }
+
+
+            // =============================================
+            // DADOS EXTRA
+            // =============================================
+
+            let dadosExtraNovo = {
+
+                ...(
+                    produto
+                        .dados_extra ||
+                    {}
+                )
+
+            };
+
+
+            for (
+                const [
+                    campo,
+                    valor
+                ]
+                of Object.entries(
+                    atributosAlterar
+                )
+            ) {
+
+                dadosExtraNovo[
+                    campo
+                ] =
+                    valor;
+
+            }
+
+
+            // =============================================
+            // SINCRONIZAÇÃO
+            // =============================================
+
+            if (
+                alterarSync
+            ) {
+
+                const bloqueado =
+                    syncValor ===
+                    'bloqueado';
+
+
+                atualizacao
+                    .bloquear_sync_ml =
+                    bloqueado;
+
+
+                dadosExtraNovo
+                    .bloquear_sync_ml =
+                    bloqueado;
+
+            }
+
+
+            if (
+                Object.keys(
+                    atributosAlterar
+                ).length > 0 ||
+                alterarSync
+            ) {
+
+                atualizacao.dados_extra =
+                    dadosExtraNovo;
+
+            }
+
+
+            // =============================================
+            // GRAVAR
+            // =============================================
+
+            const {
+                error
+            } =
+                await window.supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update(
+                        atualizacao
+                    )
+                    .eq(
+                        'id',
+                        produto.id
+                    );
+
+
+            if (
+                error
+            ) {
+                throw error;
+            }
+
+
+            atualizados++;
+
+
+            if (
+                botao
+            ) {
+
+                botao.innerHTML =
+                    `<i class="fas fa-spinner fa-spin"></i> ${i + 1}/${ids.length}`;
+
+            }
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                `❌ Erro atualizando ${produto.sku}:`,
+                error
+            );
+
+
+            erros.push(
+                `${produto.sku}: ${error.message}`
+            );
+
+        }
+
+    }
+
+
+    // =====================================================
+    // FINAL
+    // =====================================================
+
+    await carregarProdutosEstoque();
+
+
+    limparSelecaoEstoqueMassa();
+
+
+    fecharModalAjusteMassaEstoque();
+
+
+    if (
+        erros.length === 0
+    ) {
+
+        showToast(
+            `✅ ${atualizados} produto(s) atualizado(s) com sucesso!`,
+            'success'
+        );
+
+    } else {
+
+        showToast(
+            `⚠️ ${atualizados} atualizado(s) e ${erros.length} erro(s). Consulte o console.`,
+            'warning'
+        );
+
+
+        console.error(
+            'Erros da edição em massa:',
+            erros
+        );
+
+    }
+}
+
+function fecharModalAjusteMassaEstoque() {
+
+    document
+        .getElementById(
+            'modalAjusteMassaEstoque'
+        )
+        ?.remove();
 }
 
 // =========================================================
@@ -20131,6 +21910,15 @@ window.confirmarImportacaoCadastroInicial = confirmarImportacaoCadastroInicial;
 window.fecharPreviaCadastroInicial = fecharPreviaCadastroInicial;
 window.desativarImportadorCadastroInicial = desativarImportadorCadastroInicial;
 window.adicionarBotaoImportacaoCadastroInicial = adicionarBotaoImportacaoCadastroInicial;
+window.alterarSelecaoProdutoMassa = alterarSelecaoProdutoMassa;
+window.selecionarPaginaEstoqueMassa = selecionarPaginaEstoqueMassa;
+window.selecionarTodosFiltradosEstoqueMassa = selecionarTodosFiltradosEstoqueMassa;
+window.limparSelecaoEstoqueMassa = limparSelecaoEstoqueMassa;
+window.abrirModalAjusteMassaEstoque = abrirModalAjusteMassaEstoque;
+window.fecharModalAjusteMassaEstoque = fecharModalAjusteMassaEstoque;
+window.salvarAjusteMassaEstoque = salvarAjusteMassaEstoque;
+window.gerarCamposAtributosMassa = gerarCamposAtributosMassa;
+window.toggleCategoriaMassa = toggleCategoriaMassa;
 // =========================================================
 // INICIALIZAR REGRAS PARA CATEGORIAS CUSTOMIZADAS
 // =========================================================

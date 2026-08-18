@@ -6002,28 +6002,121 @@ body > * {
             </button>
         </div>
     </div>
+
+    <div
+    id="barraAcoesMassaEstoque"
+    style="
+        display: none;
+        background: #eef8ff;
+        border: 1px solid #b8e2f7;
+        border-left: 4px solid #00ADEE;
+        padding: 10px 14px;
+        margin-bottom: 10px;
+        border-radius: 7px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        flex-wrap: wrap;
+    "
+>
+
+    <div>
+
+        <strong id="contadorSelecionadosEstoque">
+            0 produtos selecionados
+        </strong>
+
+        <span
+            id="infoSelecionadosFiltrados"
+            style="
+                color: #6c757d;
+                font-size: 12px;
+                margin-left: 8px;
+            "
+        ></span>
+
+    </div>
+
+
+    <div
+        style="
+            display: flex;
+            gap: 7px;
+            flex-wrap: wrap;
+        "
+    >
+
+        <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            onclick="selecionarTodosFiltradosEstoqueMassa()"
+        >
+            <i class="fas fa-check-double"></i>
+            Selecionar todos filtrados
+        </button>
+
+
+        <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            onclick="limparSelecaoEstoqueMassa()"
+        >
+            <i class="fas fa-times"></i>
+            Limpar seleção
+        </button>
+
+
+        <button
+            type="button"
+            class="btn btn-sm btn-primary"
+            onclick="abrirModalAjusteMassaEstoque()"
+        >
+            <i class="fas fa-edit"></i>
+            Ajustar em massa
+        </button>
+
+    </div>
+
+</div>
         <div class="table-responsive">
             <table class="table" id="produtosEstoqueTable">
                 <thead>
-    <tr>
-        <th data-coluna="id" style="cursor: pointer;" onclick="ordenarEstoquePor('id')">
-            ID <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #00ADEE;"></i>
-        </th>
-        <th data-coluna="nome" style="cursor: pointer;" onclick="ordenarEstoquePor('nome')">
-            Nome / Categoria <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
-        </th>
-        <th data-coluna="sku" style="cursor: pointer;" onclick="ordenarEstoquePor('sku')">
-            SKU <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
-        </th>
-        <th data-coluna="quantidade" style="cursor: pointer;" onclick="ordenarEstoquePor('quantidade')">
-            Quantidade <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
-        </th>
-        <th data-coluna="preco_custo" style="cursor: pointer;" onclick="ordenarEstoquePor('preco_custo')">
-            Custo (R$) <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
-        </th>
-        <th data-coluna="preco_medio" style="cursor: pointer;" onclick="ordenarEstoquePor('preco_medio')">
-            Médio (R$) <i class="fas fa-sort ordenacao-icon" style="font-size: 11px; margin-left: 5px; color: #adb5bd;"></i>
-        </th>
+<tr>
+
+    <th
+        style="
+            width: 42px;
+            text-align: center;
+        "
+    >
+        <input
+            type="checkbox"
+            id="checkSelecionarPaginaEstoque"
+            onchange="selecionarPaginaEstoqueMassa(this.checked)"
+            title="Selecionar produtos desta página"
+            style="
+                width: 17px;
+                height: 17px;
+                cursor: pointer;
+            "
+        >
+    </th>
+
+    <th
+        data-coluna="id"
+        style="cursor: pointer;"
+        onclick="ordenarEstoquePor('id')"
+    >
+        ID
+        <i
+            class="fas fa-sort ordenacao-icon"
+            style="
+                font-size: 11px;
+                margin-left: 5px;
+                color: #00ADEE;
+            "
+        ></i>
+    </th>
         <th>Sincronizado?</th>
         <th>Atributos</th>
         <th>Ações</th>

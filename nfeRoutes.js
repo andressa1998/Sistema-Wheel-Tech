@@ -5,22 +5,19 @@ const {
     listarNFesEmitidas,
     listarTransportadoras,
     cadastrarTransportadora,
-    listarClientes,
     emitirNFEAvulsa,
     consultarStatusNFE,
     sincronizarVendasML,
     listarVendasSemNFE,
     listarVendasComNFE,
     buscarXMLPorChave,
-    listarClientes,
     cadastrarCliente,
     buscarClientePorId,
     atualizarCliente,
-    testarEnvioXMLFixo,   // rota de teste com XML fixo (opcional)
+    testarEnvioXMLFixo,
     testarXmlRaw,
     testarEventoRaw,
-    cadastrarCliente,
-    buscarClientePorId       
+    listarClientes   
 } = require('./nfeController');
 
 const router = express.Router();
