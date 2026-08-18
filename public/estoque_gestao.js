@@ -179,36 +179,269 @@ async function salvarCategoriasCustomizadas() {
     }
 }
 
-// ===== FUNÇÃO PARA CARREGAR CATEGORIAS CUSTOMIZADAS =====
+// =========================================================
+// CARREGAR CATEGORIAS CUSTOMIZADAS
+// E ATUALIZAR TODOS OS SELECTS
+// =========================================================
+
 async function carregarCategoriasCustomizadas() {
+
     try {
-        if (!window.supabaseClient) {
-            const localData = localStorage.getItem('categorias_customizadas');
-            if (localData) {
-                categoriasCustomizadas = JSON.parse(localData);
-                console.log('✅ Categorias customizadas carregadas do localStorage');
+
+        console.log(
+            '🔄 Carregando categorias customizadas...'
+        );
+
+
+        // =================================================
+        // SEM SUPABASE
+        // =================================================
+
+        if (
+            !window.supabaseClient
+        ) {
+
+            const localData =
+                localStorage.getItem(
+                    'categorias_customizadas'
+                );
+
+
+            if (
+                localData
+            ) {
+
+                try {
+
+                    categoriasCustomizadas =
+                        JSON.parse(
+                            localData
+                        ) || {};
+
+                } catch (error) {
+
+                    console.error(
+                        '❌ Erro lendo categorias do localStorage:',
+                        error
+                    );
+
+
+                    categoriasCustomizadas =
+                        {};
+
+                }
+
             }
-            return;
+
+
+            console.log(
+                '✅ Categorias customizadas carregadas do localStorage:',
+                Object.keys(
+                    categoriasCustomizadas
+                )
+            );
+
+
+            // =============================================
+            // IMPORTANTE
+            // =============================================
+
+            atualizarSelectCategorias();
+
+
+            preencherListaCategorias();
+
+
+            if (
+                typeof preencherListaCategoriasGerenciamento ===
+                'function'
+            ) {
+
+                const modalGerenciar =
+                    document.getElementById(
+                        'modalGerenciarCategorias'
+                    );
+
+
+                if (
+                    modalGerenciar &&
+                    modalGerenciar.style.display ===
+                    'flex'
+                ) {
+
+                    preencherListaCategoriasGerenciamento();
+
+                }
+
+            }
+
+
+            return categoriasCustomizadas;
+
         }
-        
-        const { data, error } = await window.supabaseClient
-            .from('configuracoes_sistema')
-            .select('*')
-            .eq('chave', 'categorias_customizadas')
-            .single();
-        
-        if (error && error.code !== 'PGRST116') {
-            console.error('Erro ao carregar categorias customizadas:', error);
-            return;
+
+
+        // =================================================
+        // SUPABASE
+        // =================================================
+
+        const {
+            data,
+            error
+        } =
+            await window.supabaseClient
+                .from(
+                    'configuracoes_sistema'
+                )
+                .select('*')
+                .eq(
+                    'chave',
+                    'categorias_customizadas'
+                )
+                .maybeSingle();
+
+
+        if (
+            error
+        ) {
+
+            console.error(
+                '❌ Erro ao carregar categorias customizadas:',
+                error
+            );
+
+
+            return categoriasCustomizadas;
+
         }
-        
-        if (data && data.valor) {
-            categoriasCustomizadas = typeof data.valor === 'string' ? JSON.parse(data.valor) : data.valor;
-            console.log('✅ Categorias customizadas carregadas:', Object.keys(categoriasCustomizadas).length);
+
+
+        // =================================================
+        // CARREGAR OBJETO
+        // =================================================
+
+        if (
+            data &&
+            data.valor
+        ) {
+
+            if (
+                typeof data.valor ===
+                'string'
+            ) {
+
+                try {
+
+                    categoriasCustomizadas =
+                        JSON.parse(
+                            data.valor
+                        ) || {};
+
+                } catch (error) {
+
+                    console.error(
+                        '❌ JSON das categorias inválido:',
+                        error
+                    );
+
+
+                    categoriasCustomizadas =
+                        {};
+
+                }
+
+            } else {
+
+                categoriasCustomizadas =
+                    data.valor || {};
+
+            }
+
+        } else {
+
+            categoriasCustomizadas =
+                {};
+
         }
+
+
+        // =================================================
+        // FALLBACK LOCAL
+        // =================================================
+
+        localStorage.setItem(
+
+            'categorias_customizadas',
+
+            JSON.stringify(
+                categoriasCustomizadas
+            )
+
+        );
+
+
+        console.log(
+            `✅ ${Object.keys(categoriasCustomizadas).length} categoria(s) customizada(s) carregada(s):`,
+            Object.keys(
+                categoriasCustomizadas
+            )
+        );
+
+
+        // =================================================
+        // ESSA PARTE ESTAVA FALTANDO
+        // =================================================
+
+        atualizarSelectCategorias();
+
+
+        preencherListaCategorias();
+
+
+        if (
+            typeof preencherListaCategoriasGerenciamento ===
+            'function'
+        ) {
+
+            const modalGerenciar =
+                document.getElementById(
+                    'modalGerenciarCategorias'
+                );
+
+
+            if (
+                modalGerenciar &&
+                modalGerenciar.style.display ===
+                'flex'
+            ) {
+
+                preencherListaCategoriasGerenciamento();
+
+            }
+
+        }
+
+
+        return categoriasCustomizadas;
+
+
     } catch (error) {
-        console.error('❌ Erro ao carregar categorias customizadas:', error);
-        categoriasCustomizadas = {};
+
+        console.error(
+            '❌ Erro ao carregar categorias customizadas:',
+            error
+        );
+
+
+        categoriasCustomizadas =
+            {};
+
+
+        atualizarSelectCategorias();
+
+
+        return categoriasCustomizadas;
+
     }
 }
 
@@ -464,67 +697,289 @@ function preencherListaCategorias() {
     container.innerHTML = html;
 }
 
-// ===== ATUALIZAR SELECT DE CATEGORIAS =====
+// =========================================================
+// ATUALIZAR TODOS OS SELECTS DE CATEGORIAS
+// PADRÃO + CUSTOMIZADAS
+// =========================================================
+
 function atualizarSelectCategorias() {
-    const selects = document.querySelectorAll('#produtoCategoria, #filtroCategoriaEstoque');
-    const todasCategorias = {
-        ...camposPorCategoria,
-        ...categoriasCustomizadas
-    };
-    
-    const categoriasLista = Object.keys(todasCategorias).filter(c => c !== 'outros');
-    
-    selects.forEach(select => {
-        if (!select) return;
-        const valorAtual = select.value;
-        
-        // Preservar a opção "Selecione" ou "Todas"
-        const firstOption = select.options[0];
-        const isFilter = select.id === 'filtroCategoriaEstoque';
-        
-        select.innerHTML = '';
-        
-        if (isFilter) {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = 'Todas as categorias';
-            select.appendChild(option);
-        } else {
-            const option = document.createElement('option');
-            option.value = '';
-            option.textContent = 'Selecione uma categoria';
-            select.appendChild(option);
+
+    console.log(
+        '🔄 [CATEGORIAS] Atualizando selects...',
+        Object.keys(categoriasCustomizadas || {})
+    );
+
+
+    // =====================================================
+    // CATEGORIAS PADRÃO
+    //
+    // value = valor salvo no banco
+    // label = nome mostrado para usuário
+    // =====================================================
+
+    const categoriasPadrao = [
+
+        {
+            value: 'Eixos',
+            label: 'Eixos Passantes'
+        },
+
+        {
+            value: 'Parafusos',
+            label: 'Parafusos'
+        },
+
+        {
+            value: 'Rolamentos',
+            label: 'Rolamentos'
+        },
+
+        {
+            value: 'Raios',
+            label: 'Raios'
+        },
+
+        {
+            value: 'Arruelas',
+            label: 'Arruelas'
+        },
+
+        {
+            value: 'CapacetesEPartes',
+            label: 'Capacetes e Partes'
+        },
+
+        {
+            value: 'Porcas',
+            label: 'Porcas'
         }
-        
-        // Adicionar categorias padrão
-        const categoriasPadrao = ['Eixos', 'Parafusos', 'Rolamentos', 'Raios', 'Arruelas', 'Porcas', 'CapacetesEPartes'];
-        categoriasPadrao.forEach(cat => {
-            const option = document.createElement('option');
-            option.value = cat;
-            option.textContent = cat;
-            select.appendChild(option);
-        });
-        
-        // Adicionar categorias customizadas
-        Object.keys(categoriasCustomizadas).forEach(cat => {
-            const option = document.createElement('option');
-            option.value = cat;
-            option.textContent = `${cat} ⭐`;
-            option.style.color = '#00ADEE';
-            select.appendChild(option);
-        });
-        
-        // Adicionar "outros"
-        const optionOutros = document.createElement('option');
-        optionOutros.value = 'outros';
-        optionOutros.textContent = 'Outros';
-        select.appendChild(optionOutros);
-        
-        // Restaurar valor
-        if (valorAtual && select.querySelector(`option[value="${valorAtual}"]`)) {
-            select.value = valorAtual;
+
+    ];
+
+
+    // =====================================================
+    // CATEGORIAS CUSTOMIZADAS
+    // =====================================================
+
+    const categoriasCustom =
+        Object.keys(
+            categoriasCustomizadas || {}
+        )
+        .filter(Boolean)
+        .sort(
+            (a, b) =>
+                a.localeCompare(
+                    b,
+                    'pt-BR'
+                )
+        );
+
+
+    // =====================================================
+    // SELECTS EXISTENTES
+    // =====================================================
+
+    const selects = [
+
+        document.getElementById(
+            'filtroCategoriaEstoque'
+        ),
+
+        document.getElementById(
+            'produtoCategoria'
+        ),
+
+        // Importador de produtos que estamos criando
+        document.getElementById(
+            'categoriaCadastroInicialSelecionada'
+        )
+
+    ].filter(Boolean);
+
+
+    selects.forEach(
+        select => {
+
+            const valorAtual =
+                select.value;
+
+
+            const isFiltro =
+                select.id ===
+                'filtroCategoriaEstoque';
+
+
+            const isImportador =
+                select.id ===
+                'categoriaCadastroInicialSelecionada';
+
+
+            // Limpa
+            select.innerHTML = '';
+
+
+            // =================================================
+            // PRIMEIRA OPÇÃO
+            // =================================================
+
+            const primeira =
+                document.createElement(
+                    'option'
+                );
+
+
+            primeira.value = '';
+
+
+            if (isFiltro) {
+
+                primeira.textContent =
+                    'Todas as categorias';
+
+            } else if (isImportador) {
+
+                primeira.textContent =
+                    'Selecione a categoria para importação...';
+
+            } else {
+
+                primeira.textContent =
+                    'Selecione uma categoria';
+
+            }
+
+
+            select.appendChild(
+                primeira
+            );
+
+
+            // =================================================
+            // PADRÃO
+            // =================================================
+
+            categoriasPadrao.forEach(
+                categoria => {
+
+                    const option =
+                        document.createElement(
+                            'option'
+                        );
+
+
+                    option.value =
+                        categoria.value;
+
+
+                    option.textContent =
+                        categoria.label;
+
+
+                    select.appendChild(
+                        option
+                    );
+
+                }
+            );
+
+
+            // =================================================
+            // CUSTOMIZADAS
+            // =================================================
+
+            categoriasCustom.forEach(
+                nome => {
+
+                    // Evita uma categoria customizada
+                    // duplicando uma padrão
+                    const jaExiste =
+                        categoriasPadrao.some(
+                            padrao =>
+                                padrao.value === nome
+                        );
+
+
+                    if (jaExiste) {
+                        return;
+                    }
+
+
+                    const option =
+                        document.createElement(
+                            'option'
+                        );
+
+
+                    option.value =
+                        nome;
+
+
+                    option.textContent =
+                        `${nome} ★`;
+
+
+                    option.dataset.customizada =
+                        'true';
+
+
+                    select.appendChild(
+                        option
+                    );
+
+                }
+            );
+
+
+            // =================================================
+            // OUTROS
+            // =================================================
+
+            const optionOutros =
+                document.createElement(
+                    'option'
+                );
+
+
+            optionOutros.value =
+                'outros';
+
+
+            optionOutros.textContent =
+                'Outros';
+
+
+            select.appendChild(
+                optionOutros
+            );
+
+
+            // =================================================
+            // RESTAURAR VALOR ANTERIOR
+            // =================================================
+
+            if (
+                valorAtual &&
+                Array.from(
+                    select.options
+                ).some(
+                    option =>
+                        option.value ===
+                        valorAtual
+                )
+            ) {
+
+                select.value =
+                    valorAtual;
+
+            }
+
+
+            console.log(
+                `✅ [CATEGORIAS] ${select.id}: ${select.options.length} opções`
+            );
+
         }
-    });
+    );
 }
 
 // ===== FECHAR MODAL DE CATEGORIAS =====
@@ -11409,8 +11864,7 @@ function preencherModalRegras() {
         'Raios': 'Raios',
         'Arruelas': 'Arruelas',
         'Porcas': 'Porcas',
-        'CapacetesEPartes': 'Capacetes e Partes',
-        'outros': 'Outros'
+        'CapacetesEPartes': 'Capacetes e Partes'
     };
     
     const operadores = [
@@ -11944,6 +12398,8 @@ function removerRegraIndividual() {
 function abrirModalProdutoEstoque(produto = null) {
     console.log('🚪 [abrirModalProdutoEstoque] Abrindo modal para:', produto?.sku || 'NOVO PRODUTO');
     
+atualizarSelectCategorias();
+
     const modal = document.getElementById('modalProdutoEstoque');
     if (!modal) {
         console.error('❌ Modal #modalProdutoEstoque não encontrado!');
@@ -13030,14 +13486,58 @@ function preencherListaCategoriasGerenciamento() {
 const _salvarCategoriasCustomizadasOriginal = salvarCategoriasCustomizadas;
 
 // Sobrescrever para atualizar o modal também
-salvarCategoriasCustomizadas = async function() {
-    await _salvarCategoriasCustomizadasOriginal();
-    // Se o modal estiver aberto, atualizar a lista
-    const modal = document.getElementById('modalGerenciarCategorias');
-    if (modal && modal.style.display === 'flex') {
-        preencherListaCategoriasGerenciamento();
-    }
-};
+salvarCategoriasCustomizadas =
+    async function() {
+
+        await _salvarCategoriasCustomizadasOriginal();
+
+
+        // =================================================
+        // ATUALIZAR TODOS OS SELECTS IMEDIATAMENTE
+        // =================================================
+
+        atualizarSelectCategorias();
+
+
+        // =================================================
+        // LISTA ANTIGA
+        // =================================================
+
+        if (
+            typeof preencherListaCategorias ===
+            'function'
+        ) {
+
+            preencherListaCategorias();
+
+        }
+
+
+        // =================================================
+        // MODAL NOVO DE GERENCIAMENTO
+        // =================================================
+
+        const modal =
+            document.getElementById(
+                'modalGerenciarCategorias'
+            );
+
+
+        if (
+            modal &&
+            modal.style.display ===
+            'flex'
+        ) {
+
+            preencherListaCategoriasGerenciamento();
+
+        }
+
+
+        console.log(
+            '✅ Categorias salvas e todos os selects atualizados.'
+        );
+    };
 
 // Guardar referência da função original de exclusão
 const _excluirCategoriaCustomizadaOriginal = excluirCategoriaCustomizada;
@@ -17854,8 +18354,7 @@ function abrirModalEscolherCategoriaImportacao(
         'Raios',
         'Arruelas',
         'Porcas',
-        'CapacetesEPartes',
-        'outros'
+        'CapacetesEPartes'
     ];
 
 
@@ -19674,14 +20173,40 @@ function inicializarRegrasCategoriasCustomizadas() {
 // =========================================================
 
 // Guardar referência da função original
-const _carregarCategoriasCustomizadasOriginal = carregarCategoriasCustomizadas;
+// =========================================================
+// SOBRESCREVER CARREGAMENTO DAS CATEGORIAS
+// =========================================================
 
-// Sobrescrever para inicializar regras após carregar
-carregarCategoriasCustomizadas = async function() {
-    await _carregarCategoriasCustomizadasOriginal();
-    
-    // Inicializar regras para categorias customizadas
-    setTimeout(inicializarRegrasCategoriasCustomizadas, 500);
-};
+const _carregarCategoriasCustomizadasOriginal =
+    carregarCategoriasCustomizadas;
+
+
+carregarCategoriasCustomizadas =
+    async function() {
+
+        // Carregar categorias
+        const resultado =
+            await _carregarCategoriasCustomizadasOriginal();
+
+
+        // =================================================
+        // GARANTIR SELECTS ATUALIZADOS
+        // =================================================
+
+        atualizarSelectCategorias();
+
+
+        // =================================================
+        // INICIALIZAR REGRAS DAS NOVAS CATEGORIAS
+        // =================================================
+
+        setTimeout(
+            inicializarRegrasCategoriasCustomizadas,
+            500
+        );
+
+
+        return resultado;
+    };
 
 console.log('📦 Gestão de Estoque carregada com sucesso! (Versão completa com categorias customizadas)');

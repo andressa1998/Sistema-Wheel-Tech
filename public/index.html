@@ -5804,7 +5804,6 @@ body > * {
                 <option value="Arruelas">Arruelas</option>
                 <option value="CapacetesEPartes">Capacetes e Partes</option>
                 <option value="Porcas">Porcas</option>
-                <option value="outros">Outros</option>
             </select>
         </div>
 
@@ -5981,25 +5980,22 @@ body > * {
                 <option value="Arruelas">Arruelas</option>
                 <option value="CapacetesEPartes">Capacetes e Partes</option>
                 <option value="Porcas">Porcas</option>
-                <option value="outros">Outros</option>
             </select>    
             <input type="text" id="buscaEstoqueInput" class="form-control" placeholder="🔍 Buscar por nome, SKU ou MLB..." style="width: 250px;">
-            <!-- BOTÃO GERENCIAR CATEGORIAS -->
+            <button class="btn btn-sm btn-outline-secondary" onclick="limparFiltrosEstoque()">
+                <i class="fas fa-eraser"></i> Limpar Filtros
+            </button>
+            <button class="btn btn-success" onclick="abrirModalProdutoEstoque()">
+            <i class="fas fa-plus"></i> Novo Produto
+            </button>
             <button class="btn btn-purple" onclick="abrirModalGerenciarCategorias()" title="Gerenciar categorias">
             <i class="fas fa-tags"></i> Categorias
             </button>
             <button id="btnImportarCadastroInicial" class="btn btn-warning" onclick="abrirImportacaoCadastroInicial()" title="Cadastrar vários produtos através de uma planilha">
             <i class="fas fa-box-open"></i> Importar Produtos
             </button>
-            <button class="btn btn-success" onclick="abrirModalProdutoEstoque()">
-                <i class="fas fa-plus"></i> Novo Produto
-            </button>
             <button class="btn btn-info" onclick="abrirModalRegrasEstoque()" title="Definir regras de estoque máximo">
                 <i class="fas fa-sliders-h"></i> Regras
-            </button>
-            <!-- Adicione após o input de busca no card de filtros -->
-            <button class="btn btn-sm btn-outline-secondary" onclick="limparFiltrosEstoque()">
-                <i class="fas fa-eraser"></i> Limpar Filtros
             </button>
             <button class="btn btn-success" id="btnExportarEstoque" onclick="exportarEstoqueExcel()">
                 <i class="fas fa-file-excel"></i> Exportar
