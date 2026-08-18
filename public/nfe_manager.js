@@ -22926,35 +22926,236 @@ async function carregarTransportadorasSelect() {
     }
 }
 
-// ===================== CLIENTES =====================
 async function carregarClientes() {
-    const tbody = document.getElementById('clientesBody');
-    if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center"><div class="spinner"></div> Carregando...</td></tr>';
+
+    const tbody =
+        document.getElementById(
+            'clientesBody'
+        );
+
+
+    if (!tbody) {
+        return;
+    }
+
+
+    tbody.innerHTML = `
+        <tr>
+            <td colspan="4" class="text-center">
+                <div class="spinner"></div>
+                Carregando...
+            </td>
+        </tr>
+    `;
+
+
     try {
-        const response = await fetch(`${window.API_BASE_URL}/nfe/clientes`);
-        const data = await response.json();
-        if (!data.success) throw new Error(data.error);
-        const clientes = data.clientes || [];
-        if (!clientes.length) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center">Nenhum cliente cadastrado</td></tr>';
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/clientes`,
+                {
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !response.ok ||
+            !data.success
+        ) {
+
+            throw new Error(
+                data.error ||
+                'Erro ao carregar clientes'
+            );
+        }
+
+
+        const clientes =
+            Array.isArray(
+                data.clientes
+            )
+                ? data.clientes
+                : [];
+
+
+        if (
+            clientes.length === 0
+        ) {
+
+            tbody.innerHTML = `
+                <tr>
+                    <td
+                        colspan="4"
+                        class="text-center"
+                    >
+                        Nenhum cliente cadastrado
+                    </td>
+                </tr>
+            `;
+
             return;
         }
-        tbody.innerHTML = clientes.map(c => `
-            <tr>
-                <td>${c.nome}</td>
-                <td>${c.documento || '-'}</td>
-                <td>${c.logradouro || ''}, ${c.numero || ''} - ${c.cidade || ''}</td>
-                <td>
-                <button class="btn btn-sm btn-info" onclick="visualizarCliente(${c.id})" title="Ver detalhes">
-                <i class="fas fa-eye"></i>
-                </button>
-                <button class="btn btn-sm btn-danger" onclick="excluirCliente(${c.id})">Excluir</button></td>
-            </tr>`).join('');
-        const select = document.getElementById('avulsaClienteId');
-        if (select) select.innerHTML = '<option value="">Selecione</option>' + clientes.map(c => `<option value="${c.id}">${c.nome} (${c.documento})</option>`).join('');
+
+
+        tbody.innerHTML =
+            clientes
+                .map(
+                    cliente => `
+
+                        <tr>
+
+                            <td>
+                                ${escaparHTMLCadastroNFE(
+                                    cliente.nome ||
+                                    ''
+                                )}
+                            </td>
+
+
+                            <td>
+                                ${escaparHTMLCadastroNFE(
+                                    cliente.documento ||
+                                    '-'
+                                )}
+                            </td>
+
+
+                            <td>
+
+                                ${escaparHTMLCadastroNFE(
+                                    cliente.logradouro ||
+                                    ''
+                                )}
+
+                                ${
+                                    cliente.numero
+                                        ? `, ${escaparHTMLCadastroNFE(
+                                            cliente.numero
+                                        )}`
+                                        : ''
+                                }
+
+                                ${
+                                    cliente.cidade
+                                        ? ` - ${escaparHTMLCadastroNFE(
+                                            cliente.cidade
+                                        )}`
+                                        : ''
+                                }
+
+                            </td>
+
+
+                            <td
+                                style="
+                                    white-space:nowrap;
+                                "
+                            >
+
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-info"
+                                    onclick="visualizarCliente(${Number(
+                                        cliente.id
+                                    )})"
+                                    title="Visualizar cliente"
+                                >
+                                    <i class="fas fa-eye"></i>
+                                </button>
+
+
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-warning"
+                                    onclick="editarClienteNFE(${Number(
+                                        cliente.id
+                                    )})"
+                                    title="Editar cliente"
+                                >
+                                    <i class="fas fa-edit"></i>
+                                </button>
+
+
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-danger"
+                                    onclick="excluirCliente(${Number(
+                                        cliente.id
+                                    )})"
+                                    title="Excluir cliente"
+                                >
+                                    <i class="fas fa-trash"></i>
+                                </button>
+
+                            </td>
+
+                        </tr>
+                    `
+                )
+                .join(
+                    ''
+                );
+
+
+        // =====================================================
+        // ATUALIZAR SELECT ANTIGO, CASO EXISTA
+        // =====================================================
+
+        const select =
+            document.getElementById(
+                'avulsaClienteId'
+            );
+
+
+        if (
+            select &&
+            select.tagName === 'SELECT'
+        ) {
+
+            select.innerHTML =
+                '<option value="">Selecione</option>' +
+
+                clientes
+                    .map(
+                        cliente =>
+                            `<option value="${cliente.id}">${escaparHTMLCadastroNFE(
+                                cliente.nome
+                            )} (${escaparHTMLCadastroNFE(
+                                cliente.documento ||
+                                ''
+                            )})</option>`
+                    )
+                    .join(
+                        ''
+                    );
+        }
+
+
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Erro ao carregar</td></tr>';
+
+        console.error(
+            '❌ Erro carregando clientes:',
+            error
+        );
+
+
+        tbody.innerHTML = `
+            <tr>
+                <td
+                    colspan="4"
+                    class="text-center text-danger"
+                >
+                    Erro ao carregar clientes
+                </td>
+            </tr>
+        `;
     }
 }
 
@@ -22994,6 +23195,249 @@ window.visualizarCliente = async function(id) {
     } catch (error) {
         console.error('Erro ao buscar cliente:', error);
         showToast('Erro ao carregar dados do cliente', 'error');
+    }
+};
+
+window.editarClienteNFE = async function editarClienteNFE(id) {
+    try {
+        id = Number(id);
+        if (!id) {
+            throw new Error('ID do cliente inválido');
+        }
+
+        console.log(`✏️ Abrindo edição do cliente ${id}`);
+
+        // =====================================================
+        // BUSCAR CLIENTE COMPLETO
+        // =====================================================
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/clientes/${id}`,
+                {
+                    method:
+                        'GET',
+
+                    headers: {
+                        'Accept':
+                            'application/json'
+                    },
+
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        if (
+            !response.ok ||
+            !data.success ||
+            !data.cliente
+        ) {
+
+            throw new Error(
+                data.error ||
+                'Cliente não encontrado'
+            );
+        }
+
+
+        const cliente =
+            data.cliente;
+
+
+        // =====================================================
+        // ABRIR O MESMO MODAL DO CADASTRO
+        // =====================================================
+
+        abrirModalCadastroClienteNFE();
+
+
+        const modal =
+            document.getElementById(
+                'modalCadastroClienteNFE'
+            );
+
+
+        if (!modal) {
+
+            throw new Error(
+                'Modal de cliente não encontrado'
+            );
+        }
+
+
+        // =====================================================
+        // INFORMAR QUE ESTAMOS EDITANDO
+        // =====================================================
+
+        modal.dataset.clienteId =
+            String(
+                id
+            );
+
+
+        // =====================================================
+        // TÍTULO
+        // =====================================================
+
+        const titulo =
+            modal.querySelector(
+                'h3'
+            );
+
+
+        if (titulo) {
+
+            titulo.innerHTML = `
+                <i class="fas fa-user-edit"></i>
+                Editar Cliente
+            `;
+        }
+
+
+        // =====================================================
+        // PREENCHER CAMPOS
+        // =====================================================
+
+        const preencher =
+            (
+                seletor,
+                valor
+            ) => {
+
+                const campo =
+                    modal.querySelector(
+                        seletor
+                    );
+
+
+                if (campo) {
+
+                    campo.value =
+                        valor ??
+                        '';
+                }
+            };
+
+
+        preencher(
+            '#cadClienteNome',
+            cliente.nome
+        );
+
+
+        preencher(
+            '#cadClienteDocumento',
+            String(
+                cliente.documento ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                )
+        );
+
+
+        preencher(
+            '#cadClienteLogradouro',
+            cliente.logradouro
+        );
+
+
+        preencher(
+            '#cadClienteNumero',
+            cliente.numero ||
+            'S/N'
+        );
+
+
+        preencher(
+            '#cadClienteBairro',
+            cliente.bairro
+        );
+
+
+        preencher(
+            '#cadClienteCidade',
+            cliente.cidade
+        );
+
+
+        preencher(
+            '#cadClienteUF',
+            String(
+                cliente.uf ||
+                ''
+            )
+                .toUpperCase()
+        );
+
+
+        preencher(
+            '#cadClienteCEP',
+            String(
+                cliente.cep ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                )
+        );
+
+
+        // =====================================================
+        // BOTÃO
+        // =====================================================
+
+        const botao =
+            modal.querySelector(
+                '#btnSalvarCadastroClienteNFE'
+            );
+
+
+        if (botao) {
+
+            botao.innerHTML = `
+                <i class="fas fa-save"></i>
+                Salvar Alterações
+            `;
+        }
+
+
+        // =====================================================
+        // FOCO
+        // =====================================================
+
+        setTimeout(
+            () =>
+                modal
+                    .querySelector(
+                        '#cadClienteNome'
+                    )
+                    ?.focus(),
+            100
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro abrindo edição do cliente:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao editar cliente: ${error.message}`,
+            'error'
+        );
     }
 };
 
@@ -24407,6 +24851,16 @@ async function carregarCadastroClientesNFE() {
                                                             <i class="fas fa-eye"></i>
                                                         </button>
 
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-warning"
+                                                            onclick="editarClienteNFE(${Number(
+                                                                cliente.id
+                                                            )})"
+                                                            title="Editar cliente"
+                                                        >
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
 
                                                         <button
                                                             type="button"
@@ -26124,6 +26578,43 @@ function abrirModalCadastroClienteNFE() {
 
 async function salvarCadastroClienteNFE() {
 
+    const modal =
+        document.getElementById(
+            'modalCadastroClienteNFE'
+        );
+
+
+    if (!modal) {
+
+        showToast(
+            'Modal de cliente não encontrado',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // SABER SE É EDIÇÃO
+    // =====================================================
+
+    const clienteId =
+        Number(
+            modal.dataset.clienteId ||
+            0
+        );
+
+
+    const editando =
+        clienteId >
+        0;
+
+
+    // =====================================================
+    // CAMPOS
+    // =====================================================
+
     const nome =
         document
             .getElementById(
@@ -26132,6 +26623,7 @@ async function salvarCadastroClienteNFE() {
             ?.value
             .trim() ||
         '';
+
 
     const documento =
         String(
@@ -26147,6 +26639,7 @@ async function salvarCadastroClienteNFE() {
                 ''
             );
 
+
     const logradouro =
         document
             .getElementById(
@@ -26155,6 +26648,7 @@ async function salvarCadastroClienteNFE() {
             ?.value
             .trim() ||
         '';
+
 
     const numero =
         document
@@ -26165,6 +26659,7 @@ async function salvarCadastroClienteNFE() {
             .trim() ||
         'S/N';
 
+
     const bairro =
         document
             .getElementById(
@@ -26173,6 +26668,7 @@ async function salvarCadastroClienteNFE() {
             ?.value
             .trim() ||
         '';
+
 
     const cidade =
         document
@@ -26183,15 +26679,19 @@ async function salvarCadastroClienteNFE() {
             .trim() ||
         '';
 
+
     const uf =
-        document
-            .getElementById(
-                'cadClienteUF'
-            )
-            ?.value
+        String(
+            document
+                .getElementById(
+                    'cadClienteUF'
+                )
+                ?.value ||
+            ''
+        )
             .trim()
-            .toUpperCase() ||
-        '';
+            .toUpperCase();
+
 
     const cep =
         String(
@@ -26224,10 +26724,8 @@ async function salvarCadastroClienteNFE() {
 
 
     if (
-        documento.length !==
-            11 &&
-        documento.length !==
-            14
+        documento.length !== 11 &&
+        documento.length !== 14
     ) {
 
         showToast(
@@ -26241,8 +26739,7 @@ async function salvarCadastroClienteNFE() {
 
     if (
         uf &&
-        uf.length !==
-            2
+        uf.length !== 2
     ) {
 
         showToast(
@@ -26254,10 +26751,49 @@ async function salvarCadastroClienteNFE() {
     }
 
 
+    if (
+        cep &&
+        cep.length !== 8
+    ) {
+
+        showToast(
+            'CEP deve possuir 8 dígitos',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // PAYLOAD
+    // =====================================================
+
+    const payload = {
+
+        nome,
+
+        documento,
+
+        logradouro,
+
+        numero,
+
+        bairro,
+
+        cidade,
+
+        uf,
+
+        cep
+    };
+
+
     const botao =
         document.getElementById(
             'btnSalvarCadastroClienteNFE'
         );
+
 
     const textoOriginal =
         botao?.innerHTML ||
@@ -26269,6 +26805,7 @@ async function salvarCadastroClienteNFE() {
         botao.disabled =
             true;
 
+
         botao.innerHTML =
             '<span class="spinner"></span> Salvando...';
     }
@@ -26277,68 +26814,131 @@ async function salvarCadastroClienteNFE() {
     try {
 
         // =====================================================
-        // UTILIZA A MESMA FUNÇÃO DO SALVAMENTO AUTOMÁTICO
-        // DA NF-e.
-        //
-        // Ela também impede duplicidade por CPF/CNPJ.
+        // EDIÇÃO
         // =====================================================
 
-        const resultado =
-            await salvarClienteNoBanco({
+        if (editando) {
 
-                nome,
-
-                documento,
-
-                logradouro,
-
-                endereco:
-                    logradouro,
-
-                numero,
-
-                bairro,
-
-                cidade,
-
-                uf,
-
-                cep
-            });
-
-
-        if (
-            !resultado ||
-            !resultado.success
-        ) {
-
-            throw new Error(
-                resultado?.error ||
-                'Não foi possível cadastrar o cliente'
+            console.log(
+                `✏️ Atualizando cliente ${clienteId}:`,
+                payload
             );
+
+
+            const response =
+                await fetch(
+                    `${window.API_BASE_URL}/nfe/clientes/${clienteId}`,
+                    {
+                        method:
+                            'PUT',
+
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                        body:
+                            JSON.stringify(
+                                payload
+                            )
+                    }
+                );
+
+
+            let result =
+                {};
+
+
+            try {
+
+                result =
+                    await response.json();
+
+            } catch {}
+
+
+            if (
+                !response.ok ||
+                result.success === false
+            ) {
+
+                throw new Error(
+                    result.error ||
+                    result.message ||
+                    `Erro HTTP ${response.status}`
+                );
+            }
+
+
+            showToast(
+                'Cliente atualizado com sucesso!',
+                'success'
+            );
+
+
+        // =====================================================
+        // NOVO CLIENTE
+        // =====================================================
+
+        } else {
+
+            const resultado =
+                await salvarClienteNoBanco({
+                    nome,
+                    documento,
+                    logradouro,
+                    endereco:
+                        logradouro,
+                    numero,
+                    bairro,
+                    cidade,
+                    uf,
+                    cep
+                });
+
+
+            if (
+                !resultado ||
+                !resultado.success
+            ) {
+
+                throw new Error(
+                    resultado?.error ||
+                    'Não foi possível cadastrar o cliente'
+                );
+            }
+
+
+            if (
+                resultado.existente
+            ) {
+
+                showToast(
+                    'Cliente já estava cadastrado',
+                    'info'
+                );
+
+            } else {
+
+                showToast(
+                    'Cliente cadastrado com sucesso!',
+                    'success'
+                );
+            }
         }
 
+
+        // =====================================================
+        // FECHAR
+        // =====================================================
 
         fecharModalCadastroClienteNFE();
 
 
-        // Atualizar gerenciamento
-        try {
+        // =====================================================
+        // ATUALIZAR ABA CLIENTES
+        // =====================================================
 
-            await carregarCadastroClientesNFE();
-
-        } catch (
-            error
-        ) {
-
-            console.warn(
-                '⚠️ Cliente salvo, mas não foi possível atualizar Cadastros:',
-                error
-            );
-        }
-
-
-        // Atualizar aba de consulta
         try {
 
             await carregarClientes();
@@ -26348,26 +26948,46 @@ async function salvarCadastroClienteNFE() {
         ) {
 
             console.warn(
-                '⚠️ Cliente salvo, mas não foi possível atualizar lista:',
+                '⚠️ Não foi possível atualizar aba Clientes:',
                 error
             );
         }
 
 
-        if (
-            resultado.existente
+        // =====================================================
+        // ATUALIZAR CADASTROS
+        // =====================================================
+
+        try {
+
+            await carregarCadastroClientesNFE();
+
+        } catch (
+            error
         ) {
 
-            showToast(
-                'Cliente já estava cadastrado',
-                'info'
+            console.warn(
+                '⚠️ Não foi possível atualizar cadastro de clientes:',
+                error
             );
+        }
 
-        } else {
 
-            showToast(
-                'Cliente cadastrado com sucesso!',
-                'success'
+        // =====================================================
+        // ATUALIZAR CLIENTES DA EMISSÃO AVULSA
+        // =====================================================
+
+        try {
+
+            await carregarClientesAvulsaNFE();
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Não foi possível atualizar clientes da NF-e avulsa:',
+                error
             );
         }
 
@@ -26383,25 +27003,26 @@ async function salvarCadastroClienteNFE() {
 
 
         showToast(
-            `Erro ao cadastrar cliente: ${error.message}`,
+            `Erro ao salvar cliente: ${error.message}`,
             'error'
         );
 
 
     } finally {
 
-        const btnAtual =
+        const botaoAtual =
             document.getElementById(
                 'btnSalvarCadastroClienteNFE'
             );
 
 
-        if (btnAtual) {
+        if (botaoAtual) {
 
-            btnAtual.disabled =
+            botaoAtual.disabled =
                 false;
 
-            btnAtual.innerHTML =
+
+            botaoAtual.innerHTML =
                 textoOriginal;
         }
     }

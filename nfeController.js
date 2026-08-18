@@ -2840,6 +2840,279 @@ async function emitirNFEAvulsa(req, res) {
     }
 }
 
+async function atualizarCliente(
+    req,
+    res
+) {
+
+    try {
+
+        const {
+            id
+        } =
+            req.params;
+
+
+        const {
+            nome,
+            documento,
+            logradouro,
+            numero,
+            bairro,
+            cidade,
+            uf,
+            cep
+        } =
+            req.body ||
+            {};
+
+
+        if (!id) {
+
+            return res
+                .status(
+                    400
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'ID do cliente não informado'
+                });
+        }
+
+
+        const documentoLimpo =
+            String(
+                documento ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
+
+
+        if (!nome) {
+
+            return res
+                .status(
+                    400
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'Nome do cliente é obrigatório'
+                });
+        }
+
+
+        if (
+            documentoLimpo.length !== 11 &&
+            documentoLimpo.length !== 14
+        ) {
+
+            return res
+                .status(
+                    400
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'CPF/CNPJ inválido'
+                });
+        }
+
+
+        // =====================================================
+        // NÃO DEIXAR O MESMO CPF/CNPJ EM OUTRO CLIENTE
+        // =====================================================
+
+        const {
+            data: duplicado,
+            error: erroBusca
+        } =
+            await supabase
+                .from(
+                    'clientes'
+                )
+                .select(
+                    'id, nome'
+                )
+                .eq(
+                    'documento',
+                    documentoLimpo
+                )
+                .neq(
+                    'id',
+                    id
+                )
+                .maybeSingle();
+
+
+        if (erroBusca) {
+
+            throw erroBusca;
+        }
+
+
+        if (duplicado) {
+
+            return res
+                .status(
+                    409
+                )
+                .json({
+
+                    success:
+                        false,
+
+                    error:
+                        `Já existe outro cliente cadastrado com este CPF/CNPJ: ${duplicado.nome}`
+                });
+        }
+
+
+        // =====================================================
+        // ATUALIZAR
+        // =====================================================
+
+        const {
+            data,
+            error
+        } =
+            await supabase
+                .from(
+                    'clientes'
+                )
+                .update({
+
+                    nome:
+                        String(
+                            nome
+                        ).trim(),
+
+                    documento:
+                        documentoLimpo,
+
+                    logradouro:
+                        String(
+                            logradouro ||
+                            ''
+                        ).trim(),
+
+                    numero:
+                        String(
+                            numero ||
+                            'S/N'
+                        ).trim(),
+
+                    bairro:
+                        String(
+                            bairro ||
+                            ''
+                        ).trim(),
+
+                    cidade:
+                        String(
+                            cidade ||
+                            ''
+                        ).trim(),
+
+                    uf:
+                        String(
+                            uf ||
+                            ''
+                        )
+                            .trim()
+                            .toUpperCase(),
+
+                    cep:
+                        String(
+                            cep ||
+                            ''
+                        )
+                            .replace(
+                                /\D/g,
+                                ''
+                            )
+                })
+                .eq(
+                    'id',
+                    id
+                )
+                .select()
+                .maybeSingle();
+
+
+        if (error) {
+
+            throw error;
+        }
+
+
+        if (!data) {
+
+            return res
+                .status(
+                    404
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'Cliente não encontrado'
+                });
+        }
+
+
+        console.log(
+            `✅ Cliente ${id} atualizado:`,
+            data
+        );
+
+
+        return res.json({
+
+            success:
+                true,
+
+            cliente:
+                data
+        });
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro ao atualizar cliente:',
+            error
+        );
+
+
+        return res
+            .status(
+                500
+            )
+            .json({
+
+                success:
+                    false,
+
+                error:
+                    error.message
+            });
+    }
+}
+
 // ===================== CONSULTAR STATUS =====================
 async function consultarStatusNFE(req, res) {
     try {
@@ -3379,5 +3652,6 @@ module.exports = {
     testarXmlRaw,
     testarEventoRaw,
     cadastrarCliente,      // ADICIONE
-    buscarClientePorId     // ADICIONE
+    buscarClientePorId,
+    atualizarCliente
 };

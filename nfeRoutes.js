@@ -12,6 +12,10 @@ const {
     listarVendasSemNFE,
     listarVendasComNFE,
     buscarXMLPorChave,
+    listarClientes,
+    cadastrarCliente,
+    buscarClientePorId,
+    atualizarCliente,
     testarEnvioXMLFixo,   // rota de teste com XML fixo (opcional)
     testarXmlRaw,
     testarEventoRaw,
@@ -30,6 +34,7 @@ router.post('/transportadoras', cadastrarTransportadora);
 router.get('/clientes', listarClientes);
 router.post('/clientes', cadastrarCliente);
 router.get('/clientes/:id', buscarClientePorId);
+router.put('/clientes/:id', atualizarCliente);
 router.post('/emitir-avulsa', emitirNFEAvulsa);
 router.post('/consultar-status', consultarStatusNFE);
 router.post('/sync-vendas', sincronizarVendasML);

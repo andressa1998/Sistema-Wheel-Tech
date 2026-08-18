@@ -3141,29 +3141,57 @@ window.abrirPainelMetaRonald =
 
 
                         ${
-                            bloqueado
-                                ? `
-                                    <button
-                                        onclick="desbloquearRonaldAdmin()"
-                                        style="
-                                            width:100%;
-                                            border:none;
-                                            background:#28a745;
-                                            color:white;
-                                            padding:14px;
-                                            border-radius:8px;
-                                            margin-top:18px;
-                                            cursor:pointer;
-                                            font-weight:800;
-                                            font-size:15px;
-                                        "
-                                    >
-                                        <i class="fas fa-unlock"></i>
-                                        Desbloquear Ronald até o fim do dia
-                                    </button>
-                                `
-                                : ''
-                        }
+    bloqueado
+        ? `
+            <div style="
+                margin-top:18px;
+                padding:12px;
+                background:#ffebee;
+                border:1px solid #ef9a9a;
+                border-radius:8px;
+                color:#b71c1c;
+                text-align:center;
+                font-weight:700;
+            ">
+                <i class="fas fa-lock"></i>
+                Ronald está BLOQUEADO
+            </div>
+
+            <button
+                onclick="desbloquearRonaldAdmin()"
+                style="
+                    width:100%;
+                    border:none;
+                    background:#28a745;
+                    color:white;
+                    padding:14px;
+                    border-radius:8px;
+                    margin-top:10px;
+                    cursor:pointer;
+                    font-weight:800;
+                    font-size:15px;
+                "
+            >
+                <i class="fas fa-unlock"></i>
+                Desbloquear Ronald até o fim do dia
+            </button>
+        `
+        : `
+            <div style="
+                margin-top:18px;
+                padding:14px;
+                background:#e8f5e9;
+                border:1px solid #a5d6a7;
+                border-radius:8px;
+                color:#1b5e20;
+                text-align:center;
+                font-weight:700;
+            ">
+                <i class="fas fa-unlock"></i>
+                Ronald não está bloqueado no momento
+            </div>
+        `
+}
 
 
                         <div style="
@@ -8135,13 +8163,16 @@ function atualizarVisibilidadeMenu() {
         return;
     }
 
-
     const username =
-        String(
-            currentUser.username || ''
-        )
+        String(currentUser.username || '')
             .trim()
             .toLowerCase();
+
+
+    console.log(
+        '👤 Atualizando menu para:',
+        username
+    );
 
 
     // ========================================================
@@ -8164,16 +8195,14 @@ function atualizarVisibilidadeMenu() {
 
 
         historicoCard.style.display =
-            usuariosPermitidos.includes(
-                username
-            )
-                ? ''
+            usuariosPermitidos.includes(username)
+                ? 'block'
                 : 'none';
     }
 
 
     // ========================================================
-    // CARD META RONALD
+    // META RONALD
     // SOMENTE ANDRESSAMIOTTO
     // ========================================================
 
@@ -8185,16 +8214,36 @@ function atualizarVisibilidadeMenu() {
 
     if (metaRonaldMenuCard) {
 
-        metaRonaldMenuCard.style.display =
-            username === 'andressamiotto'
-                ? ''
-                : 'none';
+        if (
+            username ===
+            'andressamiotto'
+        ) {
+
+            metaRonaldMenuCard.style.display =
+                'block';
+
+
+            console.log(
+                '✅ Card Meta Ronald liberado para Andressa'
+            );
+
+        } else {
+
+            metaRonaldMenuCard.style.display =
+                'none';
+        }
+
+    } else {
+
+        console.warn(
+            '⚠️ #metaRonaldMenuCard não encontrado no HTML'
+        );
     }
 
 
     // ========================================================
-    // BOTÃO DENTRO DA ABA OS
-    // CASO VOCÊ TENHA MANTIDO O BOTÃO ANTERIOR
+    // BOTÃO DENTRO DA ABA DE OS
+    // CASO TENHA MANTIDO
     // ========================================================
 
     const btnMetaRonald =
@@ -8210,12 +8259,6 @@ function atualizarVisibilidadeMenu() {
                 ? 'inline-block'
                 : 'none';
     }
-
-
-    console.log(
-        '👤 Visibilidade de menu atualizada:',
-        username
-    );
 }
 
 function cancelEdit() {
