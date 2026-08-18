@@ -7263,6 +7263,1268 @@ async function confirmarProdutosEditados() {
 }
 
 // =========================================================
+// EMITIR DEVOLUÇÃO A PARTIR DE UMA NF-E JÁ EMITIDA
+// =========================================================
+
+window._abrindoDevolucaoNFE =
+    false;
+
+
+async function abrirDevolucaoNFE(
+    chaveAcesso
+) {
+
+    // =====================================================
+    // EVITAR CLIQUE DUPLO
+    // =====================================================
+
+    if (
+        window._abrindoDevolucaoNFE
+    ) {
+
+        showToast(
+            'Aguarde, a devolução já está sendo preparada...',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    window._abrindoDevolucaoNFE =
+        true;
+
+
+    try {
+
+        // =====================================================
+        // CHAVE
+        // =====================================================
+
+        const chave =
+            String(
+                chaveAcesso ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
+
+
+        if (
+            chave.length !==
+            44
+        ) {
+
+            throw new Error(
+                'Chave da NF-e original inválida'
+            );
+        }
+
+
+        console.log(
+            '↩️ Preparando devolução da NF-e:',
+            chave
+        );
+
+
+        showToast(
+            'Preparando NF-e de devolução...',
+            'info'
+        );
+
+
+        // =====================================================
+        // BUSCAR XML DA NF-E ORIGINAL
+        // =====================================================
+
+        const responseXML =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/buscar-xml?chave=${encodeURIComponent(
+                    chave
+                )}`,
+                {
+                    method:
+                        'GET',
+
+                    headers: {
+                        'Accept':
+                            'application/json'
+                    },
+
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        const dadosXML =
+            await responseXML
+                .json()
+                .catch(
+                    () => ({})
+                );
+
+
+        if (
+            !responseXML.ok ||
+            !dadosXML.xml
+        ) {
+
+            throw new Error(
+                dadosXML.error ||
+                'Não foi possível localizar o XML da NF-e original'
+            );
+        }
+
+
+        // =====================================================
+        // LER XML
+        // =====================================================
+
+        const parser =
+            new DOMParser();
+
+
+        const xmlDoc =
+            parser.parseFromString(
+                dadosXML.xml,
+                'application/xml'
+            );
+
+
+        if (
+            xmlDoc.querySelector(
+                'parsererror'
+            )
+        ) {
+
+            throw new Error(
+                'XML da NF-e original inválido'
+            );
+        }
+
+
+        const infNFe =
+            xmlDoc.querySelector(
+                'infNFe'
+            );
+
+
+        if (!infNFe) {
+
+            throw new Error(
+                'Tag infNFe não encontrada no XML'
+            );
+        }
+
+
+        // =====================================================
+        // NÃO GERAR DEVOLUÇÃO DE UMA DEVOLUÇÃO
+        // =====================================================
+
+        const naturezaOriginal =
+            infNFe
+                .querySelector(
+                    'natOp'
+                )
+                ?.textContent
+                ?.trim() ||
+            '';
+
+
+        const finalidadeOriginal =
+            infNFe
+                .querySelector(
+                    'finNFe'
+                )
+                ?.textContent
+                ?.trim() ||
+            '1';
+
+
+        const tpNFOriginal =
+            infNFe
+                .querySelector(
+                    'tpNF'
+                )
+                ?.textContent
+                ?.trim() ||
+            '1';
+
+
+        const naturezaOriginalNormalizada =
+            String(
+                naturezaOriginal
+            )
+                .normalize(
+                    'NFD'
+                )
+                .replace(
+                    /[\u0300-\u036f]/g,
+                    ''
+                )
+                .toLowerCase();
+
+
+        if (
+            finalidadeOriginal ===
+                '4' ||
+            naturezaOriginalNormalizada
+                .includes(
+                    'devolucao'
+                ) ||
+            tpNFOriginal ===
+                '0'
+        ) {
+
+            throw new Error(
+                'Esta NF-e já é uma nota de entrada/devolução. Selecione a NF-e de venda original.'
+            );
+        }
+
+
+        // =====================================================
+        // CLIENTE DO XML
+        // =====================================================
+
+        const dest =
+            infNFe.querySelector(
+                'dest'
+            );
+
+
+        if (!dest) {
+
+            throw new Error(
+                'Destinatário não encontrado na NF-e original'
+            );
+        }
+
+
+        const destEndereco =
+            dest.querySelector(
+                'enderDest'
+            );
+
+
+        const clienteXML = {
+
+            nome:
+                dest
+                    .querySelector(
+                        'xNome'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '',
+
+            documento:
+                String(
+                    dest
+                        .querySelector(
+                            'CPF'
+                        )
+                        ?.textContent ||
+
+                    dest
+                        .querySelector(
+                            'CNPJ'
+                        )
+                        ?.textContent ||
+
+                    ''
+                )
+                    .replace(
+                        /\D/g,
+                        ''
+                    ),
+
+            logradouro:
+                destEndereco
+                    ?.querySelector(
+                        'xLgr'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '',
+
+            numero:
+                destEndereco
+                    ?.querySelector(
+                        'nro'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                'S/N',
+
+            bairro:
+                destEndereco
+                    ?.querySelector(
+                        'xBairro'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '',
+
+            cidade:
+                destEndereco
+                    ?.querySelector(
+                        'xMun'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '',
+
+            uf:
+                String(
+                    destEndereco
+                        ?.querySelector(
+                            'UF'
+                        )
+                        ?.textContent ||
+                    ''
+                )
+                    .trim()
+                    .toUpperCase(),
+
+            cep:
+                String(
+                    destEndereco
+                        ?.querySelector(
+                            'CEP'
+                        )
+                        ?.textContent ||
+                    ''
+                )
+                    .replace(
+                        /\D/g,
+                        ''
+                    )
+        };
+
+
+        if (
+            !clienteXML.documento
+        ) {
+
+            throw new Error(
+                'CPF/CNPJ do cliente não encontrado na NF-e original'
+            );
+        }
+
+
+        if (
+            !clienteXML.uf ||
+            clienteXML.uf.length !==
+                2
+        ) {
+
+            throw new Error(
+                'UF do cliente não encontrada na NF-e original'
+            );
+        }
+
+
+        // =====================================================
+        // CFOP DA DEVOLUÇÃO
+        //
+        // Mantém exatamente a regra que seu backend atual
+        // já utiliza.
+        // =====================================================
+
+        const cfopDevolucao =
+            clienteXML.uf ===
+                'PR'
+                ? '1202'
+                : '2202';
+
+
+        // =====================================================
+        // TRANSPORTADORA DO XML
+        // =====================================================
+
+        const transp =
+            infNFe.querySelector(
+                'transp'
+            );
+
+
+        const modFreteOriginal =
+            String(
+                transp
+                    ?.querySelector(
+                        'modFrete'
+                    )
+                    ?.textContent ||
+                '9'
+            );
+
+
+        const transporta =
+            transp?.querySelector(
+                'transporta'
+            );
+
+
+        const transportadoraXML = {
+
+            cnpj:
+                String(
+                    transporta
+                        ?.querySelector(
+                            'CNPJ'
+                        )
+                        ?.textContent ||
+                    ''
+                )
+                    .replace(
+                        /\D/g,
+                        ''
+                    ),
+
+            nome:
+                transporta
+                    ?.querySelector(
+                        'xNome'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '',
+
+            ie:
+                transporta
+                    ?.querySelector(
+                        'IE'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '',
+
+            endereco:
+                transporta
+                    ?.querySelector(
+                        'xEnder'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '',
+
+            cidade:
+                transporta
+                    ?.querySelector(
+                        'xMun'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '',
+
+            uf:
+                transporta
+                    ?.querySelector(
+                        'UF'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                ''
+        };
+
+
+        // =====================================================
+        // PRODUTOS DA NF-E ORIGINAL
+        // =====================================================
+
+        const dets =
+            Array.from(
+                infNFe.querySelectorAll(
+                    'det'
+                )
+            );
+
+
+        if (
+            dets.length ===
+            0
+        ) {
+
+            throw new Error(
+                'Nenhum produto encontrado na NF-e original'
+            );
+        }
+
+
+        const produtosXML =
+            dets
+                .map(
+                    det => {
+
+                        const prod =
+                            det.querySelector(
+                                'prod'
+                            );
+
+
+                        if (!prod) {
+                            return null;
+                        }
+
+
+                        const quantidade =
+                            parseFloat(
+                                prod
+                                    .querySelector(
+                                        'qCom'
+                                    )
+                                    ?.textContent ||
+                                '0'
+                            );
+
+
+                        const valorUnitario =
+                            parseFloat(
+                                prod
+                                    .querySelector(
+                                        'vUnCom'
+                                    )
+                                    ?.textContent ||
+                                '0'
+                            );
+
+
+                        return {
+
+                            nome:
+                                prod
+                                    .querySelector(
+                                        'xProd'
+                                    )
+                                    ?.textContent
+                                    ?.trim() ||
+                                'Produto',
+
+                            sku:
+                                prod
+                                    .querySelector(
+                                        'cProd'
+                                    )
+                                    ?.textContent
+                                    ?.trim() ||
+                                'SEM_SKU',
+
+                            quantidade:
+                                Number.isFinite(
+                                    quantidade
+                                )
+                                    ? quantidade
+                                    : 1,
+
+                            valor_unitario:
+                                Number.isFinite(
+                                    valorUnitario
+                                )
+                                    ? valorUnitario
+                                    : 0,
+
+                            ncm:
+                                String(
+                                    prod
+                                        .querySelector(
+                                            'NCM'
+                                        )
+                                        ?.textContent ||
+                                    '87149990'
+                                )
+                                    .replace(
+                                        /\D/g,
+                                        ''
+                                    )
+                                    .substring(
+                                        0,
+                                        8
+                                    ) ||
+                                '87149990'
+                        };
+                    }
+                )
+                .filter(
+                    Boolean
+                );
+
+
+        if (
+            produtosXML.length ===
+            0
+        ) {
+
+            throw new Error(
+                'Não foi possível extrair os produtos da NF-e original'
+            );
+        }
+
+
+        console.log(
+            '📦 Dados extraídos da NF-e original:',
+            {
+                chave,
+                clienteXML,
+                cfopDevolucao,
+                transportadoraXML,
+                modFreteOriginal,
+                produtosXML
+            }
+        );
+
+
+        // =====================================================
+        // ABRIR ABA DE EMISSÃO AVULSA
+        //
+        // mostrarAbaNFE já chama prepararEmissaoAvulsaNFE(),
+        // portanto aguardar até selects/clientes/produtos
+        // estarem carregados.
+        // =====================================================
+
+        await mostrarAbaNFE(
+            'avulsa'
+        );
+
+
+        // =====================================================
+        // CLIENTE
+        // =====================================================
+
+        let clientes =
+            Array.isArray(
+                window._clientesAvulsaNFE
+            )
+                ? window._clientesAvulsaNFE
+                : [];
+
+
+        let clienteCadastro =
+            clientes.find(
+                cliente => {
+
+                    const documento =
+                        String(
+                            cliente.documento ||
+                            ''
+                        )
+                            .replace(
+                                /\D/g,
+                                ''
+                            );
+
+
+                    return (
+                        documento ===
+                        clienteXML.documento
+                    );
+                }
+            );
+
+
+        // =====================================================
+        // SE O CLIENTE DA NF-E ANTIGA NÃO ESTIVER CADASTRADO,
+        // CADASTRAR AUTOMATICAMENTE COM OS DADOS DO XML
+        // =====================================================
+
+        if (
+            !clienteCadastro
+        ) {
+
+            console.log(
+                '👤 Cliente não encontrado no cadastro. Criando automaticamente...',
+                clienteXML
+            );
+
+
+            const responseCliente =
+                await fetch(
+                    `${window.API_BASE_URL}/nfe/clientes`,
+                    {
+                        method:
+                            'POST',
+
+                        headers: {
+                            'Content-Type':
+                                'application/json'
+                        },
+
+                        body:
+                            JSON.stringify(
+                                clienteXML
+                            )
+                    }
+                );
+
+
+            const resultadoCliente =
+                await responseCliente
+                    .json()
+                    .catch(
+                        () => ({})
+                    );
+
+
+            if (
+                !responseCliente.ok ||
+                resultadoCliente.success ===
+                    false
+            ) {
+
+                throw new Error(
+                    resultadoCliente.error ||
+                    'Não foi possível cadastrar automaticamente o cliente da devolução'
+                );
+            }
+
+
+            // Recarregar a lista local
+            await carregarClientesAvulsaNFE();
+
+
+            clientes =
+                Array.isArray(
+                    window._clientesAvulsaNFE
+                )
+                    ? window._clientesAvulsaNFE
+                    : [];
+
+
+            clienteCadastro =
+                clientes.find(
+                    cliente =>
+
+                        String(
+                            cliente.documento ||
+                            ''
+                        )
+                            .replace(
+                                /\D/g,
+                                ''
+                            ) ===
+                        clienteXML.documento
+                );
+        }
+
+
+        if (
+            !clienteCadastro
+        ) {
+
+            throw new Error(
+                `Cliente ${clienteXML.nome} não pôde ser localizado no cadastro`
+            );
+        }
+
+
+        selecionarClienteAvulsaNFE(
+            clienteCadastro.id
+        );
+
+
+        // =====================================================
+        // NATUREZA DA OPERAÇÃO
+        // =====================================================
+
+        const naturezaSelect =
+            document.getElementById(
+                'avulsaNatOp'
+            );
+
+
+        if (!naturezaSelect) {
+
+            throw new Error(
+                'Campo Natureza da Operação não encontrado'
+            );
+        }
+
+
+        const opcaoDevolucao =
+            Array
+                .from(
+                    naturezaSelect.options
+                )
+                .find(
+                    option => {
+
+                        const texto =
+                            String(
+                                option.value ||
+                                option.textContent ||
+                                ''
+                            )
+                                .normalize(
+                                    'NFD'
+                                )
+                                .replace(
+                                    /[\u0300-\u036f]/g,
+                                    ''
+                                )
+                                .trim()
+                                .toLowerCase();
+
+
+                        return (
+                            texto ===
+                            'entrada de devolucao'
+                        );
+                    }
+                );
+
+
+        if (
+            !opcaoDevolucao
+        ) {
+
+            throw new Error(
+                'Natureza "Entrada de Devolução" não encontrada. Cadastre/ative essa Natureza na aba Cadastros.'
+            );
+        }
+
+
+        naturezaSelect.value =
+            opcaoDevolucao.value;
+
+
+        naturezaSelect.dispatchEvent(
+            new Event(
+                'change',
+                {
+                    bubbles:
+                        true
+                }
+            )
+        );
+
+
+        // =====================================================
+        // CFOP
+        // =====================================================
+
+        const cfopSelect =
+            document.getElementById(
+                'avulsaCfop'
+            );
+
+
+        if (!cfopSelect) {
+
+            throw new Error(
+                'Campo CFOP não encontrado'
+            );
+        }
+
+
+        const opcaoCFOP =
+            Array
+                .from(
+                    cfopSelect.options
+                )
+                .find(
+                    option =>
+
+                        String(
+                            option.value ||
+                            ''
+                        )
+                            .replace(
+                                /\D/g,
+                                ''
+                            ) ===
+                        cfopDevolucao
+                );
+
+
+        if (
+            !opcaoCFOP
+        ) {
+
+            throw new Error(
+                `CFOP ${cfopDevolucao} não encontrado. Cadastre/ative esse CFOP na aba Cadastros.`
+            );
+        }
+
+
+        cfopSelect.value =
+            opcaoCFOP.value;
+
+
+        // =====================================================
+        // CHAVE DA NF-E ORIGINAL
+        // =====================================================
+
+        garantirCampoReferenciaDevolucaoAvulsaNFE();
+
+
+        atualizarCampoReferenciaDevolucaoAvulsaNFE();
+
+
+        const campoChave =
+            document.getElementById(
+                'avulsaChaveNFeReferenciada'
+            );
+
+
+        if (!campoChave) {
+
+            throw new Error(
+                'Campo da chave da NF-e referenciada não encontrado'
+            );
+        }
+
+
+        campoChave.value =
+            chave;
+
+
+        campoChave.dispatchEvent(
+            new Event(
+                'input',
+                {
+                    bubbles:
+                        true
+                }
+            )
+        );
+
+
+        // =====================================================
+        // MODALIDADE DE FRETE
+        // =====================================================
+
+        const modFreteSelect =
+            document.getElementById(
+                'avulsaModFrete'
+            );
+
+
+        if (
+            modFreteSelect
+        ) {
+
+            const valoresPermitidos =
+                [
+                    '0',
+                    '1',
+                    '2',
+                    '9'
+                ];
+
+
+            modFreteSelect.value =
+                valoresPermitidos.includes(
+                    modFreteOriginal
+                )
+                    ? modFreteOriginal
+                    : '9';
+        }
+
+
+        // =====================================================
+        // TRANSPORTADORA
+        // =====================================================
+
+        const transportadoraSelect =
+            document.getElementById(
+                'avulsaTransportadoraId'
+            );
+
+
+        let transportadoraEncontrada =
+            null;
+
+
+        if (
+            transportadoraSelect &&
+            (
+                transportadoraXML.cnpj ||
+                transportadoraXML.nome
+            )
+        ) {
+
+            try {
+
+                const responseTransportadoras =
+                    await fetch(
+                        `${window.API_BASE_URL}/nfe/transportadoras`,
+                        {
+                            cache:
+                                'no-store'
+                        }
+                    );
+
+
+                const dadosTransportadoras =
+                    await responseTransportadoras
+                        .json();
+
+
+                const transportadoras =
+                    Array.isArray(
+                        dadosTransportadoras
+                            .transportadoras
+                    )
+                        ? dadosTransportadoras
+                            .transportadoras
+                        : [];
+
+
+                // Primeiro por CNPJ
+                if (
+                    transportadoraXML.cnpj
+                ) {
+
+                    transportadoraEncontrada =
+                        transportadoras.find(
+                            transportadora =>
+
+                                String(
+                                    transportadora.cnpj ||
+                                    ''
+                                )
+                                    .replace(
+                                        /\D/g,
+                                        ''
+                                    ) ===
+                                transportadoraXML.cnpj
+                        );
+                }
+
+
+                // Fallback pelo nome
+                if (
+                    !transportadoraEncontrada &&
+                    transportadoraXML.nome
+                ) {
+
+                    const nomeXML =
+                        String(
+                            transportadoraXML.nome
+                        )
+                            .trim()
+                            .toLowerCase();
+
+
+                    transportadoraEncontrada =
+                        transportadoras.find(
+                            transportadora =>
+
+                                String(
+                                    transportadora.nome ||
+                                    ''
+                                )
+                                    .trim()
+                                    .toLowerCase() ===
+                                nomeXML
+                        );
+                }
+
+
+                if (
+                    transportadoraEncontrada
+                ) {
+
+                    transportadoraSelect.value =
+                        String(
+                            transportadoraEncontrada.id
+                        );
+
+
+                    console.log(
+                        '🚚 Transportadora da devolução selecionada:',
+                        transportadoraEncontrada.nome
+                    );
+
+                } else {
+
+                    transportadoraSelect.value =
+                        '';
+
+
+                    console.warn(
+                        '⚠️ Transportadora da NF-e original não encontrada no cadastro:',
+                        transportadoraXML
+                    );
+                }
+
+
+            } catch (
+                error
+            ) {
+
+                console.warn(
+                    '⚠️ Não foi possível localizar automaticamente a transportadora:',
+                    error
+                );
+            }
+        }
+
+
+        // =====================================================
+        // PRODUTOS
+        // =====================================================
+
+        const produtosEstoque =
+            Array.isArray(
+                window._produtosEstoqueAvulsaNFE
+            )
+                ? window._produtosEstoqueAvulsaNFE
+                : [];
+
+
+        window._itensAvulsaNFE =
+            produtosXML.map(
+                produtoXML => {
+
+                    const skuXML =
+                        String(
+                            produtoXML.sku ||
+                            ''
+                        )
+                            .trim();
+
+
+                    const produtoCadastro =
+                        produtosEstoque.find(
+                            produto =>
+
+                                String(
+                                    produto.sku ||
+                                    ''
+                                )
+                                    .trim() ===
+                                skuXML
+                        );
+
+
+                    return {
+
+                        produto_id:
+                            produtoCadastro
+                                ?.id ||
+                            null,
+
+                        nome:
+                            produtoXML.nome,
+
+                        sku:
+                            produtoXML.sku,
+
+                        quantidade:
+                            produtoXML.quantidade,
+
+                        valor_unitario:
+                            produtoXML.valor_unitario,
+
+                        ncm:
+                            produtoXML.ncm,
+
+                        estoque_atual:
+                            Number(
+                                produtoCadastro
+                                    ?.quantidade ||
+                                0
+                            )
+                    };
+                }
+            );
+
+
+        renderizarProdutosAvulsaNFE();
+
+
+        atualizarProdutosJSONAvulsaNFE();
+
+
+        // =====================================================
+        // LOG FINAL
+        // =====================================================
+
+        console.log(
+            '✅ DEVOLUÇÃO PREENCHIDA AUTOMATICAMENTE:',
+            {
+                chave_original:
+                    chave,
+
+                cliente:
+                    clienteCadastro,
+
+                natureza:
+                    naturezaSelect.value,
+
+                cfop:
+                    cfopSelect.value,
+
+                modalidade_frete:
+                    modFreteSelect
+                        ?.value,
+
+                transportadora:
+                    transportadoraEncontrada
+                        ?.nome ||
+                    null,
+
+                produtos:
+                    window
+                        ._itensAvulsaNFE
+            }
+        );
+
+
+        // =====================================================
+        // ROLAR PARA O TOPO DO FORMULÁRIO
+        // =====================================================
+
+        document
+            .getElementById(
+                'abaAvulsa'
+            )
+            ?.scrollIntoView({
+                behavior:
+                    'smooth',
+
+                block:
+                    'start'
+            });
+
+
+        showToast(
+            '✅ Devolução preparada. Confira os dados e clique em Emitir NF-e.',
+            'success'
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro preparando devolução:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao preparar devolução: ${error.message}`,
+            'error'
+        );
+
+
+    } finally {
+
+        window._abrindoDevolucaoNFE =
+            false;
+    }
+}
+
+
+window.abrirDevolucaoNFE =
+    abrirDevolucaoNFE;
+
+// =========================================================
 // NCM POR SKU
 // =========================================================
 
@@ -21305,7 +22567,8 @@ async function carregarNFesEmitidas() {
 
 
         if (
-            nfes.length === 0
+            nfes.length ===
+            0
         ) {
 
             tbody.innerHTML = `
@@ -21319,23 +22582,18 @@ async function carregarNFesEmitidas() {
                 </tr>
             `;
 
-
             return;
         }
 
 
         // =====================================================
-        // MONTAR TABELA
+        // TABELA
         // =====================================================
 
         tbody.innerHTML =
             nfes
                 .map(
                     nfe => {
-
-                        // =====================================
-                        // DADOS BÁSICOS
-                        // =====================================
 
                         const chave =
                             nfe.chave_acesso ||
@@ -21376,18 +22634,34 @@ async function carregarNFesEmitidas() {
                             '-';
 
 
+                        // CORREÇÃO:
+                        // Number(null) daria zero.
                         let valorTotal =
-                            Number(
-                                nfe.valor_total
-                            );
+                            nfe.valor_total !==
+                                null &&
+                            nfe.valor_total !==
+                                undefined &&
+                            nfe.valor_total !==
+                                ''
+
+                                ? Number(
+                                    nfe.valor_total
+                                )
+
+                                : NaN;
 
 
-                        // =====================================
+                        let tpNF =
+                            null;
+
+
+                        let finalidadeNFe =
+                            null;
+
+
+                        // =================================================
                         // LER XML
-                        //
-                        // Serve também para NF-es antigas que
-                        // não possuem natureza salva no banco.
-                        // =====================================
+                        // =================================================
 
                         try {
 
@@ -21414,11 +22688,13 @@ async function carregarNFesEmitidas() {
                                         );
 
 
-                                if (infNFe) {
+                                if (
+                                    infNFe
+                                ) {
 
-                                    // =========================
+                                    // =====================================
                                     // NATUREZA
-                                    // =========================
+                                    // =====================================
 
                                     const natOp =
                                         infNFe
@@ -21429,20 +22705,47 @@ async function carregarNFesEmitidas() {
                                             ?.trim();
 
 
-                                    if (natOp) {
+                                    if (
+                                        natOp
+                                    ) {
 
                                         naturezaOperacao =
                                             natOp;
                                     }
 
 
-                                    // =========================
+                                    // =====================================
+                                    // TIPO / FINALIDADE
+                                    // =====================================
+
+                                    tpNF =
+                                        infNFe
+                                            .querySelector(
+                                                'tpNF'
+                                            )
+                                            ?.textContent
+                                            ?.trim() ||
+                                        null;
+
+
+                                    finalidadeNFe =
+                                        infNFe
+                                            .querySelector(
+                                                'finNFe'
+                                            )
+                                            ?.textContent
+                                            ?.trim() ||
+                                        null;
+
+
+                                    // =====================================
                                     // CLIENTE
-                                    // =========================
+                                    // =====================================
 
                                     if (
                                         !clienteNome ||
-                                        clienteNome === '-'
+                                        clienteNome ===
+                                            '-'
                                     ) {
 
                                         const nomeXML =
@@ -21454,7 +22757,9 @@ async function carregarNFesEmitidas() {
                                                 ?.trim();
 
 
-                                        if (nomeXML) {
+                                        if (
+                                            nomeXML
+                                        ) {
 
                                             clienteNome =
                                                 nomeXML;
@@ -21462,13 +22767,14 @@ async function carregarNFesEmitidas() {
                                     }
 
 
-                                    // =========================
+                                    // =====================================
                                     // PRODUTOS
-                                    // =========================
+                                    // =====================================
 
                                     if (
                                         !produtoNome ||
-                                        produtoNome === '-'
+                                        produtoNome ===
+                                            '-'
                                     ) {
 
                                         const produtosXML =
@@ -21504,9 +22810,9 @@ async function carregarNFesEmitidas() {
                                     }
 
 
-                                    // =========================
+                                    // =====================================
                                     // VALOR
-                                    // =========================
+                                    // =====================================
 
                                     if (
                                         !Number.isFinite(
@@ -21521,7 +22827,7 @@ async function carregarNFesEmitidas() {
                                                         'ICMSTot vNF'
                                                     )
                                                     ?.textContent ||
-                                                '0'
+                                                ''
                                             );
 
 
@@ -21539,7 +22845,9 @@ async function carregarNFesEmitidas() {
                             }
 
 
-                        } catch (error) {
+                        } catch (
+                            error
+                        ) {
 
                             console.warn(
                                 `⚠️ Erro lendo XML da NF-e ${chave}:`,
@@ -21548,45 +22856,20 @@ async function carregarNFesEmitidas() {
                         }
 
 
-                        // =====================================
-                        // FALLBACK NATUREZA
-                        // =====================================
+                        // =================================================
+                        // NATUREZA
+                        // =================================================
 
                         if (
                             !naturezaOperacao ||
-                            naturezaOperacao === '-'
+                            naturezaOperacao ===
+                                '-'
                         ) {
 
                             naturezaOperacao =
                                 'Não informada';
                         }
 
-
-                        // =====================================
-                        // FORMATAÇÃO VALOR
-                        // =====================================
-
-                        const valorFormatado =
-                            Number.isFinite(
-                                valorTotal
-                            )
-                                ? valorTotal
-                                    .toLocaleString(
-                                        'pt-BR',
-                                        {
-                                            minimumFractionDigits:
-                                                2,
-
-                                            maximumFractionDigits:
-                                                2
-                                        }
-                                    )
-                                : '—';
-
-
-                        // =====================================
-                        // VISUAL DA NATUREZA
-                        // =====================================
 
                         const naturezaNormalizada =
                             String(
@@ -21606,7 +22889,11 @@ async function carregarNFesEmitidas() {
                             naturezaNormalizada
                                 .includes(
                                     'devolucao'
-                                );
+                                ) ||
+                            finalidadeNFe ===
+                                '4' ||
+                            tpNF ===
+                                '0';
 
 
                         const htmlNatureza =
@@ -21653,13 +22940,38 @@ async function carregarNFesEmitidas() {
                                 `;
 
 
-                        // =====================================
+                        // =================================================
+                        // VALOR
+                        // =================================================
+
+                        const valorFormatado =
+                            Number.isFinite(
+                                valorTotal
+                            )
+
+                                ? valorTotal
+                                    .toLocaleString(
+                                        'pt-BR',
+                                        {
+                                            minimumFractionDigits:
+                                                2,
+
+                                            maximumFractionDigits:
+                                                2
+                                        }
+                                    )
+
+                                : '—';
+
+
+                        // =================================================
                         // PRODUTO
-                        // =====================================
+                        // =================================================
 
                         const produtoHTML =
                             produtoNome &&
-                            produtoNome !== '-'
+                            produtoNome !==
+                                '-'
 
                                 ? escaparHTMLNFE(
                                     produtoNome
@@ -21668,9 +22980,9 @@ async function carregarNFesEmitidas() {
                                 : '-';
 
 
-                        // =====================================
-                        // STATUS / AÇÕES
-                        // =====================================
+                        // =================================================
+                        // CANCELAR
+                        // =================================================
 
                         const htmlStatus =
                             !nfe.cancelada
@@ -21679,6 +22991,7 @@ async function carregarNFesEmitidas() {
                                     <button
                                         class="btn btn-sm btn-danger"
                                         onclick="cancelarNFE('${chave}')"
+                                        title="Cancelar NF-e"
                                     >
                                         Cancelar
                                     </button>
@@ -21693,9 +23006,49 @@ async function carregarNFesEmitidas() {
                                 `;
 
 
-                        // =====================================
+                        // =================================================
+                        // BOTÃO DEVOLUÇÃO
+                        //
+                        // Só aparece em NF-e normal e não cancelada.
+                        // Não aparece em uma NF-e que já é devolução.
+                        // =================================================
+
+                        const htmlDevolucao =
+                            (
+                                !nfe.cancelada &&
+                                !ehDevolucao &&
+                                String(
+                                    chave
+                                )
+                                    .replace(
+                                        /\D/g,
+                                        ''
+                                    )
+                                    .length ===
+                                    44
+                            )
+
+                                ? `
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-warning"
+                                        onclick="abrirDevolucaoNFE('${chave}')"
+                                        title="Criar NF-e de devolução desta venda"
+                                        style="
+                                            white-space:nowrap;
+                                        "
+                                    >
+                                        <i class="fas fa-undo-alt"></i>
+                                        Emitir NF-e de devolução
+                                    </button>
+                                `
+
+                                : '';
+
+
+                        // =================================================
                         // LINHA
-                        // =====================================
+                        // =================================================
 
                         return `
                             <tr>
@@ -21764,6 +23117,7 @@ async function carregarNFesEmitidas() {
                                     >
 
                                         <button
+                                            type="button"
                                             class="btn btn-sm btn-info"
                                             onclick="visualizarNFE('${chave}')"
                                         >
@@ -21772,11 +23126,15 @@ async function carregarNFesEmitidas() {
 
 
                                         <button
+                                            type="button"
                                             class="btn btn-sm btn-secondary"
                                             onclick="baixarXMLNFE('${chave}')"
                                         >
                                             XML
                                         </button>
+
+
+                                        ${htmlDevolucao}
 
 
                                         ${htmlStatus}
@@ -21798,7 +23156,9 @@ async function carregarNFesEmitidas() {
         );
 
 
-    } catch (error) {
+    } catch (
+        error
+    ) {
 
         console.error(
             '❌ Erro ao carregar NF-es emitidas:',
