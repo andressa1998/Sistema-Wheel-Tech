@@ -1543,187 +1543,1254 @@ function ordenarEstoquePor(coluna) {
 
 // =========================================================
 // RENDERIZAR TABELA DE PRODUTOS
+// COM SELEÇÃO PARA AJUSTE EM MASSA
 // =========================================================
 
 function renderizarTabelaProdutos(produtosParaRenderizar = null) {
-    console.log('🔍 [renderizarTabelaProdutos] Iniciando renderização...');
-    
-    const tbody = document.getElementById('produtosEstoqueBody');
+
+    console.log(
+        '🔍 [renderizarTabelaProdutos] Iniciando renderização...'
+    );
+
+
+    const tbody =
+        document.getElementById(
+            'produtosEstoqueBody'
+        );
+
+
     if (!tbody) {
-        console.error('❌ Elemento #produtosEstoqueBody não encontrado');
-        return;
-    }
-    
-    const todosProdutos = produtosParaRenderizar || produtosEstoque;
-    produtosFiltradosAtuais = todosProdutos;
-    
-    if (todosProdutos.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center">Nenhum produto encontrado.</td></tr>';
-        atualizarPaginacaoEstoque(todosProdutos.length);
+
+        console.error(
+            '❌ Elemento #produtosEstoqueBody não encontrado'
+        );
+
         return;
     }
 
-    const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username);
-    const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
-    const podeVerCusto = usuariosVerCusto.includes(username) || isAdmin;
 
-    const produtosOrdenados = [...todosProdutos];
-    const coluna = ordemColunaEstoque.coluna;
-    const direcao = ordemColunaEstoque.direcao;
-    
-    produtosOrdenados.sort((a, b) => {
-        let valorA, valorB;
-        
-        switch(coluna) {
-            case 'id':
-                valorA = a.id || 0;
-                valorB = b.id || 0;
-                break;
-            case 'nome':
-                valorA = (a.nome || '').toLowerCase();
-                valorB = (b.nome || '').toLowerCase();
-                break;
-            case 'sku':
-                valorA = (a.sku || '').toLowerCase();
-                valorB = (b.sku || '').toLowerCase();
-                break;
-            case 'quantidade':
-                valorA = a.quantidade || 0;
-                valorB = b.quantidade || 0;
-                break;
-            case 'preco_custo':
-                valorA = a.ultimo_custo || a.dados_extra?.ultimo_custo || 0;
-                valorB = b.ultimo_custo || b.dados_extra?.ultimo_custo || 0;
-                break;
-            case 'preco_medio':
-                valorA = a.custo_medio || a.dados_extra?.custo_medio || 0;
-                valorB = b.custo_medio || b.dados_extra?.custo_medio || 0;
-                break;
-            case 'categoria':
-                valorA = (a.categoria || '').toLowerCase();
-                valorB = (b.categoria || '').toLowerCase();
-                break;
-            default:
-                valorA = a.id || 0;
-                valorB = b.id || 0;
+    // =====================================================
+    // PERMISSÕES
+    // =====================================================
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase() || '';
+
+
+    const isAdmin =
+        usuariosAdmin.includes(
+            username
+        );
+
+
+    const podeModificarSync =
+        usuariosAutorizadosSync.includes(
+            username
+        ) ||
+        isAdmin;
+
+
+    const podeVerCusto =
+        usuariosVerCusto.includes(
+            username
+        ) ||
+        isAdmin;
+
+
+    // =====================================================
+    // PRODUTOS
+    // =====================================================
+
+    const todosProdutos =
+        produtosParaRenderizar ||
+        produtosEstoque ||
+        [];
+
+
+    produtosFiltradosAtuais =
+        todosProdutos;
+
+
+    // =====================================================
+    // SEM PRODUTOS
+    // =====================================================
+
+    if (
+        todosProdutos.length === 0
+    ) {
+
+        produtosPaginaAtualMassa =
+            [];
+
+
+        tbody.innerHTML = `
+
+            <tr>
+
+                <td
+                    colspan="10"
+                    class="text-center"
+                >
+                    Nenhum produto encontrado.
+                </td>
+
+            </tr>
+
+        `;
+
+
+        atualizarPaginacaoEstoque(
+            0
+        );
+
+
+        atualizarBarraAcoesMassaEstoque();
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // ORDENAR
+    // =====================================================
+
+    const produtosOrdenados =
+        [...todosProdutos];
+
+
+    const coluna =
+        ordemColunaEstoque.coluna;
+
+
+    const direcao =
+        ordemColunaEstoque.direcao;
+
+
+    produtosOrdenados.sort(
+        (
+            a,
+            b
+        ) => {
+
+            let valorA;
+
+            let valorB;
+
+
+            switch (
+                coluna
+            ) {
+
+                // =========================================
+                // ID
+                // =========================================
+
+                case 'id':
+
+                    valorA =
+                        a.id || 0;
+
+                    valorB =
+                        b.id || 0;
+
+                    break;
+
+
+                // =========================================
+                // NOME
+                // =========================================
+
+                case 'nome':
+
+                    valorA =
+                        (
+                            a.nome ||
+                            ''
+                        ).toLowerCase();
+
+
+                    valorB =
+                        (
+                            b.nome ||
+                            ''
+                        ).toLowerCase();
+
+                    break;
+
+
+                // =========================================
+                // SKU
+                // =========================================
+
+                case 'sku':
+
+                    valorA =
+                        (
+                            a.sku ||
+                            ''
+                        ).toLowerCase();
+
+
+                    valorB =
+                        (
+                            b.sku ||
+                            ''
+                        ).toLowerCase();
+
+                    break;
+
+
+                // =========================================
+                // QUANTIDADE
+                // =========================================
+
+                case 'quantidade':
+
+                    valorA =
+                        a.quantidade ||
+                        0;
+
+
+                    valorB =
+                        b.quantidade ||
+                        0;
+
+                    break;
+
+
+                // =========================================
+                // ÚLTIMO CUSTO
+                // =========================================
+
+                case 'preco_custo':
+
+                    valorA =
+                        a.ultimo_custo ||
+                        a.dados_extra
+                            ?.ultimo_custo ||
+                        0;
+
+
+                    valorB =
+                        b.ultimo_custo ||
+                        b.dados_extra
+                            ?.ultimo_custo ||
+                        0;
+
+                    break;
+
+
+                // =========================================
+                // CUSTO MÉDIO
+                // =========================================
+
+                case 'preco_medio':
+
+                    valorA =
+                        a.custo_medio ||
+                        a.dados_extra
+                            ?.custo_medio ||
+                        0;
+
+
+                    valorB =
+                        b.custo_medio ||
+                        b.dados_extra
+                            ?.custo_medio ||
+                        0;
+
+                    break;
+
+
+                // =========================================
+                // CATEGORIA
+                // =========================================
+
+                case 'categoria':
+
+                    valorA =
+                        (
+                            a.categoria ||
+                            ''
+                        ).toLowerCase();
+
+
+                    valorB =
+                        (
+                            b.categoria ||
+                            ''
+                        ).toLowerCase();
+
+                    break;
+
+
+                // =========================================
+                // PADRÃO
+                // =========================================
+
+                default:
+
+                    valorA =
+                        a.id || 0;
+
+
+                    valorB =
+                        b.id || 0;
+
+                    break;
+            }
+
+
+            // =================================================
+            // STRING
+            // =================================================
+
+            if (
+                typeof valorA ===
+                'string'
+            ) {
+
+                return direcao ===
+                    'asc'
+
+                    ? valorA.localeCompare(
+                        valorB
+                    )
+
+                    : valorB.localeCompare(
+                        valorA
+                    );
+
+            }
+
+
+            // =================================================
+            // NÚMERO
+            // =================================================
+
+            return direcao ===
+                'asc'
+
+                ? valorA -
+                    valorB
+
+                : valorB -
+                    valorA;
+
         }
-        
-        if (typeof valorA === 'string') {
-            return direcao === 'asc' ? valorA.localeCompare(valorB) : valorB.localeCompare(valorA);
-        } else {
-            return direcao === 'asc' ? (valorA - valorB) : (valorB - valorA);
-        }
-    });
+    );
 
-    const totalPaginas = Math.ceil(produtosOrdenados.length / itensPorPaginaEstoque);
-    if (paginaAtualEstoque > totalPaginas) paginaAtualEstoque = totalPaginas;
-    if (paginaAtualEstoque < 1) paginaAtualEstoque = 1;
-    
-    const inicio = (paginaAtualEstoque - 1) * itensPorPaginaEstoque;
-    const fim = Math.min(inicio + itensPorPaginaEstoque, produtosOrdenados.length);
-    const produtosPagina = produtosOrdenados.slice(inicio, fim);
 
-    // =========================================================
-    // GUARDAR PRODUTOS DA PÁGINA PARA SELEÇÃO EM MASSA
-    // =========================================================
+    // =====================================================
+    // PAGINAÇÃO
+    // =====================================================
+
+    const totalPaginas =
+        Math.ceil(
+            produtosOrdenados.length /
+            itensPorPaginaEstoque
+        );
+
+
+    if (
+        paginaAtualEstoque >
+        totalPaginas
+    ) {
+
+        paginaAtualEstoque =
+            totalPaginas;
+
+    }
+
+
+    if (
+        paginaAtualEstoque < 1
+    ) {
+
+        paginaAtualEstoque =
+            1;
+
+    }
+
+
+    const inicio =
+        (
+            paginaAtualEstoque -
+            1
+        ) *
+        itensPorPaginaEstoque;
+
+
+    const fim =
+        Math.min(
+
+            inicio +
+                itensPorPaginaEstoque,
+
+            produtosOrdenados.length
+
+        );
+
+
+    const produtosPagina =
+        produtosOrdenados.slice(
+            inicio,
+            fim
+        );
+
+
+    // =====================================================
+    // IMPORTANTE:
+    // GUARDAR A PÁGINA ATUAL PARA SELEÇÃO EM MASSA
+    // =====================================================
 
     produtosPaginaAtualMassa =
         [...produtosPagina];
-    
-    tbody.innerHTML = '';
-    
-    produtosPagina.forEach(prod => {
-        const row = document.createElement('tr');
-        let atributosResumo = '';
-        if (prod.dados_extra) {
-            const keys = Object.keys(prod.dados_extra).slice(0, 2);
-            atributosResumo = keys.map(k => `${k}: ${prod.dados_extra[k]}`).join(', ');
-            if (Object.keys(prod.dados_extra).length > 2) atributosResumo += '...';
-        }
-        
-        const mlbCodes = prod.mlb_codes || prod.dados_extra?.mlb_codes;
-        const temMLB = mlbCodes && ((Array.isArray(mlbCodes) && mlbCodes.length > 0) || (typeof mlbCodes === 'string' && mlbCodes.trim() !== ''));
-        
-        const ultimoCusto = prod.ultimo_custo || prod.dados_extra?.ultimo_custo || 0;
-        const custoMedio = prod.custo_medio || prod.dados_extra?.custo_medio || 0;
-        
-        const syncBloqueado = prod.bloquear_sync_ml || prod.dados_extra?.bloquear_sync_ml || false;
-        const syncStatusHtml = syncBloqueado 
-            ? '<span class="sync-status-badge bloqueado"><i class="fas fa-lock"></i> Bloqueado</span>'
-            : '<span class="sync-status-badge ativo"><i class="fas fa-check-circle"></i> Ativo</span>';
-        
-        const isExcesso = verificarExcessoEstoque(prod);
-        const maximoPermitido = calcularEstoqueMaximo(prod);
-        const precoUnitario = prod.preco || 0;
-        
-        let excessoTooltip = '';
-        if (isExcesso) {
-            excessoTooltip = `Preço: R$ ${precoUnitario.toFixed(2)} | Estoque máximo: ${maximoPermitido} | Atual: ${prod.quantidade}`;
-        }
-        
-        let quantidadeHtml = `${prod.quantidade}`;
-        if (isExcesso) {
-            quantidadeHtml += ` <span class="badge badge-danger" title="${excessoTooltip}"><i class="fas fa-exclamation-triangle"></i> EXCESSO (máx: ${maximoPermitido})</span>`;
-        } else if (prod.quantidade <= 5) {
-            quantidadeHtml = `<span class="text-danger fw-bold">${prod.quantidade}</span>`;
-        }
-        
-        const descricaoRegra = getDescricaoRegra(prod);
-        const excessoInfo = isExcesso ? `<br><span class="badge badge-danger mt-1" title="${descricaoRegra}">⚠️ Excesso (máx: ${maximoPermitido})</span>` : '';
-        
-        let botoes = `
-        <button class="btn btn-sm btn-info" onclick="editarProdutoEstoque(${prod.id})" title="Editar"><i class="fas fa-edit"></i></button>
-        <button class="btn btn-sm btn-warning" onclick="abrirModalMovimentacaoEstoque(${prod.id}, '${escapeHtml(prod.nome)}')" title="Movimentar"><i class="fas fa-exchange-alt"></i></button>
-        <button class="btn btn-sm btn-secondary" onclick="verHistoricoMovimentacoes(${prod.id})" title="Histórico"><i class="fas fa-history"></i></button>
-        <button class="btn btn-sm btn-purple" onclick="abrirModalRegraIndividual('${escapeHtml(prod.sku)}')" title="Regra individual de estoque">
-        <i class="fas fa-sliders-h"></i>
-        </button>
-        `;
-        
-        if (isAdmin) {
-            botoes += `<button class="btn btn-sm btn-danger" onclick="excluirProdutoEstoque(${prod.id})" title="Excluir"><i class="fas fa-trash"></i></button>`;
-        }
-        
-        if (temMLB && podeModificarSync) {
-            botoes += `<button class="btn btn-sm btn-primary" onclick="sincronizarProdutoML(${prod.id})" title="Sincronizar estoque com ML"><i class="fab fa-mercadolibre"></i></button>`;
-        } else if (temMLB && !podeModificarSync) {
-            botoes += `<button class="btn btn-sm btn-secondary" disabled title="Apenas administradores podem sincronizar"><i class="fab fa-mercadolibre"></i></button>`;
-        }
-        
-        // Mostrar prefixo do SKU (8 primeiros caracteres)
-        const skuPrefix = prod.sku ? prod.sku.substring(0, 8).toUpperCase() : '-';
-        
-        let rowHtml = `
-            <td>${prod.id}</td>
-            <td><strong>${escapeHtml(prod.nome)}</strong><br><small class="text-muted">${escapeHtml(prod.categoria || 'sem categoria')}</small></td>
-            <td><code>${escapeHtml(prod.sku)}</code><br><small class="text-muted" style="font-size: 10px; color: #6c757d;">Prefixo: ${skuPrefix}</small></td>
-            <td>${quantidadeHtml}</td>
-        `;
-        
-        if (podeVerCusto) {
-            rowHtml += `
-                <td>${ultimoCusto > 0 ? `R$ ${parseFloat(ultimoCusto).toFixed(2)}` : '-'}</td>
-                <td>${custoMedio > 0 ? `R$ ${parseFloat(custoMedio).toFixed(2)}` : '-'}</td>
+
+
+    // =====================================================
+    // LIMPAR TABELA
+    // =====================================================
+
+    tbody.innerHTML =
+        '';
+
+
+    // =====================================================
+    // PRODUTOS DA PÁGINA
+    // =====================================================
+
+    produtosPagina.forEach(
+        prod => {
+
+            const row =
+                document.createElement(
+                    'tr'
+                );
+
+
+            // =================================================
+            // ATRIBUTOS
+            // =================================================
+
+            let atributosResumo =
+                '';
+
+
+            if (
+                prod.dados_extra
+            ) {
+
+                const keys =
+                    Object.keys(
+                        prod.dados_extra
+                    )
+                    .slice(
+                        0,
+                        2
+                    );
+
+
+                atributosResumo =
+                    keys
+                        .map(
+                            k =>
+                                `${k}: ${prod.dados_extra[k]}`
+                        )
+                        .join(
+                            ', '
+                        );
+
+
+                if (
+                    Object.keys(
+                        prod.dados_extra
+                    ).length > 2
+                ) {
+
+                    atributosResumo +=
+                        '...';
+
+                }
+
+            }
+
+
+            // =================================================
+            // MLB
+            // =================================================
+
+            const mlbCodes =
+                prod.mlb_codes ||
+                prod.dados_extra
+                    ?.mlb_codes;
+
+
+            const temMLB =
+                mlbCodes &&
+                (
+                    (
+                        Array.isArray(
+                            mlbCodes
+                        ) &&
+                        mlbCodes.length >
+                        0
+                    )
+                    ||
+                    (
+                        typeof mlbCodes ===
+                        'string' &&
+                        mlbCodes
+                            .trim() !==
+                        ''
+                    )
+                );
+
+
+            // =================================================
+            // CUSTOS
+            // =================================================
+
+            const ultimoCusto =
+                prod.ultimo_custo ||
+                prod.dados_extra
+                    ?.ultimo_custo ||
+                0;
+
+
+            const custoMedio =
+                prod.custo_medio ||
+                prod.dados_extra
+                    ?.custo_medio ||
+                0;
+
+
+            // =================================================
+            // SINCRONIZAÇÃO ML
+            // =================================================
+
+            const syncBloqueado =
+                prod.bloquear_sync_ml ||
+                prod.dados_extra
+                    ?.bloquear_sync_ml ||
+                false;
+
+
+            const syncStatusHtml =
+                syncBloqueado
+
+                    ? `
+
+                        <span
+                            class="
+                                sync-status-badge
+                                bloqueado
+                            "
+                        >
+                            <i
+                                class="fas fa-lock"
+                            ></i>
+
+                            Bloqueado
+                        </span>
+
+                    `
+
+                    : `
+
+                        <span
+                            class="
+                                sync-status-badge
+                                ativo
+                            "
+                        >
+                            <i
+                                class="fas fa-check-circle"
+                            ></i>
+
+                            Ativo
+                        </span>
+
+                    `;
+
+
+            // =================================================
+            // EXCESSO DE ESTOQUE
+            // =================================================
+
+            const isExcesso =
+                verificarExcessoEstoque(
+                    prod
+                );
+
+
+            const maximoPermitido =
+                calcularEstoqueMaximo(
+                    prod
+                );
+
+
+            const precoUnitario =
+                Number(
+                    prod.preco
+                ) || 0;
+
+
+            let excessoTooltip =
+                '';
+
+
+            if (
+                isExcesso
+            ) {
+
+                excessoTooltip =
+                    `Preço: R$ ${precoUnitario.toFixed(2)} | Estoque máximo: ${maximoPermitido} | Atual: ${prod.quantidade}`;
+
+            }
+
+
+            // =================================================
+            // QUANTIDADE
+            // =================================================
+
+            let quantidadeHtml =
+                `${prod.quantidade}`;
+
+
+            if (
+                isExcesso
+            ) {
+
+                quantidadeHtml += `
+
+                    <span
+                        class="
+                            badge
+                            badge-danger
+                        "
+                        title="${escapeHtml(
+                            excessoTooltip
+                        )}"
+                    >
+
+                        <i
+                            class="fas fa-exclamation-triangle"
+                        ></i>
+
+                        EXCESSO
+                        (máx: ${maximoPermitido})
+
+                    </span>
+
+                `;
+
+            }
+
+            else if (
+                Number(
+                    prod.quantidade
+                ) <= 5
+            ) {
+
+                quantidadeHtml = `
+
+                    <span
+                        class="
+                            text-danger
+                            fw-bold
+                        "
+                    >
+                        ${prod.quantidade}
+                    </span>
+
+                `;
+
+            }
+
+
+            // =================================================
+            // REGRA DE ESTOQUE
+            // =================================================
+
+            const descricaoRegra =
+                getDescricaoRegra(
+                    prod
+                );
+
+
+            const excessoInfo =
+                isExcesso
+
+                    ? `
+
+                        <br>
+
+                        <span
+                            class="
+                                badge
+                                badge-danger
+                                mt-1
+                            "
+                            title="${escapeHtml(
+                                descricaoRegra
+                            )}"
+                        >
+
+                            ⚠️ Excesso
+                            (máx: ${maximoPermitido})
+
+                        </span>
+
+                    `
+
+                    : '';
+
+
+            // =================================================
+            // BOTÕES
+            // =================================================
+
+            let botoes = `
+
+                <button
+                    class="
+                        btn
+                        btn-sm
+                        btn-info
+                    "
+                    onclick="
+                        editarProdutoEstoque(
+                            ${prod.id}
+                        )
+                    "
+                    title="Editar"
+                >
+
+                    <i
+                        class="fas fa-edit"
+                    ></i>
+
+                </button>
+
+
+                <button
+                    class="
+                        btn
+                        btn-sm
+                        btn-warning
+                    "
+                    onclick="
+                        abrirModalMovimentacaoEstoque(
+                            ${prod.id},
+                            '${escapeHtml(
+                                prod.nome
+                            )}'
+                        )
+                    "
+                    title="Movimentar"
+                >
+
+                    <i
+                        class="fas fa-exchange-alt"
+                    ></i>
+
+                </button>
+
+
+                <button
+                    class="
+                        btn
+                        btn-sm
+                        btn-secondary
+                    "
+                    onclick="
+                        verHistoricoMovimentacoes(
+                            ${prod.id}
+                        )
+                    "
+                    title="Histórico"
+                >
+
+                    <i
+                        class="fas fa-history"
+                    ></i>
+
+                </button>
+
+
+                <button
+                    class="
+                        btn
+                        btn-sm
+                        btn-purple
+                    "
+                    onclick="
+                        abrirModalRegraIndividual(
+                            '${escapeHtml(
+                                prod.sku
+                            )}'
+                        )
+                    "
+                    title="Regra individual de estoque"
+                >
+
+                    <i
+                        class="fas fa-sliders-h"
+                    ></i>
+
+                </button>
+
             `;
+
+
+            // =================================================
+            // EXCLUIR
+            // =================================================
+
+            if (
+                isAdmin
+            ) {
+
+                botoes += `
+
+                    <button
+                        class="
+                            btn
+                            btn-sm
+                            btn-danger
+                        "
+                        onclick="
+                            excluirProdutoEstoque(
+                                ${prod.id}
+                            )
+                        "
+                        title="Excluir"
+                    >
+
+                        <i
+                            class="fas fa-trash"
+                        ></i>
+
+                    </button>
+
+                `;
+
+            }
+
+
+            // =================================================
+            // SINCRONIZAR ML
+            // =================================================
+
+            if (
+                temMLB &&
+                podeModificarSync
+            ) {
+
+                botoes += `
+
+                    <button
+                        class="
+                            btn
+                            btn-sm
+                            btn-primary
+                        "
+                        onclick="
+                            sincronizarProdutoML(
+                                ${prod.id}
+                            )
+                        "
+                        title="Sincronizar estoque com ML"
+                    >
+
+                        <i
+                            class="fab fa-mercadolibre"
+                        ></i>
+
+                    </button>
+
+                `;
+
+            }
+
+            else if (
+                temMLB &&
+                !podeModificarSync
+            ) {
+
+                botoes += `
+
+                    <button
+                        class="
+                            btn
+                            btn-sm
+                            btn-secondary
+                        "
+                        disabled
+                        title="
+                            Apenas administradores
+                            podem sincronizar
+                        "
+                    >
+
+                        <i
+                            class="fab fa-mercadolibre"
+                        ></i>
+
+                    </button>
+
+                `;
+
+            }
+
+
+            // =================================================
+            // PREFIXO SKU
+            // =================================================
+
+            const skuPrefix =
+                prod.sku
+
+                    ? String(
+                        prod.sku
+                    )
+                        .substring(
+                            0,
+                            8
+                        )
+                        .toUpperCase()
+
+                    : '-';
+
+
+            // =================================================
+            // VERIFICAR SE O PRODUTO JÁ ESTÁ SELECIONADO
+            //
+            // A seleção permanece mesmo quando muda a página.
+            // =================================================
+
+            const estaSelecionado =
+                produtosSelecionadosMassa
+                    .has(
+                        String(
+                            prod.id
+                        )
+                    );
+
+
+            // =================================================
+            // MONTAR LINHA
+            // =================================================
+
+            let rowHtml = `
+
+                <!-- ======================================= -->
+                <!-- SELEÇÃO EM MASSA -->
+                <!-- ======================================= -->
+
+                <td
+                    style="
+                        text-align: center;
+                        vertical-align: middle;
+                        width: 42px;
+                    "
+                >
+
+                    <input
+                        type="checkbox"
+                        class="check-produto-massa"
+                        data-produto-id="${prod.id}"
+                        ${
+                            estaSelecionado
+                                ? 'checked'
+                                : ''
+                        }
+                        onchange="
+                            alterarSelecaoProdutoMassa(
+                                ${prod.id},
+                                this.checked
+                            )
+                        "
+                        style="
+                            width: 17px;
+                            height: 17px;
+                            cursor: pointer;
+                        "
+                    >
+
+                </td>
+
+
+                <!-- ======================================= -->
+                <!-- ID -->
+                <!-- ======================================= -->
+
+                <td>
+                    ${prod.id}
+                </td>
+
+
+                <!-- ======================================= -->
+                <!-- NOME / CATEGORIA -->
+                <!-- ======================================= -->
+
+                <td>
+
+                    <strong>
+                        ${escapeHtml(
+                            prod.nome
+                        )}
+                    </strong>
+
+                    <br>
+
+                    <small
+                        class="text-muted"
+                    >
+
+                        ${escapeHtml(
+                            prod.categoria ||
+                            'sem categoria'
+                        )}
+
+                    </small>
+
+                </td>
+
+
+                <!-- ======================================= -->
+                <!-- SKU -->
+                <!-- ======================================= -->
+
+                <td>
+
+                    <code>
+                        ${escapeHtml(
+                            prod.sku
+                        )}
+                    </code>
+
+                    <br>
+
+                    <small
+                        class="text-muted"
+                        style="
+                            font-size: 10px;
+                            color: #6c757d;
+                        "
+                    >
+
+                        Prefixo:
+                        ${escapeHtml(
+                            skuPrefix
+                        )}
+
+                    </small>
+
+                </td>
+
+
+                <!-- ======================================= -->
+                <!-- QUANTIDADE -->
+                <!-- ======================================= -->
+
+                <td>
+                    ${quantidadeHtml}
+                </td>
+
+            `;
+
+
+            // =================================================
+            // CUSTOS
+            // =================================================
+
+            if (
+                podeVerCusto
+            ) {
+
+                rowHtml += `
+
+                    <td>
+
+                        ${
+                            Number(
+                                ultimoCusto
+                            ) > 0
+
+                                ? `R$ ${parseFloat(
+                                    ultimoCusto
+                                ).toFixed(2)}`
+
+                                : '-'
+                        }
+
+                    </td>
+
+
+                    <td>
+
+                        ${
+                            Number(
+                                custoMedio
+                            ) > 0
+
+                                ? `R$ ${parseFloat(
+                                    custoMedio
+                                ).toFixed(2)}`
+
+                                : '-'
+                        }
+
+                    </td>
+
+                `;
+
+            }
+
+
+            // =================================================
+            // RESTANTE DA LINHA
+            // =================================================
+
+            rowHtml += `
+
+                <!-- ======================================= -->
+                <!-- SINCRONIZAÇÃO -->
+                <!-- ======================================= -->
+
+                <td>
+                    ${syncStatusHtml}
+                </td>
+
+
+                <!-- ======================================= -->
+                <!-- ATRIBUTOS -->
+                <!-- ======================================= -->
+
+                <td>
+
+                    <span
+                        title="${escapeHtml(
+                            atributosResumo
+                        )}"
+                        class="badge bg-info"
+                    >
+
+                        ${
+                            Object.keys(
+                                prod.dados_extra ||
+                                {}
+                            ).length
+                        }
+                        atributos
+
+                    </span>
+
+
+                    ${
+                        temMLB
+
+                            ? `
+
+                                <span
+                                    class="badge bg-success"
+                                >
+
+                                    <i
+                                        class="fab fa-mercadolibre"
+                                    ></i>
+
+                                    ${
+                                        Array.isArray(
+                                            mlbCodes
+                                        )
+
+                                            ? mlbCodes.length
+
+                                            : 1
+                                    }
+
+                                </span>
+
+                            `
+
+                            : ''
+                    }
+
+
+                    ${excessoInfo}
+
+                </td>
+
+
+                <!-- ======================================= -->
+                <!-- AÇÕES -->
+                <!-- ======================================= -->
+
+                <td>
+
+                    <div
+                        class="
+                            d-flex
+                            flex-wrap
+                            gap-1
+                        "
+                    >
+
+                        ${botoes}
+
+                    </div>
+
+                </td>
+
+            `;
+
+
+            // =================================================
+            // INSERIR NA TABELA
+            // =================================================
+
+            row.innerHTML =
+                rowHtml;
+
+
+            tbody.appendChild(
+                row
+            );
+
         }
-        
-        rowHtml += `
-            <td>${syncStatusHtml}</td>
-            <td>
-                <span title="${escapeHtml(atributosResumo)}" class="badge bg-info">${Object.keys(prod.dados_extra || {}).length} atributos</span>
-                ${temMLB ? `<span class="badge bg-success"><i class="fab fa-mercadolibre"></i> ${Array.isArray(mlbCodes) ? mlbCodes.length : 1}</span>` : ''}
-                ${excessoInfo}
-            </td>
-            <td><div class="d-flex flex-wrap gap-1">${botoes}</div></td>
-        `;
-        
-        row.innerHTML = rowHtml;
-        tbody.appendChild(row);
-    });
-    
-    atualizarPaginacaoEstoque(produtosOrdenados.length);
-    console.log('✅ [renderizarTabelaProdutos] Renderização concluída!');
+    );
+
+
+    // =====================================================
+    // PAGINAÇÃO
+    // =====================================================
+
+    atualizarPaginacaoEstoque(
+        produtosOrdenados.length
+    );
+
+
+    // =====================================================
+    // ATUALIZAR ESTADO DA SELEÇÃO EM MASSA
+    //
+    // Atualiza:
+    // - contador
+    // - barra de ações
+    // - checkbox do cabeçalho
+    // - estado indeterminado
+    // =====================================================
+
+    atualizarBarraAcoesMassaEstoque();
+
+
+    console.log(
+        '✅ [renderizarTabelaProdutos] Renderização concluída!'
+    );
 }
 
 // =========================================================

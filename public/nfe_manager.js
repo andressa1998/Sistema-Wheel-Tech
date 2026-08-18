@@ -23084,8 +23084,6 @@ async function carregarNFesEmitidas() {
                                 <td>
                                     ${produtoHTML}
                                 </td>
-
-
                                 <td
                                     style="
                                         white-space:nowrap;
@@ -23093,8 +23091,6 @@ async function carregarNFesEmitidas() {
                                 >
                                     R$ ${valorFormatado}
                                 </td>
-
-
                                 <td
                                     style="
                                         white-space:nowrap;
@@ -23104,8 +23100,6 @@ async function carregarNFesEmitidas() {
                                         dataEmissao
                                     )}
                                 </td>
-
-
                                 <td>
                                     <div
                                         style="
@@ -23115,7 +23109,6 @@ async function carregarNFesEmitidas() {
                                             align-items:center;
                                         "
                                     >
-
                                         <button
                                             type="button"
                                             class="btn btn-sm btn-info"
@@ -23123,8 +23116,6 @@ async function carregarNFesEmitidas() {
                                         >
                                             Visualizar
                                         </button>
-
-
                                         <button
                                             type="button"
                                             class="btn btn-sm btn-secondary"
@@ -23132,16 +23123,10 @@ async function carregarNFesEmitidas() {
                                         >
                                             XML
                                         </button>
-
-
                                         ${htmlDevolucao}
-
-
                                         ${htmlStatus}
-
                                     </div>
                                 </td>
-
                             </tr>
                         `;
                     }
@@ -23150,11 +23135,9 @@ async function carregarNFesEmitidas() {
                     ''
                 );
 
-
         console.log(
             `✅ ${nfes.length} NF-e(s) carregada(s) na tabela`
         );
-
 
     } catch (
         error
@@ -23165,13 +23148,11 @@ async function carregarNFesEmitidas() {
             error
         );
 
-
         tbody.innerHTML = `
             <tr>
                 <td
                     colspan="8"
-                    class="text-center text-danger"
-                >
+                    class="text-center text-danger">
                     Erro ao carregar NF-es
                 </td>
             </tr>

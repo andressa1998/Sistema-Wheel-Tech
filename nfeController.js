@@ -18,42 +18,402 @@ const CSRT_TOKEN_PRODUCAO = process.env.CSRT_TOKEN_PRODUCAO || 'DM3JSLGIU2Z957T8
 const AMBIENTE = process.env.NFE_AMBIENTE || 'producao';
 
 // ===================== OBTER CÓDIGO IBGE =====================
-async function obterCodigoMunicipio(nomeCidade, uf, cep = null) {
-    try {
-        const { data, error } = await supabase
-            .from('municipios')
-            .select('codigo_ibge')
-            .ilike('nome', nomeCidade.trim())
-            .eq('uf', uf)
-            .maybeSingle();
-        if (data && !error && data.codigo_ibge) {
-            return String(data.codigo_ibge);
-        }
+async function obterCodigoMunicipio(
+    nomeCidade,
+    uf,
+    cep = null
+) {
 
-        if (cep) {
-            const fetch = require('node-fetch');
-            const cepLimpo = cep.replace(/\D/g, '');
-            const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cepLimpo}`);
-            if (response.ok) {
-                const json = await response.json();
-                if (json.ibge_code) {
-                    const ibge = String(json.ibge_code);
-                    await supabase.from('municipios').upsert({
-                        codigo_ibge: parseInt(ibge),
-                        nome: json.city,
-                        uf: json.state
-                    }, { onConflict: 'codigo_ibge' });
-                    return ibge;
-                }
+    const cidadeLimpa =
+        String(
+            nomeCidade ||
+            ''
+        ).trim();
+
+
+    const ufLimpa =
+        String(
+            uf ||
+            ''
+        )
+            .trim()
+            .toUpperCase();
+
+
+    const cepLimpo =
+        String(
+            cep ||
+            ''
+        )
+            .replace(
+                /\D/g,
+                ''
+            );
+
+
+    if (
+        !cidadeLimpa
+    ) {
+
+        throw new Error(
+            'Cidade do destinatário não informada.'
+        );
+    }
+
+
+    if (
+        !ufLimpa ||
+        ufLimpa.length !==
+            2
+    ) {
+
+        throw new Error(
+            'UF do destinatário inválida.'
+        );
+    }
+
+
+    // =====================================================
+    // CÓDIGO IBGE DA UF
+    //
+    // Os 2 primeiros dígitos do município identificam a UF.
+    // =====================================================
+
+    const codigosUF = {
+
+        RO: '11',
+        AC: '12',
+        AM: '13',
+        RR: '14',
+        PA: '15',
+        AP: '16',
+        TO: '17',
+
+        MA: '21',
+        PI: '22',
+        CE: '23',
+        RN: '24',
+        PB: '25',
+        PE: '26',
+        AL: '27',
+        SE: '28',
+        BA: '29',
+
+        MG: '31',
+        ES: '32',
+        RJ: '33',
+        SP: '35',
+
+        PR: '41',
+        SC: '42',
+        RS: '43',
+
+        MS: '50',
+        MT: '51',
+        GO: '52',
+        DF: '53'
+    };
+
+
+    const prefixoEsperado =
+        codigosUF[
+            ufLimpa
+        ];
+
+
+    if (
+        !prefixoEsperado
+    ) {
+
+        throw new Error(
+            `UF não reconhecida: ${ufLimpa}`
+        );
+    }
+
+
+    // =====================================================
+    // VALIDADOR
+    // =====================================================
+
+    const validarCodigo =
+        codigo => {
+
+            const codigoLimpo =
+                String(
+                    codigo ||
+                    ''
+                )
+                    .replace(
+                        /\D/g,
+                        ''
+                    );
+
+
+            if (
+                codigoLimpo.length !==
+                7
+            ) {
+
+                return null;
+            }
+
+
+            if (
+                !codigoLimpo.startsWith(
+                    prefixoEsperado
+                )
+            ) {
+
+                console.warn(
+                    `⚠️ Código IBGE ${codigoLimpo} não pertence à UF ${ufLimpa}`
+                );
+
+                return null;
+            }
+
+
+            return codigoLimpo;
+        };
+
+
+    // =====================================================
+    // 1. BUSCAR NA NOSSA TABELA DE MUNICÍPIOS
+    // =====================================================
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await supabase
+                .from(
+                    'municipios'
+                )
+                .select(
+                    'codigo_ibge, nome, uf'
+                )
+                .ilike(
+                    'nome',
+                    cidadeLimpa
+                )
+                .eq(
+                    'uf',
+                    ufLimpa
+                )
+                .maybeSingle();
+
+
+        if (
+            !error &&
+            data?.codigo_ibge
+        ) {
+
+            const codigoValido =
+                validarCodigo(
+                    data.codigo_ibge
+                );
+
+
+            if (
+                codigoValido
+            ) {
+
+                console.log(
+                    `🏙️ Município encontrado no banco: ${cidadeLimpa}/${ufLimpa} → ${codigoValido}`
+                );
+
+
+                return codigoValido;
             }
         }
 
-        console.warn(`⚠️ IBGE não encontrado para ${nomeCidade}/${uf}, usando padrão ${DEFAULT_IBGE}`);
-        return DEFAULT_IBGE;
-    } catch (error) {
-        console.error('❌ Erro ao obter IBGE:', error);
-        return DEFAULT_IBGE;
+
+        if (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Erro buscando município no Supabase:',
+                error.message
+            );
+        }
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Falha buscando município no banco:',
+            error.message
+        );
     }
+
+
+    // =====================================================
+    // 2. BUSCAR PELO CEP
+    // =====================================================
+
+    if (
+        cepLimpo.length ===
+        8
+    ) {
+
+        try {
+
+            const fetch =
+                require(
+                    'node-fetch'
+                );
+
+
+            console.log(
+                `📍 Buscando IBGE pelo CEP ${cepLimpo}...`
+            );
+
+
+            const response =
+                await fetch(
+                    `https://brasilapi.com.br/api/cep/v1/${cepLimpo}`
+                );
+
+
+            if (
+                response.ok
+            ) {
+
+                const json =
+                    await response.json();
+
+
+                const ufCEP =
+                    String(
+                        json.state ||
+                        ''
+                    )
+                        .trim()
+                        .toUpperCase();
+
+
+                // =================================================
+                // PROTEÇÃO IMPORTANTE:
+                // CEP precisa pertencer à mesma UF do cliente.
+                // =================================================
+
+                if (
+                    ufCEP &&
+                    ufCEP !==
+                        ufLimpa
+                ) {
+
+                    throw new Error(
+                        `O CEP ${cepLimpo} pertence a ${ufCEP}, mas o cliente está cadastrado como ${ufLimpa}.`
+                    );
+                }
+
+
+                const codigoValido =
+                    validarCodigo(
+                        json.ibge_code
+                    );
+
+
+                if (
+                    codigoValido
+                ) {
+
+                    console.log(
+                        `✅ IBGE pelo CEP: ${json.city}/${ufCEP} → ${codigoValido}`
+                    );
+
+
+                    // =============================================
+                    // SALVAR NO CACHE LOCAL
+                    // =============================================
+
+                    try {
+
+                        await supabase
+                            .from(
+                                'municipios'
+                            )
+                            .upsert(
+                                {
+                                    codigo_ibge:
+                                        parseInt(
+                                            codigoValido,
+                                            10
+                                        ),
+
+                                    nome:
+                                        json.city ||
+                                        cidadeLimpa,
+
+                                    uf:
+                                        ufCEP ||
+                                        ufLimpa
+                                },
+                                {
+                                    onConflict:
+                                        'codigo_ibge'
+                                }
+                            );
+
+                    } catch (
+                        cacheError
+                    ) {
+
+                        console.warn(
+                            '⚠️ Não foi possível salvar município no cache:',
+                            cacheError.message
+                        );
+                    }
+
+
+                    return codigoValido;
+                }
+            }
+
+
+        } catch (
+            error
+        ) {
+
+            // Se descobrimos que CEP e UF divergem,
+            // não esconder esse erro.
+            if (
+                String(
+                    error.message ||
+                    ''
+                ).includes(
+                    'pertence a'
+                )
+            ) {
+
+                throw error;
+            }
+
+
+            console.warn(
+                '⚠️ Falha consultando município pelo CEP:',
+                error.message
+            );
+        }
+    }
+
+
+    // =====================================================
+    // NÃO USAR MAIS ARAUCÁRIA/PR COMO FALLBACK
+    //
+    // Melhor impedir emissão do que mandar cMun incorreto
+    // para a SEFAZ.
+    // =====================================================
+
+    throw new Error(
+        `Não foi possível determinar o código IBGE de ${cidadeLimpa}/${ufLimpa}. ` +
+        `Confira cidade e CEP no cadastro do cliente.`
+    );
 }
 
 // ===================== IMPORTAR NF-e NO ML =====================
@@ -427,29 +787,26 @@ async function emitirNFe(req, res) {
 
 
         // =====================================================
-        // IBGE
+        // IBGE DO MUNICÍPIO DO DESTINATÁRIO
         // =====================================================
 
-        let codigoIbge =
-            DEFAULT_IBGE;
-
-
-        try {
-
-            codigoIbge =
-                await obterCodigoMunicipio(
-                    cidade,
-                    uf,
-                    cep
-                );
-
-        } catch (err) {
-
-            console.warn(
-                'Erro ao obter IBGE, usando padrão:',
-                err.message
+        const codigoIbge =
+            await obterCodigoMunicipio(
+                cidade,
+                uf,
+                cep
             );
-        }
+
+
+        console.log(
+            '🏙️ MUNICÍPIO DESTINATÁRIO:',
+            {
+                cidade,
+                uf,
+                cep,
+                codigoIbge
+            }
+        );
 
 
         // =====================================================
