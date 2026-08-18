@@ -12225,6 +12225,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(carregarRegrasIndividuais, 1200);
     setTimeout(adicionarSecaoCategorias, 2500);
     setTimeout(carregarRegrasFixasTipoAnuncioML, 1300);
+    setTimeout(adicionarBotaoImportacaoCadastroInicial, 1800);
     
     const btnCategorias = document.getElementById('btnGerenciarCategorias');
     if (btnCategorias) {
@@ -12235,6 +12236,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(adicionarBotaoCriarCategoria, 1500);
     setTimeout(adicionarBotaoNoModalCategorias, 2000);
     setTimeout(adicionarBotaoImportarPlanilhaML, 1700);
+    setTimeout(adicionarBotaoImportacaoCadastroInicial, 400);
     
     setTimeout(async () => {
         if (!window.supabaseClient) return;
@@ -16942,6 +16944,2591 @@ function adicionarBotaoImportarPlanilhaML() {
 }
 
 // =========================================================
+// IMPORTADOR TEMPORÁRIO DE CADASTRO INICIAL DE PRODUTOS
+// =========================================================
+
+// IMPORTANTE:
+// A coluna G da planilha não possui cabeçalho.
+// Deixe FALSE até confirmar que ela representa custo.
+const IMPORTAR_COLUNA_G_COMO_CUSTO = false;
+
+let resultadoImportacaoCadastroInicial = null;
+let arquivoCadastroInicialSelecionado = null;
+let workbookCadastroInicialSelecionado = null;
+
+
+// =========================================================
+// VERIFICAR SE O IMPORTADOR ESTÁ HABILITADO
+// =========================================================
+
+async function importadorCadastroInicialEstaAtivo() {
+
+    try {
+
+        if (!window.supabaseClient) {
+            return true;
+        }
+
+        const { data, error } =
+            await window.supabaseClient
+                .from('configuracoes_sistema')
+                .select('valor')
+                .eq(
+                    'chave',
+                    'importador_cadastro_inicial_ativo'
+                )
+                .maybeSingle();
+
+
+        if (error) {
+
+            console.warn(
+                '⚠️ Não foi possível verificar configuração do importador:',
+                error
+            );
+
+            return true;
+        }
+
+
+        // Se nunca configurou, começa habilitado.
+        if (!data) {
+            return true;
+        }
+
+
+        let valor = data.valor;
+
+
+        if (typeof valor === 'string') {
+
+            const texto =
+                valor
+                    .trim()
+                    .toLowerCase();
+
+
+            if (
+                texto === 'false' ||
+                texto === '0'
+            ) {
+                return false;
+            }
+
+
+            if (
+                texto === 'true' ||
+                texto === '1'
+            ) {
+                return true;
+            }
+
+
+            try {
+
+                valor =
+                    JSON.parse(valor);
+
+            } catch (e) {
+                return true;
+            }
+
+        }
+
+
+        return valor !== false;
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro verificando importador:',
+            error
+        );
+
+        return true;
+    }
+}
+
+
+// =========================================================
+// CONVERTER VALOR DA PLANILHA EM NÚMERO
+// =========================================================
+
+function converterNumeroCadastroInicial(valor) {
+
+    if (
+        valor === null ||
+        valor === undefined ||
+        valor === ''
+    ) {
+        return 0;
+    }
+
+
+    if (
+        typeof valor === 'number'
+    ) {
+
+        return Number.isFinite(valor)
+            ? valor
+            : 0;
+    }
+
+
+    let texto =
+        String(valor)
+            .trim();
+
+
+    if (!texto) {
+        return 0;
+    }
+
+
+    // Ex:
+    // 1.234,56
+    if (
+        texto.includes(',')
+    ) {
+
+        texto =
+            texto
+                .replace(/\./g, '')
+                .replace(',', '.');
+    }
+
+
+    texto =
+        texto.replace(
+            /[^0-9.\-]/g,
+            ''
+        );
+
+
+    const numero =
+        parseFloat(texto);
+
+
+    return Number.isFinite(numero)
+        ? numero
+        : 0;
+}
+
+
+// =========================================================
+// BASE DE 8 CARACTERES
+// =========================================================
+
+function baseSkuCadastroInicial(sku) {
+
+    if (!sku) {
+        return '';
+    }
+
+
+    return String(sku)
+        .trim()
+        .substring(0, 8)
+        .toUpperCase();
+}
+
+
+function analisarPlanilhaCadastroInicial(
+    workbook,
+    nomeArquivo,
+    categoriaSelecionada
+) {
+
+    if (
+        !workbook ||
+        !workbook.SheetNames ||
+        workbook.SheetNames.length === 0
+    ) {
+
+        throw new Error(
+            'A planilha não possui nenhuma aba.'
+        );
+    }
+
+
+    if (!categoriaSelecionada) {
+
+        throw new Error(
+            'Nenhuma categoria foi selecionada.'
+        );
+    }
+
+
+    const nomeAba =
+        workbook.SheetNames[0];
+
+
+    const sheet =
+        workbook.Sheets[
+            nomeAba
+        ];
+
+
+    const linhas =
+        XLSX.utils.sheet_to_json(
+            sheet,
+            {
+
+                header: 1,
+
+                defval: null,
+
+                raw: true
+
+            }
+        );
+
+
+    const resultado = {
+
+        nomeArquivo,
+
+        nomeAba,
+
+        // Agora existe UMA categoria escolhida
+        categoriaSelecionada,
+
+        produtos: [],
+
+        validos: [],
+
+        duplicadosSistema: [],
+
+        duplicadosPlanilha: [],
+
+        erros: [],
+
+        categoriasNovas: [],
+
+        categoriasEncontradas: [
+            categoriaSelecionada
+        ]
+
+    };
+
+
+    const basesPlanilha =
+        new Map();
+
+
+    // =====================================================
+    // INDEXAR PRODUTOS JÁ CADASTRADOS
+    // =====================================================
+
+    const produtosPorBase =
+        new Map();
+
+
+    for (
+        const produto
+        of produtosEstoque || []
+    ) {
+
+        const base =
+            baseSkuCadastroInicial(
+                produto.sku
+            );
+
+
+        if (!base) {
+            continue;
+        }
+
+
+        if (
+            !produtosPorBase.has(
+                base
+            )
+        ) {
+
+            produtosPorBase.set(
+                base,
+                []
+            );
+
+        }
+
+
+        produtosPorBase
+            .get(base)
+            .push(
+                produto
+            );
+
+    }
+
+
+    // =====================================================
+    // LER PLANILHA
+    // =====================================================
+
+    for (
+        let i = 0;
+        i < linhas.length;
+        i++
+    ) {
+
+        const linha =
+            linhas[i] || [];
+
+
+        const numeroLinha =
+            i + 1;
+
+
+        // =================================================
+        // IGNORAR LINHA "Categoria : ..."
+        // =================================================
+
+        const colunaA =
+            linha[0] !== null &&
+            linha[0] !== undefined
+
+                ? String(
+                    linha[0]
+                ).trim()
+
+                : '';
+
+
+        if (
+            /^categoria\s*:/i.test(
+                colunaA
+            )
+        ) {
+
+            continue;
+
+        }
+
+
+        // =================================================
+        // SUA PLANILHA:
+        //
+        // C = EAN
+        // D = SKU
+        // E = NOME
+        // F = UNIDADE
+        // G = VALOR
+        // H = QUANTIDADE
+        // =================================================
+
+        const ean =
+            linha[2] !== null &&
+            linha[2] !== undefined
+
+                ? String(
+                    linha[2]
+                ).trim()
+
+                : '';
+
+
+        const sku =
+            linha[3] !== null &&
+            linha[3] !== undefined
+
+                ? String(
+                    linha[3]
+                ).trim()
+
+                : '';
+
+
+        const nome =
+            linha[4] !== null &&
+            linha[4] !== undefined
+
+                ? String(
+                    linha[4]
+                ).trim()
+
+                : '';
+
+
+        const unidade =
+            linha[5] !== null &&
+            linha[5] !== undefined
+
+                ? String(
+                    linha[5]
+                ).trim()
+
+                : '';
+
+
+        const valorPlanilha =
+            converterNumeroCadastroInicial(
+                linha[6]
+            );
+
+
+        const quantidade =
+            Math.max(
+                0,
+
+                Math.trunc(
+
+                    converterNumeroCadastroInicial(
+                        linha[7]
+                    )
+
+                )
+            );
+
+
+        // =================================================
+        // NÃO É LINHA DE PRODUTO
+        // =================================================
+
+        if (
+            !sku &&
+            !nome
+        ) {
+
+            continue;
+
+        }
+
+
+        const produto = {
+
+            linha:
+                numeroLinha,
+
+            sku,
+
+            base:
+                baseSkuCadastroInicial(
+                    sku
+                ),
+
+            nome,
+
+            // =============================================
+            // SEMPRE A CATEGORIA ESCOLHIDA
+            // =============================================
+
+            categoria:
+                categoriaSelecionada,
+
+            ean,
+
+            unidade,
+
+            valorPlanilha,
+
+            quantidade,
+
+            status:
+                'OK',
+
+            mensagem:
+                ''
+
+        };
+
+
+        resultado.produtos.push(
+            produto
+        );
+
+
+        // =================================================
+        // SKU
+        // =================================================
+
+        if (!sku) {
+
+            produto.status =
+                'ERRO';
+
+
+            produto.mensagem =
+                'SKU vazio.';
+
+
+            resultado.erros.push(
+                produto
+            );
+
+
+            continue;
+
+        }
+
+
+        if (
+            sku.length < 8
+        ) {
+
+            produto.status =
+                'ERRO';
+
+
+            produto.mensagem =
+                'SKU possui menos de 8 caracteres.';
+
+
+            resultado.erros.push(
+                produto
+            );
+
+
+            continue;
+
+        }
+
+
+        // =================================================
+        // NOME
+        // =================================================
+
+        if (!nome) {
+
+            produto.status =
+                'ERRO';
+
+
+            produto.mensagem =
+                'Nome do produto vazio.';
+
+
+            resultado.erros.push(
+                produto
+            );
+
+
+            continue;
+
+        }
+
+
+        // =================================================
+        // DUPLICIDADE DENTRO DA PLANILHA
+        // =================================================
+
+        if (
+            basesPlanilha.has(
+                produto.base
+            )
+        ) {
+
+            const anterior =
+                basesPlanilha.get(
+                    produto.base
+                );
+
+
+            produto.status =
+                'DUPLICADO_PLANILHA';
+
+
+            produto.mensagem =
+                `Mesma base de 8 caracteres da linha ${anterior.linha}: ${anterior.sku}`;
+
+
+            resultado
+                .duplicadosPlanilha
+                .push(
+                    produto
+                );
+
+
+            continue;
+
+        }
+
+
+        basesPlanilha.set(
+            produto.base,
+            produto
+        );
+
+
+        // =================================================
+        // DUPLICIDADE NO SISTEMA
+        // =================================================
+
+        const existentes =
+            produtosPorBase.get(
+                produto.base
+            ) || [];
+
+
+        if (
+            existentes.length > 0
+        ) {
+
+            produto.status =
+                'JA_EXISTE';
+
+
+            produto.mensagem =
+                `Já cadastrado: ${existentes.map(p => p.sku).join(', ')}`;
+
+
+            resultado
+                .duplicadosSistema
+                .push(
+                    produto
+                );
+
+
+            continue;
+
+        }
+
+
+        // =================================================
+        // PRONTO PARA CADASTRAR
+        // =================================================
+
+        resultado.validos.push(
+            produto
+        );
+
+    }
+
+
+    return resultado;
+}
+
+
+// =========================================================
+// PROCESSAR ARQUIVO SELECIONADO
+// =========================================================
+
+async function processarArquivoCadastroInicial(
+    input
+) {
+
+    const arquivo =
+        input?.files?.[0];
+
+
+    if (!arquivo) {
+        return;
+    }
+
+
+    try {
+
+        if (
+            typeof XLSX ===
+            'undefined'
+        ) {
+
+            throw new Error(
+                'Biblioteca XLSX não está carregada.'
+            );
+
+        }
+
+
+        // Sempre atualizar estoque antes da análise.
+        await carregarProdutosEstoque();
+
+
+        const buffer =
+            await arquivo.arrayBuffer();
+
+
+        const workbook =
+            XLSX.read(
+                buffer,
+                {
+                    type: 'array'
+                }
+            );
+
+
+        const resultado =
+            analisarPlanilhaCadastroInicial(
+                workbook,
+                arquivo.name
+            );
+
+
+        resultadoImportacaoCadastroInicial =
+            resultado;
+
+
+        mostrarPreviaCadastroInicial(
+            resultado
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro lendo cadastro inicial:',
+            error
+        );
+
+
+        showToast(
+            `❌ Erro ao ler planilha: ${error.message}`,
+            'error'
+        );
+
+    } finally {
+
+        if (input) {
+
+            input.value = '';
+
+        }
+
+    }
+}
+
+
+function abrirImportacaoCadastroInicial() {
+
+    let input =
+        document.getElementById(
+            'inputCadastroInicialProdutos'
+        );
+
+
+    if (!input) {
+
+        input =
+            document.createElement(
+                'input'
+            );
+
+
+        input.id =
+            'inputCadastroInicialProdutos';
+
+
+        input.type =
+            'file';
+
+
+        input.accept =
+            '.xlsx,.xls';
+
+
+        input.style.display =
+            'none';
+
+
+        input.onchange =
+            async function() {
+
+                await prepararArquivoCadastroInicial(
+                    this
+                );
+
+            };
+
+
+        document.body.appendChild(
+            input
+        );
+
+    }
+
+
+    input.click();
+}
+
+async function prepararArquivoCadastroInicial(
+    input
+) {
+
+    const arquivo =
+        input?.files?.[0];
+
+
+    if (!arquivo) {
+        return;
+    }
+
+
+    try {
+
+        if (
+            typeof XLSX ===
+            'undefined'
+        ) {
+
+            throw new Error(
+                'Biblioteca XLSX não está carregada.'
+            );
+
+        }
+
+
+        // Atualizar produtos/categorias antes da importação
+        await carregarProdutosEstoque();
+
+        await carregarCategoriasCustomizadas();
+
+
+        const buffer =
+            await arquivo.arrayBuffer();
+
+
+        const workbook =
+            XLSX.read(
+                buffer,
+                {
+                    type: 'array'
+                }
+            );
+
+
+        arquivoCadastroInicialSelecionado =
+            arquivo;
+
+
+        workbookCadastroInicialSelecionado =
+            workbook;
+
+
+        // =====================================================
+        // ABRIR ESCOLHA DA CATEGORIA
+        // =====================================================
+
+        abrirModalEscolherCategoriaImportacao(
+            arquivo.name
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro lendo planilha:',
+            error
+        );
+
+
+        showToast(
+            `❌ Erro ao ler planilha: ${error.message}`,
+            'error'
+        );
+
+    } finally {
+
+        // Permite escolher o mesmo arquivo novamente
+        if (input) {
+            input.value = '';
+        }
+
+    }
+}
+
+function abrirModalEscolherCategoriaImportacao(
+    nomeArquivo
+) {
+
+    const anterior =
+        document.getElementById(
+            'modalCategoriaImportacaoInicial'
+        );
+
+
+    if (anterior) {
+        anterior.remove();
+    }
+
+
+    // =====================================================
+    // CATEGORIAS PADRÃO EXISTENTES
+    // =====================================================
+
+    const categoriasPadrao = [
+        'Eixos',
+        'Parafusos',
+        'Rolamentos',
+        'Raios',
+        'Arruelas',
+        'Porcas',
+        'CapacetesEPartes',
+        'outros'
+    ];
+
+
+    // =====================================================
+    // CATEGORIAS PERSONALIZADAS EXISTENTES
+    // =====================================================
+
+    const categoriasCustom =
+        Object.keys(
+            categoriasCustomizadas || {}
+        );
+
+
+    // =====================================================
+    // JUNTA SEM DUPLICAR
+    // =====================================================
+
+    const categorias =
+        [
+            ...new Set([
+                ...categoriasPadrao,
+                ...categoriasCustom
+            ])
+        ]
+        .sort(
+            (a, b) =>
+                a.localeCompare(
+                    b,
+                    'pt-BR'
+                )
+        );
+
+
+    let options = `
+
+        <option value="">
+            Selecione uma categoria...
+        </option>
+
+    `;
+
+
+    categorias.forEach(
+        categoria => {
+
+            options += `
+
+                <option
+                    value="${escaparImportacaoCadastroInicial(
+                        categoria
+                    )}"
+                >
+                    ${escaparImportacaoCadastroInicial(
+                        categoria
+                    )}
+                </option>
+
+            `;
+
+        }
+    );
+
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalCategoriaImportacaoInicial';
+
+
+    modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100010;
+    `;
+
+
+    modal.innerHTML = `
+
+        <div
+            style="
+                background: white;
+                width: 90%;
+                max-width: 550px;
+                border-radius: 12px;
+                padding: 25px;
+                box-shadow: 0 20px 60px rgba(0,0,0,.3);
+            "
+        >
+
+            <h3
+                style="
+                    margin-top: 0;
+                    color: #00ADEE;
+                "
+            >
+
+                <i class="fas fa-box-open"></i>
+
+                Importar Produtos
+
+            </h3>
+
+
+            <div
+                style="
+                    background: #f8f9fa;
+                    padding: 12px;
+                    border-radius: 7px;
+                    margin-bottom: 20px;
+                    font-size: 12px;
+                "
+            >
+
+                <strong>Arquivo:</strong>
+
+                ${escaparImportacaoCadastroInicial(
+                    nomeArquivo
+                )}
+
+            </div>
+
+
+            <label
+                style="
+                    display: block;
+                    font-weight: 600;
+                    margin-bottom: 6px;
+                "
+            >
+
+                Categoria para os produtos
+
+            </label>
+
+
+            <select
+                id="categoriaCadastroInicialSelecionada"
+                class="form-control"
+                style="
+                    width: 100%;
+                    margin-bottom: 12px;
+                "
+            >
+
+                ${options}
+
+            </select>
+
+
+            <div
+                style="
+                    background: #e7f3ff;
+                    border-left: 4px solid #007bff;
+                    padding: 10px 12px;
+                    font-size: 12px;
+                    margin-bottom: 20px;
+                "
+            >
+
+                Todos os produtos desta planilha serão
+                cadastrados na categoria escolhida acima.
+
+                <br><br>
+
+                As categorias existentes dentro da própria
+                planilha serão ignoradas.
+
+            </div>
+
+
+            <div
+                style="
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 10px;
+                "
+            >
+
+                <button
+                    class="btn btn-secondary"
+                    onclick="fecharModalCategoriaImportacaoInicial()"
+                >
+                    Cancelar
+                </button>
+
+
+                <button
+                    class="btn btn-primary"
+                    onclick="continuarImportacaoCadastroInicial()"
+                >
+
+                    <i class="fas fa-search"></i>
+
+                    Analisar Planilha
+
+                </button>
+
+            </div>
+
+        </div>
+
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+}
+
+function fecharModalCategoriaImportacaoInicial() {
+
+    document
+        .getElementById(
+            'modalCategoriaImportacaoInicial'
+        )
+        ?.remove();
+}
+
+function continuarImportacaoCadastroInicial() {
+
+    const select =
+        document.getElementById(
+            'categoriaCadastroInicialSelecionada'
+        );
+
+
+    const categoria =
+        select?.value?.trim() ||
+        '';
+
+
+    if (!categoria) {
+
+        showToast(
+            '⚠️ Selecione a categoria dos produtos.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !workbookCadastroInicialSelecionado ||
+        !arquivoCadastroInicialSelecionado
+    ) {
+
+        showToast(
+            '❌ A planilha não está mais disponível. Selecione novamente.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // FECHA SELEÇÃO
+    // =====================================================
+
+    fecharModalCategoriaImportacaoInicial();
+
+
+    // =====================================================
+    // ANALISA USANDO A CATEGORIA ESCOLHIDA
+    // =====================================================
+
+    const resultado =
+        analisarPlanilhaCadastroInicial(
+
+            workbookCadastroInicialSelecionado,
+
+            arquivoCadastroInicialSelecionado.name,
+
+            categoria
+
+        );
+
+
+    resultadoImportacaoCadastroInicial =
+        resultado;
+
+
+    mostrarPreviaCadastroInicial(
+        resultado
+    );
+}
+
+
+// =========================================================
+// ESCAPE
+// =========================================================
+
+function escaparImportacaoCadastroInicial(
+    valor
+) {
+
+    return String(
+        valor ?? ''
+    )
+        .replace(
+            /&/g,
+            '&amp;'
+        )
+        .replace(
+            /</g,
+            '&lt;'
+        )
+        .replace(
+            />/g,
+            '&gt;'
+        )
+        .replace(
+            /"/g,
+            '&quot;'
+        );
+}
+
+
+// =========================================================
+// MOSTRAR PRÉVIA
+// =========================================================
+
+function mostrarPreviaCadastroInicial(
+    resultado
+) {
+
+    const anterior =
+        document.getElementById(
+            'modalPreviaCadastroInicial'
+        );
+
+
+    if (anterior) {
+
+        anterior.remove();
+
+    }
+
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalPreviaCadastroInicial';
+
+
+    modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 100010;
+    `;
+
+
+    let linhasHtml = '';
+
+
+    resultado.produtos.forEach(
+        produto => {
+
+            let cor =
+                '#28a745';
+
+
+            let textoStatus =
+                'PRONTO';
+
+
+            if (
+                produto.status ===
+                'JA_EXISTE'
+            ) {
+
+                cor =
+                    '#ffc107';
+
+                textoStatus =
+                    'JÁ EXISTE';
+
+            }
+
+
+            else if (
+                produto.status ===
+                'DUPLICADO_PLANILHA'
+            ) {
+
+                cor =
+                    '#fd7e14';
+
+                textoStatus =
+                    'DUPLICADO';
+
+            }
+
+
+            else if (
+                produto.status ===
+                'ERRO'
+            ) {
+
+                cor =
+                    '#dc3545';
+
+                textoStatus =
+                    'ERRO';
+
+            }
+
+
+            linhasHtml += `
+
+                <tr
+                    style="
+                        border-bottom: 1px solid #eee;
+                    "
+                >
+
+                    <td style="padding:7px;">
+                        ${produto.linha}
+                    </td>
+
+
+                    <td style="padding:7px;">
+                        ${escaparImportacaoCadastroInicial(
+                            produto.categoria
+                        )}
+                    </td>
+
+
+                    <td style="padding:7px;">
+                        <code>
+                            ${escaparImportacaoCadastroInicial(
+                                produto.sku
+                            )}
+                        </code>
+                    </td>
+
+
+                    <td style="padding:7px;">
+                        ${escaparImportacaoCadastroInicial(
+                            produto.nome
+                        )}
+                    </td>
+
+
+                    <td
+                        style="
+                            padding:7px;
+                            text-align:center;
+                        "
+                    >
+                        ${produto.quantidade}
+                    </td>
+
+
+                    <td style="padding:7px;">
+
+                        <span
+                            style="
+                                background:${cor};
+                                color:white;
+                                border-radius:15px;
+                                padding:3px 9px;
+                                font-size:10px;
+                                font-weight:600;
+                            "
+                        >
+                            ${textoStatus}
+                        </span>
+
+                    </td>
+
+
+                    <td
+                        style="
+                            padding:7px;
+                            font-size:11px;
+                            color:#6c757d;
+                        "
+                    >
+                        ${escaparImportacaoCadastroInicial(
+                            produto.mensagem
+                        )}
+                    </td>
+
+                </tr>
+
+            `;
+
+        }
+    );
+
+
+    modal.innerHTML = `
+
+        <div
+            style="
+                background:white;
+                width:96%;
+                max-width:1400px;
+                max-height:94vh;
+                overflow-y:auto;
+                border-radius:12px;
+                padding:22px;
+            "
+        >
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    border-bottom:1px solid #ddd;
+                    padding-bottom:12px;
+                    margin-bottom:15px;
+                "
+            >
+
+                <div>
+
+                    <h3
+                        style="
+                            margin:0;
+                            color:#00ADEE;
+                        "
+                    >
+                        <i class="fas fa-file-import"></i>
+                        Prévia do Cadastro Inicial
+                    </h3>
+
+
+                    <div
+                        style="
+                            margin-top:4px;
+                            color:#6c757d;
+                            font-size:12px;
+                        "
+                    >
+                        ${escaparImportacaoCadastroInicial(
+                            resultado.nomeArquivo
+                        )}
+                    </div>
+
+                </div>
+
+
+                <button
+                    onclick="fecharPreviaCadastroInicial()"
+                    style="
+                        background:none;
+                        border:none;
+                        font-size:25px;
+                        cursor:pointer;
+                    "
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <div
+                style="
+                    display:grid;
+                    grid-template-columns:
+                        repeat(
+                            auto-fit,
+                            minmax(150px,1fr)
+                        );
+                    gap:10px;
+                    margin-bottom:15px;
+                "
+            >
+
+                ${cardCadastroInicial(
+                    'Produtos encontrados',
+                    resultado.produtos.length,
+                    '#007bff'
+                )}
+
+
+                ${cardCadastroInicial(
+                    'Prontos para cadastrar',
+                    resultado.validos.length,
+                    '#28a745'
+                )}
+
+
+                ${cardCadastroInicial(
+                    'Já cadastrados',
+                    resultado.duplicadosSistema.length,
+                    '#ffc107'
+                )}
+
+
+                ${cardCadastroInicial(
+                    'Duplicados na planilha',
+                    resultado.duplicadosPlanilha.length,
+                    '#fd7e14'
+                )}
+
+
+                ${cardCadastroInicial(
+                    'Erros',
+                    resultado.erros.length,
+                    '#dc3545'
+                )}
+
+            </div>
+
+            <div
+    style="
+        background:#e7f3ff;
+        border-left:4px solid #007bff;
+        padding:12px 15px;
+        border-radius:6px;
+        margin-bottom:15px;
+    "
+>
+
+    <strong>
+        Categoria selecionada:
+    </strong>
+
+    <span
+        style="
+            background:#007bff;
+            color:white;
+            border-radius:15px;
+            padding:4px 12px;
+            margin-left:5px;
+            font-weight:600;
+        "
+    >
+
+        ${escaparImportacaoCadastroInicial(
+            resultado.categoriaSelecionada
+        )}
+
+    </span>
+
+
+    <div
+        style="
+            margin-top:8px;
+            font-size:11px;
+            color:#6c757d;
+        "
+    >
+
+        Todos os produtos aptos desta planilha serão cadastrados
+        nesta categoria.
+
+    </div>
+
+</div>
+            <div
+                style="
+                    background:#fff3cd;
+                    border-left:4px solid #ffc107;
+                    padding:10px 13px;
+                    margin-bottom:15px;
+                    font-size:12px;
+                "
+            >
+
+                <strong>Importação segura:</strong>
+
+                produtos que já existem pela base dos
+                <strong>8 primeiros caracteres do SKU</strong>
+                serão ignorados.
+
+                Nenhum produto existente será sobrescrito.
+
+            </div>
+
+
+            <div
+                style="
+                    overflow:auto;
+                    max-height:460px;
+                    border:1px solid #dee2e6;
+                    border-radius:8px;
+                "
+            >
+
+                <table
+                    style="
+                        width:100%;
+                        min-width:1100px;
+                        border-collapse:collapse;
+                        font-size:11px;
+                    "
+                >
+
+                    <thead
+                        style="
+                            position:sticky;
+                            top:0;
+                            background:#f8f9fa;
+                            z-index:2;
+                        "
+                    >
+
+                        <tr>
+
+                            <th style="padding:8px;">
+                                Linha
+                            </th>
+
+                            <th style="padding:8px;">
+                                Categoria
+                            </th>
+
+                            <th style="padding:8px;">
+                                SKU
+                            </th>
+
+                            <th style="padding:8px;">
+                                Produto
+                            </th>
+
+                            <th style="padding:8px;">
+                                Estoque
+                            </th>
+
+                            <th style="padding:8px;">
+                                Status
+                            </th>
+
+                            <th style="padding:8px;">
+                                Observação
+                            </th>
+
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody>
+
+                        ${linhasHtml}
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    gap:10px;
+                    flex-wrap:wrap;
+                    margin-top:18px;
+                    border-top:1px solid #ddd;
+                    padding-top:15px;
+                "
+            >
+
+                <button
+                    class="btn btn-outline-danger"
+                    onclick="desativarImportadorCadastroInicial()"
+                >
+                    <i class="fas fa-power-off"></i>
+                    Desativar Importador
+                </button>
+
+
+                <div
+                    style="
+                        display:flex;
+                        gap:10px;
+                    "
+                >
+
+                    <button
+                        class="btn btn-secondary"
+                        onclick="fecharPreviaCadastroInicial()"
+                    >
+                        Cancelar
+                    </button>
+
+
+                    <button
+                        class="btn btn-success"
+                        onclick="confirmarImportacaoCadastroInicial()"
+                        ${
+                            resultado.validos.length === 0
+                                ? 'disabled'
+                                : ''
+                        }
+                    >
+
+                        <i class="fas fa-check"></i>
+
+                        Cadastrar
+                        ${resultado.validos.length}
+                        Produto(s)
+
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+}
+
+
+// =========================================================
+// CARD
+// =========================================================
+
+function cardCadastroInicial(
+    titulo,
+    valor,
+    cor
+) {
+
+    return `
+
+        <div
+            style="
+                border:1px solid #dee2e6;
+                border-left:4px solid ${cor};
+                border-radius:8px;
+                padding:10px;
+            "
+        >
+
+            <div
+                style="
+                    color:#6c757d;
+                    font-size:10px;
+                "
+            >
+                ${titulo}
+            </div>
+
+
+            <div
+                style="
+                    color:${cor};
+                    font-size:22px;
+                    font-weight:bold;
+                "
+            >
+                ${valor}
+            </div>
+
+        </div>
+
+    `;
+}
+
+
+// =========================================================
+// FECHAR PRÉVIA
+// =========================================================
+
+function fecharPreviaCadastroInicial() {
+
+    document
+        .getElementById(
+            'modalPreviaCadastroInicial'
+        )
+        ?.remove();
+}
+
+
+// =========================================================
+// INSERIR PRODUTOS
+// =========================================================
+
+async function confirmarImportacaoCadastroInicial() {
+
+    const resultado =
+        resultadoImportacaoCadastroInicial;
+
+
+    if (
+        !resultado ||
+        resultado.validos.length === 0
+    ) {
+
+        showToast(
+            'Nenhum produto válido para cadastrar.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !confirm(
+            `Cadastrar ${resultado.validos.length} produto(s) no estoque?`
+        )
+    ) {
+        return;
+    }
+
+
+    const botao =
+        document.querySelector(
+            '#modalPreviaCadastroInicial .btn-success'
+        );
+
+
+    if (botao) {
+
+        botao.disabled =
+            true;
+
+        botao.innerHTML =
+            '<i class="fas fa-spinner fa-spin"></i> Cadastrando...';
+
+    }
+
+
+    let cadastrados =
+        0;
+
+
+    const erros =
+        [];
+
+
+    try {
+
+
+        // =================================================
+        // CADASTRAR PRODUTOS UM POR UM
+        //
+        // É proposital nesta primeira carga:
+        // se 1 linha der erro, as demais continuam.
+        // =================================================
+
+        for (
+            let i = 0;
+            i < resultado.validos.length;
+            i++
+        ) {
+
+            const item =
+                resultado.validos[i];
+
+
+            try {
+
+                // =========================================
+                // REVALIDAR DUPLICIDADE NO MOMENTO DA GRAVAÇÃO
+                // =========================================
+
+                const base =
+                    baseSkuCadastroInicial(
+                        item.sku
+                    );
+
+
+                const duplicadoAgora =
+                    produtosEstoque.find(
+                        produto =>
+                            baseSkuCadastroInicial(
+                                produto.sku
+                            ) ===
+                            base
+                    );
+
+
+                if (
+                    duplicadoAgora
+                ) {
+
+                    erros.push({
+
+                        sku:
+                            item.sku,
+
+                        erro:
+                            `Já existe no sistema: ${duplicadoAgora.sku}`
+
+                    });
+
+
+                    continue;
+                }
+
+
+                const custo =
+                    IMPORTAR_COLUNA_G_COMO_CUSTO
+
+                        ? item.valorPlanilha
+
+                        : 0;
+
+
+                const dadosExtra = {
+
+                    ean:
+                        item.ean || '',
+
+                    unidade:
+                        item.unidade || '',
+
+                    categoria_origem:
+                        item.categoria || '',
+
+                    valor_planilha_original:
+                        item.valorPlanilha || 0,
+
+                    mlb_codes:
+                        [],
+
+                    bloquear_sync_ml:
+                        false
+
+                };
+
+
+                const produtoData = {
+
+                    nome:
+                        item.nome,
+
+                    sku:
+                        item.sku,
+
+                    quantidade:
+                        item.quantidade,
+
+                    preco:
+                        0,
+
+                    descricao:
+                        '',
+
+                    categoria:
+                        item.categoria,
+
+                    dados_extra:
+                        dadosExtra,
+
+                    ultimo_custo:
+                        custo,
+
+                    custo_medio:
+                        custo,
+
+                    historico_custos:
+                        [],
+
+                    bloquear_sync_ml:
+                        false
+
+                };
+
+
+                const {
+                    data,
+                    error
+                } =
+                    await window.supabaseClient
+                        .from(
+                            'produtos_estoque'
+                        )
+                        .insert([
+                            produtoData
+                        ])
+                        .select();
+
+
+                if (error) {
+                    throw error;
+                }
+
+
+                const produtoSalvo =
+                    data?.[0];
+
+
+                if (!produtoSalvo) {
+
+                    throw new Error(
+                        'Produto não retornado pelo Supabase.'
+                    );
+
+                }
+
+
+                // =========================================
+                // REGISTRAR ESTOQUE INICIAL NO HISTÓRICO
+                // =========================================
+
+                if (
+                    item.quantidade > 0
+                ) {
+
+                    await registrarMovimentacao(
+
+                        produtoSalvo.id,
+
+                        'entrada',
+
+                        item.quantidade,
+
+                        'Importação Inicial de Estoque',
+
+                        'nova'
+
+                    );
+
+                }
+
+
+                // Coloca em memória para impedir duplicidade
+                // durante a própria importação.
+                produtosEstoque.push(
+                    produtoSalvo
+                );
+
+
+                cadastrados++;
+
+
+                if (botao) {
+
+                    botao.innerHTML =
+                        `<i class="fas fa-spinner fa-spin"></i> ${i + 1}/${resultado.validos.length}`;
+
+                }
+
+
+            } catch (error) {
+
+                console.error(
+                    `❌ Erro cadastrando ${item.sku}:`,
+                    error
+                );
+
+
+                erros.push({
+
+                    sku:
+                        item.sku,
+
+                    erro:
+                        error.message
+
+                });
+
+            }
+
+        }
+
+
+        // =================================================
+        // FINAL
+        // =================================================
+
+        await carregarProdutosEstoque();
+
+
+        fecharPreviaCadastroInicial();
+
+
+        mostrarRelatorioCadastroInicial({
+
+            cadastrados,
+
+            ignorados:
+                resultado.duplicadosSistema.length +
+                resultado.duplicadosPlanilha.length,
+
+            erros,
+
+            categoriasCriadas:
+                resultado.categoriasNovas
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro geral na importação:',
+            error
+        );
+
+
+        showToast(
+            `Erro durante importação: ${error.message}`,
+            'error'
+        );
+
+
+        if (botao) {
+
+            botao.disabled =
+                false;
+
+            botao.innerHTML =
+                'Tentar novamente';
+
+        }
+
+    }
+}
+
+
+// =========================================================
+// RELATÓRIO FINAL
+// =========================================================
+
+function mostrarRelatorioCadastroInicial(
+    dados
+) {
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalResultadoCadastroInicial';
+
+
+    modal.style.cssText = `
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.55);
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        z-index:100020;
+    `;
+
+
+    const errosHtml =
+        dados.erros.length
+
+            ? `
+
+                <div
+                    style="
+                        margin-top:15px;
+                        max-height:250px;
+                        overflow:auto;
+                        border:1px solid #f5c6cb;
+                        border-radius:6px;
+                    "
+                >
+
+                    ${dados.erros
+                        .map(
+                            item => `
+
+                            <div
+                                style="
+                                    padding:8px 10px;
+                                    border-bottom:1px solid #eee;
+                                    font-size:12px;
+                                "
+                            >
+
+                                <strong>
+                                    ${escaparImportacaoCadastroInicial(item.sku)}
+                                </strong>
+
+                                <br>
+
+                                <span style="color:#dc3545;">
+                                    ${escaparImportacaoCadastroInicial(item.erro)}
+                                </span>
+
+                            </div>
+
+                        `
+                        )
+                        .join('')}
+
+                </div>
+
+            `
+
+            : '';
+
+
+    modal.innerHTML = `
+
+        <div
+            style="
+                background:white;
+                padding:25px;
+                border-radius:12px;
+                width:90%;
+                max-width:700px;
+            "
+        >
+
+            <h3
+                style="
+                    color:#28a745;
+                    margin-top:0;
+                "
+            >
+                <i class="fas fa-check-circle"></i>
+                Importação concluída
+            </h3>
+
+
+            <div
+                style="
+                    display:grid;
+                    grid-template-columns:
+                        repeat(3,1fr);
+                    gap:10px;
+                "
+            >
+
+                ${cardCadastroInicial(
+                    'Cadastrados',
+                    dados.cadastrados,
+                    '#28a745'
+                )}
+
+
+                ${cardCadastroInicial(
+                    'Ignorados',
+                    dados.ignorados,
+                    '#ffc107'
+                )}
+
+
+                ${cardCadastroInicial(
+                    'Erros',
+                    dados.erros.length,
+                    '#dc3545'
+                )}
+
+            </div>
+
+
+            ${
+                dados.categoriasCriadas.length
+                    ? `
+
+                    <div
+                        style="
+                            margin-top:15px;
+                            font-size:12px;
+                        "
+                    >
+
+                        <strong>
+                            Categorias criadas:
+                        </strong>
+
+                        ${dados.categoriasCriadas
+                            .map(
+                                escaparImportacaoCadastroInicial
+                            )
+                            .join(', ')}
+
+                    </div>
+
+                    `
+                    : ''
+            }
+
+
+            ${errosHtml}
+
+
+            <div
+                style="
+                    text-align:right;
+                    margin-top:20px;
+                "
+            >
+
+                <button
+                    class="btn btn-primary"
+                    onclick="
+                        document
+                            .getElementById('modalResultadoCadastroInicial')
+                            ?.remove()
+                    "
+                >
+                    Fechar
+                </button>
+
+            </div>
+
+        </div>
+
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+}
+
+
+// =========================================================
+// DESATIVAR IMPORTADOR DEPOIS QUE TERMINAR TUDO
+// =========================================================
+
+async function desativarImportadorCadastroInicial() {
+
+    const confirmar =
+        confirm(
+            'Desativar o Importador de Produtos?\n\nFaça isso somente depois que terminar toda a carga inicial. O botão desaparecerá da Gestão de Estoque.'
+        );
+
+
+    if (!confirmar) {
+        return;
+    }
+
+
+    try {
+
+        const {
+            error
+        } =
+            await window.supabaseClient
+                .from(
+                    'configuracoes_sistema'
+                )
+                .upsert({
+
+                    chave:
+                        'importador_cadastro_inicial_ativo',
+
+                    valor:
+                        JSON.stringify(
+                            false
+                        ),
+
+                    atualizado_em:
+                        new Date()
+                            .toISOString(),
+
+                    atualizado_por:
+                        currentUser?.name ||
+                        'sistema'
+
+                }, {
+
+                    onConflict:
+                        'chave'
+
+                });
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        document
+            .getElementById(
+                'btnImportarCadastroInicial'
+            )
+            ?.remove();
+
+
+        fecharPreviaCadastroInicial();
+
+
+        showToast(
+            '✅ Importador de cadastro inicial desativado.',
+            'success'
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            'Erro desativando importador:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao desativar importador: ${error.message}`,
+            'error'
+        );
+
+    }
+}
+
+
+// =========================================================
+// ADICIONAR BOTÃO NA GESTÃO DE ESTOQUE
+// =========================================================
+
+async function adicionarBotaoImportacaoCadastroInicial() {
+
+    if (
+        document.getElementById(
+            'btnImportarCadastroInicial'
+        )
+    ) {
+        return;
+    }
+
+
+    const ativo =
+        await importadorCadastroInicialEstaAtivo();
+
+
+    if (!ativo) {
+
+        console.log(
+            'ℹ️ Importador de cadastro inicial está desativado.'
+        );
+
+        return;
+    }
+
+
+    // Somente administradores.
+    const username =
+        currentUser?.username
+            ?.toLowerCase() || '';
+
+
+    if (
+        !usuariosAdmin.includes(
+            username
+        )
+    ) {
+
+        return;
+    }
+
+
+    const container =
+        document.querySelector(
+            '#estoqueGestaoSystem .card-header .d-flex.gap-2'
+        );
+
+
+    if (!container) {
+
+        setTimeout(
+            adicionarBotaoImportacaoCadastroInicial,
+            500
+        );
+
+        return;
+    }
+
+
+    const botao =
+        document.createElement(
+            'button'
+        );
+
+
+    botao.id =
+        'btnImportarCadastroInicial';
+
+
+    botao.type =
+        'button';
+
+
+    botao.className =
+        'btn btn-warning';
+
+
+    botao.style.cssText = `
+        font-weight:600;
+        white-space:nowrap;
+    `;
+
+
+    botao.innerHTML = `
+        <i class="fas fa-box-open"></i>
+        Importar Produtos
+    `;
+
+
+    botao.title =
+        'Importação temporária do cadastro inicial de produtos';
+
+
+    botao.onclick =
+        abrirImportacaoCadastroInicial;
+
+
+    // =====================================================
+    // COLOCAR PERTO DE CATEGORIAS
+    // =====================================================
+
+    const btnImportarML =
+        document.getElementById(
+            'btnImportarPlanilhaML'
+        );
+
+
+    if (
+        btnImportarML &&
+        btnImportarML.parentElement ===
+        container
+    ) {
+
+        container.insertBefore(
+            botao,
+            btnImportarML
+        );
+
+
+        return;
+    }
+
+
+    const btnCategorias =
+        container.querySelector(
+            'button[onclick*="abrirModalGerenciarCategorias"]'
+        );
+
+
+    if (btnCategorias) {
+
+        btnCategorias
+            .insertAdjacentElement(
+                'afterend',
+                botao
+            );
+
+    } else {
+
+        container.prepend(
+            botao
+        );
+
+    }
+}
+
+// =========================================================
 // ATUALIZAR CATEGORIAS NO MODAL DE REGRAS
 // =========================================================
 
@@ -17039,7 +19626,12 @@ window.aplicarFiltroHistoricoEstoque = aplicarFiltroHistoricoEstoque;
 window.definirPeriodoHistoricoEstoque = definirPeriodoHistoricoEstoque;
 window.renderizarHistoricoEstoqueFiltrado = renderizarHistoricoEstoqueFiltrado;
 window.renderizarGraficoHistoricoMovimentacoes = renderizarGraficoHistoricoMovimentacoes;
-
+window.abrirImportacaoCadastroInicial = abrirImportacaoCadastroInicial;
+window.processarArquivoCadastroInicial = processarArquivoCadastroInicial;
+window.confirmarImportacaoCadastroInicial = confirmarImportacaoCadastroInicial;
+window.fecharPreviaCadastroInicial = fecharPreviaCadastroInicial;
+window.desativarImportadorCadastroInicial = desativarImportadorCadastroInicial;
+window.adicionarBotaoImportacaoCadastroInicial = adicionarBotaoImportacaoCadastroInicial;
 // =========================================================
 // INICIALIZAR REGRAS PARA CATEGORIAS CUSTOMIZADAS
 // =========================================================
