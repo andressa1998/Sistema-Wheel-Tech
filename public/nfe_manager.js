@@ -5079,6 +5079,167 @@ async function carregarIdsNFEAtivas() {
                     ? data.notas
                     : [];
 
+                    // =====================================================
+// DESCOBRIR QUAIS NF-ES DE VENDA JÁ POSSUEM DEVOLUÇÃO
+// =====================================================
+
+const chavesComDevolucao =
+    new Set();
+
+
+nfes.forEach(
+    nota => {
+
+        try {
+
+            if (
+                !nota.xml_assinado
+            ) {
+                return;
+            }
+
+
+            const parser =
+                new DOMParser();
+
+
+            const xmlDoc =
+                parser.parseFromString(
+                    nota.xml_assinado,
+                    'application/xml'
+                );
+
+
+            const infNFe =
+                xmlDoc.querySelector(
+                    'infNFe'
+                );
+
+
+            if (!infNFe) {
+                return;
+            }
+
+
+            // =================================================
+            // IDENTIFICAR SE ESTA NOTA É UMA DEVOLUÇÃO
+            // =================================================
+
+            const finalidade =
+                infNFe
+                    .querySelector(
+                        'finNFe'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '';
+
+
+            const tpNF =
+                infNFe
+                    .querySelector(
+                        'tpNF'
+                    )
+                    ?.textContent
+                    ?.trim() ||
+                '';
+
+
+            const natureza =
+                String(
+                    infNFe
+                        .querySelector(
+                            'natOp'
+                        )
+                        ?.textContent ||
+                    ''
+                )
+                    .normalize(
+                        'NFD'
+                    )
+                    .replace(
+                        /[\u0300-\u036f]/g,
+                        ''
+                    )
+                    .toLowerCase();
+
+
+            const ehNotaDevolucao =
+                finalidade ===
+                    '4' ||
+                tpNF ===
+                    '0' ||
+                natureza.includes(
+                    'devolucao'
+                );
+
+
+            if (
+                !ehNotaDevolucao
+            ) {
+                return;
+            }
+
+
+            // =================================================
+            // PEGAR A CHAVE DA NF-E ORIGINAL REFERENCIADA
+            // =================================================
+
+            const referencias =
+                Array.from(
+                    infNFe.querySelectorAll(
+                        'NFref refNFe'
+                    )
+                );
+
+
+            referencias.forEach(
+                ref => {
+
+                    const chaveOriginal =
+                        String(
+                            ref.textContent ||
+                            ''
+                        )
+                            .replace(
+                                /\D/g,
+                                ''
+                            );
+
+
+                    if (
+                        chaveOriginal.length ===
+                        44
+                    ) {
+
+                        chavesComDevolucao.add(
+                            chaveOriginal
+                        );
+                    }
+                }
+            );
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Erro verificando referência de devolução:',
+                error
+            );
+        }
+    }
+);
+
+
+console.log(
+    '↩️ NF-es que já possuem devolução:',
+    Array.from(
+        chavesComDevolucao
+    )
+);
+
             notas.forEach(
                 nfe => {
 
@@ -23013,37 +23174,90 @@ async function carregarNFesEmitidas() {
                         // Não aparece em uma NF-e que já é devolução.
                         // =================================================
 
-                        const htmlDevolucao =
-                            (
-                                !nfe.cancelada &&
-                                !ehDevolucao &&
-                                String(
-                                    chave
-                                )
-                                    .replace(
-                                        /\D/g,
-                                        ''
-                                    )
-                                    .length ===
-                                    44
-                            )
+                        // =====================================================
+// BOTÃO DEVOLUÇÃO
+// =====================================================
 
-                                ? `
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-warning"
-                                        onclick="abrirDevolucaoNFE('${chave}')"
-                                        title="Criar NF-e de devolução desta venda"
-                                        style="
-                                            white-space:nowrap;
-                                        "
-                                    >
-                                        <i class="fas fa-undo-alt"></i>
-                                        Emitir NF-e de devolução
-                                    </button>
-                                `
+const chaveLimpa =
+    String(
+        chave ||
+        ''
+    )
+        .replace(
+            /\D/g,
+            ''
+        );
 
-                                : '';
+
+const devolucaoJaEmitida =
+    chavesComDevolucao.has(
+        chaveLimpa
+    );
+
+
+let htmlDevolucao =
+    '';
+
+
+// =====================================================
+// SOMENTE NF-E DE VENDA
+// =====================================================
+
+if (
+    !nfe.cancelada &&
+    !ehDevolucao &&
+    chaveLimpa.length ===
+        44
+) {
+
+    // =================================================
+    // JÁ FOI FEITA UMA DEVOLUÇÃO
+    // =================================================
+
+    if (
+        devolucaoJaEmitida
+    ) {
+
+        htmlDevolucao = `
+            <button
+                type="button"
+                class="btn btn-sm btn-success"
+                disabled
+                title="Já existe uma NF-e de devolução para esta venda"
+                style="
+                    white-space:nowrap;
+                    cursor:not-allowed;
+                    opacity:.75;
+                "
+            >
+                <i class="fas fa-check"></i>
+                Devolução já emitida
+            </button>
+        `;
+
+
+    // =================================================
+    // AINDA NÃO TEM DEVOLUÇÃO
+    // =================================================
+
+    } else {
+
+        htmlDevolucao = `
+            <button
+                type="button"
+                class="btn btn-sm btn-warning"
+                onclick="abrirDevolucaoNFE('${chaveLimpa}')"
+                title="Criar NF-e de devolução desta venda"
+                style="
+                    white-space:nowrap;
+                "
+            >
+                <i class="fas fa-undo-alt"></i>
+                Emitir NF-e de devolução
+            </button>
+        `;
+    }
+}
 
 
                         // =================================================
