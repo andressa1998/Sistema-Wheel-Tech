@@ -2285,289 +2285,305 @@
     }
 }
 
-    // ============================================================
-    // BANCO - CONVERSÃO
-    // ============================================================
-
     function linhaParaRegistroBanco(
-        row
-    ) {
+    row
+) {
 
-        return {
+    return {
 
-            chave:
-                String(
+        chave:
+            String(
+                row.key ||
+                `${row.itemId}:${row.variationId || '0'}`
+            ),
 
-                    row.key ||
+        item_id:
+            row.itemId
+                ? String(
+                    row.itemId
+                )
+                : null,
 
-                    `${row.itemId}:${row.variationId || '0'}`
-                ),
+        variation_id:
+            row.variationId !== null &&
+            row.variationId !== undefined
 
-            item_id:
-
-                row.itemId
-                    ? String(
-                        row.itemId
-                    )
-                    : null,
-
-            variation_id:
-
-                row.variationId !==
-                    null &&
-                row.variationId !==
-                    undefined
-
-                    ? String(
-                        row.variationId
-                    )
-
-                    : null,
-
-            seller_id:
-
-                GA.sellerId !==
-                    null &&
-                GA.sellerId !==
-                    undefined
-
-                    ? String(
-                        GA.sellerId
-                    )
-
-                    : null,
-
-            user_product_id:
-
-                row.userProductId
-                    ? String(
-                        row.userProductId
-                    )
-                    : null,
-
-            inventory_id:
-
-                row.inventoryId
-                    ? String(
-                        row.inventoryId
-                    )
-                    : null,
-
-            title:
-                row.title ||
-                null,
-
-            sku:
-                row.sku ||
-                null,
-
-            thumbnail:
-                row.thumbnail ||
-                null,
-
-            permalink:
-                row.permalink ||
-                null,
-
-            listing_type_id:
-                row.listingTypeId ||
-                null,
-
-            listing_type_name:
-                row.listingTypeName ||
-                null,
-
-            exposure_id:
-                row.exposureId ||
-                null,
-
-            exposure_name:
-                row.exposureName ||
-                null,
-
-            status:
-                row.status ||
-                null,
-
-            price:
-                numeroOuNull(
-                    row.price
-                ),
-
-            estoque_ml_fora_full:
-                numeroOuNull(
-                    row.warehouse
-                ),
-
-            estoque_full:
-                numeroOuNull(
-                    row.full
-                ),
-
-            estoque_total_ml:
-                numeroOuNull(
-                    row.mlTotal
-                ),
-
-            estoque_full_indisponivel:
-                numeroOuNull(
-                    row.unavailable
-                ),
-
-            estoque_full_total:
-                numeroOuNull(
-                    row.fullTotal
-                ),
-
-            estoque_interno:
-                numeroOuNull(
-                    row.internalWarehouse
-                ),
-
-            stock_locations:
-
-                Array.isArray(
-                    row.stockLocations
+                ? String(
+                    row.variationId
                 )
 
-                    ? row.stockLocations
+                : null,
 
-                    : [],
+        seller_id:
+            GA.sellerId !== null &&
+            GA.sellerId !== undefined
 
-            stock_error:
+                ? String(
+                    GA.sellerId
+                )
 
-                row.stockError ||
+                : null,
 
-                row.fullError ||
+        user_product_id:
+            row.userProductId
+                ? String(
+                    row.userProductId
+                )
+                : null,
 
-                null,
+        inventory_id:
+            row.inventoryId
+                ? String(
+                    row.inventoryId
+                )
+                : null,
 
-            ultima_sincronizacao:
-                new Date()
-                    .toISOString()
-        };
-    }
+        title:
+            row.title ||
+            null,
+
+        sku:
+            row.sku ||
+            null,
+
+        thumbnail:
+            row.thumbnail ||
+            null,
+
+        permalink:
+            row.permalink ||
+            null,
+
+        listing_type_id:
+            row.listingTypeId ||
+            null,
+
+        listing_type_name:
+            row.listingTypeName ||
+            null,
+
+        exposure_id:
+            null,
+
+        exposure_name:
+            null,
+
+        status:
+            row.status ||
+            null,
+
+        price:
+            numeroOuNull(
+                row.price
+            ),
+
+        estoque_ml_fora_full:
+            numeroOuNull(
+                row.warehouse
+            ),
+
+        estoque_full:
+            numeroOuNull(
+                row.full
+            ),
+
+        estoque_total_ml:
+            numeroOuNull(
+                row.mlTotal
+            ),
+
+        estoque_full_indisponivel:
+            null,
+
+        estoque_full_total:
+            null,
+
+        estoque_interno:
+            null,
+
+        stock_locations:
+            Array.isArray(
+                row.stockLocations
+            )
+                ? row.stockLocations
+                : [],
+
+        stock_error:
+            row.stockError ||
+            null,
+
+
+        // =====================================================
+        // VENDAS FULL
+        // =====================================================
+
+        vendas_full_30d:
+            row.vendasFull30d !== null &&
+            row.vendasFull30d !== undefined
+
+                ? Number(
+                    row.vendasFull30d
+                )
+
+                : null,
+
+        ultima_venda_full:
+            row.ultimaVendaFull ||
+            null,
+
+        dias_sem_vender:
+            row.diasSemVender !== null &&
+            row.diasSemVender !== undefined
+
+                ? Number(
+                    row.diasSemVender
+                )
+
+                : null,
+
+        vendas_full_atualizado_em:
+            row.vendasFullAtualizadoEm ||
+            null,
+
+
+        ultima_sincronizacao:
+            new Date()
+                .toISOString()
+    };
+}
 
 
     function registroBancoParaLinha(
-        registro
-    ) {
+    registro
+) {
 
-        return {
+    return {
 
-            key:
-                registro.chave,
+        key:
+            registro.chave,
 
-            itemId:
-                registro.item_id,
+        itemId:
+            registro.item_id,
 
-            variationId:
-                registro.variation_id,
+        variationId:
+            registro.variation_id,
 
-            title:
-                registro.title ||
-                '-',
+        title:
+            registro.title ||
+            '-',
 
-            thumbnail:
-                registro.thumbnail ||
-                '',
+        thumbnail:
+            registro.thumbnail ||
+            '',
 
-            permalink:
-                registro.permalink ||
-                '',
+        permalink:
+            registro.permalink ||
+            '',
 
-            sku:
-                registro.sku ||
-                '',
+        sku:
+            registro.sku ||
+            '',
 
-            userProductId:
-                registro.user_product_id ||
-                null,
+        userProductId:
+            registro.user_product_id ||
+            null,
 
-            inventoryId:
-                registro.inventory_id ||
-                null,
+        inventoryId:
+            registro.inventory_id ||
+            null,
 
-            listingTypeId:
-                registro.listing_type_id ||
-                '',
+        listingTypeId:
+            registro.listing_type_id ||
+            '',
 
-            listingTypeName:
-                registro.listing_type_name ||
-                '',
+        listingTypeName:
+            registro.listing_type_name ||
+            '',
 
-            exposureId:
-                registro.exposure_id ||
-                '',
+        exposureId:
+            '',
 
-            exposureName:
-                registro.exposure_name ||
-                '',
+        exposureName:
+            '',
 
-            status:
-                registro.status ||
-                '',
+        status:
+            registro.status ||
+            '',
 
-            price:
-                numeroOuNull(
-                    registro.price
-                ),
+        price:
+            numeroOuNull(
+                registro.price
+            ),
 
-            warehouse:
-                numeroOuNull(
-                    registro
-                        .estoque_ml_fora_full
-                ),
-
-            full:
-                numeroOuNull(
-                    registro
-                        .estoque_full
-                ),
-
-            mlTotal:
-                numeroOuNull(
-                    registro
-                        .estoque_total_ml
-                ),
-
-            unavailable:
-                numeroOuNull(
-                    registro
-                        .estoque_full_indisponivel
-                ),
-
-            fullTotal:
-                numeroOuNull(
-                    registro
-                        .estoque_full_total
-                ),
-
-            stockLocations:
-
-                Array.isArray(
-                    registro
-                        .stock_locations
-                )
-
-                    ? registro
-                        .stock_locations
-
-                    : [],
-
-            stockError:
-                registro.stock_error ||
-                null,
-
-            fullError:
-                null,
-
-            ultimaSincronizacao:
+        warehouse:
+            numeroOuNull(
                 registro
-                    .ultima_sincronizacao ||
-                null
-        };
-    }
+                    .estoque_ml_fora_full
+            ),
+
+        full:
+            numeroOuNull(
+                registro
+                    .estoque_full
+            ),
+
+        mlTotal:
+            numeroOuNull(
+                registro
+                    .estoque_total_ml
+            ),
+
+        unavailable:
+            null,
+
+        fullTotal:
+            null,
+
+        stockLocations:
+            Array.isArray(
+                registro.stock_locations
+            )
+                ? registro.stock_locations
+                : [],
+
+        stockError:
+            registro.stock_error ||
+            null,
+
+
+        // =====================================================
+        // VENDAS FULL
+        // =====================================================
+
+        vendasFull30d:
+            numeroOuNull(
+                registro
+                    .vendas_full_30d
+            ),
+
+        ultimaVendaFull:
+            registro
+                .ultima_venda_full ||
+            null,
+
+        diasSemVender:
+            numeroOuNull(
+                registro
+                    .dias_sem_vender
+            ),
+
+        vendasFullAtualizadoEm:
+            registro
+                .vendas_full_atualizado_em ||
+            null,
+
+
+        ultimaSincronizacao:
+            registro
+                .ultima_sincronizacao ||
+            null
+    };
+}
 
 
     function mesclarLinhasComDadosSalvos(
@@ -4897,7 +4913,7 @@
                             <tr>
 
                                 <td
-                                    colspan="10"
+                                    colspan="12"
                                     style="
                                         text-align:center;
                                         padding:30px;
@@ -5528,7 +5544,1589 @@ function applyFilters(
     render();
 }
 
-   function render() {
+// ============================================================
+// VENDAS FULL / GIRO DE ESTOQUE
+// ============================================================
+
+function formatarDataApiFull(data) {
+
+    const d =
+        new Date(data);
+
+
+    return (
+        d.getFullYear() +
+        '-' +
+        String(
+            d.getMonth() + 1
+        ).padStart(2, '0') +
+        '-' +
+        String(
+            d.getDate()
+        ).padStart(2, '0')
+    );
+}
+
+
+// ============================================================
+// QUANTOS DIAS DESDE UMA DATA
+// ============================================================
+
+function calcularDiasSemVendaFull(dataVenda) {
+
+    if (!dataVenda) {
+        return null;
+    }
+
+
+    const data =
+        new Date(
+            dataVenda
+        );
+
+
+    if (
+        Number.isNaN(
+            data.getTime()
+        )
+    ) {
+
+        return null;
+    }
+
+
+    const agora =
+        new Date();
+
+
+    const diferenca =
+        agora.getTime() -
+        data.getTime();
+
+
+    return Math.max(
+        0,
+        Math.floor(
+            diferenca /
+            86400000
+        )
+    );
+}
+
+
+// ============================================================
+// RETORNAR INVENTORY ID DA OPERAÇÃO
+//
+// Em algumas respostas antigas/documentações aparece
+// seller_product_id. Aceitamos os dois.
+// ============================================================
+
+function inventoryIdDaOperacaoFull(
+    operacao
+) {
+
+    return String(
+
+        operacao?.inventory_id ||
+
+        operacao?.seller_product_id ||
+
+        ''
+
+    ).trim();
+}
+
+
+// ============================================================
+// QUANTIDADE VENDIDA EM UMA SALE_CONFIRMATION
+//
+// Exemplo ML:
+// detail.available_quantity = -2
+//
+// significa venda de 2 unidades.
+// ============================================================
+
+function quantidadeVendidaOperacaoFull(
+    operacao
+) {
+
+    const quantidade =
+        Number(
+            operacao
+                ?.detail
+                ?.available_quantity
+        );
+
+
+    if (
+        !Number.isFinite(
+            quantidade
+        )
+    ) {
+
+        return 0;
+    }
+
+
+    return Math.abs(
+        quantidade
+    );
+}
+
+
+// ============================================================
+// REQUISIÇÃO DE OPERAÇÕES COM CONTROLE DE RATE LIMIT
+// ============================================================
+
+async function requisicaoOperacoesFull(
+    path,
+    maxTentativas = 4
+) {
+
+    let ultimoErro =
+        null;
+
+
+    for (
+        let tentativa = 1;
+        tentativa <= maxTentativas;
+        tentativa++
+    ) {
+
+        try {
+
+            // Reaproveitar o mesmo limitador global
+            // das consultas de estoque.
+            if (
+                typeof aguardarSlotEstoque ===
+                'function'
+            ) {
+
+                await aguardarSlotEstoque();
+            }
+
+
+            return await ml(
+                path
+            );
+
+        } catch (error) {
+
+            ultimoErro =
+                error;
+
+
+            if (
+                !isRateLimit(error) ||
+                tentativa === maxTentativas
+            ) {
+
+                throw error;
+            }
+
+
+            const espera =
+                Math.min(
+                    60000,
+                    10000 * tentativa
+                );
+
+
+            console.warn(
+                `⏳ Rate limit consultando vendas FULL. ` +
+                `Tentativa ${tentativa}/${maxTentativas}. ` +
+                `Aguardando ${Math.round(espera / 1000)}s...`
+            );
+
+
+            if (
+                typeof aplicarCooldownEstoque ===
+                'function'
+            ) {
+
+                aplicarCooldownEstoque(
+                    espera
+                );
+
+            } else {
+
+                await sleep(
+                    espera
+                );
+            }
+        }
+    }
+
+
+    throw (
+        ultimoErro ||
+        new Error(
+            'Erro ao consultar operações FULL.'
+        )
+    );
+}
+
+
+// ============================================================
+// BUSCAR TODAS AS SALE_CONFIRMATION
+//
+// inventoryIds pode conter vários IDs.
+// A resposta pode possuir paginação por scroll.
+// ============================================================
+
+async function buscarOperacoesVendaFull(
+    inventoryIds,
+    dataFrom,
+    dataTo
+) {
+
+    const ids =
+        [
+            ...new Set(
+                (
+                    inventoryIds ||
+                    []
+                )
+                    .map(
+                        id =>
+                            String(id).trim()
+                    )
+                    .filter(Boolean)
+            )
+        ];
+
+
+    if (!ids.length) {
+        return [];
+    }
+
+
+    const seller =
+        await getSellerId();
+
+
+    const operacoes =
+        [];
+
+
+    const operacoesVistas =
+        new Set();
+
+
+    const scrollsVistos =
+        new Set();
+
+
+    let scroll =
+        null;
+
+
+    for (
+        let pagina = 0;
+        pagina < 1000;
+        pagina++
+    ) {
+
+        let path =
+
+            `/stock/fulfillment/operations/search` +
+
+            `?seller_id=${encodeURIComponent(seller)}` +
+
+            `&inventory_id=${encodeURIComponent(ids.join(','))}` +
+
+            `&date_from=${encodeURIComponent(dataFrom)}` +
+
+            `&date_to=${encodeURIComponent(dataTo)}` +
+
+            `&type=SALE_CONFIRMATION` +
+
+            `&limit=1000`;
+
+
+        if (scroll) {
+
+            path +=
+                `&scroll=${encodeURIComponent(scroll)}`;
+        }
+
+
+        const data =
+            await requisicaoOperacoesFull(
+                path
+            );
+
+
+        const resultados =
+            Array.isArray(
+                data?.results
+            )
+                ? data.results
+                : [];
+
+
+        for (const operacao of resultados) {
+
+            const idOperacao =
+                String(
+                    operacao?.id ||
+                    ''
+                );
+
+
+            // Evitar duplicidade entre páginas
+            if (
+                idOperacao &&
+                operacoesVistas.has(
+                    idOperacao
+                )
+            ) {
+
+                continue;
+            }
+
+
+            if (idOperacao) {
+
+                operacoesVistas.add(
+                    idOperacao
+                );
+            }
+
+
+            const tipo =
+                String(
+                    operacao?.type ||
+                    ''
+                )
+                    .trim()
+                    .toUpperCase();
+
+
+            if (
+                tipo !==
+                'SALE_CONFIRMATION'
+            ) {
+
+                continue;
+            }
+
+
+            operacoes.push(
+                operacao
+            );
+        }
+
+
+        const novoScroll =
+
+            data?.paging?.scroll ??
+
+            data?.scroll ??
+
+            data?.scroll_id ??
+
+            null;
+
+
+        if (!novoScroll) {
+
+            break;
+        }
+
+
+        if (
+            scrollsVistos.has(
+                String(novoScroll)
+            )
+        ) {
+
+            break;
+        }
+
+
+        scrollsVistos.add(
+            String(novoScroll)
+        );
+
+
+        scroll =
+            novoScroll;
+    }
+
+
+    return operacoes;
+}
+
+
+// ============================================================
+// APLICAR OPERAÇÃO SOBRE MAPA DE MÉTRICAS
+// ============================================================
+
+function processarOperacaoVendaFull(
+    metricas,
+    operacao,
+    somar30Dias = false
+) {
+
+    const inventoryId =
+        inventoryIdDaOperacaoFull(
+            operacao
+        );
+
+
+    if (!inventoryId) {
+
+        return;
+    }
+
+
+    if (
+        !metricas.has(
+            inventoryId
+        )
+    ) {
+
+        return;
+    }
+
+
+    const metrica =
+        metricas.get(
+            inventoryId
+        );
+
+
+    // =========================================================
+    // VENDAS 30 DIAS
+    // =========================================================
+
+    if (somar30Dias) {
+
+        metrica.vendas30d +=
+            quantidadeVendidaOperacaoFull(
+                operacao
+            );
+    }
+
+
+    // =========================================================
+    // ÚLTIMA VENDA
+    // =========================================================
+
+    const dataVenda =
+        operacao?.date_created;
+
+
+    if (!dataVenda) {
+
+        return;
+    }
+
+
+    const timestamp =
+        new Date(
+            dataVenda
+        ).getTime();
+
+
+    if (
+        Number.isNaN(
+            timestamp
+        )
+    ) {
+
+        return;
+    }
+
+
+    const timestampAtual =
+        metrica.ultimaVenda
+            ? new Date(
+                metrica.ultimaVenda
+            ).getTime()
+            : 0;
+
+
+    if (
+        !timestampAtual ||
+        timestamp > timestampAtual
+    ) {
+
+        metrica.ultimaVenda =
+            new Date(
+                dataVenda
+            ).toISOString();
+    }
+}
+
+
+// ============================================================
+// ATUALIZAR MÉTRICAS DE VENDAS FULL
+// ============================================================
+
+async function atualizarMetricasVendasFull(
+    rows
+) {
+
+    if (
+        !Array.isArray(rows) ||
+        !rows.length
+    ) {
+
+        return;
+    }
+
+
+    // =========================================================
+    // INVENTORY IDS ÚNICOS
+    // =========================================================
+
+    const inventories =
+        [
+            ...new Set(
+                rows
+                    .map(
+                        row =>
+                            row.inventoryId
+                    )
+                    .filter(Boolean)
+                    .map(String)
+            )
+        ];
+
+
+    if (!inventories.length) {
+
+        console.warn(
+            '⚠️ Nenhum inventory_id para analisar vendas FULL.'
+        );
+
+        return;
+    }
+
+
+    console.log(
+        `📈 Analisando vendas de ${inventories.length} inventory_id(s) FULL...`
+    );
+
+
+    // =========================================================
+    // MÉTRICAS
+    //
+    // Começamos aproveitando última venda salva anteriormente.
+    // =========================================================
+
+    const metricas =
+        new Map();
+
+
+    const rowsPorInventory =
+        new Map();
+
+
+    for (const inventoryId of inventories) {
+
+        metricas.set(
+            inventoryId,
+            {
+                vendas30d:
+                    0,
+
+                ultimaVenda:
+                    null,
+
+                consulta30dOk:
+                    false,
+
+                buscaHistoricaCompleta:
+                    false,
+
+                erroHistorico:
+                    false
+            }
+        );
+
+
+        rowsPorInventory.set(
+            inventoryId,
+            []
+        );
+    }
+
+
+    for (const row of rows) {
+
+        if (!row.inventoryId) {
+
+            continue;
+        }
+
+
+        const inventoryId =
+            String(
+                row.inventoryId
+            );
+
+
+        if (
+            !rowsPorInventory.has(
+                inventoryId
+            )
+        ) {
+
+            continue;
+        }
+
+
+        rowsPorInventory
+            .get(
+                inventoryId
+            )
+            .push(
+                row
+            );
+
+
+        // Aproveitar última venda conhecida.
+        if (
+            row.ultimaVendaFull
+        ) {
+
+            const metrica =
+                metricas.get(
+                    inventoryId
+                );
+
+
+            const existente =
+                metrica.ultimaVenda
+                    ? new Date(
+                        metrica.ultimaVenda
+                    ).getTime()
+                    : 0;
+
+
+            const salva =
+                new Date(
+                    row.ultimaVendaFull
+                ).getTime();
+
+
+            if (
+                Number.isFinite(salva) &&
+                salva > existente
+            ) {
+
+                metrica.ultimaVenda =
+                    row.ultimaVendaFull;
+            }
+        }
+    }
+
+
+    // =========================================================
+    // DATAS DOS ÚLTIMOS 30 DIAS
+    //
+    // date_to da API funciona como limite superior.
+    // Usamos amanhã para incluir as vendas de hoje.
+    // =========================================================
+
+    const hoje =
+        new Date();
+
+
+    const inicioHoje =
+        new Date(
+            hoje.getFullYear(),
+            hoje.getMonth(),
+            hoje.getDate()
+        );
+
+
+    const dataTo30 =
+        new Date(
+            inicioHoje
+        );
+
+
+    dataTo30.setDate(
+        dataTo30.getDate() + 1
+    );
+
+
+    const dataFrom30 =
+        new Date(
+            dataTo30
+        );
+
+
+    dataFrom30.setDate(
+        dataFrom30.getDate() - 30
+    );
+
+
+    const from30 =
+        formatarDataApiFull(
+            dataFrom30
+        );
+
+
+    const to30 =
+        formatarDataApiFull(
+            dataTo30
+        );
+
+
+    console.log(
+        `📅 Vendas FULL 30d: ${from30} até ${to30}`
+    );
+
+
+    // =========================================================
+    // BUSCAR EM LOTES
+    //
+    // O endpoint aceita vários inventory_id separados por vírgula.
+    // Limitamos a 40 para não gerar URLs exageradamente grandes.
+    // =========================================================
+
+    const TAMANHO_LOTE =
+        40;
+
+
+    let processados30 =
+        0;
+
+
+    for (
+        let i = 0;
+        i < inventories.length;
+        i += TAMANHO_LOTE
+    ) {
+
+        const lote =
+            inventories.slice(
+                i,
+                i + TAMANHO_LOTE
+            );
+
+
+        try {
+
+            const operacoes =
+                await buscarOperacoesVendaFull(
+                    lote,
+                    from30,
+                    to30
+                );
+
+
+            // A consulta funcionou.
+            for (const inventoryId of lote) {
+
+                const metrica =
+                    metricas.get(
+                        inventoryId
+                    );
+
+
+                metrica.vendas30d =
+                    0;
+
+
+                metrica.consulta30dOk =
+                    true;
+            }
+
+
+            for (const operacao of operacoes) {
+
+                processarOperacaoVendaFull(
+                    metricas,
+                    operacao,
+                    true
+                );
+            }
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ Não foi possível consultar vendas 30d do lote:',
+                lote,
+                error
+            );
+        }
+
+
+        processados30 +=
+            lote.length;
+
+
+        progress(
+            `Analisando vendas FULL dos últimos 30 dias... ` +
+            `${Math.min(processados30, inventories.length)}` +
+            `/${inventories.length}`
+        );
+    }
+
+
+    // =========================================================
+    // QUEM PRECISA DE BUSCA HISTÓRICA?
+    //
+    // Se:
+    // - consulta 30d funcionou;
+    // - não vendeu nesses 30 dias;
+    // - e NÃO temos uma última venda antiga salva;
+    //
+    // então pesquisamos para trás.
+    // =========================================================
+
+    let faltantes =
+        new Set(
+            inventories.filter(
+                inventoryId => {
+
+                    const metrica =
+                        metricas.get(
+                            inventoryId
+                        );
+
+
+                    return (
+                        metrica.consulta30dOk &&
+                        !metrica.ultimaVenda
+                    );
+                }
+            )
+        );
+
+
+    console.log(
+        `🔎 ${faltantes.size} inventory_id(s) precisam procurar a última venda anterior aos 30 dias.`
+    );
+
+
+    // =========================================================
+    // LIMITE = 12 MESES
+    // =========================================================
+
+    const limiteHistorico =
+        new Date(
+            dataTo30
+        );
+
+
+    limiteHistorico.setDate(
+        limiteHistorico.getDate() -
+        365
+    );
+
+
+    // Começar exatamente antes do período de 30 dias.
+    let fimJanela =
+        new Date(
+            dataFrom30
+        );
+
+
+    // =========================================================
+    // JANELAS DE ATÉ 60 DIAS
+    // =========================================================
+
+    while (
+        faltantes.size &&
+        fimJanela >
+            limiteHistorico
+    ) {
+
+        let inicioJanela =
+            new Date(
+                fimJanela
+            );
+
+
+        inicioJanela.setDate(
+            inicioJanela.getDate() -
+            60
+        );
+
+
+        if (
+            inicioJanela <
+            limiteHistorico
+        ) {
+
+            inicioJanela =
+                new Date(
+                    limiteHistorico
+                );
+        }
+
+
+        const dataFrom =
+            formatarDataApiFull(
+                inicioJanela
+            );
+
+
+        const dataTo =
+            formatarDataApiFull(
+                fimJanela
+            );
+
+
+        console.log(
+            `🔎 Procurando última venda FULL entre ${dataFrom} e ${dataTo} para ${faltantes.size} inventory(s)...`
+        );
+
+
+        const faltantesNestaJanela =
+            [
+                ...faltantes
+            ];
+
+
+        const idsComErroNestaJanela =
+            new Set();
+
+
+        for (
+            let i = 0;
+            i < faltantesNestaJanela.length;
+            i += TAMANHO_LOTE
+        ) {
+
+            const lote =
+                faltantesNestaJanela.slice(
+                    i,
+                    i + TAMANHO_LOTE
+                );
+
+
+            try {
+
+                const operacoes =
+                    await buscarOperacoesVendaFull(
+                        lote,
+                        dataFrom,
+                        dataTo
+                    );
+
+
+                const encontrados =
+                    new Set();
+
+
+                for (const operacao of operacoes) {
+
+                    const inventoryId =
+                        inventoryIdDaOperacaoFull(
+                            operacao
+                        );
+
+
+                    if (!inventoryId) {
+
+                        continue;
+                    }
+
+
+                    encontrados.add(
+                        inventoryId
+                    );
+
+
+                    // NÃO somar nas vendas 30d.
+                    processarOperacaoVendaFull(
+                        metricas,
+                        operacao,
+                        false
+                    );
+                }
+
+
+                // Como estamos indo do período mais novo
+                // para o mais antigo, a primeira janela onde
+                // encontramos uma venda já contém a última venda.
+                for (const inventoryId of encontrados) {
+
+                    const metrica =
+                        metricas.get(
+                            inventoryId
+                        );
+
+
+                    metrica.buscaHistoricaCompleta =
+                        true;
+
+
+                    faltantes.delete(
+                        inventoryId
+                    );
+                }
+
+            } catch (error) {
+
+                console.warn(
+                    `⚠️ Falha pesquisando histórico ${dataFrom} → ${dataTo}:`,
+                    error
+                );
+
+
+                for (const inventoryId of lote) {
+
+                    idsComErroNestaJanela.add(
+                        inventoryId
+                    );
+
+
+                    const metrica =
+                        metricas.get(
+                            inventoryId
+                        );
+
+
+                    metrica.erroHistorico =
+                        true;
+                }
+            }
+
+
+            progress(
+                `Procurando última venda FULL... ` +
+                `${faltantes.size} produto(s) ainda sem venda localizada`
+            );
+        }
+
+
+        // Quem teve erro em uma janela não pode ser considerado
+        // "sem venda em 12 meses", porque existe um buraco
+        // no histórico pesquisado.
+        for (
+            const inventoryId
+            of idsComErroNestaJanela
+        ) {
+
+            faltantes.delete(
+                inventoryId
+            );
+        }
+
+
+        fimJanela =
+            inicioJanela;
+    }
+
+
+    // =========================================================
+    // OS QUE CHEGARAM ATÉ 12 MESES SEM NENHUMA VENDA
+    // =========================================================
+
+    for (const inventoryId of faltantes) {
+
+        const metrica =
+            metricas.get(
+                inventoryId
+            );
+
+
+        if (
+            !metrica.erroHistorico
+        ) {
+
+            metrica.buscaHistoricaCompleta =
+                true;
+        }
+    }
+
+
+    // =========================================================
+    // APLICAR RESULTADOS ÀS LINHAS
+    // =========================================================
+
+    const agoraISO =
+        new Date()
+            .toISOString();
+
+
+    let atualizados =
+        0;
+
+
+    for (const row of rows) {
+
+        if (!row.inventoryId) {
+
+            continue;
+        }
+
+
+        const inventoryId =
+            String(
+                row.inventoryId
+            );
+
+
+        const metrica =
+            metricas.get(
+                inventoryId
+            );
+
+
+        if (!metrica) {
+
+            continue;
+        }
+
+
+        // =====================================================
+        // VENDA 30D
+        // =====================================================
+
+        if (
+            metrica.consulta30dOk
+        ) {
+
+            row.vendasFull30d =
+                metrica.vendas30d;
+        }
+
+
+        // =====================================================
+        // ÚLTIMA VENDA
+        // =====================================================
+
+        if (
+            metrica.ultimaVenda
+        ) {
+
+            row.ultimaVendaFull =
+                metrica.ultimaVenda;
+
+
+            row.diasSemVender =
+                calcularDiasSemVendaFull(
+                    metrica.ultimaVenda
+                );
+
+
+            row.vendasFullAtualizadoEm =
+                agoraISO;
+
+
+            atualizados++;
+        }
+
+        // =====================================================
+        // CONSULTAMOS 12 MESES COMPLETOS E NÃO ACHAMOS VENDA
+        // =====================================================
+
+        else if (
+            metrica.consulta30dOk &&
+            metrica.buscaHistoricaCompleta &&
+            !metrica.erroHistorico
+        ) {
+
+            row.ultimaVendaFull =
+                null;
+
+
+            row.diasSemVender =
+                null;
+
+
+            // Esse campo será usado pela renderização para saber
+            // que "null" significa 12+ meses e não "não consultado".
+            row.vendasFullAtualizadoEm =
+                agoraISO;
+
+
+            atualizados++;
+        }
+
+
+        // Se houve erro no histórico, NÃO destruímos
+        // informações antigas.
+    }
+
+
+    // =========================================================
+    // SALVAR NO BANCO
+    // =========================================================
+
+    try {
+
+        await salvarAnunciosBanco(
+            rows,
+            false
+        );
+
+    } catch (error) {
+
+        console.warn(
+            '⚠️ Não foi possível salvar métricas de vendas FULL:',
+            error
+        );
+    }
+
+
+    console.log(
+        '✅ Análise de vendas FULL concluída.',
+        {
+            inventories:
+                inventories.length,
+
+            registrosAtualizados:
+                atualizados,
+
+            comVenda30d:
+                [...metricas.values()]
+                    .filter(
+                        metrica =>
+                            metrica.vendas30d > 0
+                    )
+                    .length
+        }
+    );
+}
+
+// ============================================================
+// NORMALIZAR TEXTO
+// ============================================================
+
+function gaNormalizarTexto(
+    valor
+) {
+
+    return String(
+        valor || ''
+    )
+        .normalize('NFD')
+        .replace(
+            /[\u0300-\u036f]/g,
+            ''
+        )
+        .trim()
+        .toLowerCase();
+}
+
+
+// ============================================================
+// DESCOBRIR SE É CLÁSSICO
+// ============================================================
+
+function gaEhClassico(
+    row
+) {
+
+    const id =
+        gaNormalizarTexto(
+            row?.listingTypeId
+        );
+
+
+    const nome =
+        gaNormalizarTexto(
+            row?.listingTypeName
+        );
+
+
+    return (
+        id === 'gold_special' ||
+        nome.includes('classico')
+    );
+}
+
+
+// ============================================================
+// DESCOBRIR SE É PREMIUM
+// ============================================================
+
+function gaEhPremium(
+    row
+) {
+
+    const id =
+        gaNormalizarTexto(
+            row?.listingTypeId
+        );
+
+
+    const nome =
+        gaNormalizarTexto(
+            row?.listingTypeName
+        );
+
+
+    return (
+        id === 'gold_pro' ||
+        id === 'gold_premium' ||
+        nome.includes('premium')
+    );
+}
+
+
+// ============================================================
+// MAIS DE 30 DIAS SEM VENDER?
+// ============================================================
+
+function gaMaisDe30DiasSemVender(
+    row
+) {
+
+    const dias =
+        Number(
+            row?.diasSemVender
+        );
+
+
+    // Temos uma última venda conhecida
+    if (
+        Number.isFinite(dias)
+    ) {
+
+        return (
+            dias > 30
+        );
+    }
+
+
+    // ========================================================
+    // Caso "12+ meses"
+    //
+    // Se o histórico foi consultado e não encontramos nenhuma
+    // venda, vendasFullAtualizadoEm estará preenchido.
+    // ========================================================
+
+    if (
+        !row?.ultimaVendaFull &&
+        row?.vendasFullAtualizadoEm
+    ) {
+
+        return true;
+    }
+
+
+    // Ainda não temos dados suficientes
+    return false;
+}
+
+
+// ============================================================
+// PRECISA CORRIGIR?
+// ============================================================
+
+function gaPrecisaCorrigirTipo(
+    row
+) {
+
+    return (
+        gaMaisDe30DiasSemVender(
+            row
+        ) &&
+        gaEhClassico(
+            row
+        )
+    );
+}
+
+
+// ============================================================
+// NOME DO TIPO PELO ID
+// ============================================================
+
+function gaNomeTipoPorId(
+    listingTypeId
+) {
+
+    const id =
+        String(
+            listingTypeId || ''
+        );
+
+
+    const nomeCache =
+        GA.listingTypeNames?.get(
+            id
+        );
+
+
+    if (
+        nomeCache
+    ) {
+
+        return nomeCache;
+    }
+
+
+    const fallback = {
+
+        gold_pro:
+            'Premium',
+
+        gold_premium:
+            'Premium',
+
+        gold_special:
+            'Clássico',
+
+        gold:
+            'Ouro',
+
+        silver:
+            'Prata',
+
+        free:
+            'Grátis'
+    };
+
+
+    return (
+        fallback[id] ||
+        id ||
+        '-'
+    );
+}
+
+
+// ============================================================
+// LINK DIRETO PARA MODIFICAR O ANÚNCIO
+// ============================================================
+
+function gaUrlModificarAnuncio(
+    itemId
+) {
+
+    const mlb =
+        String(
+            itemId || ''
+        ).trim();
+
+
+    const callback =
+        `https://www.mercadolivre.com.br/anuncios/lista?search=${encodeURIComponent(mlb)}`;
+
+
+    return (
+        `https://www.mercadolivre.com.br/anuncios/` +
+        `${encodeURIComponent(mlb)}` +
+        `/modificar/bomni` +
+        `?callback_url=${encodeURIComponent(callback)}`
+    );
+}
+
+
+// ============================================================
+// HTML DA COLUNA "TIPO"
+// ============================================================
+
+function gaRenderTipo(
+    row
+) {
+
+    const precisaCorrigir =
+        gaPrecisaCorrigirTipo(
+            row
+        );
+
+
+    // ========================================================
+    // NORMAL
+    // ========================================================
+
+    if (
+        !precisaCorrigir
+    ) {
+
+        return `
+
+            <td>
+
+                <strong>
+                    ${esc(
+                        row.listingTypeName ||
+                        '-'
+                    )}
+                </strong>
+
+            </td>
+        `;
+    }
+
+
+    // ========================================================
+    // PRECISA ALTERAR CLÁSSICO -> PREMIUM
+    // ========================================================
+
+    const url =
+        gaUrlModificarAnuncio(
+            row.itemId
+        );
+
+
+    return `
+
+        <td class="ga-tipo-precisa-corrigir">
+
+            <strong
+                style="
+                    color:#dc3545;
+                "
+            >
+                ${esc(
+                    row.listingTypeName ||
+                    'Clássico'
+                )}
+            </strong>
+
+
+            <div class="ga-alerta-tipo">
+
+                <i class="fas fa-exclamation-triangle"></i>
+
+                Mudar para Premium
+
+            </div>
+
+
+            <div class="ga-acoes-correcao-tipo">
+
+                <a
+                    href="${esc(url)}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="ga-link-corrigir"
+                >
+
+                    <i class="fas fa-edit"></i>
+
+                    Modificar anúncio
+
+                </a>
+
+
+                <button
+                    type="button"
+                    class="ga-btn-corrigido"
+                    onclick="verificarCorrecaoTipoAnuncio(
+                        '${esc(row.itemId)}',
+                        this
+                    )"
+                >
+
+                    <i class="fas fa-check"></i>
+
+                    Corrigido
+
+                </button>
+
+            </div>
+
+        </td>
+    `;
+}
+
+function render() {
 
     const body =
         document.getElementById(
@@ -5564,23 +7162,14 @@ function applyFilters(
         );
 
 
-    if (
-        GA.page >
-        totalPaginas
-    ) {
-
-        GA.page =
-            totalPaginas;
-    }
-
-
-    if (
-        GA.page < 1
-    ) {
-
-        GA.page =
-            1;
-    }
+    GA.page =
+        Math.max(
+            1,
+            Math.min(
+                GA.page,
+                totalPaginas
+            )
+        );
 
 
     const inicio =
@@ -5617,7 +7206,7 @@ function applyFilters(
             <tr>
 
                 <td
-                    colspan="10"
+                    colspan="12"
                     class="text-center py-5"
                 >
 
@@ -5644,15 +7233,19 @@ function applyFilters(
             rows.map(
                 row => {
 
-                    // =========================================
+                    // =================================================
                     // PREÇO
-                    // =========================================
+                    // =================================================
 
                     const preco =
                         Number.isFinite(
-                            Number(row.price)
+                            Number(
+                                row.price
+                            )
                         )
-                            ? Number(row.price)
+                            ? Number(
+                                row.price
+                            )
                                 .toLocaleString(
                                     'pt-BR',
                                     {
@@ -5666,9 +7259,9 @@ function applyFilters(
                             : '-';
 
 
-                    // =========================================
+                    // =================================================
                     // DEPÓSITO
-                    // =========================================
+                    // =================================================
 
                     const estoqueDeposito =
                         row.warehouse !== null &&
@@ -5681,9 +7274,9 @@ function applyFilters(
                             : null;
 
 
-                    // =========================================
+                    // =================================================
                     // FULL
-                    // =========================================
+                    // =================================================
 
                     const estoqueFull =
                         row.full !== null &&
@@ -5696,9 +7289,278 @@ function applyFilters(
                             : null;
 
 
-                    // =========================================
+                    // =================================================
+                    // VENDAS FULL 30 DIAS
+                    // =================================================
+
+                    const vendas30d =
+                        row.vendasFull30d !== null &&
+                        row.vendasFull30d !== undefined
+
+                            ? Number(
+                                row.vendasFull30d
+                            )
+
+                            : null;
+
+
+                    // =================================================
+                    // DIAS SEM VENDER
+                    // =================================================
+
+                    const diasSemVender =
+                        row.diasSemVender !== null &&
+                        row.diasSemVender !== undefined
+
+                            ? Number(
+                                row.diasSemVender
+                            )
+
+                            : null;
+
+
+                    // =================================================
+                    // HTML VENDAS 30 DIAS
+                    // =================================================
+
+                    let vendas30dHtml = `
+
+                        <span
+                            style="
+                                color:#adb5bd;
+                                font-size:16px;
+                            "
+                        >
+                            —
+                        </span>
+                    `;
+
+
+                    if (
+                        vendas30d !== null
+                    ) {
+
+                        vendas30dHtml = `
+
+                            <strong
+                                style="
+                                    font-size:17px;
+                                    color:${
+                                        vendas30d > 0
+                                            ? '#198754'
+                                            : '#dc3545'
+                                    };
+                                "
+                            >
+                                ${esc(vendas30d)}
+                            </strong>
+
+                            <div
+                                style="
+                                    font-size:10px;
+                                    color:#6c757d;
+                                    margin-top:2px;
+                                "
+                            >
+                                ${
+                                    vendas30d === 1
+                                        ? 'unidade'
+                                        : 'unidades'
+                                }
+                            </div>
+                        `;
+                    }
+
+
+                    // =================================================
+                    // HTML SEM VENDER
+                    // =================================================
+
+                    let semVenderHtml = `
+
+                        <span
+                            style="
+                                color:#adb5bd;
+                                font-size:16px;
+                            "
+                        >
+                            —
+                        </span>
+                    `;
+
+
+                    if (
+                        row.ultimaVendaFull
+                    ) {
+
+                        let dias =
+                            diasSemVender;
+
+
+                        if (
+                            dias === null &&
+                            typeof calcularDiasSemVendaFull ===
+                                'function'
+                        ) {
+
+                            dias =
+                                calcularDiasSemVendaFull(
+                                    row.ultimaVendaFull
+                                );
+                        }
+
+
+                        const ultimaVenda =
+                            new Date(
+                                row.ultimaVendaFull
+                            );
+
+
+                        const dataFormatada =
+                            Number.isNaN(
+                                ultimaVenda.getTime()
+                            )
+                                ? ''
+                                : ultimaVenda
+                                    .toLocaleDateString(
+                                        'pt-BR'
+                                    );
+
+
+                        let textoDias =
+                            '';
+
+
+                        if (
+                            dias === 0
+                        ) {
+
+                            textoDias =
+                                'Hoje';
+
+                        } else if (
+                            dias === 1
+                        ) {
+
+                            textoDias =
+                                '1 dia';
+
+                        } else if (
+                            dias !== null
+                        ) {
+
+                            textoDias =
+                                `${dias} dias`;
+
+                        } else {
+
+                            textoDias =
+                                '-';
+                        }
+
+
+                        // Cor de acordo com tempo parado
+                        let cor =
+                            '#198754';
+
+
+                        if (
+                            dias !== null
+                        ) {
+
+                            if (
+                                dias >= 60
+                            ) {
+
+                                cor =
+                                    '#dc3545';
+
+                            } else if (
+                                dias >= 30
+                            ) {
+
+                                cor =
+                                    '#fd7e14';
+
+                            } else if (
+                                dias >= 15
+                            ) {
+
+                                cor =
+                                    '#d39e00';
+                            }
+                        }
+
+
+                        semVenderHtml = `
+
+                            <strong
+                                style="
+                                    color:${cor};
+                                    font-size:14px;
+                                    white-space:nowrap;
+                                "
+                            >
+                                ${esc(textoDias)}
+                            </strong>
+
+
+                            ${
+                                dataFormatada
+
+                                    ? `
+                                        <div
+                                            style="
+                                                color:#6c757d;
+                                                font-size:10px;
+                                                margin-top:2px;
+                                                white-space:nowrap;
+                                            "
+                                        >
+                                            ${esc(dataFormatada)}
+                                        </div>
+                                    `
+
+                                    : ''
+                            }
+                        `;
+
+                    } else if (
+                        row.vendasFullAtualizadoEm
+                    ) {
+
+                        // Já pesquisamos o histórico e não
+                        // localizamos venda em até 12 meses.
+
+                        semVenderHtml = `
+
+                            <strong
+                                style="
+                                    color:#dc3545;
+                                    font-size:13px;
+                                    white-space:nowrap;
+                                "
+                            >
+                                12+ meses
+                            </strong>
+
+                            <div
+                                style="
+                                    color:#6c757d;
+                                    font-size:10px;
+                                    margin-top:2px;
+                                    white-space:nowrap;
+                                "
+                            >
+                                Sem venda
+                            </div>
+                        `;
+                    }
+
+
+                    // =================================================
                     // STATUS
-                    // =========================================
+                    // =================================================
 
                     let statusClassName =
                         'badge-secondary';
@@ -5742,7 +7604,9 @@ function applyFilters(
 
                         <tr>
 
-                            <!-- FOTO -->
+                            <!-- ===================================== -->
+                            <!-- 1. FOTO -->
+                            <!-- ===================================== -->
 
                             <td>
 
@@ -5751,7 +7615,9 @@ function applyFilters(
 
                                         ? `
                                             <img
-                                                src="${esc(row.thumbnail)}"
+                                                src="${esc(
+                                                    row.thumbnail
+                                                )}"
                                                 alt=""
                                                 style="
                                                     width:45px;
@@ -5767,12 +7633,16 @@ function applyFilters(
                             </td>
 
 
-                            <!-- MLB -->
+                            <!-- ===================================== -->
+                            <!-- 2. MLB -->
+                            <!-- ===================================== -->
 
                             <td>
 
                                 <strong>
-                                    ${esc(row.itemId)}
+                                    ${esc(
+                                        row.itemId
+                                    )}
                                 </strong>
 
 
@@ -5800,7 +7670,9 @@ function applyFilters(
                             </td>
 
 
-                            <!-- TÍTULO / SKU -->
+                            <!-- ===================================== -->
+                            <!-- 3. TÍTULO / SKU -->
+                            <!-- ===================================== -->
 
                             <td>
 
@@ -5833,7 +7705,9 @@ function applyFilters(
                             </td>
 
 
-                            <!-- DEPÓSITO -->
+                            <!-- ===================================== -->
+                            <!-- 4. DEPÓSITO -->
+                            <!-- ===================================== -->
 
                             <td
                                 style="
@@ -5876,7 +7750,9 @@ function applyFilters(
                             </td>
 
 
-                            <!-- FULL -->
+                            <!-- ===================================== -->
+                            <!-- 5. FULL -->
+                            <!-- ===================================== -->
 
                             <td
                                 style="
@@ -5919,21 +7795,44 @@ function applyFilters(
                             </td>
 
 
-                            <!-- TIPO -->
+                            <!-- ===================================== -->
+                            <!-- 6. VENDAS FULL 30D -->
+                            <!-- ===================================== -->
 
-                            <td>
+                            <td
+                                style="
+                                    text-align:center;
+                                "
+                            >
 
-                                <strong>
-                                    ${esc(
-                                        row.listingTypeName ||
-                                        '-'
-                                    )}
-                                </strong>
+                                ${vendas30dHtml}
 
                             </td>
 
 
-                            <!-- STATUS -->
+                            <!-- ===================================== -->
+                            <!-- 7. SEM VENDER -->
+                            <!-- ===================================== -->
+
+                            <td
+                                style="
+                                    text-align:center;
+                                "
+                            >
+
+                                ${semVenderHtml}
+
+                            </td>
+
+
+                            <!-- 8. TIPO -->
+
+                            ${gaRenderTipo(row)}
+
+
+                            <!-- ===================================== -->
+                            <!-- 9. STATUS -->
+                            <!-- ===================================== -->
 
                             <td>
 
@@ -5952,7 +7851,9 @@ function applyFilters(
                             </td>
 
 
-                            <!-- PREÇO -->
+                            <!-- ===================================== -->
+                            <!-- 10. PREÇO -->
+                            <!-- ===================================== -->
 
                             <td
                                 style="
@@ -5968,13 +7869,16 @@ function applyFilters(
                             </td>
 
 
-                            <!-- INVENTORY ID -->
+                            <!-- ===================================== -->
+                            <!-- 11. INVENTORY ID -->
+                            <!-- ===================================== -->
 
                             <td>
 
                                 <code
                                     style="
                                         font-size:11px;
+                                        white-space:nowrap;
                                     "
                                 >
                                     ${esc(
@@ -5993,6 +7897,7 @@ function applyFilters(
                                                     font-size:10px;
                                                     color:#6c757d;
                                                     margin-top:3px;
+                                                    white-space:nowrap;
                                                 "
                                             >
                                                 ${esc(
@@ -6007,7 +7912,9 @@ function applyFilters(
                             </td>
 
 
-                            <!-- AÇÕES -->
+                            <!-- ===================================== -->
+                            <!-- 12. AÇÕES -->
+                            <!-- ===================================== -->
 
                             <td>
 
@@ -6512,6 +8419,31 @@ function applyFilters(
                 await loadFullStocks(
                     GA.rows
                 );
+
+                // ====================================================
+                // VENDAS FULL
+                // ====================================================
+
+                progress(
+                    'Analisando vendas e giro do estoque FULL...'
+                );
+
+
+                try {
+
+                    await atualizarMetricasVendasFull(
+                        GA.rows
+                    );
+
+                } catch (error) {
+
+                    console.error(
+                        '⚠️ Análise de vendas FULL incompleta:',
+                        error
+                    );
+                }
+
+
 
             } catch (error) {
 
@@ -7550,5 +9482,471 @@ function applyFilters(
         '✅ gerenciamento_anuncios.js carregado'
     );
 
+    window.verificarCorrecaoTipoAnuncio =
+    async function (
+        itemId,
+        botao = null
+    ) {
+
+        const mlb =
+            String(
+                itemId || ''
+            ).trim();
+
+
+        if (!mlb) {
+
+            return;
+        }
+
+
+        console.log(
+            `🔎 Verificando correção do anúncio ${mlb}...`
+        );
+
+
+        // =====================================================
+        // BOTÃO CARREGANDO
+        // =====================================================
+
+        const htmlOriginal =
+            botao?.innerHTML ||
+            'Corrigido';
+
+
+        if (botao) {
+
+            botao.disabled =
+                true;
+
+
+            botao.innerHTML = `
+
+                <i class="fas fa-spinner fa-spin"></i>
+
+                Verificando...
+            `;
+        }
+
+
+        try {
+
+            // =================================================
+            // 1. BUSCAR SOMENTE ESTE MLB
+            // =================================================
+
+            const item =
+                await ml(
+                    `/items/${encodeURIComponent(mlb)}` +
+                    `?include_attributes=all`
+                );
+
+
+            if (
+                !item ||
+                !item.id
+            ) {
+
+                throw new Error(
+                    'Mercado Livre não retornou o anúncio.'
+                );
+            }
+
+
+            console.log(
+                `📦 Anúncio ${mlb} atualizado:`,
+                item
+            );
+
+
+            // =================================================
+            // 2. TIPO ATUAL
+            // =================================================
+
+            const novoListingTypeId =
+                item.listing_type_id ||
+                '';
+
+
+            const novoListingTypeName =
+                gaNomeTipoPorId(
+                    novoListingTypeId
+                );
+
+
+            console.log(
+                `🏷️ ${mlb}: ${novoListingTypeId} -> ${novoListingTypeName}`
+            );
+
+
+            // =================================================
+            // 3. LOCALIZAR TODAS AS LINHAS DESTE MLB
+            //
+            // Um MLB pode possuir várias variações.
+            // =================================================
+
+            const linhasMlb =
+                GA.rows.filter(
+                    row =>
+                        String(
+                            row.itemId
+                        ) ===
+                        mlb
+                );
+
+
+            if (
+                !linhasMlb.length
+            ) {
+
+                throw new Error(
+                    'Anúncio não encontrado na tabela.'
+                );
+            }
+
+
+            // =================================================
+            // 4. ATUALIZAR DADOS BÁSICOS
+            // =================================================
+
+            for (
+                const row
+                of linhasMlb
+            ) {
+
+                row.listingTypeId =
+                    novoListingTypeId;
+
+
+                row.listingTypeName =
+                    novoListingTypeName;
+
+
+                row.status =
+                    item.status ||
+                    row.status;
+
+
+                row.title =
+                    item.title ||
+                    row.title;
+
+
+                row.thumbnail =
+                    item.thumbnail ||
+                    row.thumbnail;
+
+
+                row.permalink =
+                    item.permalink ||
+                    row.permalink;
+
+
+                if (
+                    item.price !==
+                    null &&
+                    item.price !==
+                    undefined
+                ) {
+
+                    row.price =
+                        Number(
+                            item.price
+                        );
+                }
+
+
+                // =================================================
+                // ATUALIZAR DADOS DA VARIAÇÃO
+                // =================================================
+
+                if (
+                    row.variationId &&
+                    Array.isArray(
+                        item.variations
+                    )
+                ) {
+
+                    const variation =
+                        item.variations.find(
+                            variation =>
+                                String(
+                                    variation.id
+                                ) ===
+                                String(
+                                    row.variationId
+                                )
+                        );
+
+
+                    if (variation) {
+
+                        const novoSku =
+                            extractSku(
+                                item,
+                                variation
+                            );
+
+
+                        if (
+                            novoSku
+                        ) {
+
+                            row.sku =
+                                novoSku;
+                        }
+
+
+                        row.userProductId =
+
+                            variation.user_product_id ||
+
+                            row.userProductId ||
+
+                            item.user_product_id ||
+
+                            null;
+
+
+                        row.inventoryId =
+
+                            variation.inventory_id ||
+
+                            row.inventoryId ||
+
+                            item.inventory_id ||
+
+                            null;
+
+
+                        if (
+                            variation.price !==
+                            null &&
+                            variation.price !==
+                            undefined
+                        ) {
+
+                            row.price =
+                                Number(
+                                    variation.price
+                                );
+                        }
+                    }
+
+                } else {
+
+                    const novoSku =
+                        extractSku(
+                            item
+                        );
+
+
+                    if (
+                        novoSku
+                    ) {
+
+                        row.sku =
+                            novoSku;
+                    }
+
+
+                    row.userProductId =
+
+                        item.user_product_id ||
+
+                        row.userProductId ||
+
+                        null;
+
+
+                    row.inventoryId =
+
+                        item.inventory_id ||
+
+                        row.inventoryId ||
+
+                        null;
+                }
+            }
+
+
+            // =================================================
+            // 5. LIMPAR SOMENTE CACHE DESSE MLB
+            // =================================================
+
+            for (
+                const row
+                of linhasMlb
+            ) {
+
+                if (
+                    row.userProductId &&
+                    GA.userProductStockCache
+                ) {
+
+                    GA.userProductStockCache.delete(
+                        row.userProductId
+                    );
+                }
+
+
+                if (
+                    row.inventoryId &&
+                    GA.inventoryStockCache
+                ) {
+
+                    GA.inventoryStockCache.delete(
+                        row.inventoryId
+                    );
+                }
+            }
+
+
+            // =================================================
+            // 6. ATUALIZAR ESTOQUE SOMENTE DESTE MLB
+            // =================================================
+
+            try {
+
+                await loadFullStocks(
+                    linhasMlb
+                );
+
+            } catch (errorEstoque) {
+
+                console.warn(
+                    `⚠️ Não foi possível atualizar estoque de ${mlb}:`,
+                    errorEstoque
+                );
+            }
+
+
+            // =================================================
+            // IMPORTANTE:
+            //
+            // NÃO fazemos novamente a consulta de vendas dos
+            // últimos 12 meses.
+            //
+            // Queremos que o botão "Corrigido" seja rápido.
+            //
+            // diasSemVender e vendasFull30d continuam com os
+            // valores já salvos.
+            // =================================================
+
+
+            // =================================================
+            // 7. SALVAR SOMENTE ESTE MLB
+            // =================================================
+
+            try {
+
+                await salvarAnunciosBanco(
+                    linhasMlb,
+                    false
+                );
+
+            } catch (errorBanco) {
+
+                console.warn(
+                    `⚠️ Não foi possível salvar ${mlb}:`,
+                    errorBanco
+                );
+            }
+
+
+            // =================================================
+            // 8. ATUALIZAR TELA
+            // =================================================
+
+            updateSummary();
+
+
+            applyFilters(
+                false
+            );
+
+
+            // =================================================
+            // 9. VERIFICAR SE REALMENTE FOI CORRIGIDO
+            // =================================================
+
+            const aindaClassico =
+                linhasMlb.some(
+                    row =>
+                        gaPrecisaCorrigirTipo(
+                            row
+                        )
+                );
+
+
+            if (
+                aindaClassico
+            ) {
+
+                console.warn(
+                    `⚠️ ${mlb} continua Clássico.`
+                );
+
+
+                window.showToast?.(
+                    `${mlb} ainda está como Clássico. Altere para Premium e clique novamente em Corrigido.`,
+                    'warning'
+                );
+
+
+                return;
+            }
+
+
+            // =================================================
+            // CORRIGIDO
+            // =================================================
+
+            console.log(
+                `✅ ${mlb} confirmado como ${novoListingTypeName}.`
+            );
+
+
+            window.showToast?.(
+                `${mlb} atualizado: ${novoListingTypeName}`,
+                'success'
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                `❌ Erro verificando ${mlb}:`,
+                error
+            );
+
+
+            window.showToast?.(
+                `Erro ao verificar ${mlb}: ${
+                    error?.message ||
+                    'Erro desconhecido'
+                }`,
+                'error'
+            );
+
+
+        } finally {
+
+            if (
+                botao &&
+                document.body.contains(
+                    botao
+                )
+            ) {
+
+                botao.disabled =
+                    false;
+
+
+                botao.innerHTML =
+                    htmlOriginal;
+            }
+        }
+    };
 
 })();
