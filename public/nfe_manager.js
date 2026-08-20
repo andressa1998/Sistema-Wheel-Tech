@@ -6499,6 +6499,11 @@ const COLUNAS_VENDAS_NFE = [
     },
 
     {
+    id: 'anuncio',
+    nome: 'Anúncio'
+    },
+
+    {
     id: 'foto',
     nome: 'Foto'
     },
@@ -16352,6 +16357,235 @@ window.editarComentarioVendaNFE =
 window.excluirComentarioVendaNFE =
     excluirComentarioVendaNFE;
 
+    // =========================================================
+// LINK PARA MODIFICAR ANÚNCIO DO MERCADO LIVRE
+// =========================================================
+
+function obterAnunciosVendaNFE(
+    venda
+) {
+
+    const anuncios =
+        [];
+
+
+    const adicionar =
+        (
+            itemId,
+            titulo = ''
+        ) => {
+
+            let id =
+                String(
+                    itemId ||
+                    ''
+                )
+                    .trim()
+                    .toUpperCase();
+
+
+            // =================================================
+            // ACEITAR SOMENTE ITEM MLB
+            // =================================================
+
+            if (
+                !/^MLB\d+$/.test(
+                    id
+                )
+            ) {
+
+                return;
+            }
+
+
+            // =================================================
+            // NÃO REPETIR O MESMO ANÚNCIO
+            // =================================================
+
+            if (
+                anuncios.some(
+                    anuncio =>
+                        anuncio.id ===
+                        id
+                )
+            ) {
+
+                return;
+            }
+
+
+            anuncios.push({
+
+                id,
+
+                titulo:
+                    String(
+                        titulo ||
+                        ''
+                    ).trim()
+            });
+        };
+
+
+    // =====================================================
+    // 1. ORDER ITEMS
+    // =====================================================
+
+    if (
+        Array.isArray(
+            venda?.order_items
+        )
+    ) {
+
+        venda.order_items
+            .forEach(
+                orderItem => {
+
+                    adicionar(
+
+                        orderItem
+                            ?.item
+                            ?.id,
+
+                        orderItem
+                            ?.item
+                            ?.title
+                    );
+                }
+            );
+    }
+
+
+    // =====================================================
+    // 2. FALLBACKS
+    // =====================================================
+
+    adicionar(
+        venda?.item_id,
+        venda?.titulo ||
+        venda?.title
+    );
+
+
+    adicionar(
+        venda?.id_item,
+        venda?.titulo ||
+        venda?.title
+    );
+
+
+    adicionar(
+        venda?.item?.id,
+        venda?.item?.title
+    );
+
+
+    return anuncios;
+}
+
+
+// =========================================================
+// GERAR HTML DA COLUNA
+// =========================================================
+
+function montarLinksModificarAnunciosNFE(
+    venda
+) {
+
+    const anuncios =
+        obterAnunciosVendaNFE(
+            venda
+        );
+
+
+    if (
+        anuncios.length ===
+        0
+    ) {
+
+        return `
+            <span
+                style="
+                    color:#adb5bd;
+                    font-size:10px;
+                "
+            >
+                Não identificado
+            </span>
+        `;
+    }
+
+
+    return anuncios
+        .map(
+            (
+                anuncio,
+                index
+            ) => {
+
+                const url =
+                    `https://www.mercadolivre.com.br/anuncios/${anuncio.id}/modificar/bomni`;
+
+
+                const titulo =
+                    anuncio.titulo
+                        ? escaparHTMLNFE(
+                            anuncio.titulo
+                        )
+                        : anuncio.id;
+
+
+                return `
+
+                    <div
+                        style="
+                            margin-bottom:${
+                                index <
+                                anuncios.length - 1
+                                    ? '7px'
+                                    : '0'
+                            };
+                            min-width:110px;
+                        "
+                    >
+
+                        <div
+                            style="
+                                font-size:10px;
+                                color:#6c757d;
+                                margin-bottom:3px;
+                                white-space:nowrap;
+                            "
+                            title="${titulo}"
+                        >
+                            ${escaparHTMLNFE(
+                                anuncio.id
+                            )}
+                        </div>
+
+
+                        <a
+                            href="${url}"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="btn btn-sm btn-warning"
+                            style="
+                                white-space:nowrap;
+                                text-decoration:none;
+                            "
+                            title="Modificar ${escaparHTMLNFE(anuncio.id)} no Mercado Livre"
+                        >
+                            <i class="fas fa-edit"></i>
+                            Modificar
+                        </a>
+
+                    </div>
+                `;
+            }
+        )
+        .join('');
+}
+
 function renderizarVendasNFETabela(
     vendas
 ) {
@@ -17569,6 +17803,15 @@ function renderizarVendasNFETabela(
                             .join('');
 
                     // =================================================
+                    // ANÚNCIO
+                    // =================================================
+
+                    const anuncioHtml =
+                        montarLinksModificarAnunciosNFE(
+                            venda
+                        );
+
+                    // =================================================
                     // FOTO
                     // =================================================
 
@@ -17776,6 +18019,15 @@ function renderizarVendasNFETabela(
 
                             <td>
                                 ${escaparHTMLNFE(cliente)}
+                            </td>
+                            <!-- ANÚNCIO -->
+                            <td
+                                style="
+                                    min-width:115px;
+                                    vertical-align:middle;
+                                "
+                            >
+                                ${anuncioHtml}
                             </td>
                             <td
                                 style="
