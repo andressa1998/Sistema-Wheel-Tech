@@ -7158,6 +7158,138 @@ window.alternarPainelColunasNFE =
 window.aplicarPreferenciasColunasNFE =
     aplicarPreferenciasColunasNFE;
 
+    // =========================================================
+// FILTRO DE MODALIDADE - TABELA NF-E
+// =========================================================
+
+window._filtroModalidadeNFE =
+    window._filtroModalidadeNFE ||
+    'todas';
+
+
+// =========================================================
+// IDENTIFICAR MODALIDADE DA VENDA
+// =========================================================
+
+function obterModalidadeFiltroNFE(
+    venda
+) {
+
+    const tipo =
+        `${venda?._logistic_type || ''} ` +
+        `${venda?._shipping_mode || ''} ` +
+        `${venda?.tipo_envio || ''}`
+            .toUpperCase();
+
+
+    // =====================================================
+    // FULL
+    // =====================================================
+
+    if (
+        venda?._is_full ||
+        tipo.includes(
+            'FULL'
+        ) ||
+        tipo.includes(
+            'FULFILLMENT'
+        )
+    ) {
+
+        return 'full';
+    }
+
+
+    // =====================================================
+    // MERCADO ENVIOS
+    //
+    // Mesma lógica usada atualmente pelo badge "ME"
+    // =====================================================
+
+    if (
+        tipo.includes(
+            'CROSS_DOCKING'
+        ) ||
+        tipo.includes(
+            'MERCADO'
+        ) ||
+        tipo.includes(
+            'ME2'
+        )
+    ) {
+
+        return 'me';
+    }
+
+
+    // FLEX / OUTROS
+    return 'outros';
+}
+
+
+// =========================================================
+// ALTERAR FILTRO
+// =========================================================
+
+function alterarFiltroModalidadeNFE(
+    valor
+) {
+
+    valor =
+        String(
+            valor ||
+            'todas'
+        )
+            .trim()
+            .toLowerCase();
+
+
+    if (
+        ![
+            'todas',
+            'full',
+            'me'
+        ].includes(
+            valor
+        )
+    ) {
+
+        valor =
+            'todas';
+    }
+
+
+    window._filtroModalidadeNFE =
+        valor;
+
+
+    console.log(
+        '🚚 Filtro modalidade NF-e:',
+        valor
+    );
+
+
+    // =====================================================
+    // RENDERIZAR NOVAMENTE USANDO TODAS AS VENDAS ORIGINAIS
+    // =====================================================
+
+    const vendas =
+        Array.isArray(
+            window._vendasTabelaNFEBase
+        )
+            ? window._vendasTabelaNFEBase
+            : [];
+
+
+    renderizarVendasNFETabela(
+        vendas
+    );
+}
+
+
+window.alterarFiltroModalidadeNFE =
+    alterarFiltroModalidadeNFE;
+
 function garantirControlesVendasNFE() {
 
     const tbody =
@@ -7198,22 +7330,123 @@ function garantirControlesVendasNFE() {
         header
     ) {
 
-        header.innerHTML =
-            COLUNAS_VENDAS_NFE
-                .map(
-                    coluna => `
+        const filtroAtualModalidade =
+    window._filtroModalidadeNFE ||
+    'todas';
+
+
+header.innerHTML =
+    COLUNAS_VENDAS_NFE
+        .map(
+            coluna => {
+
+                // =============================================
+                // MODALIDADE COM FILTRO
+                // =============================================
+
+                if (
+                    coluna.id ===
+                    'modalidade'
+                ) {
+
+                    return `
                         <th
-                            data-coluna-nfe="${coluna.id}"
+                            data-coluna-nfe="modalidade"
+                            style="
+                                min-width:125px;
+                            "
                         >
-                            ${escaparHTMLNFE(
-                                coluna.nome
-                            )}
+
+                            <div
+                                style="
+                                    margin-bottom:5px;
+                                "
+                            >
+                                Modalidade
+                            </div>
+
+
+                            <select
+                                id="filtroModalidadeNFE"
+                                class="form-control"
+                                onclick="
+                                    event.stopPropagation();
+                                "
+                                onchange="
+                                    alterarFiltroModalidadeNFE(
+                                        this.value
+                                    );
+                                "
+                                style="
+                                    min-width:110px;
+                                    padding:4px 6px !important;
+                                    height:30px;
+                                    font-size:11px !important;
+                                    font-weight:500;
+                                "
+                            >
+
+                                <option
+                                    value="todas"
+                                    ${
+                                        filtroAtualModalidade ===
+                                        'todas'
+                                            ? 'selected'
+                                            : ''
+                                    }
+                                >
+                                    Todas
+                                </option>
+
+
+                                <option
+                                    value="full"
+                                    ${
+                                        filtroAtualModalidade ===
+                                        'full'
+                                            ? 'selected'
+                                            : ''
+                                    }
+                                >
+                                    Só FULL
+                                </option>
+
+
+                                <option
+                                    value="me"
+                                    ${
+                                        filtroAtualModalidade ===
+                                        'me'
+                                            ? 'selected'
+                                            : ''
+                                    }
+                                >
+                                    Só ME
+                                </option>
+
+                            </select>
+
                         </th>
-                    `
-                )
-                .join(
-                    ''
-                );
+                    `;
+                }
+
+
+                // =============================================
+                // DEMAIS COLUNAS
+                // =============================================
+
+                return `
+                    <th
+                        data-coluna-nfe="${coluna.id}"
+                    >
+                        ${escaparHTMLNFE(
+                            coluna.nome
+                        )}
+                    </th>
+                `;
+            }
+        )
+        .join('');
     }
 
 
@@ -16605,49 +16838,132 @@ function renderizarVendasNFETabela(
 
 
     // =====================================================
-    // AGRUPAR PACKS
-    // =====================================================
+// GUARDAR A LISTA ORIGINAL
+//
+// IMPORTANTE:
+// Não pode guardar apenas FULL ou ME, porque depois
+// precisamos conseguir voltar para "Todas".
+// =====================================================
+
+window._vendasTabelaNFEBase =
+    Array.isArray(
+        vendas
+    )
+        ? vendas
+        : [];
+
+
+// =====================================================
+// AGRUPAR PACKS
+// =====================================================
+
+vendas =
+    agruparVendasEmPacksNFE(
+        window._vendasTabelaNFEBase
+    );
+
+
+// =====================================================
+// GUARDAR TODAS AS VENDAS AGRUPADAS
+//
+// Mantemos vendasPendentes COMPLETA para não interferir
+// em emissão, visualização, cancelamento etc.
+// =====================================================
+
+vendasPendentes =
+    vendas;
+
+
+// =====================================================
+// APLICAR FILTRO DE MODALIDADE
+// =====================================================
+
+const filtroModalidade =
+    window._filtroModalidadeNFE ||
+    'todas';
+
+
+if (
+    filtroModalidade ===
+    'full'
+) {
 
     vendas =
-        agruparVendasEmPacksNFE(
-            vendas
+        vendas.filter(
+            venda =>
+                obterModalidadeFiltroNFE(
+                    venda
+                ) ===
+                'full'
         );
 
 
-    // =====================================================
-    // SEM VENDAS
-    // =====================================================
+} else if (
+    filtroModalidade ===
+    'me'
+) {
+
+    vendas =
+        vendas.filter(
+            venda =>
+                obterModalidadeFiltroNFE(
+                    venda
+                ) ===
+                'me'
+        );
+}
+
+
+// =====================================================
+// SEM RESULTADOS
+// =====================================================
+
+if (
+    vendas.length ===
+    0
+) {
+
+    let texto =
+        'Nenhuma venda encontrada para esta data.';
+
 
     if (
-        !Array.isArray(
-            vendas
-        ) ||
-        vendas.length ===
-            0
+        filtroModalidade ===
+        'full'
     ) {
 
-        vendasPendentes =
-            [];
+        texto =
+            'Nenhuma venda FULL encontrada.';
 
+    } else if (
+        filtroModalidade ===
+        'me'
+    ) {
 
-        tbody.innerHTML = `
-            <tr>
-                <td
-                    colspan="${obterQuantidadeColunasVisiveisNFE()}"
-                    class="text-center py-4"
-                >
-                    Nenhuma venda encontrada para esta data.
-                </td>
-            </tr>
-        `;
-
-
-        return;
+        texto =
+            'Nenhuma venda Mercado Envios encontrada.';
     }
 
 
-    vendasPendentes =
-        vendas;
+    tbody.innerHTML = `
+        <tr>
+
+            <td
+                colspan="${obterQuantidadeColunasVisiveisNFE()}"
+                class="text-center py-4"
+            >
+                ${texto}
+            </td>
+
+        </tr>
+    `;
+
+
+    aplicarPreferenciasColunasNFE();
+
+
+    return;
+}
 
 
     // =====================================================
