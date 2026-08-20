@@ -2479,6 +2479,34 @@ function renderizarTabelaProdutos(produtosParaRenderizar = null) {
             fim
         );
 
+        // =========================================================
+        // EXTENSÃO DA TABELA PARA MOSTRAR "A CAMINHO"
+        // =========================================================
+
+        const _renderizarTabelaProdutosAntesACaminho =
+            renderizarTabelaProdutos;
+
+
+        renderizarTabelaProdutos =
+            function(...args) {
+
+                const retorno =
+                    _renderizarTabelaProdutosAntesACaminho
+                        .apply(
+                            this,
+                            args
+                        );
+
+
+                setTimeout(
+                    aplicarIndicadoresACaminhoTabela,
+                    0
+                );
+
+
+                return retorno;
+            };
+
 
     // =====================================================
     // IMPORTANTE:
@@ -29709,6 +29737,13 @@ window.carregarSubcategoriasEstoque = carregarSubcategoriasEstoque;
 window.editarSubcategoria = editarSubcategoria;
 window.atualizarSubcategoriaExistente = atualizarSubcategoriaExistente;
 window.cancelarEdicaoSubcategoria = cancelarEdicaoSubcategoria;
+window.salvarQuantidadeACaminhoRaio = salvarQuantidadeACaminhoRaio;
+window.atualizarResumoACaminhoModal = atualizarResumoACaminhoModal;
+window.aplicarIndicadoresACaminhoTabela = aplicarIndicadoresACaminhoTabela;
+window.renderizarBlocoACaminhoRaios = renderizarBlocoACaminhoRaios;
+window.gerarCamposDinamicos = gerarCamposDinamicos;
+window.renderizarTabelaProdutos = renderizarTabelaProdutos;
+
 // =========================================================
 // INICIALIZAR REGRAS PARA CATEGORIAS CUSTOMIZADAS
 // =========================================================
@@ -29785,6 +29820,1172 @@ carregarCategoriasCustomizadas =
 
 
         return resultado;
+    };
+
+    // =========================================================
+// ESTOQUE A CAMINHO / EM TRÂNSITO
+// PRINCIPALMENTE PARA RAIOS
+// =========================================================
+
+
+// =========================================================
+// QUEM PODE VER
+//
+// Admins + Arthur
+// =========================================================
+
+function podeVerQuantidadeACaminhoRaios() {
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase() || '';
+
+
+    return (
+        usuariosAdmin.includes(
+            username
+        )
+        ||
+        username ===
+        'arthur'
+    );
+}
+
+
+// =========================================================
+// QUEM PODE ALTERAR
+//
+// SOMENTE ADMIN
+// =========================================================
+
+function podeEditarQuantidadeACaminhoRaios() {
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase() || '';
+
+
+    return usuariosAdmin.includes(
+        username
+    );
+}
+
+
+// =========================================================
+// PEGAR QUANTIDADE A CAMINHO
+// =========================================================
+
+function obterQuantidadeACaminho(
+    produto
+) {
+
+    if (!produto) {
+        return 0;
+    }
+
+
+    const quantidade =
+        parseInt(
+            produto.dados_extra
+                ?.quantidade_a_caminho
+        );
+
+
+    return Number.isFinite(
+        quantidade
+    )
+        ? Math.max(
+            0,
+            quantidade
+        )
+        : 0;
+}
+
+
+// =========================================================
+// FORMATAR DATA DO ÚLTIMO AJUSTE
+// =========================================================
+
+function formatarAtualizacaoACaminho(
+    dataIso
+) {
+
+    if (!dataIso) {
+        return '';
+    }
+
+
+    try {
+
+        return new Date(
+            dataIso
+        ).toLocaleString(
+            'pt-BR',
+            {
+                timeZone:
+                    'America/Sao_Paulo'
+            }
+        );
+
+    } catch (error) {
+
+        return '';
+
+    }
+}
+
+
+// =========================================================
+// CRIAR / ATUALIZAR BLOCO "A CAMINHO"
+// NO MODAL DO PRODUTO
+// =========================================================
+
+function renderizarBlocoACaminhoRaios(
+    categoria
+) {
+
+    // Remove bloco anterior
+    document
+        .getElementById(
+            'blocoQuantidadeACaminhoRaios'
+        )
+        ?.remove();
+
+
+    // =====================================================
+    // SOMENTE CATEGORIA RAIOS
+    // =====================================================
+
+    if (
+        categoria !==
+        'Raios'
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // SOMENTE ADMIN + ARTHUR VEEM
+    // =====================================================
+
+    if (
+        !podeVerQuantidadeACaminhoRaios()
+    ) {
+
+        return;
+    }
+
+
+    const camposDinamicos =
+        document.getElementById(
+            'camposDinamicos'
+        );
+
+
+    if (!camposDinamicos) {
+        return;
+    }
+
+
+    // =====================================================
+    // PRODUTO ATUAL
+    // =====================================================
+
+    const produtoId =
+        document.getElementById(
+            'produtoId'
+        )?.value;
+
+
+    const produto =
+        produtosEstoque.find(
+            produto =>
+                String(
+                    produto.id
+                ) ===
+                String(
+                    produtoId
+                )
+        );
+
+
+    const estoqueAtual =
+        produto
+            ? Number(
+                produto.quantidade
+            ) || 0
+            : Number(
+                document.getElementById(
+                    'produtoQuantidade'
+                )?.value
+            ) || 0;
+
+
+    const aCaminho =
+        obterQuantidadeACaminho(
+            produto
+        );
+
+
+    const totalFuturo =
+        estoqueAtual +
+        aCaminho;
+
+
+    const podeEditar =
+        podeEditarQuantidadeACaminhoRaios();
+
+
+    const atualizadoEm =
+        produto
+            ?.dados_extra
+            ?.quantidade_a_caminho_atualizado_em ||
+        '';
+
+
+    const atualizadoPor =
+        produto
+            ?.dados_extra
+            ?.quantidade_a_caminho_atualizado_por ||
+        '';
+
+
+    const dataFormatada =
+        formatarAtualizacaoACaminho(
+            atualizadoEm
+        );
+
+
+    // =====================================================
+    // BLOCO
+    // =====================================================
+
+    const bloco =
+        document.createElement(
+            'div'
+        );
+
+
+    bloco.id =
+        'blocoQuantidadeACaminhoRaios';
+
+
+    bloco.style.cssText = `
+        margin-top: 15px;
+        margin-bottom: 15px;
+        border: 1px solid #b8daff;
+        border-left: 5px solid #007bff;
+        border-radius: 8px;
+        background: #f4f9ff;
+        padding: 15px;
+    `;
+
+
+    bloco.innerHTML = `
+
+        <!-- ============================================== -->
+        <!-- TÍTULO -->
+        <!-- ============================================== -->
+
+        <div
+            style="
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                gap:10px;
+                margin-bottom:12px;
+            "
+        >
+
+            <div
+                style="
+                    font-weight:700;
+                    color:#0056b3;
+                    font-size:15px;
+                "
+            >
+
+                <i class="fas fa-truck"></i>
+
+                Estoque a Caminho
+
+            </div>
+
+
+            ${
+                podeEditar
+
+                    ? `
+
+                        <span
+                            style="
+                                background:#007bff;
+                                color:white;
+                                border-radius:12px;
+                                padding:2px 9px;
+                                font-size:9px;
+                                font-weight:600;
+                            "
+                        >
+                            ADMIN
+                        </span>
+
+                    `
+
+                    : `
+
+                        <span
+                            style="
+                                background:#6c757d;
+                                color:white;
+                                border-radius:12px;
+                                padding:2px 9px;
+                                font-size:9px;
+                                font-weight:600;
+                            "
+                        >
+                            SOMENTE LEITURA
+                        </span>
+
+                    `
+            }
+
+        </div>
+
+
+        <!-- ============================================== -->
+        <!-- RESUMO -->
+        <!-- ============================================== -->
+
+        <div
+            style="
+                display:grid;
+                grid-template-columns:
+                    repeat(
+                        3,
+                        minmax(100px,1fr)
+                    );
+                gap:10px;
+                margin-bottom:13px;
+            "
+        >
+
+            <!-- ESTOQUE -->
+
+            <div
+                style="
+                    background:white;
+                    border:1px solid #dee2e6;
+                    border-radius:7px;
+                    padding:10px;
+                    text-align:center;
+                "
+            >
+
+                <div
+                    style="
+                        font-size:10px;
+                        color:#6c757d;
+                    "
+                >
+                    ESTOQUE ATUAL
+                </div>
+
+
+                <div
+                    id="resumoEstoqueAtualACaminho"
+                    style="
+                        font-size:22px;
+                        font-weight:700;
+                        color:${
+                            estoqueAtual > 0
+                                ? '#28a745'
+                                : '#dc3545'
+                        };
+                    "
+                >
+                    ${estoqueAtual}
+                </div>
+
+            </div>
+
+
+            <!-- A CAMINHO -->
+
+            <div
+                style="
+                    background:white;
+                    border:1px solid #b8daff;
+                    border-radius:7px;
+                    padding:10px;
+                    text-align:center;
+                "
+            >
+
+                <div
+                    style="
+                        font-size:10px;
+                        color:#6c757d;
+                    "
+                >
+                    🚚 A CAMINHO
+                </div>
+
+
+                <div
+                    id="resumoQuantidadeACaminho"
+                    style="
+                        font-size:22px;
+                        font-weight:700;
+                        color:#007bff;
+                    "
+                >
+                    ${aCaminho}
+                </div>
+
+            </div>
+
+
+            <!-- TOTAL FUTURO -->
+
+            <div
+                style="
+                    background:white;
+                    border:1px solid #dee2e6;
+                    border-radius:7px;
+                    padding:10px;
+                    text-align:center;
+                "
+            >
+
+                <div
+                    style="
+                        font-size:10px;
+                        color:#6c757d;
+                    "
+                >
+                    APÓS CHEGAR
+                </div>
+
+
+                <div
+                    id="resumoTotalFuturoACaminho"
+                    style="
+                        font-size:22px;
+                        font-weight:700;
+                        color:#6f42c1;
+                    "
+                >
+                    ${totalFuturo}
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <!-- ============================================== -->
+        <!-- QUANTIDADE -->
+        <!-- ============================================== -->
+
+        <div>
+
+            <label
+                style="
+                    display:block;
+                    font-weight:600;
+                    margin-bottom:5px;
+                "
+            >
+
+                Quantidade comprada / a caminho
+
+            </label>
+
+
+            <div
+                style="
+                    display:flex;
+                    gap:8px;
+                    align-items:center;
+                "
+            >
+
+                <input
+                    type="number"
+                    id="quantidadeACaminhoRaio"
+                    class="form-control"
+                    value="${aCaminho}"
+                    min="0"
+                    step="1"
+                    ${podeEditar ? '' : 'disabled'}
+                    oninput="atualizarResumoACaminhoModal()"
+                    style="
+                        max-width:180px;
+                        font-weight:600;
+                    "
+                >
+
+
+                ${
+                    podeEditar
+
+                        ? `
+
+                            <button
+                                type="button"
+                                class="btn btn-primary"
+                                onclick="
+                                    salvarQuantidadeACaminhoRaio(
+                                        '${produtoId || ''}'
+                                    )
+                                "
+                                ${
+                                    produtoId
+                                        ? ''
+                                        : 'disabled'
+                                }
+                            >
+
+                                <i class="fas fa-save"></i>
+
+                                Salvar a caminho
+
+                            </button>
+
+                        `
+
+                        : ''
+                }
+
+            </div>
+
+
+            ${
+                !produtoId &&
+                podeEditar
+
+                    ? `
+
+                        <small
+                            style="
+                                display:block;
+                                margin-top:5px;
+                                color:#856404;
+                            "
+                        >
+                            Salve o produto primeiro.
+                            Depois abra novamente para informar
+                            a quantidade a caminho.
+                        </small>
+
+                    `
+
+                    : ''
+            }
+
+
+            ${
+                !podeEditar
+
+                    ? `
+
+                        <small
+                            style="
+                                display:block;
+                                margin-top:5px;
+                                color:#6c757d;
+                            "
+                        >
+                            Você pode consultar esta informação,
+                            mas somente um administrador pode alterá-la.
+                        </small>
+
+                    `
+
+                    : `
+                        <small
+                            style="
+                                display:block;
+                                margin-top:5px;
+                                color:#6c757d;
+                            "
+                        >
+                            Esta quantidade é apenas informativa.
+                            Ela não entra no estoque disponível
+                            e não é enviada ao Mercado Livre.
+                        </small>
+                    `
+            }
+
+
+            ${
+                dataFormatada
+
+                    ? `
+
+                        <div
+                            style="
+                                margin-top:8px;
+                                font-size:10px;
+                                color:#6c757d;
+                            "
+                        >
+
+                            Última atualização:
+
+                            <strong>
+                                ${escapeHtml(
+                                    dataFormatada
+                                )}
+                            </strong>
+
+                            ${
+                                atualizadoPor
+                                    ? ` por ${escapeHtml(
+                                        atualizadoPor
+                                    )}`
+                                    : ''
+                            }
+
+                        </div>
+
+                    `
+
+                    : ''
+            }
+
+        </div>
+
+    `;
+
+
+    // =====================================================
+    // COLOCAR ABAIXO DOS ATRIBUTOS
+    // =====================================================
+
+    camposDinamicos
+        .insertAdjacentElement(
+            'afterend',
+            bloco
+        );
+}
+
+
+// =========================================================
+// ATUALIZAR RESUMO ENQUANTO ADMIN DIGITA
+// =========================================================
+
+function atualizarResumoACaminhoModal() {
+
+    const input =
+        document.getElementById(
+            'quantidadeACaminhoRaio'
+        );
+
+
+    if (!input) {
+        return;
+    }
+
+
+    const quantidade =
+        Math.max(
+            0,
+            parseInt(
+                input.value
+            ) || 0
+        );
+
+
+    const estoque =
+        Math.max(
+            0,
+            parseInt(
+                document.getElementById(
+                    'produtoQuantidade'
+                )?.value
+            ) || 0
+        );
+
+
+    const resumo =
+        document.getElementById(
+            'resumoQuantidadeACaminho'
+        );
+
+
+    const total =
+        document.getElementById(
+            'resumoTotalFuturoACaminho'
+        );
+
+
+    if (
+        resumo
+    ) {
+
+        resumo.textContent =
+            quantidade;
+
+    }
+
+
+    if (
+        total
+    ) {
+
+        total.textContent =
+            estoque +
+            quantidade;
+
+    }
+}
+
+
+// =========================================================
+// SALVAR QUANTIDADE A CAMINHO
+// =========================================================
+
+async function salvarQuantidadeACaminhoRaio(
+    produtoId
+) {
+
+    // =====================================================
+    // SEGURANÇA
+    // =====================================================
+
+    if (
+        !podeEditarQuantidadeACaminhoRaios()
+    ) {
+
+        showToast(
+            '⚠️ Apenas administradores podem alterar a quantidade a caminho.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !produtoId
+    ) {
+
+        showToast(
+            '⚠️ Salve o produto antes de informar a quantidade a caminho.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const produto =
+        produtosEstoque.find(
+            produto =>
+                String(
+                    produto.id
+                ) ===
+                String(
+                    produtoId
+                )
+        );
+
+
+    if (!produto) {
+
+        showToast(
+            '❌ Produto não encontrado.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    if (
+        produto.categoria !==
+        'Raios'
+    ) {
+
+        showToast(
+            '⚠️ Esta função é destinada à categoria Raios.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const input =
+        document.getElementById(
+            'quantidadeACaminhoRaio'
+        );
+
+
+    const quantidade =
+        parseInt(
+            input?.value
+        );
+
+
+    if (
+        !Number.isFinite(
+            quantidade
+        )
+        ||
+        quantidade < 0
+    ) {
+
+        showToast(
+            '⚠️ Informe uma quantidade válida.',
+            'warning'
+        );
+
+        input?.focus();
+
+        return;
+    }
+
+
+    // =====================================================
+    // PRESERVAR TODO O DADOS_EXTRA
+    // =====================================================
+
+    const dadosExtraNovo = {
+
+        ...(
+            produto.dados_extra ||
+            {}
+        ),
+
+        quantidade_a_caminho:
+            quantidade,
+
+        quantidade_a_caminho_atualizado_em:
+            new Date()
+                .toISOString(),
+
+        quantidade_a_caminho_atualizado_por:
+            currentUser?.name ||
+            currentUser?.username ||
+            'admin'
+
+    };
+
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await window.supabaseClient
+                .from(
+                    'produtos_estoque'
+                )
+                .update({
+
+                    dados_extra:
+                        dadosExtraNovo
+
+                })
+                .eq(
+                    'id',
+                    produto.id
+                )
+                .select();
+
+
+        if (
+            error
+        ) {
+            throw error;
+        }
+
+
+        // =================================================
+        // ATUALIZAR MEMÓRIA
+        // =================================================
+
+        produto.dados_extra =
+            dadosExtraNovo;
+
+
+        // =================================================
+        // ATUALIZAR CARD
+        // =================================================
+
+        atualizarResumoACaminhoModal();
+
+
+        // =================================================
+        // ATUALIZAR TABELA
+        // =================================================
+
+        aplicarIndicadoresACaminhoTabela();
+
+
+        showToast(
+            quantidade > 0
+
+                ? `✅ ${quantidade} unidade(s) de ${produto.sku} marcada(s) como a caminho.`
+
+                : `✅ Quantidade a caminho de ${produto.sku} zerada.`,
+
+            'success'
+        );
+
+
+        console.log(
+            `🚚 ${produto.sku}: ${quantidade} unidade(s) a caminho`
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro salvando quantidade a caminho:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao salvar quantidade a caminho: ${error.message}`,
+            'error'
+        );
+
+    }
+}
+
+
+// =========================================================
+// INDICADOR NA TABELA
+//
+// ESTOQUE: 0
+// 🚚 +100 a caminho
+//
+// Funciona tanto na tabela antiga quanto depois da
+// implementação dos checkboxes de edição em massa.
+// =========================================================
+
+function aplicarIndicadoresACaminhoTabela() {
+
+    if (
+        !podeVerQuantidadeACaminhoRaios()
+    ) {
+
+        return;
+    }
+
+
+    const tbody =
+        document.getElementById(
+            'produtosEstoqueBody'
+        );
+
+
+    if (!tbody) {
+        return;
+    }
+
+
+    // Remove indicadores anteriores
+    tbody
+        .querySelectorAll(
+            '.indicador-a-caminho-raios'
+        )
+        .forEach(
+            el =>
+                el.remove()
+        );
+
+
+    const linhas =
+        tbody.querySelectorAll(
+            'tr'
+        );
+
+
+    linhas.forEach(
+        linha => {
+
+            // =============================================
+            // SKU exibido na tabela
+            // =============================================
+
+            const code =
+                linha.querySelector(
+                    'code'
+                );
+
+
+            if (!code) {
+                return;
+            }
+
+
+            const sku =
+                String(
+                    code.textContent ||
+                    ''
+                ).trim();
+
+
+            const produto =
+                produtosEstoque.find(
+                    produto =>
+                        String(
+                            produto.sku ||
+                            ''
+                        ).trim() ===
+                        sku
+                );
+
+
+            if (
+                !produto ||
+                produto.categoria !==
+                'Raios'
+            ) {
+
+                return;
+            }
+
+
+            const quantidadeACaminho =
+                obterQuantidadeACaminho(
+                    produto
+                );
+
+
+            if (
+                quantidadeACaminho <=
+                0
+            ) {
+
+                return;
+            }
+
+
+            // =============================================
+            // A CÉLULA DE QUANTIDADE É A PRÓXIMA DA CÉLULA SKU
+            //
+            // Isso continua funcionando mesmo se houver
+            // checkbox antes do ID.
+            // =============================================
+
+            const tdSku =
+                code.closest(
+                    'td'
+                );
+
+
+            const tdQuantidade =
+                tdSku
+                    ?.nextElementSibling;
+
+
+            if (
+                !tdQuantidade
+            ) {
+                return;
+            }
+
+
+            const badge =
+                document.createElement(
+                    'div'
+                );
+
+
+            badge.className =
+                'indicador-a-caminho-raios';
+
+
+            badge.style.cssText = `
+                margin-top:4px;
+                display:inline-flex;
+                align-items:center;
+                gap:4px;
+                background:#e7f3ff;
+                color:#0056b3;
+                border:1px solid #b8daff;
+                border-radius:12px;
+                padding:2px 7px;
+                font-size:10px;
+                font-weight:600;
+                white-space:nowrap;
+            `;
+
+
+            badge.innerHTML = `
+
+                <i class="fas fa-truck"></i>
+
+                +${quantidadeACaminho}
+                a caminho
+
+            `;
+
+
+            tdQuantidade.appendChild(
+                document.createElement(
+                    'br'
+                )
+            );
+
+
+            tdQuantidade.appendChild(
+                badge
+            );
+
+        }
+    );
+}
+
+// =========================================================
+// EXTENSÃO DE gerarCamposDinamicos
+//
+// NÃO substitui sua lógica de categoria/subcategoria.
+// Apenas acrescenta o bloco "A caminho" depois.
+// =========================================================
+
+const _gerarCamposDinamicosAntesACaminho =
+    gerarCamposDinamicos;
+
+
+gerarCamposDinamicos =
+    function(...args) {
+
+        const retorno =
+            _gerarCamposDinamicosAntesACaminho
+                .apply(
+                    this,
+                    args
+                );
+
+
+        const categoria =
+            args[0] ||
+            '';
+
+
+        setTimeout(
+            () => {
+
+                renderizarBlocoACaminhoRaios(
+                    categoria
+                );
+
+            },
+            0
+        );
+
+
+        return retorno;
     };
 
 console.log('📦 Gestão de Estoque carregada com sucesso! (Versão completa com categorias customizadas)');
