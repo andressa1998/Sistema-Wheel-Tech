@@ -1,101 +1,366 @@
 // ================================================================
-// GERENCIAMENTO DE ANÚNCIOS - MÓDULO COMPLETO
+// GERENCIAMENTO DE ANÚNCIOS - MERCADO LIVRE
+// VERSÃO CONSOLIDADA
 // ================================================================
 
-(function() {
+(function () {
     'use strict';
 
     // ============================================================
-    // CONFIGURAÇÃO
+    // CONFIGURAÇÃO / ESTADO
     // ============================================================
 
     const GA = {
         api: 'https://api.mercadolibre.com',
+
         site: 'MLB',
-        worker: 'https://purple-bonus-3b1c.andmiotto1998.workers.dev',
-        
+
+        worker:
+            window.WORKER_URL ||
+            'https://purple-bonus-3b1c.andmiotto1998.workers.dev',
+
         rows: [],
+
         filtered: [],
+
         page: 1,
+
         pageSize: 20,
-        
+
         token: null,
+
         sellerId: null,
-        products: [],
-        productBySku: new Map(),
-        productsByMlb: new Map(),
-        fullCache: new Map(),
-        
-        listingTypeNames: new Map(),
-        exposureNames: new Map(),
-        exposureByListingType: new Map(),
-        
+
         loading: false,
-        totalAnuncios: 0,
-        totalEstoque: 0,
-        semVinculo: 0
+
+        products: [],
+
+        productBySku: new Map(),
+
+        productsByMlb: new Map(),
+
+        listingTypeNames: new Map(),
+
+        exposureNames: new Map(),
+
+        exposureByListingType: new Map(),
+
+        userProductStockCache: new Map(),
+
+        userProductStockPromises: new Map(),
+
+        inventoryStockCache: new Map(),
+
+        stockNextRequestAt: 0,
+
+        stockRequestIntervalMs: 750,
+
+        databaseTable:
+            'gerenciamento_anuncios_ml'
     };
+
 
     // ============================================================
     // UTILITÁRIOS
     // ============================================================
 
     function esc(value) {
-        return String(value ?? '')
-            .replaceAll('&', '&amp;')
-            .replaceAll('<', '&lt;')
-            .replaceAll('>', '&gt;')
-            .replaceAll('"', '&quot;')
-            .replaceAll("'", '&#039;');
+
+        return String(
+            value ?? ''
+        )
+            .replaceAll(
+                '&',
+                '&amp;'
+            )
+            .replaceAll(
+                '<',
+                '&lt;'
+            )
+            .replaceAll(
+                '>',
+                '&gt;'
+            )
+            .replaceAll(
+                '"',
+                '&quot;'
+            )
+            .replaceAll(
+                "'",
+                '&#039;'
+            );
     }
+
+
+    function sleep(ms) {
+
+        return new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    ms
+                )
+        );
+    }
+
+
+    function numeroOuNull(value) {
+
+        if (
+            value === null ||
+            value === undefined ||
+            value === ''
+        ) {
+
+            return null;
+        }
+
+
+        const numero =
+            Number(value);
+
+
+        return Number.isFinite(
+            numero
+        )
+            ? numero
+            : null;
+    }
+
+
+    function dataLocalISO(
+        data = new Date()
+    ) {
+
+        const d =
+            new Date(data);
+
+
+        return (
+            d.getFullYear() +
+            '-' +
+            String(
+                d.getMonth() + 1
+            ).padStart(
+                2,
+                '0'
+            ) +
+            '-' +
+            String(
+                d.getDate()
+            ).padStart(
+                2,
+                '0'
+            )
+        );
+    }
+
 
     function skuBase(sku) {
-        if (!sku) return '';
-        let resultado = String(sku).trim().toUpperCase();
-        if (/^\d{3}/.test(resultado)) {
-            resultado = resultado.slice(3);
-        }
-        return resultado.slice(0, 8);
-    }
 
-    function attr(attributes, id) {
-        return (attributes || []).find(
-            a => String(a?.id || '').toUpperCase() === id
-        )?.value_name || '';
-    }
+        if (!sku) {
 
-    function extractSku(item, variation = null) {
-
-    // =========================================================
-    // AUXILIAR PARA PROCURAR SELLER_SKU NOS ATRIBUTOS
-    // =========================================================
-
-    function buscarSkuNosAtributos(attributes) {
-
-        if (!Array.isArray(attributes)) {
             return '';
         }
 
-        const atributo = attributes.find(attr => {
 
-            const id =
-                String(
-                    attr?.id ||
-                    attr?.name ||
-                    ''
+        let resultado =
+            String(sku)
+                .trim()
+                .toUpperCase();
+
+
+        if (
+            /^\d{3}/.test(
+                resultado
+            )
+        ) {
+
+            resultado =
+                resultado.slice(
+                    3
+                );
+        }
+
+
+        return resultado.slice(
+            0,
+            8
+        );
+    }
+
+
+    function parseMlbCodes(value) {
+
+        if (!value) {
+
+            return [];
+        }
+
+
+        if (
+            Array.isArray(
+                value
+            )
+        ) {
+
+            return value
+                .flat(
+                    Infinity
                 )
-                    .trim()
-                    .toUpperCase();
+                .map(
+                    String
+                )
+                .filter(
+                    Boolean
+                );
+        }
 
-            return (
-                id === 'SELLER_SKU' ||
-                id === 'SKU'
+
+        if (
+            typeof value ===
+            'object'
+        ) {
+
+            return Object
+                .values(
+                    value
+                )
+                .flat(
+                    Infinity
+                )
+                .map(
+                    String
+                )
+                .filter(
+                    Boolean
+                );
+        }
+
+
+        const texto =
+            String(
+                value
+            ).trim();
+
+
+        if (!texto) {
+
+            return [];
+        }
+
+
+        try {
+
+            const json =
+                JSON.parse(
+                    texto
+                );
+
+
+            if (
+                Array.isArray(
+                    json
+                )
+            ) {
+
+                return json
+                    .flat(
+                        Infinity
+                    )
+                    .map(
+                        String
+                    )
+                    .filter(
+                        Boolean
+                    );
+            }
+
+
+            if (
+                json &&
+                typeof json ===
+                    'object'
+            ) {
+
+                return Object
+                    .values(
+                        json
+                    )
+                    .flat(
+                        Infinity
+                    )
+                    .map(
+                        String
+                    )
+                    .filter(
+                        Boolean
+                    );
+            }
+
+        } catch (error) {
+
+            // Não era JSON
+        }
+
+
+        return texto
+            .split(
+                /[\s,;|]+/
+            )
+            .map(
+                valor =>
+                    valor.trim()
+            )
+            .filter(
+                Boolean
             );
-        });
+    }
+
+
+    function buscarSkuNosAtributos(
+        attributes
+    ) {
+
+        if (
+            !Array.isArray(
+                attributes
+            )
+        ) {
+
+            return '';
+        }
+
+
+        const atributo =
+            attributes.find(
+                atributo => {
+
+                    const id =
+                        String(
+                            atributo?.id ||
+                            atributo?.name ||
+                            ''
+                        )
+                            .trim()
+                            .toUpperCase();
+
+
+                    return (
+                        id ===
+                            'SELLER_SKU' ||
+                        id ===
+                            'SKU'
+                    );
+                }
+            );
+
 
         if (!atributo) {
+
             return '';
         }
+
 
         return String(
             atributo.value_name ??
@@ -106,47 +371,25 @@
     }
 
 
-    // =========================================================
-    // SE FOR VARIAÇÃO
-    //
-    // IMPORTANTE:
-    // Não usamos o SKU do item principal como fallback aqui,
-    // pois cada variação pode ter um SKU diferente.
-    // =========================================================
+    function primeiroValor(
+        ...valores
+    ) {
 
-    if (variation) {
-
-        const candidatos = [
-
-            // Alguns retornos novos
-            variation.seller_sku,
-
-            // Campo oficial SELLER_SKU
-            buscarSkuNosAtributos(
-                variation.attributes
-            ),
-
-            // Algumas estruturas colocam atributos aqui
-            buscarSkuNosAtributos(
-                variation.attribute_combinations
-            ),
-
-            // Legado
-            variation.seller_custom_field
-
-        ];
-
-
-        for (const candidato of candidatos) {
+        for (
+            const valor
+            of valores
+        ) {
 
             if (
-                candidato !== null &&
-                candidato !== undefined &&
-                String(candidato).trim() !== ''
+                valor !== null &&
+                valor !== undefined &&
+                String(
+                    valor
+                ).trim() !== ''
             ) {
 
                 return String(
-                    candidato
+                    valor
                 ).trim();
             }
         }
@@ -156,870 +399,1421 @@
     }
 
 
-    // =========================================================
-    // ITEM SEM VARIAÇÕES
-    // =========================================================
+    function extractSku(
+        item,
+        variation = null
+    ) {
 
-    const candidatos = [
+        if (variation) {
 
-        item?.seller_sku,
+            const skuVariacao =
+                primeiroValor(
 
-        buscarSkuNosAtributos(
-            item?.attributes
-        ),
+                    variation.seller_sku,
 
-        item?.seller_custom_field
+                    buscarSkuNosAtributos(
+                        variation.attributes
+                    ),
 
-    ];
+                    buscarSkuNosAtributos(
+                        variation.attribute_combinations
+                    ),
+
+                    variation.seller_custom_field
+                );
 
 
-    for (const candidato of candidatos) {
+            if (
+                skuVariacao
+            ) {
 
-        if (
-            candidato !== null &&
-            candidato !== undefined &&
-            String(candidato).trim() !== ''
-        ) {
+                return skuVariacao;
+            }
 
-            return String(
-                candidato
-            ).trim();
+
+            // Se só existe uma variação,
+            // podemos usar o SKU do item pai.
+            if (
+                Array.isArray(
+                    item?.variations
+                ) &&
+                item.variations.length ===
+                    1
+            ) {
+
+                return primeiroValor(
+
+                    item?.seller_sku,
+
+                    buscarSkuNosAtributos(
+                        item?.attributes
+                    ),
+
+                    item?.seller_custom_field
+                );
+            }
+
+
+            return '';
         }
+
+
+        return primeiroValor(
+
+            item?.seller_sku,
+
+            buscarSkuNosAtributos(
+                item?.attributes
+            ),
+
+            item?.seller_custom_field
+        );
     }
 
 
-    return '';
+    function isRateLimit(
+        error
+    ) {
+
+        const status =
+            Number(
+                error?.status ||
+                0
+            );
+
+
+        const mensagem =
+            String(
+                error?.message ||
+                error?.data?.message ||
+                error ||
+                ''
+            )
+                .toLowerCase();
+
+
+        return (
+
+            status === 429 ||
+
+            mensagem.includes(
+                '429'
+            ) ||
+
+            mensagem.includes(
+                'rate limit'
+            ) ||
+
+            mensagem.includes(
+                'too many requests'
+            ) ||
+
+            mensagem.includes(
+                'over quota'
+            )
+        );
+    }
+
+
+    function progress(texto = '') {
+
+    const box =
+        document.getElementById(
+            'gaProgressBar'
+        );
+
+    const text =
+        document.getElementById(
+            'gaProgressText'
+        );
+
+
+    if (!box) {
+        return;
+    }
+
+
+    if (
+        texto &&
+        String(texto).trim() !== ''
+    ) {
+
+        box.classList.remove(
+            'hidden'
+        );
+
+        box.style.display =
+            'block';
+
+
+        if (text) {
+
+            text.textContent =
+                texto;
+        }
+
+
+        return;
+    }
+
+
+    box.classList.add(
+        'hidden'
+    );
+
+    box.style.display =
+        'none';
 }
 
-    function parseMlbCodes(value) {
-        if (!value) return [];
-        if (Array.isArray(value)) return value.map(String);
-        if (typeof value === 'object') {
-            return Object.values(value).flat().map(String);
-        }
-        const texto = String(value).trim();
-        try {
-            const json = JSON.parse(texto);
-            if (Array.isArray(json)) return json.map(String);
-            if (json && typeof json === 'object') {
-                return Object.values(json).flat().map(String);
-            }
-        } catch (e) {}
-        return texto.split(/[\s,;|]+/).filter(Boolean);
-    }
 
     // ============================================================
-    // DATA UTILITY
+    // ESTOQUE INTERNO
     // ============================================================
-
-    function dataLocalISO(data = new Date()) {
-        const d = new Date(data);
-        return d.getFullYear() + '-' + 
-               String(d.getMonth() + 1).padStart(2, '0') + '-' + 
-               String(d.getDate()).padStart(2, '0');
-    }
 
     async function loadInternalStock() {
 
-    console.log('📦 Carregando estoque interno...');
-
-    let data = null;
-
-    // =========================================================
-    // 1. TENTAR REUTILIZAR OS PRODUTOS JÁ CARREGADOS
-    //    PELO estoque_gestao.js
-    // =========================================================
-
-    try {
-
-        if (
-            typeof produtosEstoque !== 'undefined' &&
-            Array.isArray(produtosEstoque) &&
-            produtosEstoque.length > 0
-        ) {
-
-            data = produtosEstoque;
-
-            console.log(
-                `✅ Reutilizando ${data.length} produtos já carregados em produtosEstoque`
-            );
-        }
-
-    } catch (error) {
-
-        console.warn(
-            '⚠️ Não foi possível acessar produtosEstoque diretamente:',
-            error
-        );
-    }
-
-
-    // =========================================================
-    // 2. SE NÃO ESTIVER CARREGADO, BUSCAR NO SUPABASE
-    // =========================================================
-
-    if (!data) {
-
-        if (!window.supabaseClient) {
-
-            throw new Error(
-                'Supabase não inicializado.'
-            );
-        }
-
-
         console.log(
-            '🔄 Buscando produtos diretamente no Supabase...'
+            '📦 Carregando estoque interno...'
         );
 
 
-        const {
-            data: produtos,
-            error
-        } = await window.supabaseClient
-            .from('produtos_estoque')
-            .select('*')
-            .order('nome', {
-                ascending: true
-            });
+        let data =
+            null;
 
 
-        if (error) {
+        // Tentar usar produtos já carregados
+        try {
 
-            console.error(
-                '❌ Erro Supabase ao carregar produtos:',
+            if (
+                typeof produtosEstoque !==
+                    'undefined' &&
+                Array.isArray(
+                    produtosEstoque
+                ) &&
+                produtosEstoque.length >
+                    0
+            ) {
+
+                data =
+                    produtosEstoque;
+
+
+                console.log(
+                    `✅ Reutilizando ${data.length} produtos de produtosEstoque.`
+                );
+            }
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ Não foi possível reutilizar produtosEstoque:',
                 error
             );
+        }
 
 
-            console.error(
-                '❌ Detalhes erro Supabase:',
-                JSON.stringify(
-                    error,
-                    null,
-                    2
+        // Se não estiver carregado,
+        // buscar diretamente no Supabase.
+        if (!data) {
+
+            if (
+                !window.supabaseClient
+            ) {
+
+                throw new Error(
+                    'Supabase não inicializado.'
+                );
+            }
+
+
+            const {
+                data: produtos,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .select(
+                        '*'
+                    )
+                    .order(
+                        'nome',
+                        {
+                            ascending:
+                                true
+                        }
+                    );
+
+
+            if (error) {
+
+                console.error(
+                    '❌ Erro ao carregar produtos_estoque:',
+                    error
+                );
+
+
+                throw new Error(
+                    error.message ||
+                    error.details ||
+                    error.hint ||
+                    'Erro ao carregar estoque interno.'
+                );
+            }
+
+
+            data =
+                produtos ||
+                [];
+        }
+
+
+        GA.products =
+            data ||
+            [];
+
+
+        GA.productBySku
+            .clear();
+
+
+        GA.productsByMlb
+            .clear();
+
+
+        // ========================================================
+        // INDEXAR PRODUTOS POR SKU E MLB
+        // ========================================================
+
+        for (
+            const produto
+            of GA.products
+        ) {
+
+            if (!produto) {
+
+                continue;
+            }
+
+
+            const base =
+                skuBase(
+                    produto.sku
+                );
+
+
+            if (
+                base &&
+                !GA.productBySku.has(
+                    base
                 )
-            );
-
-
-            throw new Error(
-                error.message ||
-                error.details ||
-                error.hint ||
-                'Erro ao carregar produtos do estoque'
-            );
-        }
-
-
-        data = produtos || [];
-
-
-        console.log(
-            `✅ ${data.length} produtos carregados diretamente do Supabase`
-        );
-    }
-
-
-    // =========================================================
-    // 3. SALVAR PRODUTOS
-    // =========================================================
-
-    GA.products = data || [];
-
-
-    // Limpar índices antigos
-    GA.productBySku.clear();
-    GA.productsByMlb.clear();
-
-
-    // =========================================================
-    // 4. INDEXAR PRODUTOS
-    // =========================================================
-
-    for (const produto of GA.products) {
-
-        if (!produto) {
-            continue;
-        }
-
-
-        // =====================================================
-        // INDEXAR POR SKU
-        // =====================================================
-
-        const base = skuBase(
-            produto.sku
-        );
-
-
-        if (base) {
-
-            // Caso ainda não exista
-            if (!GA.productBySku.has(base)) {
+            ) {
 
                 GA.productBySku.set(
                     base,
                     produto
                 );
-
-            } else {
-
-                console.warn(
-                    `⚠️ SKU base duplicado no estoque: ${base}`,
-                    {
-                        existente:
-                            GA.productBySku.get(base),
-
-                        novo:
-                            produto
-                    }
-                );
-            }
-        }
-
-
-        // =====================================================
-        // PEGAR MLB_CODES
-        //
-        // No seu sistema ele pode existir:
-        //
-        // produto.mlb_codes
-        //
-        // OU:
-        //
-        // produto.dados_extra.mlb_codes
-        // =====================================================
-
-        const mlbCodesRaw =
-            produto.mlb_codes ??
-            produto.dados_extra?.mlb_codes ??
-            null;
-
-
-        const mlbs =
-            parseMlbCodes(
-                mlbCodesRaw
-            );
-
-
-        // =====================================================
-        // INDEXAR CADA MLB
-        // =====================================================
-
-        for (const code of mlbs) {
-
-            if (!code) {
-                continue;
             }
 
 
-            const match =
-                String(code)
-                    .toUpperCase()
-                    .match(/MLB\d+/);
+            const mlbCodesRaw =
+
+                produto.mlb_codes ??
+
+                produto
+                    .dados_extra
+                    ?.mlb_codes ??
+
+                null;
 
 
-            if (!match) {
-                continue;
-            }
-
-
-            const mlb =
-                match[0];
-
-
-            if (!GA.productsByMlb.has(mlb)) {
-
-                GA.productsByMlb.set(
-                    mlb,
-                    []
-                );
-            }
-
-
-            const lista =
-                GA.productsByMlb.get(
-                    mlb
+            const codigos =
+                parseMlbCodes(
+                    mlbCodesRaw
                 );
 
 
-            // Evitar duplicar o mesmo produto
-            if (
-                !lista.some(
-                    p =>
-                        String(p.id) ===
-                        String(produto.id)
-                )
+            for (
+                const codigo
+                of codigos
             ) {
 
-                lista.push(
-                    produto
-                );
+                const match =
+                    String(
+                        codigo
+                    )
+                        .toUpperCase()
+                        .match(
+                            /MLB\d+/
+                        );
+
+
+                if (!match) {
+
+                    continue;
+                }
+
+
+                const mlb =
+                    match[0];
+
+
+                if (
+                    !GA.productsByMlb.has(
+                        mlb
+                    )
+                ) {
+
+                    GA.productsByMlb.set(
+                        mlb,
+                        []
+                    );
+                }
+
+
+                const lista =
+                    GA.productsByMlb.get(
+                        mlb
+                    );
+
+
+                if (
+                    !lista.some(
+                        produtoLista =>
+                            String(
+                                produtoLista.id
+                            ) ===
+                            String(
+                                produto.id
+                            )
+                    )
+                ) {
+
+                    lista.push(
+                        produto
+                    );
+                }
             }
         }
+
+
+        console.log(
+            `✅ ${GA.products.length} produtos internos carregados.`
+        );
+
+
+        console.log(
+            `🔑 ${GA.productBySku.size} SKUs internos indexados.`
+        );
+
+
+        console.log(
+            `🏷️ ${GA.productsByMlb.size} MLBs internos indexados.`
+        );
     }
 
 
-    // =========================================================
-    // 5. LOGS DE DIAGNÓSTICO
-    // =========================================================
+    function warehouseStock(
+        sku,
+        itemId
+    ) {
 
-    console.log(
-        `✅ ${GA.products.length} produtos internos carregados.`
-    );
+        // ========================================================
+        // PRIMEIRO TENTAR PELO SKU
+        // ========================================================
 
-
-    console.log(
-        `🔑 ${GA.productBySku.size} SKUs indexados.`
-    );
-
-
-    console.log(
-        `🏷️ ${GA.productsByMlb.size} MLBs indexados.`
-    );
-
-
-    // Mostrar alguns exemplos para conferirmos
-    console.log(
-        '📦 Exemplos de produtos:',
-        GA.products.slice(
-            0,
-            5
-        ).map(
-            produto => ({
-                id:
-                    produto.id,
-
-                nome:
-                    produto.nome,
-
-                sku:
-                    produto.sku,
-
-                quantidade:
-                    produto.quantidade,
-
-                mlb_codes:
-                    produto.mlb_codes ??
-                    produto.dados_extra?.mlb_codes ??
-                    null
-            })
-        )
-    );
-}
-
-    function warehouseStock(sku, itemId) {
         if (sku) {
-            const partes = String(sku).split('.').filter(Boolean);
-            let quantidadePossivel = Infinity;
-            let algumFaltando = false;
 
-            for (const parte of partes) {
-                const match = parte.match(/^(\d{3})(.+)$/);
-                const quantidadePorKit = match ? Math.max(1, parseInt(match[1], 10) || 1) : 1;
-                const skuReal = match ? match[2] : parte;
-                const produto = GA.productBySku.get(skuBase(skuReal));
+            const partes =
+                String(
+                    sku
+                )
+                    .split(
+                        '.'
+                    )
+                    .map(
+                        valor =>
+                            valor.trim()
+                    )
+                    .filter(
+                        Boolean
+                    );
+
+
+            let quantidadePossivel =
+                Infinity;
+
+
+            let encontrouTodos =
+                true;
+
+
+            for (
+                const parte
+                of partes
+            ) {
+
+                const match =
+                    parte.match(
+                        /^(\d{3})(.+)$/
+                    );
+
+
+                const quantidadePorKit =
+                    match
+
+                        ? Math.max(
+                            1,
+                            parseInt(
+                                match[1],
+                                10
+                            ) ||
+                            1
+                        )
+
+                        : 1;
+
+
+                const skuReal =
+                    match
+                        ? match[2]
+                        : parte;
+
+
+                const produto =
+                    GA.productBySku.get(
+                        skuBase(
+                            skuReal
+                        )
+                    );
+
+
                 if (!produto) {
-                    algumFaltando = true;
-                    continue;
+
+                    encontrouTodos =
+                        false;
+
+                    break;
                 }
-                const estoqueAtual = Number(produto.quantidade) || 0;
-                const kitsPossiveis = Math.floor(estoqueAtual / quantidadePorKit);
-                quantidadePossivel = Math.min(quantidadePossivel, kitsPossiveis);
+
+
+                const estoqueAtual =
+                    Number(
+                        produto.quantidade
+                    ) ||
+                    0;
+
+
+                const kitsPossiveis =
+                    Math.floor(
+                        estoqueAtual /
+                        quantidadePorKit
+                    );
+
+
+                quantidadePossivel =
+                    Math.min(
+                        quantidadePossivel,
+                        kitsPossiveis
+                    );
             }
 
-            if (!algumFaltando && partes.length && Number.isFinite(quantidadePossivel)) {
+
+            if (
+                encontrouTodos &&
+                partes.length >
+                    0 &&
+                Number.isFinite(
+                    quantidadePossivel
+                )
+            ) {
+
                 return quantidadePossivel;
             }
         }
 
-        const produtosMlb = GA.productsByMlb.get(String(itemId).toUpperCase()) || [];
-        if (produtosMlb.length === 1) {
-            return Number(produtosMlb[0].quantidade) || 0;
+
+        // ========================================================
+        // FALLBACK POR MLB
+        // ========================================================
+
+        const produtosMlb =
+            GA.productsByMlb.get(
+                String(
+                    itemId ||
+                    ''
+                ).toUpperCase()
+            ) ||
+            [];
+
+
+        if (
+            produtosMlb.length ===
+            1
+        ) {
+
+            return Number(
+                produtosMlb[0]
+                    .quantidade
+            ) ||
+            0;
         }
+
+
         return null;
     }
 
+
+    function skuInternoPorMlb(
+        itemId
+    ) {
+
+        const produtosMlb =
+            GA.productsByMlb.get(
+                String(
+                    itemId ||
+                    ''
+                ).toUpperCase()
+            ) ||
+            [];
+
+
+        if (
+            produtosMlb.length ===
+                1 &&
+            produtosMlb[0]
+                ?.sku
+        ) {
+
+            return String(
+                produtosMlb[0]
+                    .sku
+            ).trim();
+        }
+
+
+        return '';
+    }
+
+
     // ============================================================
-    // ML API
+    // TOKEN / API MERCADO LIVRE
     // ============================================================
 
     async function getToken() {
-        if (GA.token) return GA.token;
+
+        if (
+            GA.token
+        ) {
+
+            return GA.token;
+        }
+
+
         try {
-            if (typeof window.getValidToken === 'function') {
-                const tokenData = await window.getValidToken();
-                GA.token = tokenData?.access_token || tokenData || null;
+
+            if (
+                typeof window
+                    .getValidToken ===
+                'function'
+            ) {
+
+                const tokenData =
+                    await window
+                        .getValidToken();
+
+
+                GA.token =
+
+                    tokenData
+                        ?.access_token ||
+
+                    tokenData ||
+
+                    null;
             }
+
         } catch (error) {
-            console.warn('⚠️ getValidToken falhou:', error);
+
+            console.warn(
+                '⚠️ getValidToken falhou:',
+                error
+            );
         }
-        if (!GA.token) {
-            GA.token = window.mlTokenStatus?.access_token || localStorage.getItem('ml_access_token');
+
+
+        if (
+            !GA.token
+        ) {
+
+            GA.token =
+
+                window
+                    .mlTokenStatus
+                    ?.access_token ||
+
+                localStorage.getItem(
+                    'ml_access_token'
+                ) ||
+
+                null;
         }
-        if (!GA.token) {
-            throw new Error('Token do Mercado Livre não encontrado.');
+
+
+        if (
+            !GA.token
+        ) {
+
+            throw new Error(
+                'Token do Mercado Livre não encontrado.'
+            );
         }
+
+
         return GA.token;
     }
 
-    async function ml(path) {
-        const accessToken = await getToken();
-        const url = path.startsWith('http') ? path : `${GA.api}${path}`;
-        const proxyUrl = `${GA.worker}/api/ml/proxy?url=${encodeURIComponent(url)}&token=${encodeURIComponent(accessToken)}`;
-        const response = await fetch(proxyUrl);
-        const text = await response.text();
-        let data;
-        try { data = text ? JSON.parse(text) : null; } catch (e) { data = text; }
-        if (!response.ok) {
-            throw new Error(data?.message || data?.error || `HTTP ${response.status}`);
-        }
-        return data;
-    }
 
-    async function getSellerId() {
-        if (GA.sellerId) return GA.sellerId;
-        const me = await ml('/users/me');
-        GA.sellerId = me?.id;
-        if (!GA.sellerId) throw new Error('seller_id não encontrado.');
-        console.log('👤 Seller ID:', GA.sellerId);
-        return GA.sellerId;
-    }
-
-    // ============================================================
-    // PROGRESSO
-    // ============================================================
-
-    function mostrarProgresso(texto) {
-        const bar = document.getElementById('gaProgressBar');
-        const text = document.getElementById('gaProgressText');
-        if (bar) bar.classList.remove('hidden');
-        if (text) text.textContent = texto;
-    }
-
-    function esconderProgresso() {
-        const bar = document.getElementById('gaProgressBar');
-        if (bar) bar.classList.add('hidden');
-    }
-
-    // ============================================================
-    // BUSCAR ANÚNCIOS
-    // ============================================================
-
-    async function scanAllIds() {
-        const seller = await getSellerId();
-        const ids = [];
-        const vistos = new Set();
-        let scrollId = null;
-
-        for (let loop = 0; loop < 10000; loop++) {
-            let path = `/users/${seller}/items/search?search_type=scan&limit=100`;
-            if (scrollId) {
-                path += `&scroll_id=${encodeURIComponent(scrollId)}`;
-            }
-            const data = await ml(path);
-            const resultados = Array.isArray(data?.results) ? data.results : [];
-            if (!resultados.length) break;
-
-            let adicionados = 0;
-            for (const id of resultados) {
-                if (!vistos.has(id)) {
-                    vistos.add(id);
-                    ids.push(id);
-                    adicionados++;
-                }
-            }
-            mostrarProgresso(`Localizando anúncios... ${ids.length}`);
-            scrollId = data?.scroll_id || scrollId;
-            if (!scrollId || !adicionados) break;
-        }
-        console.log(`✅ ${ids.length} anúncios encontrados.`);
-        return ids;
-    }
-
-    async function getAllItems(ids) {
-
-    const resultado = [];
-
-
-    // =========================================================
-    // CAMPOS QUE QUEREMOS RECEBER
-    // =========================================================
-
-    const attributes = [
-
-        'id',
-        'title',
-        'thumbnail',
-        'permalink',
-        'status',
-        'sub_status',
-        'price',
-        'listing_type_id',
-        'shipping',
-        'tags',
-
-        'inventory_id',
-        'user_product_id',
-
-        'seller_sku',
-        'seller_custom_field',
-
-        'attributes',
-        'variations'
-
-    ].join(',');
-
-
-    // =========================================================
-    // MULTIGET
-    //
-    // Mercado Livre permite até 20 itens por chamada.
-    // =========================================================
-
-    for (
-        let i = 0;
-        i < ids.length;
-        i += 20
+    async function ml(
+        path
     ) {
 
-        const grupo =
-            ids.slice(
-                i,
-                i + 20
+        const accessToken =
+            await getToken();
+
+
+        const url =
+            path.startsWith(
+                'http'
+            )
+
+                ? path
+
+                : `${GA.api}${path}`;
+
+
+        const proxyUrl =
+
+            `${GA.worker}/api/ml/proxy?url=` +
+
+            `${encodeURIComponent(
+                url
+            )}` +
+
+            `&token=${encodeURIComponent(
+                accessToken
+            )}`;
+
+
+        const response =
+            await fetch(
+                proxyUrl
             );
 
 
-        // =====================================================
-        // include_attributes=all
-        //
-        // ESSENCIAL PARA PEGAR SELLER_SKU DAS VARIAÇÕES
-        // =====================================================
-
-        const path =
-            `/items?ids=${grupo.join(',')}` +
-            `&include_attributes=all` +
-            `&attributes=${encodeURIComponent(attributes)}`;
+        const text =
+            await response.text();
 
 
-        let data = null;
+        let data =
+            null;
 
 
-        // =====================================================
-        // RETENTATIVA SIMPLES EM CASO DE 429
-        // =====================================================
+        try {
+
+            data =
+                text
+                    ? JSON.parse(
+                        text
+                    )
+                    : null;
+
+        } catch (error) {
+
+            data =
+                text;
+        }
+
+
+        if (
+            !response.ok
+        ) {
+
+            const error =
+                new Error(
+                    data?.message ||
+                    data?.error ||
+                    `HTTP ${response.status}`
+                );
+
+
+            error.status =
+                response.status;
+
+
+            error.data =
+                data;
+
+
+            throw error;
+        }
+
+
+        return data;
+    }
+
+
+    async function mlComRetry(
+        path,
+        maxTentativas = 4
+    ) {
+
+        let ultimoErro =
+            null;
+
 
         for (
             let tentativa = 1;
-            tentativa <= 5;
+            tentativa <=
+                maxTentativas;
             tentativa++
         ) {
 
             try {
 
-                data =
-                    await ml(path);
-
-                break;
+                return await ml(
+                    path
+                );
 
             } catch (error) {
 
-                const mensagem =
-                    String(
-                        error?.message ||
-                        error ||
-                        ''
-                    ).toLowerCase();
-
-
-                const rateLimit =
-                    mensagem.includes(
-                        'rate limit'
-                    ) ||
-                    mensagem.includes(
-                        'too many requests'
-                    ) ||
-                    mensagem.includes(
-                        '429'
-                    );
+                ultimoErro =
+                    error;
 
 
                 if (
-                    !rateLimit ||
-                    tentativa === 5
+                    !isRateLimit(
+                        error
+                    ) ||
+                    tentativa ===
+                        maxTentativas
                 ) {
 
                     throw error;
                 }
 
 
+                const espera =
+                    Math.min(
+                        15000,
+                        tentativa *
+                        2500
+                    );
+
+
                 console.warn(
-                    `⚠️ Rate limit no multiget. Tentativa ${tentativa}/5`
+                    `⏳ Rate limit. Nova tentativa ${tentativa + 1}/${maxTentativas} em ${espera}ms.`
                 );
 
 
-                await new Promise(
-                    resolve =>
-                        setTimeout(
-                            resolve,
-                            tentativa * 2000
-                        )
+                await sleep(
+                    espera
                 );
             }
         }
 
 
-        // =====================================================
-        // PROCESSAR RESPOSTA
-        // =====================================================
-
-        for (const resposta of data || []) {
-
-            if (
-                resposta?.code === 200 &&
-                resposta?.body
-            ) {
-
-                resultado.push(
-                    resposta.body
-                );
-            }
-        }
-
-
-        progress(
-            `Lendo anúncios... ` +
-            `${Math.min(i + 20, ids.length)}` +
-            `/${ids.length}`
-        );
-
-
-        // Pequeno intervalo entre os multigets
-        await new Promise(
-            resolve =>
-                setTimeout(
-                    resolve,
-                    80
-                )
+        throw (
+            ultimoErro ||
+            new Error(
+                'Falha na API do Mercado Livre.'
+            )
         );
     }
 
 
+    async function getSellerId() {
+
+        if (
+            GA.sellerId
+        ) {
+
+            return GA.sellerId;
+        }
+
+
+        const me =
+            await mlComRetry(
+                '/users/me'
+            );
+
+
+        GA.sellerId =
+            me?.id ||
+            null;
+
+
+        if (
+            !GA.sellerId
+        ) {
+
+            throw new Error(
+                'seller_id não encontrado.'
+            );
+        }
+
+
+        console.log(
+            '👤 Seller ID:',
+            GA.sellerId
+        );
+
+
+        return GA.sellerId;
+    }
+
+
+    // ============================================================
+    // BUSCAR TODOS OS IDS
+    // ============================================================
+
+    async function scanAllIds() {
+
+        const seller =
+            await getSellerId();
+
+
+        const ids =
+            [];
+
+
+        const vistos =
+            new Set();
+
+
+        let scrollId =
+            null;
+
+
+        for (
+            let loop = 0;
+            loop < 10000;
+            loop++
+        ) {
+
+            let path =
+
+                `/users/${seller}/items/search` +
+
+                `?search_type=scan` +
+
+                `&limit=100`;
+
+
+            if (
+                scrollId
+            ) {
+
+                path +=
+
+                    `&scroll_id=${encodeURIComponent(
+                        scrollId
+                    )}`;
+            }
+
+
+            const data =
+                await mlComRetry(
+                    path,
+                    5
+                );
+
+
+            const resultados =
+                Array.isArray(
+                    data?.results
+                )
+
+                    ? data.results
+
+                    : [];
+
+
+            if (
+                !resultados.length
+            ) {
+
+                break;
+            }
+
+
+            let adicionados =
+                0;
+
+
+            for (
+                const id
+                of resultados
+            ) {
+
+                if (
+                    !vistos.has(
+                        id
+                    )
+                ) {
+
+                    vistos.add(
+                        id
+                    );
+
+
+                    ids.push(
+                        id
+                    );
+
+
+                    adicionados++;
+                }
+            }
+
+
+            progress(
+                `Localizando anúncios... ${ids.length}`
+            );
+
+
+            scrollId =
+                data?.scroll_id ||
+                scrollId;
+
+
+            if (
+                !scrollId ||
+                !adicionados
+            ) {
+
+                break;
+            }
+        }
+
+
+        console.log(
+            `✅ ${ids.length} anúncios encontrados.`
+        );
+
+
+        return ids;
+    }
+
+
+    // ============================================================
+    // BUSCAR DETALHES DOS ITENS
+    // ============================================================
+
+    async function getAllItems(
+        ids
+    ) {
+
+        const resultado =
+            [];
+
+
+        const attributes =
+            [
+
+                'id',
+
+                'title',
+
+                'thumbnail',
+
+                'permalink',
+
+                'status',
+
+                'sub_status',
+
+                'price',
+
+                'listing_type_id',
+
+                'shipping',
+
+                'tags',
+
+                'inventory_id',
+
+                'user_product_id',
+
+                'seller_sku',
+
+                'seller_custom_field',
+
+                'attributes',
+
+                'variations'
+
+            ].join(
+                ','
+            );
+
+
+        for (
+            let i = 0;
+            i < ids.length;
+            i += 20
+        ) {
+
+            const grupo =
+                ids.slice(
+                    i,
+                    i + 20
+                );
+
+
+            const path =
+
+                `/items?ids=${grupo.join(
+                    ','
+                )}` +
+
+                `&include_attributes=all` +
+
+                `&attributes=${encodeURIComponent(
+                    attributes
+                )}`;
+
+
+            const data =
+                await mlComRetry(
+                    path,
+                    5
+                );
+
+
+            for (
+                const resposta
+                of data ||
+                []
+            ) {
+
+                if (
+                    resposta?.code ===
+                        200 &&
+                    resposta?.body
+                ) {
+
+                    resultado.push(
+                        resposta.body
+                    );
+                }
+            }
+
+
+            progress(
+
+                `Lendo anúncios... ` +
+
+                `${Math.min(
+                    i + 20,
+                    ids.length
+                )}` +
+
+                `/${ids.length}`
+            );
+
+
+            await sleep(
+                80
+            );
+        }
+
+
+        console.log(
+            `📦 ${resultado.length} anúncios detalhados recebidos.`
+        );
+
+
+        return resultado;
+    }
+
+
+    function isFull(item) {
+
+    const logisticType =
+        String(
+            item?.shipping?.logistic_type ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
     // =========================================================
-    // DIAGNÓSTICO DE SKU
+    // SOMENTE É FULL SE A LOGÍSTICA DO ANÚNCIO FOR FULFILLMENT
     // =========================================================
 
-    let linhas = 0;
-    let linhasSemSku = 0;
+    return (
+        logisticType ===
+        'fulfillment'
+    );
+}
 
 
-    for (const item of resultado) {
+    // ============================================================
+    // CRIAR LINHAS
+    // ============================================================
 
-        const variations =
-            Array.isArray(item.variations)
-                ? item.variations
-                : [];
+    function buildRows(
+        items
+    ) {
+
+        const rows =
+            [];
 
 
-        if (variations.length) {
+        for (
+            const item
+            of items
+        ) {
 
-            for (const variation of variations) {
+            if (
+                !isFull(
+                    item
+                )
+            ) {
 
-                linhas++;
+                continue;
+            }
 
-                const sku =
+
+            const variations =
+                Array.isArray(
+                    item.variations
+                )
+
+                    ? item.variations
+
+                    : [];
+
+
+            // ====================================================
+            // COM VARIAÇÕES
+            // ====================================================
+
+            if (
+                variations.length
+            ) {
+
+                for (
+                    const variation
+                    of variations
+                ) {
+
+                    let sku =
+                        extractSku(
+                            item,
+                            variation
+                        );
+
+
+                    if (!sku) {
+
+                        sku =
+                            skuInternoPorMlb(
+                                item.id
+                            );
+                    }
+
+
+                    rows.push({
+
+                        key:
+                            `${item.id}:${variation.id}`,
+
+                        itemId:
+                            item.id,
+
+                        variationId:
+                            variation.id,
+
+                        title:
+                            item.title ||
+                            '-',
+
+                        thumbnail:
+                            item.thumbnail ||
+                            '',
+
+                        permalink:
+                            item.permalink ||
+                            '',
+
+                        sku:
+                            sku ||
+                            '',
+
+                        userProductId:
+
+                            variation
+                                .user_product_id ||
+
+                            item
+                                .user_product_id ||
+
+                            null,
+
+                        inventoryId:
+
+                            variation
+                                .inventory_id ||
+
+                            item
+                                .inventory_id ||
+
+                            null,
+
+                        listingTypeId:
+                            item
+                                .listing_type_id ||
+                            '',
+
+                        listingTypeName:
+                            '',
+
+                        exposureId:
+                            '',
+
+                        exposureName:
+                            '',
+
+                        status:
+                            item.status ||
+                            '',
+
+                        price:
+
+                            variation.price ??
+
+                            item.price ??
+
+                            null,
+
+                        warehouse:
+                            null,
+
+                        full:
+                            null,
+
+                        mlTotal:
+                            null,
+
+                        unavailable:
+                            null,
+
+                        fullTotal:
+                            null,
+
+                        stockLocations:
+                            [],
+
+                        stockError:
+                            null,
+
+                        ultimaSincronizacao:
+                            null
+                    });
+                }
+
+            } else {
+
+                // =================================================
+                // SEM VARIAÇÕES
+                // =================================================
+
+                let sku =
                     extractSku(
-                        item,
-                        variation
+                        item
                     );
 
 
                 if (!sku) {
 
-                    linhasSemSku++;
-
-                    console.warn(
-                        '⚠️ Variação sem SKU:',
-                        {
-                            MLB:
-                                item.id,
-
-                            variation_id:
-                                variation.id,
-
-                            user_product_id:
-                                variation.user_product_id,
-
-                            seller_sku:
-                                variation.seller_sku,
-
-                            seller_custom_field:
-                                variation.seller_custom_field,
-
-                            attributes:
-                                variation.attributes
-                        }
-                    );
+                    sku =
+                        skuInternoPorMlb(
+                            item.id
+                        );
                 }
-            }
 
-        } else {
-
-            linhas++;
-
-            const sku =
-                extractSku(
-                    item
-                );
-
-
-            if (!sku) {
-
-                linhasSemSku++;
-
-                console.warn(
-                    '⚠️ Anúncio sem SKU:',
-                    {
-                        MLB:
-                            item.id,
-
-                        user_product_id:
-                            item.user_product_id,
-
-                        seller_sku:
-                            item.seller_sku,
-
-                        seller_custom_field:
-                            item.seller_custom_field,
-
-                        attributes:
-                            item.attributes
-                    }
-                );
-            }
-        }
-    }
-
-
-    console.log(
-        `🏷️ SKU: ${linhas - linhasSemSku}/${linhas} linhas com SKU.`
-    );
-
-
-    if (linhasSemSku > 0) {
-
-        console.warn(
-            `⚠️ ${linhasSemSku} linha(s) continuam sem SELLER_SKU cadastrado/retornado pelo ML.`
-        );
-    }
-
-
-    return resultado;
-}
-
-    // ============================================================
-    // IDENTIFICAR FULL
-    // ============================================================
-
-    function isFull(item) {
-        const logisticType = String(item?.shipping?.logistic_type || '').toLowerCase();
-        const tags = (item?.tags || []).map(t => String(t).toLowerCase());
-        return logisticType === 'fulfillment' ||
-               tags.includes('fulfillment') ||
-               !!item?.inventory_id ||
-               (item?.variations || []).some(v => !!v?.inventory_id);
-    }
-
-    function buildRows(items) {
-
-    const rows = [];
-
-    for (const item of items) {
-
-        if (!isFull(item)) {
-            continue;
-        }
-
-        const variations =
-            Array.isArray(item.variations)
-                ? item.variations
-                : [];
-
-        // =====================================================
-        // ANÚNCIO COM VARIAÇÕES
-        // =====================================================
-
-        if (variations.length) {
-
-            for (const variation of variations) {
-
-                const sku =
-                    extractSku(
-                        item,
-                        variation
-                    );
-
-                const internalWarehouse =
-                    warehouseStock(
-                        sku,
-                        item.id
-                    );
 
                 rows.push({
 
                     key:
-                        `${item.id}:${variation.id}`,
+                        item.id,
 
                     itemId:
                         item.id,
 
                     variationId:
-                        variation.id,
+                        null,
 
                     title:
-                        item.title || '-',
+                        item.title ||
+                        '-',
 
                     thumbnail:
-                        item.thumbnail || '',
+                        item.thumbnail ||
+                        '',
 
                     permalink:
-                        item.permalink || '',
+                        item.permalink ||
+                        '',
 
                     sku:
-                        sku,
+                        sku ||
+                        '',
 
-                    // NOVO
                     userProductId:
-                        variation.user_product_id ||
-                        item.user_product_id ||
+
+                        item
+                            .user_product_id ||
+
                         null,
 
                     inventoryId:
-                        variation.inventory_id ||
-                        item.inventory_id ||
+
+                        item
+                            .inventory_id ||
+
                         null,
 
                     listingTypeId:
-                        item.listing_type_id || '',
+
+                        item
+                            .listing_type_id ||
+
+                        '',
+
+                    listingTypeName:
+                        '',
+
+                    exposureId:
+                        '',
+
+                    exposureName:
+                        '',
 
                     status:
-                        item.status || '',
+                        item.status ||
+                        '',
 
                     price:
-                        variation.price ??
+
                         item.price ??
+
                         null,
-
-                    // =================================================
-                    // ESTOQUE INTERNO DO SEU SISTEMA
-                    // =================================================
-
-                    internalWarehouse:
-                        internalWarehouse,
-
-                    // =================================================
-                    // ESTOQUE REAL DO MERCADO LIVRE
-                    // =================================================
 
                     warehouse:
                         null,
@@ -1042,409 +1836,1411 @@
                     stockError:
                         null,
 
-                    exposureId:
-                        '',
-
-                    exposureName:
-                        '',
-
-                    listingTypeName:
-                        ''
+                    ultimaSincronizacao:
+                        null
                 });
             }
+        }
 
-        } else {
 
-            // =================================================
-            // ANÚNCIO SEM VARIAÇÕES
-            // =================================================
+        return rows;
+    }
 
-            const sku =
-                extractSku(item);
 
-            const internalWarehouse =
-                warehouseStock(
-                    sku,
-                    item.id
+    // ============================================================
+    // RECUPERAR SKUS QUE NÃO VIERAM NA PRIMEIRA BUSCA
+    // ============================================================
+
+    async function recuperarSkusFaltantes(
+        rows
+    ) {
+
+        const semSku =
+            rows.filter(
+                row =>
+                    !String(
+                        row.sku ||
+                        ''
+                    ).trim()
+            );
+
+
+        if (
+            !semSku.length
+        ) {
+
+            console.log(
+                `🏷️ SKU: ${rows.length}/${rows.length} linhas com SKU.`
+            );
+
+
+            return;
+        }
+
+
+        const itemIds =
+            [
+                ...new Set(
+                    semSku
+                        .map(
+                            row =>
+                                row.itemId
+                        )
+                        .filter(
+                            Boolean
+                        )
+                )
+            ];
+
+
+        console.log(
+            `🏷️ ${semSku.length} linha(s) sem SKU. Fazendo segunda leitura de ${itemIds.length} anúncio(s).`
+        );
+
+
+        const detalhesPorItem =
+            new Map();
+
+
+        for (
+            let i = 0;
+            i < itemIds.length;
+            i += 20
+        ) {
+
+            const grupo =
+                itemIds.slice(
+                    i,
+                    i + 20
                 );
 
-            rows.push({
 
-                key:
-                    item.id,
+            try {
 
-                itemId:
-                    item.id,
+                const data =
+                    await mlComRetry(
 
-                variationId:
-                    null,
+                        `/items?ids=${grupo.join(
+                            ','
+                        )}&include_attributes=all`,
 
-                title:
-                    item.title || '-',
+                        4
+                    );
 
-                thumbnail:
-                    item.thumbnail || '',
 
-                permalink:
-                    item.permalink || '',
+                for (
+                    const resposta
+                    of data ||
+                    []
+                ) {
 
-                sku:
-                    sku,
+                    if (
+                        resposta?.code ===
+                            200 &&
+                        resposta
+                            ?.body
+                            ?.id
+                    ) {
 
-                // NOVO
-                userProductId:
-                    item.user_product_id ||
-                    null,
+                        detalhesPorItem.set(
 
-                inventoryId:
-                    item.inventory_id ||
-                    null,
+                            String(
+                                resposta
+                                    .body
+                                    .id
+                            ),
 
-                listingTypeId:
-                    item.listing_type_id ||
-                    '',
+                            resposta.body
+                        );
+                    }
+                }
 
-                status:
-                    item.status || '',
+            } catch (error) {
 
-                price:
-                    item.price ??
-                    null,
+                console.warn(
+                    '⚠️ Segunda leitura de SKU falhou:',
+                    grupo,
+                    error
+                );
+            }
 
-                // Estoque interno
-                internalWarehouse:
-                    internalWarehouse,
 
-                // Estoque Mercado Livre
-                warehouse:
-                    null,
+            progress(
 
-                full:
-                    null,
+                `Recuperando SKUs faltantes... ` +
 
-                mlTotal:
-                    null,
+                `${Math.min(
+                    i + 20,
+                    itemIds.length
+                )}` +
 
-                unavailable:
-                    null,
+                `/${itemIds.length}`
+            );
 
-                fullTotal:
-                    null,
 
-                stockLocations:
-                    [],
+            await sleep(
+                120
+            );
+        }
 
-                stockError:
-                    null,
 
-                exposureId:
-                    '',
+        // ========================================================
+        // APLICAR SKUS RECUPERADOS
+        // ========================================================
 
-                exposureName:
-                    '',
+        for (
+            const row
+            of semSku
+        ) {
 
-                listingTypeName:
-                    ''
-            });
+            const item =
+                detalhesPorItem.get(
+                    String(
+                        row.itemId
+                    )
+                );
+
+
+            if (!item) {
+
+                continue;
+            }
+
+
+            let sku =
+                '';
+
+
+            if (
+                row.variationId
+            ) {
+
+                const variation =
+                    (
+                        item.variations ||
+                        []
+                    )
+                        .find(
+                            variation =>
+                                String(
+                                    variation.id
+                                ) ===
+                                String(
+                                    row.variationId
+                                )
+                        );
+
+
+                if (variation) {
+
+                    sku =
+                        extractSku(
+                            item,
+                            variation
+                        );
+
+
+                    row.userProductId =
+
+                        variation
+                            .user_product_id ||
+
+                        row.userProductId ||
+
+                        item
+                            .user_product_id ||
+
+                        null;
+
+
+                    row.inventoryId =
+
+                        variation
+                            .inventory_id ||
+
+                        row.inventoryId ||
+
+                        item
+                            .inventory_id ||
+
+                        null;
+                }
+
+            } else {
+
+                sku =
+                    extractSku(
+                        item
+                    );
+
+
+                row.userProductId =
+
+                    item
+                        .user_product_id ||
+
+                    row.userProductId ||
+
+                    null;
+
+
+                row.inventoryId =
+
+                    item
+                        .inventory_id ||
+
+                    row.inventoryId ||
+
+                    null;
+            }
+
+
+            if (!sku) {
+
+                sku =
+                    skuInternoPorMlb(
+                        row.itemId
+                    );
+            }
+
+
+            if (sku) {
+
+                row.sku =
+                    sku;
+
+
+                row.internalWarehouse =
+                    warehouseStock(
+                        sku,
+                        row.itemId
+                    );
+            }
+        }
+
+
+        const aindaSemSku =
+            rows.filter(
+                row =>
+                    !String(
+                        row.sku ||
+                        ''
+                    ).trim()
+            );
+
+
+        console.log(
+
+            `🏷️ SKU: ` +
+
+            `${rows.length - aindaSemSku.length}` +
+
+            `/${rows.length} linhas com SKU.`
+        );
+
+
+        if (
+            aindaSemSku.length
+        ) {
+
+            console.warn(
+
+                `⚠️ ${aindaSemSku.length} linha(s) continuam sem SKU cadastrado/retornado.`,
+
+                aindaSemSku
+                    .slice(
+                        0,
+                        30
+                    )
+                    .map(
+                        row => ({
+
+                            MLB:
+                                row.itemId,
+
+                            variation_id:
+                                row.variationId,
+
+                            user_product_id:
+                                row.userProductId,
+
+                            inventory_id:
+                                row.inventoryId
+                        })
+                    )
+            );
         }
     }
 
-    return rows;
+
+    async function loadExposure(rows) {
+
+    // =========================================================
+    // NÃO VAMOS MAIS TRABALHAR COM "EXPOSIÇÃO"
+    //
+    // Essa função permanece com o mesmo nome para não precisar
+    // alterar as chamadas existentes no loadAll().
+    //
+    // Ela agora resolve somente:
+    //
+    // listing_type_id
+    // listing_type_name
+    //
+    // Exemplo:
+    // gold_pro     -> Premium
+    // gold_special -> Clássico
+    // =========================================================
+
+
+    // =========================================================
+    // TENTAR BUSCAR NOMES OFICIAIS
+    // =========================================================
+
+    try {
+
+        const types =
+            await mlComRetry(
+                `/sites/${GA.site}/listing_types`,
+                3
+            );
+
+
+        for (const type of types || []) {
+
+            if (!type?.id) {
+                continue;
+            }
+
+
+            GA.listingTypeNames.set(
+                type.id,
+                type.name || type.id
+            );
+        }
+
+    } catch (error) {
+
+        console.warn(
+            '⚠️ Não foi possível buscar listing_types:',
+            error
+        );
+    }
+
+
+    // =========================================================
+    // FALLBACKS
+    // =========================================================
+
+    GA.listingTypeNames.set(
+        'gold_pro',
+        'Premium'
+    );
+
+    GA.listingTypeNames.set(
+        'gold_special',
+        'Clássico'
+    );
+
+    GA.listingTypeNames.set(
+        'gold_premium',
+        'Premium'
+    );
+
+    GA.listingTypeNames.set(
+        'gold',
+        'Ouro'
+    );
+
+    GA.listingTypeNames.set(
+        'silver',
+        'Prata'
+    );
+
+    GA.listingTypeNames.set(
+        'free',
+        'Grátis'
+    );
+
+
+    // =========================================================
+    // APLICAR NAS LINHAS
+    // =========================================================
+
+    for (const row of rows) {
+
+        row.listingTypeName =
+            GA.listingTypeNames.get(
+                row.listingTypeId
+            ) ||
+            row.listingTypeId ||
+            '-';
+
+
+        // Não utilizaremos mais exposição
+        row.exposureId =
+            '';
+
+        row.exposureName =
+            '';
+    }
 }
 
-async function buscarEstoqueUserProduct(userProductId) {
+    // ============================================================
+    // BANCO - CONVERSÃO
+    // ============================================================
 
-    if (!userProductId) {
+    function linhaParaRegistroBanco(
+        row
+    ) {
 
         return {
-            success: false,
-            warehouse: null,
-            full: null,
-            total: null,
-            locations: [],
-            error: 'Sem user_product_id'
+
+            chave:
+                String(
+
+                    row.key ||
+
+                    `${row.itemId}:${row.variationId || '0'}`
+                ),
+
+            item_id:
+
+                row.itemId
+                    ? String(
+                        row.itemId
+                    )
+                    : null,
+
+            variation_id:
+
+                row.variationId !==
+                    null &&
+                row.variationId !==
+                    undefined
+
+                    ? String(
+                        row.variationId
+                    )
+
+                    : null,
+
+            seller_id:
+
+                GA.sellerId !==
+                    null &&
+                GA.sellerId !==
+                    undefined
+
+                    ? String(
+                        GA.sellerId
+                    )
+
+                    : null,
+
+            user_product_id:
+
+                row.userProductId
+                    ? String(
+                        row.userProductId
+                    )
+                    : null,
+
+            inventory_id:
+
+                row.inventoryId
+                    ? String(
+                        row.inventoryId
+                    )
+                    : null,
+
+            title:
+                row.title ||
+                null,
+
+            sku:
+                row.sku ||
+                null,
+
+            thumbnail:
+                row.thumbnail ||
+                null,
+
+            permalink:
+                row.permalink ||
+                null,
+
+            listing_type_id:
+                row.listingTypeId ||
+                null,
+
+            listing_type_name:
+                row.listingTypeName ||
+                null,
+
+            exposure_id:
+                row.exposureId ||
+                null,
+
+            exposure_name:
+                row.exposureName ||
+                null,
+
+            status:
+                row.status ||
+                null,
+
+            price:
+                numeroOuNull(
+                    row.price
+                ),
+
+            estoque_ml_fora_full:
+                numeroOuNull(
+                    row.warehouse
+                ),
+
+            estoque_full:
+                numeroOuNull(
+                    row.full
+                ),
+
+            estoque_total_ml:
+                numeroOuNull(
+                    row.mlTotal
+                ),
+
+            estoque_full_indisponivel:
+                numeroOuNull(
+                    row.unavailable
+                ),
+
+            estoque_full_total:
+                numeroOuNull(
+                    row.fullTotal
+                ),
+
+            estoque_interno:
+                numeroOuNull(
+                    row.internalWarehouse
+                ),
+
+            stock_locations:
+
+                Array.isArray(
+                    row.stockLocations
+                )
+
+                    ? row.stockLocations
+
+                    : [],
+
+            stock_error:
+
+                row.stockError ||
+
+                row.fullError ||
+
+                null,
+
+            ultima_sincronizacao:
+                new Date()
+                    .toISOString()
         };
     }
 
 
-    // =========================================================
-    // CRIAR CACHES
-    // =========================================================
-
-    if (!GA.userProductStockCache) {
-
-        GA.userProductStockCache =
-            new Map();
-    }
-
-
-    if (!GA.userProductStockPromises) {
-
-        GA.userProductStockPromises =
-            new Map();
-    }
-
-
-    // =========================================================
-    // CACHE PRONTO
-    // =========================================================
-
-    if (
-        GA.userProductStockCache.has(
-            userProductId
-        )
+    function registroBancoParaLinha(
+        registro
     ) {
 
-        return GA.userProductStockCache.get(
-            userProductId
-        );
+        return {
+
+            key:
+                registro.chave,
+
+            itemId:
+                registro.item_id,
+
+            variationId:
+                registro.variation_id,
+
+            title:
+                registro.title ||
+                '-',
+
+            thumbnail:
+                registro.thumbnail ||
+                '',
+
+            permalink:
+                registro.permalink ||
+                '',
+
+            sku:
+                registro.sku ||
+                '',
+
+            userProductId:
+                registro.user_product_id ||
+                null,
+
+            inventoryId:
+                registro.inventory_id ||
+                null,
+
+            listingTypeId:
+                registro.listing_type_id ||
+                '',
+
+            listingTypeName:
+                registro.listing_type_name ||
+                '',
+
+            exposureId:
+                registro.exposure_id ||
+                '',
+
+            exposureName:
+                registro.exposure_name ||
+                '',
+
+            status:
+                registro.status ||
+                '',
+
+            price:
+                numeroOuNull(
+                    registro.price
+                ),
+
+            warehouse:
+                numeroOuNull(
+                    registro
+                        .estoque_ml_fora_full
+                ),
+
+            full:
+                numeroOuNull(
+                    registro
+                        .estoque_full
+                ),
+
+            mlTotal:
+                numeroOuNull(
+                    registro
+                        .estoque_total_ml
+                ),
+
+            unavailable:
+                numeroOuNull(
+                    registro
+                        .estoque_full_indisponivel
+                ),
+
+            fullTotal:
+                numeroOuNull(
+                    registro
+                        .estoque_full_total
+                ),
+
+            stockLocations:
+
+                Array.isArray(
+                    registro
+                        .stock_locations
+                )
+
+                    ? registro
+                        .stock_locations
+
+                    : [],
+
+            stockError:
+                registro.stock_error ||
+                null,
+
+            fullError:
+                null,
+
+            ultimaSincronizacao:
+                registro
+                    .ultima_sincronizacao ||
+                null
+        };
     }
 
 
-    // =========================================================
-    // EVITAR DUAS REQUISIÇÕES SIMULTÂNEAS DO MESMO UP
-    // =========================================================
-
-    if (
-        GA.userProductStockPromises.has(
-            userProductId
-        )
+    function mesclarLinhasComDadosSalvos(
+        novasLinhas,
+        linhasAntigas
     ) {
 
-        return await GA.userProductStockPromises.get(
-            userProductId
-        );
-    }
+        const antigasPorChave =
+            new Map();
 
 
-    // =========================================================
-    // CRIAR PROMISE DA CONSULTA
-    // =========================================================
+        for (
+            const antiga
+            of linhasAntigas ||
+            []
+        ) {
 
-    const promise =
-        (async () => {
-
-            let ultimoErro =
-                null;
-
-
-            for (
-                let tentativa = 1;
-                tentativa <= 6;
-                tentativa++
+            if (
+                antiga?.key
             ) {
 
-                try {
+                antigasPorChave.set(
 
-                    const data =
-                        await ml(
-                            `/user-products/${encodeURIComponent(userProductId)}/stock`
+                    String(
+                        antiga.key
+                    ),
+
+                    antiga
+                );
+            }
+        }
+
+
+        return (
+            novasLinhas ||
+            []
+        )
+            .map(
+                nova => {
+
+                    const antiga =
+                        antigasPorChave.get(
+                            String(
+                                nova.key
+                            )
                         );
 
 
-                    const locations =
-                        Array.isArray(
-                            data?.locations
-                        )
-                            ? data.locations
-                            : [];
+                    if (!antiga) {
 
-
-                    let estoqueFull =
-                        0;
-
-                    let estoqueDepositoML =
-                        0;
-
-                    let estoqueTotal =
-                        0;
-
-                    let encontrouFull =
-                        false;
-
-                    let encontrouDeposito =
-                        false;
-
-
-                    // =========================================
-                    // SOMAR LOCALIZAÇÕES
-                    // =========================================
-
-                    for (const location of locations) {
-
-                        const type =
-                            String(
-                                location?.type ||
-                                ''
-                            ).toLowerCase();
-
-
-                        const quantidade =
-                            Number(
-                                location?.quantity
-                            ) || 0;
-
-
-                        estoqueTotal +=
-                            quantidade;
-
-
-                        // =====================================
-                        // FULL
-                        // =====================================
-
-                        if (
-                            type ===
-                                'meli_facility' ||
-                            type ===
-                                'fulfillment'
-                        ) {
-
-                            estoqueFull +=
-                                quantidade;
-
-                            encontrouFull =
-                                true;
-                        }
-
-
-                        // =====================================
-                        // DEPÓSITO DO VENDEDOR
-                        // =====================================
-
-                        else if (
-                            type ===
-                                'selling_address' ||
-                            type ===
-                                'seller_warehouse'
-                        ) {
-
-                            estoqueDepositoML +=
-                                quantidade;
-
-                            encontrouDeposito =
-                                true;
-                        }
+                        return nova;
                     }
 
 
-                    const result = {
+                    return {
 
-                        success:
-                            true,
+                        ...antiga,
+
+                        ...nova,
 
                         warehouse:
-                            encontrouDeposito
-                                ? estoqueDepositoML
-                                : 0,
+
+                            antiga.warehouse !==
+                                undefined
+
+                                ? antiga.warehouse
+
+                                : nova.warehouse,
 
                         full:
-                            encontrouFull
-                                ? estoqueFull
-                                : 0,
 
-                        total:
-                            estoqueTotal,
+                            antiga.full !==
+                                undefined
 
-                        locations:
-                            locations,
+                                ? antiga.full
 
-                        error:
-                            null
+                                : nova.full,
+
+                        mlTotal:
+
+                            antiga.mlTotal !==
+                                undefined
+
+                                ? antiga.mlTotal
+
+                                : nova.mlTotal,
+
+                        unavailable:
+
+                            antiga.unavailable !==
+                                undefined
+
+                                ? antiga.unavailable
+
+                                : nova.unavailable,
+
+                        fullTotal:
+
+                            antiga.fullTotal !==
+                                undefined
+
+                                ? antiga.fullTotal
+
+                                : nova.fullTotal,
+
+                        stockLocations:
+
+                            Array.isArray(
+                                antiga.stockLocations
+                            )
+
+                                ? antiga.stockLocations
+
+                                : [],
+
+                        stockError:
+                            antiga.stockError ||
+                            null,
+
+                        internalWarehouse:
+                            nova.internalWarehouse
                     };
-
-
-                    // =========================================
-                    // SALVAR SOMENTE RESULTADO VÁLIDO
-                    // =========================================
-
-                    GA.userProductStockCache.set(
-                        userProductId,
-                        result
-                    );
-
-
-                    return result;
-
-                } catch (error) {
-
-                    ultimoErro =
-                        error;
-
-
-                    const mensagem =
-                        String(
-                            error?.message ||
-                            error ||
-                            ''
-                        ).toLowerCase();
-
-
-                    const rateLimit =
-                        mensagem.includes(
-                            'rate limit'
-                        ) ||
-                        mensagem.includes(
-                            'too many requests'
-                        ) ||
-                        mensagem.includes(
-                            '429'
-                        ) ||
-                        mensagem.includes(
-                            'over quota'
-                        );
-
-
-                    // =========================================
-                    // ERRO QUE NÃO É RATE LIMIT
-                    // =========================================
-
-                    if (!rateLimit) {
-
-                        console.warn(
-                            `⚠️ Erro estoque UP ${userProductId}:`,
-                            error
-                        );
-
-                        break;
-                    }
-
-
-                    // =========================================
-                    // RATE LIMIT
-                    // =========================================
-
-                    console.warn(
-                        `⏳ Rate limit em ${userProductId}. Tentativa ${tentativa}/6`
-                    );
-
-
-                    // Backoff progressivo
-                    const espera =
-                        Math.min(
-                            15000,
-                            1500 *
-                            Math.pow(
-                                2,
-                                tentativa - 1
-                            )
-                        );
-
-
-                    await new Promise(
-                        resolve =>
-                            setTimeout(
-                                resolve,
-                                espera
-                            )
-                    );
                 }
+            );
+    }
+
+
+    // ============================================================
+    // CARREGAR BANCO
+    // ============================================================
+
+    async function carregarAnunciosBanco() {
+
+        if (
+            !window.supabaseClient
+        ) {
+
+            throw new Error(
+                'Supabase não inicializado.'
+            );
+        }
+
+
+        console.log(
+            '💾 Carregando anúncios salvos no banco...'
+        );
+
+
+        const todos =
+            [];
+
+
+        const TAMANHO =
+            1000;
+
+
+        let inicio =
+            0;
+
+
+        while (true) {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        GA.databaseTable
+                    )
+                    .select(
+                        '*'
+                    )
+                    .order(
+                        'title',
+                        {
+                            ascending:
+                                true
+                        }
+                    )
+                    .range(
+
+                        inicio,
+
+                        inicio +
+                        TAMANHO -
+                        1
+                    );
+
+
+            if (error) {
+
+                console.error(
+                    '❌ Erro carregando anúncios salvos:',
+                    error
+                );
+
+
+                throw error;
             }
 
 
-            // =================================================
-            // NÃO SALVAR ERRO DE RATE LIMIT NO CACHE
-            // =================================================
+            const pagina =
+                data ||
+                [];
+
+
+            todos.push(
+                ...pagina
+            );
+
+
+            if (
+                pagina.length <
+                TAMANHO
+            ) {
+
+                break;
+            }
+
+
+            inicio +=
+                TAMANHO;
+        }
+
+
+        GA.rows =
+            todos.map(
+                registroBancoParaLinha
+            );
+
+
+        GA.page =
+            1;
+
+
+        updateSummary();
+
+        updateExposureFilter();
+
+        applyFilters(
+            false
+        );
+
+
+        console.log(
+            `✅ ${GA.rows.length} linha(s) carregadas do banco.`
+        );
+
+
+        return GA.rows;
+    }
+
+
+    // ============================================================
+    // SALVAR BANCO
+    // ============================================================
+
+    async function salvarAnunciosBanco(
+        rows,
+        mostrarLog = true
+    ) {
+
+        if (
+            !Array.isArray(
+                rows
+            ) ||
+            !rows.length
+        ) {
+
+            return;
+        }
+
+
+        if (
+            !window.supabaseClient
+        ) {
+
+            console.warn(
+                '⚠️ Supabase não disponível para salvar anúncios.'
+            );
+
+
+            return;
+        }
+
+
+        const mapa =
+            new Map();
+
+
+        for (
+            const row
+            of rows
+        ) {
+
+            if (!row) {
+
+                continue;
+            }
+
+
+            const registro =
+                linhaParaRegistroBanco(
+                    row
+                );
+
+
+            if (
+                !registro.chave
+            ) {
+
+                continue;
+            }
+
+
+            mapa.set(
+                registro.chave,
+                registro
+            );
+        }
+
+
+        const registros =
+            [
+                ...mapa.values()
+            ];
+
+
+        const TAMANHO =
+            200;
+
+
+        let salvos =
+            0;
+
+
+        for (
+            let i = 0;
+            i < registros.length;
+            i += TAMANHO
+        ) {
+
+            const lote =
+                registros.slice(
+                    i,
+                    i + TAMANHO
+                );
+
+
+            const {
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        GA.databaseTable
+                    )
+                    .upsert(
+                        lote,
+                        {
+                            onConflict:
+                                'chave'
+                        }
+                    );
+
+
+            if (error) {
+
+                console.error(
+                    '❌ Erro salvando anúncios no Supabase:',
+                    error
+                );
+
+
+                throw error;
+            }
+
+
+            salvos +=
+                lote.length;
+        }
+
+
+        if (
+            mostrarLog
+        ) {
+
+            console.log(
+                `💾 ${salvos} linha(s) salvas/atualizadas no banco.`
+            );
+        }
+    }
+
+
+    // ============================================================
+    // REMOVER ANÚNCIOS QUE NÃO SÃO MAIS FULL
+    // ============================================================
+
+    async function removerAnunciosObsoletos(
+        rowsAtuais
+    ) {
+
+        if (
+            !window.supabaseClient
+        ) {
+
+            return;
+        }
+
+
+        const chavesAtuais =
+            new Set(
+
+                (
+                    rowsAtuais ||
+                    []
+                )
+                    .map(
+                        row =>
+                            String(
+                                row.key ||
+                                ''
+                            )
+                    )
+                    .filter(
+                        Boolean
+                    )
+            );
+
+
+        const registrosBanco =
+            [];
+
+
+        const TAMANHO =
+            1000;
+
+
+        let inicio =
+            0;
+
+
+        while (true) {
+
+            let query =
+                window
+                    .supabaseClient
+                    .from(
+                        GA.databaseTable
+                    )
+                    .select(
+                        'chave,seller_id'
+                    );
+
+
+            if (
+                GA.sellerId
+            ) {
+
+                query =
+                    query.eq(
+                        'seller_id',
+                        String(
+                            GA.sellerId
+                        )
+                    );
+            }
+
+
+            query =
+                query.range(
+
+                    inicio,
+
+                    inicio +
+                    TAMANHO -
+                    1
+                );
+
+
+            const {
+                data,
+                error
+            } =
+                await query;
+
+
+            if (error) {
+
+                console.warn(
+                    '⚠️ Não foi possível verificar registros obsoletos:',
+                    error
+                );
+
+
+                return;
+            }
+
+
+            const pagina =
+                data ||
+                [];
+
+
+            registrosBanco.push(
+                ...pagina
+            );
+
+
+            if (
+                pagina.length <
+                TAMANHO
+            ) {
+
+                break;
+            }
+
+
+            inicio +=
+                TAMANHO;
+        }
+
+
+        const obsoletos =
+            registrosBanco
+                .map(
+                    registro =>
+                        String(
+                            registro.chave ||
+                            ''
+                        )
+                )
+                .filter(
+                    chave =>
+                        chave &&
+                        !chavesAtuais.has(
+                            chave
+                        )
+                );
+
+
+        if (
+            !obsoletos.length
+        ) {
+
+            return;
+        }
+
+
+        console.log(
+            `🧹 Removendo ${obsoletos.length} registro(s) que não são mais FULL.`
+        );
+
+
+        for (
+            let i = 0;
+            i < obsoletos.length;
+            i += 100
+        ) {
+
+            const lote =
+                obsoletos.slice(
+                    i,
+                    i + 100
+                );
+
+
+            const {
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        GA.databaseTable
+                    )
+                    .delete()
+                    .in(
+                        'chave',
+                        lote
+                    );
+
+
+            if (error) {
+
+                console.warn(
+                    '⚠️ Erro removendo registros obsoletos:',
+                    error
+                );
+
+
+                return;
+            }
+        }
+    }
+
+
+    // ============================================================
+    // CONTROLE DE RATE LIMIT DE ESTOQUE
+    // ============================================================
+
+    async function aguardarSlotEstoque() {
+
+        const agora =
+            Date.now();
+
+
+        const inicio =
+            Math.max(
+
+                agora,
+
+                Number(
+                    GA.stockNextRequestAt
+                ) ||
+                0
+            );
+
+
+        GA.stockNextRequestAt =
+
+            inicio +
+
+            GA.stockRequestIntervalMs;
+
+
+        const espera =
+            inicio -
+            agora;
+
+
+        if (
+            espera >
+            0
+        ) {
+
+            await sleep(
+                espera
+            );
+        }
+    }
+
+
+    function aplicarCooldownEstoque(
+        ms
+    ) {
+
+        GA.stockNextRequestAt =
+            Math.max(
+
+                Number(
+                    GA.stockNextRequestAt
+                ) ||
+                0,
+
+                Date.now() +
+                ms
+            );
+    }
+
+
+    // ============================================================
+    // ESTOQUE USER PRODUCT
+    // ============================================================
+
+    async function buscarEstoqueUserProduct(
+        userProductId
+    ) {
+
+        if (
+            !userProductId
+        ) {
 
             return {
 
@@ -1464,754 +3260,2330 @@ async function buscarEstoqueUserProduct(userProductId) {
                     [],
 
                 error:
-                    ultimoErro?.message ||
-                    'Erro ao consultar estoque'
+                    'Sem user_product_id'
             };
-        })();
+        }
 
 
-    GA.userProductStockPromises.set(
-        userProductId,
-        promise
-    );
+        if (
+            GA.userProductStockCache.has(
+                userProductId
+            )
+        ) {
+
+            return GA.userProductStockCache.get(
+                userProductId
+            );
+        }
 
 
-    try {
+        if (
+            GA.userProductStockPromises.has(
+                userProductId
+            )
+        ) {
 
-        return await promise;
+            return await GA.userProductStockPromises.get(
+                userProductId
+            );
+        }
 
-    } finally {
 
-        GA.userProductStockPromises.delete(
-            userProductId
+        const promise =
+            (
+                async () => {
+
+                    let ultimoErro =
+                        null;
+
+
+                    for (
+                        let tentativa = 1;
+                        tentativa <= 4;
+                        tentativa++
+                    ) {
+
+                        try {
+
+                            await aguardarSlotEstoque();
+
+
+                            const data =
+                                await ml(
+
+                                    `/user-products/${encodeURIComponent(
+                                        userProductId
+                                    )}/stock`
+                                );
+
+
+                            const locations =
+                                Array.isArray(
+                                    data?.locations
+                                )
+
+                                    ? data.locations
+
+                                    : [];
+
+
+                            let estoqueFull =
+                                0;
+
+
+                            let estoqueDepositoML =
+                                0;
+
+
+                            let estoqueTotal =
+                                0;
+
+
+                            let encontrouFull =
+                                false;
+
+
+                            let encontrouDeposito =
+                                false;
+
+
+                            for (
+                                const location
+                                of locations
+                            ) {
+
+                                const type =
+                                    String(
+                                        location?.type ||
+                                        ''
+                                    )
+                                        .toLowerCase();
+
+
+                                const quantidade =
+                                    Number(
+                                        location?.quantity
+                                    ) ||
+                                    0;
+
+
+                                estoqueTotal +=
+                                    quantidade;
+
+
+                                // FULL
+                                if (
+                                    type ===
+                                        'meli_facility' ||
+                                    type ===
+                                        'fulfillment'
+                                ) {
+
+                                    estoqueFull +=
+                                        quantidade;
+
+
+                                    encontrouFull =
+                                        true;
+                                }
+
+                                // ESTOQUE FORA DO FULL
+                                else if (
+                                    type ===
+                                        'selling_address' ||
+                                    type ===
+                                        'seller_warehouse'
+                                ) {
+
+                                    estoqueDepositoML +=
+                                        quantidade;
+
+
+                                    encontrouDeposito =
+                                        true;
+                                }
+                            }
+
+
+                            const result = {
+
+                                success:
+                                    true,
+
+                                warehouse:
+
+                                    encontrouDeposito
+
+                                        ? estoqueDepositoML
+
+                                        : 0,
+
+                                full:
+
+                                    encontrouFull
+
+                                        ? estoqueFull
+
+                                        : 0,
+
+                                total:
+                                    estoqueTotal,
+
+                                locations:
+                                    locations,
+
+                                error:
+                                    null
+                            };
+
+
+                            GA.userProductStockCache.set(
+                                userProductId,
+                                result
+                            );
+
+
+                            return result;
+
+                        } catch (error) {
+
+                            ultimoErro =
+                                error;
+
+
+                            if (
+                                !isRateLimit(
+                                    error
+                                )
+                            ) {
+
+                                console.warn(
+                                    `⚠️ Erro estoque UP ${userProductId}:`,
+                                    error
+                                );
+
+
+                                break;
+                            }
+
+
+                            const cooldown =
+                                Math.min(
+
+                                    60000,
+
+                                    15000 *
+                                    tentativa
+                                );
+
+
+                            aplicarCooldownEstoque(
+                                cooldown
+                            );
+
+
+                            console.warn(
+
+                                `⏳ Rate limit em ${userProductId}. ` +
+
+                                `Pausa global de ${Math.round(
+                                    cooldown /
+                                    1000
+                                )}s. ` +
+
+                                `Tentativa ${tentativa}/4.`
+                            );
+                        }
+                    }
+
+
+                    return {
+
+                        success:
+                            false,
+
+                        warehouse:
+                            null,
+
+                        full:
+                            null,
+
+                        total:
+                            null,
+
+                        locations:
+                            [],
+
+                        error:
+
+                            ultimoErro
+                                ?.message ||
+
+                            'Erro ao consultar estoque do User Product.'
+                    };
+                }
+            )();
+
+
+        GA.userProductStockPromises.set(
+            userProductId,
+            promise
         );
-    }
-}
 
-async function buscarDetalhesEstoqueFull(inventoryId) {
 
-    if (!inventoryId) {
+        try {
 
-        return {
-            success: false,
-            available: null,
-            unavailable: null,
-            total: null,
-            details: [],
-            error: 'Sem inventory_id'
-        };
+            return await promise;
+
+        } finally {
+
+            GA.userProductStockPromises.delete(
+                userProductId
+            );
+        }
     }
 
-    if (!GA.fullDetailCache) {
-        GA.fullDetailCache = new Map();
-    }
 
-    if (
-        GA.fullDetailCache.has(
-            inventoryId
-        )
+    // ============================================================
+    // FALLBACK INVENTORY
+    // ============================================================
+
+    async function buscarEstoqueInventory(
+        inventoryId
     ) {
 
-        return GA.fullDetailCache.get(
-            inventoryId
-        );
-    }
+        if (
+            !inventoryId
+        ) {
 
-    try {
+            return {
 
-        const data =
-            await ml(
-                `/inventories/${encodeURIComponent(inventoryId)}/stock/fulfillment`
+                success:
+                    false,
+
+                full:
+                    null,
+
+                unavailable:
+                    null,
+
+                total:
+                    null,
+
+                error:
+                    'Sem inventory_id'
+            };
+        }
+
+
+        if (
+            GA.inventoryStockCache.has(
+                inventoryId
+            )
+        ) {
+
+            return GA.inventoryStockCache.get(
+                inventoryId
+            );
+        }
+
+
+        try {
+
+            await aguardarSlotEstoque();
+
+
+            const data =
+                await ml(
+
+                    `/inventories/${encodeURIComponent(
+                        inventoryId
+                    )}/stock/fulfillment`
+                );
+
+
+            const result = {
+
+                success:
+                    true,
+
+                full:
+                    numeroOuNull(
+                        data
+                            ?.available_quantity
+                    ),
+
+                unavailable:
+                    numeroOuNull(
+                        data
+                            ?.not_available_quantity
+                    ),
+
+                total:
+                    numeroOuNull(
+                        data?.total
+                    ),
+
+                error:
+                    null
+            };
+
+
+            GA.inventoryStockCache.set(
+                inventoryId,
+                result
             );
 
-        console.log(
-            `🏭 Estoque FULL ${inventoryId}:`,
-            data
-        );
 
-        const result = {
-
-            success: true,
-
-            available:
-                Number.isFinite(
-                    Number(
-                        data?.available_quantity
-                    )
-                )
-                    ? Number(
-                        data.available_quantity
-                    )
-                    : null,
-
-            unavailable:
-                Number.isFinite(
-                    Number(
-                        data?.not_available_quantity
-                    )
-                )
-                    ? Number(
-                        data.not_available_quantity
-                    )
-                    : null,
-
-            total:
-                Number.isFinite(
-                    Number(
-                        data?.total
-                    )
-                )
-                    ? Number(
-                        data.total
-                    )
-                    : null,
-
-            details:
-                Array.isArray(
-                    data?.not_available_detail
-                )
-                    ? data.not_available_detail
-                    : [],
-
-            error:
-                null
-        };
-
-        GA.fullDetailCache.set(
-            inventoryId,
-            result
-        );
-
-        return result;
-
-    } catch (error) {
-
-        console.warn(
-            `⚠️ Erro estoque FULL ${inventoryId}:`,
-            error
-        );
-
-        const result = {
-
-            success: false,
-
-            available:
-                null,
-
-            unavailable:
-                null,
-
-            total:
-                null,
-
-            details:
-                [],
-
-            error:
-                error.message
-        };
-
-        GA.fullDetailCache.set(
-            inventoryId,
-            result
-        );
-
-        return result;
-    }
-}
-
-    // ============================================================
-    // EXPOSIÇÃO
-    // ============================================================
-
-    async function loadExposure(rows) {
-        try {
-            const types = await ml(`/sites/${GA.site}/listing_types`);
-            for (const type of types || []) {
-                GA.listingTypeNames.set(type.id, type.name || type.id);
-            }
-        } catch (error) {
-            console.warn('⚠️ Erro ao buscar listing_types:', error);
-        }
-
-        GA.listingTypeNames.set('gold_pro', 'Premium');
-        GA.listingTypeNames.set('gold_special', 'Clássico');
-        GA.listingTypeNames.set('gold_premium', 'Premium');
-        GA.listingTypeNames.set('gold', 'Ouro');
-        GA.listingTypeNames.set('silver', 'Prata');
-        GA.listingTypeNames.set('free', 'Grátis');
-
-        try {
-            const exposures = await ml(`/sites/${GA.site}/listing_exposures`);
-            for (const exposure of exposures || []) {
-                GA.exposureNames.set(exposure.id, exposure.name || exposure.id);
-            }
-        } catch (error) {
-            console.warn('⚠️ Endpoint listing_exposures não disponível:', error);
-        }
-
-        const uniqueTypes = [...new Set(rows.map(row => row.listingTypeId).filter(Boolean))];
-        for (const typeId of uniqueTypes) {
-            try {
-                const details = await ml(`/sites/${GA.site}/listing_types/${encodeURIComponent(typeId)}`);
-                const exposure = details?.configuration?.listing_exposure || 
-                                 details?.configuration?.listing_exposure_id || '';
-                GA.exposureByListingType.set(typeId, exposure);
-            } catch (error) {
-                console.warn(`⚠️ Não foi possível consultar exposição de ${typeId}:`, error);
-                GA.exposureByListingType.set(typeId, '');
-            }
-        }
-
-        const exposureFallback = {
-            gold_pro: 'Alta',
-            gold_premium: 'Alta',
-            gold_special: 'Alta',
-            gold: 'Alta',
-            silver: 'Média',
-            free: 'Baixa'
-        };
-
-        for (const row of rows) {
-            row.listingTypeName = GA.listingTypeNames.get(row.listingTypeId) || row.listingTypeId || '-';
-            row.exposureId = GA.exposureByListingType.get(row.listingTypeId) || '';
-            row.exposureName = GA.exposureNames.get(row.exposureId) || 
-                               row.exposureId || 
-                               exposureFallback[row.listingTypeId] || '-';
-        }
-    }
-
-    // ============================================================
-    // ESTOQUE FULL
-    // ============================================================
-
-    async function fullStock(inventoryId) {
-        if (!inventoryId) {
-            return { full: null, unavailable: null, total: null, error: 'Sem inventory_id' };
-        }
-        if (GA.fullCache.has(inventoryId)) {
-            return GA.fullCache.get(inventoryId);
-        }
-
-        try {
-            const data = await ml(`/inventories/${encodeURIComponent(inventoryId)}/stock/fulfillment`);
-            const result = {
-                full: Number.isFinite(Number(data?.available_quantity)) ? Number(data.available_quantity) : null,
-                unavailable: Number.isFinite(Number(data?.not_available_quantity)) ? Number(data.not_available_quantity) : null,
-                total: Number.isFinite(Number(data?.total)) ? Number(data.total) : null,
-                error: null
-            };
-            GA.fullCache.set(inventoryId, result);
             return result;
-        } catch (error) {
-            console.warn(`⚠️ fulfillment stock falhou para ${inventoryId}:`, error.message);
-        }
 
-        try {
-            const data = await ml(`/inventories/${encodeURIComponent(inventoryId)}/stock`);
-            const available = data?.total?.available_quantity ?? data?.available_quantity ?? null;
-            let unavailable = data?.total?.not_available_quantity ?? data?.not_available_quantity ?? null;
-            let total = data?.total?.quantity ?? data?.total_quantity ?? null;
-            if (typeof data?.total === 'number') total = data.total;
+        } catch (error) {
+
+            if (
+                isRateLimit(
+                    error
+                )
+            ) {
+
+                aplicarCooldownEstoque(
+                    15000
+                );
+            }
+
 
             const result = {
-                full: Number.isFinite(Number(available)) ? Number(available) : null,
-                unavailable: Number.isFinite(Number(unavailable)) ? Number(unavailable) : null,
-                total: Number.isFinite(Number(total)) ? Number(total) : null,
-                error: null
+
+                success:
+                    false,
+
+                full:
+                    null,
+
+                unavailable:
+                    null,
+
+                total:
+                    null,
+
+                error:
+                    error.message
             };
-            GA.fullCache.set(inventoryId, result);
-            return result;
-        } catch (error) {
-            const result = { full: null, unavailable: null, total: null, error: error.message };
-            GA.fullCache.set(inventoryId, result);
+
+
+            if (
+                !isRateLimit(
+                    error
+                )
+            ) {
+
+                GA.inventoryStockCache.set(
+                    inventoryId,
+                    result
+                );
+            }
+
+
             return result;
         }
     }
 
-    function progress(texto = '') {
 
-    const box =
-        document.getElementById(
-            'gaProgress'
-        );
+    // ============================================================
+    // CARREGAR ESTOQUE ML
+    // ============================================================
 
-    if (!box) {
-        return;
-    }
-
-    // Se recebeu texto, mostrar
-    if (
-        texto &&
-        String(texto).trim() !== ''
+    async function loadFullStocks(
+        rows
     ) {
 
-        box.style.display =
-            'block';
+        if (
+            !Array.isArray(
+                rows
+            ) ||
+            !rows.length
+        ) {
 
-        box.innerHTML = `
-            <i class="fas fa-spinner fa-spin"></i>
-            ${typeof esc === 'function'
-                ? esc(texto)
-                : String(texto)}
+            return;
+        }
+
+
+        const rowsPorUserProduct =
+            new Map();
+
+
+        const semUserProduct =
+            [];
+
+
+        // ========================================================
+        // AGRUPAR POR USER PRODUCT
+        // ========================================================
+
+        for (
+            const row
+            of rows
+        ) {
+
+            if (
+                row.userProductId
+            ) {
+
+                if (
+                    !rowsPorUserProduct.has(
+                        row.userProductId
+                    )
+                ) {
+
+                    rowsPorUserProduct.set(
+                        row.userProductId,
+                        []
+                    );
+                }
+
+
+                rowsPorUserProduct
+                    .get(
+                        row.userProductId
+                    )
+                    .push(
+                        row
+                    );
+
+            } else {
+
+                semUserProduct.push(
+                    row
+                );
+            }
+        }
+
+
+        const userProducts =
+            [
+                ...rowsPorUserProduct.keys()
+            ];
+
+
+        console.log(
+
+            `📦 ${userProducts.length} User Products únicos ` +
+
+            `para ${rows.length} linha(s).`
+        );
+
+
+        console.log(
+
+            `♻️ ${
+
+                rows.length -
+
+                userProducts.length -
+
+                semUserProduct.length
+
+            } consulta(s) duplicada(s) eliminada(s).`
+        );
+
+
+        let proximoIndice =
+            0;
+
+
+        let concluidos =
+            0;
+
+
+        let sucessos =
+            0;
+
+
+        let erros =
+            0;
+
+
+        let pendentesSalvar =
+            [];
+
+
+        let salvandoPendentes =
+            false;
+
+
+        // ========================================================
+        // SALVAR LOTES PROGRESSIVOS
+        // ========================================================
+
+        async function salvarPendentes(
+            force = false
+        ) {
+
+            if (
+                salvandoPendentes
+            ) {
+
+                return;
+            }
+
+
+            if (
+                !force &&
+                pendentesSalvar.length <
+                    100
+            ) {
+
+                return;
+            }
+
+
+            if (
+                !pendentesSalvar.length
+            ) {
+
+                return;
+            }
+
+
+            salvandoPendentes =
+                true;
+
+
+            try {
+
+                const lote =
+                    pendentesSalvar.splice(
+
+                        0,
+
+                        force
+
+                            ? pendentesSalvar.length
+
+                            : 200
+                    );
+
+
+                await salvarAnunciosBanco(
+                    lote,
+                    false
+                );
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ Falha ao salvar lote parcial:',
+                    error
+                );
+
+            } finally {
+
+                salvandoPendentes =
+                    false;
+            }
+        }
+
+
+        // ========================================================
+        // WORKER
+        // ========================================================
+
+        async function workerUserProduct() {
+
+            while (true) {
+
+                const index =
+                    proximoIndice++;
+
+
+                if (
+                    index >=
+                    userProducts.length
+                ) {
+
+                    return;
+                }
+
+
+                const userProductId =
+                    userProducts[
+                        index
+                    ];
+
+
+                const linhasDoUP =
+                    rowsPorUserProduct.get(
+                        userProductId
+                    ) ||
+                    [];
+
+
+                try {
+
+                    const estoque =
+                        await buscarEstoqueUserProduct(
+                            userProductId
+                        );
+
+
+                    if (
+                        estoque
+                            ?.success
+                    ) {
+
+                        sucessos++;
+
+
+                        for (
+                            const row
+                            of linhasDoUP
+                        ) {
+
+                            row.warehouse =
+                                estoque.warehouse;
+
+
+                            row.full =
+                                estoque.full;
+
+
+                            row.mlTotal =
+                                estoque.total;
+
+
+                            row.stockLocations =
+                                estoque.locations ||
+                                [];
+
+
+                            row.stockError =
+                                null;
+
+
+                            row.ultimaSincronizacao =
+                                new Date()
+                                    .toISOString();
+
+
+                            pendentesSalvar.push(
+                                row
+                            );
+                        }
+
+                    } else {
+
+                        erros++;
+
+
+                        // IMPORTANTE:
+                        // Não apagar estoque antigo.
+                        for (
+                            const row
+                            of linhasDoUP
+                        ) {
+
+                            row.stockError =
+
+                                estoque
+                                    ?.error ||
+
+                                'Erro ao consultar estoque.';
+                        }
+                    }
+
+                } catch (error) {
+
+                    erros++;
+
+
+                    for (
+                        const row
+                        of linhasDoUP
+                    ) {
+
+                        row.stockError =
+
+                            error
+                                ?.message ||
+
+                            'Erro ao consultar estoque.';
+                    }
+                }
+
+
+                concluidos++;
+
+
+                progress(
+
+                    `Atualizando estoque ML... ` +
+
+                    `${concluidos}` +
+
+                    `/` +
+
+                    `${userProducts.length}`
+                );
+
+
+                // Atualizar a tabela periodicamente
+                if (
+                    concluidos %
+                    10 ===
+                    0
+                ) {
+
+                    updateSummary();
+
+                    applyFilters(
+                        false
+                    );
+                }
+
+
+                await salvarPendentes(
+                    false
+                );
+            }
+        }
+
+
+        // ========================================================
+        // 3 WORKERS COM LIMITADOR GLOBAL
+        // ========================================================
+
+        const workers =
+            Math.min(
+
+                3,
+
+                Math.max(
+                    1,
+                    userProducts.length
+                )
+            );
+
+
+        await Promise.all(
+
+            Array.from(
+                {
+                    length:
+                        workers
+                },
+
+                () =>
+                    workerUserProduct()
+            )
+        );
+
+
+        await salvarPendentes(
+            true
+        );
+
+
+        // ========================================================
+        // FALLBACK PARA ANÚNCIOS SEM USER PRODUCT
+        // ========================================================
+
+        const porInventory =
+            new Map();
+
+
+        for (
+            const row
+            of semUserProduct
+        ) {
+
+            if (
+                !row.inventoryId
+            ) {
+
+                row.stockError =
+                    'Sem user_product_id e sem inventory_id';
+
+
+                continue;
+            }
+
+
+            if (
+                !porInventory.has(
+                    row.inventoryId
+                )
+            ) {
+
+                porInventory.set(
+                    row.inventoryId,
+                    []
+                );
+            }
+
+
+            porInventory
+                .get(
+                    row.inventoryId
+                )
+                .push(
+                    row
+                );
+        }
+
+
+        const inventories =
+            [
+                ...porInventory.keys()
+            ];
+
+
+        if (
+            inventories.length
+        ) {
+
+            console.log(
+
+                `📦 ${inventories.length} inventory_id(s) ` +
+
+                `serão usados como fallback.`
+            );
+        }
+
+
+        for (
+            let i = 0;
+            i < inventories.length;
+            i++
+        ) {
+
+            const inventoryId =
+                inventories[i];
+
+
+            const linhas =
+                porInventory.get(
+                    inventoryId
+                ) ||
+                [];
+
+
+            const estoque =
+                await buscarEstoqueInventory(
+                    inventoryId
+                );
+
+
+            if (
+                estoque
+                    ?.success
+            ) {
+
+                for (
+                    const row
+                    of linhas
+                ) {
+
+                    row.full =
+                        estoque.full;
+
+
+                    row.mlTotal =
+                        estoque.full;
+
+
+                    row.unavailable =
+                        estoque.unavailable;
+
+
+                    row.fullTotal =
+                        estoque.total;
+
+
+                    row.stockError =
+                        null;
+
+
+                    row.ultimaSincronizacao =
+                        new Date()
+                            .toISOString();
+                }
+
+
+                try {
+
+                    await salvarAnunciosBanco(
+                        linhas,
+                        false
+                    );
+
+                } catch (error) {
+
+                    console.warn(
+                        '⚠️ Não foi possível salvar fallback inventory:',
+                        error
+                    );
+                }
+
+            } else {
+
+                for (
+                    const row
+                    of linhas
+                ) {
+
+                    row.stockError =
+
+                        estoque?.error ||
+
+                        'Erro no inventory';
+                }
+            }
+
+
+            progress(
+
+                `Atualizando estoque antigo... ` +
+
+                `${i + 1}` +
+
+                `/` +
+
+                `${inventories.length}`
+            );
+        }
+
+
+        updateSummary();
+
+        applyFilters(
+            false
+        );
+
+
+        console.log(
+            '✅ Consulta de estoque finalizada.',
+            {
+
+                userProducts:
+                    userProducts.length,
+
+                sucessos:
+                    sucessos,
+
+                erros:
+                    erros,
+
+                fallbackInventory:
+                    inventories.length,
+
+                linhas:
+                    rows.length
+            }
+        );
+    }
+
+
+    // ============================================================
+    // CRIAR INTERFACE
+    // ============================================================
+
+    function ensureUI() {
+
+        if (
+            document.getElementById(
+                'gerenciamentoAnunciosScreen'
+            )
+        ) {
+
+            return;
+        }
+
+
+        // ========================================================
+        // CSS
+        // ========================================================
+
+        const style =
+            document.createElement(
+                'style'
+            );
+
+
+        style.id =
+            'gerenciamentoAnunciosStyle';
+
+
+        style.textContent = `
+
+            #gerenciamentoAnunciosScreen {
+                position: fixed;
+                inset: 0;
+                z-index: 99990;
+                background: #f5f6f8;
+                overflow: auto;
+                font-family: Arial, sans-serif;
+            }
+
+            #gerenciamentoAnunciosScreen * {
+                box-sizing: border-box;
+            }
+
+            .gaHead {
+                position: sticky;
+                top: 0;
+                z-index: 20;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 12px;
+                background: #fff;
+                border-bottom: 1px solid #e5e7eb;
+                padding: 14px 20px;
+            }
+
+            .gaHeadLeft,
+            .gaHeadRight {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+
+            .gaTitle {
+                font-size: 20px;
+                font-weight: 800;
+                margin: 0;
+            }
+
+            .gaWrap {
+                width: 100%;
+                max-width: 1900px;
+                margin: 0 auto;
+                padding: 18px;
+            }
+
+            .gaBtn {
+                border: 0;
+                border-radius: 8px;
+                padding: 10px 13px;
+                cursor: pointer;
+                font-weight: 700;
+                font-size: 13px;
+            }
+
+            .gaBtn:disabled {
+                opacity: .55;
+                cursor: not-allowed;
+            }
+
+            .gaPrimary {
+                background: #3483fa;
+                color: #fff;
+            }
+
+            .gaSecondary {
+                background: #e9ecef;
+                color: #222;
+            }
+
+            .gaCards {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 12px;
+                margin-bottom: 12px;
+            }
+
+            .gaCard {
+                background: #fff;
+                border: 1px solid #e5e7eb;
+                border-radius: 10px;
+                padding: 14px;
+            }
+
+            .gaCard span {
+                color: #6b7280;
+                font-size: 12px;
+                font-weight: 700;
+            }
+
+            .gaCard b {
+                display: block;
+                margin-top: 5px;
+                font-size: 27px;
+            }
+
+            #gaProgress {
+                display: none;
+                align-items: center;
+                gap: 8px;
+                background: #fff;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                padding: 11px 13px;
+                margin-bottom: 10px;
+                color: #374151;
+            }
+
+            .gaTools {
+                display: grid;
+                grid-template-columns:
+                    minmax(240px, 2fr)
+                    1fr
+                    1fr
+                    1fr
+                    auto;
+                gap: 8px;
+                margin-bottom: 10px;
+            }
+
+            .gaTools input,
+            .gaTools select {
+                width: 100%;
+                padding: 10px;
+                border: 1px solid #d1d5db;
+                border-radius: 7px;
+                background: #fff;
+            }
+
+            .gaTableBox {
+                background: #fff;
+                border: 1px solid #e5e7eb;
+                border-radius: 10px;
+                overflow: auto;
+            }
+
+            .gaTable {
+                width: 100%;
+                border-collapse: collapse;
+                min-width: 1500px;
+            }
+
+            .gaTable th {
+                position: sticky;
+                top: 0;
+                z-index: 2;
+                background: #f8fafc;
+                padding: 10px;
+                text-align: left;
+                white-space: nowrap;
+                font-size: 12px;
+                border-bottom: 1px solid #e5e7eb;
+            }
+
+            .gaTable td {
+                padding: 9px;
+                border-top: 1px solid #eee;
+                vertical-align: middle;
+                font-size: 13px;
+            }
+
+            .gaTable tr:hover td {
+                background: #fafafa;
+            }
+
+            .gaImg {
+                width: 52px;
+                height: 52px;
+                object-fit: contain;
+                border-radius: 6px;
+                background: #fff;
+            }
+
+            .gaMlb {
+                font-weight: 800;
+                white-space: nowrap;
+            }
+
+            .gaSku {
+                display: inline-block;
+                margin-top: 4px;
+                padding: 3px 7px;
+                border-radius: 5px;
+                background: #f3f4f6;
+                font-family: monospace;
+                font-size: 12px;
+            }
+
+            .gaSub {
+                color: #6b7280;
+                font-size: 11px;
+                margin-top: 3px;
+            }
+
+            .gaStock {
+                text-align: center;
+                font-size: 19px;
+                font-weight: 800;
+            }
+
+            .gaStockOk {
+                color: #15803d;
+            }
+
+            .gaStockZero {
+                color: #dc2626;
+            }
+
+            .gaStockNa {
+                color: #9ca3af;
+            }
+
+            .gaBadge {
+                display: inline-block;
+                padding: 4px 8px;
+                border-radius: 999px;
+                background: #ede9fe;
+                color: #5b21b6;
+                font-size: 11px;
+                font-weight: 700;
+                white-space: nowrap;
+            }
+
+            .gaStatusActive {
+                background: #dcfce7;
+                color: #166534;
+            }
+
+            .gaStatusPaused {
+                background: #fef3c7;
+                color: #92400e;
+            }
+
+            .gaStatusClosed {
+                background: #fee2e2;
+                color: #991b1b;
+            }
+
+            .gaLink {
+                color: #2563eb;
+                text-decoration: none;
+                font-weight: 700;
+                white-space: nowrap;
+            }
+
+            .gaPager {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 10px;
+                margin-top: 10px;
+                background: #fff;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+                padding: 10px;
+            }
+
+            .gaPagerRight {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            @media (max-width: 1100px) {
+
+                .gaCards {
+                    grid-template-columns: 1fr 1fr;
+                }
+
+                .gaTools {
+                    grid-template-columns: 1fr 1fr;
+                }
+            }
         `;
 
-        return;
+
+        document.head.appendChild(
+            style
+        );
+
+
+        // ========================================================
+        // HTML
+        // ========================================================
+
+        const screen =
+            document.createElement(
+                'div'
+            );
+
+
+        screen.id =
+            'gerenciamentoAnunciosScreen';
+
+
+        screen.style.display =
+            'none';
+
+
+        screen.innerHTML = `
+
+            <div class="gaHead">
+
+                <div class="gaHeadLeft">
+
+                    <button
+                        type="button"
+                        class="gaBtn gaSecondary"
+                        onclick="fecharSistemaGerenciamentoAnuncios()"
+                    >
+                        <i class="fas fa-arrow-left"></i>
+                        Voltar
+                    </button>
+
+                    <h2 class="gaTitle">
+                        Gerenciamento de Anúncios
+                    </h2>
+
+                </div>
+
+
+                <div class="gaHeadRight">
+
+                    <button
+                        type="button"
+                        class="gaBtn gaSecondary"
+                        onclick="exportarGerenciamentoAnuncios()"
+                    >
+                        <i class="fas fa-file-export"></i>
+                        Exportar
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="gaBtn gaPrimary"
+                        id="gaRefresh"
+                        onclick="carregarGerenciamentoAnuncios(true)"
+                    >
+                        <i class="fas fa-sync-alt"></i>
+                        Atualizar tudo
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <div class="gaWrap">
+
+                <div class="gaCards">
+
+                    <div class="gaCard">
+
+                        <span>
+                            Anúncios FULL
+                        </span>
+
+                        <b id="gaAds">
+                            0
+                        </b>
+
+                    </div>
+
+
+                    <div class="gaCard">
+
+                        <span>
+                            SKUs / variações
+                        </span>
+
+                        <b id="gaRows">
+                            0
+                        </b>
+
+                    </div>
+
+
+                    <div class="gaCard">
+
+                        <span>
+                            Unidades FULL disponíveis
+                        </span>
+
+                        <b id="gaFullTotal">
+                            0
+                        </b>
+
+                    </div>
+
+
+                    <div class="gaCard">
+
+                        <span>
+                            Sem vínculo no estoque interno
+                        </span>
+
+                        <b id="gaMissing">
+                            0
+                        </b>
+
+                    </div>
+
+                </div>
+
+
+                <div id="gaProgress"></div>
+
+
+                <div class="gaTools">
+
+                    <input
+                        id="gaSearch"
+                        type="text"
+                        placeholder="Buscar título, MLB, SKU, User Product ou Inventory..."
+                        oninput="filtrarGerenciamentoAnuncios()"
+                    >
+
+
+                    <select
+                        id="gaExposure"
+                        onchange="filtrarGerenciamentoAnuncios()"
+                    >
+
+                        <option value="">
+                            Todas exposições
+                        </option>
+
+                    </select>
+
+
+                    <select
+                        id="gaStatus"
+                        onchange="filtrarGerenciamentoAnuncios()"
+                    >
+
+                        <option value="">
+                            Todos status
+                        </option>
+
+                        <option value="active">
+                            Ativo
+                        </option>
+
+                        <option value="paused">
+                            Pausado
+                        </option>
+
+                        <option value="under_review">
+                            Em revisão
+                        </option>
+
+                        <option value="closed">
+                            Finalizado
+                        </option>
+
+                    </select>
+
+
+                    <select
+                        id="gaSort"
+                        onchange="filtrarGerenciamentoAnuncios()"
+                    >
+
+                        <option value="title">
+                            Título A-Z
+                        </option>
+
+                        <option value="fullDesc">
+                            FULL maior
+                        </option>
+
+                        <option value="fullAsc">
+                            FULL menor
+                        </option>
+
+                        <option value="depDesc">
+                            Depósito ML maior
+                        </option>
+
+                        <option value="depAsc">
+                            Depósito ML menor
+                        </option>
+
+                    </select>
+
+
+                    <select
+                        id="gaPageSize"
+                        onchange="alterarTamanhoPaginaGerenciamentoAnuncios()"
+                    >
+
+                        <option value="20">
+                            20 por página
+                        </option>
+
+                        <option
+                            value="50"
+                            selected
+                        >
+                            50 por página
+                        </option>
+
+                        <option value="100">
+                            100 por página
+                        </option>
+
+                        <option value="200">
+                            200 por página
+                        </option>
+
+                    </select>
+
+                </div>
+
+
+                <div class="gaTableBox">
+
+                    <table class="gaTable">
+
+                        <thead>
+
+                            <tr>
+
+                                <th>
+                                    Foto
+                                </th>
+
+                                <th>
+                                    MLB
+                                </th>
+
+                                <th>
+                                    Título / SKU
+                                </th>
+
+                                <th>
+                                    Estoque ML fora FULL
+                                </th>
+
+                                <th>
+                                    Estoque FULL
+                                </th>
+
+                                <th>
+                                    FULL indisponível
+                                </th>
+
+                                <th>
+                                    Exposição
+                                </th>
+
+                                <th>
+                                    Tipo
+                                </th>
+
+                                <th>
+                                    Status
+                                </th>
+
+                                <th>
+                                    Preço
+                                </th>
+
+                                <th>
+                                    Inventory / UP
+                                </th>
+
+                                <th>
+                                    Ações
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody id="gaBody">
+
+                            <tr>
+
+                                <td
+                                    colspan="10"
+                                    style="
+                                        text-align:center;
+                                        padding:30px;
+                                    "
+                                >
+                                    Carregando...
+                                </td>
+
+                            </tr>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+
+                <div class="gaPager">
+
+                    <div id="gaInfo">
+                        0 registros
+                    </div>
+
+
+                    <div class="gaPagerRight">
+
+                        <button
+                            type="button"
+                            class="gaBtn gaSecondary"
+                            onclick="mudarPaginaGerenciamentoAnuncios(-1)"
+                        >
+                            Anterior
+                        </button>
+
+
+                        <strong id="gaPage">
+                            Página 1 de 1
+                        </strong>
+
+
+                        <button
+                            type="button"
+                            class="gaBtn gaSecondary"
+                            onclick="mudarPaginaGerenciamentoAnuncios(1)"
+                        >
+                            Próxima
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+        `;
+
+
+        document.body.appendChild(
+            screen
+        );
     }
 
-    // Se não recebeu texto, esconder
-    box.style.display =
-        'none';
 
-    box.innerHTML =
-        '';
-}
+    // ============================================================
+    // STATUS / ESTOQUE VISUAL
+    // ============================================================
 
-    async function loadFullStocks(rows) {
-
-    if (
-        !Array.isArray(rows) ||
-        rows.length === 0
+    function statusLabel(
+        status
     ) {
 
-        return;
+        const nomes = {
+
+            active:
+                'Ativo',
+
+            paused:
+                'Pausado',
+
+            closed:
+                'Finalizado',
+
+            under_review:
+                'Em revisão'
+        };
+
+
+        return (
+            nomes[
+                status
+            ] ||
+
+            status ||
+
+            '-'
+        );
     }
 
 
-    console.log(
-        `📦 Preparando estoque ML para ${rows.length} linha(s)...`
-    );
+    function statusClass(
+        status
+    ) {
+
+        if (
+            status ===
+            'active'
+        ) {
+
+            return 'gaStatusActive';
+        }
+
+
+        if (
+            status ===
+            'paused'
+        ) {
+
+            return 'gaStatusPaused';
+        }
+
+
+        if (
+            status ===
+            'closed'
+        ) {
+
+            return 'gaStatusClosed';
+        }
+
+
+        return '';
+    }
+
+
+    function stockHtml(
+        value,
+        title = ''
+    ) {
+
+        if (
+            value === null ||
+            value === undefined
+        ) {
+
+            return `
+
+                <div
+                    class="gaStock gaStockNa"
+                    title="${esc(title)}"
+                >
+                    —
+                </div>
+            `;
+        }
+
+
+        const numero =
+            Number(
+                value
+            ) ||
+            0;
+
+
+        const classe =
+
+            numero >
+                0
+
+                ? 'gaStockOk'
+
+                : 'gaStockZero';
+
+
+        return `
+
+            <div
+                class="gaStock ${classe}"
+                title="${esc(title)}"
+            >
+                ${esc(numero)}
+            </div>
+        `;
+    }
+
+
+    function updateSummary() {
+
+    // =========================================================
+    // ANÚNCIOS
+    // =========================================================
+
+    const anuncios =
+        new Set(
+            GA.rows
+                .map(
+                    row =>
+                        String(
+                            row.itemId ||
+                            ''
+                        )
+                )
+                .filter(
+                    Boolean
+                )
+        );
 
 
     // =========================================================
-    // AGRUPAR LINHAS PELO USER PRODUCT
-    //
-    // Um mesmo User Product pode estar associado a mais de
-    // uma condição de venda/anúncio.
-    //
-    // Assim evitamos consultar o mesmo estoque várias vezes.
+    // NÃO DUPLICAR ESTOQUE DO MESMO USER PRODUCT
     // =========================================================
 
-    const rowsPorUserProduct =
+    const produtos =
         new Map();
 
 
-    for (const row of rows) {
+    for (
+        const row
+        of GA.rows
+    ) {
 
-        if (!row.userProductId) {
+        const chave =
+            row.userProductId ||
+            row.inventoryId ||
+            row.key;
 
-            row.stockError =
-                'Sem user_product_id';
 
+        if (!chave) {
             continue;
         }
 
 
         if (
-            !rowsPorUserProduct.has(
-                row.userProductId
+            produtos.has(
+                chave
             )
         ) {
 
-            rowsPorUserProduct.set(
-                row.userProductId,
-                []
-            );
+            continue;
         }
 
 
-        rowsPorUserProduct
-            .get(
-                row.userProductId
-            )
-            .push(
-                row
-            );
+        produtos.set(
+            chave,
+            {
+                deposito:
+                    row.warehouse !== null &&
+                    row.warehouse !== undefined
+
+                        ? Number(
+                            row.warehouse
+                        ) || 0
+
+                        : 0,
+
+                full:
+                    row.full !== null &&
+                    row.full !== undefined
+
+                        ? Number(
+                            row.full
+                        ) || 0
+
+                        : 0
+            }
+        );
     }
 
 
-    const userProducts =
-        [
-            ...rowsPorUserProduct.keys()
-        ];
+    // =========================================================
+    // SOMAR
+    // =========================================================
 
-
-    console.log(
-        `📦 ${userProducts.length} User Products únicos para consultar.`
-    );
-
-
-    console.log(
-        `♻️ ${rows.length - userProducts.length} consultas duplicadas eliminadas.`
-    );
-
-
-    let concluidos =
+    let totalDeposito =
         0;
 
-    let sucessos =
+
+    let totalFull =
         0;
 
-    let erros =
-        0;
+
+    for (
+        const estoque
+        of produtos.values()
+    ) {
+
+        totalDeposito +=
+            estoque.deposito;
+
+
+        totalFull +=
+            estoque.full;
+    }
 
 
     // =========================================================
-    // IMPORTANTE
-    //
-    // NÃO USAR Promise.all / múltiplos workers aqui.
-    //
-    // O endpoint possui limite baixo de RPM.
-    //
-    // Vamos trabalhar sequencialmente e dar intervalo entre
-    // chamadas.
+    // HTML
     // =========================================================
 
-    for (const userProductId of userProducts) {
-
-        const linhasDoUP =
-            rowsPorUserProduct.get(
-                userProductId
-            ) || [];
-
-
-        try {
-
-            const estoque =
-                await buscarEstoqueUserProduct(
-                    userProductId
-                );
-
-
-            // =================================================
-            // APLICAR O MESMO ESTOQUE EM TODAS AS LINHAS
-            // DESSE USER PRODUCT
-            // =================================================
-
-            for (const row of linhasDoUP) {
-
-                if (estoque?.success) {
-
-                    row.warehouse =
-                        estoque.warehouse;
-
-                    row.full =
-                        estoque.full;
-
-                    row.mlTotal =
-                        estoque.total;
-
-                    row.stockLocations =
-                        estoque.locations ||
-                        [];
-
-                    row.stockError =
-                        null;
-
-
-                    // =========================================
-                    // NÃO CONSULTAR INVENTORY AGORA
-                    //
-                    // Isso dobrava as chamadas desnecessariamente.
-                    // =========================================
-
-                    row.unavailable =
-                        null;
-
-                    row.fullTotal =
-                        null;
-
-
-                } else {
-
-                    row.warehouse =
-                        null;
-
-                    row.full =
-                        null;
-
-                    row.mlTotal =
-                        null;
-
-                    row.stockLocations =
-                        [];
-
-                    row.stockError =
-                        estoque?.error ||
-                        'Erro ao consultar estoque';
-                }
-            }
-
-
-            if (estoque?.success) {
-
-                sucessos++;
-
-            } else {
-
-                erros++;
-            }
-
-        } catch (error) {
-
-            erros++;
-
-
-            console.warn(
-                `⚠️ Erro processando estoque ${userProductId}:`,
-                error
-            );
-
-
-            for (const row of linhasDoUP) {
-
-                row.stockError =
-                    error.message ||
-                    'Erro ao consultar estoque';
-            }
-        }
-
-
-        concluidos++;
-
-
-        // =====================================================
-        // PROGRESSO
-        // =====================================================
-
-        progress(
-            `Consultando estoque Mercado Livre... ` +
-            `${concluidos}/${userProducts.length}`
+    const totalAnuncios =
+        document.getElementById(
+            'gaTotalAnuncios'
         );
 
 
-        // =====================================================
-        // ATUALIZAR A TABELA PROGRESSIVAMENTE
-        // =====================================================
+    const totalVariacoes =
+        document.getElementById(
+            'gaTotalVariacoes'
+        );
 
-        if (
-    concluidos % 20 === 0
+
+    const deposito =
+        document.getElementById(
+            'gaTotalDeposito'
+        );
+
+
+    const full =
+        document.getElementById(
+            'gaTotalEstoque'
+        );
+
+
+    if (
+        totalAnuncios
+    ) {
+
+        totalAnuncios.textContent =
+            anuncios.size;
+    }
+
+
+    if (
+        totalVariacoes
+    ) {
+
+        totalVariacoes.textContent =
+            GA.rows.length;
+    }
+
+
+    if (
+        deposito
+    ) {
+
+        deposito.textContent =
+            totalDeposito;
+    }
+
+
+    if (
+        full
+    ) {
+
+        full.textContent =
+            totalFull;
+    }
+}
+
+
+    function updateExposureFilter() {
+
+    const select =
+        document.getElementById(
+            'gaFiltroExposicao'
+        );
+
+
+    if (!select) {
+        return;
+    }
+
+
+    const valorAtual =
+        select.value;
+
+
+    const exposicoes =
+        [
+            ...new Set(
+                GA.rows
+                    .map(
+                        row =>
+                            row.exposureName
+                    )
+                    .filter(
+                        valor =>
+                            valor &&
+                            valor !== '-'
+                    )
+            )
+        ]
+            .sort(
+                (a, b) =>
+                    String(a)
+                        .localeCompare(
+                            String(b),
+                            'pt-BR'
+                        )
+            );
+
+
+    select.innerHTML = `
+
+        <option value="">
+            Todas exposições
+        </option>
+
+        ${
+            exposicoes
+                .map(
+                    exposicao => `
+
+                        <option value="${esc(exposicao)}">
+                            ${esc(exposicao)}
+                        </option>
+                    `
+                )
+                .join('')
+        }
+    `;
+
+
+    if (
+        exposicoes.includes(
+            valorAtual
+        )
+    ) {
+
+        select.value =
+            valorAtual;
+    }
+}
+
+
+function applyFilters(
+    resetPage = true
 ) {
 
-    try {
-
-        // Atualizar tela
-        updateSummary();
-
-        applyFilters();
-
-
-        // =====================================================
-        // SALVAR PROGRESSIVAMENTE
-        // =====================================================
-
-        const linhasAtualizadas =
-            [];
+    const busca =
+        String(
+            document.getElementById(
+                'gaBusca'
+            )?.value || ''
+        )
+            .trim()
+            .toLowerCase();
 
 
-        for (
-            const [
-                userProduct,
-                linhas
-            ]
-            of rowsPorUserProduct
-        ) {
-
-            if (
-                linhasAtualizadas.length >=
-                200
-            ) {
-                break;
-            }
+    const status =
+        document.getElementById(
+            'gaFiltroStatus'
+        )?.value || '';
 
 
-            for (const linha of linhas) {
+    const ordenacao =
+        document.getElementById(
+            'gaFiltroOrdenacao'
+        )?.value || 'title';
 
+
+    // =========================================================
+    // FILTRAR
+    // =========================================================
+
+    GA.filtered =
+        GA.rows.filter(
+            row => {
+
+                // STATUS
                 if (
-                    linha.warehouse !== null ||
-                    linha.full !== null
+                    status &&
+                    row.status !== status
                 ) {
 
-                    linhasAtualizadas.push(
-                        linha
-                    );
+                    return false;
                 }
-            }
-        }
 
 
-        if (
-            linhasAtualizadas.length
-        ) {
+                // PESQUISA
+                if (busca) {
 
-            await salvarAnunciosBanco(
-                linhasAtualizadas,
-                false
-            );
-        }
+                    const texto =
+                        [
 
+                            row.title,
 
-    } catch (error) {
-
-        console.warn(
-            '⚠️ Não foi possível salvar atualização parcial:',
-            error
-        );
-    }
-}
-
-
-        // =====================================================
-        // PAUSA ENTRE REQUISIÇÕES
-        //
-        // 900ms deixa margem abaixo do limite documentado,
-        // inclusive para outras chamadas do sistema.
-        // =====================================================
-
-        await new Promise(
-            resolve =>
-                setTimeout(
-                    resolve,
-                    900
-                )
-        );
-    }
-
-
-    console.log(
-        '✅ Consulta de estoque finalizada.',
-        {
-            userProducts:
-                userProducts.length,
-
-            sucessos:
-                sucessos,
-
-            erros:
-                erros,
-
-            linhas:
-                rows.length
-        }
-    );
-
-
-    // =========================================================
-    // DIAGNÓSTICO FINAL
-    // =========================================================
-
-    console.table(
-        rows.slice(
-            0,
-            30
-        ).map(
-            row => ({
-
-                MLB:
-                    row.itemId,
-
-                variacao:
-                    row.variationId,
-
-                SKU:
-                    row.sku,
-
-                user_product:
-                    row.userProductId,
-
-                inventory:
-                    row.inventoryId,
-
-                deposito_ML:
-                    row.warehouse,
-
-                FULL:
-                    row.full,
-
-                total_ML:
-                    row.mlTotal,
-
-                estoque_interno:
-                    row.internalWarehouse
-
-            })
-        )
-    );
-
-
-    // =========================================================
-    // QUANTOS SKUS FALTARAM
-    // =========================================================
-
-    const semSku =
-        rows.filter(
-            row =>
-                !row.sku ||
-                String(
-                    row.sku
-                ).trim() === ''
-        );
-
-
-    console.log(
-        `🏷️ SKUs encontrados: ${rows.length - semSku.length}/${rows.length}`
-    );
-
-
-    if (semSku.length) {
-
-        console.warn(
-            `⚠️ ${semSku.length} linha(s) sem SKU.`,
-            semSku
-                .slice(
-                    0,
-                    30
-                )
-                .map(
-                    row => ({
-                        MLB:
                             row.itemId,
 
-                        variation_id:
                             row.variationId,
 
-                        user_product_id:
+                            row.sku,
+
+                            row.inventoryId,
+
                             row.userProductId,
 
-                        inventory_id:
-                            row.inventoryId
-                    })
-                )
+                            row.listingTypeName,
+
+                            row.listingTypeId
+
+                        ]
+                            .join(' ')
+                            .toLowerCase();
+
+
+                    if (
+                        !texto.includes(
+                            busca
+                        )
+                    ) {
+
+                        return false;
+                    }
+                }
+
+
+                return true;
+            }
         );
+
+
+    // =========================================================
+    // AUXILIAR NUMÉRICO
+    // =========================================================
+
+    function numero(
+        valor,
+        fallback
+    ) {
+
+        const n =
+            Number(valor);
+
+
+        return Number.isFinite(n)
+            ? n
+            : fallback;
     }
 
 
     // =========================================================
-    // RENDER FINAL
+    // ORDENAR
     // =========================================================
 
-    updateSummary();
+    GA.filtered.sort(
+        (a, b) => {
 
-    applyFilters();
+            switch (ordenacao) {
+
+                case 'fullDesc':
+
+                    return (
+                        numero(
+                            b.full,
+                            -1
+                        ) -
+                        numero(
+                            a.full,
+                            -1
+                        )
+                    );
+
+
+                case 'fullAsc':
+
+                    return (
+                        numero(
+                            a.full,
+                            999999999
+                        ) -
+                        numero(
+                            b.full,
+                            999999999
+                        )
+                    );
+
+
+                case 'depDesc':
+
+                    return (
+                        numero(
+                            b.warehouse,
+                            -1
+                        ) -
+                        numero(
+                            a.warehouse,
+                            -1
+                        )
+                    );
+
+
+                case 'depAsc':
+
+                    return (
+                        numero(
+                            a.warehouse,
+                            999999999
+                        ) -
+                        numero(
+                            b.warehouse,
+                            999999999
+                        )
+                    );
+
+
+                default:
+
+                    return String(
+                        a.title || ''
+                    )
+                        .localeCompare(
+                            String(
+                                b.title || ''
+                            ),
+                            'pt-BR'
+                        );
+            }
+        }
+    );
+
+
+    if (resetPage) {
+
+        GA.page =
+            1;
+    }
+
+
+    render();
 }
 
-function render() {
+   function render() {
 
     const body =
         document.getElementById(
-            'gaBody'
+            'gaTabelaBody'
         );
 
+
     if (!body) {
+
+        console.warn(
+            '⚠️ #gaTabelaBody não encontrado.'
+        );
+
         return;
     }
 
 
     // =========================================================
-    // CALCULAR INÍCIO DA PÁGINA
+    // PAGINAÇÃO
     // =========================================================
 
-    const start =
+    const totalRegistros =
+        GA.filtered.length;
+
+
+    const totalPaginas =
+        Math.max(
+            1,
+            Math.ceil(
+                totalRegistros /
+                GA.pageSize
+            )
+        );
+
+
+    if (
+        GA.page >
+        totalPaginas
+    ) {
+
+        GA.page =
+            totalPaginas;
+    }
+
+
+    if (
+        GA.page < 1
+    ) {
+
+        GA.page =
+            1;
+    }
+
+
+    const inicio =
         (
             GA.page -
             1
@@ -2219,11 +5591,18 @@ function render() {
         GA.pageSize;
 
 
+    const fim =
+        Math.min(
+            inicio +
+            GA.pageSize,
+            totalRegistros
+        );
+
+
     const rows =
         GA.filtered.slice(
-            start,
-            start +
-            GA.pageSize
+            inicio,
+            fim
         );
 
 
@@ -2234,235 +5613,136 @@ function render() {
     if (!rows.length) {
 
         body.innerHTML = `
+
             <tr>
+
                 <td
-                    colspan="12"
-                    style="
-                        text-align:center;
-                        padding:30px;
-                    "
+                    colspan="10"
+                    class="text-center py-5"
                 >
-                    Nenhum anúncio encontrado.
+
+                    <i
+                        class="fas fa-box-open fa-3x mb-3"
+                        style="
+                            color:#6c757d;
+                            opacity:0.3;
+                        "
+                    ></i>
+
+                    <h4 style="color:#6c757d;">
+                        Nenhum anúncio encontrado
+                    </h4>
+
                 </td>
+
             </tr>
         `;
 
     } else {
 
-        // =====================================================
-        // RENDERIZAR LINHAS
-        // =====================================================
-
         body.innerHTML =
             rows.map(
                 row => {
 
-                    // =================================================
+                    // =========================================
                     // PREÇO
-                    // =================================================
+                    // =========================================
 
                     const preco =
                         Number.isFinite(
                             Number(row.price)
                         )
-                            ? Number(
-                                row.price
-                            ).toLocaleString(
-                                'pt-BR',
-                                {
-                                    style:
-                                        'currency',
+                            ? Number(row.price)
+                                .toLocaleString(
+                                    'pt-BR',
+                                    {
+                                        style:
+                                            'currency',
 
-                                    currency:
-                                        'BRL'
-                                }
-                            )
+                                        currency:
+                                            'BRL'
+                                    }
+                                )
                             : '-';
 
 
-                    // =================================================
-                    // ESTOQUE INTERNO
-                    // =================================================
+                    // =========================================
+                    // DEPÓSITO
+                    // =========================================
 
-                    const estoqueInterno =
-                        row.internalWarehouse !== null &&
-                        row.internalWarehouse !== undefined
-                            ? row.internalWarehouse
-                            : null;
-
-
-                    // =================================================
-                    // ESTOQUE ML FORA DO FULL
-                    // =================================================
-
-                    const estoqueDepositoML =
+                    const estoqueDeposito =
                         row.warehouse !== null &&
                         row.warehouse !== undefined
-                            ? row.warehouse
+
+                            ? Number(
+                                row.warehouse
+                            )
+
                             : null;
 
 
-                    // =================================================
-                    // ESTOQUE FULL DISPONÍVEL
-                    // =================================================
+                    // =========================================
+                    // FULL
+                    // =========================================
 
                     const estoqueFull =
                         row.full !== null &&
                         row.full !== undefined
-                            ? row.full
+
+                            ? Number(
+                                row.full
+                            )
+
                             : null;
 
 
-                    // =================================================
-                    // TOTAL DISPONÍVEL NO ML
-                    // =================================================
+                    // =========================================
+                    // STATUS
+                    // =========================================
 
-                    const estoqueTotalML =
-                        row.mlTotal !== null &&
-                        row.mlTotal !== undefined
-                            ? row.mlTotal
-                            : null;
+                    let statusClassName =
+                        'badge-secondary';
 
-
-                    // =================================================
-                    // ESTOQUE FULL INDISPONÍVEL
-                    // =================================================
-
-                    const estoqueIndisponivel =
-                        row.unavailable !== null &&
-                        row.unavailable !== undefined
-                            ? row.unavailable
-                            : null;
-
-
-                    // =================================================
-                    // TOTAL FÍSICO FULL
-                    // =================================================
-
-                    const totalFisicoFull =
-                        row.fullTotal !== null &&
-                        row.fullTotal !== undefined
-                            ? row.fullTotal
-                            : null;
-
-
-                    // =================================================
-                    // TOOLTIP DE LOCALIZAÇÕES
-                    // =================================================
-
-                    let locationsTooltip = '';
 
                     if (
-                        Array.isArray(
-                            row.stockLocations
-                        ) &&
-                        row.stockLocations.length
+                        row.status ===
+                        'active'
                     ) {
 
-                        locationsTooltip =
-                            row.stockLocations
-                                .map(
-                                    location => {
+                        statusClassName =
+                            'badge-success';
 
-                                        const tipo =
-                                            location?.type ||
-                                            'desconhecido';
-
-                                        const quantidade =
-                                            location?.quantity ??
-                                            0;
-
-                                        return (
-                                            `${tipo}: ${quantidade}`
-                                        );
-                                    }
-                                )
-                                .join(' | ');
-                    }
-
-
-                    // =================================================
-                    // DIFERENÇA ENTRE ESTOQUE INTERNO E ML
-                    // =================================================
-
-                    let diferencaDepositoHtml =
-                        '';
-
-                    if (
-                        estoqueInterno !== null &&
-                        estoqueDepositoML !== null &&
-                        Number(estoqueInterno) !==
-                        Number(estoqueDepositoML)
+                    } else if (
+                        row.status ===
+                        'paused'
                     ) {
 
-                        const diferenca =
-                            Number(
-                                estoqueDepositoML
-                            ) -
-                            Number(
-                                estoqueInterno
-                            );
+                        statusClassName =
+                            'badge-warning';
 
+                    } else if (
+                        row.status ===
+                        'closed'
+                    ) {
 
-                        diferencaDepositoHtml = `
-                            <div
-                                class="gaSub"
-                                style="
-                                    text-align:center;
-                                    color:#b45309;
-                                    margin-top:4px;
-                                "
-                            >
-                                Diferença:
-                                <strong>
-                                    ${
-                                        diferenca > 0
-                                            ? '+'
-                                            : ''
-                                    }${esc(diferenca)}
-                                </strong>
-                            </div>
-                        `;
+                        statusClassName =
+                            'badge-danger';
+
+                    } else if (
+                        row.status ===
+                        'under_review'
+                    ) {
+
+                        statusClassName =
+                            'badge-info';
                     }
-
-
-                    // =================================================
-                    // USER PRODUCT
-                    // =================================================
-
-                    const userProductHtml =
-                        row.userProductId
-                            ? `
-                                <div
-                                    class="gaSub"
-                                    title="User Product ID"
-                                >
-                                    UP:
-                                    ${esc(
-                                        row.userProductId
-                                    )}
-                                </div>
-                            `
-                            : '';
-
-
-                    // =================================================
-                    // ERRO DE ESTOQUE
-                    // =================================================
-
-                    const erroEstoque =
-                        row.stockError ||
-                        row.fullError ||
-                        '';
 
 
                     return `
 
                         <tr>
 
-                            <!-- ===================================== -->
                             <!-- FOTO -->
-                            <!-- ===================================== -->
 
                             <td>
 
@@ -2471,9 +5751,13 @@ function render() {
 
                                         ? `
                                             <img
-                                                class="gaImg"
                                                 src="${esc(row.thumbnail)}"
                                                 alt=""
+                                                style="
+                                                    width:45px;
+                                                    height:45px;
+                                                    object-fit:contain;
+                                                "
                                             >
                                         `
 
@@ -2483,404 +5767,199 @@ function render() {
                             </td>
 
 
-                            <!-- ===================================== -->
                             <!-- MLB -->
-                            <!-- ===================================== -->
 
                             <td>
 
-                                <div class="gaMlb">
-
+                                <strong>
                                     ${esc(row.itemId)}
-
-                                </div>
+                                </strong>
 
 
                                 ${
                                     row.variationId
 
                                         ? `
-                                            <div class="gaSub">
-
-                                                Variação:
+                                            <div
+                                                style="
+                                                    font-size:11px;
+                                                    color:#6c757d;
+                                                    margin-top:3px;
+                                                "
+                                            >
+                                                Var:
                                                 ${esc(
                                                     row.variationId
                                                 )}
-
                                             </div>
                                         `
 
                                         : ''
                                 }
 
-
-                                ${userProductHtml}
-
                             </td>
 
 
-                            <!-- ===================================== -->
                             <!-- TÍTULO / SKU -->
-                            <!-- ===================================== -->
 
                             <td>
 
-                                <strong>
-
+                                <div
+                                    style="
+                                        font-weight:600;
+                                        margin-bottom:4px;
+                                    "
+                                >
                                     ${esc(
                                         row.title
                                     )}
-
-                                </strong>
-
-
-                                <div>
-
-                                    <span class="gaSku">
-
-                                        ${
-                                            esc(
-                                                row.sku ||
-                                                'Sem SKU'
-                                            )
-                                        }
-
-                                    </span>
-
                                 </div>
+
+
+                                <code
+                                    style="
+                                        font-size:12px;
+                                        background:#f8f9fa;
+                                        padding:2px 5px;
+                                        border-radius:3px;
+                                    "
+                                >
+                                    ${esc(
+                                        row.sku ||
+                                        'Sem SKU'
+                                    )}
+                                </code>
 
                             </td>
 
 
-                            <!-- ===================================== -->
-                            <!-- ESTOQUE ML FORA DO FULL -->
-                            <!-- ===================================== -->
+                            <!-- DEPÓSITO -->
 
-                            <td>
-
-                                ${
-                                    stockHtml(
-                                        estoqueDepositoML,
-                                        erroEstoque
-                                    )
-                                }
-
-
-                                <div
-                                    class="gaSub"
-                                    style="
-                                        text-align:center;
-                                    "
-                                >
-                                    Mercado Livre
-                                </div>
-
+                            <td
+                                style="
+                                    text-align:center;
+                                "
+                            >
 
                                 ${
-                                    estoqueInterno !== null
+                                    estoqueDeposito !== null
 
                                         ? `
-                                            <div
-                                                class="gaSub"
+                                            <strong
                                                 style="
-                                                    text-align:center;
-                                                    margin-top:5px;
+                                                    font-size:18px;
+                                                    color:${
+                                                        estoqueDeposito > 0
+                                                            ? '#198754'
+                                                            : '#dc3545'
+                                                    };
                                                 "
                                             >
-                                                Sistema interno:
-                                                <strong>
-                                                    ${esc(
-                                                        estoqueInterno
-                                                    )}
-                                                </strong>
-                                            </div>
+                                                ${esc(
+                                                    estoqueDeposito
+                                                )}
+                                            </strong>
                                         `
 
                                         : `
-                                            <div
-                                                class="gaSub"
+                                            <span
                                                 style="
-                                                    text-align:center;
-                                                    margin-top:5px;
-                                                    color:#b45309;
+                                                    color:#adb5bd;
+                                                    font-size:18px;
                                                 "
                                             >
-                                                Não localizado no estoque
-                                            </div>
+                                                —
+                                            </span>
                                         `
-                                }
-
-
-                                ${diferencaDepositoHtml}
-
-
-                                ${
-                                    locationsTooltip
-
-                                        ? `
-                                            <div
-                                                class="gaSub"
-                                                style="
-                                                    text-align:center;
-                                                    margin-top:5px;
-                                                    cursor:help;
-                                                "
-                                                title="${esc(
-                                                    locationsTooltip
-                                                )}"
-                                            >
-                                                <i class="fas fa-info-circle"></i>
-                                                Ver localizações
-                                            </div>
-                                        `
-
-                                        : ''
                                 }
 
                             </td>
 
 
-                            <!-- ===================================== -->
-                            <!-- ESTOQUE FULL -->
-                            <!-- ===================================== -->
+                            <!-- FULL -->
 
-                            <td>
-
-                                ${
-                                    stockHtml(
-                                        estoqueFull,
-                                        erroEstoque
-                                    )
-                                }
-
-
-                                <div
-                                    class="gaSub"
-                                    style="
-                                        text-align:center;
-                                    "
-                                >
-                                    Disponível FULL
-                                </div>
-
+                            <td
+                                style="
+                                    text-align:center;
+                                "
+                            >
 
                                 ${
-                                    estoqueTotalML !== null
+                                    estoqueFull !== null
 
                                         ? `
-                                            <div
+                                            <strong
                                                 style="
-                                                    margin-top:7px;
-                                                    padding:5px 6px;
-                                                    background:#eff6ff;
-                                                    border-radius:5px;
-                                                    text-align:center;
-                                                    font-size:11px;
-                                                    color:#1d4ed8;
+                                                    font-size:18px;
+                                                    color:${
+                                                        estoqueFull > 0
+                                                            ? '#198754'
+                                                            : '#dc3545'
+                                                    };
                                                 "
                                             >
-                                                Total disponível ML:
-                                                <strong>
-                                                    ${esc(
-                                                        estoqueTotalML
-                                                    )}
-                                                </strong>
-                                            </div>
-                                        `
-
-                                        : ''
-                                }
-
-
-                                ${
-                                    totalFisicoFull !== null
-
-                                        ? `
-                                            <div
-                                                class="gaSub"
-                                                style="
-                                                    text-align:center;
-                                                    margin-top:4px;
-                                                "
-                                            >
-                                                Total físico FULL:
-                                                <strong>
-                                                    ${esc(
-                                                        totalFisicoFull
-                                                    )}
-                                                </strong>
-                                            </div>
-                                        `
-
-                                        : ''
-                                }
-
-
-                                ${
-                                    erroEstoque
-
-                                        ? `
-                                            <div
-                                                class="gaSub"
-                                                style="
-                                                    text-align:center;
-                                                    color:#dc2626;
-                                                    margin-top:5px;
-                                                "
-                                                title="${esc(
-                                                    erroEstoque
-                                                )}"
-                                            >
-                                                <i class="fas fa-exclamation-triangle"></i>
-                                                Erro na consulta
-                                            </div>
-                                        `
-
-                                        : ''
-                                }
-
-                            </td>
-
-
-                            <!-- ===================================== -->
-                            <!-- FULL INDISPONÍVEL -->
-                            <!-- ===================================== -->
-
-                            <td>
-
-                                ${
-                                    stockHtml(
-                                        estoqueIndisponivel
-                                    )
-                                }
-
-
-                                ${
-                                    estoqueIndisponivel !== null &&
-                                    Number(
-                                        estoqueIndisponivel
-                                    ) > 0
-
-                                        ? `
-                                            <div
-                                                class="gaSub"
-                                                style="
-                                                    text-align:center;
-                                                    color:#b45309;
-                                                "
-                                            >
-                                                Não disponível
-                                            </div>
-                                        `
-
-                                        : ''
-                                }
-
-                            </td>
-
-
-                            <!-- ===================================== -->
-                            <!-- EXPOSIÇÃO -->
-                            <!-- ===================================== -->
-
-                            <td>
-
-                                <span class="gaBadge">
-
-                                    ${
-                                        esc(
-                                            row.exposureName ||
-                                            '-'
-                                        )
-                                    }
-
-                                </span>
-
-
-                                ${
-                                    row.exposureId
-
-                                        ? `
-                                            <div class="gaSub">
-
                                                 ${esc(
-                                                    row.exposureId
+                                                    estoqueFull
                                                 )}
-
-                                            </div>
+                                            </strong>
                                         `
 
-                                        : ''
+                                        : `
+                                            <span
+                                                style="
+                                                    color:#adb5bd;
+                                                    font-size:18px;
+                                                "
+                                            >
+                                                —
+                                            </span>
+                                        `
                                 }
 
                             </td>
 
 
-                            <!-- ===================================== -->
-                            <!-- TIPO DO ANÚNCIO -->
-                            <!-- ===================================== -->
+                            <!-- TIPO -->
 
                             <td>
 
                                 <strong>
-
-                                    ${
-                                        esc(
-                                            row.listingTypeName ||
-                                            '-'
-                                        )
-                                    }
-
+                                    ${esc(
+                                        row.listingTypeName ||
+                                        '-'
+                                    )}
                                 </strong>
-
-
-                                <div class="gaSub">
-
-                                    ${
-                                        esc(
-                                            row.listingTypeId ||
-                                            '-'
-                                        )
-                                    }
-
-                                </div>
 
                             </td>
 
 
-                            <!-- ===================================== -->
                             <!-- STATUS -->
-                            <!-- ===================================== -->
 
                             <td>
 
                                 <span
-                                    class="
-                                        gaBadge
-                                        ${statusClass(
-                                            row.status
-                                        )}
-                                    "
+                                    class="badge ${statusClassName}"
                                 >
 
-                                    ${
-                                        esc(
-                                            statusLabel(
-                                                row.status
-                                            )
+                                    ${esc(
+                                        statusLabel(
+                                            row.status
                                         )
-                                    }
+                                    )}
 
                                 </span>
 
                             </td>
 
 
-                            <!-- ===================================== -->
                             <!-- PREÇO -->
-                            <!-- ===================================== -->
 
-                            <td>
+                            <td
+                                style="
+                                    text-align:right;
+                                    white-space:nowrap;
+                                "
+                            >
 
                                 <strong>
                                     ${preco}
@@ -2889,21 +5968,19 @@ function render() {
                             </td>
 
 
-                            <!-- ===================================== -->
                             <!-- INVENTORY ID -->
-                            <!-- ===================================== -->
 
                             <td>
 
-                                <code>
-
-                                    ${
-                                        esc(
-                                            row.inventoryId ||
-                                            '-'
-                                        )
-                                    }
-
+                                <code
+                                    style="
+                                        font-size:11px;
+                                    "
+                                >
+                                    ${esc(
+                                        row.inventoryId ||
+                                        '-'
+                                    )}
                                 </code>
 
 
@@ -2912,12 +5989,12 @@ function render() {
 
                                         ? `
                                             <div
-                                                class="gaSub"
                                                 style="
-                                                    margin-top:5px;
+                                                    font-size:10px;
+                                                    color:#6c757d;
+                                                    margin-top:3px;
                                                 "
                                             >
-                                                UP:
                                                 ${esc(
                                                     row.userProductId
                                                 )}
@@ -2930,9 +6007,7 @@ function render() {
                             </td>
 
 
-                            <!-- ===================================== -->
                             <!-- AÇÕES -->
-                            <!-- ===================================== -->
 
                             <td>
 
@@ -2941,15 +6016,15 @@ function render() {
 
                                         ? `
                                             <a
-                                                class="gaLink"
                                                 href="${esc(
                                                     row.permalink
                                                 )}"
                                                 target="_blank"
                                                 rel="noopener noreferrer"
+                                                class="btn btn-sm btn-outline-primary"
+                                                title="Abrir anúncio"
                                             >
                                                 <i class="fas fa-external-link-alt"></i>
-                                                Abrir anúncio
                                             </a>
                                         `
 
@@ -2961,7 +6036,29 @@ function render() {
                         </tr>
                     `;
                 }
-            ).join('');
+            )
+                .join('');
+    }
+
+
+    // =========================================================
+    // CONTAGEM
+    // =========================================================
+
+    const contagem =
+        document.getElementById(
+            'gaContagemRegistros'
+        );
+
+
+    if (contagem) {
+
+        contagem.textContent =
+            `${totalRegistros} registro${
+                totalRegistros === 1
+                    ? ''
+                    : 's'
+            }`;
     }
 
 
@@ -2969,1834 +6066,1195 @@ function render() {
     // PAGINAÇÃO
     // =========================================================
 
-    const totalPages =
-        Math.max(
-            1,
-            Math.ceil(
-                GA.filtered.length /
-                GA.pageSize
-            )
-        );
-
-
-    // =========================================================
-    // INFORMAÇÃO DE REGISTROS
-    // =========================================================
-
-    const info =
+    const elInicio =
         document.getElementById(
-            'gaInfo'
+            'gaInicio'
         );
 
 
-    if (info) {
-
-        if (
-            GA.filtered.length === 0
-        ) {
-
-            info.textContent =
-                '0 registros';
-
-        } else {
-
-            const primeiro =
-                start + 1;
-
-
-            const ultimo =
-                Math.min(
-                    start +
-                    GA.pageSize,
-                    GA.filtered.length
-                );
-
-
-            info.textContent =
-                `${primeiro}-${ultimo} de ${GA.filtered.length} registros`;
-        }
-    }
-
-
-    // =========================================================
-    // NÚMERO DA PÁGINA
-    // =========================================================
-
-    const page =
+    const elFim =
         document.getElementById(
-            'gaPage'
+            'gaFim'
         );
 
 
-    if (page) {
-
-        page.textContent =
-            `Página ${GA.page} de ${totalPages}`;
-    }
-}
-
-    // ============================================================
-    // RENDERIZAR TABELA
-    // ============================================================
-
-    function statusLabel(status) {
-        const nomes = { active: 'Ativo', paused: 'Pausado', closed: 'Finalizado', under_review: 'Em revisão' };
-        return nomes[status] || status || '-';
-    }
-
-    function statusClass(status) {
-        if (status === 'active') return 'badge-success';
-        if (status === 'paused') return 'badge-warning';
-        if (status === 'closed') return 'badge-danger';
-        return '';
-    }
-
-    function stockHtml(value, title = '') {
-        if (value === null || value === undefined) {
-            return `<div class="text-center text-muted" title="${esc(title)}">—</div>`;
-        }
-        const numero = Number(value);
-        const classe = numero > 0 ? 'text-success' : 'text-danger';
-        return `<div class="text-center fw-bold ${classe}" style="font-size:18px;">${numero}</div>`;
-    }
-
-    function renderTabela() {
-        const body = document.getElementById('gaTabelaBody');
-        if (!body) return;
-
-        const start = (GA.page - 1) * GA.pageSize;
-        const rows = GA.filtered.slice(start, start + GA.pageSize);
-
-        if (!rows.length) {
-            body.innerHTML = `
-                <tr>
-                    <td colspan="12" class="text-center py-5">
-                        <i class="fas fa-search fa-3x mb-3" style="color: #6c757d; opacity: 0.3;"></i>
-                        <h4 style="color: #6c757d;">Nenhum anúncio encontrado</h4>
-                        <p style="color: #6c757d;">Tente ajustar os filtros ou sincronizar novamente.</p>
-                    </td>
-                </tr>
-            `;
-        } else {
-            body.innerHTML = rows.map(row => {
-                const preco = Number.isFinite(Number(row.price)) 
-                    ? Number(row.price).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                    : '-';
-
-                return `
-                    <tr>
-                        <td>
-                            ${row.thumbnail ? `<img src="${esc(row.thumbnail)}" style="width:50px;height:50px;object-fit:contain;">` : '-'}
-                        </td>
-                        <td>
-                            <div class="fw-bold">${esc(row.itemId)}</div>
-                            ${row.variationId ? `<div class="text-muted small">Var: ${esc(row.variationId)}</div>` : ''}
-                        </td>
-                        <td>
-                            <div class="fw-bold">${esc(row.title)}</div>
-                            <div><span class="badge bg-light text-dark">${esc(row.sku || 'Sem SKU')}</span></div>
-                        </td>
-                        <td>${stockHtml(row.warehouse)}</td>
-                        <td>${stockHtml(row.full, row.fullError)}</td>
-                        <td>${stockHtml(row.unavailable)}</td>
-                        <td>
-                            <span class="badge bg-info">${esc(row.exposureName || '-')}</span>
-                            ${row.exposureId ? `<div class="text-muted small">${esc(row.exposureId)}</div>` : ''}
-                        </td>
-                        <td>
-                            <div class="fw-bold">${esc(row.listingTypeName || '-')}</div>
-                            <div class="text-muted small">${esc(row.listingTypeId || '-')}</div>
-                        </td>
-                        <td><span class="badge ${statusClass(row.status)}">${esc(statusLabel(row.status))}</span></td>
-                        <td class="text-end">${preco}</td>
-                        <td><code class="small">${esc(row.inventoryId || '-')}</code></td>
-                        <td>
-                            ${row.permalink ? `<a href="${esc(row.permalink)}" target="_blank" class="btn btn-sm btn-outline-primary"><i class="fas fa-external-link-alt"></i></a>` : '-'}
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-
-        // Atualizar paginação
-        const total = GA.filtered.length;
-        const totalPages = Math.max(1, Math.ceil(total / GA.pageSize));
-        document.getElementById('gaInicio').textContent = total ? start + 1 : 0;
-        document.getElementById('gaFim').textContent = Math.min(start + GA.pageSize, total);
-        document.getElementById('gaTotal').textContent = total;
-        document.getElementById('gaPaginaInfo').textContent = `Página ${GA.page} de ${totalPages}`;
-        document.getElementById('gaContagemRegistros').textContent = `${total} registros`;
-        document.getElementById('gaBtnAnterior').disabled = GA.page <= 1;
-        document.getElementById('gaBtnProxima').disabled = GA.page >= totalPages;
-    }
-
-    // ============================================================
-    // RESUMO
-    // ============================================================
-
-    function atualizarResumo() {
-        const anuncios = new Set(GA.rows.map(row => row.itemId));
-        const inventories = new Map();
-        let semVinculo = 0;
-
-        for (const row of GA.rows) {
-            if (row.warehouse === null) semVinculo++;
-            if (row.inventoryId && !inventories.has(row.inventoryId)) {
-                inventories.set(row.inventoryId, Number(row.full) || 0);
-            }
-        }
-
-        const totalEstoque = [...inventories.values()].reduce((a, b) => a + b, 0);
-
-        document.getElementById('gaTotalAnuncios').textContent = anuncios.size;
-        document.getElementById('gaTotalVariacoes').textContent = GA.rows.length;
-        document.getElementById('gaTotalEstoque').textContent = totalEstoque;
-        document.getElementById('gaSemVinculo').textContent = semVinculo;
-    }
-
-    // ============================================================
-    // FILTROS
-    // ============================================================
-
-    function aplicarFiltros() {
-        const busca = String(document.getElementById('gaBusca')?.value || '').toLowerCase().trim();
-        const exposure = document.getElementById('gaFiltroExposicao')?.value || '';
-        const status = document.getElementById('gaFiltroStatus')?.value || '';
-        const sort = document.getElementById('gaFiltroOrdenacao')?.value || 'title';
-
-        GA.filtered = GA.rows.filter(row => {
-            if (exposure && row.exposureName !== exposure) return false;
-            if (status && row.status !== status) return false;
-            if (busca) {
-                const texto = [row.title, row.itemId, row.sku, row.inventoryId, row.exposureName, row.listingTypeName]
-                    .join(' ').toLowerCase();
-                if (!texto.includes(busca)) return false;
-            }
-            return true;
-        });
-
-        const numero = (valor, fallback) => Number.isFinite(Number(valor)) ? Number(valor) : fallback;
-
-        GA.filtered.sort((a, b) => {
-            if (sort === 'fullDesc') return numero(b.full, -1) - numero(a.full, -1);
-            if (sort === 'fullAsc') return numero(a.full, 999999999) - numero(b.full, 999999999);
-            if (sort === 'depDesc') return numero(b.warehouse, -1) - numero(a.warehouse, -1);
-            if (sort === 'depAsc') return numero(a.warehouse, 999999999) - numero(b.warehouse, 999999999);
-            return String(a.title).localeCompare(String(b.title), 'pt-BR');
-        });
-
-        GA.page = 1;
-        renderTabela();
-    }
-
-    function atualizarFiltroExposicao() {
-        const select = document.getElementById('gaFiltroExposicao');
-        if (!select) return;
-        const valorAtual = select.value;
-        const mapa = new Map();
-        for (const row of GA.rows) {
-            const nome = row.exposureName || '-';
-            if (nome && nome !== '-') mapa.set(nome, nome);
-        }
-        const valores = [...mapa.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-        select.innerHTML = `
-            <option value="">Todas exposições</option>
-            ${valores.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}
-        `;
-        if (valores.includes(valorAtual)) select.value = valorAtual;
-    }
-
-    function limparFiltros() {
-        document.getElementById('gaBusca').value = '';
-        document.getElementById('gaFiltroExposicao').value = '';
-        document.getElementById('gaFiltroStatus').value = '';
-        document.getElementById('gaFiltroOrdenacao').value = 'title';
-        aplicarFiltros();
-    }
-
-    // ============================================================
-    // PAGINAÇÃO
-    // ============================================================
-
-    function mudarItensPorPagina() {
-        const select = document.getElementById('gaItensPorPagina');
-        GA.pageSize = parseInt(select?.value) || 20;
-        GA.page = 1;
-        renderTabela();
-    }
-
-    function paginar(direcao) {
-        const totalPages = Math.max(1, Math.ceil(GA.filtered.length / GA.pageSize));
-        if (direcao === 'anterior' && GA.page > 1) GA.page--;
-        if (direcao === 'proxima' && GA.page < totalPages) GA.page++;
-        renderTabela();
-    }
-
-    function linhaParaRegistroBanco(row) {
-
-    return {
-
-        chave:
-            String(
-                row.key ||
-                `${row.itemId}:${row.variationId || '0'}`
-            ),
-
-        item_id:
-            row.itemId
-                ? String(row.itemId)
-                : null,
-
-        variation_id:
-            row.variationId
-                ? String(row.variationId)
-                : null,
-
-        seller_id:
-            GA.sellerId
-                ? String(GA.sellerId)
-                : null,
-
-        user_product_id:
-            row.userProductId
-                ? String(row.userProductId)
-                : null,
-
-        inventory_id:
-            row.inventoryId
-                ? String(row.inventoryId)
-                : null,
-
-        title:
-            row.title || null,
-
-        sku:
-            row.sku || null,
-
-        thumbnail:
-            row.thumbnail || null,
-
-        permalink:
-            row.permalink || null,
-
-        listing_type_id:
-            row.listingTypeId || null,
-
-        listing_type_name:
-            row.listingTypeName || null,
-
-        exposure_id:
-            row.exposureId || null,
-
-        exposure_name:
-            row.exposureName || null,
-
-        status:
-            row.status || null,
-
-        price:
-            Number.isFinite(
-                Number(row.price)
-            )
-                ? Number(row.price)
-                : null,
-
-        estoque_ml_fora_full:
-            row.warehouse !== null &&
-            row.warehouse !== undefined
-                ? Number(row.warehouse)
-                : null,
-
-        estoque_full:
-            row.full !== null &&
-            row.full !== undefined
-                ? Number(row.full)
-                : null,
-
-        estoque_total_ml:
-            row.mlTotal !== null &&
-            row.mlTotal !== undefined
-                ? Number(row.mlTotal)
-                : null,
-
-        estoque_full_indisponivel:
-            row.unavailable !== null &&
-            row.unavailable !== undefined
-                ? Number(row.unavailable)
-                : null,
-
-        estoque_full_total:
-            row.fullTotal !== null &&
-            row.fullTotal !== undefined
-                ? Number(row.fullTotal)
-                : null,
-
-        estoque_interno:
-            row.internalWarehouse !== null &&
-            row.internalWarehouse !== undefined
-                ? Number(row.internalWarehouse)
-                : null,
-
-        stock_locations:
-            Array.isArray(
-                row.stockLocations
-            )
-                ? row.stockLocations
-                : [],
-
-        stock_error:
-            row.stockError ||
-            row.fullError ||
-            null,
-
-        ultima_sincronizacao:
-            new Date().toISOString()
-    };
-}
-
-function registroBancoParaLinha(registro) {
-
-    return {
-
-        key:
-            registro.chave,
-
-        itemId:
-            registro.item_id,
-
-        variationId:
-            registro.variation_id,
-
-        title:
-            registro.title || '-',
-
-        thumbnail:
-            registro.thumbnail || '',
-
-        permalink:
-            registro.permalink || '',
-
-        sku:
-            registro.sku || '',
-
-        userProductId:
-            registro.user_product_id || null,
-
-        inventoryId:
-            registro.inventory_id || null,
-
-        listingTypeId:
-            registro.listing_type_id || '',
-
-        listingTypeName:
-            registro.listing_type_name || '',
-
-        exposureId:
-            registro.exposure_id || '',
-
-        exposureName:
-            registro.exposure_name || '',
-
-        status:
-            registro.status || '',
-
-        price:
-            registro.price !== null
-                ? Number(registro.price)
-                : null,
-
-        warehouse:
-            registro.estoque_ml_fora_full,
-
-        full:
-            registro.estoque_full,
-
-        mlTotal:
-            registro.estoque_total_ml,
-
-        unavailable:
-            registro.estoque_full_indisponivel,
-
-        fullTotal:
-            registro.estoque_full_total,
-
-        internalWarehouse:
-            registro.estoque_interno,
-
-        stockLocations:
-            Array.isArray(
-                registro.stock_locations
-            )
-                ? registro.stock_locations
-                : [],
-
-        stockError:
-            registro.stock_error || null,
-
-        fullError:
-            null,
-
-        ultimaSincronizacao:
-            registro.ultima_sincronizacao
-    };
-}
-
-async function salvarAnunciosBanco(
-    rows,
-    mostrarLog = true
-) {
-
-    if (
-        !Array.isArray(rows) ||
-        rows.length === 0
-    ) {
-        return;
-    }
-
-
-    if (!window.supabaseClient) {
-
-        console.warn(
-            '⚠️ Supabase não disponível para salvar anúncios.'
+    const elTotal =
+        document.getElementById(
+            'gaTotal'
         );
 
-        return;
-    }
 
-
-    // =========================================================
-    // REMOVER DUPLICADOS PELA CHAVE
-    // =========================================================
-
-    const mapa =
-        new Map();
-
-
-    for (const row of rows) {
-
-        if (!row) {
-            continue;
-        }
-
-
-        const registro =
-            linhaParaRegistroBanco(
-                row
-            );
-
-
-        if (!registro.chave) {
-            continue;
-        }
-
-
-        mapa.set(
-            registro.chave,
-            registro
+    const paginaInfo =
+        document.getElementById(
+            'gaPaginaInfo'
         );
+
+
+    const btnAnterior =
+        document.getElementById(
+            'gaBtnAnterior'
+        );
+
+
+    const btnProxima =
+        document.getElementById(
+            'gaBtnProxima'
+        );
+
+
+    if (elInicio) {
+
+        elInicio.textContent =
+            totalRegistros
+                ? inicio + 1
+                : 0;
     }
 
 
-    const registros =
-        [
-            ...mapa.values()
-        ];
+    if (elFim) {
+
+        elFim.textContent =
+            fim;
+    }
 
 
-    // =========================================================
-    // SALVAR EM BLOCOS
-    // =========================================================
+    if (elTotal) {
 
-    const TAMANHO_LOTE =
-        200;
-
-
-    let salvos =
-        0;
+        elTotal.textContent =
+            totalRegistros;
+    }
 
 
-    for (
-        let i = 0;
-        i < registros.length;
-        i += TAMANHO_LOTE
+    if (paginaInfo) {
+
+        paginaInfo.textContent =
+            `Página ${GA.page} de ${totalPaginas}`;
+    }
+
+
+    if (btnAnterior) {
+
+        btnAnterior.disabled =
+            GA.page <= 1;
+    }
+
+
+    if (btnProxima) {
+
+        btnProxima.disabled =
+            GA.page >=
+            totalPaginas;
+    }
+}
+
+
+    // ============================================================
+    // LOAD ALL
+    // ============================================================
+
+    async function loadAll(
+        force = false
     ) {
 
-        const lote =
-            registros.slice(
-                i,
-                i + TAMANHO_LOTE
-            );
-
-
-        const {
-            error
-        } = await window.supabaseClient
-            .from(
-                'gerenciamento_anuncios_ml'
-            )
-            .upsert(
-                lote,
-                {
-                    onConflict:
-                        'chave'
-                }
-            );
-
-
-        if (error) {
-
-            console.error(
-                '❌ Erro salvando anúncios no Supabase:',
-                error
-            );
-
-            throw error;
-        }
-
-
-        salvos +=
-            lote.length;
-    }
-
-
-    if (mostrarLog) {
-
-        console.log(
-            `💾 ${salvos} linha(s) de anúncios salvas/atualizadas no banco.`
-        );
-    }
-}
-
-async function carregarAnunciosBanco() {
-
-    if (!window.supabaseClient) {
-
-        throw new Error(
-            'Supabase não inicializado.'
-        );
-    }
-
-
-    console.log(
-        '💾 Carregando anúncios salvos no banco...'
-    );
-
-
-    const todos =
-        [];
-
-
-    const TAMANHO_PAGINA =
-        1000;
-
-
-    let inicio =
-        0;
-
-
-    while (true) {
-
-        const fim =
-            inicio +
-            TAMANHO_PAGINA -
-            1;
-
-
-        const {
-            data,
-            error
-        } = await window.supabaseClient
-            .from(
-                'gerenciamento_anuncios_ml'
-            )
-            .select('*')
-            .order(
-                'title',
-                {
-                    ascending:
-                        true
-                }
-            )
-            .range(
-                inicio,
-                fim
-            );
-
-
-        if (error) {
-
-            console.error(
-                '❌ Erro carregando anúncios salvos:',
-                error
-            );
-
-            throw error;
-        }
-
-
-        const pagina =
-            data || [];
-
-
-        todos.push(
-            ...pagina
-        );
-
-
         if (
-            pagina.length <
-            TAMANHO_PAGINA
+            GA.loading
         ) {
-
-            break;
-        }
-
-
-        inicio +=
-            TAMANHO_PAGINA;
-    }
-
-
-    GA.rows =
-        todos.map(
-            registroBancoParaLinha
-        );
-
-
-    GA.page =
-        1;
-
-
-    updateSummary();
-
-    updateExposureFilter();
-
-    applyFilters();
-
-
-    console.log(
-        `✅ ${GA.rows.length} linha(s) carregadas do banco.`
-    );
-
-
-    return GA.rows;
-}
-
-function mesclarLinhasComDadosSalvos(
-    novasLinhas,
-    linhasAntigas
-) {
-
-    const antigasPorChave =
-        new Map();
-
-
-    for (
-        const antiga
-        of linhasAntigas || []
-    ) {
-
-        if (antiga?.key) {
-
-            antigasPorChave.set(
-                String(antiga.key),
-                antiga
-            );
-        }
-    }
-
-
-    return novasLinhas.map(
-        nova => {
-
-            const antiga =
-                antigasPorChave.get(
-                    String(nova.key)
-                );
-
-
-            if (!antiga) {
-
-                return nova;
-            }
-
-
-            return {
-
-                // DADOS ANTIGOS
-                ...antiga,
-
-                // DADOS NOVOS DO ANÚNCIO
-                ...nova,
-
-
-                // =============================================
-                // PRESERVAR ESTOQUE ATÉ CHEGAR UMA CONSULTA NOVA
-                // =============================================
-
-                warehouse:
-                    antiga.warehouse,
-
-                full:
-                    antiga.full,
-
-                mlTotal:
-                    antiga.mlTotal,
-
-                unavailable:
-                    antiga.unavailable,
-
-                fullTotal:
-                    antiga.fullTotal,
-
-                stockLocations:
-                    antiga.stockLocations ||
-                    [],
-
-                stockError:
-                    antiga.stockError || null,
-
-
-                // Estoque interno pode ser atualizado
-                internalWarehouse:
-                    nova.internalWarehouse
-            };
-        }
-    );
-}
-
-    async function loadAll(force = false) {
-
-    // =========================================================
-    // EVITAR DUAS SINCRONIZAÇÕES AO MESMO TEMPO
-    // =========================================================
-
-    if (GA.loading) {
-
-        console.log(
-            '⚠️ Gerenciamento de anúncios já está sendo atualizado.'
-        );
-
-        return;
-    }
-
-
-    GA.loading = true;
-
-
-    // =========================================================
-    // GARANTIR INTERFACE
-    // =========================================================
-
-    ensureUI();
-
-
-    const refresh =
-        document.getElementById(
-            'gaRefresh'
-        );
-
-
-    if (refresh) {
-
-        refresh.disabled = true;
-
-        refresh.innerHTML = `
-            <i class="fas fa-spinner fa-spin"></i>
-            Atualizando...
-        `;
-    }
-
-
-    // =========================================================
-    // GUARDAR OS DADOS QUE JÁ ESTAVAM NA TELA/BANCO
-    //
-    // MUITO IMPORTANTE:
-    // se uma consulta nova falhar, vamos preservar o último
-    // estoque conhecido.
-    // =========================================================
-
-    let linhasSalvasAntes =
-        Array.isArray(GA.rows)
-            ? [...GA.rows]
-            : [];
-
-
-    try {
-
-        console.log(
-            '🔄 Iniciando sincronização do Gerenciamento de Anúncios...'
-        );
-
-
-        // =====================================================
-        // 1. SE A TELA AINDA NÃO TEM DADOS, TENTAR CARREGAR
-        //    O CACHE DO SUPABASE PRIMEIRO
-        // =====================================================
-
-        if (
-            linhasSalvasAntes.length === 0 &&
-            typeof carregarAnunciosBanco === 'function'
-        ) {
-
-            try {
-
-                progress(
-                    'Carregando dados já salvos...'
-                );
-
-
-                const linhasBanco =
-                    await carregarAnunciosBanco();
-
-
-                if (
-                    Array.isArray(linhasBanco) &&
-                    linhasBanco.length > 0
-                ) {
-
-                    linhasSalvasAntes =
-                        [...linhasBanco];
-
-
-                    console.log(
-                        `💾 ${linhasSalvasAntes.length} linha(s) recuperadas do banco antes da atualização.`
-                    );
-                }
-
-            } catch (error) {
-
-                console.warn(
-                    '⚠️ Não foi possível carregar os anúncios existentes do banco:',
-                    error
-                );
-            }
-        }
-
-
-        // =====================================================
-        // 2. SE FOR ATUALIZAÇÃO FORÇADA, LIMPAR APENAS CACHES
-        //    DE API.
-        //
-        // NÃO LIMPAR GA.rows.
-        // NÃO APAGAR OS DADOS DO BANCO.
-        // =====================================================
-
-        if (force) {
 
             console.log(
-                '🔄 Atualização completa solicitada.'
+                '⚠️ Já existe uma sincronização em andamento.'
             );
 
 
-            GA.token =
-                null;
-
-
-            GA.sellerId =
-                null;
-
-
-            if (GA.fullCache) {
-
-                GA.fullCache.clear();
-            }
-
-
-            if (GA.userProductStockCache) {
-
-                GA.userProductStockCache.clear();
-            }
-
-
-            if (GA.userProductStockPromises) {
-
-                GA.userProductStockPromises.clear();
-            }
-
-
-            if (GA.fullDetailCache) {
-
-                GA.fullDetailCache.clear();
-            }
-
-
-            GA.exposureByListingType.clear();
-
-            GA.listingTypeNames.clear();
-
-            GA.exposureNames.clear();
+            return;
         }
 
 
-        // =====================================================
-        // 3. CARREGAR ESTOQUE INTERNO
-        // =====================================================
-
-        progress(
-            'Carregando estoque interno...'
-        );
+        ensureUI();
 
 
-        await loadInternalStock();
+        GA.loading =
+            true;
 
 
-        // =====================================================
-        // 4. OBTER SELLER ID
-        //
-        // Fazemos antes para já deixar GA.sellerId disponível
-        // na hora de salvar os registros.
-        // =====================================================
-
-        progress(
-            'Validando conta Mercado Livre...'
-        );
-
-
-        await sellerId();
-
-
-        // =====================================================
-        // 5. LOCALIZAR TODOS OS ANÚNCIOS
-        // =====================================================
-
-        progress(
-            'Localizando todos os anúncios da conta...'
-        );
-
-
-        const ids =
-            await scanAllIds();
-
-
-        if (
-            !Array.isArray(ids) ||
-            ids.length === 0
-        ) {
-
-            throw new Error(
-                'Nenhum anúncio encontrado na conta do Mercado Livre.'
+        const refresh =
+            document.getElementById(
+                'gaRefresh'
             );
+
+
+        if (refresh) {
+
+            refresh.disabled =
+                true;
+
+
+            refresh.innerHTML = `
+
+                <i class="fas fa-spinner fa-spin"></i>
+
+                Atualizando...
+            `;
         }
 
 
-        console.log(
-            `✅ ${ids.length} anúncios encontrados.`
-        );
+        let linhasSalvasAntes =
+
+            Array.isArray(
+                GA.rows
+            )
+
+                ? [
+                    ...GA.rows
+                ]
+
+                : [];
 
 
-        // =====================================================
-        // 6. BUSCAR DETALHES DOS ANÚNCIOS
-        //
-        // getAllItems() já deve utilizar:
-        //
-        // include_attributes=all
-        //
-        // para aumentar a precisão do SELLER_SKU.
-        // =====================================================
+        try {
 
-        progress(
-            `Buscando detalhes de ${ids.length} anúncios...`
-        );
-
-
-        const items =
-            await getAllItems(
-                ids
+            console.log(
+                '🔄 Iniciando sincronização do Gerenciamento de Anúncios...'
             );
 
 
-        console.log(
-            `📦 ${items.length} anúncios detalhados recebidos.`
-        );
+            // ====================================================
+            // TENTAR CARREGAR CACHE ANTIGO
+            // ====================================================
+
+            if (
+                !linhasSalvasAntes.length
+            ) {
+
+                try {
+
+                    const banco =
+                        await carregarAnunciosBanco();
 
 
-        // =====================================================
-        // 7. CRIAR AS LINHAS DOS ANÚNCIOS FULL
-        // =====================================================
+                    if (
+                        Array.isArray(
+                            banco
+                        ) &&
+                        banco.length
+                    ) {
 
-        progress(
-            'Identificando anúncios FULL...'
-        );
+                        linhasSalvasAntes =
+                            [
+                                ...banco
+                            ];
+                    }
+
+                } catch (error) {
+
+                    console.warn(
+                        '⚠️ Cache do banco indisponível:',
+                        error
+                    );
+                }
+            }
 
 
-        const novasLinhas =
-            buildRows(
-                items
+            // ====================================================
+            // LIMPAR CACHES QUANDO FOR ATUALIZAÇÃO FORÇADA
+            // ====================================================
+
+            if (force) {
+
+                GA.token =
+                    null;
+
+
+                GA.sellerId =
+                    null;
+
+
+                GA.userProductStockCache
+                    .clear();
+
+
+                GA.userProductStockPromises
+                    .clear();
+
+
+                GA.inventoryStockCache
+                    .clear();
+
+
+                GA.listingTypeNames
+                    .clear();
+
+
+                GA.exposureNames
+                    .clear();
+
+
+                GA.exposureByListingType
+                    .clear();
+
+
+                GA.stockNextRequestAt =
+                    0;
+            }
+
+
+            // ====================================================
+            // CONTA
+            // ====================================================
+
+            progress(
+                'Validando conta Mercado Livre...'
             );
 
 
-        const quantidadeAnunciosFull =
-            new Set(
-                novasLinhas.map(
-                    row =>
-                        row.itemId
-                )
-            ).size;
+            await getSellerId();
 
 
-        console.log(
-            `🏭 ${quantidadeAnunciosFull} anúncios FULL detectados.`
-        );
+            // ====================================================
+            // TODOS ANÚNCIOS
+            // ====================================================
+
+            progress(
+                'Localizando todos os anúncios da conta...'
+            );
 
 
-        console.log(
-            `📋 ${novasLinhas.length} SKU(s)/variação(ões) FULL encontrados.`
-        );
+            const ids =
+                await scanAllIds();
 
 
-        // =====================================================
-        // 8. MESCLAR COM O ÚLTIMO DADO SALVO
-        //
-        // O anúncio, título, SKU, preço etc. ficam novos.
-        //
-        // O estoque anterior é preservado até conseguirmos uma
-        // resposta nova do Mercado Livre.
-        // =====================================================
+            if (
+                !ids.length
+            ) {
 
-        if (
-            typeof mesclarLinhasComDadosSalvos ===
-            'function'
-        ) {
+                throw new Error(
+                    'Nenhum anúncio encontrado na conta.'
+                );
+            }
+
+
+            // ====================================================
+            // DETALHES
+            // ====================================================
+
+            progress(
+                `Buscando detalhes de ${ids.length} anúncios...`
+            );
+
+
+            const items =
+                await getAllItems(
+                    ids
+                );
+
+
+            // ====================================================
+            // FULL
+            // ====================================================
+
+            progress(
+                'Identificando anúncios FULL...'
+            );
+
+
+            const novasLinhas =
+                buildRows(
+                    items
+                );
+
+
+            console.log(
+
+                `🏭 ${
+
+                    new Set(
+                        novasLinhas.map(
+                            row =>
+                                row.itemId
+                        )
+                    ).size
+
+                } anúncios FULL detectados.`
+            );
+
+
+            console.log(
+
+                `📋 ${novasLinhas.length} linha(s) FULL entre produtos e variações.`
+            );
+
+
+            // ====================================================
+            // RECUPERAR SKU FALTANTE
+            // ====================================================
+
+            await recuperarSkusFaltantes(
+                novasLinhas
+            );
+
+
+            // ====================================================
+            // MESCLAR COM CACHE
+            // ====================================================
 
             GA.rows =
                 mesclarLinhasComDadosSalvos(
+
                     novasLinhas,
+
                     linhasSalvasAntes
                 );
 
-        } else {
 
-            // Fallback caso a função ainda não tenha sido criada.
-            GA.rows =
-                novasLinhas;
-        }
-
-
-        // =====================================================
-        // 9. SALVAR IMEDIATAMENTE OS DADOS BÁSICOS
-        //
-        // Isso acontece ANTES da longa consulta dos estoques.
-        //
-        // Então mesmo que aconteça 429 depois, os anúncios já
-        // estão persistidos no banco.
-        // =====================================================
-
-        progress(
-            'Salvando anúncios encontrados...'
-        );
-
-
-        try {
-
-            if (
-                typeof salvarAnunciosBanco ===
-                'function'
-            ) {
-
-                await salvarAnunciosBanco(
-                    GA.rows
-                );
-            }
-
-        } catch (error) {
-
-            console.warn(
-                '⚠️ Os anúncios foram carregados, mas houve erro ao salvar os dados básicos:',
-                error
-            );
-        }
-
-
-        // =====================================================
-        // 10. JÁ MOSTRAR A TABELA
-        //
-        // NÃO ESPERAR TODOS OS ESTOQUES PARA EXIBIR.
-        // =====================================================
-
-        GA.page =
-            1;
-
-
-        updateSummary();
-
-        updateExposureFilter();
-
-        applyFilters();
-
-
-        // =====================================================
-        // 11. BUSCAR EXPOSIÇÃO / TIPO DO ANÚNCIO
-        // =====================================================
-
-        progress(
-            'Atualizando exposição e tipo dos anúncios...'
-        );
-
-
-        try {
-
-            await loadExposure(
-                GA.rows
-            );
-
-
-            // Atualiza tabela
-            updateExposureFilter();
-
-            applyFilters();
-
-
-            // Salvar exposição
-            if (
-                typeof salvarAnunciosBanco ===
-                'function'
-            ) {
-
-                await salvarAnunciosBanco(
-                    GA.rows,
-                    false
-                );
-            }
-
-        } catch (error) {
-
-            console.warn(
-                '⚠️ Não foi possível atualizar todas as exposições:',
-                error
-            );
-        }
-
-
-        // =====================================================
-        // 12. CONSULTAR ESTOQUE REAL DO MERCADO LIVRE
-        //
-        // loadFullStocks() agora deve:
-        //
-        // - agrupar por user_product_id;
-        // - consultar cada UP apenas uma vez;
-        // - respeitar rate limit;
-        // - usar cache;
-        // - atualizar a tabela progressivamente;
-        // - preferencialmente salvar blocos progressivamente.
-        // =====================================================
-
-        progress(
-            `Consultando estoque dos ${GA.rows.length} registros FULL...`
-        );
-
-
-        try {
-
-            await loadFullStocks(
-                GA.rows
-            );
-
-        } catch (error) {
-
-            // =================================================
-            // IMPORTANTE:
-            //
-            // NÃO CANCELAMOS A SINCRONIZAÇÃO TODA POR CAUSA
-            // DE UM PROBLEMA DE ESTOQUE.
-            //
-            // Os últimos valores salvos continuam na tabela.
-            // =================================================
-
-            console.error(
-                '⚠️ A consulta de estoque não foi concluída completamente:',
-                error
-            );
-
-
-            if (
-                typeof window.showToast ===
-                'function'
-            ) {
-
-                window.showToast(
-                    'Alguns estoques não puderam ser atualizados. Os últimos valores salvos foram mantidos.',
-                    'warning'
-                );
-            }
-        }
-
-
-        // =====================================================
-        // 13. SALVAR ESTADO FINAL NO SUPABASE
-        // =====================================================
-
-        progress(
-            'Salvando atualização no banco...'
-        );
-
-
-        try {
-
-            if (
-                typeof salvarAnunciosBanco ===
-                'function'
-            ) {
-
-                await salvarAnunciosBanco(
-                    GA.rows
-                );
-            }
-
-        } catch (error) {
-
-            console.error(
-                '❌ Erro ao salvar o resultado final no banco:',
-                error
-            );
-        }
-
-
-        // =====================================================
-        // 14. RENDER FINAL
-        // =====================================================
-
-        updateSummary();
-
-        updateExposureFilter();
-
-        applyFilters();
-
-
-        // =====================================================
-        // 15. ESTATÍSTICAS DE DIAGNÓSTICO
-        // =====================================================
-
-        const anunciosFull =
-            new Set(
-                GA.rows.map(
-                    row =>
-                        row.itemId
-                )
-            ).size;
-
-
-        const totalLinhas =
-            GA.rows.length;
-
-
-        const comSku =
-            GA.rows.filter(
-                row =>
-                    row.sku &&
-                    String(
-                        row.sku
-                    ).trim() !== ''
-            ).length;
-
-
-        const semSku =
-            totalLinhas -
-            comSku;
-
-
-        const comUserProduct =
-            GA.rows.filter(
-                row =>
-                    !!row.userProductId
-            ).length;
-
-
-        const comEstoqueML =
-            GA.rows.filter(
-                row =>
-                    row.full !== null ||
-                    row.warehouse !== null ||
-                    row.mlTotal !== null
-            ).length;
-
-
-        const comErroEstoque =
-            GA.rows.filter(
-                row =>
-                    !!row.stockError
-            ).length;
-
-
-        console.log(
-            '✅ Sincronização do Gerenciamento de Anúncios finalizada.',
-            {
-                anunciosFull:
-                    anunciosFull,
-
-                linhas:
-                    totalLinhas,
-
-                comSku:
-                    comSku,
-
-                semSku:
-                    semSku,
-
-                comUserProduct:
-                    comUserProduct,
-
-                estoqueAtualizado:
-                    comEstoqueML,
-
-                errosEstoque:
-                    comErroEstoque
-            }
-        );
-
-
-        // =====================================================
-        // 16. MOSTRAR ALGUNS ANÚNCIOS SEM SKU PARA DIAGNÓSTICO
-        // =====================================================
-
-        if (
-            semSku > 0
-        ) {
-
-            console.warn(
-                `⚠️ ${semSku} linha(s) continuam sem SKU.`
-            );
-
-
-            console.table(
-                GA.rows
-                    .filter(
-                        row =>
-                            !row.sku ||
-                            String(
-                                row.sku
-                            ).trim() === ''
-                    )
-                    .slice(
-                        0,
-                        30
-                    )
-                    .map(
-                        row => ({
-                            MLB:
-                                row.itemId,
-
-                            variacao:
-                                row.variationId,
-
-                            user_product:
-                                row.userProductId,
-
-                            inventory:
-                                row.inventoryId,
-
-                            titulo:
-                                row.title
-                        })
-                    )
-            );
-        }
-
-
-        // =====================================================
-        // 17. TOAST FINAL
-        // =====================================================
-
-        if (
-            typeof window.showToast ===
-            'function'
-        ) {
-
-            window.showToast(
-                `${anunciosFull} anúncios FULL sincronizados`,
-                'success'
-            );
-        }
-
-    } catch (error) {
-
-        console.error(
-            '❌ Gerenciamento de Anúncios:',
-            error
-        );
-
-
-        // =====================================================
-        // SE A SINCRONIZAÇÃO FALHAR, NÃO APAGAR A TABELA
-        //
-        // Se temos dados anteriores, continuamos mostrando-os.
-        // =====================================================
-
-        if (
-            linhasSalvasAntes.length > 0
-        ) {
-
-            console.warn(
-                '⚠️ A atualização falhou. Mantendo os últimos dados salvos.'
-            );
-
-
-            GA.rows =
-                linhasSalvasAntes;
+            // Mostrar a tabela antes de consultar todo estoque.
+            GA.page =
+                1;
 
 
             updateSummary();
 
             updateExposureFilter();
 
-            applyFilters();
+            applyFilters(
+                false
+            );
 
 
-            if (
-                typeof window.showToast ===
-                'function'
-            ) {
+            // ====================================================
+            // EXPOSIÇÃO
+            // ====================================================
 
-                window.showToast(
-                    'A atualização falhou. Os últimos dados salvos continuam disponíveis.',
+            progress(
+                'Atualizando exposição e tipo dos anúncios...'
+            );
+
+
+            try {
+
+                await loadExposure(
+                    GA.rows
+                );
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ Exposição não foi totalmente atualizada:',
+                    error
+                );
+            }
+
+
+            updateExposureFilter();
+
+            applyFilters(
+                false
+            );
+
+
+            // ====================================================
+            // SALVAR DADOS BÁSICOS
+            // ====================================================
+
+            try {
+
+                progress(
+                    'Salvando anúncios no banco...'
+                );
+
+
+                await salvarAnunciosBanco(
+                    GA.rows
+                );
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ Falha ao salvar dados básicos no banco:',
+                    error
+                );
+            }
+
+
+            // ====================================================
+            // REMOVER ANTIGOS
+            // ====================================================
+
+            try {
+
+                await removerAnunciosObsoletos(
+                    GA.rows
+                );
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ Limpeza de registros obsoletos falhou:',
+                    error
+                );
+            }
+
+
+            // ====================================================
+            // ESTOQUE
+            // ====================================================
+
+            progress(
+
+                `Atualizando estoque de ` +
+
+                `${GA.rows.length} ` +
+
+                `linha(s) FULL...`
+            );
+
+
+            try {
+
+                await loadFullStocks(
+                    GA.rows
+                );
+
+            } catch (error) {
+
+                console.error(
+                    '⚠️ Atualização de estoque incompleta:',
+                    error
+                );
+
+
+                window.showToast?.(
+
+                    'Alguns estoques não foram atualizados. ' +
+
+                    'O último valor salvo foi mantido.',
+
                     'warning'
                 );
             }
 
-        } else {
 
-            // =================================================
-            // SOMENTE SE NÃO EXISTE NENHUM DADO SALVO
-            // MOSTRAR ERRO NA TABELA
-            // =================================================
+            // ====================================================
+            // SALVAR ESTADO FINAL
+            // ====================================================
 
-            const body =
-                document.getElementById(
-                    'gaBody'
+            try {
+
+                progress(
+                    'Salvando estado final...'
                 );
 
 
-            if (body) {
+                await salvarAnunciosBanco(
+                    GA.rows
+                );
 
-                body.innerHTML = `
-                    <tr>
+            } catch (error) {
 
-                        <td
-                            colspan="12"
-                            style="
-                                text-align:center;
-                                padding:30px;
-                                color:#b91c1c;
-                            "
-                        >
+                console.warn(
+                    '⚠️ Falha ao salvar estado final:',
+                    error
+                );
+            }
 
-                            <strong>
-                                Erro ao carregar anúncios
-                            </strong>
 
-                            <br><br>
+            updateSummary();
 
-                            ${esc(
-                                error?.message ||
-                                error ||
-                                'Erro desconhecido'
-                            )}
+            updateExposureFilter();
 
-                        </td>
+            applyFilters(
+                false
+            );
 
-                    </tr>
+
+            // ====================================================
+            // ESTATÍSTICAS
+            // ====================================================
+
+            const semSku =
+                GA.rows.filter(
+                    row =>
+                        !String(
+                            row.sku ||
+                            ''
+                        ).trim()
+                );
+
+
+            console.log(
+                '✅ Sincronização finalizada.',
+                {
+
+                    anunciosFull:
+
+                        new Set(
+                            GA.rows.map(
+                                row =>
+                                    row.itemId
+                            )
+                        ).size,
+
+                    linhas:
+                        GA.rows.length,
+
+                    comSku:
+
+                        GA.rows.length -
+                        semSku.length,
+
+                    semSku:
+                        semSku.length,
+
+                    comUserProduct:
+
+                        GA.rows.filter(
+                            row =>
+                                !!row.userProductId
+                        ).length,
+
+                    estoquePreenchido:
+
+                        GA.rows.filter(
+                            row =>
+
+                                row.full !==
+                                    null ||
+
+                                row.warehouse !==
+                                    null ||
+
+                                row.mlTotal !==
+                                    null
+                        ).length
+                }
+            );
+
+
+            window.showToast?.(
+
+                `${
+                    new Set(
+                        GA.rows.map(
+                            row =>
+                                row.itemId
+                        )
+                    ).size
+                } anúncios FULL sincronizados`,
+
+                'success'
+            );
+
+        } catch (error) {
+
+            console.error(
+                '❌ Gerenciamento de Anúncios:',
+                error
+            );
+
+
+            // ====================================================
+            // PRESERVAR DADOS ANTIGOS
+            // ====================================================
+
+            if (
+                linhasSalvasAntes.length
+            ) {
+
+                GA.rows =
+                    linhasSalvasAntes;
+
+
+                updateSummary();
+
+                updateExposureFilter();
+
+                applyFilters(
+                    false
+                );
+
+
+                window.showToast?.(
+
+                    'A atualização falhou. ' +
+
+                    'Os últimos dados salvos continuam visíveis.',
+
+                    'warning'
+                );
+
+            } else {
+
+                const body =
+                    document.getElementById(
+                        'gaBody'
+                    );
+
+
+                if (body) {
+
+                    body.innerHTML = `
+
+                        <tr>
+
+                            <td
+                                colspan="11"
+                                style="
+                                    text-align:center;
+                                    padding:30px;
+                                    color:#b91c1c;
+                                "
+                            >
+
+                                <strong>
+                                    Erro ao carregar anúncios
+                                </strong>
+
+                                <br><br>
+
+                                ${esc(
+                                    error?.message ||
+                                    error ||
+                                    'Erro desconhecido'
+                                )}
+
+                            </td>
+
+                        </tr>
+                    `;
+                }
+
+
+                window.showToast?.(
+
+                    `Erro: ${
+
+                        error?.message ||
+
+                        'Falha ao carregar anúncios'
+
+                    }`,
+
+                    'error'
+                );
+            }
+
+        } finally {
+
+            GA.loading =
+                false;
+
+
+            progress(
+                ''
+            );
+
+
+            if (refresh) {
+
+                refresh.disabled =
+                    false;
+
+
+                refresh.innerHTML = `
+
+                    <i class="fas fa-sync-alt"></i>
+
+                    Atualizar tudo
                 `;
             }
 
 
-            if (
-                typeof window.showToast ===
-                'function'
-            ) {
-
-                window.showToast(
-                    `Erro: ${
-                        error?.message ||
-                        'Falha ao carregar anúncios'
-                    }`,
-                    'error'
-                );
-            }
+            console.log(
+                '🏁 Processo de atualização encerrado.'
+            );
         }
-
-    } finally {
-
-        // =====================================================
-        // FINALIZAR ESTADO DE CARREGAMENTO
-        // =====================================================
-
-        GA.loading =
-            false;
-
-
-        progress('');
-
-
-        // =====================================================
-        // RESTAURAR BOTÃO
-        // =====================================================
-
-        if (refresh) {
-
-            refresh.disabled =
-                false;
-
-
-            refresh.innerHTML = `
-                <i class="fas fa-sync-alt"></i>
-                Atualizar tudo
-            `;
-        }
-
-
-        console.log(
-            '🏁 Processo de atualização encerrado.'
-        );
     }
-}
+
 
     // ============================================================
-    // EXPORTAR
+    // EXPORTAR CSV
     // ============================================================
 
-    function exportarExcel() {
-        if (!GA.filtered.length) {
-            window.showToast('Nenhum dado para exportar', 'warning');
+    function exportarCSV() {
+
+        const rows =
+
+            GA.filtered.length
+
+                ? GA.filtered
+
+                : GA.rows;
+
+
+        if (
+            !rows.length
+        ) {
+
+            window.showToast?.(
+                'Nenhum dado para exportar.',
+                'warning'
+            );
+
+
             return;
         }
 
-        const dados = [
-            ['MLB', 'Variação', 'Título', 'SKU', 'Depósito', 'FULL', 'Indisponível', 'Exposição', 'Tipo', 'Status', 'Preço', 'Inventory ID']
-        ];
 
-        for (const row of GA.filtered) {
-            dados.push([
-                row.itemId,
-                row.variationId || '-',
-                row.title,
-                row.sku || '-',
-                row.warehouse ?? '-',
-                row.full ?? '-',
-                row.unavailable ?? '-',
-                row.exposureName || '-',
-                row.listingTypeName || '-',
-                statusLabel(row.status),
-                row.price ?? '-',
-                row.inventoryId || '-'
-            ]);
+        const colunas =
+            [
+
+                'MLB',
+
+                'Variação',
+
+                'Título',
+
+                'SKU',
+
+                'User Product',
+
+                'Inventory ID',
+
+                'Estoque ML fora FULL',
+
+                'Estoque FULL',
+
+                'Total disponível ML',
+
+                'Estoque interno',
+
+                'Exposição',
+
+                'Tipo',
+
+                'Status',
+
+                'Preço'
+            ];
+
+
+        function csv(
+            value
+        ) {
+
+            const texto =
+                String(
+                    value ??
+                    ''
+                );
+
+
+            return (
+                '"' +
+                texto.replaceAll(
+                    '"',
+                    '""'
+                ) +
+                '"'
+            );
         }
 
-        const ws = XLSX.utils.aoa_to_sheet(dados);
-        ws['!cols'] = [
-            { wch: 15 }, { wch: 12 }, { wch: 40 }, { wch: 18 },
-            { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 14 },
-            { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 20 }
-        ];
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Anuncios_FULL');
-        XLSX.writeFile(wb, `anuncios_full_${dataLocalISO()}.xlsx`);
-        window.showToast('✅ Relatório exportado com sucesso!', 'success');
-    }
 
-    window.abrirSistemaGerenciamentoAnuncios = function() {
+        const linhas =
+            [
 
-    console.log(
-        '📋 Abrindo Gerenciamento de Anúncios...'
-    );
+                colunas
+                    .map(
+                        csv
+                    )
+                    .join(
+                        ';'
+                    ),
 
-    // =========================================================
-    // 1. GARANTIR QUE A INTERFACE EXISTA
-    // =========================================================
+                ...rows.map(
+                    row =>
+                        [
 
-    ensureUI();
+                            row.itemId,
+
+                            row.variationId ||
+                            '',
+
+                            row.title,
+
+                            row.sku,
+
+                            row.userProductId ||
+                            '',
+
+                            row.inventoryId ||
+                            '',
+
+                            row.warehouse ??
+                            '',
+
+                            row.full ??
+                            '',
+
+                            row.mlTotal ??
+                            '',
+
+                            row.internalWarehouse ??
+                            '',
+
+                            row.exposureName ||
+                            '',
+
+                            row.listingTypeName ||
+                            '',
+
+                            statusLabel(
+                                row.status
+                            ),
+
+                            row.price ??
+                            ''
+
+                        ]
+                            .map(
+                                csv
+                            )
+                            .join(
+                                ';'
+                            )
+                )
+            ];
 
 
-    // =========================================================
-    // 2. ABRIR A TELA IMEDIATAMENTE
-    // =========================================================
+        const blob =
+            new Blob(
 
-    const tela =
-        document.getElementById(
-            'gerenciamentoAnunciosScreen'
+                [
+                    '\uFEFF' +
+                    linhas.join(
+                        '\n'
+                    )
+                ],
+
+                {
+                    type:
+                        'text/csv;charset=utf-8;'
+                }
+            );
+
+
+        const url =
+            URL.createObjectURL(
+                blob
+            );
+
+
+        const a =
+            document.createElement(
+                'a'
+            );
+
+
+        a.href =
+            url;
+
+
+        a.download =
+
+            `gerenciamento_anuncios_` +
+
+            `${dataLocalISO()}` +
+
+            `.csv`;
+
+
+        document.body.appendChild(
+            a
         );
 
 
-    if (!tela) {
+        a.click();
 
-        console.error(
-            '❌ Tela gerenciamentoAnunciosScreen não encontrada.'
+
+        a.remove();
+
+
+        URL.revokeObjectURL(
+            url
         );
-
-        return;
     }
 
 
-    tela.style.display =
-        'block';
-
-
-    document.body.style.overflow =
-        'hidden';
-
-
-    console.log(
-        '✅ Tela do Gerenciamento de Anúncios aberta.'
-    );
-
-
-    // =========================================================
-    // 3. SE JÁ TEM DADOS NA MEMÓRIA
-    // =========================================================
-
-    if (
-        Array.isArray(GA.rows) &&
-        GA.rows.length > 0
-    ) {
+   window.abrirSistemaGerenciamentoAnuncios =
+    function () {
 
         console.log(
-            `📋 ${GA.rows.length} registros já estão carregados.`
+            '📋 Abrindo Gerenciamento de Anúncios...'
         );
 
 
-        GA.page =
-            1;
+        // =========================================================
+        // ESCONDER OUTRAS ABAS
+        // =========================================================
+
+        const sistemas = [
+
+            'menuSystem',
+
+            'mainSystem',
+
+            'salesSystem',
+
+            'precificacaoSystem',
+
+            'reembolsosSystem',
+
+            'caixaSystem',
+
+            'perguntasSystem',
+
+            'promocoesSystem',
+
+            'reviewsSystem',
+
+            'folgasSystem',
+
+            'shippingSystem',
+
+            'entradasSystem',
+
+            'feedbackSystem',
+
+            'estoqueSystem',
+
+            'estoqueGestaoSystem',
+
+            'fullSystem',
+
+            'gerenciamentoAnunciosSystem'
+        ];
 
 
-        updateSummary();
+        sistemas.forEach(
+            id => {
 
-        updateExposureFilter();
-
-        applyFilters();
-
-
-        return;
-    }
+                const el =
+                    document.getElementById(
+                        id
+                    );
 
 
-    // =========================================================
-    // 4. MOSTRAR CARREGAMENTO
-    // =========================================================
+                if (el) {
 
-    progress(
-        'Carregando anúncios salvos...'
-    );
+                    el.classList.add(
+                        'hidden'
+                    );
+                }
+            }
+        );
 
 
-    // =========================================================
-    // 5. CARREGAR SUPABASE SEM BLOQUEAR A ABERTURA DA TELA
-    // =========================================================
+        // =========================================================
+        // MOSTRAR GERENCIAMENTO
+        // =========================================================
 
-    (async () => {
+        const tela =
+            document.getElementById(
+                'gerenciamentoAnunciosSystem'
+            );
+
+
+        if (!tela) {
+
+            console.error(
+                '❌ #gerenciamentoAnunciosSystem não encontrado no index.html'
+            );
+
+
+            window.showToast?.(
+                'Tela de Gerenciamento de Anúncios não encontrada.',
+                'error'
+            );
+
+
+            return;
+        }
+
+
+        tela.classList.remove(
+            'hidden'
+        );
+
+
+        tela.style.display =
+            'block';
+
+
+        // =========================================================
+        // HEADER DO USUÁRIO
+        // =========================================================
+
+        let usuario =
+            null;
+
 
         try {
 
-            // =================================================
-            // TENTAR CARREGAR DO BANCO
-            // =================================================
-
             if (
-                typeof carregarAnunciosBanco ===
-                'function'
+                typeof currentUser !==
+                'undefined'
             ) {
 
-                console.log(
-                    '💾 Buscando anúncios salvos no Supabase...'
-                );
+                usuario =
+                    currentUser;
+            }
 
+        } catch (error) {
+
+        }
+
+
+        usuario =
+            usuario ||
+            window.currentUser ||
+            null;
+
+
+        const nome =
+            document.getElementById(
+                'gaUserName'
+            );
+
+
+        const avatar =
+            document.getElementById(
+                'gaUserAvatar'
+            );
+
+
+        const role =
+            document.getElementById(
+                'gaUserRole'
+            );
+
+
+        if (nome) {
+
+            nome.textContent =
+
+                usuario?.name ||
+
+                usuario?.nome ||
+
+                usuario?.username ||
+
+                'Usuário';
+        }
+
+
+        if (avatar) {
+
+            avatar.textContent =
+
+                usuario?.avatar ||
+
+                String(
+                    usuario?.name ||
+                    usuario?.nome ||
+                    'U'
+                )
+                    .trim()
+                    .charAt(0)
+                    .toUpperCase() ||
+
+                'U';
+        }
+
+
+        if (role) {
+
+            role.textContent =
+
+                usuario?.role ||
+
+                usuario?.cargo ||
+
+                '';
+        }
+
+
+        // =========================================================
+        // SE JÁ ESTÁ EM MEMÓRIA
+        // =========================================================
+
+        if (
+            Array.isArray(
+                GA.rows
+            ) &&
+            GA.rows.length
+        ) {
+
+            updateSummary();
+
+            updateExposureFilter();
+
+            applyFilters(
+                false
+            );
+
+
+            return;
+        }
+
+
+        // =========================================================
+        // CARREGAR BANCO
+        // =========================================================
+
+        progress(
+            'Carregando anúncios salvos...'
+        );
+
+
+        (async () => {
+
+            try {
 
                 const dados =
                     await carregarAnunciosBanco();
 
 
                 if (
-                    Array.isArray(dados) &&
-                    dados.length > 0
+                    Array.isArray(
+                        dados
+                    ) &&
+                    dados.length
                 ) {
-
-                    console.log(
-                        `✅ ${dados.length} registros recuperados do Supabase.`
-                    );
-
-
-                    // carregarAnunciosBanco já deve preencher GA.rows,
-                    // mas garantimos caso não tenha preenchido.
-
-                    if (
-                        !Array.isArray(GA.rows) ||
-                        GA.rows.length === 0
-                    ) {
-
-                        GA.rows =
-                            dados;
-                    }
-
-
-                    GA.page =
-                        1;
-
-
-                    updateSummary();
-
-                    updateExposureFilter();
-
-                    applyFilters();
-
 
                     progress('');
 
 
                     console.log(
-                        '✅ Gerenciamento carregado pelo banco de dados.'
+                        `✅ ${dados.length} registros carregados do Supabase.`
                     );
 
 
-                    // IMPORTANTE:
-                    // Não chamar Mercado Livre automaticamente.
                     return;
                 }
-            }
 
 
-            // =================================================
-            // 6. BANCO VAZIO = PRIMEIRA SINCRONIZAÇÃO
-            // =================================================
-
-            console.log(
-                'ℹ️ Banco de anúncios vazio.'
-            );
+                console.log(
+                    'ℹ️ Banco vazio. Iniciando primeira sincronização.'
+                );
 
 
-            console.log(
-                '🔄 Iniciando primeira sincronização com Mercado Livre...'
-            );
+                await loadAll(
+                    false
+                );
 
 
-            await loadAll(
-                false
-            );
+            } catch (error) {
 
+                console.warn(
+                    '⚠️ Não foi possível carregar o banco:',
+                    error
+                );
 
-        } catch (error) {
-
-            console.error(
-                '❌ Erro carregando Gerenciamento de Anúncios:',
-                error
-            );
-
-
-            progress('');
-
-
-            // =================================================
-            // SE NÃO EXISTE NADA SALVO, TENTAR ML
-            // =================================================
-
-            if (
-                !Array.isArray(GA.rows) ||
-                GA.rows.length === 0
-            ) {
 
                 try {
-
-                    console.log(
-                        '🔄 Tentando carregar diretamente do Mercado Livre...'
-                    );
-
 
                     await loadAll(
                         false
@@ -4805,53 +7263,292 @@ function mesclarLinhasComDadosSalvos(
                 } catch (erroML) {
 
                     console.error(
-                        '❌ Falha ao carregar Mercado Livre:',
+                        '❌ Falha ao carregar anúncios:',
                         erroML
                     );
-
-
-                    const body =
-                        document.getElementById(
-                            'gaBody'
-                        );
-
-
-                    if (body) {
-
-                        body.innerHTML = `
-                            <tr>
-
-                                <td
-                                    colspan="12"
-                                    style="
-                                        padding:30px;
-                                        text-align:center;
-                                        color:#b91c1c;
-                                    "
-                                >
-
-                                    <strong>
-                                        Erro ao carregar anúncios
-                                    </strong>
-
-                                    <br><br>
-
-                                    ${esc(
-                                        erroML?.message ||
-                                        'Erro desconhecido'
-                                    )}
-
-                                </td>
-
-                            </tr>
-                        `;
-                    }
                 }
             }
+
+        })();
+    };
+
+    window.limparFiltrosGerenciamentoAnuncios =
+    function () {
+
+        const busca =
+            document.getElementById(
+                'gaBusca'
+            );
+
+        const exposicao =
+            document.getElementById(
+                'gaFiltroExposicao'
+            );
+
+        const status =
+            document.getElementById(
+                'gaFiltroStatus'
+            );
+
+        const ordenacao =
+            document.getElementById(
+                'gaFiltroOrdenacao'
+            );
+
+
+        if (busca) {
+
+            busca.value =
+                '';
         }
 
-    })();
-};
 
-    console.log('✅ gerenciamento_anuncios_integrado.js carregado');
+        if (exposicao) {
+
+            exposicao.value =
+                '';
+        }
+
+
+        if (status) {
+
+            status.value =
+                '';
+        }
+
+
+        if (ordenacao) {
+
+            ordenacao.value =
+                'title';
+        }
+
+
+        GA.page =
+            1;
+
+
+        applyFilters(
+            false
+        );
+    };
+
+    window.paginarGerenciamentoAnuncios =
+    function (direcao) {
+
+        const totalPaginas =
+            Math.max(
+                1,
+                Math.ceil(
+                    GA.filtered.length /
+                    GA.pageSize
+                )
+            );
+
+
+        if (
+            direcao ===
+            'anterior'
+        ) {
+
+            GA.page =
+                Math.max(
+                    1,
+                    GA.page - 1
+                );
+
+        } else if (
+            direcao ===
+            'proxima'
+        ) {
+
+            GA.page =
+                Math.min(
+                    totalPaginas,
+                    GA.page + 1
+                );
+        }
+
+
+        render();
+    };
+
+    window.mudarItensPorPaginaGerenciamento =
+    function () {
+
+        const select =
+            document.getElementById(
+                'gaItensPorPagina'
+            );
+
+
+        GA.pageSize =
+            parseInt(
+                select?.value,
+                10
+            ) ||
+            20;
+
+
+        GA.page =
+            1;
+
+
+        render();
+    };
+
+    window.exportarGerenciamentoAnunciosExcel =
+    function () {
+
+        exportarCSV();
+    };
+
+
+    // ============================================================
+    // FECHAR ABA
+    // ============================================================
+
+    window.fecharSistemaGerenciamentoAnuncios =
+        function () {
+
+            const tela =
+                document.getElementById(
+                    'gerenciamentoAnunciosScreen'
+                );
+
+
+            if (tela) {
+
+                tela.style.display =
+                    'none';
+            }
+        };
+
+
+    // ============================================================
+    // ATUALIZAR
+    // ============================================================
+
+    window.carregarGerenciamentoAnuncios =
+        function (
+            force = true
+        ) {
+
+            return loadAll(
+                !!force
+            );
+        };
+
+
+    // ============================================================
+    // FILTRAR
+    // ============================================================
+
+    window.filtrarGerenciamentoAnuncios =
+        function () {
+
+            applyFilters(
+                true
+            );
+        };
+
+
+    // ============================================================
+    // PAGINAÇÃO
+    // ============================================================
+
+    window.mudarPaginaGerenciamentoAnuncios =
+        function (
+            delta
+        ) {
+
+            const totalPages =
+                Math.max(
+
+                    1,
+
+                    Math.ceil(
+
+                        GA.filtered.length /
+
+                        GA.pageSize
+                    )
+                );
+
+
+            GA.page =
+                Math.max(
+
+                    1,
+
+                    Math.min(
+
+                        totalPages,
+
+                        GA.page +
+                        Number(
+                            delta ||
+                            0
+                        )
+                    )
+                );
+
+
+            render();
+        };
+
+
+    // ============================================================
+    // ITENS POR PÁGINA
+    // ============================================================
+
+    window.alterarTamanhoPaginaGerenciamentoAnuncios =
+        function () {
+
+            const select =
+                document.getElementById(
+                    'gaPageSize'
+                );
+
+
+            GA.pageSize =
+                parseInt(
+                    select?.value,
+                    10
+                ) ||
+                50;
+
+
+            GA.page =
+                1;
+
+
+            render();
+        };
+
+
+    // ============================================================
+    // EXPORTAÇÃO
+    // ============================================================
+
+    window.exportarGerenciamentoAnuncios =
+        function () {
+
+            exportarCSV();
+        };
+
+
+    // ============================================================
+    // EXPOR ESTADO PARA DIAGNÓSTICO
+    // ============================================================
+
+    window.GerenciamentoAnuncios =
+        GA;
+
+
+    console.log(
+        '✅ gerenciamento_anuncios.js carregado'
+    );
+
+
 })();
