@@ -1100,6 +1100,73 @@ body > * {
 .ga-link-corrigir:hover {
     text-decoration: underline;
 }
+/* ============================================================
+   ALERTA - ESTOQUE DEPÓSITO ZERADO COM ESTOQUE INTERNO
+   ============================================================ */
+
+@keyframes gaPiscarEstoqueDeposito {
+
+    0%,
+    100% {
+        background-color: #fff1f1;
+        box-shadow: inset 0 0 0 2px #dc3545;
+    }
+
+    50% {
+        background-color: #ffcccc;
+        box-shadow: inset 0 0 0 3px #ff0000;
+    }
+}
+
+
+.ga-estoque-precisa-corrigir {
+    animation: gaPiscarEstoqueDeposito 1s infinite;
+    border-radius: 6px;
+    padding: 7px !important;
+}
+
+
+.ga-alerta-estoque {
+    color: #dc3545;
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 5px;
+    line-height: 1.25;
+}
+
+
+.ga-acoes-correcao-estoque {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+
+.ga-btn-corrigido-estoque {
+    border: 1px solid #198754;
+    background: #fff;
+    color: #198754;
+    border-radius: 4px;
+    padding: 3px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+
+.ga-btn-corrigido-estoque:hover {
+    background: #198754;
+    color: #fff;
+}
+
+
+.ga-link-corrigir-estoque {
+    color: #dc3545;
+    font-size: 10px;
+    font-weight: 700;
+    text-decoration: none;
+}
     </style>
 </head>
 <body>
@@ -6372,9 +6439,20 @@ body > * {
                     <option value="under_review">Em revisão</option>
                 </select>
 
-                <select id="gaFiltroCorrecao" class="form-control form-control-sm" style="width: 180px;" onchange="filtrarGerenciamentoAnuncios()">
-                    <option value="">Todos</option>
-                    <option value="30plus">30+ dias / Corrigir</option>
+                <select id="gaFiltroCorrecao" class="form-control form-control-sm" style="width: 220px;" onchange="filtrarGerenciamentoAnuncios()">
+                    <option value="">Todas as situações</option>
+
+                    <option value="30plus">
+                        30+ dias / Corrigir tipo
+                    </option>
+
+                    <option value="estoque">
+                        Depósito 0 / Corrigir estoque
+                    </option>
+
+                    <option value="pendencias">
+                        Todas as pendências
+                    </option>
                 </select>
 
                 <select id="gaFiltroOrdenacao" class="form-control form-control-sm" style="width: 160px;" onchange="filtrarGerenciamentoAnuncios()">

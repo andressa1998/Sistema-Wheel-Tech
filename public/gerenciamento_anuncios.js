@@ -5401,15 +5401,45 @@ function applyFilters(
 
 
                 // =================================================
-                // FILTRO 30+ / PRECISA CORRIGIR
+                // PENDÊNCIA: TIPO
                 //
-                // Regra:
-                //
-                // mais de 30 dias sem vender
+                // Mais de 30 dias sem vender
                 // +
-                // anúncio Clássico
-                // =
-                // precisa mudar para Premium
+                // Clássico
+                // =================================================
+
+                const precisaCorrigirTipo =
+                    typeof gaPrecisaCorrigirTipo ===
+                        'function'
+
+                        ? gaPrecisaCorrigirTipo(
+                            row
+                        )
+
+                        : false;
+
+
+                // =================================================
+                // PENDÊNCIA: ESTOQUE
+                //
+                // Depósito ML = 0
+                // +
+                // Estoque interno > 0
+                // =================================================
+
+                const precisaCorrigirEstoque =
+                    typeof gaPrecisaCorrigirEstoqueDeposito ===
+                        'function'
+
+                        ? gaPrecisaCorrigirEstoqueDeposito(
+                            row
+                        )
+
+                        : false;
+
+
+                // =================================================
+                // FILTRO 30+
                 // =================================================
 
                 if (
@@ -5418,9 +5448,46 @@ function applyFilters(
                 ) {
 
                     if (
-                        !gaPrecisaCorrigirTipo(
-                            row
-                        )
+                        !precisaCorrigirTipo
+                    ) {
+
+                        return false;
+                    }
+                }
+
+
+                // =================================================
+                // FILTRO ESTOQUE
+                // =================================================
+
+                if (
+                    correcao ===
+                    'estoque'
+                ) {
+
+                    if (
+                        !precisaCorrigirEstoque
+                    ) {
+
+                        return false;
+                    }
+                }
+
+
+                // =================================================
+                // TODAS AS PENDÊNCIAS
+                //
+                // Aparece se tiver QUALQUER uma das duas.
+                // =================================================
+
+                if (
+                    correcao ===
+                    'pendencias'
+                ) {
+
+                    if (
+                        !precisaCorrigirTipo &&
+                        !precisaCorrigirEstoque
                     ) {
 
                         return false;
@@ -5455,7 +5522,11 @@ function applyFilters(
 
                             row.status,
 
-                            row.diasSemVender
+                            row.diasSemVender,
+
+                            row.warehouse,
+
+                            row.full
 
                         ]
                             .join(' ')
@@ -5488,10 +5559,14 @@ function applyFilters(
     ) {
 
         const n =
-            Number(valor);
+            Number(
+                valor
+            );
 
 
-        return Number.isFinite(n)
+        return Number.isFinite(
+            n
+        )
             ? n
             : fallback;
     }
@@ -5502,9 +5577,18 @@ function applyFilters(
     // =========================================================
 
     GA.filtered.sort(
-        (a, b) => {
+        (
+            a,
+            b
+        ) => {
 
-            switch (ordenacao) {
+            switch (
+                ordenacao
+            ) {
+
+                // =============================================
+                // FULL MAIOR
+                // =============================================
 
                 case 'fullDesc':
 
@@ -5520,6 +5604,10 @@ function applyFilters(
                     );
 
 
+                // =============================================
+                // FULL MENOR
+                // =============================================
+
                 case 'fullAsc':
 
                     return (
@@ -5533,6 +5621,10 @@ function applyFilters(
                         )
                     );
 
+
+                // =============================================
+                // DEPÓSITO MAIOR
+                // =============================================
 
                 case 'depDesc':
 
@@ -5548,6 +5640,10 @@ function applyFilters(
                     );
 
 
+                // =============================================
+                // DEPÓSITO MENOR
+                // =============================================
+
                 case 'depAsc':
 
                     return (
@@ -5562,21 +5658,24 @@ function applyFilters(
                     );
 
 
+                // =============================================
+                // PADRÃO
+                // =============================================
+
                 default:
 
-                    // Se estiver usando filtro 30+,
-                    // colocar os mais parados primeiro.
+
+                    // -----------------------------------------
+                    // FILTRO 30+
+                    //
+                    // Colocar quem está há mais tempo sem
+                    // vender primeiro.
+                    // -----------------------------------------
+
                     if (
                         correcao ===
                         '30plus'
                     ) {
-
-                        const diasB =
-                            numero(
-                                b.diasSemVender,
-                                9999
-                            );
-
 
                         const diasA =
                             numero(
@@ -5585,9 +5684,16 @@ function applyFilters(
                             );
 
 
+                        const diasB =
+                            numero(
+                                b.diasSemVender,
+                                9999
+                            );
+
+
                         if (
-                            diasB !==
-                            diasA
+                            diasA !==
+                            diasB
                         ) {
 
                             return (
@@ -5597,6 +5703,88 @@ function applyFilters(
                         }
                     }
 
+
+                    // -----------------------------------------
+                    // FILTRO TODAS AS PENDÊNCIAS
+                    //
+                    // Prioridade:
+                    //
+                    // 1. Produto com DUAS pendências
+                    // 2. Estoque
+                    // 3. Tipo
+                    // -----------------------------------------
+
+                    if (
+                        correcao ===
+                        'pendencias'
+                    ) {
+
+                        const tipoA =
+                            typeof gaPrecisaCorrigirTipo ===
+                                'function' &&
+                            gaPrecisaCorrigirTipo(
+                                a
+                            );
+
+
+                        const tipoB =
+                            typeof gaPrecisaCorrigirTipo ===
+                                'function' &&
+                            gaPrecisaCorrigirTipo(
+                                b
+                            );
+
+
+                        const estoqueA =
+                            typeof gaPrecisaCorrigirEstoqueDeposito ===
+                                'function' &&
+                            gaPrecisaCorrigirEstoqueDeposito(
+                                a
+                            );
+
+
+                        const estoqueB =
+                            typeof gaPrecisaCorrigirEstoqueDeposito ===
+                                'function' &&
+                            gaPrecisaCorrigirEstoqueDeposito(
+                                b
+                            );
+
+
+                        const quantidadePendenciasA =
+                            Number(
+                                !!tipoA
+                            ) +
+                            Number(
+                                !!estoqueA
+                            );
+
+
+                        const quantidadePendenciasB =
+                            Number(
+                                !!tipoB
+                            ) +
+                            Number(
+                                !!estoqueB
+                            );
+
+
+                        if (
+                            quantidadePendenciasA !==
+                            quantidadePendenciasB
+                        ) {
+
+                            return (
+                                quantidadePendenciasB -
+                                quantidadePendenciasA
+                            );
+                        }
+                    }
+
+
+                    // -----------------------------------------
+                    // TÍTULO A-Z
+                    // -----------------------------------------
 
                     return String(
                         a.title || ''
@@ -5612,12 +5800,22 @@ function applyFilters(
     );
 
 
-    if (resetPage) {
+    // =========================================================
+    // VOLTAR PARA PÁGINA 1
+    // =========================================================
+
+    if (
+        resetPage
+    ) {
 
         GA.page =
             1;
     }
 
+
+    // =========================================================
+    // RENDERIZAR
+    // =========================================================
 
     render();
 }
@@ -7783,49 +7981,9 @@ function render() {
                             </td>
 
 
-                            <!-- ===================================== -->
-                            <!-- 4. DEPÓSITO -->
-                            <!-- ===================================== -->
+                            <!-- DEPÓSITO -->
 
-                            <td
-                                style="
-                                    text-align:center;
-                                "
-                            >
-
-                                ${
-                                    estoqueDeposito !== null
-
-                                        ? `
-                                            <strong
-                                                style="
-                                                    font-size:18px;
-                                                    color:${
-                                                        estoqueDeposito > 0
-                                                            ? '#198754'
-                                                            : '#dc3545'
-                                                    };
-                                                "
-                                            >
-                                                ${esc(
-                                                    estoqueDeposito
-                                                )}
-                                            </strong>
-                                        `
-
-                                        : `
-                                            <span
-                                                style="
-                                                    color:#adb5bd;
-                                                    font-size:18px;
-                                                "
-                                            >
-                                                —
-                                            </span>
-                                        `
-                                }
-
-                            </td>
+                            ${gaRenderEstoqueDeposito(row)}
 
 
                             <!-- ===================================== -->
@@ -8132,651 +8290,1634 @@ function render() {
     }
 }
 
+function atualizarEstoqueInternoGerenciamento(
+    rows
+) {
 
-    // ============================================================
-    // LOAD ALL
-    // ============================================================
-
-    async function loadAll(
-        force = false
+    if (
+        !Array.isArray(rows)
     ) {
 
-        if (
-            GA.loading
-        ) {
+        return;
+    }
 
-            console.log(
-                '⚠️ Já existe uma sincronização em andamento.'
+
+    for (const row of rows) {
+
+        row.internalWarehouse =
+            warehouseStock(
+                row.sku,
+                row.itemId
             );
+    }
+}
+
+function gaPrecisaCorrigirEstoqueDeposito(
+    row
+) {
+
+    // =========================================================
+    // PRECISAMOS TER UMA RESPOSTA REAL DO MERCADO LIVRE
+    //
+    // null / undefined significa que ainda não consultamos.
+    // =========================================================
+
+    if (
+        row?.warehouse === null ||
+        row?.warehouse === undefined
+    ) {
+
+        return false;
+    }
 
 
-            return;
-        }
+    const estoqueDeposito =
+        Number(
+            row.warehouse
+        );
 
 
-        ensureUI();
+    const estoqueInterno =
+        Number(
+            row.internalWarehouse
+        );
 
 
-        GA.loading =
+    if (
+        !Number.isFinite(
+            estoqueDeposito
+        )
+    ) {
+
+        return false;
+    }
+
+
+    if (
+        !Number.isFinite(
+            estoqueInterno
+        )
+    ) {
+
+        return false;
+    }
+
+
+    return (
+        estoqueDeposito === 0 &&
+        estoqueInterno > 0
+    );
+}
+
+function gaRenderEstoqueDeposito(
+    row
+) {
+
+    const estoqueDeposito =
+        row.warehouse !== null &&
+        row.warehouse !== undefined
+
+            ? Number(
+                row.warehouse
+            )
+
+            : null;
+
+
+    // =========================================================
+    // AINDA NÃO CONSULTADO
+    // =========================================================
+
+    if (
+        estoqueDeposito === null
+    ) {
+
+        return `
+
+            <td
+                style="
+                    text-align:center;
+                "
+            >
+
+                <span
+                    style="
+                        color:#adb5bd;
+                        font-size:18px;
+                    "
+                >
+                    —
+                </span>
+
+            </td>
+        `;
+    }
+
+
+    const precisaCorrigir =
+        gaPrecisaCorrigirEstoqueDeposito(
+            row
+        );
+
+
+    // =========================================================
+    // ESTÁ NORMAL
+    // =========================================================
+
+    if (
+        !precisaCorrigir
+    ) {
+
+        return `
+
+            <td
+                style="
+                    text-align:center;
+                "
+            >
+
+                <strong
+                    style="
+                        font-size:18px;
+                        color:${
+                            estoqueDeposito > 0
+                                ? '#198754'
+                                : '#dc3545'
+                        };
+                    "
+                >
+                    ${esc(
+                        estoqueDeposito
+                    )}
+                </strong>
+
+            </td>
+        `;
+    }
+
+
+    // =========================================================
+    // DEPÓSITO ZERO MAS TEM ESTOQUE INTERNO
+    // =========================================================
+
+    const url =
+        gaUrlModificarAnuncio(
+            row.itemId
+        );
+
+
+    return `
+
+        <td
+            class="ga-estoque-precisa-corrigir"
+            style="
+                text-align:center;
+            "
+        >
+
+            <strong
+                style="
+                    font-size:20px;
+                    color:#dc3545;
+                "
+            >
+                0
+            </strong>
+
+
+            <div class="ga-alerta-estoque">
+
+                <i class="fas fa-exclamation-triangle"></i>
+
+                Tem estoque disponível
+
+                <br>
+
+                Colocar 1 no anúncio
+
+            </div>
+
+
+            <div class="ga-acoes-correcao-estoque">
+
+                <a
+                    href="${esc(url)}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="ga-link-corrigir-estoque"
+                >
+
+                    <i class="fas fa-edit"></i>
+
+                    Modificar anúncio
+
+                </a>
+
+
+                <button
+                    type="button"
+                    class="ga-btn-corrigido-estoque"
+                    onclick="verificarCorrecaoEstoqueAnuncio(
+                        '${esc(row.itemId)}',
+                        '${esc(row.variationId || '')}',
+                        this
+                    )"
+                >
+
+                    <i class="fas fa-check"></i>
+
+                    Corrigido
+
+                </button>
+
+            </div>
+
+        </td>
+    `;
+}
+
+
+    async function loadAll(
+    force = false
+) {
+
+    // =========================================================
+    // EVITAR DUAS SINCRONIZAÇÕES AO MESMO TEMPO
+    // =========================================================
+
+    if (GA.loading) {
+
+        console.log(
+            '⚠️ Gerenciamento de anúncios já está sendo atualizado.'
+        );
+
+        return;
+    }
+
+
+    GA.loading =
+        true;
+
+
+    // =========================================================
+    // BOTÃO SINCRONIZAR
+    // =========================================================
+
+    const refresh =
+        document.getElementById(
+            'gaRefresh'
+        );
+
+
+    const refreshHtmlOriginal =
+        refresh?.innerHTML ||
+        null;
+
+
+    if (refresh) {
+
+        refresh.disabled =
             true;
 
 
-        const refresh =
-            document.getElementById(
-                'gaRefresh'
-            );
+        refresh.innerHTML = `
+
+            <i class="fas fa-spinner fa-spin"></i>
+
+            Atualizando...
+        `;
+    }
 
 
-        if (refresh) {
+    // =========================================================
+    // PRESERVAR O QUE JÁ ESTÁ NA TELA
+    //
+    // Isso é fundamental porque:
+    //
+    // - estoque pode dar 429;
+    // - vendas podem demorar;
+    // - alguma consulta pode falhar;
+    //
+    // Nunca queremos apagar o último dado válido.
+    // =========================================================
 
-            refresh.disabled =
-                true;
+    let linhasSalvasAntes =
+        Array.isArray(
+            GA.rows
+        )
+            ? [...GA.rows]
+            : [];
 
 
-            refresh.innerHTML = `
+    try {
 
-                <i class="fas fa-spinner fa-spin"></i>
+        console.log(
+            '🔄 Iniciando sincronização do Gerenciamento de Anúncios...'
+        );
 
-                Atualizando...
-            `;
+
+        // =====================================================
+        // 1. CARREGAR DADOS SALVOS DO SUPABASE
+        //
+        // Só fazemos isso se ainda não existir nada em memória.
+        // =====================================================
+
+        if (
+            linhasSalvasAntes.length === 0 &&
+            typeof carregarAnunciosBanco ===
+                'function'
+        ) {
+
+            try {
+
+                progress(
+                    'Carregando dados já salvos...'
+                );
+
+
+                const linhasBanco =
+                    await carregarAnunciosBanco();
+
+
+                if (
+                    Array.isArray(
+                        linhasBanco
+                    ) &&
+                    linhasBanco.length > 0
+                ) {
+
+                    linhasSalvasAntes =
+                        [...linhasBanco];
+
+
+                    console.log(
+                        `💾 ${linhasSalvasAntes.length} registro(s) recuperado(s) do banco.`
+                    );
+                }
+
+            } catch (error) {
+
+                console.warn(
+                    '⚠️ Não foi possível carregar os anúncios salvos:',
+                    error
+                );
+            }
         }
 
 
-        let linhasSalvasAntes =
+        // =====================================================
+        // 2. LIMPAR CACHES SE FOR SINCRONIZAÇÃO FORÇADA
+        //
+        // NÃO limpar GA.rows.
+        // NÃO apagar banco.
+        // =====================================================
 
-            Array.isArray(
-                GA.rows
-            )
+        if (force) {
 
-                ? [
-                    ...GA.rows
-                ]
+            console.log(
+                '🔄 Sincronização completa solicitada.'
+            );
 
-                : [];
+
+            GA.token =
+                null;
+
+
+            GA.sellerId =
+                null;
+
+
+            if (
+                GA.fullCache?.clear
+            ) {
+
+                GA.fullCache.clear();
+            }
+
+
+            if (
+                GA.userProductStockCache?.clear
+            ) {
+
+                GA.userProductStockCache.clear();
+            }
+
+
+            if (
+                GA.userProductStockPromises?.clear
+            ) {
+
+                GA.userProductStockPromises.clear();
+            }
+
+
+            if (
+                GA.inventoryStockCache?.clear
+            ) {
+
+                GA.inventoryStockCache.clear();
+            }
+
+
+            if (
+                GA.fullDetailCache?.clear
+            ) {
+
+                GA.fullDetailCache.clear();
+            }
+
+
+            if (
+                GA.listingTypeNames?.clear
+            ) {
+
+                GA.listingTypeNames.clear();
+            }
+
+
+            if (
+                GA.exposureNames?.clear
+            ) {
+
+                GA.exposureNames.clear();
+            }
+
+
+            if (
+                GA.exposureByListingType?.clear
+            ) {
+
+                GA.exposureByListingType.clear();
+            }
+        }
+
+
+        // =====================================================
+        // 3. CARREGAR ESTOQUE INTERNO
+        //
+        // IMPORTANTE:
+        //
+        // Ele NÃO é exibido como coluna.
+        //
+        // É usado somente para verificar:
+        //
+        // Depósito ML = 0
+        // +
+        // Estoque interno > 0
+        //
+        // => precisa colocar 1 no anúncio.
+        // =====================================================
+
+        progress(
+            'Carregando estoque interno para validação...'
+        );
 
 
         try {
 
-            console.log(
-                '🔄 Iniciando sincronização do Gerenciamento de Anúncios...'
+            await loadInternalStock();
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ Não foi possível carregar estoque interno:',
+                error
+            );
+        }
+
+
+        // =====================================================
+        // 4. VALIDAR CONTA / SELLER ID
+        // =====================================================
+
+        progress(
+            'Validando conta Mercado Livre...'
+        );
+
+
+        await getSellerId();
+
+
+        // =====================================================
+        // 5. LOCALIZAR TODOS OS ANÚNCIOS DA CONTA
+        // =====================================================
+
+        progress(
+            'Localizando anúncios do Mercado Livre...'
+        );
+
+
+        const ids =
+            await scanAllIds();
+
+
+        if (
+            !Array.isArray(
+                ids
+            ) ||
+            ids.length === 0
+        ) {
+
+            throw new Error(
+                'Nenhum anúncio encontrado na conta do Mercado Livre.'
+            );
+        }
+
+
+        console.log(
+            `✅ ${ids.length} anúncio(s) localizado(s).`
+        );
+
+
+        // =====================================================
+        // 6. BUSCAR DETALHES
+        // =====================================================
+
+        progress(
+            `Buscando detalhes de ${ids.length} anúncios...`
+        );
+
+
+        const items =
+            await getAllItems(
+                ids
             );
 
 
-            // ====================================================
-            // TENTAR CARREGAR CACHE ANTIGO
-            // ====================================================
+        if (
+            !Array.isArray(
+                items
+            )
+        ) {
 
-            if (
-                !linhasSalvasAntes.length
+            throw new Error(
+                'Resposta inválida ao buscar os anúncios.'
+            );
+        }
+
+
+        console.log(
+            `📦 ${items.length} anúncio(s) detalhado(s) recebido(s).`
+        );
+
+
+        // =====================================================
+        // 7. CRIAR LINHAS
+        //
+        // buildRows() deve retornar apenas os anúncios que
+        // realmente atendem à regra atual da tela.
+        // =====================================================
+
+        progress(
+            'Preparando anúncios e variações...'
+        );
+
+
+        const novasLinhas =
+            buildRows(
+                items
+            );
+
+
+        if (
+            !Array.isArray(
+                novasLinhas
+            )
+        ) {
+
+            throw new Error(
+                'Não foi possível montar as linhas dos anúncios.'
+            );
+        }
+
+
+        const quantidadeAnuncios =
+            new Set(
+                novasLinhas
+                    .map(
+                        row =>
+                            row.itemId
+                    )
+                    .filter(Boolean)
+            ).size;
+
+
+        console.log(
+            `📋 ${novasLinhas.length} produto(s)/variação(ões) encontrados em ${quantidadeAnuncios} anúncio(s).`
+        );
+
+
+        // =====================================================
+        // 8. MESCLAR COM OS ÚLTIMOS DADOS SALVOS
+        //
+        // Ex.:
+        //
+        // - estoque anterior;
+        // - vendas 30d;
+        // - última venda;
+        // - dias sem vender.
+        //
+        // Tudo permanece até uma informação nova substituir.
+        // =====================================================
+
+        if (
+            typeof mesclarLinhasComDadosSalvos ===
+            'function'
+        ) {
+
+            GA.rows =
+                mesclarLinhasComDadosSalvos(
+                    novasLinhas,
+                    linhasSalvasAntes
+                );
+
+        } else {
+
+            GA.rows =
+                novasLinhas;
+        }
+
+
+        // =====================================================
+        // GARANTIA EXTRA:
+        // PRESERVAR MÉTRICAS DE VENDAS
+        //
+        // Isso protege caso sua função
+        // mesclarLinhasComDadosSalvos ainda não tenha sido
+        // atualizada para os campos novos.
+        // =====================================================
+
+        if (
+            linhasSalvasAntes.length > 0
+        ) {
+
+            const anterioresPorChave =
+                new Map();
+
+
+            for (
+                const antiga
+                of linhasSalvasAntes
+            ) {
+
+                const chave =
+                    String(
+                        antiga.key ||
+                        `${antiga.itemId}:${antiga.variationId || '0'}`
+                    );
+
+
+                anterioresPorChave.set(
+                    chave,
+                    antiga
+                );
+            }
+
+
+            for (
+                const row
+                of GA.rows
+            ) {
+
+                const chave =
+                    String(
+                        row.key ||
+                        `${row.itemId}:${row.variationId || '0'}`
+                    );
+
+
+                const antiga =
+                    anterioresPorChave.get(
+                        chave
+                    );
+
+
+                if (!antiga) {
+
+                    continue;
+                }
+
+
+                // =============================================
+                // ESTOQUE ML ANTERIOR
+                // =============================================
+
+                if (
+                    row.warehouse === null ||
+                    row.warehouse === undefined
+                ) {
+
+                    row.warehouse =
+                        antiga.warehouse ??
+                        null;
+                }
+
+
+                if (
+                    row.full === null ||
+                    row.full === undefined
+                ) {
+
+                    row.full =
+                        antiga.full ??
+                        null;
+                }
+
+
+                if (
+                    row.mlTotal === null ||
+                    row.mlTotal === undefined
+                ) {
+
+                    row.mlTotal =
+                        antiga.mlTotal ??
+                        null;
+                }
+
+
+                // =============================================
+                // VENDAS
+                // =============================================
+
+                if (
+                    row.vendasFull30d === null ||
+                    row.vendasFull30d === undefined
+                ) {
+
+                    row.vendasFull30d =
+                        antiga.vendasFull30d ??
+                        null;
+                }
+
+
+                if (
+                    !row.ultimaVendaFull
+                ) {
+
+                    row.ultimaVendaFull =
+                        antiga.ultimaVendaFull ||
+                        null;
+                }
+
+
+                if (
+                    row.diasSemVender === null ||
+                    row.diasSemVender === undefined
+                ) {
+
+                    row.diasSemVender =
+                        antiga.diasSemVender ??
+                        null;
+                }
+
+
+                if (
+                    !row.vendasFullAtualizadoEm
+                ) {
+
+                    row.vendasFullAtualizadoEm =
+                        antiga.vendasFullAtualizadoEm ||
+                        null;
+                }
+            }
+        }
+
+
+        // =====================================================
+        // 9. CALCULAR ESTOQUE INTERNO DAS LINHAS
+        //
+        // Isso NÃO aparece na tabela.
+        //
+        // Serve apenas para:
+        //
+        // gaPrecisaCorrigirEstoqueDeposito(row)
+        // =====================================================
+
+        if (
+            typeof atualizarEstoqueInternoGerenciamento ===
+            'function'
+        ) {
+
+            atualizarEstoqueInternoGerenciamento(
+                GA.rows
+            );
+
+        } else {
+
+            // Fallback caso ainda não tenha criado a função.
+
+            for (
+                const row
+                of GA.rows
             ) {
 
                 try {
 
-                    const banco =
-                        await carregarAnunciosBanco();
-
-
-                    if (
-                        Array.isArray(
-                            banco
-                        ) &&
-                        banco.length
-                    ) {
-
-                        linhasSalvasAntes =
-                            [
-                                ...banco
-                            ];
-                    }
+                    row.internalWarehouse =
+                        warehouseStock(
+                            row.sku,
+                            row.itemId
+                        );
 
                 } catch (error) {
 
-                    console.warn(
-                        '⚠️ Cache do banco indisponível:',
-                        error
-                    );
+                    row.internalWarehouse =
+                        null;
                 }
             }
+        }
 
 
-            // ====================================================
-            // LIMPAR CACHES QUANDO FOR ATUALIZAÇÃO FORÇADA
-            // ====================================================
+        // =====================================================
+        // 10. MOSTRAR TABELA IMEDIATAMENTE
+        //
+        // Assim o usuário não precisa esperar estoque e vendas
+        // para começar a visualizar os produtos.
+        // =====================================================
 
-            if (force) {
-
-                GA.token =
-                    null;
-
-
-                GA.sellerId =
-                    null;
+        GA.page =
+            1;
 
 
-                GA.userProductStockCache
-                    .clear();
+        updateSummary();
 
 
-                GA.userProductStockPromises
-                    .clear();
+        applyFilters(
+            true
+        );
 
 
-                GA.inventoryStockCache
-                    .clear();
+        // =====================================================
+        // 11. SALVAR DADOS BÁSICOS
+        // =====================================================
+
+        progress(
+            'Salvando anúncios encontrados...'
+        );
 
 
-                GA.listingTypeNames
-                    .clear();
-
-
-                GA.exposureNames
-                    .clear();
-
-
-                GA.exposureByListingType
-                    .clear();
-
-
-                GA.stockNextRequestAt =
-                    0;
-            }
-
-
-            // ====================================================
-            // CONTA
-            // ====================================================
-
-            progress(
-                'Validando conta Mercado Livre...'
-            );
-
-
-            await getSellerId();
-
-
-            // ====================================================
-            // TODOS ANÚNCIOS
-            // ====================================================
-
-            progress(
-                'Localizando todos os anúncios da conta...'
-            );
-
-
-            const ids =
-                await scanAllIds();
-
+        try {
 
             if (
-                !ids.length
+                typeof salvarAnunciosBanco ===
+                'function'
             ) {
 
-                throw new Error(
-                    'Nenhum anúncio encontrado na conta.'
+                await salvarAnunciosBanco(
+                    GA.rows,
+                    false
                 );
             }
 
+        } catch (error) {
 
-            // ====================================================
-            // DETALHES
-            // ====================================================
-
-            progress(
-                `Buscando detalhes de ${ids.length} anúncios...`
+            console.warn(
+                '⚠️ Não foi possível salvar os dados básicos:',
+                error
             );
+        }
 
 
-            const items =
-                await getAllItems(
-                    ids
-                );
+        // =====================================================
+        // 12. ATUALIZAR TIPO DO ANÚNCIO
+        //
+        // Premium / Clássico.
+        //
+        // A exposição não é mais necessária visualmente.
+        // =====================================================
+
+        progress(
+            'Atualizando tipo dos anúncios...'
+        );
 
 
-            // ====================================================
-            // FULL
-            // ====================================================
+        try {
 
-            progress(
-                'Identificando anúncios FULL...'
-            );
-
-
-            const novasLinhas =
-                buildRows(
-                    items
-                );
-
-
-            console.log(
-
-                `🏭 ${
-
-                    new Set(
-                        novasLinhas.map(
-                            row =>
-                                row.itemId
-                        )
-                    ).size
-
-                } anúncios FULL detectados.`
-            );
-
-
-            console.log(
-
-                `📋 ${novasLinhas.length} linha(s) FULL entre produtos e variações.`
-            );
-
-
-            // ====================================================
-            // RECUPERAR SKU FALTANTE
-            // ====================================================
-
-            await recuperarSkusFaltantes(
-                novasLinhas
-            );
-
-
-            // ====================================================
-            // MESCLAR COM CACHE
-            // ====================================================
-
-            GA.rows =
-                mesclarLinhasComDadosSalvos(
-
-                    novasLinhas,
-
-                    linhasSalvasAntes
-                );
-
-
-            // Mostrar a tabela antes de consultar todo estoque.
-            GA.page =
-                1;
-
-
-            updateSummary();
-
-            updateExposureFilter();
-
-            applyFilters(
-                false
-            );
-
-
-            // ====================================================
-            // EXPOSIÇÃO
-            // ====================================================
-
-            progress(
-                'Atualizando exposição e tipo dos anúncios...'
-            );
-
-
-            try {
+            if (
+                typeof loadExposure ===
+                'function'
+            ) {
 
                 await loadExposure(
                     GA.rows
                 );
-
-            } catch (error) {
-
-                console.warn(
-                    '⚠️ Exposição não foi totalmente atualizada:',
-                    error
-                );
             }
 
 
-            updateExposureFilter();
+            // Atualiza imediatamente a regra:
+            //
+            // 30+ dias sem vender
+            // +
+            // Clássico
+            // =
+            // piscar para alterar Premium
 
             applyFilters(
                 false
             );
 
 
-            // ====================================================
-            // SALVAR DADOS BÁSICOS
-            // ====================================================
-
-            try {
-
-                progress(
-                    'Salvando anúncios no banco...'
-                );
-
+            if (
+                typeof salvarAnunciosBanco ===
+                'function'
+            ) {
 
                 await salvarAnunciosBanco(
-                    GA.rows
-                );
-
-            } catch (error) {
-
-                console.warn(
-                    '⚠️ Falha ao salvar dados básicos no banco:',
-                    error
+                    GA.rows,
+                    false
                 );
             }
 
+        } catch (error) {
 
-            // ====================================================
-            // REMOVER ANTIGOS
-            // ====================================================
-
-            try {
-
-                await removerAnunciosObsoletos(
-                    GA.rows
-                );
-
-            } catch (error) {
-
-                console.warn(
-                    '⚠️ Limpeza de registros obsoletos falhou:',
-                    error
-                );
-            }
+            console.warn(
+                '⚠️ Não foi possível atualizar todos os tipos dos anúncios:',
+                error
+            );
+        }
 
 
-            // ====================================================
-            // ESTOQUE
-            // ====================================================
+        // =====================================================
+        // 13. CONSULTAR ESTOQUE REAL DO MERCADO LIVRE
+        //
+        // Aqui serão atualizados:
+        //
+        // row.warehouse -> Depósito
+        // row.full      -> FULL
+        // =====================================================
 
-            progress(
+        progress(
+            `Consultando estoque de ${GA.rows.length} produto(s)...`
+        );
 
-                `Atualizando estoque de ` +
 
-                `${GA.rows.length} ` +
+        try {
 
-                `linha(s) FULL...`
+            await loadFullStocks(
+                GA.rows
             );
 
 
-            try {
-
-                await loadFullStocks(
-                    GA.rows
-                );
-
-                // ====================================================
-                // VENDAS FULL
-                // ====================================================
-
-                progress(
-                    'Analisando vendas e giro do estoque FULL...'
-                );
-
-
-                try {
-
-                    await atualizarMetricasVendasFull(
-                        GA.rows
-                    );
-
-                } catch (error) {
-
-                    console.error(
-                        '⚠️ Análise de vendas FULL incompleta:',
-                        error
-                    );
-                }
-
-
-
-            } catch (error) {
-
-                console.error(
-                    '⚠️ Atualização de estoque incompleta:',
-                    error
-                );
-
-
-                window.showToast?.(
-
-                    'Alguns estoques não foram atualizados. ' +
-
-                    'O último valor salvo foi mantido.',
-
-                    'warning'
-                );
-            }
-
-
-            // ====================================================
-            // SALVAR ESTADO FINAL
-            // ====================================================
-
-            try {
-
-                progress(
-                    'Salvando estado final...'
-                );
-
-
-                await salvarAnunciosBanco(
-                    GA.rows
-                );
-
-            } catch (error) {
-
-                console.warn(
-                    '⚠️ Falha ao salvar estado final:',
-                    error
-                );
-            }
-
+            // =============================================
+            // IMPORTANTE
+            //
+            // Agora que temos o estoque real do ML,
+            // renderizar novamente para que a regra:
+            //
+            // depósito = 0
+            // +
+            // estoque interno > 0
+            //
+            // apareça imediatamente.
+            // =============================================
 
             updateSummary();
 
-            updateExposureFilter();
 
             applyFilters(
                 false
-            );
-
-
-            // ====================================================
-            // ESTATÍSTICAS
-            // ====================================================
-
-            const semSku =
-                GA.rows.filter(
-                    row =>
-                        !String(
-                            row.sku ||
-                            ''
-                        ).trim()
-                );
-
-
-            console.log(
-                '✅ Sincronização finalizada.',
-                {
-
-                    anunciosFull:
-
-                        new Set(
-                            GA.rows.map(
-                                row =>
-                                    row.itemId
-                            )
-                        ).size,
-
-                    linhas:
-                        GA.rows.length,
-
-                    comSku:
-
-                        GA.rows.length -
-                        semSku.length,
-
-                    semSku:
-                        semSku.length,
-
-                    comUserProduct:
-
-                        GA.rows.filter(
-                            row =>
-                                !!row.userProductId
-                        ).length,
-
-                    estoquePreenchido:
-
-                        GA.rows.filter(
-                            row =>
-
-                                row.full !==
-                                    null ||
-
-                                row.warehouse !==
-                                    null ||
-
-                                row.mlTotal !==
-                                    null
-                        ).length
-                }
-            );
-
-
-            window.showToast?.(
-
-                `${
-                    new Set(
-                        GA.rows.map(
-                            row =>
-                                row.itemId
-                        )
-                    ).size
-                } anúncios FULL sincronizados`,
-
-                'success'
             );
 
         } catch (error) {
 
             console.error(
-                '❌ Gerenciamento de Anúncios:',
+                '⚠️ A consulta de estoque não foi concluída completamente:',
                 error
             );
 
 
-            // ====================================================
-            // PRESERVAR DADOS ANTIGOS
-            // ====================================================
+            window.showToast?.(
+                'Alguns estoques não puderam ser atualizados. Os últimos valores salvos foram mantidos.',
+                'warning'
+            );
+        }
+
+
+        // =====================================================
+        // 14. VENDAS FULL
+        //
+        // Atualiza:
+        //
+        // - vendasFull30d
+        // - ultimaVendaFull
+        // - diasSemVender
+        // - vendasFullAtualizadoEm
+        //
+        // Essa é normalmente a parte mais demorada.
+        // =====================================================
+
+        progress(
+            'Analisando vendas FULL e última venda...'
+        );
+
+
+        try {
 
             if (
-                linhasSalvasAntes.length
+                typeof atualizarMetricasVendasFull ===
+                'function'
             ) {
 
-                GA.rows =
-                    linhasSalvasAntes;
+                await atualizarMetricasVendasFull(
+                    GA.rows
+                );
 
 
-                updateSummary();
-
-                updateExposureFilter();
+                // =========================================
+                // Atualizar regras que dependem de vendas
+                //
+                // Ex. 30+ dias + Clássico.
+                // =========================================
 
                 applyFilters(
                     false
                 );
 
-
-                window.showToast?.(
-
-                    'A atualização falhou. ' +
-
-                    'Os últimos dados salvos continuam visíveis.',
-
-                    'warning'
-                );
-
             } else {
 
-                const body =
-                    document.getElementById(
-                        'gaBody'
-                    );
-
-
-                if (body) {
-
-                    body.innerHTML = `
-
-                        <tr>
-
-                            <td
-                                colspan="11"
-                                style="
-                                    text-align:center;
-                                    padding:30px;
-                                    color:#b91c1c;
-                                "
-                            >
-
-                                <strong>
-                                    Erro ao carregar anúncios
-                                </strong>
-
-                                <br><br>
-
-                                ${esc(
-                                    error?.message ||
-                                    error ||
-                                    'Erro desconhecido'
-                                )}
-
-                            </td>
-
-                        </tr>
-                    `;
-                }
-
-
-                window.showToast?.(
-
-                    `Erro: ${
-
-                        error?.message ||
-
-                        'Falha ao carregar anúncios'
-
-                    }`,
-
-                    'error'
+                console.warn(
+                    '⚠️ atualizarMetricasVendasFull() não foi encontrada.'
                 );
             }
 
-        } finally {
+        } catch (error) {
 
-            GA.loading =
-                false;
-
-
-            progress(
-                ''
+            console.error(
+                '⚠️ Não foi possível concluir a análise de vendas FULL:',
+                error
             );
 
 
-            if (refresh) {
+            window.showToast?.(
+                'Algumas informações de vendas não puderam ser atualizadas. Os dados anteriores foram mantidos.',
+                'warning'
+            );
+        }
 
-                refresh.disabled =
-                    false;
 
+        // =====================================================
+        // 15. RECALCULAR ESTOQUE INTERNO
+        //
+        // Normalmente não mudou durante esta sincronização,
+        // mas garantimos que as regras de depósito utilizem
+        // os SKUs atuais.
+        // =====================================================
+
+        if (
+            typeof atualizarEstoqueInternoGerenciamento ===
+            'function'
+        ) {
+
+            atualizarEstoqueInternoGerenciamento(
+                GA.rows
+            );
+        }
+
+
+        // =====================================================
+        // 16. SALVAR RESULTADO FINAL
+        // =====================================================
+
+        progress(
+            'Salvando atualização no banco...'
+        );
+
+
+        try {
+
+            if (
+                typeof salvarAnunciosBanco ===
+                'function'
+            ) {
+
+                await salvarAnunciosBanco(
+                    GA.rows,
+                    false
+                );
+            }
+
+        } catch (error) {
+
+            console.error(
+                '❌ Erro ao salvar resultado final:',
+                error
+            );
+        }
+
+
+        // =====================================================
+        // 17. REMOVER REGISTROS ANTIGOS/OBSOLETOS
+        //
+        // Somente se essa função já existir no seu arquivo.
+        // =====================================================
+
+        try {
+
+            if (
+                typeof removerAnunciosObsoletos ===
+                'function'
+            ) {
+
+                await removerAnunciosObsoletos(
+                    GA.rows
+                );
+            }
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ Não foi possível remover registros obsoletos:',
+                error
+            );
+        }
+
+
+        // =====================================================
+        // 18. RENDER FINAL
+        // =====================================================
+
+        updateSummary();
+
+
+        // Não forçar página 1 aqui.
+        // Assim um usuário que esteja usando algum filtro
+        // não perde a posição sem necessidade.
+
+        applyFilters(
+            false
+        );
+
+
+        // =====================================================
+        // 19. ESTATÍSTICAS
+        // =====================================================
+
+        const anuncios =
+            new Set(
+                GA.rows
+                    .map(
+                        row =>
+                            row.itemId
+                    )
+                    .filter(Boolean)
+            ).size;
+
+
+        const totalLinhas =
+            GA.rows.length;
+
+
+        const comSku =
+            GA.rows.filter(
+                row =>
+                    row.sku &&
+                    String(
+                        row.sku
+                    ).trim() !== ''
+            ).length;
+
+
+        const semSku =
+            totalLinhas -
+            comSku;
+
+
+        const comUserProduct =
+            GA.rows.filter(
+                row =>
+                    !!row.userProductId
+            ).length;
+
+
+        const comInventory =
+            GA.rows.filter(
+                row =>
+                    !!row.inventoryId
+            ).length;
+
+
+        const estoqueAtualizado =
+            GA.rows.filter(
+                row =>
+                    row.warehouse !== null &&
+                    row.warehouse !== undefined
+            ).length;
+
+
+        const estoqueFullAtualizado =
+            GA.rows.filter(
+                row =>
+                    row.full !== null &&
+                    row.full !== undefined
+            ).length;
+
+
+        const vendasAtualizadas =
+            GA.rows.filter(
+                row =>
+                    row.vendasFull30d !== null &&
+                    row.vendasFull30d !== undefined
+            ).length;
+
+
+        // =====================================================
+        // ALERTAS PREMIUM
+        // =====================================================
+
+        const precisaPremium =
+            typeof gaPrecisaCorrigirTipo ===
+                'function'
+
+                ? GA.rows.filter(
+                    row =>
+                        gaPrecisaCorrigirTipo(
+                            row
+                        )
+                ).length
+
+                : 0;
+
+
+        // =====================================================
+        // ALERTAS DE ESTOQUE DEPÓSITO
+        // =====================================================
+
+        const precisaEstoque =
+            typeof gaPrecisaCorrigirEstoqueDeposito ===
+                'function'
+
+                ? GA.rows.filter(
+                    row =>
+                        gaPrecisaCorrigirEstoqueDeposito(
+                            row
+                        )
+                ).length
+
+                : 0;
+
+
+        console.log(
+            '✅ Sincronização do Gerenciamento de Anúncios finalizada.',
+            {
+                anuncios:
+                    anuncios,
+
+                linhas:
+                    totalLinhas,
+
+                comSku:
+                    comSku,
+
+                semSku:
+                    semSku,
+
+                comUserProduct:
+                    comUserProduct,
+
+                comInventory:
+                    comInventory,
+
+                depositoAtualizado:
+                    estoqueAtualizado,
+
+                fullAtualizado:
+                    estoqueFullAtualizado,
+
+                vendasAtualizadas:
+                    vendasAtualizadas,
+
+                precisaMudarPremium:
+                    precisaPremium,
+
+                precisaColocarEstoque:
+                    precisaEstoque
+            }
+        );
+
+
+        // =====================================================
+        // DIAGNÓSTICO DE SKUS FALTANTES
+        // =====================================================
+
+        if (
+            semSku > 0
+        ) {
+
+            console.warn(
+                `⚠️ ${semSku} linha(s) continuam sem SKU.`
+            );
+
+
+            console.table(
+                GA.rows
+                    .filter(
+                        row =>
+                            !row.sku ||
+                            String(
+                                row.sku
+                            ).trim() === ''
+                    )
+                    .slice(
+                        0,
+                        30
+                    )
+                    .map(
+                        row => ({
+
+                            MLB:
+                                row.itemId,
+
+                            variacao:
+                                row.variationId,
+
+                            userProduct:
+                                row.userProductId,
+
+                            inventory:
+                                row.inventoryId,
+
+                            titulo:
+                                row.title
+                        })
+                    )
+            );
+        }
+
+
+        // =====================================================
+        // DIAGNÓSTICO DOS ALERTAS DE ESTOQUE
+        // =====================================================
+
+        if (
+            precisaEstoque > 0 &&
+            typeof gaPrecisaCorrigirEstoqueDeposito ===
+                'function'
+        ) {
+
+            console.log(
+                `⚠️ ${precisaEstoque} produto(s) possuem estoque interno mas depósito ML está zerado.`
+            );
+
+
+            console.table(
+                GA.rows
+                    .filter(
+                        row =>
+                            gaPrecisaCorrigirEstoqueDeposito(
+                                row
+                            )
+                    )
+                    .slice(
+                        0,
+                        30
+                    )
+                    .map(
+                        row => ({
+
+                            MLB:
+                                row.itemId,
+
+                            variacao:
+                                row.variationId,
+
+                            SKU:
+                                row.sku,
+
+                            depositoML:
+                                row.warehouse,
+
+                            estoqueInterno:
+                                row.internalWarehouse
+                        })
+                    )
+            );
+        }
+
+
+        // =====================================================
+        // TOAST FINAL
+        // =====================================================
+
+        let mensagemFinal =
+            `${anuncios} anúncios sincronizados`;
+
+
+        if (
+            precisaPremium > 0 ||
+            precisaEstoque > 0
+        ) {
+
+            const alertas =
+                [];
+
+
+            if (
+                precisaPremium > 0
+            ) {
+
+                alertas.push(
+                    `${precisaPremium} para Premium`
+                );
+            }
+
+
+            if (
+                precisaEstoque > 0
+            ) {
+
+                alertas.push(
+                    `${precisaEstoque} com estoque para corrigir`
+                );
+            }
+
+
+            mensagemFinal +=
+                ` • ${alertas.join(' • ')}`;
+        }
+
+
+        window.showToast?.(
+            mensagemFinal,
+            'success'
+        );
+
+
+    } catch (error) {
+
+        // =====================================================
+        // ERRO GERAL
+        // =====================================================
+
+        console.error(
+            '❌ Gerenciamento de Anúncios:',
+            error
+        );
+
+
+        // =====================================================
+        // PRESERVAR DADOS ANTIGOS
+        // =====================================================
+
+        if (
+            linhasSalvasAntes.length >
+            0
+        ) {
+
+            console.warn(
+                '⚠️ Atualização falhou. Mantendo os últimos dados salvos.'
+            );
+
+
+            GA.rows =
+                linhasSalvasAntes;
+
+
+            // =============================================
+            // Mesmo em caso de erro, tentar carregar o
+            // estoque interno para a validação visual.
+            // =============================================
+
+            try {
+
+                if (
+                    typeof atualizarEstoqueInternoGerenciamento ===
+                    'function'
+                ) {
+
+                    atualizarEstoqueInternoGerenciamento(
+                        GA.rows
+                    );
+                }
+
+            } catch (
+                errorInterno
+            ) {
+
+                console.warn(
+                    '⚠️ Erro recalculando estoque interno:',
+                    errorInterno
+                );
+            }
+
+
+            updateSummary();
+
+
+            applyFilters(
+                false
+            );
+
+
+            window.showToast?.(
+                'A atualização falhou. Os últimos dados salvos continuam disponíveis.',
+                'warning'
+            );
+
+        } else {
+
+            // =================================================
+            // NÃO TEM DADO ANTIGO
+            // =================================================
+
+            const body =
+                document.getElementById(
+                    'gaTabelaBody'
+                );
+
+
+            if (body) {
+
+                body.innerHTML = `
+
+                    <tr>
+
+                        <td
+                            colspan="12"
+                            style="
+                                text-align:center;
+                                padding:30px;
+                                color:#b91c1c;
+                            "
+                        >
+
+                            <strong>
+                                Erro ao carregar anúncios
+                            </strong>
+
+                            <br><br>
+
+                            ${esc(
+                                error?.message ||
+                                error ||
+                                'Erro desconhecido'
+                            )}
+
+                        </td>
+
+                    </tr>
+                `;
+            }
+
+
+            window.showToast?.(
+                `Erro: ${
+                    error?.message ||
+                    'Falha ao carregar anúncios'
+                }`,
+                'error'
+            );
+        }
+
+
+    } finally {
+
+        // =====================================================
+        // FINALIZAR CARREGAMENTO
+        // =====================================================
+
+        GA.loading =
+            false;
+
+
+        progress(
+            ''
+        );
+
+
+        // =====================================================
+        // RESTAURAR BOTÃO
+        // =====================================================
+
+        if (refresh) {
+
+            refresh.disabled =
+                false;
+
+
+            if (
+                refreshHtmlOriginal
+            ) {
+
+                refresh.innerHTML =
+                    refreshHtmlOriginal;
+
+            } else {
 
                 refresh.innerHTML = `
 
                     <i class="fas fa-sync-alt"></i>
 
-                    Atualizar tudo
+                    Sincronizar Agora
                 `;
             }
-
-
-            console.log(
-                '🏁 Processo de atualização encerrado.'
-            );
         }
+
+
+        console.log(
+            '🏁 Processo de atualização encerrado.'
+        );
     }
+}
 
 
 function exportarCSV() {
@@ -9126,16 +10267,16 @@ function exportarCSV() {
 
 
    window.abrirSistemaGerenciamentoAnuncios =
-    function () {
+    async function () {
 
         console.log(
-            '📋 Abrindo Gerenciamento de Anúncios...'
+            '📊 Abrindo Gerenciamento de Anúncios...'
         );
 
 
-        // =========================================================
-        // ESCONDER OUTRAS ABAS
-        // =========================================================
+        // =====================================================
+        // ESCONDER OUTROS SISTEMAS
+        // =====================================================
 
         const sistemas = [
 
@@ -9175,248 +10316,313 @@ function exportarCSV() {
         ];
 
 
-        sistemas.forEach(
-            id => {
+        for (
+            const id
+            of sistemas
+        ) {
 
-                const el =
-                    document.getElementById(
-                        id
-                    );
+            const elemento =
+                document.getElementById(
+                    id
+                );
 
 
-                if (el) {
+            if (elemento) {
 
-                    el.classList.add(
-                        'hidden'
-                    );
-                }
+                elemento.classList.add(
+                    'hidden'
+                );
             }
-        );
+        }
 
 
-        // =========================================================
+        // =====================================================
         // MOSTRAR GERENCIAMENTO
-        // =========================================================
+        // =====================================================
 
-        const tela =
+        const sistema =
             document.getElementById(
                 'gerenciamentoAnunciosSystem'
             );
 
 
-        if (!tela) {
+        if (sistema) {
 
-            console.error(
-                '❌ #gerenciamentoAnunciosSystem não encontrado no index.html'
+            sistema.classList.remove(
+                'hidden'
             );
-
-
-            window.showToast?.(
-                'Tela de Gerenciamento de Anúncios não encontrada.',
-                'error'
-            );
-
-
-            return;
         }
 
 
-        tela.classList.remove(
-            'hidden'
-        );
-
-
-        tela.style.display =
-            'block';
-
-
-        // =========================================================
-        // HEADER DO USUÁRIO
-        // =========================================================
-
-        let usuario =
-            null;
-
+        // =====================================================
+        // USUÁRIO
+        // =====================================================
 
         try {
 
-            if (
-                typeof currentUser !==
-                'undefined'
-            ) {
+            const nome =
+                window.currentUser?.nome ||
+                window.currentUser?.username ||
+                window.currentUser?.usuario ||
+                'Usuário';
 
-                usuario =
-                    currentUser;
+
+            const role =
+                window.currentUser?.role ||
+                window.currentUser?.cargo ||
+                '';
+
+
+            const nomeEl =
+                document.getElementById(
+                    'gaUserName'
+                );
+
+
+            const roleEl =
+                document.getElementById(
+                    'gaUserRole'
+                );
+
+
+            const avatarEl =
+                document.getElementById(
+                    'gaUserAvatar'
+                );
+
+
+            if (nomeEl) {
+
+                nomeEl.textContent =
+                    nome;
+            }
+
+
+            if (roleEl) {
+
+                roleEl.textContent =
+                    role;
+            }
+
+
+            if (avatarEl) {
+
+                avatarEl.textContent =
+                    String(
+                        nome
+                    )
+                        .trim()
+                        .charAt(0)
+                        .toUpperCase() ||
+                    'U';
             }
 
         } catch (error) {
 
-        }
-
-
-        usuario =
-            usuario ||
-            window.currentUser ||
-            null;
-
-
-        const nome =
-            document.getElementById(
-                'gaUserName'
+            console.warn(
+                '⚠️ Não foi possível preencher usuário:',
+                error
             );
-
-
-        const avatar =
-            document.getElementById(
-                'gaUserAvatar'
-            );
-
-
-        const role =
-            document.getElementById(
-                'gaUserRole'
-            );
-
-
-        if (nome) {
-
-            nome.textContent =
-
-                usuario?.name ||
-
-                usuario?.nome ||
-
-                usuario?.username ||
-
-                'Usuário';
         }
 
 
-        if (avatar) {
-
-            avatar.textContent =
-
-                usuario?.avatar ||
-
-                String(
-                    usuario?.name ||
-                    usuario?.nome ||
-                    'U'
-                )
-                    .trim()
-                    .charAt(0)
-                    .toUpperCase() ||
-
-                'U';
-        }
-
-
-        if (role) {
-
-            role.textContent =
-
-                usuario?.role ||
-
-                usuario?.cargo ||
-
-                '';
-        }
-
-
-        // =========================================================
-        // SE JÁ ESTÁ EM MEMÓRIA
-        // =========================================================
+        // =====================================================
+        // 1. CARREGAR ANÚNCIOS SALVOS
+        // =====================================================
 
         if (
-            Array.isArray(
+            !Array.isArray(
                 GA.rows
-            ) &&
-            GA.rows.length
+            ) ||
+            GA.rows.length === 0
         ) {
-
-            updateSummary();
-
-            updateExposureFilter();
-
-            applyFilters(
-                false
-            );
-
-
-            return;
-        }
-
-
-        // =========================================================
-        // CARREGAR BANCO
-        // =========================================================
-
-        progress(
-            'Carregando anúncios salvos...'
-        );
-
-
-        (async () => {
 
             try {
 
-                const dados =
-                    await carregarAnunciosBanco();
-
-
-                if (
-                    Array.isArray(
-                        dados
-                    ) &&
-                    dados.length
-                ) {
-
-                    progress('');
-
-
-                    console.log(
-                        `✅ ${dados.length} registros carregados do Supabase.`
-                    );
-
-
-                    return;
-                }
-
-
-                console.log(
-                    'ℹ️ Banco vazio. Iniciando primeira sincronização.'
+                progress(
+                    'Carregando anúncios salvos...'
                 );
 
 
-                await loadAll(
-                    false
-                );
-
+                await carregarAnunciosBanco();
 
             } catch (error) {
 
                 console.warn(
-                    '⚠️ Não foi possível carregar o banco:',
+                    '⚠️ Não foi possível carregar anúncios salvos:',
                     error
                 );
+            }
+        }
 
 
-                try {
+        // =====================================================
+        // 2. CARREGAR ESTOQUE INTERNO
+        //
+        // IMPORTANTE:
+        //
+        // NÃO consulta anúncios do Mercado Livre.
+        //
+        // Só carrega produtos_estoque para poder verificar:
+        //
+        // Depósito ML = 0
+        // +
+        // Nosso estoque > 0
+        // =====================================================
 
-                    await loadAll(
-                        false
-                    );
+        try {
 
-                } catch (erroML) {
+            progress(
+                'Conferindo estoque interno...'
+            );
 
-                    console.error(
-                        '❌ Falha ao carregar anúncios:',
-                        erroML
-                    );
+
+            await loadInternalStock();
+
+
+            // =================================================
+            // 3. RECALCULAR ESTOQUE INTERNO DAS LINHAS
+            // =================================================
+
+            if (
+                typeof atualizarEstoqueInternoGerenciamento ===
+                'function'
+            ) {
+
+                atualizarEstoqueInternoGerenciamento(
+                    GA.rows
+                );
+
+            } else {
+
+                // fallback
+
+                for (
+                    const row
+                    of GA.rows
+                ) {
+
+                    try {
+
+                        row.internalWarehouse =
+                            warehouseStock(
+                                row.sku,
+                                row.itemId
+                            );
+
+                    } catch (error) {
+
+                        row.internalWarehouse =
+                            null;
+                    }
                 }
             }
 
-        })();
+
+            console.log(
+                '✅ Conferência de estoque interno atualizada.'
+            );
+
+
+        } catch (error) {
+
+            console.warn(
+                '⚠️ Não foi possível carregar estoque interno:',
+                error
+            );
+        }
+
+
+        // =====================================================
+        // 4. DIAGNÓSTICO
+        // =====================================================
+
+        const alertasEstoque =
+            typeof gaPrecisaCorrigirEstoqueDeposito ===
+                'function'
+
+                ? GA.rows.filter(
+                    row =>
+                        gaPrecisaCorrigirEstoqueDeposito(
+                            row
+                        )
+                )
+
+                : [];
+
+
+        console.log(
+            `⚠️ ${alertasEstoque.length} produto(s) precisam corrigir estoque do anúncio.`
+        );
+
+
+        if (
+            alertasEstoque.length
+        ) {
+
+            console.table(
+
+                alertasEstoque
+                    .slice(
+                        0,
+                        30
+                    )
+                    .map(
+                        row => ({
+
+                            MLB:
+                                row.itemId,
+
+                            SKU:
+                                row.sku,
+
+                            depositoML:
+                                row.warehouse,
+
+                            estoqueInterno:
+                                row.internalWarehouse
+                        })
+                    )
+            );
+        }
+
+
+        // =====================================================
+        // 5. MOSTRAR TABELA
+        // =====================================================
+
+        updateSummary();
+
+
+        applyFilters(
+            false
+        );
+
+
+        // =====================================================
+        // FINALIZAR
+        // =====================================================
+
+        progress(
+            ''
+        );
+
+
+        // =====================================================
+        // SE NÃO TEM DADO SALVO, AÍ SIM SINCRONIZAR
+        // =====================================================
+
+        if (
+            !Array.isArray(
+                GA.rows
+            ) ||
+            GA.rows.length === 0
+        ) {
+
+            await loadAll(
+                false
+            );
+        }
     };
 
     window.limparFiltrosGerenciamentoAnuncios =
@@ -9590,17 +10796,31 @@ function exportarCSV() {
         };
 
 
-    // ============================================================
-    // FILTRAR
-    // ============================================================
-
     window.filtrarGerenciamentoAnuncios =
-        function () {
+    function () {
 
-            applyFilters(
-                true
+        // Recalcula a informação interna usada na regra
+        // "Depósito ML = 0 + temos estoque".
+        //
+        // Não consulta o Mercado Livre.
+        // É uma operação local e rápida.
+
+        if (
+            typeof atualizarEstoqueInternoGerenciamento ===
+            'function' &&
+            Array.isArray(GA.rows)
+        ) {
+
+            atualizarEstoqueInternoGerenciamento(
+                GA.rows
             );
-        };
+        }
+
+
+        applyFilters(
+            true
+        );
+    };
 
 
     // ============================================================
@@ -10144,6 +11364,485 @@ function exportarCSV() {
                     error?.message ||
                     'Erro desconhecido'
                 }`,
+                'error'
+            );
+
+
+        } finally {
+
+            if (
+                botao &&
+                document.body.contains(
+                    botao
+                )
+            ) {
+
+                botao.disabled =
+                    false;
+
+
+                botao.innerHTML =
+                    htmlOriginal;
+            }
+        }
+    };
+
+    window.verificarCorrecaoEstoqueAnuncio =
+    async function (
+        itemId,
+        variationId = '',
+        botao = null
+    ) {
+
+        const mlb =
+            String(
+                itemId || ''
+            ).trim();
+
+
+        const variacaoAlvo =
+            String(
+                variationId || ''
+            ).trim();
+
+
+        if (!mlb) {
+
+            return;
+        }
+
+
+        console.log(
+            `🔎 Verificando estoque corrigido de ${mlb}...`
+        );
+
+
+        const htmlOriginal =
+            botao?.innerHTML ||
+            'Corrigido';
+
+
+        if (botao) {
+
+            botao.disabled =
+                true;
+
+
+            botao.innerHTML = `
+
+                <i class="fas fa-spinner fa-spin"></i>
+
+                Verificando...
+            `;
+        }
+
+
+        try {
+
+            // =================================================
+            // 1. BUSCAR SOMENTE ESTE MLB
+            // =================================================
+
+            const item =
+                await ml(
+                    `/items/${encodeURIComponent(mlb)}` +
+                    `?include_attributes=all`
+                );
+
+
+            if (
+                !item?.id
+            ) {
+
+                throw new Error(
+                    'Mercado Livre não retornou o anúncio.'
+                );
+            }
+
+
+            console.log(
+                `📦 Dados atualizados de ${mlb}:`,
+                item
+            );
+
+
+            // =================================================
+            // 2. LOCALIZAR AS LINHAS DESSE MLB
+            // =================================================
+
+            const linhasMlb =
+                GA.rows.filter(
+                    row =>
+                        String(
+                            row.itemId
+                        ) ===
+                        mlb
+                );
+
+
+            if (
+                !linhasMlb.length
+            ) {
+
+                throw new Error(
+                    'MLB não encontrado na tabela.'
+                );
+            }
+
+
+            // =================================================
+            // 3. ATUALIZAR DADOS DAS VARIAÇÕES
+            // =================================================
+
+            for (
+                const row
+                of linhasMlb
+            ) {
+
+                row.status =
+                    item.status ||
+                    row.status;
+
+
+                row.listingTypeId =
+                    item.listing_type_id ||
+                    row.listingTypeId;
+
+
+                row.listingTypeName =
+                    gaNomeTipoPorId(
+                        row.listingTypeId
+                    );
+
+
+                row.title =
+                    item.title ||
+                    row.title;
+
+
+                row.thumbnail =
+                    item.thumbnail ||
+                    row.thumbnail;
+
+
+                row.permalink =
+                    item.permalink ||
+                    row.permalink;
+
+
+                // =============================================
+                // COM VARIAÇÃO
+                // =============================================
+
+                if (
+                    row.variationId &&
+                    Array.isArray(
+                        item.variations
+                    )
+                ) {
+
+                    const variation =
+                        item.variations.find(
+                            variation =>
+                                String(
+                                    variation.id
+                                ) ===
+                                String(
+                                    row.variationId
+                                )
+                        );
+
+
+                    if (variation) {
+
+                        const novoSku =
+                            extractSku(
+                                item,
+                                variation
+                            );
+
+
+                        if (novoSku) {
+
+                            row.sku =
+                                novoSku;
+                        }
+
+
+                        row.userProductId =
+
+                            variation.user_product_id ||
+
+                            row.userProductId ||
+
+                            item.user_product_id ||
+
+                            null;
+
+
+                        row.inventoryId =
+
+                            variation.inventory_id ||
+
+                            row.inventoryId ||
+
+                            item.inventory_id ||
+
+                            null;
+                    }
+
+                } else {
+
+                    const novoSku =
+                        extractSku(
+                            item
+                        );
+
+
+                    if (novoSku) {
+
+                        row.sku =
+                            novoSku;
+                    }
+
+
+                    row.userProductId =
+
+                        item.user_product_id ||
+
+                        row.userProductId ||
+
+                        null;
+
+
+                    row.inventoryId =
+
+                        item.inventory_id ||
+
+                        row.inventoryId ||
+
+                        null;
+                }
+            }
+
+
+            // =================================================
+            // 4. ATUALIZAR ESTOQUE INTERNO SOMENTE DESTE MLB
+            // =================================================
+
+            try {
+
+                await loadInternalStock();
+
+
+                atualizarEstoqueInternoGerenciamento(
+                    linhasMlb
+                );
+
+            } catch (errorInterno) {
+
+                console.warn(
+                    '⚠️ Não foi possível atualizar estoque interno:',
+                    errorInterno
+                );
+            }
+
+
+            // =================================================
+            // 5. LIMPAR CACHE DOS USER PRODUCTS DESSE MLB
+            //
+            // Importantíssimo:
+            // senão buscarEstoqueUserProduct() poderia devolver
+            // o antigo zero que estava no cache.
+            // =================================================
+
+            for (
+                const row
+                of linhasMlb
+            ) {
+
+                if (
+                    row.userProductId &&
+                    GA.userProductStockCache
+                ) {
+
+                    GA.userProductStockCache.delete(
+                        row.userProductId
+                    );
+                }
+
+
+                if (
+                    row.userProductId &&
+                    GA.userProductStockPromises
+                ) {
+
+                    GA.userProductStockPromises.delete(
+                        row.userProductId
+                    );
+                }
+
+
+                if (
+                    row.inventoryId &&
+                    GA.inventoryStockCache
+                ) {
+
+                    GA.inventoryStockCache.delete(
+                        row.inventoryId
+                    );
+                }
+            }
+
+
+            // =================================================
+            // 6. BUSCAR ESTOQUE SOMENTE DESSE MLB
+            // =================================================
+
+            await loadFullStocks(
+                linhasMlb
+            );
+
+
+            // =================================================
+            // 7. LOCALIZAR EXATAMENTE A VARIAÇÃO CLICADA
+            // =================================================
+
+            let linhaAlvo =
+                null;
+
+
+            if (
+                variacaoAlvo
+            ) {
+
+                linhaAlvo =
+                    linhasMlb.find(
+                        row =>
+                            String(
+                                row.variationId ||
+                                ''
+                            ) ===
+                            variacaoAlvo
+                    );
+
+            } else {
+
+                linhaAlvo =
+                    linhasMlb.find(
+                        row =>
+                            !row.variationId
+                    ) ||
+                    linhasMlb[0];
+            }
+
+
+            if (!linhaAlvo) {
+
+                throw new Error(
+                    'Não foi possível identificar a variação verificada.'
+                );
+            }
+
+
+            // =================================================
+            // 8. SALVAR SOMENTE ESSE MLB
+            // =================================================
+
+            try {
+
+                await salvarAnunciosBanco(
+                    linhasMlb,
+                    false
+                );
+
+            } catch (errorBanco) {
+
+                console.warn(
+                    `⚠️ Não foi possível salvar ${mlb}:`,
+                    errorBanco
+                );
+            }
+
+
+            // =================================================
+            // 9. ATUALIZAR TELA
+            // =================================================
+
+            updateSummary();
+
+
+            applyFilters(
+                false
+            );
+
+
+            // =================================================
+            // 10. CONFIRMAR SE FOI CORRIGIDO
+            // =================================================
+
+            if (
+                gaPrecisaCorrigirEstoqueDeposito(
+                    linhaAlvo
+                )
+            ) {
+
+                console.warn(
+                    `⚠️ ${mlb} ainda está com depósito zerado.`
+                );
+
+
+                window.showToast?.(
+
+                    `${mlb} ainda está com estoque 0 no depósito. ` +
+                    `Coloque pelo menos 1 e clique novamente em Corrigido.`,
+
+                    'warning'
+                );
+
+
+                return;
+            }
+
+
+            // =================================================
+            // FOI CORRIGIDO
+            // =================================================
+
+            const novoEstoque =
+                Number(
+                    linhaAlvo.warehouse
+                );
+
+
+            console.log(
+                `✅ Estoque de ${mlb} confirmado: ${novoEstoque}`
+            );
+
+
+            window.showToast?.(
+
+                `${mlb} corrigido. Estoque no depósito: ${novoEstoque}.`,
+
+                'success'
+            );
+
+
+        } catch (error) {
+
+            console.error(
+                `❌ Erro verificando estoque de ${mlb}:`,
+                error
+            );
+
+
+            window.showToast?.(
+
+                `Erro ao verificar ${mlb}: ${
+                    error?.message ||
+                    'Erro desconhecido'
+                }`,
+
                 'error'
             );
 
