@@ -91,6 +91,7 @@ const regrasEstoquePadrao = {
 let regrasEstoqueAtuais = {};
 let regrasEstoqueIndividuais = {};
 let categoriasCustomizadas = {};
+let subcategoriasEstoque = {};
 
 // =========================================================
 // REGRAS FIXAS DE TIPO DE ANÚNCIO DO MERCADO LIVRE
@@ -138,6 +139,259 @@ function verificarDuplicidadeSKU(novoSKU, idIgnorar = null) {
     }
     
     return { duplicado: false };
+}
+
+// =========================================================
+// CARREGAR SUBCATEGORIAS
+// =========================================================
+
+async function carregarSubcategoriasEstoque() {
+
+    try {
+
+        console.log(
+            '🔄 Carregando subcategorias do estoque...'
+        );
+
+
+        // =================================================
+        // SEM SUPABASE
+        // =================================================
+
+        if (!window.supabaseClient) {
+
+            const local =
+                localStorage.getItem(
+                    'subcategorias_estoque'
+                );
+
+
+            subcategoriasEstoque =
+                local
+                    ? JSON.parse(local)
+                    : {};
+
+
+            console.log(
+                '✅ Subcategorias carregadas do localStorage:',
+                subcategoriasEstoque
+            );
+
+
+            return subcategoriasEstoque;
+        }
+
+
+        // =================================================
+        // SUPABASE
+        // =================================================
+
+        const {
+            data,
+            error
+        } =
+            await window.supabaseClient
+                .from(
+                    'configuracoes_sistema'
+                )
+                .select('*')
+                .eq(
+                    'chave',
+                    'subcategorias_estoque'
+                )
+                .maybeSingle();
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        if (
+            data &&
+            data.valor
+        ) {
+
+            subcategoriasEstoque =
+                typeof data.valor ===
+                'string'
+
+                    ? JSON.parse(
+                        data.valor
+                    )
+
+                    : data.valor;
+
+        } else {
+
+            subcategoriasEstoque = {};
+
+        }
+
+
+        localStorage.setItem(
+            'subcategorias_estoque',
+            JSON.stringify(
+                subcategoriasEstoque
+            )
+        );
+
+
+        console.log(
+            '✅ Subcategorias carregadas:',
+            subcategoriasEstoque
+        );
+
+
+        return subcategoriasEstoque;
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro carregando subcategorias:',
+            error
+        );
+
+
+        try {
+
+            const local =
+                localStorage.getItem(
+                    'subcategorias_estoque'
+                );
+
+
+            subcategoriasEstoque =
+                local
+                    ? JSON.parse(local)
+                    : {};
+
+        } catch (e) {
+
+            subcategoriasEstoque = {};
+
+        }
+
+
+        return subcategoriasEstoque;
+    }
+}
+
+
+// =========================================================
+// SALVAR SUBCATEGORIAS
+// =========================================================
+
+async function salvarSubcategoriasEstoque() {
+
+    try {
+
+        localStorage.setItem(
+            'subcategorias_estoque',
+            JSON.stringify(
+                subcategoriasEstoque
+            )
+        );
+
+
+        if (
+            window.supabaseClient
+        ) {
+
+            const {
+                error
+            } =
+                await window.supabaseClient
+                    .from(
+                        'configuracoes_sistema'
+                    )
+                    .upsert({
+
+                        chave:
+                            'subcategorias_estoque',
+
+                        valor:
+                            JSON.stringify(
+                                subcategoriasEstoque
+                            ),
+
+                        atualizado_em:
+                            new Date()
+                                .toISOString(),
+
+                        atualizado_por:
+                            currentUser?.name ||
+                            'sistema'
+
+                    }, {
+
+                        onConflict:
+                            'chave'
+
+                    });
+
+
+            if (error) {
+                throw error;
+            }
+
+        }
+
+
+        console.log(
+            '✅ Subcategorias salvas:',
+            subcategoriasEstoque
+        );
+
+
+        return {
+            success: true
+        };
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro salvando subcategorias:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao salvar subcategorias: ${error.message}`,
+            'error'
+        );
+
+
+        return {
+            success: false,
+            error:
+                error.message
+        };
+    }
+}
+
+
+// =========================================================
+// PEGAR SUBCATEGORIAS DE UMA CATEGORIA
+// =========================================================
+
+function obterSubcategoriasCategoria(
+    categoria
+) {
+
+    if (!categoria) {
+        return {};
+    }
+
+
+    return (
+        subcategoriasEstoque[
+            categoria
+        ] ||
+        {}
+    );
 }
 
 // =========================================================
@@ -457,19 +711,304 @@ function atualizarBarraAcoesMassaEstoque() {
 }
 
 // =========================================================
-// FUNÇÕES PARA CATEGORIAS CUSTOMIZADAS
+// CAMPOS DA CATEGORIA / SUBCATEGORIA
 // =========================================================
 
-function getCamposPorCategoria(categoria) {
-    // Verifica se é uma categoria customizada
-    if (categoriasCustomizadas[categoria]) {
-        return categoriasCustomizadas[categoria].campos || [];
+function getCamposPorCategoria(
+    categoria,
+    subcategoria = undefined
+) {
+
+    // =====================================================
+    // CAMPOS DA CATEGORIA PAI
+    // =====================================================
+
+    let camposPai = [];
+
+
+    if (
+        categoriasCustomizadas[
+            categoria
+        ]
+    ) {
+
+        camposPai =
+            categoriasCustomizadas[
+                categoria
+            ].campos || [];
+
     }
-    // Verifica se é uma categoria padrão
-    if (camposPorCategoria[categoria]) {
-        return camposPorCategoria[categoria];
+
+    else if (
+        camposPorCategoria[
+            categoria
+        ]
+    ) {
+
+        camposPai =
+            camposPorCategoria[
+                categoria
+            ] || [];
+
     }
-    return camposPorCategoria['outros'] || [];
+
+    else {
+
+        camposPai =
+            camposPorCategoria[
+                'outros'
+            ] || [];
+
+    }
+
+
+    // =====================================================
+    // SUBCATEGORIAS EXISTENTES
+    // =====================================================
+
+    const subcategorias =
+        obterSubcategoriasCategoria(
+            categoria
+        );
+
+
+    const nomesSubcategorias =
+        Object.keys(
+            subcategorias
+        );
+
+
+    // Não possui subcategoria.
+    if (
+        nomesSubcategorias.length ===
+        0
+    ) {
+
+        return camposPai;
+    }
+
+
+    // =====================================================
+    // SE NÃO FOI INFORMADA SUBCATEGORIA
+    //
+    // Quando chamado durante cadastro/edição,
+    // tentar descobrir pelo select atual.
+    //
+    // Fora do modal, manter comportamento antigo.
+    // =====================================================
+
+    if (
+        subcategoria === undefined
+    ) {
+
+        const modal =
+            document.getElementById(
+                'modalProdutoEstoque'
+            );
+
+
+        const modalVisivel =
+            modal &&
+            (
+                modal.style.display ===
+                'flex' ||
+                !modal.classList.contains(
+                    'hidden'
+                )
+            );
+
+
+        if (
+            modalVisivel
+        ) {
+
+            const selectSub =
+                document.getElementById(
+                    'campo_subcategoria'
+                );
+
+
+            subcategoria =
+                selectSub?.value || '';
+
+        } else {
+
+            // Fora do formulário continua retornando
+            // somente os campos da categoria principal.
+            return camposPai;
+
+        }
+    }
+
+
+    // =====================================================
+    // CAMPO DE ESCOLHA DA SUBCATEGORIA
+    // =====================================================
+
+    const campoSubcategoria = {
+
+        nome:
+            'subcategoria',
+
+        label:
+            'Subcategoria',
+
+        tipo:
+            'select',
+
+        obrigatorio:
+            false,
+
+        opcoes:
+            nomesSubcategorias,
+
+        ehSubcategoria:
+            true
+
+    };
+
+
+    // =====================================================
+    // SEM SUBCATEGORIA
+    //
+    // Ex:
+    // Raios → produto é um raio normal.
+    // =====================================================
+
+    if (
+        !subcategoria ||
+        !subcategorias[
+            subcategoria
+        ]
+    ) {
+
+        return [
+
+            campoSubcategoria,
+
+            ...camposPai
+
+        ];
+
+    }
+
+
+    // =====================================================
+    // COM SUBCATEGORIA
+    // =====================================================
+
+    const configuracao =
+        subcategorias[
+            subcategoria
+        ];
+
+
+    const camposSub =
+        configuracao.campos ||
+        [];
+
+
+    // =====================================================
+    // HERDAR CAMPOS DA CATEGORIA PAI?
+    // =====================================================
+
+    let camposEfetivos = [];
+
+
+    if (
+        configuracao
+            .herdar_campos_pai
+    ) {
+
+        // Evitar repetir MLB Codes.
+        camposEfetivos.push(
+
+            ...camposPai.filter(
+                campo =>
+                    campo.nome !==
+                    'mlb_codes'
+            )
+
+        );
+
+    }
+
+
+    camposEfetivos.push(
+        ...camposSub
+    );
+
+
+    // =====================================================
+    // REMOVER CAMPOS DUPLICADOS
+    // =====================================================
+
+    const mapa =
+        new Map();
+
+
+    camposEfetivos.forEach(
+        campo => {
+
+            mapa.set(
+                campo.nome,
+                campo
+            );
+
+        }
+    );
+
+
+    camposEfetivos =
+        Array.from(
+            mapa.values()
+        );
+
+
+    // =====================================================
+    // GARANTIR MLB CODES
+    // =====================================================
+
+    if (
+        !camposEfetivos.some(
+            campo =>
+                campo.nome ===
+                'mlb_codes'
+        )
+    ) {
+
+        camposEfetivos.push({
+
+            nome:
+                'mlb_codes',
+
+            label:
+                'Códigos MLB',
+
+            tipo:
+                'textarea',
+
+            placeholder:
+                'MLB separados por vírgula',
+
+            rows:
+                2,
+
+            obrigatorio:
+                false
+
+        });
+
+    }
+
+
+    return [
+
+        campoSubcategoria,
+
+        ...camposEfetivos
+
+    ];
 }
 
 // ===== FUNÇÃO PARA SALVAR CATEGORIAS CUSTOMIZADAS =====
@@ -10977,209 +11516,1021 @@ const camposPorCategoria = {
     ]
 };
 
-function gerarCamposDinamicos(categoria) {
-    const container = document.getElementById('camposDinamicos');
-    if (!container) return;
-    container.innerHTML = '';
+// =========================================================
+// GERAR CAMPOS DINÂMICOS
+// COM SUPORTE A SUBCATEGORIA
+// =========================================================
 
-    const campos = getCamposPorCategoria(categoria);
-    
-    if (!campos || campos.length === 0) {
-        container.innerHTML = '<div class="alert alert-info">Nenhum campo específico para esta categoria.</div>';
-        const bulkSection = document.getElementById('bulkAddSection');
-        if (bulkSection) bulkSection.style.display = 'none';
-        
-        const kitContainer = document.getElementById('kitComposicaoContainer');
-        if (kitContainer) {
-            kitContainer.style.display = 'block';
-            configurarEventosKit();
-        }
+function gerarCamposDinamicos(
+    categoria,
+    subcategoria = ''
+) {
+
+    const container =
+        document.getElementById(
+            'camposDinamicos'
+        );
+
+
+    if (!container) {
         return;
     }
 
-    const grid = document.createElement('div');
-    grid.style.display = 'grid';
-    grid.style.gridTemplateColumns = '1fr 1fr';
-    grid.style.gap = '10px';
-    grid.style.marginTop = '10px';
 
-    campos.forEach(campo => {
-        const div = document.createElement('div');
-        div.className = 'campo-dinamico';
+    container.innerHTML =
+        '';
 
-        const label = document.createElement('label');
-        label.style.fontWeight = '600';
-        label.style.display = 'block';
-        label.style.marginBottom = '5px';
-        label.textContent = `${campo.label} ${campo.obrigatorio ? '*' : ''}`;
-        div.appendChild(label);
 
-        if (campo.validacao === 'numero_virgula') {
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.id = `campo_${campo.nome}`;
-            input.className = 'form-control';
-            if (campo.placeholder) input.placeholder = campo.placeholder;
-            if (campo.obrigatorio) input.required = true;
-            input.addEventListener('input', function(e) {
-                this.value = this.value.replace(/[^0-9,]/g, '');
-            });
-            input.addEventListener('blur', function(e) {
-                const val = this.value.trim();
-                if (val !== '' && !/^[0-9]+(,[0-9]+)?$/.test(val)) {
-                    showToast('Digite apenas números e vírgula (ex: 15 ou 15,5)', 'warning');
-                    this.focus();
+    // =====================================================
+    // CAMPOS EFETIVOS
+    // =====================================================
+
+    const campos =
+        getCamposPorCategoria(
+            categoria,
+            subcategoria
+        );
+
+
+    if (
+        !campos ||
+        campos.length === 0
+    ) {
+
+        container.innerHTML = `
+
+            <div
+                class="alert alert-info"
+            >
+                Nenhum campo específico
+                para esta categoria.
+            </div>
+
+        `;
+
+
+        const bulkSection =
+            document.getElementById(
+                'bulkAddSection'
+            );
+
+
+        if (
+            bulkSection
+        ) {
+
+            bulkSection.style.display =
+                'none';
+
+        }
+
+
+        const kitContainer =
+            document.getElementById(
+                'kitComposicaoContainer'
+            );
+
+
+        if (
+            kitContainer
+        ) {
+
+            kitContainer.style.display =
+                'block';
+
+
+            configurarEventosKit();
+
+        }
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // GRID
+    // =====================================================
+
+    const grid =
+        document.createElement(
+            'div'
+        );
+
+
+    grid.style.display =
+        'grid';
+
+
+    grid.style.gridTemplateColumns =
+        '1fr 1fr';
+
+
+    grid.style.gap =
+        '10px';
+
+
+    grid.style.marginTop =
+        '10px';
+
+
+    // =====================================================
+    // CAMPOS
+    // =====================================================
+
+    campos.forEach(
+        campo => {
+
+            const div =
+                document.createElement(
+                    'div'
+                );
+
+
+            div.className =
+                'campo-dinamico';
+
+
+            // =================================================
+            // SUBCATEGORIA OCUPA A LINHA INTEIRA
+            // =================================================
+
+            if (
+                campo.ehSubcategoria
+            ) {
+
+                div.style.gridColumn =
+                    '1 / -1';
+
+
+                div.style.background =
+                    '#f4efff';
+
+
+                div.style.padding =
+                    '12px';
+
+
+                div.style.borderRadius =
+                    '7px';
+
+
+                div.style.border =
+                    '1px solid #d2bfff';
+
+            }
+
+
+            const label =
+                document.createElement(
+                    'label'
+                );
+
+
+            label.style.fontWeight =
+                '600';
+
+
+            label.style.display =
+                'block';
+
+
+            label.style.marginBottom =
+                '5px';
+
+
+            label.textContent =
+                `${campo.label} ${
+                    campo.obrigatorio
+                        ? '*'
+                        : ''
+                }`;
+
+
+            div.appendChild(
+                label
+            );
+
+
+            // =================================================
+            // VALIDAÇÃO NÚMERO COM VÍRGULA
+            // =================================================
+
+            if (
+                campo.validacao ===
+                'numero_virgula'
+            ) {
+
+                const input =
+                    document.createElement(
+                        'input'
+                    );
+
+
+                input.type =
+                    'text';
+
+
+                input.id =
+                    `campo_${campo.nome}`;
+
+
+                input.className =
+                    'form-control';
+
+
+                if (
+                    campo.placeholder
+                ) {
+
+                    input.placeholder =
+                        campo.placeholder;
+
                 }
-            });
-            div.appendChild(input);
-            grid.appendChild(div);
-            return;
-        }
 
-        if (campo.tipo === 'select') {
-            const select = document.createElement('select');
-            select.id = `campo_${campo.nome}`;
-            select.className = 'form-control';
-            if (campo.obrigatorio) select.required = true;
-            const defaultOption = document.createElement('option');
-            defaultOption.value = '';
-            defaultOption.textContent = 'Selecione...';
-            select.appendChild(defaultOption);
-            if (campo.opcoes && campo.opcoes.length > 0) {
-                campo.opcoes.forEach(op => {
-                    const option = document.createElement('option');
-                    option.value = op;
-                    option.textContent = op;
-                    select.appendChild(option);
-                });
+
+                if (
+                    campo.obrigatorio
+                ) {
+
+                    input.required =
+                        true;
+
+                }
+
+
+                input.addEventListener(
+                    'input',
+                    function() {
+
+                        this.value =
+                            this.value.replace(
+                                /[^0-9,]/g,
+                                ''
+                            );
+
+                    }
+                );
+
+
+                input.addEventListener(
+                    'blur',
+                    function() {
+
+                        const val =
+                            this.value.trim();
+
+
+                        if (
+                            val !== '' &&
+                            !/^[0-9]+(,[0-9]+)?$/.test(
+                                val
+                            )
+                        ) {
+
+                            showToast(
+                                'Digite apenas números e vírgula (ex: 15 ou 15,5)',
+                                'warning'
+                            );
+
+
+                            this.focus();
+
+                        }
+
+                    }
+                );
+
+
+                div.appendChild(
+                    input
+                );
+
+
+                grid.appendChild(
+                    div
+                );
+
+
+                return;
             }
-            if (categoria === 'Raios' && campo.nome === 'marca') {
-                select.addEventListener('change', (e) => {
-                    atualizarModelosPorMarca(e.target.value);
-                });
+
+
+            // =================================================
+            // SELECT
+            // =================================================
+
+            if (
+                campo.tipo ===
+                'select'
+            ) {
+
+                const select =
+                    document.createElement(
+                        'select'
+                    );
+
+
+                select.id =
+                    `campo_${campo.nome}`;
+
+
+                select.className =
+                    'form-control';
+
+
+                if (
+                    campo.obrigatorio
+                ) {
+
+                    select.required =
+                        true;
+
+                }
+
+
+                const defaultOption =
+                    document.createElement(
+                        'option'
+                    );
+
+
+                defaultOption.value =
+                    '';
+
+
+                defaultOption.textContent =
+                    campo.ehSubcategoria
+
+                        ? `Sem subcategoria / ${
+                            categoria ||
+                            'Categoria principal'
+                        }`
+
+                        : 'Selecione...';
+
+
+                select.appendChild(
+                    defaultOption
+                );
+
+
+                if (
+                    campo.opcoes &&
+                    campo.opcoes.length >
+                    0
+                ) {
+
+                    campo.opcoes.forEach(
+                        op => {
+
+                            const option =
+                                document.createElement(
+                                    'option'
+                                );
+
+
+                            option.value =
+                                op;
+
+
+                            option.textContent =
+                                op;
+
+
+                            select.appendChild(
+                                option
+                            );
+
+                        }
+                    );
+
+                }
+
+
+                // =============================================
+                // SUBCATEGORIA
+                // =============================================
+
+                if (
+                    campo.ehSubcategoria
+                ) {
+
+                    select.value =
+                        subcategoria ||
+                        '';
+
+
+                    select.addEventListener(
+                        'change',
+                        function() {
+
+                            const novaSubcategoria =
+                                this.value;
+
+
+                            console.log(
+                                `📂 Subcategoria selecionada: ${
+                                    novaSubcategoria ||
+                                    'categoria principal'
+                                }`
+                            );
+
+
+                            gerarCamposDinamicos(
+                                categoria,
+                                novaSubcategoria
+                            );
+
+                        }
+                    );
+
+                }
+
+
+                // =============================================
+                // MARCA DE RAIOS
+                // =============================================
+
+                if (
+                    categoria ===
+                    'Raios' &&
+                    campo.nome ===
+                    'marca'
+                ) {
+
+                    select.addEventListener(
+                        'change',
+                        e => {
+
+                            atualizarModelosPorMarca(
+                                e.target.value
+                            );
+
+                        }
+                    );
+
+                }
+
+
+                div.appendChild(
+                    select
+                );
+
+
+                grid.appendChild(
+                    div
+                );
+
+
+                return;
             }
-            div.appendChild(select);
-            grid.appendChild(div);
-            return;
+
+
+            // =================================================
+            // CHECKBOX
+            // =================================================
+
+            if (
+                campo.tipo ===
+                'checkbox'
+            ) {
+
+                const wrapper =
+                    document.createElement(
+                        'div'
+                    );
+
+
+                wrapper.className =
+                    'form-check';
+
+
+                const checkbox =
+                    document.createElement(
+                        'input'
+                    );
+
+
+                checkbox.type =
+                    'checkbox';
+
+
+                checkbox.id =
+                    `campo_${campo.nome}`;
+
+
+                checkbox.className =
+                    'form-check-input';
+
+
+                const checkLabel =
+                    document.createElement(
+                        'label'
+                    );
+
+
+                checkLabel.className =
+                    'form-check-label';
+
+
+                checkLabel.htmlFor =
+                    `campo_${campo.nome}`;
+
+
+                checkLabel.textContent =
+                    campo.label;
+
+
+                wrapper.appendChild(
+                    checkbox
+                );
+
+
+                wrapper.appendChild(
+                    checkLabel
+                );
+
+
+                div.appendChild(
+                    wrapper
+                );
+
+
+                grid.appendChild(
+                    div
+                );
+
+
+                return;
+            }
+
+
+            // =================================================
+            // TEXTAREA
+            // =================================================
+
+            if (
+                campo.tipo ===
+                'textarea'
+            ) {
+
+                const textarea =
+                    document.createElement(
+                        'textarea'
+                    );
+
+
+                textarea.id =
+                    `campo_${campo.nome}`;
+
+
+                textarea.className =
+                    'form-control';
+
+
+                textarea.rows =
+                    campo.rows || 2;
+
+
+                if (
+                    campo.placeholder
+                ) {
+
+                    textarea.placeholder =
+                        campo.placeholder;
+
+                }
+
+
+                if (
+                    campo.obrigatorio
+                ) {
+
+                    textarea.required =
+                        true;
+
+                }
+
+
+                div.appendChild(
+                    textarea
+                );
+
+
+                grid.appendChild(
+                    div
+                );
+
+
+                return;
+            }
+
+
+            // =================================================
+            // INPUT NORMAL
+            // =================================================
+
+            const input =
+                document.createElement(
+                    'input'
+                );
+
+
+            input.type =
+                campo.tipo ||
+                'text';
+
+
+            input.id =
+                `campo_${campo.nome}`;
+
+
+            input.className =
+                'form-control';
+
+
+            if (
+                campo.step
+            ) {
+
+                input.step =
+                    campo.step;
+
+            }
+
+
+            if (
+                campo.min !==
+                undefined
+            ) {
+
+                input.min =
+                    campo.min;
+
+            }
+
+
+            if (
+                campo.placeholder
+            ) {
+
+                input.placeholder =
+                    campo.placeholder;
+
+            }
+
+
+            if (
+                campo.obrigatorio
+            ) {
+
+                input.required =
+                    true;
+
+            }
+
+
+            div.appendChild(
+                input
+            );
+
+
+            grid.appendChild(
+                div
+            );
+
         }
+    );
 
-        if (campo.tipo === 'checkbox') {
-            const wrapper = document.createElement('div');
-            wrapper.className = 'form-check';
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.id = `campo_${campo.nome}`;
-            checkbox.className = 'form-check-input';
-            const checkLabel = document.createElement('label');
-            checkLabel.className = 'form-check-label';
-            checkLabel.htmlFor = `campo_${campo.nome}`;
-            checkLabel.textContent = campo.label;
-            wrapper.appendChild(checkbox);
-            wrapper.appendChild(checkLabel);
-            div.appendChild(wrapper);
-            grid.appendChild(div);
-            return;
-        }
 
-        if (campo.tipo === 'textarea') {
-            const textarea = document.createElement('textarea');
-            textarea.id = `campo_${campo.nome}`;
-            textarea.className = 'form-control';
-            textarea.rows = campo.rows || 2;
-            if (campo.placeholder) textarea.placeholder = campo.placeholder;
-            div.appendChild(textarea);
-            grid.appendChild(div);
-            return;
-        }
+    container.appendChild(
+        grid
+    );
 
-        const input = document.createElement('input');
-        input.type = campo.tipo || 'text';
-        input.id = `campo_${campo.nome}`;
-        input.className = 'form-control';
-        if (campo.step) input.step = campo.step;
-        if (campo.min) input.min = campo.min;
-        if (campo.placeholder) input.placeholder = campo.placeholder;
-        if (campo.obrigatorio) input.required = true;
-        div.appendChild(input);
-        grid.appendChild(div);
-    });
 
-    container.appendChild(grid);
+    // =====================================================
+    // CAMPOS ESPECIAIS DE ROLAMENTOS
+    // =====================================================
 
-    // Campos de ângulos para Rolamentos
-    if (categoria === 'Rolamentos') {
-        let angulosDiv = document.getElementById('camposAngulosRolamento');
+    if (
+        categoria ===
+        'Rolamentos'
+    ) {
+
+        let angulosDiv =
+            document.getElementById(
+                'camposAngulosRolamento'
+            );
+
+
         if (!angulosDiv) {
-            angulosDiv = document.createElement('div');
-            angulosDiv.id = 'camposAngulosRolamento';
-            angulosDiv.style.display = 'none';
-            angulosDiv.style.marginTop = '10px';
-            angulosDiv.style.borderTop = '1px solid #dee2e6';
-            angulosDiv.style.paddingTop = '10px';
+
+            angulosDiv =
+                document.createElement(
+                    'div'
+                );
+
+
+            angulosDiv.id =
+                'camposAngulosRolamento';
+
+
+            angulosDiv.style.display =
+                'none';
+
+
+            angulosDiv.style.marginTop =
+                '10px';
+
+
+            angulosDiv.style.borderTop =
+                '1px solid #dee2e6';
+
+
+            angulosDiv.style.paddingTop =
+                '10px';
+
+
             angulosDiv.innerHTML = `
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+
+                <div
+                    style="
+                        display:grid;
+                        grid-template-columns:
+                            1fr 1fr;
+                        gap:10px;
+                    "
+                >
+
                     <div class="campo-dinamico">
-                        <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo interno *</label>
-                        <input type="text" id="campo_angulo_interno" class="form-control" placeholder="Ex: 45" required>
+
+                        <label
+                            style="
+                                font-weight:600;
+                                display:block;
+                                margin-bottom:5px;
+                            "
+                        >
+                            Ângulo interno *
+                        </label>
+
+                        <input
+                            type="text"
+                            id="campo_angulo_interno"
+                            class="form-control"
+                            placeholder="Ex: 45"
+                            required
+                        >
+
                     </div>
+
+
                     <div class="campo-dinamico">
-                        <label style="font-weight:600;display:block;margin-bottom:5px;">Ângulo externo *</label>
-                        <input type="text" id="campo_angulo_externo" class="form-control" placeholder="Ex: 45" required>
+
+                        <label
+                            style="
+                                font-weight:600;
+                                display:block;
+                                margin-bottom:5px;
+                            "
+                        >
+                            Ângulo externo *
+                        </label>
+
+                        <input
+                            type="text"
+                            id="campo_angulo_externo"
+                            class="form-control"
+                            placeholder="Ex: 45"
+                            required
+                        >
+
                     </div>
+
                 </div>
-                <small class="text-muted">Preencha os ângulos internos e externos (apenas números e vírgula).</small>
+
+                <small class="text-muted">
+                    Preencha os ângulos internos e externos
+                    (apenas números e vírgula).
+                </small>
+
             `;
-            container.appendChild(angulosDiv);
+
+
+            container.appendChild(
+                angulosDiv
+            );
+
         }
 
-        function toggleAngulos(valorAplicacao) {
-            if (!angulosDiv) return;
-            const shouldShow = (valorAplicacao === 'Caixa de Direção');
-            angulosDiv.style.display = shouldShow ? 'block' : 'none';
-            const angInt = document.getElementById('campo_angulo_interno');
-            const angExt = document.getElementById('campo_angulo_externo');
-            if (angInt) angInt.required = shouldShow;
-            if (angExt) angExt.required = shouldShow;
-            
-            if (!shouldShow) {
-                if (angInt) angInt.value = '';
-                if (angExt) angExt.value = '';
+
+        function toggleAngulos(
+            valorAplicacao
+        ) {
+
+            if (!angulosDiv) {
+                return;
             }
+
+
+            const shouldShow =
+                valorAplicacao ===
+                'Cubo/Caixa de Direção';
+
+
+            angulosDiv.style.display =
+                shouldShow
+                    ? 'block'
+                    : 'none';
+
+
+            const angInt =
+                document.getElementById(
+                    'campo_angulo_interno'
+                );
+
+
+            const angExt =
+                document.getElementById(
+                    'campo_angulo_externo'
+                );
+
+
+            if (
+                angInt
+            ) {
+
+                angInt.required =
+                    shouldShow;
+
+            }
+
+
+            if (
+                angExt
+            ) {
+
+                angExt.required =
+                    shouldShow;
+
+            }
+
+
+            if (
+                !shouldShow
+            ) {
+
+                if (
+                    angInt
+                ) {
+
+                    angInt.value =
+                        '';
+
+                }
+
+
+                if (
+                    angExt
+                ) {
+
+                    angExt.value =
+                        '';
+
+                }
+
+            }
+
         }
 
-        const selectAplicacao = document.getElementById('campo_aplicaçao');
-        if (selectAplicacao) {
-            const novoSelect = selectAplicacao.cloneNode(true);
-            selectAplicacao.parentNode.replaceChild(novoSelect, selectAplicacao);
-            
-            novoSelect.addEventListener('change', function(e) {
-                toggleAngulos(e.target.value);
-            });
-            
-            setTimeout(() => {
-                toggleAngulos(novoSelect.value);
-            }, 300);
+
+        const selectAplicacao =
+            document.getElementById(
+                'campo_aplicaçao'
+            );
+
+
+        if (
+            selectAplicacao
+        ) {
+
+            const novoSelect =
+                selectAplicacao
+                    .cloneNode(
+                        true
+                    );
+
+
+            selectAplicacao
+                .parentNode
+                .replaceChild(
+                    novoSelect,
+                    selectAplicacao
+                );
+
+
+            novoSelect.addEventListener(
+                'change',
+                function(e) {
+
+                    toggleAngulos(
+                        e.target.value
+                    );
+
+                }
+            );
+
+
+            setTimeout(
+                () => {
+
+                    toggleAngulos(
+                        novoSelect.value
+                    );
+
+                },
+                300
+            );
+
         }
+
     }
 
-    // ===== CONFIGURAR BULK MODE PARA RAIOS =====
-    const bulkSection = document.getElementById('bulkAddSection');
-    const kitContainer = document.getElementById('kitComposicaoContainer');
-    const isEditing = document.getElementById('produtoId').value !== '';
-    
-    if (kitContainer) {
-        kitContainer.style.display = 'block';
+
+    // =====================================================
+    // KIT
+    // =====================================================
+
+    const kitContainer =
+        document.getElementById(
+            'kitComposicaoContainer'
+        );
+
+
+    if (
+        kitContainer
+    ) {
+
+        kitContainer.style.display =
+            'block';
+
+
         configurarEventosKit();
+
     }
 
-    // Se for categoria Raios e NÃO for edição, mostrar o bulk
-    if (categoria === 'Raios' && !isEditing) {
-        if (bulkSection) {
-            bulkSection.style.display = 'block';
+
+    // =====================================================
+    // BULK MODE DE RAIOS
+    //
+    // IMPORTANTE:
+    // somente Raio principal.
+    //
+    // Nipples e outras subcategorias NÃO usam bulk de Raios.
+    // =====================================================
+
+    const bulkSection =
+        document.getElementById(
+            'bulkAddSection'
+        );
+
+
+    const isEditing =
+        document.getElementById(
+            'produtoId'
+        )?.value !== '';
+
+
+    if (
+        categoria === 'Raios' &&
+        !subcategoria &&
+        !isEditing
+    ) {
+
+        if (
+            bulkSection
+        ) {
+
+            bulkSection.style.display =
+                'block';
+
+
             configurarBulkModeEvents();
+
         }
+
     } else {
-        if (bulkSection) bulkSection.style.display = 'none';
+
+        if (
+            bulkSection
+        ) {
+
+            bulkSection.style.display =
+                'none';
+
+        }
+
     }
 }
 
@@ -17292,205 +18643,3502 @@ function removerRegraIndividual() {
 
 // =========================================================
 // ABRIR MODAL PRODUTO ESTOQUE
+// COM SUPORTE A SUBCATEGORIA
 // =========================================================
 
-function abrirModalProdutoEstoque(produto = null) {
-    console.log('🚪 [abrirModalProdutoEstoque] Abrindo modal para:', produto?.sku || 'NOVO PRODUTO');
-    
-atualizarSelectCategorias();
+function abrirModalProdutoEstoque(
+    produto = null
+) {
 
-    const modal = document.getElementById('modalProdutoEstoque');
+    console.log(
+        '🚪 [abrirModalProdutoEstoque] Abrindo modal para:',
+        produto?.sku ||
+        'NOVO PRODUTO'
+    );
+
+
+    // Garantir categorias atualizadas
+    if (
+        typeof atualizarSelectCategorias ===
+        'function'
+    ) {
+
+        atualizarSelectCategorias();
+
+    }
+
+
+    const modal =
+        document.getElementById(
+            'modalProdutoEstoque'
+        );
+
+
     if (!modal) {
-        console.error('❌ Modal #modalProdutoEstoque não encontrado!');
-        showToast('Erro: Modal não encontrado', 'error');
-        return;
-    }
-    
-    const title = document.getElementById('modalProdutoTitle');
-    const idInput = document.getElementById('produtoId');
-    const nomeInput = document.getElementById('produtoNome');
-    const skuInput = document.getElementById('produtoSKU');
-    const qtdInput = document.getElementById('produtoQuantidade');
-    const precoInput = document.getElementById('produtoPreco');
-    const descInput = document.getElementById('produtoDescricao');
-    const categoriaSelect = document.getElementById('produtoCategoria');
-    const toggleSync = document.getElementById('bloquearSyncML');
-    const syncStatusLabel = document.getElementById('mlSyncStatusLabel');
 
-    const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username); // NÃO ALTERADO
-    const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
-    const podeVerCusto = usuariosVerCusto.includes(username) || isAdmin;
-    const podeGerenciarCategorias = usuariosGerenciarCategorias.includes(username);
+        console.error(
+            '❌ Modal #modalProdutoEstoque não encontrado!'
+        );
 
-    if (toggleSync) {
-        if (!podeModificarSync) {
-            toggleSync.disabled = true;
-            toggleSync.title = '🔒 Apenas administradores podem modificar a sincronização com o ML';
-            toggleSync.parentElement.style.opacity = '0.6';
-            toggleSync.parentElement.style.cursor = 'not-allowed';
-        } else {
-            toggleSync.disabled = false;
-            toggleSync.title = 'Clique para alternar a sincronização com o ML';
-            toggleSync.parentElement.style.opacity = '1';
-            toggleSync.parentElement.style.cursor = 'pointer';
-        }
-    }
 
-    const adminOnlyMsg = document.getElementById('mlSyncAdminOnly');
-    if (adminOnlyMsg) {
-        adminOnlyMsg.style.display = podeModificarSync ? 'none' : 'block';
-    }
+        showToast(
+            'Erro: Modal não encontrado',
+            'error'
+        );
 
-    const helpText = document.getElementById('mlSyncHelpText');
-    if (helpText) {
-        if (podeModificarSync) {
-            helpText.textContent = 'Quando ativado, o estoque NÃO será sincronizado automaticamente com o ML';
-        } else {
-            helpText.textContent = 'Esta configuração é gerenciada por administradores';
-        }
-    }
 
-    if (!title || !idInput || !nomeInput || !skuInput || !qtdInput || !precoInput || !descInput || !categoriaSelect) {
-        console.error('❌ Elementos do modal não encontrados!');
-        showToast('Erro: Elementos do modal não encontrados', 'error');
         return;
     }
 
-    if (produto && produto.id) {
-        title.textContent = 'Editar Produto';
-        idInput.value = produto.id;
-        nomeInput.value = produto.nome || '';
-        skuInput.value = produto.sku || '';
-        qtdInput.value = produto.quantidade || 0;
-        qtdInput.readOnly = true;
-        qtdInput.classList.add('bg-light');
-        precoInput.value = produto.preco || 0;
-        descInput.value = produto.descricao || '';
-        categoriaSelect.value = produto.categoria || '';
-        
-        const syncBloqueado = produto.bloquear_sync_ml || produto.dados_extra?.bloquear_sync_ml || false;
-        if (toggleSync) {
-            toggleSync.checked = syncBloqueado;
-            atualizarStatusSyncLabel(toggleSync.checked);
+
+    const title =
+        document.getElementById(
+            'modalProdutoTitle'
+        );
+
+
+    const idInput =
+        document.getElementById(
+            'produtoId'
+        );
+
+
+    const nomeInput =
+        document.getElementById(
+            'produtoNome'
+        );
+
+
+    const skuInput =
+        document.getElementById(
+            'produtoSKU'
+        );
+
+
+    const qtdInput =
+        document.getElementById(
+            'produtoQuantidade'
+        );
+
+
+    const precoInput =
+        document.getElementById(
+            'produtoPreco'
+        );
+
+
+    const descInput =
+        document.getElementById(
+            'produtoDescricao'
+        );
+
+
+    const categoriaSelect =
+        document.getElementById(
+            'produtoCategoria'
+        );
+
+
+    const toggleSync =
+        document.getElementById(
+            'bloquearSyncML'
+        );
+
+
+    // =====================================================
+    // PERMISSÕES
+    // =====================================================
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase() || '';
+
+
+    const isAdmin =
+        usuariosAdmin.includes(
+            username
+        );
+
+
+    const podeModificarSync =
+        usuariosAutorizadosSync.includes(
+            username
+        ) ||
+        isAdmin;
+
+
+    // =====================================================
+    // TOGGLE ML
+    // =====================================================
+
+    if (
+        toggleSync
+    ) {
+
+        if (
+            !podeModificarSync
+        ) {
+
+            toggleSync.disabled =
+                true;
+
+
+            toggleSync.title =
+                '🔒 Apenas administradores podem modificar a sincronização com o ML';
+
+
+            toggleSync.parentElement
+                .style.opacity =
+                '0.6';
+
+
+            toggleSync.parentElement
+                .style.cursor =
+                'not-allowed';
+
+        } else {
+
+            toggleSync.disabled =
+                false;
+
+
+            toggleSync.title =
+                'Clique para alternar a sincronização com o ML';
+
+
+            toggleSync.parentElement
+                .style.opacity =
+                '1';
+
+
+            toggleSync.parentElement
+                .style.cursor =
+                'pointer';
+
         }
-        
-        console.log('📦 [abrirModalProdutoEstoque] Editando produto:', produto.sku);
-        console.log('🔒 Sync ML bloqueado?', syncBloqueado);
-        
-        gerarCamposDinamicos(produto.categoria);
-        
-        const dadosExtra = produto.dados_extra || {};
-        Object.keys(dadosExtra).forEach(chave => {
-            const campo = document.getElementById(`campo_${chave}`);
-            if (campo) {
-                if (campo.type === 'checkbox') {
-                    campo.checked = dadosExtra[chave];
-                } else if (chave === 'mlb_codes' && Array.isArray(dadosExtra[chave])) {
-                    campo.value = dadosExtra[chave].join(', ');
-                } else {
-                    campo.value = dadosExtra[chave];
-                }
-            }
-        });
-        
-        if (produto.categoria === 'Raios') {
-            const marcaField = document.getElementById('campo_marca');
-            if (marcaField && marcaField.value) {
-                atualizarModelosPorMarca(marcaField.value);
-                const modeloField = document.getElementById('campo_modelo');
-                if (modeloField && dadosExtra.modelo) {
-                    modeloField.value = dadosExtra.modelo;
-                }
-            }
-        }
-        
-        if (produto.categoria === 'Rolamentos') {
-            const anguloInt = document.getElementById('campo_angulo_interno');
-            const anguloExt = document.getElementById('campo_angulo_externo');
-            if (anguloInt && dadosExtra.angulo_interno) anguloInt.value = dadosExtra.angulo_interno;
-            if (anguloExt && dadosExtra.angulo_externo) anguloExt.value = dadosExtra.angulo_externo;
-            const aplicacao = document.getElementById('campo_aplicaçao');
-            if (aplicacao && aplicacao.value === 'Caixa de Direção') {
-                const angulosDiv = document.getElementById('camposAngulosRolamento');
-                if (angulosDiv) angulosDiv.style.display = 'block';
-            }
-        }
-        
-        setTimeout(async () => {
-            const skuAtual = document.getElementById('produtoSKU').value;
-            if (skuAtual) {
-                try {
-                    const skus = await carregarSkusKit(skuAtual);
-                    renderizarSkusKit(skus);
-                } catch (error) {
-                    console.error('❌ Erro ao carregar SKUs do kit:', error);
-                    renderizarSkusKit([]);
-                }
-            }
-        }, 500);
-        
-    } else {
-        title.textContent = 'Novo Produto';
-        idInput.value = '';
-        nomeInput.value = '';
-        skuInput.value = '';
-        qtdInput.value = '0';
-        qtdInput.readOnly = false;
-        qtdInput.classList.remove('bg-light');
-        precoInput.value = '0';
-        descInput.value = '';
-        categoriaSelect.value = '';
-        
-        if (toggleSync) {
-            toggleSync.checked = false;
-            atualizarStatusSyncLabel(false);
-        }
-        
-        gerarCamposDinamicos('');
-        renderizarSkusKit([]);
+
     }
 
-    if (toggleSync) {
-        toggleSync.onchange = function() {
-            atualizarStatusSyncLabel(this.checked);
+
+    const adminOnlyMsg =
+        document.getElementById(
+            'mlSyncAdminOnly'
+        );
+
+
+    if (
+        adminOnlyMsg
+    ) {
+
+        adminOnlyMsg.style.display =
+            podeModificarSync
+                ? 'none'
+                : 'block';
+
+    }
+
+
+    const helpText =
+        document.getElementById(
+            'mlSyncHelpText'
+        );
+
+
+    if (
+        helpText
+    ) {
+
+        helpText.textContent =
+            podeModificarSync
+
+                ? 'Quando ativado, o estoque NÃO será sincronizado automaticamente com o ML'
+
+                : 'Esta configuração é gerenciada por administradores';
+
+    }
+
+
+    // =====================================================
+    // VALIDAR ELEMENTOS
+    // =====================================================
+
+    if (
+        !title ||
+        !idInput ||
+        !nomeInput ||
+        !skuInput ||
+        !qtdInput ||
+        !precoInput ||
+        !descInput ||
+        !categoriaSelect
+    ) {
+
+        console.error(
+            '❌ Elementos do modal não encontrados!'
+        );
+
+
+        showToast(
+            'Erro: Elementos do modal não encontrados',
+            'error'
+        );
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // EDITANDO
+    // =====================================================
+
+    if (
+        produto &&
+        produto.id
+    ) {
+
+        title.textContent =
+            'Editar Produto';
+
+
+        idInput.value =
+            produto.id;
+
+
+        nomeInput.value =
+            produto.nome || '';
+
+
+        skuInput.value =
+            produto.sku || '';
+
+
+        qtdInput.value =
+            produto.quantidade || 0;
+
+
+        qtdInput.readOnly =
+            true;
+
+
+        qtdInput.classList.add(
+            'bg-light'
+        );
+
+
+        precoInput.value =
+            produto.preco || 0;
+
+
+        descInput.value =
+            produto.descricao || '';
+
+
+        categoriaSelect.value =
+            produto.categoria ||
+            '';
+
+
+        const dadosExtra =
+            produto.dados_extra ||
+            {};
+
+
+        const subcategoriaProduto =
+            dadosExtra.subcategoria ||
+            '';
+
+
+        // =================================================
+        // SYNC ML
+        // =================================================
+
+        const syncBloqueado =
+            produto.bloquear_sync_ml ||
+            dadosExtra
+                .bloquear_sync_ml ||
+            false;
+
+
+        if (
+            toggleSync
+        ) {
+
+            toggleSync.checked =
+                syncBloqueado;
+
+
+            atualizarStatusSyncLabel(
+                toggleSync.checked
+            );
+
+        }
+
+
+        console.log(
+            '📦 Editando:',
+            produto.sku
+        );
+
+
+        console.log(
+            '📂 Subcategoria:',
+            subcategoriaProduto ||
+            'nenhuma'
+        );
+
+
+        // =================================================
+        // IMPORTANTE:
+        // gerar os campos DA SUBCATEGORIA correta.
+        // =================================================
+
+        gerarCamposDinamicos(
+            produto.categoria,
+            subcategoriaProduto
+        );
+
+
+        // =================================================
+        // PREENCHER DADOS EXTRA
+        // =================================================
+
+        Object.keys(
+            dadosExtra
+        )
+        .forEach(
+            chave => {
+
+                const campo =
+                    document.getElementById(
+                        `campo_${chave}`
+                    );
+
+
+                if (!campo) {
+                    return;
+                }
+
+
+                if (
+                    campo.type ===
+                    'checkbox'
+                ) {
+
+                    campo.checked =
+                        !!dadosExtra[
+                            chave
+                        ];
+
+                }
+
+                else if (
+                    chave ===
+                    'mlb_codes' &&
+                    Array.isArray(
+                        dadosExtra[
+                            chave
+                        ]
+                    )
+                ) {
+
+                    campo.value =
+                        dadosExtra[
+                            chave
+                        ].join(
+                            ', '
+                        );
+
+                }
+
+                else {
+
+                    campo.value =
+                        dadosExtra[
+                            chave
+                        ];
+
+                }
+
+            }
+        );
+
+
+        // =================================================
+        // MODELOS DOS RAIOS
+        //
+        // Só executa se a subcategoria tiver campo marca/modelo.
+        // =================================================
+
+        if (
+            produto.categoria ===
+            'Raios'
+        ) {
+
+            const marcaField =
+                document.getElementById(
+                    'campo_marca'
+                );
+
+
+            if (
+                marcaField &&
+                marcaField.value
+            ) {
+
+                atualizarModelosPorMarca(
+                    marcaField.value
+                );
+
+
+                const modeloField =
+                    document.getElementById(
+                        'campo_modelo'
+                    );
+
+
+                if (
+                    modeloField &&
+                    dadosExtra.modelo
+                ) {
+
+                    modeloField.value =
+                        dadosExtra.modelo;
+
+                }
+
+            }
+
+        }
+
+
+        // =================================================
+        // ROLAMENTOS
+        // =================================================
+
+        if (
+            produto.categoria ===
+            'Rolamentos'
+        ) {
+
+            const anguloInt =
+                document.getElementById(
+                    'campo_angulo_interno'
+                );
+
+
+            const anguloExt =
+                document.getElementById(
+                    'campo_angulo_externo'
+                );
+
+
+            if (
+                anguloInt &&
+                dadosExtra.angulo_interno
+            ) {
+
+                anguloInt.value =
+                    dadosExtra.angulo_interno;
+
+            }
+
+
+            if (
+                anguloExt &&
+                dadosExtra.angulo_externo
+            ) {
+
+                anguloExt.value =
+                    dadosExtra.angulo_externo;
+
+            }
+
+
+            const aplicacao =
+                document.getElementById(
+                    'campo_aplicaçao'
+                );
+
+
+            if (
+                aplicacao &&
+                aplicacao.value ===
+                'Cubo/Caixa de Direção'
+            ) {
+
+                const angulosDiv =
+                    document.getElementById(
+                        'camposAngulosRolamento'
+                    );
+
+
+                if (
+                    angulosDiv
+                ) {
+
+                    angulosDiv.style.display =
+                        'block';
+
+                }
+
+            }
+
+        }
+
+
+        // =================================================
+        // KIT
+        // =================================================
+
+        setTimeout(
+            async () => {
+
+                const skuAtual =
+                    document.getElementById(
+                        'produtoSKU'
+                    )?.value;
+
+
+                if (
+                    skuAtual
+                ) {
+
+                    try {
+
+                        const skus =
+                            await carregarSkusKit(
+                                skuAtual
+                            );
+
+
+                        renderizarSkusKit(
+                            skus
+                        );
+
+                    } catch (error) {
+
+                        console.error(
+                            '❌ Erro ao carregar SKUs do kit:',
+                            error
+                        );
+
+
+                        renderizarSkusKit(
+                            []
+                        );
+
+                    }
+
+                }
+
+            },
+            500
+        );
+
+    }
+
+    // =====================================================
+    // NOVO PRODUTO
+    // =====================================================
+
+    else {
+
+        title.textContent =
+            'Novo Produto';
+
+
+        idInput.value =
+            '';
+
+
+        nomeInput.value =
+            '';
+
+
+        skuInput.value =
+            '';
+
+
+        qtdInput.value =
+            '0';
+
+
+        qtdInput.readOnly =
+            false;
+
+
+        qtdInput.classList.remove(
+            'bg-light'
+        );
+
+
+        precoInput.value =
+            '0';
+
+
+        descInput.value =
+            '';
+
+
+        categoriaSelect.value =
+            '';
+
+
+        if (
+            toggleSync
+        ) {
+
+            toggleSync.checked =
+                false;
+
+
+            atualizarStatusSyncLabel(
+                false
+            );
+
+        }
+
+
+        gerarCamposDinamicos(
+            '',
+            ''
+        );
+
+
+        renderizarSkusKit(
+            []
+        );
+
+    }
+
+
+    // =====================================================
+    // EVENTO SYNC
+    // =====================================================
+
+    if (
+        toggleSync
+    ) {
+
+        toggleSync.onchange =
+            function() {
+
+                atualizarStatusSyncLabel(
+                    this.checked
+                );
+
+            };
+
+    }
+
+
+    // =====================================================
+    // TROCA DE CATEGORIA
+    // =====================================================
+
+    categoriaSelect.onchange =
+        function() {
+
+            const novaCategoria =
+                categoriaSelect.value;
+
+
+            const produtoAtual =
+                document.getElementById(
+                    'produtoId'
+                )?.value;
+
+
+            if (
+                produtoAtual &&
+                produto &&
+                produto.categoria &&
+                novaCategoria !==
+                produto.categoria
+            ) {
+
+                if (
+                    !confirm(
+                        'Alterar a categoria limpará os atributos específicos e a subcategoria. Deseja continuar?'
+                    )
+                ) {
+
+                    categoriaSelect.value =
+                        produto.categoria ||
+                        '';
+
+
+                    return;
+                }
+
+            }
+
+
+            gerarCamposDinamicos(
+                novaCategoria,
+                ''
+            );
+
         };
+
+
+    // =====================================================
+    // EXIBIR MODAL
+    // =====================================================
+
+    modal.style.display =
+        'flex';
+
+
+    modal.style.alignItems =
+        'center';
+
+
+    modal.style.justifyContent =
+        'center';
+
+
+    modal.style.position =
+        'fixed';
+
+
+    modal.style.top =
+        '0';
+
+
+    modal.style.left =
+        '0';
+
+
+    modal.style.width =
+        '100%';
+
+
+    modal.style.height =
+        '100%';
+
+
+    modal.style.backgroundColor =
+        'rgba(0,0,0,0.7)';
+
+
+    modal.style.zIndex =
+        '99999';
+
+
+    modal.style.visibility =
+        'visible';
+
+
+    modal.style.opacity =
+        '1';
+
+
+    modal.classList.remove(
+        'hidden'
+    );
+
+
+    const modalContent =
+        modal.querySelector(
+            '.modal-content'
+        );
+
+
+    if (
+        modalContent
+    ) {
+
+        modalContent.style
+            .backgroundColor =
+            'white';
+
+
+        modalContent.style
+            .position =
+            'relative';
+
+
+        modalContent.style
+            .zIndex =
+            '100000';
+
     }
 
-    categoriaSelect.onchange = function() {
-        const novaCategoria = categoriaSelect.value;
-        const produtoAtual = document.getElementById('produtoId').value;
-        if (produtoAtual && produto && produto.categoria && novaCategoria !== produto.categoria) {
-            if (!confirm('Alterar a categoria limpará os atributos específicos. Deseja continuar?')) {
-                categoriaSelect.value = produto.categoria || '';
+
+    console.log(
+        '✅ Modal exibido com sucesso!'
+    );
+}
+
+// =========================================================
+// ABRIR GERENCIADOR DE SUBCATEGORIAS
+// =========================================================
+
+function abrirModalGerenciarSubcategorias() {
+
+    document
+        .getElementById(
+            'modalGerenciarSubcategorias'
+        )
+        ?.remove();
+
+
+    const categoriasPrincipais = [
+
+        ...Object.keys(
+            camposPorCategoria
+        ).filter(
+            categoria =>
+                categoria !==
+                'outros'
+        ),
+
+        ...Object.keys(
+            categoriasCustomizadas ||
+            {}
+        )
+
+    ]
+    .filter(
+        (
+            item,
+            index,
+            array
+        ) =>
+            array.indexOf(item) ===
+            index
+    )
+    .sort(
+        (
+            a,
+            b
+        ) =>
+            a.localeCompare(
+                b,
+                'pt-BR'
+            )
+    );
+
+
+    let optionsCategoria = `
+
+        <option value="">
+            Selecione...
+        </option>
+
+    `;
+
+
+    categoriasPrincipais.forEach(
+        categoria => {
+
+            optionsCategoria += `
+
+                <option
+                    value="${escapeHtml(categoria)}"
+                >
+                    ${escapeHtml(categoria)}
+                </option>
+
+            `;
+
+        }
+    );
+
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalGerenciarSubcategorias';
+
+
+    modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,.55);
+        z-index: 100040;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    `;
+
+
+    modal.innerHTML = `
+
+        <div
+            style="
+                width: 94%;
+                max-width: 1000px;
+                max-height: 92vh;
+                overflow-y: auto;
+                background: white;
+                border-radius: 12px;
+                padding: 22px;
+            "
+        >
+
+            <!-- ========================================== -->
+            <!-- CABEÇALHO -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    border-bottom: 1px solid #ddd;
+                    padding-bottom: 12px;
+                    margin-bottom: 15px;
+                "
+            >
+
+                <div>
+
+                    <h3
+                        id="tituloModalSubcategoria"
+                        style="
+                            margin: 0;
+                            color: #6f42c1;
+                        "
+                    >
+
+                        <i class="fas fa-sitemap"></i>
+
+                        Gerenciar Subcategorias
+
+                    </h3>
+
+
+                    <div
+                        id="infoModoEdicaoSubcategoria"
+                        style="
+                            font-size: 11px;
+                            color: #6c757d;
+                            margin-top: 4px;
+                            display: none;
+                        "
+                    ></div>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    onclick="fecharModalGerenciarSubcategorias()"
+                    style="
+                        border: none;
+                        background: transparent;
+                        font-size: 26px;
+                        cursor: pointer;
+                    "
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- DADOS -->
+            <!-- ========================================== -->
+
+            <input
+                type="hidden"
+                id="subcategoriaEditandoCategoriaOriginal"
+            >
+
+            <input
+                type="hidden"
+                id="subcategoriaEditandoNomeOriginal"
+            >
+
+
+            <div
+                style="
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 15px;
+                    margin-bottom: 15px;
+                "
+            >
+
+                <div>
+
+                    <label
+                        style="
+                            font-weight: 600;
+                            margin-bottom: 5px;
+                            display: block;
+                        "
+                    >
+                        Categoria Pai *
+                    </label>
+
+
+                    <select
+                        id="subcategoriaCategoriaPai"
+                        class="form-control"
+                    >
+                        ${optionsCategoria}
+                    </select>
+
+                </div>
+
+
+                <div>
+
+                    <label
+                        style="
+                            font-weight: 600;
+                            margin-bottom: 5px;
+                            display: block;
+                        "
+                    >
+                        Nome da Subcategoria *
+                    </label>
+
+
+                    <input
+                        type="text"
+                        id="subcategoriaNome"
+                        class="form-control"
+                        placeholder="Ex: Nipples"
+                    >
+
+                </div>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- HERDAR -->
+            <!-- ========================================== -->
+
+            <label
+                style="
+                    display: flex;
+                    align-items: center;
+                    gap: 7px;
+                    margin-bottom: 15px;
+                    cursor: pointer;
+                "
+            >
+
+                <input
+                    type="checkbox"
+                    id="subcategoriaHerdarCampos"
+                >
+
+                Herdar também os atributos da categoria pai
+
+            </label>
+
+
+            <!-- ========================================== -->
+            <!-- CAMPOS -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    border-top: 1px solid #ddd;
+                    padding-top: 15px;
+                "
+            >
+
+                <div
+                    style="
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 10px;
+                    "
+                >
+
+                    <h4
+                        style="
+                            margin: 0;
+                        "
+                    >
+                        Atributos da Subcategoria
+                    </h4>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-primary"
+                        onclick="adicionarCampoSubcategoria()"
+                    >
+
+                        <i class="fas fa-plus"></i>
+
+                        Adicionar Campo
+
+                    </button>
+
+                </div>
+
+
+                <div
+                    id="camposNovaSubcategoria"
+                ></div>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- BOTÕES -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    display: flex;
+                    justify-content: space-between;
+                    gap: 10px;
+                    margin-top: 20px;
+                    border-top: 1px solid #dee2e6;
+                    padding-top: 15px;
+                "
+            >
+
+                <button
+                    type="button"
+                    id="btnCancelarEdicaoSubcategoria"
+                    class="btn btn-outline-secondary"
+                    onclick="cancelarEdicaoSubcategoria()"
+                    style="
+                        display: none;
+                    "
+                >
+
+                    <i class="fas fa-times"></i>
+
+                    Cancelar Edição
+
+                </button>
+
+
+                <div
+                    style="
+                        display: flex;
+                        gap: 10px;
+                        margin-left: auto;
+                    "
+                >
+
+                    <button
+                        type="button"
+                        class="btn btn-secondary"
+                        onclick="fecharModalGerenciarSubcategorias()"
+                    >
+                        Fechar
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-success"
+                        id="btnSalvarSubcategoria"
+                        onclick="salvarNovaSubcategoria()"
+                    >
+
+                        <i class="fas fa-save"></i>
+
+                        Salvar Subcategoria
+
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- LISTA -->
+            <!-- ========================================== -->
+
+            <hr
+                style="
+                    margin-top: 25px;
+                "
+            >
+
+
+            <h4>
+                Subcategorias cadastradas
+            </h4>
+
+
+            <div
+                id="listaSubcategoriasCadastradas"
+            ></div>
+
+        </div>
+
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    atualizarListaSubcategorias();
+}
+
+function adicionarCampoSubcategoria(
+    existente = null
+) {
+
+    const container =
+        document.getElementById(
+            'camposNovaSubcategoria'
+        );
+
+
+    if (!container) {
+        return;
+    }
+
+
+    const div =
+        document.createElement(
+            'div'
+        );
+
+
+    div.className =
+        'campo-subcategoria-editor';
+
+
+    div.style.cssText = `
+
+        border:1px solid #dee2e6;
+        border-radius:8px;
+        padding:12px;
+        margin-bottom:10px;
+        background:#f8f9fa;
+
+    `;
+
+
+    div.innerHTML = `
+
+        <div
+            style="
+                display:grid;
+                grid-template-columns:
+                    1fr 1fr;
+                gap:10px;
+            "
+        >
+
+            <div>
+                <label>Identificador *</label>
+
+                <input
+                    class="form-control subcampo-nome"
+                    value="${escapeHtml(existente?.nome || '')}"
+                    placeholder="Ex: material"
+                >
+            </div>
+
+
+            <div>
+                <label>Nome exibido *</label>
+
+                <input
+                    class="form-control subcampo-label"
+                    value="${escapeHtml(existente?.label || '')}"
+                    placeholder="Ex: Material"
+                >
+            </div>
+
+
+            <div>
+                <label>Tipo *</label>
+
+                <select
+                    class="form-control subcampo-tipo"
+                    onchange="
+                        const opcoes =
+                            this.closest('.campo-subcategoria-editor')
+                                .querySelector('.subcampo-opcoes-wrap');
+
+                        opcoes.style.display =
+                            this.value === 'select'
+                                ? 'block'
+                                : 'none';
+                    "
+                >
+
+                    <option
+                        value="text"
+                        ${existente?.tipo === 'text' ? 'selected' : ''}
+                    >
+                        Texto
+                    </option>
+
+                    <option
+                        value="number"
+                        ${existente?.tipo === 'number' ? 'selected' : ''}
+                    >
+                        Número
+                    </option>
+
+                    <option
+                        value="select"
+                        ${existente?.tipo === 'select' ? 'selected' : ''}
+                    >
+                        Seleção
+                    </option>
+
+                    <option
+                        value="textarea"
+                        ${existente?.tipo === 'textarea' ? 'selected' : ''}
+                    >
+                        Texto Longo
+                    </option>
+
+                    <option
+                        value="checkbox"
+                        ${existente?.tipo === 'checkbox' ? 'selected' : ''}
+                    >
+                        Sim / Não
+                    </option>
+
+                </select>
+            </div>
+
+
+            <div>
+                <label>Obrigatório</label>
+
+                <select
+                    class="form-control subcampo-obrigatorio"
+                >
+
+                    <option
+                        value="false"
+                        ${!existente?.obrigatorio ? 'selected' : ''}
+                    >
+                        Não
+                    </option>
+
+                    <option
+                        value="true"
+                        ${existente?.obrigatorio ? 'selected' : ''}
+                    >
+                        Sim
+                    </option>
+
+                </select>
+            </div>
+
+
+            <div>
+                <label>Placeholder</label>
+
+                <input
+                    class="form-control subcampo-placeholder"
+                    value="${escapeHtml(existente?.placeholder || '')}"
+                >
+            </div>
+
+
+            <div
+                class="subcampo-opcoes-wrap"
+                style="
+                    ${
+                        existente?.tipo ===
+                        'select'
+
+                            ? ''
+
+                            : 'display:none;'
+                    }
+                "
+            >
+
+                <label>
+                    Opções separadas por vírgula
+                </label>
+
+                <input
+                    class="form-control subcampo-opcoes"
+                    value="${escapeHtml(
+                        existente?.opcoes?.join(', ') || ''
+                    )}"
+                >
+
+            </div>
+
+        </div>
+
+
+        <div
+            style="
+                text-align:right;
+                margin-top:8px;
+            "
+        >
+
+            <button
+                class="btn btn-sm btn-danger"
+                onclick="
+                    this.closest('.campo-subcategoria-editor').remove()
+                "
+            >
+                <i class="fas fa-trash"></i>
+                Remover
+            </button>
+
+        </div>
+
+    `;
+
+
+    container.appendChild(
+        div
+    );
+}
+
+async function salvarNovaSubcategoria() {
+
+    const categoriaPai =
+        document.getElementById(
+            'subcategoriaCategoriaPai'
+        )?.value;
+
+
+    const nome =
+        document.getElementById(
+            'subcategoriaNome'
+        )?.value
+            ?.trim();
+
+
+    const herdar =
+        document.getElementById(
+            'subcategoriaHerdarCampos'
+        )?.checked ||
+        false;
+
+
+    if (
+        !categoriaPai
+    ) {
+
+        showToast(
+            'Selecione a categoria pai.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !nome
+    ) {
+
+        showToast(
+            'Informe o nome da subcategoria.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const campos = [];
+
+
+    const linhas =
+        document.querySelectorAll(
+            '#camposNovaSubcategoria .campo-subcategoria-editor'
+        );
+
+
+    for (
+        const linha
+        of linhas
+    ) {
+
+        const nomeCampo =
+            linha.querySelector(
+                '.subcampo-nome'
+            )?.value
+                ?.trim();
+
+
+        const label =
+            linha.querySelector(
+                '.subcampo-label'
+            )?.value
+                ?.trim();
+
+
+        const tipo =
+            linha.querySelector(
+                '.subcampo-tipo'
+            )?.value ||
+            'text';
+
+
+        const obrigatorio =
+            linha.querySelector(
+                '.subcampo-obrigatorio'
+            )?.value ===
+            'true';
+
+
+        const placeholder =
+            linha.querySelector(
+                '.subcampo-placeholder'
+            )?.value
+                ?.trim() ||
+            '';
+
+
+        if (
+            !nomeCampo ||
+            !label
+        ) {
+
+            showToast(
+                'Todos os atributos precisam de identificador e nome.',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        if (
+            !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(
+                nomeCampo
+            )
+        ) {
+
+            showToast(
+                `Identificador inválido: ${nomeCampo}`,
+                'warning'
+            );
+
+            return;
+        }
+
+
+        const campo = {
+
+            nome:
+                nomeCampo,
+
+            label,
+
+            tipo,
+
+            obrigatorio,
+
+            placeholder
+
+        };
+
+
+        if (
+            tipo ===
+            'select'
+        ) {
+
+            const opcoes =
+                linha.querySelector(
+                    '.subcampo-opcoes'
+                )?.value
+                    ?.split(',')
+                    .map(
+                        v =>
+                            v.trim()
+                    )
+                    .filter(Boolean) ||
+                [];
+
+
+            if (
+                opcoes.length ===
+                0
+            ) {
+
+                showToast(
+                    `Informe as opções de "${label}".`,
+                    'warning'
+                );
+
                 return;
             }
+
+
+            campo.opcoes =
+                opcoes;
+
         }
-        gerarCamposDinamicos(novaCategoria);
+
+
+        if (
+            tipo ===
+            'textarea'
+        ) {
+
+            campo.rows =
+                2;
+
+        }
+
+
+        if (
+            tipo ===
+            'number'
+        ) {
+
+            campo.step =
+                '0.01';
+
+
+            campo.min =
+                '0';
+
+        }
+
+
+        campos.push(
+            campo
+        );
+
+    }
+
+
+    // =====================================================
+    // MLB CODES AUTOMÁTICO
+    // =====================================================
+
+    campos.push({
+
+        nome:
+            'mlb_codes',
+
+        label:
+            'Códigos MLB',
+
+        tipo:
+            'textarea',
+
+        placeholder:
+            'MLB separados por vírgula',
+
+        rows:
+            2,
+
+        obrigatorio:
+            false
+
+    });
+
+
+    if (
+        !subcategoriasEstoque[
+            categoriaPai
+        ]
+    ) {
+
+        subcategoriasEstoque[
+            categoriaPai
+        ] = {};
+
+    }
+
+
+    subcategoriasEstoque[
+        categoriaPai
+    ][nome] = {
+
+        campos,
+
+        herdar_campos_pai:
+            herdar,
+
+        criado_por:
+            currentUser?.name ||
+            'sistema',
+
+        criado_em:
+            new Date()
+                .toISOString()
+
     };
 
-    modal.style.display = 'flex';
-    modal.style.alignItems = 'center';
-    modal.style.justifyContent = 'center';
-    modal.style.position = 'fixed';
-    modal.style.top = '0';
-    modal.style.left = '0';
-    modal.style.width = '100%';
-    modal.style.height = '100%';
-    modal.style.backgroundColor = 'rgba(0,0,0,0.7)';
-    modal.style.zIndex = '99999';
-    modal.style.visibility = 'visible';
-    modal.style.opacity = '1';
-    modal.classList.remove('hidden');
-    
-    const modalContent = modal.querySelector('.modal-content');
-    if (modalContent) {
-        modalContent.style.backgroundColor = 'white';
-        modalContent.style.position = 'relative';
-        modalContent.style.zIndex = '100000';
+
+    const resultado =
+        await salvarSubcategoriasEstoque();
+
+
+    if (
+        !resultado.success
+    ) {
+        return;
     }
-    
-    console.log('✅ Modal exibido com sucesso!');
+
+
+    document.getElementById(
+        'subcategoriaNome'
+    ).value = '';
+
+
+    document.getElementById(
+        'camposNovaSubcategoria'
+    ).innerHTML = '';
+
+
+    atualizarListaSubcategorias();
+
+
+    showToast(
+        `✅ Subcategoria "${nome}" vinculada a "${categoriaPai}"!`,
+        'success'
+    );
+}
+
+// =========================================================
+// ATUALIZAR LISTA DE SUBCATEGORIAS
+// =========================================================
+
+function atualizarListaSubcategorias() {
+
+    const container =
+        document.getElementById(
+            'listaSubcategoriasCadastradas'
+        );
+
+
+    if (!container) {
+        return;
+    }
+
+
+    let html = '';
+
+
+    let quantidadeTotal =
+        0;
+
+
+    Object.entries(
+        subcategoriasEstoque ||
+        {}
+    )
+    .sort(
+        (
+            [categoriaA],
+            [categoriaB]
+        ) =>
+            categoriaA.localeCompare(
+                categoriaB,
+                'pt-BR'
+            )
+    )
+    .forEach(
+        ([
+            categoriaPai,
+            subcategorias
+        ]) => {
+
+            Object.entries(
+                subcategorias ||
+                {}
+            )
+            .sort(
+                (
+                    [nomeA],
+                    [nomeB]
+                ) =>
+                    nomeA.localeCompare(
+                        nomeB,
+                        'pt-BR'
+                    )
+            )
+            .forEach(
+                ([
+                    nome,
+                    config
+                ]) => {
+
+                    quantidadeTotal++;
+
+
+                    const campos =
+                        config.campos ||
+                        [];
+
+
+                    // Não contar MLB como atributo específico
+                    const camposEspecificos =
+                        campos.filter(
+                            campo =>
+                                campo.nome !==
+                                'mlb_codes'
+                        );
+
+
+                    const herda =
+                        !!config
+                            .herdar_campos_pai;
+
+
+                    const produtosUsando =
+                        produtosEstoque
+                            .filter(
+                                produto =>
+                                    produto.categoria ===
+                                    categoriaPai
+                                    &&
+                                    produto.dados_extra
+                                        ?.subcategoria ===
+                                    nome
+                            )
+                            .length;
+
+
+                    const listaCampos =
+                        camposEspecificos.length
+
+                            ? camposEspecificos
+                                .map(
+                                    campo => `
+
+                                        <span
+                                            style="
+                                                background: #e9ecef;
+                                                padding: 3px 8px;
+                                                border-radius: 4px;
+                                                font-size: 10px;
+                                                display: inline-block;
+                                            "
+                                        >
+
+                                            ${escapeHtml(
+                                                campo.label ||
+                                                campo.nome
+                                            )}
+
+                                            ${
+                                                campo.obrigatorio
+                                                    ? ' *'
+                                                    : ''
+                                            }
+
+                                        </span>
+
+                                    `
+                                )
+                                .join('')
+
+                            : `
+
+                                <span
+                                    style="
+                                        color:#6c757d;
+                                        font-size:11px;
+                                    "
+                                >
+                                    Nenhum atributo específico
+                                </span>
+
+                            `;
+
+
+                    html += `
+
+                        <div
+                            style="
+                                padding: 13px 15px;
+                                margin-bottom: 10px;
+                                border: 1px solid #d2bfff;
+                                border-left: 4px solid #6f42c1;
+                                border-radius: 8px;
+                                background: #fcfaff;
+                            "
+                        >
+
+                            <!-- =========================== -->
+                            <!-- CABEÇALHO -->
+                            <!-- =========================== -->
+
+                            <div
+                                style="
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: flex-start;
+                                    gap: 10px;
+                                "
+                            >
+
+                                <div>
+
+                                    <div
+                                        style="
+                                            font-weight: 700;
+                                            font-size: 15px;
+                                        "
+                                    >
+
+                                        ${escapeHtml(
+                                            categoriaPai
+                                        )}
+
+                                        <span
+                                            style="
+                                                color:#6c757d;
+                                                margin:0 5px;
+                                            "
+                                        >
+                                            →
+                                        </span>
+
+                                        <span
+                                            style="
+                                                color:#6f42c1;
+                                            "
+                                        >
+                                            ${escapeHtml(
+                                                nome
+                                            )}
+                                        </span>
+
+                                    </div>
+
+
+                                    <div
+                                        style="
+                                            display: flex;
+                                            gap: 6px;
+                                            flex-wrap: wrap;
+                                            margin-top: 5px;
+                                        "
+                                    >
+
+                                        <span
+                                            style="
+                                                background:#6f42c1;
+                                                color:white;
+                                                padding:2px 8px;
+                                                border-radius:12px;
+                                                font-size:9px;
+                                            "
+                                        >
+                                            Subcategoria
+                                        </span>
+
+
+                                        ${
+                                            herda
+
+                                                ? `
+
+                                                    <span
+                                                        style="
+                                                            background:#17a2b8;
+                                                            color:white;
+                                                            padding:2px 8px;
+                                                            border-radius:12px;
+                                                            font-size:9px;
+                                                        "
+                                                    >
+                                                        Herda atributos
+                                                    </span>
+
+                                                `
+
+                                                : ''
+                                        }
+
+
+                                        <span
+                                            style="
+                                                background:#e9ecef;
+                                                color:#495057;
+                                                padding:2px 8px;
+                                                border-radius:12px;
+                                                font-size:9px;
+                                            "
+                                        >
+
+                                            ${produtosUsando}
+                                            produto(s)
+
+                                        </span>
+
+                                    </div>
+
+                                </div>
+
+
+                                <!-- ======================= -->
+                                <!-- AÇÕES -->
+                                <!-- ======================= -->
+
+                                <div
+                                    style="
+                                        display: flex;
+                                        gap: 5px;
+                                        flex-shrink: 0;
+                                    "
+                                >
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm"
+                                        style="
+                                            background:#6f42c1;
+                                            color:white;
+                                        "
+                                        onclick='editarSubcategoria(
+                                            ${JSON.stringify(categoriaPai)},
+                                            ${JSON.stringify(nome)}
+                                        )'
+                                        title="Editar subcategoria"
+                                    >
+
+                                        <i class="fas fa-edit"></i>
+
+                                        Editar
+
+                                    </button>
+
+
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-danger"
+                                        onclick='excluirSubcategoria(
+                                            ${JSON.stringify(categoriaPai)},
+                                            ${JSON.stringify(nome)}
+                                        )'
+                                        title="Excluir subcategoria"
+                                    >
+
+                                        <i class="fas fa-trash"></i>
+
+                                        Excluir
+
+                                    </button>
+
+                                </div>
+
+                            </div>
+
+
+                            <!-- =========================== -->
+                            <!-- CAMPOS -->
+                            <!-- =========================== -->
+
+                            <div
+                                style="
+                                    margin-top: 10px;
+                                    padding-top: 9px;
+                                    border-top: 1px solid #eee;
+                                "
+                            >
+
+                                <div
+                                    style="
+                                        font-size: 10px;
+                                        color:#6c757d;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    ${camposEspecificos.length}
+                                    atributo(s) específico(s)
+                                </div>
+
+
+                                <div
+                                    style="
+                                        display:flex;
+                                        flex-wrap:wrap;
+                                        gap:4px;
+                                    "
+                                >
+                                    ${listaCampos}
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    `;
+
+                }
+            );
+
+        }
+    );
+
+
+    if (
+        quantidadeTotal === 0
+    ) {
+
+        html = `
+
+            <div
+                style="
+                    padding: 30px;
+                    text-align: center;
+                    color: #6c757d;
+                    background: #f8f9fa;
+                    border-radius: 8px;
+                "
+            >
+
+                <i
+                    class="fas fa-sitemap"
+                    style="
+                        font-size: 25px;
+                        opacity: .4;
+                        display: block;
+                        margin-bottom: 8px;
+                    "
+                ></i>
+
+                Nenhuma subcategoria cadastrada.
+
+            </div>
+
+        `;
+
+    }
+
+
+    container.innerHTML =
+        html;
+}
+
+// =========================================================
+// EDITAR SUBCATEGORIA
+// =========================================================
+
+function editarSubcategoria(
+    categoriaPai,
+    nome
+) {
+
+    const configuracao =
+        subcategoriasEstoque
+            ?.[categoriaPai]
+            ?.[nome];
+
+
+    if (!configuracao) {
+
+        showToast(
+            '❌ Subcategoria não encontrada.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // DADOS ORIGINAIS
+    // =====================================================
+
+    const inputCategoriaOriginal =
+        document.getElementById(
+            'subcategoriaEditandoCategoriaOriginal'
+        );
+
+
+    const inputNomeOriginal =
+        document.getElementById(
+            'subcategoriaEditandoNomeOriginal'
+        );
+
+
+    if (
+        inputCategoriaOriginal
+    ) {
+
+        inputCategoriaOriginal.value =
+            categoriaPai;
+
+    }
+
+
+    if (
+        inputNomeOriginal
+    ) {
+
+        inputNomeOriginal.value =
+            nome;
+
+    }
+
+
+    // =====================================================
+    // PREENCHER FORM
+    // =====================================================
+
+    const selectCategoria =
+        document.getElementById(
+            'subcategoriaCategoriaPai'
+        );
+
+
+    const inputNome =
+        document.getElementById(
+            'subcategoriaNome'
+        );
+
+
+    const checkHerdar =
+        document.getElementById(
+            'subcategoriaHerdarCampos'
+        );
+
+
+    if (
+        selectCategoria
+    ) {
+
+        selectCategoria.value =
+            categoriaPai;
+
+    }
+
+
+    if (
+        inputNome
+    ) {
+
+        inputNome.value =
+            nome;
+
+    }
+
+
+    if (
+        checkHerdar
+    ) {
+
+        checkHerdar.checked =
+            !!configuracao
+                .herdar_campos_pai;
+
+    }
+
+
+    // =====================================================
+    // LIMPAR CAMPOS
+    // =====================================================
+
+    const container =
+        document.getElementById(
+            'camposNovaSubcategoria'
+        );
+
+
+    if (
+        container
+    ) {
+
+        container.innerHTML =
+            '';
+
+    }
+
+
+    // =====================================================
+    // CARREGAR CAMPOS
+    //
+    // MLB Codes não entra no editor porque é automático.
+    // =====================================================
+
+    const campos =
+        configuracao.campos ||
+        [];
+
+
+    campos.forEach(
+        campo => {
+
+            if (
+                campo.nome ===
+                'mlb_codes'
+            ) {
+
+                return;
+
+            }
+
+
+            adicionarCampoSubcategoria(
+                campo
+            );
+
+        }
+    );
+
+
+    // =====================================================
+    // CABEÇALHO
+    // =====================================================
+
+    const titulo =
+        document.getElementById(
+            'tituloModalSubcategoria'
+        );
+
+
+    if (
+        titulo
+    ) {
+
+        titulo.innerHTML = `
+
+            <i class="fas fa-edit"></i>
+
+            Editar Subcategoria
+
+        `;
+
+    }
+
+
+    const info =
+        document.getElementById(
+            'infoModoEdicaoSubcategoria'
+        );
+
+
+    if (
+        info
+    ) {
+
+        info.style.display =
+            'block';
+
+
+        info.innerHTML = `
+
+            Editando:
+
+            <strong>
+                ${escapeHtml(categoriaPai)}
+                →
+                ${escapeHtml(nome)}
+            </strong>
+
+        `;
+
+    }
+
+
+    // =====================================================
+    // BOTÃO SALVAR
+    // =====================================================
+
+    const btnSalvar =
+        document.getElementById(
+            'btnSalvarSubcategoria'
+        );
+
+
+    if (
+        btnSalvar
+    ) {
+
+        btnSalvar.className =
+            'btn btn-primary';
+
+
+        btnSalvar.innerHTML = `
+
+            <i class="fas fa-save"></i>
+
+            Atualizar Subcategoria
+
+        `;
+
+
+        btnSalvar.onclick =
+            atualizarSubcategoriaExistente;
+
+    }
+
+
+    // =====================================================
+    // CANCELAR EDIÇÃO
+    // =====================================================
+
+    const btnCancelar =
+        document.getElementById(
+            'btnCancelarEdicaoSubcategoria'
+        );
+
+
+    if (
+        btnCancelar
+    ) {
+
+        btnCancelar.style.display =
+            'inline-block';
+
+    }
+
+
+    // =====================================================
+    // SUBIR MODAL PARA O TOPO
+    // =====================================================
+
+    const modal =
+        document.getElementById(
+            'modalGerenciarSubcategorias'
+        );
+
+
+    const conteudo =
+        modal?.querySelector(
+            'div'
+        );
+
+
+    if (
+        conteudo
+    ) {
+
+        conteudo.scrollTop =
+            0;
+
+    }
+
+
+    document.getElementById(
+        'subcategoriaNome'
+    )?.focus();
+
+
+    console.log(
+        `✏️ Editando subcategoria ${categoriaPai} → ${nome}`
+    );
+}
+
+// =========================================================
+// ATUALIZAR SUBCATEGORIA EXISTENTE
+// =========================================================
+
+async function atualizarSubcategoriaExistente() {
+
+    const categoriaPaiOriginal =
+        document.getElementById(
+            'subcategoriaEditandoCategoriaOriginal'
+        )?.value;
+
+
+    const nomeOriginal =
+        document.getElementById(
+            'subcategoriaEditandoNomeOriginal'
+        )?.value;
+
+
+    const categoriaPaiNova =
+        document.getElementById(
+            'subcategoriaCategoriaPai'
+        )?.value;
+
+
+    const nomeNovo =
+        document.getElementById(
+            'subcategoriaNome'
+        )?.value
+            ?.trim();
+
+
+    const herdar =
+        document.getElementById(
+            'subcategoriaHerdarCampos'
+        )?.checked ||
+        false;
+
+
+    // =====================================================
+    // VALIDAR ORIGINAL
+    // =====================================================
+
+    if (
+        !categoriaPaiOriginal ||
+        !nomeOriginal
+    ) {
+
+        showToast(
+            '❌ Não foi possível identificar a subcategoria original.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    if (
+        !subcategoriasEstoque
+            ?.[categoriaPaiOriginal]
+            ?.[nomeOriginal]
+    ) {
+
+        showToast(
+            '❌ A subcategoria original não existe mais.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // VALIDAR NOVOS DADOS
+    // =====================================================
+
+    if (
+        !categoriaPaiNova
+    ) {
+
+        showToast(
+            '⚠️ Selecione a categoria pai.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !nomeNovo
+    ) {
+
+        showToast(
+            '⚠️ Informe o nome da subcategoria.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // NÃO PERMITIR DUPLICAR
+    // =====================================================
+
+    const mudouIdentidade =
+        categoriaPaiNova !==
+        categoriaPaiOriginal
+        ||
+        nomeNovo !==
+        nomeOriginal;
+
+
+    if (
+        mudouIdentidade &&
+        subcategoriasEstoque
+            ?.[categoriaPaiNova]
+            ?.[nomeNovo]
+    ) {
+
+        showToast(
+            `⚠️ Já existe "${categoriaPaiNova} → ${nomeNovo}".`,
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // COLETAR CAMPOS
+    // =====================================================
+
+    const campos =
+        [];
+
+
+    const linhas =
+        document.querySelectorAll(
+            '#camposNovaSubcategoria .campo-subcategoria-editor'
+        );
+
+
+    for (
+        const linha
+        of linhas
+    ) {
+
+        const nomeCampo =
+            linha.querySelector(
+                '.subcampo-nome'
+            )?.value
+                ?.trim();
+
+
+        const label =
+            linha.querySelector(
+                '.subcampo-label'
+            )?.value
+                ?.trim();
+
+
+        const tipo =
+            linha.querySelector(
+                '.subcampo-tipo'
+            )?.value ||
+            'text';
+
+
+        const obrigatorio =
+            linha.querySelector(
+                '.subcampo-obrigatorio'
+            )?.value ===
+            'true';
+
+
+        const placeholder =
+            linha.querySelector(
+                '.subcampo-placeholder'
+            )?.value
+                ?.trim() ||
+            '';
+
+
+        // =============================================
+        // VALIDAÇÃO
+        // =============================================
+
+        if (
+            !nomeCampo ||
+            !label
+        ) {
+
+            showToast(
+                '⚠️ Todos os atributos precisam de identificador e nome.',
+                'warning'
+            );
+
+            return;
+        }
+
+
+        if (
+            !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(
+                nomeCampo
+            )
+        ) {
+
+            showToast(
+                `⚠️ Identificador inválido: ${nomeCampo}`,
+                'warning'
+            );
+
+            return;
+        }
+
+
+        if (
+            campos.some(
+                campo =>
+                    campo.nome ===
+                    nomeCampo
+            )
+        ) {
+
+            showToast(
+                `⚠️ O atributo "${nomeCampo}" está duplicado.`,
+                'warning'
+            );
+
+            return;
+        }
+
+
+        const campo = {
+
+            nome:
+                nomeCampo,
+
+            label,
+
+            tipo,
+
+            obrigatorio,
+
+            placeholder
+
+        };
+
+
+        // =============================================
+        // SELECT
+        // =============================================
+
+        if (
+            tipo ===
+            'select'
+        ) {
+
+            const opcoes =
+                linha.querySelector(
+                    '.subcampo-opcoes'
+                )?.value
+                    ?.split(',')
+                    .map(
+                        valor =>
+                            valor.trim()
+                    )
+                    .filter(Boolean) ||
+                [];
+
+
+            if (
+                opcoes.length ===
+                0
+            ) {
+
+                showToast(
+                    `⚠️ Informe as opções de "${label}".`,
+                    'warning'
+                );
+
+                return;
+            }
+
+
+            campo.opcoes =
+                opcoes;
+
+        }
+
+
+        // =============================================
+        // TEXTAREA
+        // =============================================
+
+        if (
+            tipo ===
+            'textarea'
+        ) {
+
+            campo.rows =
+                2;
+
+        }
+
+
+        // =============================================
+        // NUMBER
+        // =============================================
+
+        if (
+            tipo ===
+            'number'
+        ) {
+
+            campo.step =
+                '0.01';
+
+
+            campo.min =
+                '0';
+
+        }
+
+
+        campos.push(
+            campo
+        );
+
+    }
+
+
+    // =====================================================
+    // MLB AUTOMÁTICO
+    // =====================================================
+
+    campos.push({
+
+        nome:
+            'mlb_codes',
+
+        label:
+            'Códigos MLB',
+
+        tipo:
+            'textarea',
+
+        placeholder:
+            'MLB separados por vírgula',
+
+        rows:
+            2,
+
+        obrigatorio:
+            false
+
+    });
+
+
+    // =====================================================
+    // CONFIGURAÇÃO ANTIGA
+    // =====================================================
+
+    const configAntiga =
+        subcategoriasEstoque[
+            categoriaPaiOriginal
+        ][
+            nomeOriginal
+        ];
+
+
+    const configNova = {
+
+        ...configAntiga,
+
+        campos,
+
+        herdar_campos_pai:
+            herdar,
+
+        atualizado_por:
+            currentUser?.name ||
+            'sistema',
+
+        atualizado_em:
+            new Date()
+                .toISOString()
+
+    };
+
+
+    // =====================================================
+    // SE MUDOU CATEGORIA PAI OU NOME
+    // =====================================================
+
+    if (
+        mudouIdentidade
+    ) {
+
+        // =============================================
+        // CRIAR DESTINO
+        // =============================================
+
+        if (
+            !subcategoriasEstoque[
+                categoriaPaiNova
+            ]
+        ) {
+
+            subcategoriasEstoque[
+                categoriaPaiNova
+            ] = {};
+
+        }
+
+
+        subcategoriasEstoque[
+            categoriaPaiNova
+        ][
+            nomeNovo
+        ] =
+            configNova;
+
+
+        // =============================================
+        // REMOVER ANTIGA
+        // =============================================
+
+        delete subcategoriasEstoque[
+            categoriaPaiOriginal
+        ][
+            nomeOriginal
+        ];
+
+
+        if (
+            Object.keys(
+                subcategoriasEstoque[
+                    categoriaPaiOriginal
+                ]
+            ).length ===
+            0
+        ) {
+
+            delete subcategoriasEstoque[
+                categoriaPaiOriginal
+            ];
+
+        }
+
+    } else {
+
+        // =============================================
+        // MESMA IDENTIDADE
+        // =============================================
+
+        subcategoriasEstoque[
+            categoriaPaiOriginal
+        ][
+            nomeOriginal
+        ] =
+            configNova;
+
+    }
+
+
+    // =====================================================
+    // SALVAR CONFIGURAÇÃO
+    // =====================================================
+
+    const resultado =
+        await salvarSubcategoriasEstoque();
+
+
+    if (
+        !resultado.success
+    ) {
+        return;
+    }
+
+
+    // =====================================================
+    // ATUALIZAR PRODUTOS CASO NOME/CATEGORIA TENHA MUDADO
+    //
+    // Ex:
+    // Raios → Nipples
+    //
+    // vira:
+    // Raios → Niples
+    //
+    // Todos os produtos existentes precisam acompanhar.
+    // =====================================================
+
+    if (
+        mudouIdentidade
+    ) {
+
+        const produtosAfetados =
+            produtosEstoque.filter(
+                produto =>
+                    produto.categoria ===
+                    categoriaPaiOriginal
+                    &&
+                    produto.dados_extra
+                        ?.subcategoria ===
+                    nomeOriginal
+            );
+
+
+        console.log(
+            `🔄 ${produtosAfetados.length} produto(s) precisam migrar de subcategoria.`
+        );
+
+
+        for (
+            const produto
+            of produtosAfetados
+        ) {
+
+            try {
+
+                const dadosExtraNovo = {
+
+                    ...(
+                        produto.dados_extra ||
+                        {}
+                    ),
+
+                    subcategoria:
+                        nomeNovo
+
+                };
+
+
+                const atualizacao = {
+
+                    dados_extra:
+                        dadosExtraNovo
+
+                };
+
+
+                // =========================================
+                // SE MUDOU A CATEGORIA PAI
+                // =========================================
+
+                if (
+                    categoriaPaiNova !==
+                    categoriaPaiOriginal
+                ) {
+
+                    atualizacao.categoria =
+                        categoriaPaiNova;
+
+                }
+
+
+                const {
+                    error
+                } =
+                    await window.supabaseClient
+                        .from(
+                            'produtos_estoque'
+                        )
+                        .update(
+                            atualizacao
+                        )
+                        .eq(
+                            'id',
+                            produto.id
+                        );
+
+
+                if (
+                    error
+                ) {
+                    throw error;
+                }
+
+
+                // Atualizar memória
+                produto.dados_extra =
+                    dadosExtraNovo;
+
+
+                if (
+                    categoriaPaiNova !==
+                    categoriaPaiOriginal
+                ) {
+
+                    produto.categoria =
+                        categoriaPaiNova;
+
+                }
+
+
+            } catch (error) {
+
+                console.error(
+                    `❌ Erro migrando produto ${produto.sku}:`,
+                    error
+                );
+
+            }
+
+        }
+
+    }
+
+
+    // =====================================================
+    // RECARREGAR PRODUTOS
+    // =====================================================
+
+    try {
+
+        await carregarProdutosEstoque();
+
+    } catch (error) {
+
+        console.warn(
+            '⚠️ Não foi possível recarregar produtos:',
+            error
+        );
+
+    }
+
+
+    // =====================================================
+    // VOLTAR PARA MODO NOVO
+    // =====================================================
+
+    cancelarEdicaoSubcategoria();
+
+
+    atualizarListaSubcategorias();
+
+
+    showToast(
+        `✅ Subcategoria "${categoriaPaiNova} → ${nomeNovo}" atualizada!`,
+        'success'
+    );
+}
+
+// =========================================================
+// CANCELAR EDIÇÃO / VOLTAR PARA NOVA SUBCATEGORIA
+// =========================================================
+
+function cancelarEdicaoSubcategoria() {
+
+    const categoriaOriginal =
+        document.getElementById(
+            'subcategoriaEditandoCategoriaOriginal'
+        );
+
+
+    const nomeOriginal =
+        document.getElementById(
+            'subcategoriaEditandoNomeOriginal'
+        );
+
+
+    if (
+        categoriaOriginal
+    ) {
+
+        categoriaOriginal.value =
+            '';
+
+    }
+
+
+    if (
+        nomeOriginal
+    ) {
+
+        nomeOriginal.value =
+            '';
+
+    }
+
+
+    // =====================================================
+    // LIMPAR FORM
+    // =====================================================
+
+    const categoria =
+        document.getElementById(
+            'subcategoriaCategoriaPai'
+        );
+
+
+    const nome =
+        document.getElementById(
+            'subcategoriaNome'
+        );
+
+
+    const herdar =
+        document.getElementById(
+            'subcategoriaHerdarCampos'
+        );
+
+
+    const campos =
+        document.getElementById(
+            'camposNovaSubcategoria'
+        );
+
+
+    if (
+        categoria
+    ) {
+        categoria.value = '';
+    }
+
+
+    if (
+        nome
+    ) {
+        nome.value = '';
+    }
+
+
+    if (
+        herdar
+    ) {
+        herdar.checked = false;
+    }
+
+
+    if (
+        campos
+    ) {
+        campos.innerHTML = '';
+    }
+
+
+    // =====================================================
+    // TÍTULO
+    // =====================================================
+
+    const titulo =
+        document.getElementById(
+            'tituloModalSubcategoria'
+        );
+
+
+    if (
+        titulo
+    ) {
+
+        titulo.innerHTML = `
+
+            <i class="fas fa-sitemap"></i>
+
+            Gerenciar Subcategorias
+
+        `;
+
+    }
+
+
+    const info =
+        document.getElementById(
+            'infoModoEdicaoSubcategoria'
+        );
+
+
+    if (
+        info
+    ) {
+
+        info.style.display =
+            'none';
+
+
+        info.innerHTML =
+            '';
+
+    }
+
+
+    // =====================================================
+    // BOTÃO
+    // =====================================================
+
+    const btnSalvar =
+        document.getElementById(
+            'btnSalvarSubcategoria'
+        );
+
+
+    if (
+        btnSalvar
+    ) {
+
+        btnSalvar.className =
+            'btn btn-success';
+
+
+        btnSalvar.innerHTML = `
+
+            <i class="fas fa-save"></i>
+
+            Salvar Subcategoria
+
+        `;
+
+
+        btnSalvar.onclick =
+            salvarNovaSubcategoria;
+
+    }
+
+
+    const btnCancelar =
+        document.getElementById(
+            'btnCancelarEdicaoSubcategoria'
+        );
+
+
+    if (
+        btnCancelar
+    ) {
+
+        btnCancelar.style.display =
+            'none';
+
+    }
+}
+
+
+async function excluirSubcategoria(
+    categoriaPai,
+    nome
+) {
+
+    // =====================================================
+    // VERIFICAR SE TEM PRODUTOS USANDO
+    // =====================================================
+
+    const produtosUsando =
+        produtosEstoque.filter(
+            produto =>
+                produto.categoria ===
+                categoriaPai
+                &&
+                produto.dados_extra
+                    ?.subcategoria ===
+                nome
+        );
+
+
+    if (
+        produtosUsando.length >
+        0
+    ) {
+
+        showToast(
+            `❌ Não é possível excluir "${nome}". Existem ${produtosUsando.length} produto(s) usando esta subcategoria.`,
+            'error'
+        );
+
+        return;
+    }
+
+
+    if (
+        !confirm(
+            `Excluir a subcategoria "${categoriaPai} → ${nome}"?`
+        )
+    ) {
+
+        return;
+    }
+
+
+    delete subcategoriasEstoque[
+        categoriaPai
+    ][nome];
+
+
+    if (
+        Object.keys(
+            subcategoriasEstoque[
+                categoriaPai
+            ]
+        ).length === 0
+    ) {
+
+        delete subcategoriasEstoque[
+            categoriaPai
+        ];
+
+    }
+
+
+    await salvarSubcategoriasEstoque();
+
+
+    atualizarListaSubcategorias();
+
+
+    showToast(
+        `✅ Subcategoria "${nome}" excluída.`,
+        'success'
+    );
+}
+
+
+function fecharModalGerenciarSubcategorias() {
+
+    document
+        .getElementById(
+            'modalGerenciarSubcategorias'
+        )
+        ?.remove();
+}
+
+function adicionarBotaoGerenciarSubcategorias() {
+
+    const modal =
+        document.getElementById(
+            'modalGerenciarCategorias'
+        );
+
+
+    if (!modal) {
+        return;
+    }
+
+
+    if (
+        modal.querySelector(
+            '#btnGerenciarSubcategorias'
+        )
+    ) {
+        return;
+    }
+
+
+    const btnCriar =
+        Array.from(
+            modal.querySelectorAll(
+                'button'
+            )
+        ).find(
+            btn =>
+                btn.textContent
+                    .includes(
+                        'Criar Nova Categoria'
+                    )
+        );
+
+
+    if (!btnCriar) {
+        return;
+    }
+
+
+    const botao =
+        document.createElement(
+            'button'
+        );
+
+
+    botao.id =
+        'btnGerenciarSubcategorias';
+
+
+    botao.className =
+        'btn btn-sm btn-primary';
+
+
+    botao.innerHTML = `
+
+        <i class="fas fa-sitemap"></i>
+        Subcategorias
+
+    `;
+
+
+    botao.onclick =
+        function() {
+
+            fecharModalGerenciarCategorias();
+
+
+            setTimeout(
+                abrirModalGerenciarSubcategorias,
+                200
+            );
+
+        };
+
+
+    btnCriar.parentElement
+        .insertBefore(
+            botao,
+            btnCriar
+        );
 }
 
 function atualizarStatusSyncLabel(bloqueado) {
@@ -18214,6 +22862,14 @@ function abrirModalGerenciarCategorias() {
     
     // Preencher a lista
     preencherListaCategoriasGerenciamento();
+
+    setTimeout(adicionarBotaoGerenciarSubcategorias,
+    50
+);
+
+    setTimeout(carregarSubcategoriasEstoque,
+        1250
+);
     
     modal.classList.remove('hidden');
     modal.style.display = 'flex';
@@ -25044,6 +29700,15 @@ window.fecharModalEdicaoSKUsMassa = fecharModalEdicaoSKUsMassa;
 window.validarLinhaSKUMassa = validarLinhaSKUMassa;
 window.filtrarTabelaSKUsMassa = filtrarTabelaSKUsMassa;
 window.salvarSKUsMassa = salvarSKUsMassa;
+window.abrirModalGerenciarSubcategorias = abrirModalGerenciarSubcategorias;
+window.fecharModalGerenciarSubcategorias = fecharModalGerenciarSubcategorias;
+window.adicionarCampoSubcategoria = adicionarCampoSubcategoria;
+window.salvarNovaSubcategoria = salvarNovaSubcategoria;
+window.excluirSubcategoria = excluirSubcategoria;
+window.carregarSubcategoriasEstoque = carregarSubcategoriasEstoque;
+window.editarSubcategoria = editarSubcategoria;
+window.atualizarSubcategoriaExistente = atualizarSubcategoriaExistente;
+window.cancelarEdicaoSubcategoria = cancelarEdicaoSubcategoria;
 // =========================================================
 // INICIALIZAR REGRAS PARA CATEGORIAS CUSTOMIZADAS
 // =========================================================
