@@ -1219,11 +1219,18 @@ body > * {
             <h3>Feedback</h3>
             <p>Avaliações, respostas e sugestões</p>
             </div>
+            <div class="menu-card" onclick="abrirSistemaGerenciamentoAnuncios()">
+            <div class="menu-icon">
+            <i class="fas fa-list-alt"></i>
+            </div>
+            <h3>Gerenciamento de Anúncios</h3>
+            <p>Anúncios FULL, estoque e exposição</p>
+            </div>
             <div class="menu-card" onclick="abrirSistemaFull()">
             <div class="menu-icon"><i class="fas fa-warehouse"></i></div>
             <h3>FULL</h3>
             <p>Estoque Full, dias sem venda e histórico</p>
-        </div>
+            </div>
         </div>
     </div>
 
@@ -6217,6 +6224,165 @@ body > * {
         </div>
     </div>
 </div>
+
+<!-- ============================================================ -->
+<!-- SISTEMA DE GERENCIAMENTO DE ANÚNCIOS - VERSÃO INTEGRADA      -->
+<!-- ============================================================ -->
+
+<div id="gerenciamentoAnunciosSystem" class="hidden">
+    <header class="main-header">
+        <div class="container">
+            <div class="header-content">
+                <h1 style="display: flex; align-items: center; gap: 10px;">
+                    <img src="logo.png" alt="Wheel Tech" style="height: 35px; width: auto;">
+                    <span id="caixaDateTitle">Gerenciamento de Anúncios FULL</span>
+                </h1>
+                <div class="user-info">
+                    <div class="user-avatar" id="gaUserAvatar">U</div>
+                    <div>
+                        <div style="font-weight: 600;" id="gaUserName">Usuário</div>
+                        <div style="font-size: 12px; color: #6c757d;" id="gaUserRole"></div>
+                        <div class="d-flex gap-2 mt-2">
+                            <button onclick="voltarParaMenu()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
+                            <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container nfe-container-largo">
+        <!-- Painel de Resumo -->
+        <div class="card mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h3 style="display: flex; align-items: center; gap: 10px; margin: 0;">
+                        <i class="fas fa-warehouse" style="color: #6f42c1;"></i>
+                        Análise de Anúncios FULL
+                    </h3>
+                    <p style="margin: 5px 0 0 0; color: #6c757d; font-size: 14px;">
+                        <span id="gaTotalAnuncios">0</span> anúncios FULL •
+                        <span id="gaTotalVariacoes">0</span> variações •
+                        <span id="gaTotalEstoque">0</span> unidades em estoque •
+                        <span id="gaSemVinculo">0</span> sem vínculo
+                    </p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" onclick="carregarGerenciamentoAnuncios(true)">
+                        <i class="fas fa-sync-alt"></i> Sincronizar Agora
+                    </button>
+                    <button class="btn btn-success" onclick="exportarGerenciamentoAnunciosExcel()">
+                        <i class="fas fa-file-excel"></i> Exportar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="card mb-4">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <span><i class="fas fa-filter"></i> Filtrar:</span>
+                
+                <input type="text" id="gaBusca" class="form-control form-control-sm" 
+                       placeholder="🔍 Buscar por título, SKU, MLB..." 
+                       style="width: 250px;" oninput="filtrarGerenciamentoAnuncios()">
+
+                <select id="gaFiltroExposicao" class="form-control form-control-sm" style="width: 180px;" onchange="filtrarGerenciamentoAnuncios()">
+                    <option value="">Todas exposições</option>
+                </select>
+
+                <select id="gaFiltroStatus" class="form-control form-control-sm" style="width: 150px;" onchange="filtrarGerenciamentoAnuncios()">
+                    <option value="">Todos status</option>
+                    <option value="active">Ativos</option>
+                    <option value="paused">Pausados</option>
+                    <option value="closed">Finalizados</option>
+                    <option value="under_review">Em revisão</option>
+                </select>
+
+                <select id="gaFiltroOrdenacao" class="form-control form-control-sm" style="width: 160px;" onchange="filtrarGerenciamentoAnuncios()">
+                    <option value="title">Título A-Z</option>
+                    <option value="fullDesc">FULL maior</option>
+                    <option value="fullAsc">FULL menor</option>
+                    <option value="depDesc">Depósito maior</option>
+                    <option value="depAsc">Depósito menor</option>
+                </select>
+
+                <button class="btn btn-sm btn-outline-secondary" onclick="limparFiltrosGerenciamentoAnuncios()">
+                    <i class="fas fa-eraser"></i> Limpar
+                </button>
+            </div>
+        </div>
+
+        <!-- Progresso -->
+        <div id="gaProgressBar" class="card mb-4 hidden">
+            <div class="d-flex align-items-center gap-3 p-3">
+                <div class="spinner"></div>
+                <span id="gaProgressText">Carregando anúncios...</span>
+            </div>
+        </div>
+
+        <!-- Tabela de Anúncios -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title"><i class="fas fa-list"></i> Lista de Anúncios FULL</h2>
+                <span class="badge badge-info" id="gaContagemRegistros">0 registros</span>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover" id="gaTabela" style="min-width: 1400px;">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">Foto</th>
+                            <th style="min-width: 130px;">MLB</th>
+                            <th style="min-width: 200px;">Título / SKU</th>
+                            <th style="width: 110px; text-align: center;">Estoque ML fora FULL</th>
+                            <th style="width: 110px; text-align: center;">FULL</th>
+                            <th style="width: 110px; text-align: center;">Indisponível</th>
+                            <th style="width: 110px;">Exposição</th>
+                            <th style="width: 100px;">Tipo</th>
+                            <th style="width: 100px;">Status</th>
+                            <th style="width: 100px; text-align: right;">Preço</th>
+                            <th style="min-width: 120px;">Inventory ID</th>
+                            <th style="width: 80px;">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gaTabelaBody">
+                        <tr>
+                            <td colspan="12" class="text-center py-5">
+                                <i class="fas fa-box-open fa-3x mb-3" style="color: #6c757d; opacity: 0.3;"></i>
+                                <h4 style="color: #6c757d;">Nenhum anúncio carregado</h4>
+                                <p style="color: #6c757d;">Clique em "Sincronizar Agora" para buscar os anúncios FULL do Mercado Livre.</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Paginação -->
+            <div class="d-flex justify-content-between align-items-center p-3 border-top">
+                <div style="color: #6c757d; font-size: 14px;">
+                    Mostrando <span id="gaInicio">0</span>-<span id="gaFim">0</span> de <span id="gaTotal">0</span>
+                </div>
+                <div class="d-flex gap-2 align-items-center">
+                    <span id="gaPaginaInfo" style="font-size: 14px; color: #6c757d; margin-right: 10px;">Página 1 de 1</span>
+                    <button class="btn btn-sm btn-outline-secondary" id="gaBtnAnterior" onclick="paginarGerenciamentoAnuncios('anterior')" disabled>
+                        <i class="fas fa-chevron-left"></i> Anterior
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" id="gaBtnProxima" onclick="paginarGerenciamentoAnuncios('proxima')" disabled>
+                        Próxima <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <select id="gaItensPorPagina" class="form-control form-control-sm" style="width: 70px;" onchange="mudarItensPorPaginaGerenciamento()">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
     
     <!-- SCRIPT PRINCIPAL -->
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
@@ -6234,12 +6400,9 @@ body > * {
     <script src="entradas.js"></script>
     <script src="promocoes_manager.js"></script>
     <script src="full_analysis.js"></script>
+    <script src="gerenciamento_anuncios.js"></script>
 
     <script>
-        // ============================================================
-    //  FALBACK INFALÍVEL PARA O SISTEMA FULL
-    //  Define abrirSistemaFull e sincronizarFull imediatamente
-    // ============================================================
     
     console.log('🚀 Inicializando fallback do sistema FULL');
 

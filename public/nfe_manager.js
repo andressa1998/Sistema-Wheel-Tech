@@ -6499,13 +6499,13 @@ const COLUNAS_VENDAS_NFE = [
     },
 
     {
-        id: 'sku',
-        nome: 'SKU'
+    id: 'foto',
+    nome: 'Foto'
     },
 
     {
-    id: 'foto',
-    nome: 'Foto'
+        id: 'sku',
+        nome: 'SKU'
     },
 
     {
@@ -6531,6 +6531,11 @@ const COLUNAS_VENDAS_NFE = [
     {
         id: 'estoque',
         nome: 'Estoque'
+    },
+
+    {
+    id: 'comentarios',
+    nome: 'Comentários'
     },
 
     {
@@ -14331,6 +14336,2022 @@ function obterOrderIdsVendaAtualNFE(
         : [];
 }
 
+// =========================================================
+// COMENTÁRIOS DAS VENDAS - NF-E
+// =========================================================
+
+window._comentariosVendaAtualNFE =
+    null;
+
+
+// =========================================================
+// USUÁRIO ATUAL
+// =========================================================
+
+function obterUsuarioAtualComentariosNFE() {
+
+    let usuario =
+        window.currentUser ||
+        null;
+
+
+    // =====================================================
+    // FALLBACK DA SESSÃO
+    // =====================================================
+
+    if (!usuario) {
+
+        try {
+
+            usuario =
+                JSON.parse(
+                    localStorage.getItem(
+                        'wheeltech_user'
+                    ) ||
+                    'null'
+                );
+
+        } catch (
+            error
+        ) {
+
+            usuario =
+                null;
+        }
+    }
+
+
+    const username =
+        String(
+            usuario?.username ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    const nome =
+        String(
+            usuario?.name ||
+            usuario?.nome ||
+            username ||
+            'Usuário'
+        )
+            .trim();
+
+
+    return {
+        username,
+        nome
+    };
+}
+
+
+// =========================================================
+// FORMATAR DATA
+// =========================================================
+
+function formatarDataComentarioNFE(
+    valor
+) {
+
+    if (!valor) {
+
+        return '';
+    }
+
+
+    try {
+
+        return new Date(
+            valor
+        )
+            .toLocaleString(
+                'pt-BR',
+                {
+                    day:
+                        '2-digit',
+
+                    month:
+                        '2-digit',
+
+                    year:
+                        'numeric',
+
+                    hour:
+                        '2-digit',
+
+                    minute:
+                        '2-digit'
+                }
+            );
+
+    } catch (
+        error
+    ) {
+
+        return '';
+    }
+}
+
+
+// =========================================================
+// CRIAR MODAL
+// =========================================================
+
+function garantirModalComentariosNFE() {
+
+    let modal =
+        document.getElementById(
+            'modalComentariosVendaNFE'
+        );
+
+
+    if (
+        modal
+    ) {
+
+        return modal;
+    }
+
+
+    modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalComentariosVendaNFE';
+
+
+    modal.className =
+        'modal hidden';
+
+
+    modal.innerHTML = `
+
+        <div
+            class="modal-content"
+            style="
+                width:92%;
+                max-width:750px;
+                max-height:88vh;
+                overflow-y:auto;
+                padding:0;
+            "
+        >
+
+            <!-- ========================================== -->
+            <!-- CABEÇALHO -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    padding:18px 20px;
+                    border-bottom:1px solid #dee2e6;
+                    position:sticky;
+                    top:0;
+                    background:white;
+                    z-index:5;
+                "
+            >
+
+                <div>
+
+                    <h3
+                        style="
+                            margin:0;
+                            display:flex;
+                            align-items:center;
+                            gap:8px;
+                        "
+                    >
+                        <i class="fas fa-comments"></i>
+                        Comentários da Venda
+                    </h3>
+
+
+                    <div
+                        id="tituloVendaComentariosNFE"
+                        style="
+                            color:#6c757d;
+                            font-size:12px;
+                            margin-top:4px;
+                        "
+                    ></div>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    onclick="fecharComentariosVendaNFE()"
+                    style="
+                        border:none;
+                        background:transparent;
+                        font-size:22px;
+                        cursor:pointer;
+                        color:#6c757d;
+                    "
+                    title="Fechar"
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- NOVO COMENTÁRIO -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    padding:18px 20px;
+                    background:#f8f9fa;
+                    border-bottom:1px solid #dee2e6;
+                "
+            >
+
+                <label
+                    style="
+                        display:block;
+                        font-weight:600;
+                        margin-bottom:7px;
+                    "
+                >
+                    Novo comentário
+                </label>
+
+
+                <textarea
+                    id="novoComentarioVendaNFE"
+                    class="form-control"
+                    rows="3"
+                    maxlength="2000"
+                    placeholder="Digite uma observação sobre esta venda..."
+                    style="
+                        resize:vertical;
+                        min-height:80px;
+                    "
+                ></textarea>
+
+
+                <div
+                    style="
+                        display:flex;
+                        justify-content:space-between;
+                        align-items:center;
+                        margin-top:8px;
+                        gap:10px;
+                    "
+                >
+
+                    <small
+                        id="contadorComentarioVendaNFE"
+                        style="
+                            color:#6c757d;
+                        "
+                    >
+                        0/2000
+                    </small>
+
+
+                    <button
+                        type="button"
+                        id="btnSalvarComentarioVendaNFE"
+                        class="btn btn-primary"
+                        onclick="salvarNovoComentarioVendaNFE()"
+                    >
+                        <i class="fas fa-comment"></i>
+                        Adicionar comentário
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <!-- ========================================== -->
+            <!-- COMENTÁRIOS -->
+            <!-- ========================================== -->
+
+            <div
+                style="
+                    padding:20px;
+                "
+            >
+
+                <div
+                    id="listaComentariosVendaNFE"
+                >
+
+                    <div
+                        style="
+                            text-align:center;
+                            padding:25px;
+                            color:#6c757d;
+                        "
+                    >
+                        Carregando...
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    // =====================================================
+    // CONTADOR
+    // =====================================================
+
+    const textarea =
+        document.getElementById(
+            'novoComentarioVendaNFE'
+        );
+
+
+    textarea
+        ?.addEventListener(
+            'input',
+            () => {
+
+                const contador =
+                    document.getElementById(
+                        'contadorComentarioVendaNFE'
+                    );
+
+
+                if (
+                    contador
+                ) {
+
+                    contador.textContent =
+                        `${textarea.value.length}/2000`;
+                }
+            }
+        );
+
+
+    // =====================================================
+    // FECHAR CLICANDO FORA
+    // =====================================================
+
+    modal.addEventListener(
+        'click',
+        event => {
+
+            if (
+                event.target ===
+                modal
+            ) {
+
+                fecharComentariosVendaNFE();
+            }
+        }
+    );
+
+
+    return modal;
+}
+
+
+// =========================================================
+// HTML INICIAL DA CÉLULA
+// =========================================================
+
+function montarCelulaComentariosVendaNFE(
+    vendaId
+) {
+
+    return `
+
+        <div
+            data-resumo-comentarios-nfe
+            data-venda-id="${escaparHTMLNFE(vendaId)}"
+            style="
+                min-width:150px;
+            "
+        >
+
+            <button
+                type="button"
+                class="btn btn-sm btn-secondary"
+                onclick="abrirComentariosVendaNFE('${escaparHTMLNFE(vendaId)}')"
+            >
+                <i class="fas fa-comments"></i>
+                Comentários
+            </button>
+
+
+            <div
+                style="
+                    color:#adb5bd;
+                    font-size:10px;
+                    margin-top:4px;
+                "
+            >
+                Carregando...
+            </div>
+
+        </div>
+    `;
+}
+
+
+function renderizarResumoComentariosVendaNFE(
+    vendaId,
+    comentarios = []
+) {
+
+    const elementos =
+        document.querySelectorAll(
+            '#vendasPendentesBody [data-resumo-comentarios-nfe]'
+        );
+
+
+    elementos.forEach(
+        elemento => {
+
+            if (
+                String(
+                    elemento.dataset
+                        .vendaId
+                ) !==
+                String(
+                    vendaId
+                )
+            ) {
+
+                return;
+            }
+
+
+            const quantidade =
+                comentarios.length;
+
+
+            // =================================================
+            // SEM COMENTÁRIOS
+            // =================================================
+
+            if (
+                quantidade ===
+                0
+            ) {
+
+                elemento.innerHTML = `
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-secondary"
+                        onclick="abrirComentariosVendaNFE('${escaparHTMLNFE(vendaId)}')"
+                        style="
+                            white-space:nowrap;
+                        "
+                    >
+                        <i class="far fa-comment"></i>
+                        Adicionar
+                    </button>
+
+
+                    <div
+                        style="
+                            color:#adb5bd;
+                            font-size:10px;
+                            margin-top:4px;
+                        "
+                    >
+                        Sem comentários
+                    </div>
+                `;
+
+
+                return;
+            }
+
+
+            // =================================================
+            // TODOS OS COMENTÁRIOS
+            // =================================================
+
+            const comentariosHtml =
+                comentarios
+                    .map(
+                        comentario => {
+
+                            const texto =
+                                String(
+                                    comentario.comentario ||
+                                    ''
+                                );
+
+
+                            const nomeUsuario =
+                                comentario.usuario_nome ||
+                                comentario.usuario_username ||
+                                'Usuário';
+
+
+                            const data =
+                                formatarDataComentarioNFE(
+                                    comentario.criado_em
+                                );
+
+
+                            const editado =
+                                comentario.editado_em
+                                    ? `
+                                        <span
+                                            style="
+                                                color:#adb5bd;
+                                                font-size:9px;
+                                            "
+                                        >
+                                            • editado
+                                        </span>
+                                    `
+                                    : '';
+
+
+                            return `
+
+                                <div
+                                    style="
+                                        border-left:3px solid #17a2b8;
+                                        padding:6px 7px;
+                                        margin-bottom:6px;
+                                        background:#f8f9fa;
+                                        border-radius:4px;
+                                        max-width:230px;
+                                    "
+                                >
+
+                                    <div
+                                        style="
+                                            font-size:10px;
+                                            font-weight:700;
+                                            color:#343a40;
+                                            margin-bottom:2px;
+                                        "
+                                    >
+                                        <i class="fas fa-user-circle"></i>
+
+                                        ${escaparHTMLNFE(
+                                            nomeUsuario
+                                        )}
+                                    </div>
+
+
+                                    <div
+                                        style="
+                                            font-size:10px;
+                                            line-height:1.35;
+                                            color:#495057;
+                                            white-space:pre-wrap;
+                                            word-break:break-word;
+                                        "
+                                    >
+                                        ${escaparHTMLNFE(
+                                            texto
+                                        )}
+                                    </div>
+
+
+                                    <div
+                                        style="
+                                            font-size:9px;
+                                            color:#868e96;
+                                            margin-top:3px;
+                                        "
+                                    >
+                                        ${escaparHTMLNFE(
+                                            data
+                                        )}
+
+                                        ${editado}
+                                    </div>
+
+                                </div>
+                            `;
+                        }
+                    )
+                    .join(
+                        ''
+                    );
+
+
+            elemento.innerHTML = `
+
+                <div
+                    style="
+                        min-width:190px;
+                        max-width:240px;
+                    "
+                >
+
+                    <div
+                        style="
+                            display:flex;
+                            justify-content:space-between;
+                            align-items:center;
+                            gap:6px;
+                            margin-bottom:6px;
+                        "
+                    >
+
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-info"
+                            onclick="abrirComentariosVendaNFE('${escaparHTMLNFE(vendaId)}')"
+                            style="
+                                white-space:nowrap;
+                            "
+                            title="Abrir comentários"
+                        >
+                            <i class="fas fa-comments"></i>
+
+                            ${quantidade}
+
+                            ${
+                                quantidade ===
+                                    1
+                                    ? 'comentário'
+                                    : 'comentários'
+                            }
+                        </button>
+
+
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-success"
+                            onclick="abrirComentariosVendaNFE('${escaparHTMLNFE(vendaId)}')"
+                            title="Adicionar comentário"
+                            style="
+                                padding:4px 7px !important;
+                            "
+                        >
+                            <i class="fas fa-plus"></i>
+                        </button>
+
+                    </div>
+
+
+                    <div
+                        style="
+                            max-height:220px;
+                            overflow-y:auto;
+                            padding-right:3px;
+                        "
+                    >
+                        ${comentariosHtml}
+                    </div>
+
+                </div>
+            `;
+        }
+    );
+}
+
+
+// =========================================================
+// CARREGAR RESUMOS DE TODAS AS VENDAS DA TABELA
+// =========================================================
+
+async function carregarResumosComentariosVendasNFE(
+    vendas
+) {
+
+    if (
+        !Array.isArray(
+            vendas
+        ) ||
+        vendas.length ===
+            0
+    ) {
+
+        return;
+    }
+
+
+    const ids =
+        [
+            ...new Set(
+
+                vendas
+                    .map(
+                        venda =>
+                            normalizarOrderIdML(
+                                venda.id_venda_ml ||
+                                venda.id
+                            )
+                    )
+                    .filter(Boolean)
+            )
+        ];
+
+
+    if (
+        ids.length ===
+        0
+    ) {
+
+        return;
+    }
+
+
+    const todosComentarios =
+        [];
+
+
+    // =====================================================
+    // BUSCAR EM LOTES
+    // =====================================================
+
+    const TAMANHO_LOTE =
+        100;
+
+
+    for (
+        let i = 0;
+        i < ids.length;
+        i += TAMANHO_LOTE
+    ) {
+
+        const lote =
+            ids.slice(
+                i,
+                i +
+                    TAMANHO_LOTE
+            );
+
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_comentarios'
+                )
+                .select(`
+                    id,
+                    venda_id_ml,
+                    comentario,
+                    usuario_username,
+                    usuario_nome,
+                    criado_em,
+                    editado_em
+                `)
+                .in(
+                    'venda_id_ml',
+                    lote
+                )
+                .order(
+                    'criado_em',
+                    {
+                        ascending:
+                            false
+                    }
+                );
+
+
+        if (
+            error
+        ) {
+
+            console.error(
+                '❌ Erro carregando comentários:',
+                error
+            );
+
+
+            throw error;
+        }
+
+
+        todosComentarios.push(
+            ...(
+                data ||
+                []
+            )
+        );
+    }
+
+
+    // =====================================================
+    // AGRUPAR POR VENDA
+    // =====================================================
+
+    const mapa =
+        new Map();
+
+
+    ids.forEach(
+        id =>
+
+            mapa.set(
+                String(id),
+                []
+            )
+    );
+
+
+    todosComentarios.forEach(
+        comentario => {
+
+            const id =
+                String(
+                    comentario
+                        .venda_id_ml
+                );
+
+
+            if (
+                !mapa.has(
+                    id
+                )
+            ) {
+
+                mapa.set(
+                    id,
+                    []
+                );
+            }
+
+
+            mapa
+                .get(
+                    id
+                )
+                .push(
+                    comentario
+                );
+        }
+    );
+
+
+    // =====================================================
+    // ATUALIZAR TELA
+    // =====================================================
+
+    mapa.forEach(
+        (
+            comentarios,
+            vendaId
+        ) => {
+
+            renderizarResumoComentariosVendaNFE(
+                vendaId,
+                comentarios
+            );
+        }
+    );
+}
+
+
+// =========================================================
+// ABRIR MODAL
+// =========================================================
+
+async function abrirComentariosVendaNFE(
+    vendaId
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        showToast(
+            'ID da venda inválido.',
+            'error'
+        );
+
+
+        return;
+    }
+
+
+    const modal =
+        garantirModalComentariosNFE();
+
+
+    window
+        ._comentariosVendaAtualNFE =
+        vendaId;
+
+
+    const titulo =
+        document.getElementById(
+            'tituloVendaComentariosNFE'
+        );
+
+
+    if (
+        titulo
+    ) {
+
+        titulo.textContent =
+            `Venda ${vendaId}`;
+    }
+
+
+    const textarea =
+        document.getElementById(
+            'novoComentarioVendaNFE'
+        );
+
+
+    if (
+        textarea
+    ) {
+
+        textarea.value =
+            '';
+
+
+        textarea.focus();
+    }
+
+
+    const contador =
+        document.getElementById(
+            'contadorComentarioVendaNFE'
+        );
+
+
+    if (
+        contador
+    ) {
+
+        contador.textContent =
+            '0/2000';
+    }
+
+
+    modal.classList.remove(
+        'hidden'
+    );
+
+
+    await carregarComentariosVendaNFE(
+        vendaId
+    );
+}
+
+
+// =========================================================
+// FECHAR
+// =========================================================
+
+function fecharComentariosVendaNFE() {
+
+    document
+        .getElementById(
+            'modalComentariosVendaNFE'
+        )
+        ?.classList
+        .add(
+            'hidden'
+        );
+
+
+    window
+        ._comentariosVendaAtualNFE =
+        null;
+}
+
+
+// =========================================================
+// CARREGAR COMENTÁRIOS DE UMA VENDA
+// =========================================================
+
+async function carregarComentariosVendaNFE(
+    vendaId
+) {
+
+    const lista =
+        document.getElementById(
+            'listaComentariosVendaNFE'
+        );
+
+
+    if (
+        lista
+    ) {
+
+        lista.innerHTML = `
+
+            <div
+                style="
+                    text-align:center;
+                    padding:25px;
+                    color:#6c757d;
+                "
+            >
+                <span class="spinner"></span>
+                Carregando comentários...
+            </div>
+        `;
+    }
+
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_comentarios'
+                )
+                .select(`
+                    id,
+                    venda_id_ml,
+                    comentario,
+                    usuario_username,
+                    usuario_nome,
+                    criado_em,
+                    editado_em
+                `)
+                .eq(
+                    'venda_id_ml',
+                    String(
+                        vendaId
+                    )
+                )
+                .order(
+                    'criado_em',
+                    {
+                        ascending:
+                            false
+                    }
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+        }
+
+
+        const comentarios =
+            Array.isArray(
+                data
+            )
+                ? data
+                : [];
+
+
+        const usuarioAtual =
+            obterUsuarioAtualComentariosNFE();
+
+
+        // =================================================
+        // SEM COMENTÁRIO
+        // =================================================
+
+        if (
+            comentarios.length ===
+            0
+        ) {
+
+            lista.innerHTML = `
+
+                <div
+                    style="
+                        text-align:center;
+                        padding:35px 15px;
+                        color:#6c757d;
+                    "
+                >
+
+                    <i
+                        class="far fa-comments"
+                        style="
+                            font-size:30px;
+                            margin-bottom:10px;
+                            display:block;
+                            color:#adb5bd;
+                        "
+                    ></i>
+
+                    Nenhum comentário nesta venda.
+
+                </div>
+            `;
+
+        } else {
+
+            // =================================================
+            // LISTA
+            // =================================================
+
+            lista.innerHTML =
+                comentarios
+                    .map(
+                        comentario => {
+
+                            const dono =
+                                String(
+                                    comentario
+                                        .usuario_username ||
+                                    ''
+                                )
+                                    .trim()
+                                    .toLowerCase() ===
+                                usuarioAtual.username;
+
+
+                            const dataComentario =
+                                formatarDataComentarioNFE(
+                                    comentario.criado_em
+                                );
+
+
+                            const dataEditado =
+                                comentario.editado_em
+                                    ? formatarDataComentarioNFE(
+                                        comentario.editado_em
+                                    )
+                                    : '';
+
+
+                            return `
+
+                                <div
+                                    style="
+                                        border:1px solid #dee2e6;
+                                        border-radius:9px;
+                                        padding:13px;
+                                        margin-bottom:10px;
+                                        background:white;
+                                    "
+                                >
+
+                                    <div
+                                        style="
+                                            display:flex;
+                                            justify-content:space-between;
+                                            gap:10px;
+                                            align-items:flex-start;
+                                        "
+                                    >
+
+                                        <div>
+
+                                            <strong>
+                                                <i class="fas fa-user-circle"></i>
+
+                                                ${escaparHTMLNFE(
+                                                    comentario.usuario_nome ||
+                                                    comentario.usuario_username ||
+                                                    'Usuário'
+                                                )}
+                                            </strong>
+
+
+                                            <div
+                                                style="
+                                                    font-size:10px;
+                                                    color:#6c757d;
+                                                    margin-top:2px;
+                                                "
+                                            >
+
+                                                ${escaparHTMLNFE(
+                                                    dataComentario
+                                                )}
+
+                                                ${
+                                                    comentario.editado_em
+
+                                                        ? `
+                                                            • editado ${
+                                                                escaparHTMLNFE(
+                                                                    dataEditado
+                                                                )
+                                                            }
+                                                        `
+
+                                                        : ''
+                                                }
+
+                                            </div>
+
+                                        </div>
+
+
+                                        ${
+                                            dono
+
+                                                ? `
+
+                                                    <div
+                                                        style="
+                                                            display:flex;
+                                                            gap:4px;
+                                                        "
+                                                    >
+
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-warning"
+                                                            onclick="editarComentarioVendaNFE(${Number(
+                                                                comentario.id
+                                                            )})"
+                                                            title="Editar meu comentário"
+                                                        >
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+
+
+                                                        <button
+                                                            type="button"
+                                                            class="btn btn-sm btn-danger"
+                                                            onclick="excluirComentarioVendaNFE(${Number(
+                                                                comentario.id
+                                                            )})"
+                                                            title="Excluir meu comentário"
+                                                        >
+                                                            <i class="fas fa-trash"></i>
+                                                        </button>
+
+                                                    </div>
+                                                `
+
+                                                : ''
+                                        }
+
+                                    </div>
+
+
+                                    <div
+                                        style="
+                                            margin-top:11px;
+                                            white-space:pre-wrap;
+                                            word-break:break-word;
+                                            line-height:1.45;
+                                            color:#343a40;
+                                        "
+                                    >${escaparHTMLNFE(
+                                        comentario.comentario
+                                    )}</div>
+
+                                </div>
+                            `;
+                        }
+                    )
+                    .join(
+                        ''
+                    );
+        }
+
+
+        // =================================================
+        // ATUALIZAR TAMBÉM RESUMO NA TABELA
+        // =================================================
+
+        renderizarResumoComentariosVendaNFE(
+            vendaId,
+            comentarios
+        );
+
+
+        return comentarios;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando comentários da venda:',
+            error
+        );
+
+
+        if (
+            lista
+        ) {
+
+            lista.innerHTML = `
+
+                <div
+                    style="
+                        text-align:center;
+                        color:#dc3545;
+                        padding:20px;
+                    "
+                >
+                    Erro ao carregar comentários.
+                </div>
+            `;
+        }
+
+
+        return [];
+    }
+}
+
+
+// =========================================================
+// ADICIONAR COMENTÁRIO
+// =========================================================
+
+async function salvarNovoComentarioVendaNFE() {
+
+    const vendaId =
+        window
+            ._comentariosVendaAtualNFE;
+
+
+    if (
+        !vendaId
+    ) {
+
+        showToast(
+            'Venda não identificada.',
+            'error'
+        );
+
+
+        return;
+    }
+
+
+    const usuario =
+        obterUsuarioAtualComentariosNFE();
+
+
+    if (
+        !usuario.username
+    ) {
+
+        showToast(
+            'Usuário não identificado. Faça login novamente.',
+            'error'
+        );
+
+
+        return;
+    }
+
+
+    const textarea =
+        document.getElementById(
+            'novoComentarioVendaNFE'
+        );
+
+
+    const comentario =
+        String(
+            textarea?.value ||
+            ''
+        )
+            .trim();
+
+
+    if (
+        !comentario
+    ) {
+
+        showToast(
+            'Digite o comentário.',
+            'warning'
+        );
+
+
+        textarea
+            ?.focus();
+
+
+        return;
+    }
+
+
+    if (
+        comentario.length >
+        2000
+    ) {
+
+        showToast(
+            'O comentário pode ter no máximo 2000 caracteres.',
+            'warning'
+        );
+
+
+        return;
+    }
+
+
+    const botao =
+        document.getElementById(
+            'btnSalvarComentarioVendaNFE'
+        );
+
+
+    const textoOriginal =
+        botao?.innerHTML ||
+        'Adicionar comentário';
+
+
+    try {
+
+        if (
+            botao
+        ) {
+
+            botao.disabled =
+                true;
+
+
+            botao.innerHTML =
+                '<span class="spinner"></span> Salvando...';
+        }
+
+
+        const {
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_comentarios'
+                )
+                .insert({
+
+                    venda_id_ml:
+                        String(
+                            vendaId
+                        ),
+
+                    comentario:
+                        comentario,
+
+                    usuario_username:
+                        usuario.username,
+
+                    usuario_nome:
+                        usuario.nome
+                });
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+        }
+
+
+        textarea.value =
+            '';
+
+
+        const contador =
+            document.getElementById(
+                'contadorComentarioVendaNFE'
+            );
+
+
+        if (
+            contador
+        ) {
+
+            contador.textContent =
+                '0/2000';
+        }
+
+
+        showToast(
+            '✅ Comentário adicionado.',
+            'success'
+        );
+
+
+        await carregarComentariosVendaNFE(
+            vendaId
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro adicionando comentário:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao adicionar comentário: ${error.message}`,
+            'error'
+        );
+
+
+    } finally {
+
+        if (
+            botao
+        ) {
+
+            botao.disabled =
+                false;
+
+
+            botao.innerHTML =
+                textoOriginal;
+        }
+    }
+}
+
+
+// =========================================================
+// EDITAR COMENTÁRIO
+// =========================================================
+
+async function editarComentarioVendaNFE(
+    comentarioId
+) {
+
+    const usuario =
+        obterUsuarioAtualComentariosNFE();
+
+
+    if (
+        !usuario.username
+    ) {
+
+        showToast(
+            'Usuário não identificado.',
+            'error'
+        );
+
+
+        return;
+    }
+
+
+    try {
+
+        // =================================================
+        // BUSCAR COMENTÁRIO ORIGINAL
+        // =================================================
+
+        const {
+            data:
+                comentario,
+            error:
+                erroBusca
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_comentarios'
+                )
+                .select(`
+                    id,
+                    venda_id_ml,
+                    comentario,
+                    usuario_username
+                `)
+                .eq(
+                    'id',
+                    comentarioId
+                )
+                .maybeSingle();
+
+
+        if (
+            erroBusca
+        ) {
+
+            throw erroBusca;
+        }
+
+
+        if (
+            !comentario
+        ) {
+
+            showToast(
+                'Comentário não encontrado.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        // =================================================
+        // SOMENTE DONO
+        // =================================================
+
+        if (
+            String(
+                comentario.usuario_username
+            )
+                .trim()
+                .toLowerCase() !==
+            usuario.username
+        ) {
+
+            showToast(
+                '🚫 Você só pode editar seus próprios comentários.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        const novoTexto =
+            prompt(
+                'Editar comentário:',
+                comentario.comentario
+            );
+
+
+        if (
+            novoTexto ===
+            null
+        ) {
+
+            return;
+        }
+
+
+        const texto =
+            String(
+                novoTexto
+            )
+                .trim();
+
+
+        if (
+            !texto
+        ) {
+
+            showToast(
+                'O comentário não pode ficar vazio.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        if (
+            texto.length >
+            2000
+        ) {
+
+            showToast(
+                'O comentário pode ter no máximo 2000 caracteres.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        // =================================================
+        // UPDATE
+        //
+        // Repare que também filtramos pelo username.
+        // =================================================
+
+        const {
+            data:
+                atualizado,
+            error:
+                erroUpdate
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_comentarios'
+                )
+                .update({
+
+                    comentario:
+                        texto,
+
+                    editado_em:
+                        new Date()
+                            .toISOString()
+                })
+                .eq(
+                    'id',
+                    comentarioId
+                )
+                .eq(
+                    'usuario_username',
+                    usuario.username
+                )
+                .select(
+                    'id'
+                );
+
+
+        if (
+            erroUpdate
+        ) {
+
+            throw erroUpdate;
+        }
+
+
+        if (
+            !atualizado ||
+            atualizado.length ===
+                0
+        ) {
+
+            showToast(
+                '🚫 Você não tem permissão para editar este comentário.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        showToast(
+            '✅ Comentário atualizado.',
+            'success'
+        );
+
+
+        await carregarComentariosVendaNFE(
+            comentario.venda_id_ml
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro editando comentário:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao editar comentário: ${error.message}`,
+            'error'
+        );
+    }
+}
+
+
+// =========================================================
+// EXCLUIR COMENTÁRIO
+// =========================================================
+
+async function excluirComentarioVendaNFE(
+    comentarioId
+) {
+
+    const usuario =
+        obterUsuarioAtualComentariosNFE();
+
+
+    if (
+        !usuario.username
+    ) {
+
+        showToast(
+            'Usuário não identificado.',
+            'error'
+        );
+
+
+        return;
+    }
+
+
+    try {
+
+        // =================================================
+        // BUSCAR
+        // =================================================
+
+        const {
+            data:
+                comentario,
+            error:
+                erroBusca
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_comentarios'
+                )
+                .select(`
+                    id,
+                    venda_id_ml,
+                    comentario,
+                    usuario_username
+                `)
+                .eq(
+                    'id',
+                    comentarioId
+                )
+                .maybeSingle();
+
+
+        if (
+            erroBusca
+        ) {
+
+            throw erroBusca;
+        }
+
+
+        if (
+            !comentario
+        ) {
+
+            showToast(
+                'Comentário não encontrado.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        // =================================================
+        // SOMENTE O DONO
+        // =================================================
+
+        if (
+            String(
+                comentario.usuario_username
+            )
+                .trim()
+                .toLowerCase() !==
+            usuario.username
+        ) {
+
+            showToast(
+                '🚫 Você só pode excluir seus próprios comentários.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        const confirmar =
+            confirm(
+                'Excluir este comentário?'
+            );
+
+
+        if (
+            !confirmar
+        ) {
+
+            return;
+        }
+
+
+        // =================================================
+        // DELETE COM ID + USUÁRIO
+        // =================================================
+
+        const {
+            data:
+                excluido,
+            error:
+                erroDelete
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_comentarios'
+                )
+                .delete()
+                .eq(
+                    'id',
+                    comentarioId
+                )
+                .eq(
+                    'usuario_username',
+                    usuario.username
+                )
+                .select(
+                    'id'
+                );
+
+
+        if (
+            erroDelete
+        ) {
+
+            throw erroDelete;
+        }
+
+
+        if (
+            !excluido ||
+            excluido.length ===
+                0
+        ) {
+
+            showToast(
+                '🚫 Você não tem permissão para excluir este comentário.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        showToast(
+            '✅ Comentário excluído.',
+            'success'
+        );
+
+
+        await carregarComentariosVendaNFE(
+            comentario.venda_id_ml
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro excluindo comentário:',
+            error
+        );
+
+
+        showToast(
+            `Erro ao excluir comentário: ${error.message}`,
+            'error'
+        );
+    }
+}
+
+
+// =========================================================
+// EXPOR FUNÇÕES
+// =========================================================
+
+window.abrirComentariosVendaNFE =
+    abrirComentariosVendaNFE;
+
+window.fecharComentariosVendaNFE =
+    fecharComentariosVendaNFE;
+
+window.salvarNovoComentarioVendaNFE =
+    salvarNovoComentarioVendaNFE;
+
+window.editarComentarioVendaNFE =
+    editarComentarioVendaNFE;
+
+window.excluirComentarioVendaNFE =
+    excluirComentarioVendaNFE;
+
 function renderizarVendasNFETabela(
     vendas
 ) {
@@ -15168,6 +17189,11 @@ function renderizarVendasNFETabela(
                     venda.id
                 );
 
+                const comentariosHtml =
+                    montarCelulaComentariosVendaNFE(
+                        vendaId
+                    );
+
 
             // =============================================
             // FULL
@@ -15377,6 +17403,16 @@ function renderizarVendasNFETabela(
                             venda.id_venda_ml ||
                             venda.id
                         );
+
+
+                // =================================================
+                // COMENTÁRIOS
+                // =================================================
+
+                const comentariosHtml =
+                    montarCelulaComentariosVendaNFE(
+                        vendaId
+                    );
 
 
                     const isFull =
@@ -15741,12 +17777,6 @@ function renderizarVendasNFETabela(
                             <td>
                                 ${escaparHTMLNFE(cliente)}
                             </td>
-
-
-                            <td>
-                                ${skuHtml}
-                            </td>
-
                             <td
                                 style="
                                     width:75px;
@@ -15756,6 +17786,10 @@ function renderizarVendasNFETabela(
                                 "
                             >
                                 ${fotoHtml}
+                            </td>
+
+                            <td>
+                                ${skuHtml}
                             </td>
 
                             <td>
@@ -15784,7 +17818,19 @@ function renderizarVendasNFETabela(
                                 ${htmlEstoque(venda)}
                             </td>
 
+                            <!-- COMENTÁRIOS -->
+                            <td
+                                style="
+                                    min-width:170px;
+                                    max-width:230px;
+                                    vertical-align:middle;
+                                "
+                            >
+                                ${comentariosHtml}
+                            </td>
 
+
+                            <!-- AÇÕES -->
                             <td
                                 style="
                                     white-space:nowrap;
@@ -15819,6 +17865,23 @@ function renderizarVendasNFETabela(
                         );
                     }
                 );
+
+                // =====================================================
+                // CARREGAR RESUMOS DOS COMENTÁRIOS
+                // =====================================================
+
+                carregarResumosComentariosVendasNFE(
+                    vendas
+                )
+                    .catch(
+                        error => {
+
+                            console.warn(
+                                '⚠️ Erro carregando comentários da tabela NF-e:',
+                                error
+                            );
+                        }
+                    );
 
 
     // =====================================================
