@@ -5764,6 +5764,591 @@ async function obterTokenMLNFE() {
     return token || null;
 }
 
+// =========================================================
+// FOTO DO PRODUTO - TABELA NF-E
+// =========================================================
+
+window._cacheFotosProdutosNFE =
+    window._cacheFotosProdutosNFE ||
+    new Map();
+
+
+// =========================================================
+// DESCOBRIR ITEM ID DO PRODUTO
+// =========================================================
+
+function obterItemIdFotoProdutoNFE(
+    venda
+) {
+
+    // =====================================================
+    // 1. ORDER_ITEMS
+    // =====================================================
+
+    if (
+        Array.isArray(
+            venda?.order_items
+        ) &&
+        venda.order_items.length >
+            0
+    ) {
+
+        for (
+            const orderItem
+            of venda.order_items
+        ) {
+
+            const itemId =
+                orderItem
+                    ?.item
+                    ?.id;
+
+
+            if (
+                itemId
+            ) {
+
+                return String(
+                    itemId
+                ).trim();
+            }
+        }
+    }
+
+
+    // =====================================================
+    // 2. POSSÍVEIS FALLBACKS
+    // =====================================================
+
+    const itemId =
+        venda?.item_id ||
+        venda?.id_item ||
+        venda?.mlb ||
+        venda?.MLB ||
+        venda?.item?.id ||
+        null;
+
+
+    if (
+        itemId
+    ) {
+
+        return String(
+            itemId
+        ).trim();
+    }
+
+
+    return null;
+}
+
+
+// =========================================================
+// HTML INICIAL DA FOTO
+// =========================================================
+
+function montarFotoProdutoNFE(
+    venda
+) {
+
+    const itemId =
+        obterItemIdFotoProdutoNFE(
+            venda
+        );
+
+
+    if (
+        !itemId
+    ) {
+
+        return `
+            <div
+                style="
+                    width:58px;
+                    height:58px;
+                    border:1px solid #dee2e6;
+                    border-radius:7px;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    color:#adb5bd;
+                    background:#f8f9fa;
+                "
+                title="Foto não disponível"
+            >
+                <i class="fas fa-image"></i>
+            </div>
+        `;
+    }
+
+
+    // =====================================================
+    // SE JÁ ESTÁ NO CACHE DA SESSÃO
+    // =====================================================
+
+    const fotoCache =
+        window
+            ._cacheFotosProdutosNFE
+            .get(
+                itemId
+            );
+
+
+    if (
+        typeof fotoCache ===
+            'string' &&
+        fotoCache
+    ) {
+
+        return `
+            <img
+                src="${escaparHTMLNFE(fotoCache)}"
+                alt="Produto"
+                loading="lazy"
+                title="${escaparHTMLNFE(itemId)}"
+                style="
+                    width:58px;
+                    height:58px;
+                    object-fit:contain;
+                    border:1px solid #dee2e6;
+                    border-radius:7px;
+                    background:white;
+                    display:block;
+                "
+            >
+        `;
+    }
+
+
+    // =====================================================
+    // PLACEHOLDER ENQUANTO BUSCA
+    // =====================================================
+
+    return `
+        <div
+            class="foto-produto-nfe"
+            data-item-id="${escaparHTMLNFE(itemId)}"
+            style="
+                width:58px;
+                height:58px;
+                border:1px solid #dee2e6;
+                border-radius:7px;
+                background:#f8f9fa;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                color:#6c757d;
+            "
+            title="Carregando foto..."
+        >
+            <i
+                class="fas fa-spinner fa-spin"
+                style="font-size:15px;"
+            ></i>
+        </div>
+    `;
+}
+
+
+// =========================================================
+// BUSCAR FOTO DE CAPA DO ITEM NO MERCADO LIVRE
+// =========================================================
+
+async function buscarFotoProdutoMLNFE(
+    itemId
+) {
+
+    itemId =
+        String(
+            itemId ||
+            ''
+        ).trim();
+
+
+    if (
+        !itemId
+    ) {
+
+        return null;
+    }
+
+
+    // =====================================================
+    // JÁ POSSUI CACHE
+    // =====================================================
+
+    const cache =
+        window
+            ._cacheFotosProdutosNFE
+            .get(
+                itemId
+            );
+
+
+    if (
+        typeof cache ===
+        'string'
+    ) {
+
+        return cache ||
+            null;
+    }
+
+
+    // =====================================================
+    // SE JÁ ESTÁ SENDO BUSCADO, REUTILIZAR A MESMA PROMISE
+    // =====================================================
+
+    if (
+        cache instanceof
+        Promise
+    ) {
+
+        return await cache;
+    }
+
+
+    // =====================================================
+    // CRIAR BUSCA
+    // =====================================================
+
+    const promise =
+        (
+            async () => {
+
+                try {
+
+                    const token =
+                        await obterTokenMLNFE();
+
+
+                    if (
+                        !token
+                    ) {
+
+                        console.warn(
+                            `⚠️ Token ML indisponível para buscar foto ${itemId}`
+                        );
+
+                        return null;
+                    }
+
+
+                    const url =
+                        `https://api.mercadolibre.com/items/${encodeURIComponent(
+                            itemId
+                        )}`;
+
+
+                    const proxyUrl =
+                        `${window.WORKER_URL}/api/ml/proxy?url=` +
+                        `${encodeURIComponent(url)}` +
+                        `&token=${encodeURIComponent(token)}`;
+
+
+                    const response =
+                        await fetch(
+                            proxyUrl,
+                            {
+                                cache:
+                                    'no-store'
+                            }
+                        );
+
+
+                    if (
+                        !response.ok
+                    ) {
+
+                        console.warn(
+                            `⚠️ Não foi possível buscar foto ${itemId}: HTTP ${response.status}`
+                        );
+
+                        return null;
+                    }
+
+
+                    const item =
+                        await response.json();
+
+
+                    // =================================================
+                    // FOTO DE CAPA
+                    // =================================================
+
+                    let foto =
+                        item.secure_thumbnail ||
+                        item.thumbnail ||
+                        null;
+
+
+                    // =================================================
+                    // FALLBACK PARA PRIMEIRA PICTURE
+                    // =================================================
+
+                    if (
+                        !foto &&
+                        Array.isArray(
+                            item.pictures
+                        ) &&
+                        item.pictures.length >
+                            0
+                    ) {
+
+                        foto =
+                            item.pictures[0]
+                                ?.secure_url ||
+                            item.pictures[0]
+                                ?.url ||
+                            null;
+                    }
+
+
+                    if (
+                        foto
+                    ) {
+
+                        foto =
+                            String(
+                                foto
+                            )
+                                .replace(
+                                    /^http:/i,
+                                    'https:'
+                                );
+
+
+                        console.log(
+                            `🖼️ Foto localizada ${itemId}:`,
+                            foto
+                        );
+
+
+                        return foto;
+                    }
+
+
+                    console.warn(
+                        `⚠️ Item ${itemId} não possui foto`
+                    );
+
+
+                    return null;
+
+
+                } catch (
+                    error
+                ) {
+
+                    console.warn(
+                        `⚠️ Erro buscando foto do item ${itemId}:`,
+                        error
+                    );
+
+
+                    return null;
+                }
+            }
+        )();
+
+
+    // =====================================================
+    // GUARDAR A PROMISE PARA NÃO REPETIR REQUISIÇÃO
+    // =====================================================
+
+    window
+        ._cacheFotosProdutosNFE
+        .set(
+            itemId,
+            promise
+        );
+
+
+    const foto =
+        await promise;
+
+
+    // =====================================================
+    // SUBSTITUIR PROMISE PELO RESULTADO FINAL
+    // =====================================================
+
+    window
+        ._cacheFotosProdutosNFE
+        .set(
+            itemId,
+            foto ||
+            ''
+        );
+
+
+    return foto;
+}
+
+
+// =========================================================
+// PREENCHER FOTO NA TABELA
+// =========================================================
+
+function atualizarFotoProdutoTabelaNFE(
+    itemId,
+    foto
+) {
+
+    const elementos =
+        document.querySelectorAll(
+            '#vendasPendentesBody .foto-produto-nfe'
+        );
+
+
+    elementos.forEach(
+        elemento => {
+
+            if (
+                String(
+                    elemento.dataset
+                        .itemId ||
+                    ''
+                ) !==
+                String(
+                    itemId
+                )
+            ) {
+
+                return;
+            }
+
+
+            if (
+                foto
+            ) {
+
+                elemento.outerHTML = `
+                    <img
+                        src="${escaparHTMLNFE(foto)}"
+                        alt="Produto"
+                        loading="lazy"
+                        title="${escaparHTMLNFE(itemId)}"
+                        style="
+                            width:58px;
+                            height:58px;
+                            object-fit:contain;
+                            border:1px solid #dee2e6;
+                            border-radius:7px;
+                            background:white;
+                            display:block;
+                        "
+                    >
+                `;
+
+
+            } else {
+
+                elemento.innerHTML = `
+                    <i
+                        class="fas fa-image"
+                        style="
+                            color:#adb5bd;
+                            font-size:16px;
+                        "
+                    ></i>
+                `;
+
+
+                elemento.title =
+                    'Foto não disponível';
+            }
+        }
+    );
+}
+
+
+// =========================================================
+// CARREGAR TODAS AS FOTOS VISÍVEIS
+// =========================================================
+
+async function carregarFotosProdutosTabelaNFE() {
+
+    const elementos =
+        Array.from(
+            document.querySelectorAll(
+                '#vendasPendentesBody .foto-produto-nfe[data-item-id]'
+            )
+        );
+
+
+    if (
+        elementos.length ===
+        0
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // ELIMINAR IDs REPETIDOS
+    // =====================================================
+
+    const ids =
+        [
+            ...new Set(
+                elementos
+                    .map(
+                        elemento =>
+                            elemento.dataset
+                                .itemId
+                    )
+                    .filter(
+                        Boolean
+                    )
+            )
+        ];
+
+
+    // =====================================================
+    // BUSCAR EM LOTES DE 6
+    //
+    // Evita fazer dezenas/centenas de requests simultâneos.
+    // =====================================================
+
+    const TAMANHO_LOTE =
+        6;
+
+
+    for (
+        let i = 0;
+        i < ids.length;
+        i += TAMANHO_LOTE
+    ) {
+
+        const lote =
+            ids.slice(
+                i,
+                i +
+                    TAMANHO_LOTE
+            );
+
+
+        await Promise.all(
+            lote.map(
+                async itemId => {
+
+                    const foto =
+                        await buscarFotoProdutoMLNFE(
+                            itemId
+                        );
+
+
+                    atualizarFotoProdutoTabelaNFE(
+                        itemId,
+                        foto
+                    );
+                }
+            )
+        );
+    }
+}
+
 function obterDataHojeLocal() {
 
     const agora =
@@ -5916,6 +6501,11 @@ const COLUNAS_VENDAS_NFE = [
     {
         id: 'sku',
         nome: 'SKU'
+    },
+
+    {
+    id: 'foto',
+    nome: 'Foto'
     },
 
     {
@@ -14942,6 +15532,15 @@ function renderizarVendasNFETabela(
                             )
                             .join('');
 
+                    // =================================================
+                    // FOTO
+                    // =================================================
+
+                    const fotoHtml =
+                        montarFotoProdutoNFE(
+                            venda
+                        );
+
 
                     // =================================================
                     // VALOR
@@ -15148,6 +15747,16 @@ function renderizarVendasNFETabela(
                                 ${skuHtml}
                             </td>
 
+                            <td
+                                style="
+                                    width:75px;
+                                    min-width:75px;
+                                    text-align:center;
+                                    vertical-align:middle;
+                                "
+                            >
+                                ${fotoHtml}
+                            </td>
 
                             <td>
                                 <strong>
@@ -15195,6 +15804,21 @@ function renderizarVendasNFETabela(
             // =====================================================
 
             aplicarPreferenciasColunasNFE();
+
+            // =====================================================
+            // CARREGAR FOTOS DOS PRODUTOS
+            // =====================================================
+
+            carregarFotosProdutosTabelaNFE()
+                .catch(
+                    error => {
+
+                        console.warn(
+                            '⚠️ Erro carregando fotos da tabela NF-e:',
+                            error
+                        );
+                    }
+                );
 
 
     // =====================================================

@@ -10953,7 +10953,7 @@ const camposPorCategoria = {
     Raios: [
         { nome: "marca", label: "Marca", tipo: "select", opcoes: ["Sapim", "Pillar", "Mavic", "Richman", "Green", "Dt Swiss", "Crank Brothers", "VeloForce", "Zincado", "Titânio", "T-Head"] },
         { nome: "modelo", label: "Modelo", tipo: "select", opcoes: [] },
-        { nome: "cabeçaraio", label: "Cabeça do Raio", tipo: "select", opcoes: ["SP", "J"] },
+        { nome: "cabeçaraio", label: "Cabeça do Raio", tipo: "select", opcoes: ["SP", "J", "T-head"] },
         { nome: "tamanhoraio", label: "Tamanho Raio", tipo: "number", placeholder: "Ex: 284"},
         { nome: "mlb_codes", label: "Códigos MLB", tipo: "textarea", placeholder: "MLB separados por vírgula", rows: 2 }
     ],
@@ -11219,11 +11219,11 @@ const modelosPorMarca = {
     "Mavic": ["Crossride", "Crossmax", "Crossride Light", "Crossride Fts", "Aksium Ksyrium"],
     "Richman": ["Preto", "Fino Silver", "Grosso Silver"],
     "Green": ["Silver", "Pro", "Aero"],
-    "Dt Swiss": ["Aero", "Competition", "Revolution", "Competition Especial", "Champion Preto", "Champion Prata", "Aero Comp"],
+    "Dt Swiss": ["Aero", "Competition", "Revolution", "Revolution Prata", "Competition Especial", "Champion Preto", "Champion Prata", "Champion Rainbow", "Aero Comp"],
     "Crank Brothers": ["Preto"],
     "VeloForce": ["Preto", "Prata"],
     "Zincado": ["Prata"],
-    "Titânio": ["Preto"],
+    "Titânio": ["Prata"],
     "T-Head": ["Revolution", "Competition", "AeroLite"]
 };
 
