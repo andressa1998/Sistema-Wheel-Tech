@@ -5367,6 +5367,12 @@ function applyFilters(
         )?.value || '';
 
 
+    const correcao =
+        document.getElementById(
+            'gaFiltroCorrecao'
+        )?.value || '';
+
+
     const ordenacao =
         document.getElementById(
             'gaFiltroOrdenacao'
@@ -5381,7 +5387,10 @@ function applyFilters(
         GA.rows.filter(
             row => {
 
+                // =================================================
                 // STATUS
+                // =================================================
+
                 if (
                     status &&
                     row.status !== status
@@ -5391,7 +5400,38 @@ function applyFilters(
                 }
 
 
+                // =================================================
+                // FILTRO 30+ / PRECISA CORRIGIR
+                //
+                // Regra:
+                //
+                // mais de 30 dias sem vender
+                // +
+                // anúncio Clássico
+                // =
+                // precisa mudar para Premium
+                // =================================================
+
+                if (
+                    correcao ===
+                    '30plus'
+                ) {
+
+                    if (
+                        !gaPrecisaCorrigirTipo(
+                            row
+                        )
+                    ) {
+
+                        return false;
+                    }
+                }
+
+
+                // =================================================
                 // PESQUISA
+                // =================================================
+
                 if (busca) {
 
                     const texto =
@@ -5411,7 +5451,11 @@ function applyFilters(
 
                             row.listingTypeName,
 
-                            row.listingTypeId
+                            row.listingTypeId,
+
+                            row.status,
+
+                            row.diasSemVender
 
                         ]
                             .join(' ')
@@ -5519,6 +5563,40 @@ function applyFilters(
 
 
                 default:
+
+                    // Se estiver usando filtro 30+,
+                    // colocar os mais parados primeiro.
+                    if (
+                        correcao ===
+                        '30plus'
+                    ) {
+
+                        const diasB =
+                            numero(
+                                b.diasSemVender,
+                                9999
+                            );
+
+
+                        const diasA =
+                            numero(
+                                a.diasSemVender,
+                                9999
+                            );
+
+
+                        if (
+                            diasB !==
+                            diasA
+                        ) {
+
+                            return (
+                                diasB -
+                                diasA
+                            );
+                        }
+                    }
+
 
                     return String(
                         a.title || ''
@@ -8701,213 +8779,350 @@ function render() {
     }
 
 
-    // ============================================================
-    // EXPORTAR CSV
-    // ============================================================
-
-    function exportarCSV() {
-
-        const rows =
-
-            GA.filtered.length
-
-                ? GA.filtered
-
-                : GA.rows;
-
-
-        if (
-            !rows.length
-        ) {
-
-            window.showToast?.(
-                'Nenhum dado para exportar.',
-                'warning'
-            );
-
-
-            return;
-        }
-
-
-        const colunas =
-            [
-
-                'MLB',
-
-                'Variação',
-
-                'Título',
-
-                'SKU',
-
-                'User Product',
-
-                'Inventory ID',
-
-                'Estoque ML fora FULL',
-
-                'Estoque FULL',
-
-                'Total disponível ML',
-
-                'Estoque interno',
-
-                'Exposição',
-
-                'Tipo',
-
-                'Status',
-
-                'Preço'
-            ];
-
-
-        function csv(
-            value
-        ) {
-
-            const texto =
-                String(
-                    value ??
-                    ''
-                );
-
-
-            return (
-                '"' +
-                texto.replaceAll(
-                    '"',
-                    '""'
-                ) +
-                '"'
-            );
-        }
-
-
-        const linhas =
-            [
-
-                colunas
-                    .map(
-                        csv
-                    )
-                    .join(
-                        ';'
-                    ),
-
-                ...rows.map(
-                    row =>
-                        [
-
-                            row.itemId,
-
-                            row.variationId ||
-                            '',
-
-                            row.title,
-
-                            row.sku,
-
-                            row.userProductId ||
-                            '',
-
-                            row.inventoryId ||
-                            '',
-
-                            row.warehouse ??
-                            '',
-
-                            row.full ??
-                            '',
-
-                            row.mlTotal ??
-                            '',
-
-                            row.internalWarehouse ??
-                            '',
-
-                            row.exposureName ||
-                            '',
-
-                            row.listingTypeName ||
-                            '',
-
-                            statusLabel(
-                                row.status
-                            ),
-
-                            row.price ??
-                            ''
-
-                        ]
-                            .map(
-                                csv
-                            )
-                            .join(
-                                ';'
-                            )
-                )
-            ];
-
-
-        const blob =
-            new Blob(
-
-                [
-                    '\uFEFF' +
-                    linhas.join(
-                        '\n'
-                    )
-                ],
-
-                {
-                    type:
-                        'text/csv;charset=utf-8;'
-                }
-            );
-
-
-        const url =
-            URL.createObjectURL(
-                blob
-            );
-
-
-        const a =
-            document.createElement(
-                'a'
-            );
-
-
-        a.href =
-            url;
-
-
-        a.download =
-
-            `gerenciamento_anuncios_` +
-
-            `${dataLocalISO()}` +
-
-            `.csv`;
-
-
-        document.body.appendChild(
-            a
+function exportarCSV() {
+
+    // =========================================================
+    // SEMPRE EXPORTAR O RESULTADO ATUAL DOS FILTROS
+    //
+    // GA.filtered contém:
+    //
+    // - todos os registros quando não existe filtro
+    // - somente os filtrados quando há filtro
+    // =========================================================
+
+    const rows =
+        Array.isArray(
+            GA.filtered
+        )
+            ? GA.filtered
+            : [];
+
+
+    if (
+        !rows.length
+    ) {
+
+        window.showToast?.(
+            'Nenhum registro no filtro atual para exportar.',
+            'warning'
         );
 
 
-        a.click();
+        return;
+    }
 
 
-        a.remove();
+    // =========================================================
+    // COLUNAS
+    // =========================================================
+
+    const colunas = [
+
+        'MLB',
+
+        'Variação',
+
+        'Título',
+
+        'SKU',
+
+        'Depósito',
+
+        'FULL',
+
+        'Vendas FULL 30d',
+
+        'Dias sem vender',
+
+        'Última venda FULL',
+
+        'Tipo',
+
+        'Status',
+
+        'Preço',
+
+        'Inventory ID',
+
+        'User Product',
+
+        'Precisa corrigir'
+    ];
 
 
-        URL.revokeObjectURL(
-            url
+    // =========================================================
+    // ESCAPE CSV
+    // =========================================================
+
+    function csv(
+        value
+    ) {
+
+        const texto =
+            String(
+                value ??
+                ''
+            );
+
+
+        return (
+            '"' +
+            texto.replaceAll(
+                '"',
+                '""'
+            ) +
+            '"'
         );
     }
+
+
+    // =========================================================
+    // GERAR LINHAS
+    // =========================================================
+
+    const linhas = [
+
+        colunas
+            .map(csv)
+            .join(';'),
+
+
+        ...rows.map(
+            row => {
+
+                // =================================================
+                // ÚLTIMA VENDA
+                // =================================================
+
+                let ultimaVenda =
+                    '';
+
+
+                if (
+                    row.ultimaVendaFull
+                ) {
+
+                    const data =
+                        new Date(
+                            row.ultimaVendaFull
+                        );
+
+
+                    if (
+                        !Number.isNaN(
+                            data.getTime()
+                        )
+                    ) {
+
+                        ultimaVenda =
+                            data.toLocaleDateString(
+                                'pt-BR'
+                            );
+                    }
+                }
+
+
+                // =================================================
+                // DIAS SEM VENDER
+                // =================================================
+
+                let diasSemVender =
+                    '';
+
+
+                if (
+                    row.diasSemVender !== null &&
+                    row.diasSemVender !== undefined
+                ) {
+
+                    diasSemVender =
+                        Number(
+                            row.diasSemVender
+                        );
+
+                } else if (
+                    !row.ultimaVendaFull &&
+                    row.vendasFullAtualizadoEm
+                ) {
+
+                    diasSemVender =
+                        '12+ meses';
+                }
+
+
+                // =================================================
+                // PRECISA CORRIGIR
+                // =================================================
+
+                const precisaCorrigir =
+                    gaPrecisaCorrigirTipo(
+                        row
+                    )
+                        ? 'SIM'
+                        : 'NÃO';
+
+
+                return [
+
+                    row.itemId,
+
+                    row.variationId ||
+                    '',
+
+                    row.title,
+
+                    row.sku,
+
+                    row.warehouse ??
+                    '',
+
+                    row.full ??
+                    '',
+
+                    row.vendasFull30d ??
+                    '',
+
+                    diasSemVender,
+
+                    ultimaVenda,
+
+                    row.listingTypeName ||
+                    '',
+
+                    statusLabel(
+                        row.status
+                    ),
+
+                    row.price ??
+                    '',
+
+                    row.inventoryId ||
+                    '',
+
+                    row.userProductId ||
+                    '',
+
+                    precisaCorrigir
+
+                ]
+                    .map(csv)
+                    .join(';');
+            }
+        )
+    ];
+
+
+    // =========================================================
+    // IDENTIFICAR SE EXISTE FILTRO
+    // =========================================================
+
+    const filtro30 =
+        document.getElementById(
+            'gaFiltroCorrecao'
+        )?.value;
+
+
+    const busca =
+        document.getElementById(
+            'gaBusca'
+        )?.value;
+
+
+    const status =
+        document.getElementById(
+            'gaFiltroStatus'
+        )?.value;
+
+
+    let sufixo =
+        'todos';
+
+
+    if (
+        filtro30 ===
+        '30plus'
+    ) {
+
+        sufixo =
+            'corrigir_30_dias';
+
+    } else if (
+        busca ||
+        status
+    ) {
+
+        sufixo =
+            'filtrado';
+    }
+
+
+    // =========================================================
+    // CRIAR ARQUIVO
+    // =========================================================
+
+    const blob =
+        new Blob(
+            [
+                '\uFEFF' +
+                linhas.join('\n')
+            ],
+            {
+                type:
+                    'text/csv;charset=utf-8;'
+            }
+        );
+
+
+    const url =
+        URL.createObjectURL(
+            blob
+        );
+
+
+    const a =
+        document.createElement(
+            'a'
+        );
+
+
+    const hoje =
+        new Date()
+            .toISOString()
+            .slice(
+                0,
+                10
+            );
+
+
+    a.href =
+        url;
+
+
+    a.download =
+        `gerenciamento_anuncios_${sufixo}_${hoje}.csv`;
+
+
+    document.body.appendChild(
+        a
+    );
+
+
+    a.click();
+
+
+    a.remove();
+
+
+    URL.revokeObjectURL(
+        url
+    );
+
+
+    window.showToast?.(
+        `${rows.length} registro(s) exportado(s).`,
+        'success'
+    );
+}
 
 
    window.abrirSistemaGerenciamentoAnuncios =
@@ -9212,15 +9427,18 @@ function render() {
                 'gaBusca'
             );
 
-        const exposicao =
-            document.getElementById(
-                'gaFiltroExposicao'
-            );
 
         const status =
             document.getElementById(
                 'gaFiltroStatus'
             );
+
+
+        const correcao =
+            document.getElementById(
+                'gaFiltroCorrecao'
+            );
+
 
         const ordenacao =
             document.getElementById(
@@ -9235,16 +9453,16 @@ function render() {
         }
 
 
-        if (exposicao) {
+        if (status) {
 
-            exposicao.value =
+            status.value =
                 '';
         }
 
 
-        if (status) {
+        if (correcao) {
 
-            status.value =
+            correcao.value =
                 '';
         }
 

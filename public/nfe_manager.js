@@ -7978,6 +7978,12 @@ async function atualizarVendasDataSelecionada() {
         );
 
         // =====================================================
+        // VERIFICAR CANCELAMENTOS E DEVOLVER ESTOQUE
+        // =====================================================
+
+        await verificarCancelamentosVendasNFE();
+
+        // =====================================================
         // RECARREGAR CACHE
         // =====================================================
 
@@ -16819,6 +16825,1069 @@ function montarLinksModificarAnunciosNFE(
         .join('');
 }
 
+// =========================================================
+// CANCELAMENTOS DE VENDAS ML → RESTAURAÇÃO DE ESTOQUE
+// =========================================================
+
+window._verificandoCancelamentosNFE =
+    false;
+
+
+// =========================================================
+// BUSCAR VENDAS CANCELADAS NO MERCADO LIVRE
+// =========================================================
+
+async function buscarVendasCanceladasMLNFE(
+    dias = 180
+) {
+
+    const token =
+        await obterTokenMLNFE();
+
+
+    if (!token) {
+
+        throw new Error(
+            'Token Mercado Livre não disponível'
+        );
+    }
+
+
+    const inicio =
+        new Date(
+            Date.now() -
+            (
+                dias *
+                24 *
+                60 *
+                60 *
+                1000
+            )
+        );
+
+
+    const vendas =
+        [];
+
+
+    const LIMIT =
+        50;
+
+
+    let offset =
+        0;
+
+
+    let total =
+        null;
+
+
+    while (
+        total === null ||
+        offset < total
+    ) {
+
+        const params =
+            new URLSearchParams({
+
+                seller:
+                    '415176739',
+
+                'order.status':
+                    'cancelled',
+
+                'order.date_last_updated.from':
+                    inicio.toISOString(),
+
+                sort:
+                    'date_desc',
+
+                limit:
+                    String(
+                        LIMIT
+                    ),
+
+                offset:
+                    String(
+                        offset
+                    )
+            });
+
+
+        const url =
+            `https://api.mercadolibre.com/orders/search?${params.toString()}`;
+
+
+        const proxyUrl =
+            `${window.WORKER_URL}/api/ml/proxy?url=` +
+            `${encodeURIComponent(url)}` +
+            `&token=${encodeURIComponent(token)}`;
+
+
+        const response =
+            await fetch(
+                proxyUrl,
+                {
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        if (
+            !response.ok
+        ) {
+
+            const texto =
+                await response
+                    .text()
+                    .catch(
+                        () => ''
+                    );
+
+
+            throw new Error(
+                `Erro buscando vendas canceladas: HTTP ${response.status} ${texto}`
+            );
+        }
+
+
+        const dados =
+            await response.json();
+
+
+        const resultados =
+            Array.isArray(
+                dados?.results
+            )
+                ? dados.results
+                : [];
+
+
+        vendas.push(
+            ...resultados
+        );
+
+
+        total =
+            Number(
+                dados?.paging?.total ??
+                resultados.length
+            );
+
+
+        offset +=
+            LIMIT;
+
+
+        // =================================================
+        // PROTEÇÃO
+        // =================================================
+
+        if (
+            resultados.length ===
+            0
+        ) {
+
+            break;
+        }
+
+
+        if (
+            offset >=
+            2000
+        ) {
+
+            console.warn(
+                '⚠️ Limite de 2000 vendas canceladas atingido'
+            );
+
+            break;
+        }
+    }
+
+
+    console.log(
+        `🚫 ${vendas.length} venda(s) cancelada(s) encontradas no Mercado Livre`
+    );
+
+
+    return vendas;
+}
+
+
+// =========================================================
+// REGISTRAR ENTRADA NO HISTÓRICO DOS PRODUTOS
+// =========================================================
+
+async function registrarMovimentacoesRestauracaoCancelamentoNFE(
+    vendaId,
+    detalhesEstoque = []
+) {
+
+    if (
+        typeof window
+            .registrarMovimentacao !==
+        'function'
+    ) {
+
+        console.warn(
+            '⚠️ registrarMovimentacao não disponível para histórico da restauração'
+        );
+
+
+        return;
+    }
+
+
+    for (
+        const item
+        of (
+            Array.isArray(
+                detalhesEstoque
+            )
+                ? detalhesEstoque
+                : []
+        )
+    ) {
+
+        if (
+            !item ||
+            item.encontrado ===
+                false
+        ) {
+
+            continue;
+        }
+
+
+        const produtoId =
+            item.produto_id;
+
+
+        const quantidade =
+            Number(
+                item.quantidade_venda ||
+                0
+            );
+
+
+        if (
+            !produtoId ||
+            quantidade <=
+                0
+        ) {
+
+            continue;
+        }
+
+
+        try {
+
+            await window
+                .registrarMovimentacao(
+
+                    produtoId,
+
+                    'entrada',
+
+                    quantidade,
+
+                    `CANCELAMENTO-ML-${vendaId}`,
+
+                    'cancelamento_venda'
+                );
+
+
+            console.log(
+                `📝 Entrada registrada no histórico: ${item.sku} +${quantidade}`
+            );
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                `⚠️ Não foi possível registrar histórico da restauração ${item.sku}:`,
+                error
+            );
+        }
+    }
+}
+
+
+// =========================================================
+// RESTAURAR UMA VENDA CANCELADA
+// =========================================================
+
+async function restaurarEstoqueVendaCanceladaNFE(
+    vendaId
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (!vendaId) {
+
+        return {
+            success:
+                false,
+
+            error:
+                'Venda inválida'
+        };
+    }
+
+
+    console.log(
+        `♻️ Verificando restauração da venda cancelada ${vendaId}`
+    );
+
+
+    // =====================================================
+    // LER ESTADO ATUAL
+    // =====================================================
+
+    const {
+        data:
+            vendaCache,
+
+        error:
+            erroCache
+    } =
+        await window
+            .supabaseClient
+            .from(
+                'vendas_nfe_cache'
+            )
+            .select(`
+                id_venda_ml,
+                is_full,
+                estoque_baixado,
+                estoque_status,
+                estoque_detalhes,
+                estoque_restaurado_cancelamento,
+                estoque_restaurado_cancelamento_em
+            `)
+            .eq(
+                'id_venda_ml',
+                vendaId
+            )
+            .maybeSingle();
+
+
+    if (
+        erroCache
+    ) {
+
+        throw erroCache;
+    }
+
+
+    if (
+        !vendaCache
+    ) {
+
+        return {
+            success:
+                true,
+
+            skipped:
+                true,
+
+            motivo:
+                'Venda não está no cache'
+        };
+    }
+
+
+    // =====================================================
+    // FULL
+    // =====================================================
+
+    if (
+        vendaCache.is_full
+    ) {
+
+        await window
+            .supabaseClient
+            .from(
+                'vendas_nfe_cache'
+            )
+            .update({
+
+                venda_cancelada:
+                    true,
+
+                ml_status:
+                    'cancelled',
+
+                venda_cancelada_em:
+                    new Date()
+                        .toISOString(),
+
+                atualizado_em:
+                    new Date()
+                        .toISOString()
+            })
+            .eq(
+                'id_venda_ml',
+                vendaId
+            );
+
+
+        return {
+            success:
+                true,
+
+            full:
+                true,
+
+            skipped:
+                true
+        };
+    }
+
+
+    // =====================================================
+    // NÃO TEVE BAIXA
+    // =====================================================
+
+    if (
+        !vendaCache
+            .estoque_baixado
+    ) {
+
+        await window
+            .supabaseClient
+            .from(
+                'vendas_nfe_cache'
+            )
+            .update({
+
+                venda_cancelada:
+                    true,
+
+                ml_status:
+                    'cancelled',
+
+                venda_cancelada_em:
+                    new Date()
+                        .toISOString(),
+
+                atualizado_em:
+                    new Date()
+                        .toISOString()
+            })
+            .eq(
+                'id_venda_ml',
+                vendaId
+            );
+
+
+        return {
+            success:
+                true,
+
+            semBaixa:
+                true,
+
+            skipped:
+                true
+        };
+    }
+
+
+    // =====================================================
+    // JÁ RESTAURADA
+    // =====================================================
+
+    if (
+        vendaCache
+            .estoque_restaurado_cancelamento
+    ) {
+
+        console.log(
+            `✅ ${vendaId}: estoque já havia sido restaurado`
+        );
+
+
+        return {
+            success:
+                true,
+
+            already:
+                true,
+
+            skipped:
+                true
+        };
+    }
+
+
+    const detalhes =
+        Array.isArray(
+            vendaCache
+                .estoque_detalhes
+        )
+            ? vendaCache
+                .estoque_detalhes
+            : [];
+
+
+    // =====================================================
+    // RPC ATÔMICA
+    // =====================================================
+
+    console.log(
+        `♻️ Restaurando estoque da venda ${vendaId}...`
+    );
+
+
+    const {
+        data:
+            resultadoBruto,
+
+        error:
+            erroRPC
+    } =
+        await window
+            .supabaseClient
+            .rpc(
+                'restaurar_estoque_venda_cancelada_nfe',
+                {
+                    p_venda_id:
+                        vendaId
+                }
+            );
+
+
+    if (
+        erroRPC
+    ) {
+
+        throw erroRPC;
+    }
+
+
+    const resultado =
+        normalizarResultadoRPCBaixaNFE(
+            resultadoBruto
+        );
+
+
+    console.log(
+        '📥 Resultado restauração:',
+        resultado
+    );
+
+
+    if (
+        resultado.already ===
+        true
+    ) {
+
+        return {
+            success:
+                true,
+
+            already:
+                true,
+
+            skipped:
+                true
+        };
+    }
+
+
+    if (
+        resultado.success !==
+        true
+    ) {
+
+        throw new Error(
+            resultado.error ||
+            'A restauração não retornou success=true'
+        );
+    }
+
+
+    if (
+        resultado.restaurado ===
+        true
+    ) {
+
+        // =================================================
+        // HISTÓRICO DO PRODUTO
+        // =================================================
+
+        await registrarMovimentacoesRestauracaoCancelamentoNFE(
+            vendaId,
+            detalhes
+        );
+
+
+        // =================================================
+        // SINCRONIZAR NOVO ESTOQUE COM O MERCADO LIVRE
+        // =================================================
+
+        let sincronizado =
+            false;
+
+
+        try {
+
+            sincronizado =
+                await sincronizarProdutosBaixadosNFE(
+                    detalhes
+                );
+
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                `❌ Erro sincronizando estoque restaurado ${vendaId}:`,
+                error
+            );
+        }
+
+
+        // =================================================
+        // STATUS DA SINCRONIZAÇÃO
+        // =================================================
+
+        await window
+            .supabaseClient
+            .from(
+                'vendas_nfe_cache'
+            )
+            .update({
+
+                estoque_status:
+                    sincronizado
+                        ? 'restaurado_cancelamento'
+                        : 'restaurado_cancelamento_sync_pendente',
+
+                atualizado_em:
+                    new Date()
+                        .toISOString()
+            })
+            .eq(
+                'id_venda_ml',
+                vendaId
+            );
+
+
+        if (
+            typeof window
+                .carregarProdutosEstoque ===
+            'function'
+        ) {
+
+            try {
+
+                await window
+                    .carregarProdutosEstoque();
+
+            } catch (
+                error
+            ) {}
+        }
+
+
+        console.log(
+            `✅ ${vendaId}: estoque restaurado por cancelamento`,
+            {
+                sincronizado
+            }
+        );
+
+
+        return {
+            success:
+                true,
+
+            restaurado:
+                true,
+
+            sincronizado
+        };
+    }
+
+
+    return resultado;
+}
+
+
+// =========================================================
+// VERIFICAR TODAS AS VENDAS CANCELADAS
+// =========================================================
+
+async function verificarCancelamentosVendasNFE() {
+
+    if (
+        window
+            ._verificandoCancelamentosNFE
+    ) {
+
+        return {
+            success:
+                true,
+
+            skipped:
+                true
+        };
+    }
+
+
+    window
+        ._verificandoCancelamentosNFE =
+        true;
+
+
+    try {
+
+        console.log(
+            '🔎 Verificando vendas canceladas no Mercado Livre...'
+        );
+
+
+        // =================================================
+        // 1. BUSCAR CANCELADAS NO ML
+        // =================================================
+
+        const canceladas =
+            await buscarVendasCanceladasMLNFE(
+                180
+            );
+
+
+        if (
+            canceladas.length ===
+            0
+        ) {
+
+            return {
+                success:
+                    true,
+
+                encontradas:
+                    0,
+
+                restauradas:
+                    0
+            };
+        }
+
+
+        // =================================================
+        // 2. IDs CANCELADOS
+        // =================================================
+
+        const mapaCanceladas =
+            new Map();
+
+
+        canceladas.forEach(
+            venda => {
+
+                const id =
+                    normalizarOrderIdML(
+                        venda.id
+                    );
+
+
+                if (
+                    id
+                ) {
+
+                    mapaCanceladas.set(
+                        id,
+                        venda
+                    );
+                }
+            }
+        );
+
+
+        const idsCancelados =
+            Array.from(
+                mapaCanceladas.keys()
+            );
+
+
+        let restauradas =
+            0;
+
+
+        let marcadas =
+            0;
+
+
+        // =================================================
+        // 3. PROCESSAR EM LOTES
+        // =================================================
+
+        const TAMANHO_LOTE =
+            100;
+
+
+        for (
+            let i = 0;
+            i < idsCancelados.length;
+            i += TAMANHO_LOTE
+        ) {
+
+            const lote =
+                idsCancelados.slice(
+                    i,
+                    i +
+                        TAMANHO_LOTE
+                );
+
+
+            const {
+                data:
+                    registros,
+
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'vendas_nfe_cache'
+                    )
+                    .select(`
+                        id_venda_ml,
+                        is_full,
+                        estoque_baixado,
+                        estoque_status,
+                        estoque_detalhes,
+                        venda_cancelada,
+                        estoque_restaurado_cancelamento
+                    `)
+                    .in(
+                        'id_venda_ml',
+                        lote
+                    );
+
+
+            if (
+                error
+            ) {
+
+                throw error;
+            }
+
+
+            for (
+                const registro
+                of (
+                    registros ||
+                    []
+                )
+            ) {
+
+                const vendaId =
+                    normalizarOrderIdML(
+                        registro
+                            .id_venda_ml
+                    );
+
+
+                if (
+                    !vendaId
+                ) {
+
+                    continue;
+                }
+
+
+                const vendaML =
+                    mapaCanceladas.get(
+                        vendaId
+                    );
+
+
+                // =========================================
+                // MARCAR CANCELADA MESMO SEM BAIXA
+                // =========================================
+
+                if (
+                    !registro
+                        .venda_cancelada
+                ) {
+
+                    await window
+                        .supabaseClient
+                        .from(
+                            'vendas_nfe_cache'
+                        )
+                        .update({
+
+                            ml_status:
+                                'cancelled',
+
+                            venda_cancelada:
+                                true,
+
+                            venda_cancelada_em:
+                                vendaML
+                                    ?.date_closed ||
+                                vendaML
+                                    ?.date_last_updated ||
+                                new Date()
+                                    .toISOString(),
+
+                            atualizado_em:
+                                new Date()
+                                    .toISOString()
+                        })
+                        .eq(
+                            'id_venda_ml',
+                            vendaId
+                        );
+
+
+                    marcadas++;
+                }
+
+
+                // =========================================
+                // RESTAURAR SOMENTE SE:
+                //
+                // - NÃO FULL
+                // - JÁ TEVE BAIXA
+                // - AINDA NÃO RESTAURAMOS
+                // =========================================
+
+                if (
+                    registro.is_full ||
+                    !registro
+                        .estoque_baixado ||
+                    registro
+                        .estoque_restaurado_cancelamento
+                ) {
+
+                    continue;
+                }
+
+
+                try {
+
+                    const resultado =
+                        await restaurarEstoqueVendaCanceladaNFE(
+                            vendaId
+                        );
+
+
+                    if (
+                        resultado
+                            ?.restaurado
+                    ) {
+
+                        restauradas++;
+                    }
+
+
+                } catch (
+                    error
+                ) {
+
+                    console.error(
+                        `❌ Falha restaurando venda cancelada ${vendaId}:`,
+                        error
+                    );
+                }
+            }
+        }
+
+
+        if (
+            restauradas >
+            0
+        ) {
+
+            showToast(
+                `♻️ ${restauradas} venda(s) cancelada(s): estoque restaurado automaticamente.`,
+                'success'
+            );
+        }
+
+
+        console.log(
+            '✅ Verificação de cancelamentos concluída:',
+            {
+                canceladasML:
+                    canceladas.length,
+
+                marcadas,
+
+                restauradas
+            }
+        );
+
+
+        return {
+            success:
+                true,
+
+            encontradas:
+                canceladas.length,
+
+            marcadas,
+
+            restauradas
+        };
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro verificando cancelamentos:',
+            error
+        );
+
+
+        return {
+            success:
+                false,
+
+            error:
+                error.message
+        };
+
+
+    } finally {
+
+        window
+            ._verificandoCancelamentosNFE =
+            false;
+    }
+}
+
+
+// =========================================================
+// EXPORTAR
+// =========================================================
+
+window.buscarVendasCanceladasMLNFE =
+    buscarVendasCanceladasMLNFE;
+
+window.restaurarEstoqueVendaCanceladaNFE =
+    restaurarEstoqueVendaCanceladaNFE;
+
+window.verificarCancelamentosVendasNFE =
+    verificarCancelamentosVendasNFE;
+
 function renderizarVendasNFETabela(
     vendas
 ) {
@@ -17768,6 +18837,82 @@ if (
                 `;
             }
 
+            // =============================================
+// VENDA CANCELADA / ESTOQUE RESTAURADO
+// =============================================
+
+if (
+    venda
+        ._estoque_restaurado_cancelamento ||
+    venda
+        ._estoque_status ===
+        'restaurado_cancelamento' ||
+    venda
+        ._estoque_status ===
+        'restaurado_cancelamento_sync_pendente'
+) {
+
+    const syncPendente =
+        venda
+            ._estoque_status ===
+        'restaurado_cancelamento_sync_pendente';
+
+
+    return `
+
+        <div>
+
+            <span
+                style="
+                    display:inline-block;
+                    background:#17a2b8;
+                    color:white;
+                    padding:4px 8px;
+                    border-radius:5px;
+                    font-size:11px;
+                    font-weight:600;
+                    white-space:nowrap;
+                "
+            >
+                <i class="fas fa-undo-alt"></i>
+                Estoque restaurado
+            </span>
+
+
+            <div
+                style="
+                    color:#dc3545;
+                    font-size:10px;
+                    font-weight:600;
+                    margin-top:4px;
+                "
+            >
+                Venda cancelada
+            </div>
+
+
+            ${
+                syncPendente
+
+                    ? `
+                        <div
+                            style="
+                                color:#856404;
+                                font-size:9px;
+                                margin-top:3px;
+                            "
+                        >
+                            ⚠️ Sync ML pendente
+                        </div>
+                    `
+
+                    : ''
+            }
+
+        </div>
+    `;
+}
+
 
             // =============================================
             // BAIXADO
@@ -18274,6 +19419,7 @@ if (
                                 <strong>
                                     ${escaparHTMLNFE(vendaId)}
                                 </strong>
+                                
                                     <div
                                             style="
                                                 color:#6c757d;
@@ -20309,6 +21455,42 @@ async function carregarVendasCacheNFE(
                                 .tem_nfe
                         ),
 
+                        // =============================================
+// CANCELAMENTO
+// =============================================
+
+_ml_status:
+    registro.ml_status ||
+    venda.status ||
+    '',
+
+_venda_cancelada:
+    Boolean(
+        registro.venda_cancelada
+    ),
+
+_venda_cancelada_em:
+    registro.venda_cancelada_em ||
+    null,
+
+_estoque_restaurado_cancelamento:
+    Boolean(
+        registro.estoque_restaurado_cancelamento
+    ),
+
+_estoque_restaurado_cancelamento_em:
+    registro.estoque_restaurado_cancelamento_em ||
+    null,
+
+
+// =============================================
+// ESTOQUE
+// =============================================
+
+_estoque_status:
+    registro.estoque_status ||
+    'nao_verificado',
+
 
                     // =============================================
                     // ESTOQUE
@@ -21662,6 +22844,51 @@ async function carregarVendasPendentes(
 
     renderizarVendasNFETabela(
         vendasCache
+    );
+
+    // =====================================================
+// VERIFICAR CANCELAMENTOS EM SEGUNDO PLANO
+// =====================================================
+
+verificarCancelamentosVendasNFE()
+    .then(
+        async resultado => {
+
+            if (
+                resultado
+                    ?.restauradas >
+                0 ||
+                resultado
+                    ?.marcadas >
+                0
+            ) {
+
+                const vendasAtualizadas =
+                    window._nfeFiltroTodas
+
+                        ? await carregarVendasCacheNFE(
+                            null
+                        )
+
+                        : await carregarVendasCacheNFE(
+                            dataSelecionada
+                        );
+
+
+                renderizarVendasNFETabela(
+                    vendasAtualizadas
+                );
+            }
+        }
+    )
+    .catch(
+        error => {
+
+            console.warn(
+                '⚠️ Verificação automática de cancelamentos:',
+                error
+            );
+        }
     );
 
     // =====================================================
