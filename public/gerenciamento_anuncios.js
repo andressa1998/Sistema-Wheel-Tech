@@ -816,38 +816,72 @@
 
 
     function warehouseStock(
-        sku,
-        itemId
-    ) {
+    sku,
+    itemId
+) {
 
-        // ========================================================
-        // PRIMEIRO TENTAR PELO SKU
-        // ========================================================
+    // =========================================================
+    // RETORNO DESTA FUNÇÃO:
+    //
+    // NÃO é o estoque físico bruto.
+    //
+    // É quantas UNIDADES DO ANÚNCIO conseguimos vender
+    // considerando a quantidade informada nos 3 primeiros
+    // caracteres de cada SKU.
+    //
+    // Exemplo:
+    //
+    // anúncio:
+    // 00300807PARTITM5x12ABNT
+    //
+    // produto:
+    // 00807PARTITM5x12ABNT
+    //
+    // estoque físico = 8
+    //
+    // 8 / 3 = 2 unidades possíveis do anúncio
+    // =========================================================
 
-        if (sku) {
 
-            const partes =
-                String(
-                    sku
+    if (sku) {
+
+        // =====================================================
+        // KIT
+        //
+        // Exemplo:
+        //
+        // 002ABC12345.001DEF67890
+        //
+        // significa:
+        //
+        // 2 x ABC12345
+        // 1 x DEF67890
+        // =====================================================
+
+        const partes =
+            String(
+                sku
+            )
+                .split('.')
+                .map(
+                    parte =>
+                        String(
+                            parte
+                        ).trim()
                 )
-                    .split(
-                        '.'
-                    )
-                    .map(
-                        valor =>
-                            valor.trim()
-                    )
-                    .filter(
-                        Boolean
-                    );
+                .filter(Boolean);
 
+
+        if (
+            partes.length
+        ) {
 
             let quantidadePossivel =
                 Infinity;
 
 
-            let encontrouTodos =
-                true;
+            let algumProdutoNaoEncontrado =
+                false;
 
 
             for (
@@ -855,115 +889,181 @@
                 of partes
             ) {
 
+                // =============================================
+                // PEGAR QUANTIDADE DOS 3 PRIMEIROS DÍGITOS
+                // =============================================
+
                 const match =
                     parte.match(
                         /^(\d{3})(.+)$/
                     );
 
 
-                const quantidadePorKit =
-                    match
-
-                        ? Math.max(
-                            1,
-                            parseInt(
-                                match[1],
-                                10
-                            ) ||
-                            1
-                        )
-
-                        : 1;
+                let quantidadePorVenda =
+                    1;
 
 
-                const skuReal =
-                    match
-                        ? match[2]
-                        : parte;
+                let skuProduto =
+                    parte;
+
+
+                if (match) {
+
+                    quantidadePorVenda =
+                        parseInt(
+                            match[1],
+                            10
+                        );
+
+
+                    if (
+                        !Number.isFinite(
+                            quantidadePorVenda
+                        ) ||
+                        quantidadePorVenda <= 0
+                    ) {
+
+                        quantidadePorVenda =
+                            1;
+                    }
+
+
+                    skuProduto =
+                        match[2];
+                }
+
+
+                // =============================================
+                // ENCONTRAR O PRODUTO NO ESTOQUE
+                // =============================================
+
+                const skuBusca =
+                    skuBase(
+                        skuProduto
+                    );
 
 
                 const produto =
                     GA.productBySku.get(
-                        skuBase(
-                            skuReal
-                        )
+                        skuBusca
                     );
 
 
                 if (!produto) {
 
-                    encontrouTodos =
-                        false;
+                    algumProdutoNaoEncontrado =
+                        true;
 
-                    break;
+
+                    console.warn(
+                        '⚠️ Produto do anúncio não encontrado no estoque interno:',
+                        {
+                            itemId:
+                                itemId,
+
+                            skuAnuncio:
+                                sku,
+
+                            parte:
+                                parte,
+
+                            skuProduto:
+                                skuProduto,
+
+                            skuBusca:
+                                skuBusca
+                        }
+                    );
+
+
+                    continue;
                 }
 
 
-                const estoqueAtual =
+                // =============================================
+                // ESTOQUE FÍSICO
+                // =============================================
+
+                const estoqueFisico =
                     Number(
                         produto.quantidade
-                    ) ||
-                    0;
+                    ) || 0;
 
 
-                const kitsPossiveis =
+                // =============================================
+                // QUANTIDADE DE ANÚNCIOS POSSÍVEIS
+                //
+                // Exemplo:
+                //
+                // estoque = 8
+                // anúncio exige 3
+                //
+                // floor(8 / 3) = 2
+                // =============================================
+
+                const unidadesAnuncioPossiveis =
                     Math.floor(
-                        estoqueAtual /
-                        quantidadePorKit
+                        estoqueFisico /
+                        quantidadePorVenda
                     );
 
 
                 quantidadePossivel =
                     Math.min(
                         quantidadePossivel,
-                        kitsPossiveis
+                        unidadesAnuncioPossiveis
                     );
             }
 
 
+            // =================================================
+            // SÓ RETORNAR SE ENCONTROU TODOS OS COMPONENTES
+            // =================================================
+
             if (
-                encontrouTodos &&
-                partes.length >
-                    0 &&
+                !algumProdutoNaoEncontrado &&
                 Number.isFinite(
                     quantidadePossivel
                 )
             ) {
 
-                return quantidadePossivel;
+                return Math.max(
+                    0,
+                    quantidadePossivel
+                );
             }
         }
-
-
-        // ========================================================
-        // FALLBACK POR MLB
-        // ========================================================
-
-        const produtosMlb =
-            GA.productsByMlb.get(
-                String(
-                    itemId ||
-                    ''
-                ).toUpperCase()
-            ) ||
-            [];
-
-
-        if (
-            produtosMlb.length ===
-            1
-        ) {
-
-            return Number(
-                produtosMlb[0]
-                    .quantidade
-            ) ||
-            0;
-        }
-
-
-        return null;
     }
+
+
+    // =========================================================
+    // FALLBACK POR MLB
+    //
+    // Só usar quando houver exatamente um produto associado.
+    // =========================================================
+
+    const produtosMlb =
+        GA.productsByMlb.get(
+            String(
+                itemId || ''
+            ).toUpperCase()
+        ) || [];
+
+
+    if (
+        produtosMlb.length === 1
+    ) {
+
+        return Number(
+            produtosMlb[0]
+                .quantidade
+        ) || 0;
+    }
+
+
+    // Não conseguimos determinar com segurança.
+    return null;
+}
 
 
     function skuInternoPorMlb(
@@ -8317,9 +8417,7 @@ function gaPrecisaCorrigirEstoqueDeposito(
 ) {
 
     // =========================================================
-    // PRECISAMOS TER UMA RESPOSTA REAL DO MERCADO LIVRE
-    //
-    // null / undefined significa que ainda não consultamos.
+    // PRECISAMOS TER ESTOQUE DO MERCADO LIVRE CONSULTADO
     // =========================================================
 
     if (
@@ -8331,13 +8429,40 @@ function gaPrecisaCorrigirEstoqueDeposito(
     }
 
 
-    const estoqueDeposito =
+    const depositoML =
         Number(
             row.warehouse
         );
 
 
-    const estoqueInterno =
+    if (
+        !Number.isFinite(
+            depositoML
+        )
+    ) {
+
+        return false;
+    }
+
+
+    // Só interessa depósito zerado.
+    if (
+        depositoML !== 0
+    ) {
+
+        return false;
+    }
+
+
+    // =========================================================
+    // internalWarehouse =
+    //
+    // QUANTAS UNIDADES DO ANÚNCIO CONSEGUIMOS MONTAR
+    //
+    // e não simplesmente estoque físico.
+    // =========================================================
+
+    const unidadesPossiveis =
         Number(
             row.internalWarehouse
         );
@@ -8345,7 +8470,7 @@ function gaPrecisaCorrigirEstoqueDeposito(
 
     if (
         !Number.isFinite(
-            estoqueDeposito
+            unidadesPossiveis
         )
     ) {
 
@@ -8353,19 +8478,12 @@ function gaPrecisaCorrigirEstoqueDeposito(
     }
 
 
-    if (
-        !Number.isFinite(
-            estoqueInterno
-        )
-    ) {
-
-        return false;
-    }
-
+    // =========================================================
+    // SÓ AVISAR SE DÁ PARA VENDER PELO MENOS 1
+    // =========================================================
 
     return (
-        estoqueDeposito === 0 &&
-        estoqueInterno > 0
+        unidadesPossiveis >= 1
     );
 }
 
