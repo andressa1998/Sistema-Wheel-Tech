@@ -5882,6 +5882,682 @@ function detectarVendaFullNFE(venda) {
     );
 }
 
+// =========================================================
+// COLUNAS PERSONALIZÁVEIS - TABELA DE VENDAS NF-E
+// =========================================================
+//
+// IMPORTANTE:
+//
+// A ordem aqui deve ser a MESMA ordem das colunas da tabela.
+//
+// Quando você criar uma coluna nova futuramente,
+// basta adicioná-la nesta lista e na tabela.
+//
+// Colunas novas ficam VISÍVEIS por padrão.
+// =========================================================
+
+const COLUNAS_VENDAS_NFE = [
+
+    {
+        id: 'venda',
+        nome: 'Venda'
+    },
+
+    {
+        id: 'envio',
+        nome: 'Envio'
+    },
+
+    {
+        id: 'cliente',
+        nome: 'Cliente'
+    },
+
+    {
+        id: 'sku',
+        nome: 'SKU'
+    },
+
+    {
+        id: 'valor',
+        nome: 'Valor'
+    },
+
+    {
+        id: 'pagamento',
+        nome: 'Pagamento'
+    },
+
+    {
+        id: 'modalidade',
+        nome: 'Modalidade'
+    },
+
+    {
+        id: 'nfe',
+        nome: 'NF-e'
+    },
+
+    {
+        id: 'estoque',
+        nome: 'Estoque'
+    },
+
+    {
+        id: 'acoes',
+        nome: 'Ações'
+    }
+];
+
+
+// =========================================================
+// IDENTIFICAR USUÁRIO
+// =========================================================
+
+function obterUsuarioPreferenciasColunasNFE() {
+
+    // =====================================================
+    // PRIMEIRA OPÇÃO:
+    // USUÁRIO ATUAL DO SISTEMA
+    // =====================================================
+
+    if (
+        window.currentUser?.username
+    ) {
+
+        return String(
+            window.currentUser.username
+        )
+            .trim()
+            .toLowerCase();
+    }
+
+
+    // =====================================================
+    // FALLBACK:
+    // USUÁRIO SALVO NA SESSÃO
+    // =====================================================
+
+    try {
+
+        const usuarioSalvo =
+            JSON.parse(
+                localStorage.getItem(
+                    'wheeltech_user'
+                ) ||
+                'null'
+            );
+
+
+        if (
+            usuarioSalvo?.username
+        ) {
+
+            return String(
+                usuarioSalvo.username
+            )
+                .trim()
+                .toLowerCase();
+        }
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Não foi possível identificar usuário para preferências NF-e:',
+            error
+        );
+    }
+
+
+    return 'padrao';
+}
+
+
+// =========================================================
+// CHAVE DO LOCALSTORAGE
+// =========================================================
+
+function obterChavePreferenciasColunasNFE() {
+
+    const usuario =
+        obterUsuarioPreferenciasColunasNFE();
+
+
+    return (
+        `wheeltech_nfe_colunas_ocultas_${usuario}`
+    );
+}
+
+
+// =========================================================
+// CARREGAR COLUNAS OCULTAS
+// =========================================================
+
+function carregarColunasOcultasNFE() {
+
+    try {
+
+        const chave =
+            obterChavePreferenciasColunasNFE();
+
+
+        const salvo =
+            localStorage.getItem(
+                chave
+            );
+
+
+        if (!salvo) {
+
+            return new Set();
+        }
+
+
+        const lista =
+            JSON.parse(
+                salvo
+            );
+
+
+        if (
+            !Array.isArray(
+                lista
+            )
+        ) {
+
+            return new Set();
+        }
+
+
+        // =================================================
+        // DESCARTAR COLUNAS QUE NÃO EXISTEM MAIS
+        // =================================================
+
+        const idsValidos =
+            new Set(
+                COLUNAS_VENDAS_NFE.map(
+                    coluna =>
+                        coluna.id
+                )
+            );
+
+
+        return new Set(
+            lista.filter(
+                id =>
+                    idsValidos.has(
+                        id
+                    )
+            )
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro carregando preferência de colunas:',
+            error
+        );
+
+
+        return new Set();
+    }
+}
+
+
+// =========================================================
+// SALVAR COLUNAS OCULTAS
+// =========================================================
+
+function salvarColunasOcultasNFE(
+    colunasOcultas
+) {
+
+    try {
+
+        const chave =
+            obterChavePreferenciasColunasNFE();
+
+
+        localStorage.setItem(
+            chave,
+            JSON.stringify(
+                Array.from(
+                    colunasOcultas
+                )
+            )
+        );
+
+
+        console.log(
+            '💾 Preferências de colunas NF-e salvas:',
+            {
+                usuario:
+                    obterUsuarioPreferenciasColunasNFE(),
+
+                ocultas:
+                    Array.from(
+                        colunasOcultas
+                    )
+            }
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro salvando preferência de colunas:',
+            error
+        );
+    }
+}
+
+
+// =========================================================
+// QUANTIDADE VISÍVEL
+// =========================================================
+
+function obterQuantidadeColunasVisiveisNFE() {
+
+    const ocultas =
+        carregarColunasOcultasNFE();
+
+
+    const quantidade =
+        COLUNAS_VENDAS_NFE.filter(
+            coluna =>
+                !ocultas.has(
+                    coluna.id
+                )
+        ).length;
+
+
+    return Math.max(
+        1,
+        quantidade
+    );
+}
+
+
+// =========================================================
+// APLICAR PREFERÊNCIAS NA TABELA
+// =========================================================
+
+function aplicarPreferenciasColunasNFE() {
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
+
+
+    if (!tbody) {
+
+        return;
+    }
+
+
+    const tabela =
+        tbody.closest(
+            'table'
+        );
+
+
+    if (!tabela) {
+
+        return;
+    }
+
+
+    const ocultas =
+        carregarColunasOcultasNFE();
+
+
+    // =====================================================
+    // CABEÇALHO
+    // =====================================================
+
+    const headers =
+        tabela.querySelectorAll(
+            'thead tr th'
+        );
+
+
+    COLUNAS_VENDAS_NFE.forEach(
+        (
+            coluna,
+            index
+        ) => {
+
+            const th =
+                headers[
+                    index
+                ];
+
+
+            if (!th) {
+
+                return;
+            }
+
+
+            th.dataset.colunaNfe =
+                coluna.id;
+
+
+            th.style.display =
+                ocultas.has(
+                    coluna.id
+                )
+                    ? 'none'
+                    : '';
+        }
+    );
+
+
+    // =====================================================
+    // LINHAS DA TABELA
+    // =====================================================
+
+    tbody
+        .querySelectorAll(
+            'tr'
+        )
+        .forEach(
+            tr => {
+
+                const cells =
+                    tr.querySelectorAll(
+                        ':scope > td'
+                    );
+
+
+                // =============================================
+                // Linha normal possui todas as colunas.
+                //
+                // Linha de "Nenhuma venda encontrada" possui
+                // somente um TD com colspan e é ignorada aqui.
+                // =============================================
+
+                if (
+                    cells.length !==
+                    COLUNAS_VENDAS_NFE.length
+                ) {
+
+                    return;
+                }
+
+
+                COLUNAS_VENDAS_NFE.forEach(
+                    (
+                        coluna,
+                        index
+                    ) => {
+
+                        const td =
+                            cells[
+                                index
+                            ];
+
+
+                        if (!td) {
+
+                            return;
+                        }
+
+
+                        td.dataset.colunaNfe =
+                            coluna.id;
+
+
+                        td.style.display =
+                            ocultas.has(
+                                coluna.id
+                            )
+                                ? 'none'
+                                : '';
+                    }
+                );
+            }
+        );
+
+
+    // =====================================================
+    // ATUALIZAR CHECKBOXES
+    // =====================================================
+
+    document
+        .querySelectorAll(
+            '#painelColunasNFE input[data-coluna-nfe]'
+        )
+        .forEach(
+            checkbox => {
+
+                const id =
+                    checkbox.dataset
+                        .colunaNfe;
+
+
+                checkbox.checked =
+                    !ocultas.has(
+                        id
+                    );
+            }
+        );
+
+
+    // =====================================================
+    // CONTADOR NO BOTÃO
+    // =====================================================
+
+    const botao =
+        document.getElementById(
+            'btnConfigColunasNFE'
+        );
+
+
+    if (botao) {
+
+        const visiveis =
+            COLUNAS_VENDAS_NFE.length -
+            ocultas.size;
+
+
+        botao.innerHTML = `
+            <i class="fas fa-columns"></i>
+            Colunas
+            <span
+                style="
+                    background:rgba(255,255,255,.25);
+                    padding:2px 6px;
+                    border-radius:10px;
+                    font-size:10px;
+                "
+            >
+                ${visiveis}/${COLUNAS_VENDAS_NFE.length}
+            </span>
+        `;
+    }
+}
+
+
+// =========================================================
+// MOSTRAR / ESCONDER UMA COLUNA
+// =========================================================
+
+function alterarVisibilidadeColunaNFE(
+    colunaId,
+    visivel
+) {
+
+    const ocultas =
+        carregarColunasOcultasNFE();
+
+
+    if (
+        visivel
+    ) {
+
+        ocultas.delete(
+            colunaId
+        );
+
+    } else {
+
+        ocultas.add(
+            colunaId
+        );
+    }
+
+
+    salvarColunasOcultasNFE(
+        ocultas
+    );
+
+
+    aplicarPreferenciasColunasNFE();
+}
+
+
+// =========================================================
+// MOSTRAR TODAS
+// =========================================================
+
+function mostrarTodasColunasNFE() {
+
+    salvarColunasOcultasNFE(
+        new Set()
+    );
+
+
+    aplicarPreferenciasColunasNFE();
+}
+
+
+// =========================================================
+// OCULTAR TODAS
+// =========================================================
+
+function ocultarTodasColunasNFE() {
+
+    const ocultas =
+        new Set(
+            COLUNAS_VENDAS_NFE.map(
+                coluna =>
+                    coluna.id
+            )
+        );
+
+
+    salvarColunasOcultasNFE(
+        ocultas
+    );
+
+
+    aplicarPreferenciasColunasNFE();
+}
+
+
+// =========================================================
+// RESTAURAR PADRÃO
+// =========================================================
+
+function restaurarColunasPadraoNFE() {
+
+    try {
+
+        localStorage.removeItem(
+            obterChavePreferenciasColunasNFE()
+        );
+
+
+        aplicarPreferenciasColunasNFE();
+
+
+        showToast(
+            '✅ Colunas restauradas para o padrão.',
+            'success'
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            error
+        );
+    }
+}
+
+
+// =========================================================
+// ABRIR / FECHAR PAINEL
+// =========================================================
+
+function alternarPainelColunasNFE() {
+
+    const painel =
+        document.getElementById(
+            'painelColunasNFE'
+        );
+
+
+    if (!painel) {
+
+        return;
+    }
+
+
+    const aberto =
+        painel.style.display ===
+        'block';
+
+
+    painel.style.display =
+        aberto
+            ? 'none'
+            : 'block';
+
+
+    if (
+        !aberto
+    ) {
+
+        aplicarPreferenciasColunasNFE();
+    }
+}
+
+
+// =========================================================
+// EXPORTAR
+// =========================================================
+
+window.alterarVisibilidadeColunaNFE =
+    alterarVisibilidadeColunaNFE;
+
+window.mostrarTodasColunasNFE =
+    mostrarTodasColunasNFE;
+
+window.ocultarTodasColunasNFE =
+    ocultarTodasColunasNFE;
+
+window.restaurarColunasPadraoNFE =
+    restaurarColunasPadraoNFE;
+
+window.alternarPainelColunasNFE =
+    alternarPainelColunasNFE;
+
+window.aplicarPreferenciasColunasNFE =
+    aplicarPreferenciasColunasNFE;
+
 function garantirControlesVendasNFE() {
 
     const tbody =
@@ -5889,18 +6565,24 @@ function garantirControlesVendasNFE() {
             'vendasPendentesBody'
         );
 
+
     if (!tbody) {
+
         return;
     }
+
 
     const tabela =
         tbody.closest(
             'table'
         );
 
+
     if (!tabela) {
+
         return;
     }
+
 
     // =====================================================
     // CABEÇALHO
@@ -5911,38 +6593,63 @@ function garantirControlesVendasNFE() {
             'thead tr'
         );
 
-    if (header) {
-
-        header.innerHTML = `
-            <th>Venda</th>
-            <th>Envio</th>
-            <th>Cliente</th>
-            <th>SKU</th>
-            <th>Valor</th>
-            <th>Pagamento</th>
-            <th>Modalidade</th>
-            <th>NF-e</th>
-            <th>Estoque</th>
-            <th>Ações</th>
-        `;
-    }
 
     if (
+        header
+    ) {
+
+        header.innerHTML =
+            COLUNAS_VENDAS_NFE
+                .map(
+                    coluna => `
+                        <th
+                            data-coluna-nfe="${coluna.id}"
+                        >
+                            ${escaparHTMLNFE(
+                                coluna.nome
+                            )}
+                        </th>
+                    `
+                )
+                .join(
+                    ''
+                );
+    }
+
+
+    // =====================================================
+    // CONTROLES JÁ EXISTEM
+    // =====================================================
+
+    const controlesExistentes =
         document.getElementById(
             'controlesVendasNFE'
-        )
+        );
+
+
+    if (
+        controlesExistentes
     ) {
+
+        aplicarPreferenciasColunasNFE();
 
         return;
     }
+
+
+    // =====================================================
+    // CRIAR CONTAINER
+    // =====================================================
 
     const container =
         document.createElement(
             'div'
         );
 
+
     container.id =
         'controlesVendasNFE';
+
 
     container.style.cssText = `
         display:flex;
@@ -5954,7 +6661,67 @@ function garantirControlesVendasNFE() {
         background:#f8f9fa;
         border:1px solid #e2e6ea;
         border-radius:8px;
+        position:relative;
     `;
+
+
+    // =====================================================
+    // CHECKBOXES
+    // =====================================================
+
+    const htmlColunas =
+        COLUNAS_VENDAS_NFE
+            .map(
+                coluna => `
+
+                    <label
+                        style="
+                            display:flex;
+                            align-items:center;
+                            gap:7px;
+                            padding:7px 8px;
+                            border-radius:5px;
+                            cursor:pointer;
+                            font-size:12px;
+                            margin:0;
+                        "
+                        onmouseenter="
+                            this.style.background='#f1f3f5'
+                        "
+                        onmouseleave="
+                            this.style.background=''
+                        "
+                    >
+
+                        <input
+                            type="checkbox"
+                            data-coluna-nfe="${coluna.id}"
+                            onchange="
+                                alterarVisibilidadeColunaNFE(
+                                    '${coluna.id}',
+                                    this.checked
+                                )
+                            "
+                            style="
+                                width:16px;
+                                height:16px;
+                                cursor:pointer;
+                            "
+                        >
+
+                        <span>
+                            ${escaparHTMLNFE(
+                                coluna.nome
+                            )}
+                        </span>
+
+                    </label>
+                `
+            )
+            .join(
+                ''
+            );
+
 
     container.innerHTML = `
 
@@ -6000,6 +6767,137 @@ function garantirControlesVendasNFE() {
         </button>
 
 
+        <!-- =============================================== -->
+        <!-- CONFIGURAÇÃO DE COLUNAS -->
+        <!-- =============================================== -->
+
+        <div
+            style="
+                position:relative;
+            "
+        >
+
+            <button
+                type="button"
+                class="btn btn-secondary"
+                id="btnConfigColunasNFE"
+                onclick="
+                    event.stopPropagation();
+                    alternarPainelColunasNFE();
+                "
+            >
+                <i class="fas fa-columns"></i>
+                Colunas
+            </button>
+
+
+            <div
+                id="painelColunasNFE"
+                onclick="
+                    event.stopPropagation();
+                "
+                style="
+                    display:none;
+                    position:absolute;
+                    top:calc(100% + 7px);
+                    right:0;
+                    width:260px;
+                    background:white;
+                    border:1px solid #dee2e6;
+                    border-radius:10px;
+                    box-shadow:0 8px 25px rgba(0,0,0,.18);
+                    padding:12px;
+                    z-index:9999;
+                "
+            >
+
+                <div
+                    style="
+                        font-weight:700;
+                        font-size:13px;
+                        margin-bottom:4px;
+                    "
+                >
+                    Colunas visíveis
+                </div>
+
+
+                <div
+                    style="
+                        color:#6c757d;
+                        font-size:10px;
+                        margin-bottom:10px;
+                    "
+                >
+                    Esta configuração é individual para seu usuário.
+                </div>
+
+
+                <div
+                    style="
+                        max-height:320px;
+                        overflow-y:auto;
+                    "
+                >
+
+                    ${htmlColunas}
+
+                </div>
+
+
+                <div
+                    style="
+                        border-top:1px solid #e9ecef;
+                        margin-top:10px;
+                        padding-top:10px;
+                        display:flex;
+                        flex-wrap:wrap;
+                        gap:5px;
+                    "
+                >
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-primary"
+                        onclick="
+                            mostrarTodasColunasNFE()
+                        "
+                    >
+                        <i class="fas fa-eye"></i>
+                        Todas
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-secondary"
+                        onclick="
+                            ocultarTodasColunasNFE()
+                        "
+                    >
+                        <i class="fas fa-eye-slash"></i>
+                        Nenhuma
+                    </button>
+
+
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-warning"
+                        onclick="
+                            restaurarColunasPadraoNFE()
+                        "
+                    >
+                        <i class="fas fa-undo"></i>
+                        Padrão
+                    </button>
+
+                </div>
+
+            </div>
+
+        </div>
+
+
         <span
             id="statusAtualizacaoNFE"
             style="
@@ -6009,8 +6907,14 @@ function garantirControlesVendasNFE() {
         ></span>
     `;
 
+
+    // =====================================================
+    // INSERIR ANTES DA TABELA
+    // =====================================================
+
     const wrapper =
         tabela.parentElement;
+
 
     wrapper.parentElement
         .insertBefore(
@@ -6018,25 +6922,43 @@ function garantirControlesVendasNFE() {
             wrapper
         );
 
+
+    // =====================================================
+    // DATA PADRÃO
+    // =====================================================
+
     const input =
         document.getElementById(
             'filtroDataEnvioNFE'
         );
 
-    input.value =
-        obterDataHojeLocal();
 
-    input.addEventListener(
-        'change',
-        async () => {
+    if (
+        input
+    ) {
 
-            window
-                ._nfeFiltroTodas =
-                false;
+        input.value =
+            obterDataHojeLocal();
 
-            await atualizarVendasDataSelecionada();
-        }
-    );
+
+        input.addEventListener(
+            'change',
+            async () => {
+
+                window
+                    ._nfeFiltroTodas =
+                    false;
+
+
+                await atualizarVendasDataSelecionada();
+            }
+        );
+    }
+
+
+    // =====================================================
+    // ATUALIZAR DATA
+    // =====================================================
 
     document
         .getElementById(
@@ -6047,6 +6969,11 @@ function garantirControlesVendasNFE() {
             atualizarVendasDataSelecionada
         );
 
+
+    // =====================================================
+    // TODAS SALVAS
+    // =====================================================
+
     document
         .getElementById(
             'btnTodasVendasNFE'
@@ -6055,6 +6982,71 @@ function garantirControlesVendasNFE() {
             'click',
             mostrarTodasVendasCacheNFE
         );
+
+
+    // =====================================================
+    // FECHAR MENU AO CLICAR FORA
+    // =====================================================
+
+    if (
+        !window._listenerColunasNFEInstalado
+    ) {
+
+        window._listenerColunasNFEInstalado =
+            true;
+
+
+        document.addEventListener(
+            'click',
+            event => {
+
+                const painel =
+                    document.getElementById(
+                        'painelColunasNFE'
+                    );
+
+
+                const botao =
+                    document.getElementById(
+                        'btnConfigColunasNFE'
+                    );
+
+
+                if (
+                    !painel ||
+                    painel.style.display !==
+                        'block'
+                ) {
+
+                    return;
+                }
+
+
+                if (
+                    painel.contains(
+                        event.target
+                    ) ||
+                    botao?.contains(
+                        event.target
+                    )
+                ) {
+
+                    return;
+                }
+
+
+                painel.style.display =
+                    'none';
+            }
+        );
+    }
+
+
+    // =====================================================
+    // APLICAR CONFIGURAÇÃO DO USUÁRIO
+    // =====================================================
+
+    aplicarPreferenciasColunasNFE();
 }
 
 async function mostrarTodasVendasCacheNFE() {
@@ -12796,7 +13788,7 @@ function renderizarVendasNFETabela(
         tbody.innerHTML = `
             <tr>
                 <td
-                    colspan="10"
+                    colspan="${obterQuantidadeColunasVisiveisNFE()}"
                     class="text-center py-4"
                 >
                     Nenhuma venda encontrada para esta data.
@@ -14197,6 +15189,12 @@ function renderizarVendasNFETabela(
                 }
             )
             .join('');
+
+            // =====================================================
+            // APLICAR COLUNAS ESCOLHIDAS PELO USUÁRIO
+            // =====================================================
+
+            aplicarPreferenciasColunasNFE();
 
 
     // =====================================================
