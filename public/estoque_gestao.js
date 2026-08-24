@@ -2045,65 +2045,935 @@ function fecharModalCategorias() {
 }
 
 // =========================================================
-// FUNÇÕES DE ABERTURA DO SISTEMA
+// MENU SUSPENSO - ACESSIBILIDADE
+// GESTÃO DE ESTOQUE
 // =========================================================
 
+function obterBarraAcoesGestaoEstoque() {
+
+    return (
+        document.querySelector(
+            '#estoqueGestaoSystem .card-header .d-flex.gap-2.align-items-center'
+        )
+        ||
+        document.querySelector(
+            '#estoqueGestaoSystem .card-header .d-flex.gap-2'
+        )
+        ||
+        document.querySelector(
+            '#estoqueGestaoSystem .card-header .d-flex'
+        )
+    );
+}
+
+
+// =========================================================
+// ESTILIZAR BOTÃO COMO ITEM DO MENU
+// =========================================================
+
+function estilizarItemMenuAcessibilidadeEstoque(
+    botao
+) {
+
+    if (!botao) {
+        return;
+    }
+
+
+    botao.classList.remove(
+        'btn-primary',
+        'btn-success',
+        'btn-warning',
+        'btn-danger',
+        'btn-info',
+        'btn-secondary',
+        'btn-purple'
+    );
+
+
+    botao.classList.add(
+        'item-menu-acessibilidade-estoque'
+    );
+
+
+    botao.style.cssText = `
+        width: 100%;
+        min-width: 0;
+        height: auto;
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+
+        padding: 10px 12px;
+
+        border: none;
+        border-radius: 7px;
+
+        background: transparent;
+        color: #343a40;
+
+        font-size: 13px;
+        font-weight: 500;
+
+        text-align: left;
+        white-space: nowrap;
+
+        cursor: pointer;
+    `;
+
+
+    // Fecha menu depois da ação,
+    // sem apagar o onclick original.
+    if (
+        botao.dataset
+            .menuAcessibilidadeConfigurado !==
+        'true'
+    ) {
+
+        botao.addEventListener(
+            'click',
+            () => {
+
+                setTimeout(
+                    fecharMenuAcessibilidadeEstoque,
+                    50
+                );
+
+            }
+        );
+
+
+        botao.dataset
+            .menuAcessibilidadeConfigurado =
+            'true';
+
+    }
+}
+
+
+// =========================================================
+// MOVER BOTÕES EXISTENTES PARA O MENU
+// =========================================================
+
+function moverBotoesParaMenuAcessibilidadeEstoque() {
+
+    const menu =
+        document.getElementById(
+            'menuAcessibilidadeEstoqueDropdown'
+        );
+
+
+    if (!menu) {
+        return;
+    }
+
+
+    const candidatos = [];
+
+
+    // =====================================================
+    // CATEGORIAS
+    // =====================================================
+
+    const btnCategorias =
+        document.getElementById(
+            'btnGerenciarCategorias'
+        )
+        ||
+        document.querySelector(
+            '#estoqueGestaoSystem button[onclick*="abrirModalGerenciarCategorias"]'
+        )
+        ||
+        document.querySelector(
+            '#estoqueGestaoSystem button[onclick*="abrirModalCategorias"]'
+        );
+
+
+    if (btnCategorias) {
+
+        candidatos.push({
+            botao:
+                btnCategorias,
+            ordem:
+                10
+        });
+
+    }
+
+
+    // =====================================================
+    // CRIAR CATEGORIA
+    // =====================================================
+
+    const btnCriarCategoria =
+        document.getElementById(
+            'btnCriarCategoria'
+        );
+
+
+    if (btnCriarCategoria) {
+
+        candidatos.push({
+            botao:
+                btnCriarCategoria,
+            ordem:
+                20
+        });
+
+    }
+
+
+    // =====================================================
+    // IMPORTAR PLANILHA ML
+    // =====================================================
+
+    const btnImportarML =
+        document.getElementById(
+            'btnImportarPlanilhaML'
+        );
+
+
+    if (btnImportarML) {
+
+        candidatos.push({
+            botao:
+                btnImportarML,
+            ordem:
+                30
+        });
+
+    }
+
+
+    // =====================================================
+    // IMPORTAR PRODUTOS
+    // =====================================================
+
+    const btnImportarProdutos =
+        document.getElementById(
+            'btnImportarCadastroInicial'
+        );
+
+
+    if (btnImportarProdutos) {
+
+        candidatos.push({
+            botao:
+                btnImportarProdutos,
+            ordem:
+                40
+        });
+
+    }
+
+
+    // =====================================================
+    // REGRAS
+    // =====================================================
+
+    const btnRegras =
+        document.querySelector(
+            '#estoqueGestaoSystem button[onclick*="abrirModalRegrasEstoque"]'
+        );
+
+
+    if (btnRegras) {
+
+        candidatos.push({
+            botao:
+                btnRegras,
+            ordem:
+                50
+        });
+
+    }
+
+
+    // =====================================================
+    // EXPORTAR
+    // =====================================================
+
+    const btnExportar =
+        document.querySelector(
+            '#estoqueGestaoSystem button[onclick*="exportarEstoqueExcel"]'
+        );
+
+
+    if (btnExportar) {
+
+        candidatos.push({
+            botao:
+                btnExportar,
+            ordem:
+                60
+        });
+
+    }
+
+
+    // =====================================================
+    // LIMPAR FILTROS
+    // =====================================================
+
+    const btnLimpar =
+        document.querySelector(
+            '#estoqueGestaoSystem button[onclick*="limparFiltrosEstoque"]'
+        );
+
+
+    if (btnLimpar) {
+
+        candidatos.push({
+            botao:
+                btnLimpar,
+            ordem:
+                70
+        });
+
+    }
+
+
+    // =====================================================
+    // ORDENAR
+    // =====================================================
+
+    candidatos
+        .sort(
+            (a, b) =>
+                a.ordem -
+                b.ordem
+        )
+        .forEach(
+            item => {
+
+                const botao =
+                    item.botao;
+
+
+                // Nunca mover o próprio botão
+                // de Acessibilidade.
+                if (
+                    botao.id ===
+                    'btnMenuAcessibilidadeEstoque'
+                ) {
+
+                    return;
+                }
+
+
+                estilizarItemMenuAcessibilidadeEstoque(
+                    botao
+                );
+
+
+                menu.appendChild(
+                    botao
+                );
+
+            }
+        );
+}
+
+
+// =========================================================
+// CRIAR / GARANTIR MENU
+// =========================================================
+
+function garantirMenuAcessibilidadeEstoque() {
+
+    const barra =
+        obterBarraAcoesGestaoEstoque();
+
+
+    if (!barra) {
+
+        console.warn(
+            '⚠️ Barra da Gestão de Estoque ainda não encontrada.'
+        );
+
+        return null;
+    }
+
+
+    // =====================================================
+    // JÁ EXISTE
+    // =====================================================
+
+    let wrapper =
+        document.getElementById(
+            'menuAcessibilidadeEstoqueWrapper'
+        );
+
+
+    if (!wrapper) {
+
+        wrapper =
+            document.createElement(
+                'div'
+            );
+
+
+        wrapper.id =
+            'menuAcessibilidadeEstoqueWrapper';
+
+
+        wrapper.style.cssText = `
+            position: relative;
+            display: inline-flex;
+            flex-shrink: 0;
+        `;
+
+
+        wrapper.innerHTML = `
+
+            <button
+                type="button"
+                id="btnMenuAcessibilidadeEstoque"
+                title="Mais opções"
+                style="
+                    min-width: 155px;
+                    min-height: 44px;
+
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 9px;
+
+                    padding: 9px 14px;
+
+                    border: none;
+                    border-radius: 8px;
+
+                    background: #00ADEE;
+                    color: white;
+
+                    font-weight: 600;
+                    cursor: pointer;
+                "
+            >
+
+                <i class="fas fa-bars"></i>
+
+                <span>
+                    Acessibilidade
+                </span>
+
+                <i
+                    id="iconeMenuAcessibilidadeEstoque"
+                    class="fas fa-chevron-down"
+                    style="
+                        font-size: 10px;
+                        margin-left: 3px;
+                    "
+                ></i>
+
+            </button>
+
+
+            <div
+                id="menuAcessibilidadeEstoqueDropdown"
+                style="
+                    display: none;
+
+                    position: absolute;
+                    right: 0;
+                    top: calc(100% + 7px);
+
+                    width: 270px;
+
+                    padding: 7px;
+
+                    background: white;
+
+                    border: 1px solid #dee2e6;
+                    border-radius: 10px;
+
+                    box-shadow:
+                        0 10px 30px
+                        rgba(0,0,0,.16);
+
+                    z-index: 99990;
+                "
+            ></div>
+
+        `;
+
+
+        barra.appendChild(
+            wrapper
+        );
+
+
+        const botao =
+            wrapper.querySelector(
+                '#btnMenuAcessibilidadeEstoque'
+            );
+
+
+        botao.onclick =
+            function(event) {
+
+                event.stopPropagation();
+
+
+                toggleMenuAcessibilidadeEstoque();
+
+            };
+
+
+        // =============================================
+        // HOVER DOS ITENS
+        // =============================================
+
+        const style =
+            document.createElement(
+                'style'
+            );
+
+
+        style.id =
+            'styleMenuAcessibilidadeEstoque';
+
+
+        style.textContent = `
+
+            #menuAcessibilidadeEstoqueDropdown
+            .item-menu-acessibilidade-estoque:hover {
+
+                background: #f1f3f5 !important;
+                color: #111 !important;
+
+            }
+
+
+            #menuAcessibilidadeEstoqueDropdown
+            .item-menu-acessibilidade-estoque i {
+
+                width: 19px;
+                text-align: center;
+
+            }
+
+        `;
+
+
+        if (
+            !document.getElementById(
+                style.id
+            )
+        ) {
+
+            document.head.appendChild(
+                style
+            );
+
+        }
+
+
+        // =============================================
+        // CLICAR FORA
+        // =============================================
+
+        if (
+            document.body.dataset
+                .menuAcessibilidadeEstoqueClick !==
+            'true'
+        ) {
+
+            document.addEventListener(
+                'click',
+                function(event) {
+
+                    const atual =
+                        document.getElementById(
+                            'menuAcessibilidadeEstoqueWrapper'
+                        );
+
+
+                    if (
+                        atual &&
+                        !atual.contains(
+                            event.target
+                        )
+                    ) {
+
+                        fecharMenuAcessibilidadeEstoque();
+
+                    }
+
+                }
+            );
+
+
+            document.body.dataset
+                .menuAcessibilidadeEstoqueClick =
+                'true';
+
+        }
+
+    }
+
+
+    moverBotoesParaMenuAcessibilidadeEstoque();
+
+
+    return document.getElementById(
+        'menuAcessibilidadeEstoqueDropdown'
+    );
+}
+
+
+// =========================================================
+// ABRIR / FECHAR
+// =========================================================
+
+function toggleMenuAcessibilidadeEstoque() {
+
+    const menu =
+        document.getElementById(
+            'menuAcessibilidadeEstoqueDropdown'
+        );
+
+
+    const icone =
+        document.getElementById(
+            'iconeMenuAcessibilidadeEstoque'
+        );
+
+
+    if (!menu) {
+        return;
+    }
+
+
+    const aberto =
+        menu.style.display ===
+        'block';
+
+
+    menu.style.display =
+        aberto
+            ? 'none'
+            : 'block';
+
+
+    if (icone) {
+
+        icone.className =
+            aberto
+                ? 'fas fa-chevron-down'
+                : 'fas fa-chevron-up';
+
+    }
+}
+
+
+function fecharMenuAcessibilidadeEstoque() {
+
+    const menu =
+        document.getElementById(
+            'menuAcessibilidadeEstoqueDropdown'
+        );
+
+
+    const icone =
+        document.getElementById(
+            'iconeMenuAcessibilidadeEstoque'
+        );
+
+
+    if (menu) {
+
+        menu.style.display =
+            'none';
+
+    }
+
+
+    if (icone) {
+
+        icone.className =
+            'fas fa-chevron-down';
+
+    }
+}
+
 window.abrirGestaoEstoque = function() {
+
     if (!currentUser) {
-        if (window.showToast) showToast('⚠️ Faça login primeiro', 'warning');
-        else alert('Faça login primeiro');
+
+        if (
+            window.showToast
+        ) {
+
+            showToast(
+                '⚠️ Faça login primeiro',
+                'warning'
+            );
+
+        } else {
+
+            alert(
+                'Faça login primeiro'
+            );
+
+        }
+
+
         return;
     }
 
-    const sistemas = ['mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'promocoesSystem',
-                      'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem', 'menuSystem', 'perguntasSystem'];
-    sistemas.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
-    });
 
-    const gestaoSystem = document.getElementById('estoqueGestaoSystem');
+    const sistemas = [
+
+        'mainSystem',
+        'salesSystem',
+        'reembolsosSystem',
+        'caixaSystem',
+        'promocoesSystem',
+        'reviewsSystem',
+        'folgasSystem',
+        'shippingSystem',
+        'estoqueSystem',
+        'menuSystem',
+        'perguntasSystem'
+
+    ];
+
+
+    sistemas.forEach(
+        id => {
+
+            const el =
+                document.getElementById(
+                    id
+                );
+
+
+            if (el) {
+
+                el.classList.add(
+                    'hidden'
+                );
+
+            }
+
+        }
+    );
+
+
+    const gestaoSystem =
+        document.getElementById(
+            'estoqueGestaoSystem'
+        );
+
+
     if (!gestaoSystem) {
-        console.error('Elemento #estoqueGestaoSystem não encontrado');
-        if (window.showToast) showToast('Erro: sistema de estoque não configurado', 'error');
+
+        console.error(
+            'Elemento #estoqueGestaoSystem não encontrado'
+        );
+
+
+        if (
+            window.showToast
+        ) {
+
+            showToast(
+                'Erro: sistema de estoque não configurado',
+                'error'
+            );
+
+        }
+
+
         return;
     }
-    gestaoSystem.classList.remove('hidden');
 
-    const userNameEl = document.getElementById('estoqueGestaoUserName');
-    if (userNameEl) userNameEl.textContent = currentUser.name;
-    const userAvatarEl = document.getElementById('estoqueGestaoUserAvatar');
-    if (userAvatarEl) userAvatarEl.textContent = currentUser.avatar;
-    const userRoleEl = document.getElementById('estoqueGestaoUserRole');
-    if (userRoleEl) userRoleEl.textContent = currentUser.role;
+
+    gestaoSystem.classList.remove(
+        'hidden'
+    );
+
+
+    // =====================================================
+    // USUÁRIO
+    // =====================================================
+
+    const userNameEl =
+        document.getElementById(
+            'estoqueGestaoUserName'
+        );
+
+
+    if (userNameEl) {
+
+        userNameEl.textContent =
+            currentUser.name;
+
+    }
+
+
+    const userAvatarEl =
+        document.getElementById(
+            'estoqueGestaoUserAvatar'
+        );
+
+
+    if (userAvatarEl) {
+
+        userAvatarEl.textContent =
+            currentUser.avatar;
+
+    }
+
+
+    const userRoleEl =
+        document.getElementById(
+            'estoqueGestaoUserRole'
+        );
+
+
+    if (userRoleEl) {
+
+        userRoleEl.textContent =
+            currentUser.role;
+
+    }
+
+
+    // =====================================================
+    // CARREGAMENTOS
+    // =====================================================
 
     carregarProdutosEstoque();
+
     carregarRegrasEstoque();
+
     carregarCategoriasCustomizadas();
 
-    const buscaInput = document.getElementById('buscaEstoqueInput');
+
+    garantirSubcategoriasEstoqueCarregadas()
+        .catch(
+            error => {
+
+                console.error(
+                    '❌ Erro carregando subcategorias:',
+                    error
+                );
+
+            }
+        );
+
+
+    // =====================================================
+    // BUSCA
+    // =====================================================
+
+    const buscaInput =
+        document.getElementById(
+            'buscaEstoqueInput'
+        );
+
+
     if (buscaInput) {
-        buscaInput.removeEventListener('input', filtrarProdutosEstoque);
-        buscaInput.addEventListener('input', filtrarProdutosEstoque);
+
+        buscaInput.removeEventListener(
+            'input',
+            filtrarProdutosEstoque
+        );
+
+
+        buscaInput.addEventListener(
+            'input',
+            filtrarProdutosEstoque
+        );
+
     }
 
-    const categoriaFilter = document.getElementById('filtroCategoriaEstoque');
+
+    // =====================================================
+    // FILTRO
+    // =====================================================
+
+    const categoriaFilter =
+        document.getElementById(
+            'filtroCategoriaEstoque'
+        );
+
+
     if (categoriaFilter) {
-        categoriaFilter.removeEventListener('change', filtrarProdutosEstoque);
-        categoriaFilter.addEventListener('change', filtrarProdutosEstoque);
+
+        categoriaFilter.removeEventListener(
+            'change',
+            filtrarProdutosEstoque
+        );
+
+
+        categoriaFilter.addEventListener(
+            'change',
+            filtrarProdutosEstoque
+        );
+
     }
-    
-    // Botão para gerenciar categorias
-    const btnCategorias = document.getElementById('btnGerenciarCategorias');
+
+
+    // =====================================================
+    // BOTÃO CATEGORIAS
+    // MANTÉM COMPORTAMENTO ATUAL
+    // =====================================================
+
+    const btnCategorias =
+        document.getElementById(
+            'btnGerenciarCategorias'
+        );
+
+
     if (btnCategorias) {
-        btnCategorias.onclick = abrirModalCategorias;
+
+        btnCategorias.onclick =
+            abrirModalCategorias;
+
     }
 
-    // =========================================================
-    // GARANTIR BOTÃO DE IMPORTAÇÃO
-    // =========================================================
 
-    setTimeout(adicionarBotaoImportarPlanilhaML, 300);
+    // =====================================================
+    // MENU ACESSIBILIDADE
+    // =====================================================
+
+    garantirMenuAcessibilidadeEstoque();
+
+
+    // =====================================================
+    // BOTÕES DINÂMICOS
+    // =====================================================
+
+    setTimeout(
+        adicionarBotaoImportarPlanilhaML,
+        100
+    );
+
+
+    setTimeout(
+        adicionarBotaoImportacaoCadastroInicial,
+        150
+    );
+
+
+    setTimeout(
+        adicionarBotaoCriarCategoria,
+        200
+    );
+
+
+    // Depois que todos forem criados,
+    // reorganizar novamente.
+    setTimeout(
+        garantirMenuAcessibilidadeEstoque,
+        350
+    );
 };
 
 // =========================================================
@@ -24150,12 +25020,18 @@ function renderizarSkusKit(skus) {
 // INICIALIZAÇÃO
 // =========================================================
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 Inicializando Gestão de Estoque com Categorias Dinâmicas...');
+document.addEventListener(
+    'DOMContentLoaded',
+    () => {
 
-    // =============================================
+        console.log(
+            '🚀 Inicializando Gestão de Estoque com Categorias Dinâmicas...'
+        );
+
+
+        // =================================================
         // SUBCATEGORIAS
-        // =============================================
+        // =================================================
 
         garantirSubcategoriasEstoqueCarregadas()
             .catch(
@@ -24168,54 +25044,226 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 }
             );
-    
-    const buscaInput = document.getElementById('buscaEstoqueInput');
-    if (buscaInput) {
-        buscaInput.addEventListener('input', filtrarProdutosEstoque);
+
+
+        // =================================================
+        // FILTRO / BUSCA
+        // =================================================
+
+        const buscaInput =
+            document.getElementById(
+                'buscaEstoqueInput'
+            );
+
+
+        if (buscaInput) {
+
+            buscaInput.addEventListener(
+                'input',
+                filtrarProdutosEstoque
+            );
+
+        }
+
+
+        const categoriaFilter =
+            document.getElementById(
+                'filtroCategoriaEstoque'
+            );
+
+
+        if (categoriaFilter) {
+
+            categoriaFilter.addEventListener(
+                'change',
+                filtrarProdutosEstoque
+            );
+
+        }
+
+
+        configurarEventosKit();
+
+
+        paginaAtualEstoque =
+            1;
+
+
+        itensPorPaginaEstoque =
+            20;
+
+
+        produtosFiltradosAtuais =
+            [];
+
+
+        // =================================================
+        // DADOS
+        // =================================================
+
+        setTimeout(
+            carregarRegrasEstoque,
+            1000
+        );
+
+
+        setTimeout(
+            carregarCategoriasCustomizadas,
+            1100
+        );
+
+
+        setTimeout(
+            carregarRegrasIndividuais,
+            1200
+        );
+
+
+        setTimeout(
+            carregarRegrasFixasTipoAnuncioML,
+            1300
+        );
+
+
+        setTimeout(
+            adicionarSecaoCategorias,
+            2500
+        );
+
+
+        // =================================================
+        // CATEGORIAS
+        // =================================================
+
+        const btnCategorias =
+            document.getElementById(
+                'btnGerenciarCategorias'
+            );
+
+
+        if (btnCategorias) {
+
+            btnCategorias.onclick =
+                abrirModalCategorias;
+
+        }
+
+
+        // =================================================
+        // CRIAR MENU PRIMEIRO
+        // =================================================
+
+        setTimeout(
+            garantirMenuAcessibilidadeEstoque,
+            100
+        );
+
+
+        // =================================================
+        // BOTÕES DINÂMICOS DENTRO DO MENU
+        // =================================================
+
+        setTimeout(
+            adicionarBotaoImportacaoCadastroInicial,
+            350
+        );
+
+
+        setTimeout(
+            adicionarBotaoCriarCategoria,
+            400
+        );
+
+
+        setTimeout(
+            adicionarBotaoImportarPlanilhaML,
+            450
+        );
+
+
+        setTimeout(
+            adicionarBotaoNoModalCategorias,
+            1000
+        );
+
+
+        // =================================================
+        // GARANTIR QUE BOTÕES ESTÁTICOS:
+        //
+        // Categorias
+        // Regras
+        // Exportar
+        // Limpar Filtros
+        //
+        // também tenham sido movidos.
+        // =================================================
+
+        setTimeout(
+            garantirMenuAcessibilidadeEstoque,
+            700
+        );
+
+
+        setTimeout(
+            garantirMenuAcessibilidadeEstoque,
+            1600
+        );
+
+
+        // =================================================
+        // VERIFICAR TABELA
+        // =================================================
+
+        setTimeout(
+            async () => {
+
+                if (
+                    !window.supabaseClient
+                ) {
+                    return;
+                }
+
+
+                try {
+
+                    const {
+                        error
+                    } =
+                        await window.supabaseClient
+                            .from(
+                                'produtos_estoque'
+                            )
+                            .select(
+                                'id'
+                            )
+                            .limit(
+                                1
+                            );
+
+
+                    if (
+                        error &&
+                        error.message.includes(
+                            'does not exist'
+                        )
+                    ) {
+
+                        console.warn(
+                            'Tabela produtos_estoque não existe. Execute o SQL de criação.'
+                        );
+
+                    }
+
+                }
+
+                catch (e) {}
+
+            },
+            2000
+        );
+
     }
-    
-    const categoriaFilter = document.getElementById('filtroCategoriaEstoque');
-    if (categoriaFilter) {
-        categoriaFilter.addEventListener('change', filtrarProdutosEstoque);
-    }
-    
-    configurarEventosKit();
-    
-    paginaAtualEstoque = 1;
-    itensPorPaginaEstoque = 20;
-    produtosFiltradosAtuais = [];
-    
-    setTimeout(carregarRegrasEstoque, 1000);
-    setTimeout(carregarCategoriasCustomizadas, 1100);
-    setTimeout(carregarRegrasIndividuais, 1200);
-    setTimeout(adicionarSecaoCategorias, 2500);
-    setTimeout(carregarRegrasFixasTipoAnuncioML, 1300);
-    setTimeout(adicionarBotaoImportacaoCadastroInicial, 1800);
-    
-    const btnCategorias = document.getElementById('btnGerenciarCategorias');
-    if (btnCategorias) {
-        btnCategorias.onclick = abrirModalCategorias;
-    }
-    
-    // ===== ADICIONAR BOTÃO "CRIAR CATEGORIA" =====
-    setTimeout(adicionarBotaoCriarCategoria, 1500);
-    setTimeout(adicionarBotaoNoModalCategorias, 2000);
-    setTimeout(adicionarBotaoImportarPlanilhaML, 1700);
-    setTimeout(adicionarBotaoImportacaoCadastroInicial, 400);
-    
-    setTimeout(async () => {
-        if (!window.supabaseClient) return;
-        try {
-            const { error } = await window.supabaseClient
-                .from('produtos_estoque')
-                .select('id')
-                .limit(1);
-            if (error && error.message.includes('does not exist')) {
-                console.warn('Tabela produtos_estoque não existe. Execute o SQL de criação.');
-            }
-        } catch(e) {}
-    }, 2000);
-});
+);
 
 // =========================================================
 // EXPORTAR FUNÇÕES PARA USO GLOBAL
@@ -24250,44 +25298,172 @@ window.abrirImportacaoPlanilhaML = abrirImportacaoPlanilhaML;
 window.processarArquivoImportacaoML = processarArquivoImportacaoML;
 window.baixarRelatorioImportacaoML = baixarRelatorioImportacaoML;
 window.fecharRelatorioImportacaoML = fecharRelatorioImportacaoML;
+window.garantirMenuAcessibilidadeEstoque = garantirMenuAcessibilidadeEstoque;
+window.toggleMenuAcessibilidadeEstoque = toggleMenuAcessibilidadeEstoque;
+window.fecharMenuAcessibilidadeEstoque = fecharMenuAcessibilidadeEstoque;
 
-// ===== ADICIONAR BOTÃO "CRIAR CATEGORIA" NA TELA =====
 function adicionarBotaoCriarCategoria() {
-    console.log('🔧 [adicionarBotaoCriarCategoria] Tentando adicionar botão...');
-    
-    const filtrosContainer = document.querySelector('#estoqueGestaoSystem .card-header .d-flex.gap-2');
-    if (!filtrosContainer) {
-        setTimeout(adicionarBotaoCriarCategoria, 500);
+
+    console.log(
+        '🔧 [adicionarBotaoCriarCategoria] Preparando item no menu...'
+    );
+
+
+    // =====================================================
+    // JÁ EXISTE?
+    // =====================================================
+
+    const existente =
+        document.getElementById(
+            'btnCriarCategoria'
+        );
+
+
+    if (existente) {
+
+        const menu =
+            garantirMenuAcessibilidadeEstoque();
+
+
+        if (
+            menu &&
+            existente.parentElement !==
+            menu
+        ) {
+
+            estilizarItemMenuAcessibilidadeEstoque(
+                existente
+            );
+
+
+            menu.appendChild(
+                existente
+            );
+
+        }
+
+
         return;
     }
-    
-    if (document.getElementById('btnCriarCategoria')) return;
-    
-    const username = currentUser?.username?.toLowerCase() || '';
-    const isAuthorized = usuariosGerenciarCategorias.includes(username);
-    
-    const btn = document.createElement('button');
-    btn.id = 'btnCriarCategoria';
-    btn.className = 'btn btn-purple';
-    btn.innerHTML = '<i class="fas fa-plus-circle"></i> Criar Categoria';
-    btn.title = 'Criar nova categoria personalizada com campos específicos';
-    btn.onclick = abrirModalCriarCategoria;
-    
-    // Se não for autorizado, desabilitar (mas ainda mostra o botão)
+
+
+    // =====================================================
+    // MENU
+    // =====================================================
+
+    const menu =
+        garantirMenuAcessibilidadeEstoque();
+
+
+    if (!menu) {
+
+        setTimeout(
+            adicionarBotaoCriarCategoria,
+            500
+        );
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // PERMISSÃO
+    // =====================================================
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase() || '';
+
+
+    const isAuthorized =
+        usuariosGerenciarCategorias.includes(
+            username
+        );
+
+
+    // =====================================================
+    // CRIAR
+    // =====================================================
+
+    const btn =
+        document.createElement(
+            'button'
+        );
+
+
+    btn.id =
+        'btnCriarCategoria';
+
+
+    btn.type =
+        'button';
+
+
+    btn.innerHTML = `
+
+        <i class="fas fa-plus-circle"></i>
+
+        Criar Categoria
+
+    `;
+
+
+    btn.title =
+        'Criar nova categoria personalizada com campos específicos';
+
+
+    btn.onclick =
+        abrirModalCriarCategoria;
+
+
     if (!isAuthorized) {
-        btn.disabled = true;
-        btn.title = '🔒 Apenas usuários autorizados podem criar categorias';
-        btn.style.opacity = '0.6';
-        btn.style.cursor = 'not-allowed';
+
+        btn.disabled =
+            true;
+
+
+        btn.title =
+            '🔒 Apenas usuários autorizados podem criar categorias';
+
+
+        btn.style.opacity =
+            '0.6';
+
+
+        btn.style.cursor =
+            'not-allowed';
+
     }
-    
-    const novoProdutoBtn = filtrosContainer.querySelector('.btn-success');
-    if (novoProdutoBtn) {
-        filtrosContainer.insertBefore(btn, novoProdutoBtn);
-    } else {
-        filtrosContainer.appendChild(btn);
+
+
+    estilizarItemMenuAcessibilidadeEstoque(
+        btn
+    );
+
+
+    // Restaurar aparência de bloqueado depois
+    // da estilização.
+    if (!isAuthorized) {
+
+        btn.style.opacity =
+            '0.5';
+
+
+        btn.style.cursor =
+            'not-allowed';
+
     }
-    console.log('✅ Botão "Criar Categoria" adicionado!');
+
+
+    menu.appendChild(
+        btn
+    );
+
+
+    console.log(
+        '✅ Criar Categoria adicionado ao menu Acessibilidade!'
+    );
 }
 
 // ===== ABRIR MODAL DE CRIAÇÃO DE CATEGORIA =====
@@ -28716,15 +29892,10 @@ function abrirImportacaoPlanilhaML() {
 }
 
 
-// =========================================================
-// ADICIONAR BOTÃO "IMPORTAR PLANILHA ML"
-// VERSÃO CORRIGIDA
-// =========================================================
-
 function adicionarBotaoImportarPlanilhaML() {
 
     console.log(
-        '🔧 [IMPORTAÇÃO ML] Tentando adicionar botão...'
+        '🔧 [IMPORTAÇÃO ML] Preparando opção no menu Acessibilidade...'
     );
 
 
@@ -28732,109 +29903,64 @@ function adicionarBotaoImportarPlanilhaML() {
     // JÁ EXISTE?
     // =====================================================
 
-    if (
+    const existente =
         document.getElementById(
             'btnImportarPlanilhaML'
-        )
-    ) {
-
-        console.log(
-            '✅ [IMPORTAÇÃO ML] Botão já existe.'
         );
+
+
+    if (existente) {
+
+        // Se existe mas ficou fora do menu,
+        // move para dentro.
+        const menu =
+            garantirMenuAcessibilidadeEstoque();
+
+
+        if (
+            menu &&
+            existente.parentElement !==
+            menu
+        ) {
+
+            estilizarItemMenuAcessibilidadeEstoque(
+                existente
+            );
+
+
+            menu.appendChild(
+                existente
+            );
+
+        }
+
 
         return;
     }
 
 
     // =====================================================
-    // LOCALIZAR A BARRA DE BOTÕES
-    //
-    // Primeiro tenta encontrar pelo botão Categorias
-    // através do onclick, já que ele NÃO possui ID.
+    // GARANTIR MENU
     // =====================================================
 
-    let btnCategorias =
-        document.querySelector(
-            '#estoqueGestaoSystem button[onclick*="abrirModalGerenciarCategorias"]'
+    const menu =
+        garantirMenuAcessibilidadeEstoque();
+
+
+    if (!menu) {
+
+        setTimeout(
+            adicionarBotaoImportarPlanilhaML,
+            300
         );
 
-
-    // =====================================================
-    // FALLBACK:
-    // procurar botão que abre abrirModalCategorias
-    // =====================================================
-
-    if (!btnCategorias) {
-
-        btnCategorias =
-            document.querySelector(
-                '#estoqueGestaoSystem button[onclick*="abrirModalCategorias"]'
-            );
-
-    }
-
-
-    // =====================================================
-    // LOCALIZAR CONTAINER
-    // =====================================================
-
-    let container =
-        btnCategorias?.parentElement ||
-        null;
-
-
-    // =====================================================
-    // FALLBACK 2:
-    // pegar diretamente a barra do cabeçalho
-    // =====================================================
-
-    if (!container) {
-
-        container =
-            document.querySelector(
-                '#estoqueGestaoSystem .card-header .d-flex.gap-2.align-items-center'
-            );
-
-    }
-
-
-    // =====================================================
-    // FALLBACK 3:
-    // seletor um pouco mais genérico
-    // =====================================================
-
-    if (!container) {
-
-        container =
-            document.querySelector(
-                '#estoqueGestaoSystem .card-header .d-flex'
-            );
-
-    }
-
-
-    // =====================================================
-    // NÃO ENCONTROU
-    // =====================================================
-
-    if (!container) {
-
-        console.error(
-            '❌ [IMPORTAÇÃO ML] Não foi possível localizar a barra de botões da Gestão de Estoque.'
-        );
 
         return;
     }
 
 
-    console.log(
-        '✅ [IMPORTAÇÃO ML] Barra de botões encontrada:',
-        container
-    );
-
-
     // =====================================================
-    // CRIAR BOTÃO
+    // CRIAR
     // =====================================================
 
     const botao =
@@ -28851,27 +29977,12 @@ function adicionarBotaoImportarPlanilhaML() {
         'button';
 
 
-    botao.className =
-        'btn btn-primary';
-
-
-    botao.style.cssText = `
-        background: #007bff;
-        color: #ffffff;
-        border: none;
-        font-weight: 600;
-        white-space: nowrap;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        min-height: 38px;
-    `;
-
-
     botao.innerHTML = `
+
         <i class="fas fa-file-import"></i>
+
         Importar Planilha ML
+
     `;
 
 
@@ -28892,71 +30003,18 @@ function adicionarBotaoImportarPlanilhaML() {
         };
 
 
-    // =====================================================
-    // POSICIONAR O BOTÃO
-    //
-    // Queremos:
-    //
-    // Categorias
-    // Importar Planilha ML
-    // Novo Produto
-    // Regras
-    // ...
-    // =====================================================
-
-    if (
-        btnCategorias &&
-        btnCategorias.parentElement === container
-    ) {
-
-        btnCategorias.insertAdjacentElement(
-            'afterend',
-            botao
-        );
-
-    } else {
-
-        // Se não encontrou Categorias,
-        // tenta colocar antes de Novo Produto.
-
-        const btnNovoProduto =
-            Array.from(
-                container.querySelectorAll(
-                    'button'
-                )
-            ).find(
-                btn =>
-                    String(
-                        btn.textContent || ''
-                    )
-                        .trim()
-                        .toLowerCase()
-                        .includes(
-                            'novo produto'
-                        )
-            );
+    estilizarItemMenuAcessibilidadeEstoque(
+        botao
+    );
 
 
-        if (btnNovoProduto) {
-
-            container.insertBefore(
-                botao,
-                btnNovoProduto
-            );
-
-        } else {
-
-            container.appendChild(
-                botao
-            );
-
-        }
-
-    }
+    menu.appendChild(
+        botao
+    );
 
 
     console.log(
-        '✅ [IMPORTAÇÃO ML] Botão "Importar Planilha ML" adicionado com sucesso!'
+        '✅ Importar Planilha ML adicionado ao menu Acessibilidade.'
     );
 }
 
@@ -31395,20 +32453,49 @@ async function desativarImportadorCadastroInicial() {
 }
 
 
-// =========================================================
-// ADICIONAR BOTÃO NA GESTÃO DE ESTOQUE
-// =========================================================
-
 async function adicionarBotaoImportacaoCadastroInicial() {
 
-    if (
+    // =====================================================
+    // JÁ EXISTE?
+    // =====================================================
+
+    const existente =
         document.getElementById(
             'btnImportarCadastroInicial'
-        )
-    ) {
+        );
+
+
+    if (existente) {
+
+        const menu =
+            garantirMenuAcessibilidadeEstoque();
+
+
+        if (
+            menu &&
+            existente.parentElement !==
+            menu
+        ) {
+
+            estilizarItemMenuAcessibilidadeEstoque(
+                existente
+            );
+
+
+            menu.appendChild(
+                existente
+            );
+
+        }
+
+
         return;
     }
 
+
+    // =====================================================
+    // IMPORTADOR ATIVO?
+    // =====================================================
 
     const ativo =
         await importadorCadastroInicialEstaAtivo();
@@ -31420,11 +32507,15 @@ async function adicionarBotaoImportacaoCadastroInicial() {
             'ℹ️ Importador de cadastro inicial está desativado.'
         );
 
+
         return;
     }
 
 
-    // Somente administradores.
+    // =====================================================
+    // SOMENTE ADMIN
+    // =====================================================
+
     const username =
         currentUser?.username
             ?.toLowerCase() || '';
@@ -31440,22 +32531,29 @@ async function adicionarBotaoImportacaoCadastroInicial() {
     }
 
 
-    const container =
-        document.querySelector(
-            '#estoqueGestaoSystem .card-header .d-flex.gap-2'
-        );
+    // =====================================================
+    // GARANTIR MENU
+    // =====================================================
+
+    const menu =
+        garantirMenuAcessibilidadeEstoque();
 
 
-    if (!container) {
+    if (!menu) {
 
         setTimeout(
             adicionarBotaoImportacaoCadastroInicial,
             500
         );
 
+
         return;
     }
 
+
+    // =====================================================
+    // CRIAR
+    // =====================================================
 
     const botao =
         document.createElement(
@@ -31471,19 +32569,12 @@ async function adicionarBotaoImportacaoCadastroInicial() {
         'button';
 
 
-    botao.className =
-        'btn btn-warning';
-
-
-    botao.style.cssText = `
-        font-weight:600;
-        white-space:nowrap;
-    `;
-
-
     botao.innerHTML = `
+
         <i class="fas fa-box-open"></i>
+
         Importar Produtos
+
     `;
 
 
@@ -31495,53 +32586,14 @@ async function adicionarBotaoImportacaoCadastroInicial() {
         abrirImportacaoCadastroInicial;
 
 
-    // =====================================================
-    // COLOCAR PERTO DE CATEGORIAS
-    // =====================================================
-
-    const btnImportarML =
-        document.getElementById(
-            'btnImportarPlanilhaML'
-        );
+    estilizarItemMenuAcessibilidadeEstoque(
+        botao
+    );
 
 
-    if (
-        btnImportarML &&
-        btnImportarML.parentElement ===
-        container
-    ) {
-
-        container.insertBefore(
-            botao,
-            btnImportarML
-        );
-
-
-        return;
-    }
-
-
-    const btnCategorias =
-        container.querySelector(
-            'button[onclick*="abrirModalGerenciarCategorias"]'
-        );
-
-
-    if (btnCategorias) {
-
-        btnCategorias
-            .insertAdjacentElement(
-                'afterend',
-                botao
-            );
-
-    } else {
-
-        container.prepend(
-            botao
-        );
-
-    }
+    menu.appendChild(
+        botao
+    );
 }
 
 // =========================================================
