@@ -2983,33 +2983,350 @@ window.abrirGestaoEstoque = function() {
 };
 
 // =========================================================
-// CARREGAR PRODUTOS DO SUPABASE COM PERSISTÊNCIA DE FILTROS
+// CARREGAR TODOS OS PRODUTOS DO SUPABASE
+// COM PAGINAÇÃO PARA NÃO PERDER REGISTROS
 // =========================================================
 
 async function carregarProdutosEstoque() {
+
     try {
-        if (!window.supabaseClient) throw new Error('Supabase não inicializado');
-        const { data, error } = await window.supabaseClient
-            .from('produtos_estoque')
-            .select('*')
-            .order('nome', { ascending: true });
-        if (error) throw error;
-        produtosEstoque = data || [];
-        
-        // Restaurar estado dos filtros e paginação
-        const termo = document.getElementById('buscaEstoqueInput');
-        const categoria = document.getElementById('filtroCategoriaEstoque');
-        
-        if (termo) termo.value = estadoFiltrosEstoque.termo || '';
-        if (categoria) categoria.value = estadoFiltrosEstoque.categoria || '';
-        
+
+        // =====================================================
+        // VALIDAR SUPABASE
+        // =====================================================
+
+        if (
+            !window.supabaseClient
+        ) {
+
+            throw new Error(
+                'Supabase não inicializado'
+            );
+
+        }
+
+
+        console.log(
+            '📦 Carregando TODOS os produtos do estoque...'
+        );
+
+
+        // =====================================================
+        // PAGINAÇÃO
+        //
+        // O Supabase pode limitar cada resposta.
+        // Então buscamos em blocos de 1000.
+        // =====================================================
+
+        const tamanhoPagina =
+            1000;
+
+
+        let inicio =
+            0;
+
+
+        let todosProdutos =
+            [];
+
+
+        let continuar =
+            true;
+
+
+        while (
+            continuar
+        ) {
+
+            const fim =
+                inicio +
+                tamanhoPagina -
+                1;
+
+
+            console.log(
+                `📦 Buscando produtos ${inicio} até ${fim}...`
+            );
+
+
+            const {
+                data,
+                error
+            } =
+                await window.supabaseClient
+
+                    .from(
+                        'produtos_estoque'
+                    )
+
+                    .select(
+                        '*'
+                    )
+
+                    // ID deixa a paginação estável.
+                    .order(
+                        'id',
+                        {
+                            ascending:
+                                true
+                        }
+                    )
+
+                    .range(
+                        inicio,
+                        fim
+                    );
+
+
+            if (
+                error
+            ) {
+
+                throw error;
+
+            }
+
+
+            const lote =
+                data || [];
+
+
+            todosProdutos.push(
+                ...lote
+            );
+
+
+            console.log(
+                `✅ ${lote.length} produto(s) recebido(s) neste lote. Total: ${todosProdutos.length}`
+            );
+
+
+            // =================================================
+            // ÚLTIMA PÁGINA
+            // =================================================
+
+            if (
+                lote.length <
+                tamanhoPagina
+            ) {
+
+                continuar =
+                    false;
+
+            }
+
+            else {
+
+                inicio +=
+                    tamanhoPagina;
+
+            }
+
+        }
+
+
+        // =====================================================
+        // REMOVER EVENTUAIS DUPLICADOS POR ID
+        //
+        // É apenas uma proteção extra.
+        // =====================================================
+
+        const produtosUnicos =
+            new Map();
+
+
+        todosProdutos.forEach(
+            produto => {
+
+                if (
+                    produto &&
+                    produto.id !==
+                        undefined &&
+                    produto.id !==
+                        null
+                ) {
+
+                    produtosUnicos.set(
+                        String(
+                            produto.id
+                        ),
+                        produto
+                    );
+
+                }
+
+            }
+        );
+
+
+        produtosEstoque =
+            Array.from(
+                produtosUnicos.values()
+            );
+
+
+        // =====================================================
+        // ORDENAR EM MEMÓRIA POR NOME
+        //
+        // Mantém comportamento semelhante ao anterior.
+        // =====================================================
+
+        produtosEstoque.sort(
+            (
+                a,
+                b
+            ) =>
+
+                String(
+                    a.nome ||
+                    ''
+                ).localeCompare(
+                    String(
+                        b.nome ||
+                        ''
+                    ),
+                    'pt-BR'
+                )
+
+        );
+
+
+        // =====================================================
+        // RESTAURAR FILTROS
+        // =====================================================
+
+        const termo =
+            document.getElementById(
+                'buscaEstoqueInput'
+            );
+
+
+        const categoria =
+            document.getElementById(
+                'filtroCategoriaEstoque'
+            );
+
+
+        if (
+            termo
+        ) {
+
+            termo.value =
+                estadoFiltrosEstoque
+                    .termo ||
+                '';
+
+        }
+
+
+        if (
+            categoria
+        ) {
+
+            categoria.value =
+                estadoFiltrosEstoque
+                    .categoria ||
+                '';
+
+        }
+
+
+        // =====================================================
+        // APLICAR FILTROS / RENDERIZAR
+        // =====================================================
+
         aplicarFiltrosEOrdenacao();
-        console.log(`✅ ${produtosEstoque.length} produtos carregados`);
-    } catch (error) {
-        console.error('Erro ao carregar produtos:', error);
-        if (window.showToast) showToast('Erro ao carregar produtos', 'error');
-        const tbody = document.getElementById('produtosEstoqueBody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="text-danger">Erro ao carregar produtos. Consulte o console.</td></tr>';
+
+
+        // =====================================================
+        // RASTREIOS / A CAMINHO
+        //
+        // Se essa função já existir, atualizamos depois
+        // que TODOS os produtos estiverem carregados.
+        // =====================================================
+
+        if (
+            typeof carregarPreEntradasRastreioEstoque ===
+            'function'
+        ) {
+
+            carregarPreEntradasRastreioEstoque()
+                .catch(
+                    error => {
+
+                        console.warn(
+                            '⚠️ Não foi possível atualizar rastreios:',
+                            error
+                        );
+
+                    }
+                );
+
+        }
+
+
+        console.log(
+            `✅ ${produtosEstoque.length} produtos carregados no total.`
+        );
+
+
+        return produtosEstoque;
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro ao carregar produtos:',
+            error
+        );
+
+
+        if (
+            window.showToast
+        ) {
+
+            showToast(
+                'Erro ao carregar produtos',
+                'error'
+            );
+
+        }
+
+
+        const tbody =
+            document.getElementById(
+                'produtosEstoqueBody'
+            );
+
+
+        if (
+            tbody
+        ) {
+
+            tbody.innerHTML = `
+
+                <tr>
+
+                    <td
+                        colspan="10"
+                        class="text-danger text-center"
+                    >
+
+                        Erro ao carregar produtos.
+                        Consulte o console.
+
+                    </td>
+
+                </tr>
+
+            `;
+
+        }
+
+
+        return [];
     }
 }
 
