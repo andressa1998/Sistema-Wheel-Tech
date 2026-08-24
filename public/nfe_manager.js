@@ -23625,10 +23625,6 @@ function reconciliarEstadosFullComRegrasFixasNFE() {
     }
 }
 
-// =========================================================
-// CACHE LOCAL IMEDIATO - MONITOR FULL
-// =========================================================
-
 function persistirEstadosFullLocalNFE() {
 
     try {
@@ -23643,11 +23639,208 @@ function persistirEstadosFullLocalNFE() {
             );
 
 
+        // =====================================================
+        // CACHE VISUAL LEVE
+        //
+        // NÃO guardar locations, responses completas etc.
+        // =====================================================
+
+        const estadosCompactos =
+            estados.map(
+                estado => {
+
+                    const detalhesVariacoes =
+                        Array.isArray(
+                            estado.detalhes_variacoes
+                        )
+                            ? estado.detalhes_variacoes.map(
+                                detalhe => ({
+
+                                    variation_id:
+                                        detalhe.variation_id ??
+                                        null,
+
+                                    sku:
+                                        detalhe.sku ||
+                                        'SEM_SKU',
+
+                                    estoque_full:
+                                        detalhe.estoque_full ??
+                                        null,
+
+                                    estoque_local_ml:
+                                        detalhe.estoque_local_ml ??
+                                        null,
+
+                                    user_product_id:
+                                        detalhe.user_product_id ||
+                                        null
+                                })
+                            )
+                            : [];
+
+
+                    const estoqueLocal =
+                        Array.isArray(
+                            estado.estoque_local
+                        )
+                            ? estado.estoque_local.map(
+                                item => ({
+
+                                    sku:
+                                        item.sku ||
+                                        null,
+
+                                    sku_anuncio:
+                                        item.sku_anuncio ||
+                                        null,
+
+                                    produto_id:
+                                        item.produto_id ||
+                                        null,
+
+                                    encontrado:
+                                        item.encontrado ??
+                                        null,
+
+                                    estoque_atual:
+                                        item.estoque_atual ??
+                                        null,
+
+                                    motivo:
+                                        item.motivo ||
+                                        null
+                                })
+                            )
+                            : [];
+
+
+                    const detalhesSync =
+                        Array.isArray(
+                            estado.detalhes_sync
+                        )
+                            ? estado.detalhes_sync.map(
+                                item => ({
+
+                                    sku:
+                                        item.sku ||
+                                        null,
+
+                                    produto_id:
+                                        item.produto_id ||
+                                        null,
+
+                                    estoque_cadastro:
+                                        item.estoque_cadastro ??
+                                        null,
+
+                                    success:
+                                        item.success !==
+                                        false,
+
+                                    error:
+                                        item.error ||
+                                        null
+                                })
+                            )
+                            : [];
+
+
+                    return {
+
+                        mlb:
+                            estado.mlb,
+
+                        ativo:
+                            Boolean(
+                                estado.ativo
+                            ),
+
+                        status:
+                            estado.status ||
+                            'monitorando',
+
+                        venda_id_origem:
+                            estado.venda_id_origem ||
+                            null,
+
+                        full_total:
+                            estado.full_total ??
+                            null,
+
+                        listing_type_atual:
+                            estado.listing_type_atual ||
+                            null,
+
+                        listing_type_esperado:
+                            estado.listing_type_esperado ||
+                            null,
+
+                        mensagem:
+                            estado.mensagem ||
+                            null,
+
+                        detalhes_variacoes:
+                            detalhesVariacoes,
+
+                        estoque_local:
+                            estoqueLocal,
+
+                        detalhes_sync:
+                            detalhesSync,
+
+                        resumo_automatico:
+                            estado.resumo_automatico ||
+                            {},
+
+                        full_retirado_confirmado:
+                            Boolean(
+                                estado.full_retirado_confirmado
+                            ),
+
+                        sync_local_executado:
+                            Boolean(
+                                estado.sync_local_executado
+                            ),
+
+                        sync_local_sucesso:
+                            estado.sync_local_sucesso ??
+                            null,
+
+                        detectado_em:
+                            estado.detectado_em ||
+                            null,
+
+                        ultima_verificacao_em:
+                            estado.ultima_verificacao_em ||
+                            null,
+
+                        resolvido_em:
+                            estado.resolvido_em ||
+                            null,
+
+                        resolvido_por_username:
+                            estado.resolvido_por_username ||
+                            null,
+
+                        resolvido_por_nome:
+                            estado.resolvido_por_nome ||
+                            null
+                    };
+                }
+            );
+
+
         localStorage.setItem(
             'nfe_estados_full_cache',
             JSON.stringify(
-                estados
+                estadosCompactos
             )
+        );
+
+
+        console.log(
+            `💾 ${estadosCompactos.length} alerta(s) FULL salvo(s) no cache visual`
         );
 
 
@@ -23655,23 +23848,12 @@ function persistirEstadosFullLocalNFE() {
         error
     ) {
 
-        console.warn(
-            '⚠️ Erro persistindo estados FULL localmente:',
+        console.error(
+            '❌ Erro persistindo cache visual FULL:',
             error
         );
     }
 }
-
-
-// =========================================================
-// CARREGAR ESTADOS DO LOCALSTORAGE SINCRONAMENTE
-//
-// NÃO TEM await.
-// NÃO CONSULTA SUPABASE.
-// NÃO CONSULTA MERCADO LIVRE.
-//
-// É PARA A LINHA COMEÇAR PISCANDO IMEDIATAMENTE.
-// =========================================================
 
 function hidratarEstadosFullLocalNFE() {
 
@@ -23723,14 +23905,27 @@ function hidratarEstadosFullLocalNFE() {
 
 
                 if (
-                    mlb
+                    !mlb
                 ) {
 
-                    mapa.set(
-                        mlb,
-                        estado
-                    );
+                    return;
                 }
+
+
+                mapa.set(
+                    mlb,
+                    {
+
+                        ...estado,
+
+                        mlb,
+
+                        ativo:
+                            Boolean(
+                                estado.ativo
+                            )
+                    }
+                );
             }
         );
 
@@ -23740,7 +23935,7 @@ function hidratarEstadosFullLocalNFE() {
 
 
         console.log(
-            `⚡ ${mapa.size} estado(s) FULL restaurado(s) instantaneamente`
+            `⚡ ${mapa.size} alerta(s) FULL restaurado(s) SEM consultar internet`
         );
 
 
@@ -23751,8 +23946,8 @@ function hidratarEstadosFullLocalNFE() {
         error
     ) {
 
-        console.warn(
-            '⚠️ Cache local FULL inválido:',
+        console.error(
+            '❌ Cache local FULL inválido:',
             error
         );
 
@@ -24873,7 +25068,22 @@ async function verificarMonitorFullVendasNFE(
 
     try {
 
-        await carregarEstadosFullNFE();
+        // =====================================================
+        // USAR ESTADOS QUE JÁ ESTÃO EM MEMÓRIA / LOCAL
+        //
+        // NÃO CONSULTAR SUPABASE AQUI.
+        // =====================================================
+
+        hidratarEstadosFullLocalNFE();
+
+
+        hidratarRegrasFixasTipoAnuncioLocalNFE();
+
+
+        reconciliarEstadosFullComRegrasFixasNFE();
+
+
+        aplicarEstadosFullTabelaNFE();
 
 
         const vendas =
@@ -24885,7 +25095,7 @@ async function verificarMonitorFullVendasNFE(
 
 
         // =====================================================
-        // SOMENTE VENDAS FULL
+        // SOMENTE FULL
         // =====================================================
 
         const vendasFull =
@@ -24934,7 +25144,7 @@ async function verificarMonitorFullVendasNFE(
 
 
         console.log(
-            `🏭 Monitor FULL: ${mapa.size} MLB(s) único(s) para conferir`
+            `🏭 Monitor FULL: ${mapa.size} MLB(s) único(s)`
         );
 
 
@@ -24943,10 +25153,6 @@ async function verificarMonitorFullVendasNFE(
                 mapa.entries()
             );
 
-
-        // =====================================================
-        // PROCESSAR 2 MLBs POR VEZ
-        // =====================================================
 
         const TAMANHO_LOTE =
             2;
@@ -25005,7 +25211,7 @@ async function verificarMonitorFullVendasNFE(
 
 
             // =============================================
-            // ATUALIZAR VISUAL A CADA LOTE
+            // MOSTRAR RESULTADOS ENQUANTO PROCESSA
             // =============================================
 
             aplicarEstadosFullTabelaNFE();
@@ -25021,14 +25227,23 @@ async function verificarMonitorFullVendasNFE(
                     resolve =>
                         setTimeout(
                             resolve,
-                            300
+                            250
                         )
                 );
             }
         }
 
 
-        await carregarEstadosFullNFE();
+        // =====================================================
+        // SALVAR O RESULTADO LOCALMENTE
+        //
+        // processarMLBMonitorFullNFE já salva cada estado no
+        // Supabase individualmente.
+        //
+        // NÃO precisamos buscar tudo novamente.
+        // =====================================================
+
+        persistirEstadosFullLocalNFE();
 
 
         aplicarEstadosFullTabelaNFE();
@@ -25673,241 +25888,147 @@ window.inicializarMonitorFullNFE =
     );
 }
 
-function renderizarVendasNFETabela(
-    vendas
-) {
-
-    const tbody =
-        document.getElementById(
-            'vendasPendentesBody'
-        );
-
+function renderizarVendasNFETabela(vendas) {
+    const tbody = document.getElementById('vendasPendentesBody');
 
     if (!tbody) {
         return;
     }
 
     // =====================================================
-    // RESTAURAR ALERTAS ANTES DE DESENHAR
+    // ALERTAS FULL JÁ CONHECIDOS - SOMENTE CACHE LOCAL
+    //
+    // IMPORTANTE:
+    // esta função NÃO consulta Mercado Livre e NÃO agenda
+    // verificação FULL. Ela apenas reaplica o estado salvo.
     // =====================================================
-
     if (
         !window._estadosFullNFE ||
-        window._estadosFullNFE.size ===
-            0
+        window._estadosFullNFE.size === 0
     ) {
-
-        hidratarEstadosFullLocalNFE();
+        if (typeof hidratarEstadosFullLocalNFE === 'function') {
+            hidratarEstadosFullLocalNFE();
+        }
     }
 
+    if (
+        typeof hidratarRegrasFixasTipoAnuncioLocalNFE ===
+        'function'
+    ) {
+        hidratarRegrasFixasTipoAnuncioLocalNFE();
+    }
 
-    hidratarRegrasFixasTipoAnuncioLocalNFE();
-
-
-    reconciliarEstadosFullComRegrasFixasNFE();
-
+    if (
+        typeof reconciliarEstadosFullComRegrasFixasNFE ===
+        'function'
+    ) {
+        reconciliarEstadosFullComRegrasFixasNFE();
+    }
 
     garantirControlesVendasNFE();
 
+    // =====================================================
+    // GUARDAR LISTA ORIGINAL + AGRUPAR PACKS
+    // =====================================================
+    window._vendasTabelaNFEBase =
+        Array.isArray(vendas)
+            ? vendas
+            : [];
+
+    vendas =
+        agruparVendasEmPacksNFE(
+            window._vendasTabelaNFEBase
+        );
+
+    // Mantém lista completa para emissão/baixa/comentários.
+    vendasPendentes =
+        vendas;
 
     // =====================================================
-// GUARDAR A LISTA ORIGINAL
-//
-// IMPORTANTE:
-// Não pode guardar apenas FULL ou ME, porque depois
-// precisamos conseguir voltar para "Todas".
-// =====================================================
-
-window._vendasTabelaNFEBase =
-    Array.isArray(
-        vendas
-    )
-        ? vendas
-        : [];
-
-
-// =====================================================
-// AGRUPAR PACKS
-// =====================================================
-
-vendas =
-    agruparVendasEmPacksNFE(
-        window._vendasTabelaNFEBase
-    );
-
-
-// =====================================================
-// GUARDAR TODAS AS VENDAS AGRUPADAS
-//
-// Mantemos vendasPendentes COMPLETA para não interferir
-// em emissão, visualização, cancelamento etc.
-// =====================================================
-
-vendasPendentes =
-    vendas;
-
-
-// =====================================================
-// APLICAR FILTRO DE MODALIDADE
-// =====================================================
-
-const filtroModalidade =
-    window._filtroModalidadeNFE ||
-    'todas';
-
-
-if (
-    filtroModalidade ===
-    'full'
-) {
-
-    vendas =
-        vendas.filter(
-            venda =>
-                obterModalidadeFiltroNFE(
-                    venda
-                ) ===
-                'full'
-        );
-
-
-} else if (
-    filtroModalidade ===
-    'me'
-) {
-
-    vendas =
-        vendas.filter(
-            venda =>
-                obterModalidadeFiltroNFE(
-                    venda
-                ) ===
-                'me'
-        );
-}
-
-
-// =====================================================
-// SEM RESULTADOS
-// =====================================================
-
-if (
-    vendas.length ===
-    0
-) {
-
-    let texto =
-        'Nenhuma venda encontrada para esta data.';
-
+    // FILTRO MODALIDADE
+    // =====================================================
+    const filtroModalidade =
+        window._filtroModalidadeNFE ||
+        'todas';
 
     if (
         filtroModalidade ===
         'full'
     ) {
-
-        texto =
-            'Nenhuma venda FULL encontrada.';
+        vendas =
+            vendas.filter(
+                venda =>
+                    obterModalidadeFiltroNFE(
+                        venda
+                    ) ===
+                    'full'
+            );
 
     } else if (
         filtroModalidade ===
         'me'
     ) {
-
-        texto =
-            'Nenhuma venda Mercado Envios encontrada.';
+        vendas =
+            vendas.filter(
+                venda =>
+                    obterModalidadeFiltroNFE(
+                        venda
+                    ) ===
+                    'me'
+            );
     }
 
-
-    tbody.innerHTML = `
-        <tr>
-
-            <td
-                colspan="${obterQuantidadeColunasVisiveisNFE()}"
-                class="text-center py-4"
-            >
-                ${texto}
-            </td>
-
-        </tr>
-    `;
-
-
-    aplicarPreferenciasColunasNFE();
-
     // =====================================================
-    // ALERTA FULL JÁ CONHECIDO
-    //
-    // NÃO ESPERA CONSULTA AO MERCADO LIVRE.
+    // SEM RESULTADOS
     // =====================================================
-
     if (
-        typeof aplicarEstadosFullTabelaNFE ===
-        'function'
+        vendas.length ===
+        0
     ) {
+        let texto =
+            'Nenhuma venda encontrada para esta data.';
 
-        aplicarEstadosFullTabelaNFE();
+        if (
+            filtroModalidade ===
+            'full'
+        ) {
+            texto =
+                'Nenhuma venda FULL encontrada.';
+
+        } else if (
+            filtroModalidade ===
+            'me'
+        ) {
+            texto =
+                'Nenhuma venda Mercado Envios encontrada.';
+        }
+
+        tbody.innerHTML = `
+            <tr>
+                <td
+                    colspan="${obterQuantidadeColunasVisiveisNFE()}"
+                    class="text-center py-4"
+                >
+                    ${texto}
+                </td>
+            </tr>
+        `;
+
+        aplicarPreferenciasColunasNFE();
+
+        if (
+            typeof aplicarEstadosFullTabelaNFE ===
+            'function'
+        ) {
+            aplicarEstadosFullTabelaNFE();
+        }
+
+        return;
     }
 
-
     // =====================================================
-    // CONSULTA ML DEPOIS, EM SEGUNDO PLANO
+    // MODALIDADE
     // =====================================================
-
-    if (
-        typeof agendarVerificacaoMonitorFullNFE ===
-        'function'
-    ) {
-
-        agendarVerificacaoMonitorFullNFE(
-            1800,
-            false
-        );
-    }
-
-    // =====================================================
-    // REAPLICAR STATUS FULL
-    // =====================================================
-
-    setTimeout(
-        () => {
-
-            if (
-                typeof aplicarEstadosFullTabelaNFE ===
-                'function'
-            ) {
-
-                aplicarEstadosFullTabelaNFE();
-            }
-
-        },
-        50
-    );
-    // =====================================================
-// AGENDAR CONFERÊNCIA FULL
-//
-// NÃO dispara imediatamente várias requisições.
-// =====================================================
-
-if (
-    typeof agendarVerificacaoMonitorFullNFE ===
-    'function'
-) {
-
-    agendarVerificacaoMonitorFullNFE(
-        1200,
-        false
-    );
-}
-
-
-    return;
-}
-
-
-    // =====================================================
-    // BADGE DE ENVIO
-    // =====================================================
-
     const badgeEnvio =
         venda => {
 
@@ -25915,21 +26036,12 @@ if (
                 `${venda._logistic_type || ''} ${venda._shipping_mode || ''} ${venda.tipo_envio || ''}`
                     .toUpperCase();
 
-
-            // =============================================
             // FULL
-            // =============================================
-
             if (
                 venda._is_full ||
-                tipo.includes(
-                    'FULL'
-                ) ||
-                tipo.includes(
-                    'FULFILLMENT'
-                )
+                tipo.includes('FULL') ||
+                tipo.includes('FULFILLMENT')
             ) {
-
                 return `
                     <span
                         style="
@@ -25947,23 +26059,12 @@ if (
                 `;
             }
 
-
-            // =============================================
             // FLEX
-            // =============================================
-
             if (
-                tipo.includes(
-                    'FLEX'
-                ) ||
-                tipo.includes(
-                    'SELF_SERVICE'
-                ) ||
-                tipo.includes(
-                    'DROP_OFF'
-                )
+                tipo.includes('FLEX') ||
+                tipo.includes('SELF_SERVICE') ||
+                tipo.includes('DROP_OFF')
             ) {
-
                 return `
                     <span
                         style="
@@ -25981,23 +26082,12 @@ if (
                 `;
             }
 
-
-            // =============================================
             // MERCADO ENVIOS
-            // =============================================
-
             if (
-                tipo.includes(
-                    'CROSS_DOCKING'
-                ) ||
-                tipo.includes(
-                    'MERCADO'
-                ) ||
-                tipo.includes(
-                    'ME2'
-                )
+                tipo.includes('CROSS_DOCKING') ||
+                tipo.includes('MERCADO') ||
+                tipo.includes('ME2')
             ) {
-
                 return `
                     <span
                         style="
@@ -26014,11 +26104,6 @@ if (
                     </span>
                 `;
             }
-
-
-            // =============================================
-            // OUTROS
-            // =============================================
 
             return `
                 <span
@@ -26038,17 +26123,11 @@ if (
             `;
         };
 
-
     // =====================================================
     // PAGAMENTO
     // =====================================================
-
     const htmlPagamento =
         venda => {
-
-                        // =============================================
-            // MÚLTIPLOS PAGAMENTOS
-            // =============================================
 
             const pagamentosDetalhes =
                 Array.isArray(
@@ -26063,12 +26142,13 @@ if (
                             : []
                     );
 
-
+            // =================================================
+            // MÚLTIPLOS PAGAMENTOS
+            // =================================================
             if (
                 pagamentosDetalhes.length >
                 0
             ) {
-
                 const totalPagamentos =
                     pagamentosDetalhes.reduce(
                         (
@@ -26083,7 +26163,6 @@ if (
                         0
                     );
 
-
                 const htmlMetodos =
                     pagamentosDetalhes
                         .map(
@@ -26094,7 +26173,6 @@ if (
                                         .metodo_pagamento_nome ||
                                     'Não informado';
 
-
                                 const tipo =
                                     String(
                                         pagamento
@@ -26102,7 +26180,6 @@ if (
                                         ''
                                     )
                                         .toLowerCase();
-
 
                                 const metodoId =
                                     String(
@@ -26112,33 +26189,30 @@ if (
                                     )
                                         .toLowerCase();
 
-
                                 const valor =
                                     Number(
                                         pagamento.valor ||
                                         0
                                     );
 
-
                                 const parcelamento =
                                     pagamento
                                         .parcelamento_nome ||
                                     '';
 
-
                                 let icone =
                                     'fa-wallet';
-
 
                                 let fundo =
                                     '#6c757d';
 
+                                let corTexto =
+                                    'white';
 
                                 if (
                                     metodoId ===
                                     'pix'
                                 ) {
-
                                     icone =
                                         'fa-qrcode';
 
@@ -26149,7 +26223,6 @@ if (
                                     tipo ===
                                     'credit_card'
                                 ) {
-
                                     icone =
                                         'fa-credit-card';
 
@@ -26160,7 +26233,6 @@ if (
                                     tipo ===
                                     'debit_card'
                                 ) {
-
                                     icone =
                                         'fa-credit-card';
 
@@ -26171,25 +26243,25 @@ if (
                                     tipo ===
                                     'account_money'
                                 ) {
-
                                     icone =
                                         'fa-wallet';
 
                                     fundo =
                                         '#ffc107';
 
+                                    corTexto =
+                                        '#212529';
+
                                 } else if (
                                     tipo ===
                                     'ticket'
                                 ) {
-
                                     icone =
                                         'fa-barcode';
 
                                     fundo =
                                         '#6f42c1';
                                 }
-
 
                                 return `
                                     <div
@@ -26200,18 +26272,16 @@ if (
                                         <span
                                             style="
                                                 background:${fundo};
-                                                color:${
-                                                    tipo === 'account_money'
-                                                        ? '#212529'
-                                                        : 'white'
-                                                };
+                                                color:${corTexto};
                                                 padding:4px 7px;
                                                 border-radius:5px;
                                                 font-size:11px;
                                                 display:inline-block;
                                             "
                                         >
-                                            <i class="fas ${icone}"></i>
+                                            <i
+                                                class="fas ${icone}"
+                                            ></i>
 
                                             ${escaparHTMLNFE(
                                                 nome
@@ -26239,11 +26309,9 @@ if (
 
                                             ${
                                                 parcelamento
-
                                                     ? ` • ${escaparHTMLNFE(
                                                         parcelamento
                                                     )}`
-
                                                     : ''
                                             }
                                         </div>
@@ -26251,15 +26319,11 @@ if (
                                 `;
                             }
                         )
-                        .join(
-                            ''
-                        );
-
+                        .join('');
 
                 const htmlTotal =
                     pagamentosDetalhes.length >
                     1
-
                         ? `
                             <div
                                 style="
@@ -26272,6 +26336,7 @@ if (
                                 "
                             >
                                 Total pago:
+
                                 R$ ${totalPagamentos.toLocaleString(
                                     'pt-BR',
                                     {
@@ -26284,9 +26349,7 @@ if (
                                 )}
                             </div>
                         `
-
                         : '';
-
 
                 return `
                     <div>
@@ -26296,11 +26359,13 @@ if (
                 `;
             }
 
+            // =================================================
+            // PAGAMENTO ÚNICO
+            // =================================================
             const metodoPagamento =
                 venda._metodo_pagamento_nome ||
                 venda.metodo_pagamento_nome ||
                 'N/I';
-
 
             const metodoPagamentoId =
                 String(
@@ -26310,7 +26375,6 @@ if (
                 )
                     .toLowerCase();
 
-
             const tipoPagamento =
                 String(
                     venda._tipo_pagamento ||
@@ -26319,77 +26383,67 @@ if (
                 )
                     .toLowerCase();
 
-
             const parcelasBruto =
                 venda._parcelas ??
                 venda.parcelas ??
                 null;
 
-
             const parcelas =
-                parcelasBruto !== null &&
-                parcelasBruto !== undefined &&
-                parcelasBruto !== ''
-
+                parcelasBruto !==
+                    null &&
+                parcelasBruto !==
+                    undefined &&
+                parcelasBruto !==
+                    ''
                     ? Number(
                         parcelasBruto
                     )
-
                     : null;
-
 
             const valorParcelaBruto =
                 venda._valor_parcela ??
                 venda.valor_parcela ??
                 null;
 
-
             const valorParcela =
-                valorParcelaBruto !== null &&
-                valorParcelaBruto !== undefined &&
-                valorParcelaBruto !== ''
-
+                valorParcelaBruto !==
+                    null &&
+                valorParcelaBruto !==
+                    undefined &&
+                valorParcelaBruto !==
+                    ''
                     ? Number(
                         valorParcelaBruto
                     )
-
                     : null;
-
 
             let parcelamentoNome =
                 venda._parcelamento_nome ||
                 venda.parcelamento_nome ||
                 null;
 
-
-            // =============================================
-            // CRIAR TEXTO DE PARCELAMENTO CASO O CACHE
-            // TENHA OS DADOS MAS NÃO TENHA O TEXTO PRONTO
-            // =============================================
-
             if (
                 tipoPagamento ===
                     'credit_card' &&
                 !parcelamentoNome &&
                 parcelas &&
-                parcelas > 0
+                parcelas >
+                    0
             ) {
-
                 if (
                     parcelas ===
                     1
                 ) {
-
                     parcelamentoNome =
                         '1x (À vista)';
 
                 } else if (
-                    valorParcela !== null &&
+                    valorParcela !==
+                        null &&
                     Number.isFinite(
                         valorParcela
                     )
                 ) {
-
                     parcelamentoNome =
                         `${parcelas}x de R$ ${valorParcela.toLocaleString(
                             'pt-BR',
@@ -26403,17 +26457,12 @@ if (
                         )}`;
 
                 } else {
-
                     parcelamentoNome =
                         `${parcelas}x`;
                 }
             }
 
-
-            // =============================================
             // PIX
-            // =============================================
-
             if (
                 metodoPagamentoId ===
                     'pix' ||
@@ -26425,34 +26474,25 @@ if (
                         'pix'
                     )
             ) {
-
                 return `
-                    <div>
-
-                        <span
-                            style="
-                                background:#28a745;
-                                color:white;
-                                padding:4px 8px;
-                                border-radius:5px;
-                                font-size:11px;
-                                white-space:nowrap;
-                                display:inline-block;
-                            "
-                        >
-                            <i class="fas fa-qrcode"></i>
-                            Pix
-                        </span>
-
-                    </div>
+                    <span
+                        style="
+                            background:#28a745;
+                            color:white;
+                            padding:4px 8px;
+                            border-radius:5px;
+                            font-size:11px;
+                            white-space:nowrap;
+                            display:inline-block;
+                        "
+                    >
+                        <i class="fas fa-qrcode"></i>
+                        Pix
+                    </span>
                 `;
             }
 
-
-            // =============================================
-            // CARTÃO DE CRÉDITO
-            // =============================================
-
+            // CRÉDITO
             if (
                 tipoPagamento ===
                     'credit_card' ||
@@ -26464,32 +26504,8 @@ if (
                         'crédito'
                     )
             ) {
-
-                const htmlParcelamento =
-                    parcelamentoNome
-
-                        ? `
-                            <div
-                                style="
-                                    margin-top:4px;
-                                    font-size:10px;
-                                    color:#495057;
-                                    white-space:nowrap;
-                                    font-weight:600;
-                                "
-                            >
-                                ${escaparHTMLNFE(
-                                    parcelamentoNome
-                                )}
-                            </div>
-                        `
-
-                        : '';
-
-
                 return `
                     <div>
-
                         <span
                             style="
                                 background:#007bff;
@@ -26508,17 +26524,30 @@ if (
                             )}
                         </span>
 
-                        ${htmlParcelamento}
-
+                        ${
+                            parcelamentoNome
+                                ? `
+                                    <div
+                                        style="
+                                            margin-top:4px;
+                                            font-size:10px;
+                                            color:#495057;
+                                            white-space:nowrap;
+                                            font-weight:600;
+                                        "
+                                    >
+                                        ${escaparHTMLNFE(
+                                            parcelamentoNome
+                                        )}
+                                    </div>
+                                `
+                                : ''
+                        }
                     </div>
                 `;
             }
 
-
-            // =============================================
-            // CARTÃO DE DÉBITO
-            // =============================================
-
+            // DÉBITO
             if (
                 tipoPagamento ===
                     'debit_card' ||
@@ -26530,7 +26559,6 @@ if (
                         'débito'
                     )
             ) {
-
                 return `
                     <span
                         style="
@@ -26552,16 +26580,11 @@ if (
                 `;
             }
 
-
-            // =============================================
             // SALDO MERCADO PAGO
-            // =============================================
-
             if (
                 tipoPagamento ===
-                    'account_money'
+                'account_money'
             ) {
-
                 return `
                     <span
                         style="
@@ -26583,16 +26606,11 @@ if (
                 `;
             }
 
-
-            // =============================================
             // BOLETO
-            // =============================================
-
             if (
                 tipoPagamento ===
-                    'ticket'
+                'ticket'
             ) {
-
                 return `
                     <span
                         style="
@@ -26614,11 +26632,7 @@ if (
                 `;
             }
 
-
-            // =============================================
             // NÃO INFORMADO
-            // =============================================
-
             if (
                 !metodoPagamento ||
                 metodoPagamento ===
@@ -26626,7 +26640,6 @@ if (
                 metodoPagamento ===
                     'Não informado'
             ) {
-
                 return `
                     <span
                         style="
@@ -26638,11 +26651,6 @@ if (
                     </span>
                 `;
             }
-
-
-            // =============================================
-            // OUTROS
-            // =============================================
 
             return `
                 <span
@@ -26663,11 +26671,9 @@ if (
             `;
         };
 
-
     // =====================================================
-    // ESTOQUE
+    // ESTOQUE INTERNO
     // =====================================================
-
     const htmlEstoque =
         venda => {
 
@@ -26677,260 +26683,218 @@ if (
                     venda.id
                 );
 
-                const vendaCancelada =
-                    vendaEstaCanceladaNFE(
+            const vendaCancelada =
+                vendaEstaCanceladaNFE(
+                    venda
+                );
+
+            const baixadoPor =
+                venda._estoque_baixado_por_nome ||
+                null;
+
+            // =================================================
+            // VENDA CANCELADA TEM PRIORIDADE
+            // =================================================
+            if (
+                vendaCancelada
+            ) {
+                const restaurado =
+                    Boolean(
                         venda
-                    );
+                            ._estoque_restaurado_cancelamento
+                    ) ||
+                    venda
+                        ._estoque_status ===
+                        'restaurado_cancelamento' ||
+                    venda
+                        ._estoque_status ===
+                        'restaurado_cancelamento_sync_pendente';
 
-                const comentariosHtml =
-                    montarCelulaComentariosVendaNFE(
-                        vendaId
-                    );
+                // RESTAURADO
+                if (
+                    restaurado
+                ) {
+                    const syncPendente =
+                        venda
+                            ._estoque_status ===
+                        'restaurado_cancelamento_sync_pendente';
 
-                const baixadoPor =
-                        venda._estoque_baixado_por_nome ||
-                        null;
+                    return `
+                        <div>
+                            <span
+                                style="
+                                    display:inline-block;
+                                    background:#17a2b8;
+                                    color:white;
+                                    padding:4px 8px;
+                                    border-radius:5px;
+                                    font-size:11px;
+                                    font-weight:600;
+                                    white-space:nowrap;
+                                "
+                            >
+                                <i class="fas fa-undo-alt"></i>
+                                Estoque restaurado
+                            </span>
 
-                        // =====================================================
-// VENDA CANCELADA TEM PRIORIDADE SOBRE TODO O RESTO
-// =====================================================
-
-if (
-    vendaCancelada
-) {
-
-    const restaurado =
-        venda
-            ._estoque_restaurado_cancelamento ||
-        venda
-            ._estoque_status ===
-            'restaurado_cancelamento' ||
-        venda
-            ._estoque_status ===
-            'restaurado_cancelamento_sync_pendente';
-
-
-    // =================================================
-    // ESTOQUE JÁ RESTAURADO
-    // =================================================
-
-    if (
-        restaurado
-    ) {
-
-        const syncPendente =
-            venda
-                ._estoque_status ===
-            'restaurado_cancelamento_sync_pendente';
-
-
-        return `
-            <div>
-
-                <span
-                    style="
-                        display:inline-block;
-                        background:#17a2b8;
-                        color:white;
-                        padding:4px 8px;
-                        border-radius:5px;
-                        font-size:11px;
-                        font-weight:600;
-                        white-space:nowrap;
-                    "
-                >
-                    <i class="fas fa-undo-alt"></i>
-                    Estoque restaurado
-                </span>
-
-
-                <div
-                    style="
-                        color:#dc3545;
-                        font-size:10px;
-                        font-weight:700;
-                        margin-top:4px;
-                    "
-                >
-                    <i class="fas fa-ban"></i>
-                    Venda cancelada
-                </div>
-
-
-                ${
-                    baixadoPor
-
-                        ? `
                             <div
                                 style="
-                                    margin-top:3px;
+                                    color:#dc3545;
+                                    font-size:10px;
+                                    font-weight:700;
+                                    margin-top:4px;
+                                "
+                            >
+                                <i class="fas fa-ban"></i>
+                                Venda cancelada
+                            </div>
+
+                            ${
+                                baixadoPor
+                                    ? `
+                                        <div
+                                            data-responsavel-baixa-nfe="1"
+                                            style="
+                                                margin-top:3px;
+                                                font-size:9px;
+                                                color:#6c757d;
+                                            "
+                                        >
+                                            Baixa original por
+
+                                            <strong>
+                                                ${escaparHTMLNFE(
+                                                    baixadoPor
+                                                )}
+                                            </strong>
+                                        </div>
+                                    `
+                                    : ''
+                            }
+
+                            ${
+                                syncPendente
+                                    ? `
+                                        <div
+                                            style="
+                                                color:#856404;
+                                                font-size:9px;
+                                                margin-top:3px;
+                                            "
+                                        >
+                                            ⚠️ Sync ML pendente
+                                        </div>
+                                    `
+                                    : ''
+                            }
+                        </div>
+                    `;
+                }
+
+                // FULL CANCELADA
+                if (
+                    venda._is_full
+                ) {
+                    return `
+                        <div>
+                            <span
+                                style="
+                                    display:inline-block;
+                                    background:#dc3545;
+                                    color:white;
+                                    padding:4px 8px;
+                                    border-radius:5px;
+                                    font-size:11px;
+                                    font-weight:700;
+                                "
+                            >
+                                <i class="fas fa-ban"></i>
+                                Venda cancelada
+                            </span>
+
+                            <div
+                                style="
+                                    margin-top:4px;
                                     font-size:9px;
                                     color:#6c757d;
                                 "
                             >
-                                Baixa original por
-
-                                <strong>
-                                    ${escaparHTMLNFE(
-                                        baixadoPor
-                                    )}
-                                </strong>
+                                Estoque era FULL
                             </div>
-                        `
-
-                        : ''
+                        </div>
+                    `;
                 }
 
+                // CANCELADA APÓS BAIXA
+                if (
+                    venda._estoque_baixado
+                ) {
+                    return `
+                        <div>
+                            <span
+                                style="
+                                    display:inline-block;
+                                    background:#dc3545;
+                                    color:white;
+                                    padding:4px 8px;
+                                    border-radius:5px;
+                                    font-size:11px;
+                                "
+                            >
+                                <i class="fas fa-ban"></i>
+                                Venda cancelada
+                            </span>
 
-                ${
-                    syncPendente
-
-                        ? `
                             <div
                                 style="
                                     color:#856404;
                                     font-size:9px;
-                                    margin-top:3px;
+                                    margin-top:4px;
                                 "
                             >
-                                ⚠️ Sync ML pendente
+                                Aguardando restauração do estoque
                             </div>
-                        `
-
-                        : ''
+                        </div>
+                    `;
                 }
 
-            </div>
-        `;
-    }
+                // CANCELADA SEM BAIXA
+                return `
+                    <div>
+                        <span
+                            style="
+                                display:inline-block;
+                                background:#dc3545;
+                                color:white;
+                                padding:4px 8px;
+                                border-radius:5px;
+                                font-size:11px;
+                                font-weight:700;
+                            "
+                        >
+                            <i class="fas fa-ban"></i>
+                            Venda cancelada
+                        </span>
 
+                        <div
+                            style="
+                                color:#6c757d;
+                                font-size:9px;
+                                margin-top:4px;
+                            "
+                        >
+                            Baixa desabilitada
+                        </div>
+                    </div>
+                `;
+            }
 
-    // =================================================
-    // FULL CANCELADA
-    // =================================================
-
-    if (
-        venda._is_full
-    ) {
-
-        return `
-            <div>
-
-                <span
-                    style="
-                        display:inline-block;
-                        background:#dc3545;
-                        color:white;
-                        padding:4px 8px;
-                        border-radius:5px;
-                        font-size:11px;
-                        font-weight:700;
-                    "
-                >
-                    <i class="fas fa-ban"></i>
-                    Venda cancelada
-                </span>
-
-                <div
-                    style="
-                        margin-top:4px;
-                        font-size:9px;
-                        color:#6c757d;
-                    "
-                >
-                    Estoque era FULL
-                </div>
-
-            </div>
-        `;
-    }
-
-
-    // =================================================
-    // CANCELADA DEPOIS DA BAIXA,
-    // MAS RESTAURAÇÃO AINDA NÃO APARECEU
-    // =================================================
-
-    if (
-        venda._estoque_baixado
-    ) {
-
-        return `
-            <div>
-
-                <span
-                    style="
-                        display:inline-block;
-                        background:#dc3545;
-                        color:white;
-                        padding:4px 8px;
-                        border-radius:5px;
-                        font-size:11px;
-                    "
-                >
-                    <i class="fas fa-ban"></i>
-                    Venda cancelada
-                </span>
-
-                <div
-                    style="
-                        color:#856404;
-                        font-size:9px;
-                        margin-top:4px;
-                    "
-                >
-                    Aguardando restauração do estoque
-                </div>
-
-            </div>
-        `;
-    }
-
-
-    // =================================================
-    // CANCELADA SEM NUNCA TER DADO BAIXA
-    // =================================================
-
-    return `
-        <div>
-
-            <span
-                style="
-                    display:inline-block;
-                    background:#dc3545;
-                    color:white;
-                    padding:4px 8px;
-                    border-radius:5px;
-                    font-size:11px;
-                    font-weight:700;
-                "
-            >
-                <i class="fas fa-ban"></i>
-                Venda cancelada
-            </span>
-
-            <div
-                style="
-                    color:#6c757d;
-                    font-size:9px;
-                    margin-top:4px;
-                "
-            >
-                Baixa desabilitada
-            </div>
-
-        </div>
-    `;
-}
-
-            // =============================================
-            // FULL
-            // =============================================
-
+            // =================================================
+            // FULL NORMAL
+            // =================================================
             if (
                 venda._is_full
             ) {
-
                 return `
                     <span
                         style="
@@ -26946,126 +26910,70 @@ if (
                 `;
             }
 
-            // =============================================
-// VENDA CANCELADA / ESTOQUE RESTAURADO
-// =============================================
-
-if (
-    venda
-        ._estoque_restaurado_cancelamento ||
-    venda
-        ._estoque_status ===
-        'restaurado_cancelamento' ||
-    venda
-        ._estoque_status ===
-        'restaurado_cancelamento_sync_pendente'
-) {
-
-    const syncPendente =
-        venda
-            ._estoque_status ===
-        'restaurado_cancelamento_sync_pendente';
-
-
-    return `
-
-        <div>
-
-            <span
-                style="
-                    display:inline-block;
-                    background:#17a2b8;
-                    color:white;
-                    padding:4px 8px;
-                    border-radius:5px;
-                    font-size:11px;
-                    font-weight:600;
-                    white-space:nowrap;
-                "
-            >
-                <i class="fas fa-undo-alt"></i>
-                Estoque restaurado
-            </span>
-
-
-            <div
-                style="
-                    color:#dc3545;
-                    font-size:10px;
-                    font-weight:600;
-                    margin-top:4px;
-                "
-            >
-                Venda cancelada
-            </div>
-
-
-            ${
-                syncPendente
-
-                    ? `
-                        <div
+            // =================================================
+            // BAIXADO
+            // =================================================
+            if (
+                venda._estoque_baixado
+            ) {
+                return `
+                    <div>
+                        <span
                             style="
-                                color:#856404;
-                                font-size:9px;
-                                margin-top:3px;
+                                background:#28a745;
+                                color:white;
+                                padding:4px 8px;
+                                border-radius:5px;
+                                font-size:11px;
+                                display:inline-block;
                             "
                         >
-                            ⚠️ Sync ML pendente
-                        </div>
-                    `
+                            <i class="fas fa-check"></i>
+                            Estoque baixado
+                        </span>
 
-                    : ''
-            }
+                        ${
+                            baixadoPor
+                                ? `
+                                    <div
+                                        data-responsavel-baixa-nfe="1"
+                                        style="
+                                            margin-top:4px;
+                                            font-size:10px;
+                                            color:#495057;
+                                            white-space:nowrap;
+                                        "
+                                    >
+                                        <i class="fas fa-user"></i>
 
-        </div>
-    `;
-}
+                                        Baixa por
 
-
-            // =============================================
-            // BAIXADO
-            // =============================================
-
-            if (
-                venda
-                    ._estoque_baixado
-            ) {
-
-                return `
-                    <span
-                        style="
-                            background:#28a745;
-                            color:white;
-                            padding:4px 8px;
-                            border-radius:5px;
-                            font-size:11px;
-                        "
-                    >
-                        <i class="fas fa-check"></i>
-                        Estoque baixado
-                    </span>
+                                        <strong>
+                                            ${escaparHTMLNFE(
+                                                baixadoPor
+                                            )}
+                                        </strong>
+                                    </div>
+                                `
+                                : ''
+                        }
+                    </div>
                 `;
             }
-
 
             const status =
                 venda._estoque_status ||
                 'nao_verificado';
 
-
-            // =============================================
+            // =================================================
             // DISPONÍVEL
-            // =============================================
-
+            // =================================================
             if (
                 status ===
                 'disponivel'
             ) {
-
                 return `
                     <div>
-
                         <div
                             style="
                                 color:#28a745;
@@ -27080,30 +26988,29 @@ if (
                         <button
                             type="button"
                             class="btn btn-sm btn-primary"
-                            style="margin-top:4px;"
-                            onclick="darBaixaEstoqueVenda('${escaparHTMLNFE(vendaId)}')"
+                            style="
+                                margin-top:4px;
+                            "
+                            onclick="darBaixaEstoqueVenda('${escaparHTMLNFE(
+                                vendaId
+                            )}')"
                         >
                             <i class="fas fa-minus-circle"></i>
                             Dar baixa
                         </button>
-
                     </div>
                 `;
             }
 
-
-            // =============================================
+            // =================================================
             // SYNC PENDENTE
-            // =============================================
-
+            // =================================================
             if (
                 status ===
                 'baixado_sync_pendente'
             ) {
-
                 return `
                     <div>
-
                         <span
                             style="
                                 color:#856404;
@@ -27118,26 +27025,26 @@ if (
                         <button
                             type="button"
                             class="btn btn-sm btn-warning"
-                            style="margin-top:4px;"
-                            onclick="sincronizarEstoqueVendaManual('${escaparHTMLNFE(vendaId)}')"
+                            style="
+                                margin-top:4px;
+                            "
+                            onclick="sincronizarEstoqueVendaManual('${escaparHTMLNFE(
+                                vendaId
+                            )}')"
                         >
                             Sincronizar ML
                         </button>
-
                     </div>
                 `;
             }
 
-
-            // =============================================
+            // =================================================
             // SEM CADASTRO
-            // =============================================
-
+            // =================================================
             if (
                 status ===
                 'sem_cadastro'
             ) {
-
                 return `
                     <span
                         style="
@@ -27152,16 +27059,13 @@ if (
                 `;
             }
 
-
-            // =============================================
+            // =================================================
             // PROCESSANDO
-            // =============================================
-
+            // =================================================
             if (
                 status ===
                 'processando'
             ) {
-
                 return `
                     <span
                         style="
@@ -27175,11 +27079,6 @@ if (
                 `;
             }
 
-
-            // =============================================
-            // PADRÃO
-            // =============================================
-
             return `
                 <span
                     style="
@@ -27192,11 +27091,9 @@ if (
             `;
         };
 
-
     // =====================================================
     // LINHAS
     // =====================================================
-
     tbody.innerHTML =
         vendas
             .map(
@@ -27208,179 +27105,159 @@ if (
                             venda.id
                         );
 
-
-                // =================================================
-                // COMENTÁRIOS
-                // =================================================
-
-                const comentariosHtml =
-                    montarCelulaComentariosVendaNFE(
-                        vendaId
-                    );
-
+                    // =================================================
+                    // COMENTÁRIOS
+                    // =================================================
+                    const comentariosHtml =
+                        montarCelulaComentariosVendaNFE(
+                            vendaId
+                        );
 
                     const isFull =
                         Boolean(
                             venda._is_full
                         );
 
-
                     const temNfe =
-    Boolean(
-        venda._tem_nfe
-    );
+                        Boolean(
+                            venda._tem_nfe
+                        );
 
+                    const vendaCancelada =
+                        vendaEstaCanceladaNFE(
+                            venda
+                        );
 
-const vendaCancelada =
-    vendaEstaCanceladaNFE(
-        venda
-    );
+                    const emitidoPor =
+                        venda._nfe_emitida_por_nome ||
+                        null;
 
+                    const canceladaEm =
+                        venda._venda_cancelada_em ||
+                        null;
 
-const emitidoPor =
-    venda._nfe_emitida_por_nome ||
-    null;
+                    // =================================================
+                    // CANCELAMENTO
+                    // =================================================
+                    let canceladaHtml =
+                        '';
 
+                    if (
+                        vendaCancelada
+                    ) {
+                        let dataCancelamento =
+                            '';
 
-const canceladaEm =
-    venda._venda_cancelada_em ||
-    null;
+                        if (
+                            canceladaEm
+                        ) {
+                            try {
+                                dataCancelamento =
+                                    new Date(
+                                        canceladaEm
+                                    )
+                                        .toLocaleString(
+                                            'pt-BR',
+                                            {
+                                                day:
+                                                    '2-digit',
 
+                                                month:
+                                                    '2-digit',
 
-let canceladaHtml =
-    '';
+                                                year:
+                                                    'numeric',
 
+                                                hour:
+                                                    '2-digit',
 
-if (
-    vendaCancelada
-) {
+                                                minute:
+                                                    '2-digit'
+                                            }
+                                        );
 
-    let dataCancelamento =
-        '';
-
-
-    if (
-        canceladaEm
-    ) {
-
-        try {
-
-            dataCancelamento =
-                new Date(
-                    canceladaEm
-                )
-                    .toLocaleString(
-                        'pt-BR',
-                        {
-                            day:
-                                '2-digit',
-
-                            month:
-                                '2-digit',
-
-                            year:
-                                'numeric',
-
-                            hour:
-                                '2-digit',
-
-                            minute:
-                                '2-digit'
+                            } catch (
+                                error
+                            ) {}
                         }
-                    );
 
-        } catch (
-            error
-        ) {}
-    }
+                        canceladaHtml = `
+                            <div
+                                style="
+                                    margin-top:5px;
+                                "
+                            >
+                                <span
+                                    style="
+                                        display:inline-block;
+                                        background:#dc3545;
+                                        color:white;
+                                        padding:3px 7px;
+                                        border-radius:5px;
+                                        font-size:10px;
+                                        font-weight:700;
+                                        white-space:nowrap;
+                                    "
+                                >
+                                    <i class="fas fa-ban"></i>
+                                    VENDA CANCELADA
+                                </span>
 
+                                ${
+                                    dataCancelamento
+                                        ? `
+                                            <div
+                                                style="
+                                                    color:#dc3545;
+                                                    font-size:9px;
+                                                    margin-top:2px;
+                                                "
+                                            >
+                                                ${escaparHTMLNFE(
+                                                    dataCancelamento
+                                                )}
+                                            </div>
+                                        `
+                                        : ''
+                                }
+                            </div>
+                        `;
+                    }
 
-    canceladaHtml = `
-        <div
-            style="
-                margin-top:5px;
-            "
-        >
-            <span
-                style="
-                    display:inline-block;
-                    background:#dc3545;
-                    color:white;
-                    padding:3px 7px;
-                    border-radius:5px;
-                    font-size:10px;
-                    font-weight:700;
-                    white-space:nowrap;
-                "
-            >
-                <i class="fas fa-ban"></i>
-                VENDA CANCELADA
-            </span>
-
-            ${
-                dataCancelamento
-
-                    ? `
-                        <div
-                            style="
-                                color:#dc3545;
-                                font-size:9px;
-                                margin-top:2px;
-                            "
-                        >
-                            ${escaparHTMLNFE(
-                                dataCancelamento
-                            )}
-                        </div>
-                    `
-
-                    : ''
-            }
-        </div>
-    `;
-}
-
+                    // =================================================
+                    // DATA VENDA
+                    // =================================================
                     const dataHoraVenda =
                         formatarDataHoraVendaNFE(
                             venda
-                        );    
-
+                        );
 
                     // =================================================
-                    // DATA
+                    // ENVIO
                     // =================================================
-
-                    let dataEnvio =
+                    const dataEnvio =
                         isFull
-
                             ? obterDataVendaNFE(
                                 venda
                             )
-
                             : venda._data_envio;
 
-
-                    let tituloData =
+                    const tituloData =
                         isFull
                             ? 'Venda FULL'
                             : 'Despachar';
 
-
                     let hora =
                         '';
-
 
                     if (
                         !isFull &&
                         venda._prazo_envio
                     ) {
-
                         try {
-
                             hora =
                                 new Date(
-                                    venda
-                                        ._prazo_envio
+                                    venda._prazo_envio
                                 )
                                     .toLocaleTimeString(
                                         'pt-BR',
@@ -27398,30 +27275,21 @@ if (
                         ) {}
                     }
 
-
                     // =================================================
                     // CLIENTE
                     // =================================================
-
                     const cliente =
                         venda.cliente ||
-
-                        venda.buyer
-                            ?.nickname ||
-
+                        venda.buyer?.nickname ||
                         `${venda.buyer?.first_name || ''} ${venda.buyer?.last_name || ''}`
                             .trim() ||
-
                         'N/I';
-
 
                     // =================================================
                     // SKU
                     // =================================================
-
                     let skus =
                         [];
-
 
                     if (
                         venda.eh_kit &&
@@ -27429,21 +27297,21 @@ if (
                             venda.skus_kit
                         )
                     ) {
-
                         skus =
                             venda.skus_kit
                                 .map(
                                     item =>
                                         item.sku
                                 )
-                                .filter(Boolean);
+                                .filter(
+                                    Boolean
+                                );
 
                     } else if (
                         Array.isArray(
                             venda.order_items
                         )
                     ) {
-
                         skus =
                             venda.order_items
                                 .map(
@@ -27451,41 +27319,46 @@ if (
                                         item.item
                                             ?.seller_sku
                                 )
-                                .filter(Boolean);
+                                .filter(
+                                    Boolean
+                                );
 
                     } else if (
                         venda.sku
                     ) {
-
                         skus = [
                             venda.sku
                         ];
                     }
 
-
                     if (
                         skus.length ===
                         0
                     ) {
-
                         skus = [
                             'SEM_SKU'
                         ];
                     }
 
-
                     const skuHtml =
                         skus
                             .map(
                                 sku =>
-                                    `<div><code>${escaparHTMLNFE(sku)}</code></div>`
+                                    `
+                                        <div>
+                                            <code>
+                                                ${escaparHTMLNFE(
+                                                    sku
+                                                )}
+                                            </code>
+                                        </div>
+                                    `
                             )
                             .join('');
 
                     // =================================================
                     // ANÚNCIO
                     // =================================================
-
                     const anuncioHtml =
                         montarLinksModificarAnunciosNFE(
                             venda
@@ -27494,17 +27367,22 @@ if (
                     // =================================================
                     // FOTO
                     // =================================================
-
                     const fotoHtml =
                         montarFotoProdutoNFE(
                             venda
                         );
 
+                    // =================================================
+                    // ESTOQUE DO ANÚNCIO
+                    // =================================================
+                    const estoqueAnuncioHtml =
+                        montarEstoqueAnuncioPosVendaHtmlNFE(
+                            venda
+                        );
 
                     // =================================================
                     // VALOR
                     // =================================================
-
                     const valor =
                         Number(
                             venda._valor_produto ??
@@ -27513,416 +27391,391 @@ if (
                             0
                         );
 
-
+                    // =================================================
+                    // NF-E + AÇÕES
+                    // =================================================
                     let statusNFE;
-let acoes;
+                    let acoes;
 
+                    // =================================================
+                    // VENDA CANCELADA
+                    // =================================================
+                    if (
+                        vendaCancelada
+                    ) {
+                        // =============================================
+                        // FULL CANCELADA
+                        // =============================================
+                        if (
+                            isFull
+                        ) {
+                            statusNFE = `
+                                <div>
+                                    <span
+                                        style="
+                                            background:#dc3545;
+                                            color:white;
+                                            padding:4px 8px;
+                                            border-radius:5px;
+                                            font-size:11px;
+                                            white-space:nowrap;
+                                            display:inline-block;
+                                        "
+                                    >
+                                        <i class="fas fa-ban"></i>
+                                        Venda cancelada
+                                    </span>
 
-// =================================================
-// VENDA CANCELADA
-// =================================================
+                                    <div
+                                        style="
+                                            margin-top:4px;
+                                            color:#6c757d;
+                                            font-size:9px;
+                                            white-space:nowrap;
+                                        "
+                                    >
+                                        <i class="fas fa-warehouse"></i>
+                                        NF-e pelo Mercado Livre
+                                    </div>
+                                </div>
+                            `;
 
-if (
-    vendaCancelada
-) {
+                            acoes = `
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-secondary"
+                                    disabled
+                                    style="
+                                        opacity:.65;
+                                        cursor:not-allowed;
+                                    "
+                                    title="Venda cancelada"
+                                >
+                                    <i class="fas fa-ban"></i>
+                                    Cancelada
+                                </button>
+                            `;
 
-    // =============================================
-    // FULL CANCELADA
-    // =============================================
+                        // =============================================
+                        // CANCELADA COM NF-E JÁ EMITIDA
+                        // =============================================
+                        } else if (
+                            temNfe
+                        ) {
+                            statusNFE = `
+                                <div>
+                                    <span
+                                        style="
+                                            background:#dc3545;
+                                            color:white;
+                                            padding:4px 8px;
+                                            border-radius:5px;
+                                            font-size:11px;
+                                            white-space:nowrap;
+                                            display:inline-block;
+                                        "
+                                    >
+                                        <i class="fas fa-ban"></i>
+                                        Venda cancelada
+                                    </span>
 
-    if (
-        isFull
-    ) {
+                                    <div
+                                        style="
+                                            margin-top:4px;
+                                        "
+                                    >
+                                        <span
+                                            style="
+                                                background:#28a745;
+                                                color:white;
+                                                padding:3px 6px;
+                                                border-radius:4px;
+                                                font-size:9px;
+                                                display:inline-block;
+                                            "
+                                        >
+                                            <i class="fas fa-check"></i>
+                                            NF-e já emitida
+                                        </span>
+                                    </div>
 
-        statusNFE = `
-            <div>
+                                    <div
+                                        style="
+                                            margin-top:3px;
+                                            font-size:9px;
+                                            color:#495057;
+                                            white-space:nowrap;
+                                        "
+                                    >
+                                        Emitida por
 
-                <span
-                    style="
-                        background:#dc3545;
-                        color:white;
-                        padding:4px 8px;
-                        border-radius:5px;
-                        font-size:11px;
-                        white-space:nowrap;
-                        display:inline-block;
-                    "
-                >
-                    <i class="fas fa-ban"></i>
-                    Venda cancelada
-                </span>
+                                        <strong>
+                                            ${escaparHTMLNFE(
+                                                emitidoPor ||
+                                                'não registrado'
+                                            )}
+                                        </strong>
+                                    </div>
+                                </div>
+                            `;
 
-                <div
-                    style="
-                        margin-top:4px;
-                        color:#6c757d;
-                        font-size:9px;
-                        white-space:nowrap;
-                    "
-                >
-                    <i class="fas fa-warehouse"></i>
-                    NF-e pelo Mercado Livre
-                </div>
+                            acoes = `
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-warning btn-ver-nfe"
+                                    data-venda-id="${escaparHTMLNFE(
+                                        vendaId
+                                    )}"
+                                >
+                                    <i class="fas fa-eye"></i>
+                                    Ver
+                                </button>
 
-            </div>
-        `;
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-danger btn-cancelar-nfe"
+                                    data-venda-id="${escaparHTMLNFE(
+                                        vendaId
+                                    )}"
+                                >
+                                    <i class="fas fa-times"></i>
+                                    Cancelar NF-e
+                                </button>
+                            `;
 
+                        // =============================================
+                        // CANCELADA SEM NF-E
+                        // =============================================
+                        } else {
+                            statusNFE = `
+                                <span
+                                    style="
+                                        background:#dc3545;
+                                        color:white;
+                                        padding:4px 8px;
+                                        border-radius:5px;
+                                        font-size:11px;
+                                        white-space:nowrap;
+                                    "
+                                >
+                                    <i class="fas fa-ban"></i>
+                                    Venda cancelada
+                                </span>
+                            `;
 
-        acoes = `
-            <button
-                type="button"
-                class="btn btn-sm btn-secondary"
-                disabled
-                style="
-                    opacity:.65;
-                    cursor:not-allowed;
-                "
-                title="Venda cancelada"
-            >
-                <i class="fas fa-ban"></i>
-                Cancelada
-            </button>
-        `;
-
-
-    // =============================================
-    // CANCELADA MAS NF-E JÁ FOI EMITIDA
-    //
-    // Continua permitindo visualizar/cancelar
-    // a NF-e que já existe.
-    // =============================================
-
-    } else if (
-        temNfe
-    ) {
-
-        statusNFE = `
-            <div>
-
-                <span
-                    style="
-                        background:#dc3545;
-                        color:white;
-                        padding:4px 8px;
-                        border-radius:5px;
-                        font-size:11px;
-                        white-space:nowrap;
-                        display:inline-block;
-                    "
-                >
-                    <i class="fas fa-ban"></i>
-                    Venda cancelada
-                </span>
-
-
-                <div
-                    style="
-                        margin-top:4px;
-                    "
-                >
-                    <span
-                        style="
-                            background:#28a745;
-                            color:white;
-                            padding:3px 6px;
-                            border-radius:4px;
-                            font-size:9px;
-                            display:inline-block;
-                        "
-                    >
-                        <i class="fas fa-check"></i>
-                        NF-e já emitida
-                    </span>
-                </div>
-
-
-                <div
-                    style="
-                        margin-top:3px;
-                        font-size:9px;
-                        color:#495057;
-                        white-space:nowrap;
-                    "
-                >
-                    Emitida por
-
-                    <strong>
-                        ${
-                            escaparHTMLNFE(
-                                emitidoPor ||
-                                'não registrado'
-                            )
+                            acoes = `
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-secondary"
+                                    disabled
+                                    style="
+                                        opacity:.65;
+                                        cursor:not-allowed;
+                                    "
+                                    title="Não é possível emitir NF-e de venda cancelada"
+                                >
+                                    <i class="fas fa-file-invoice"></i>
+                                    Emitir NF-e
+                                </button>
+                            `;
                         }
-                    </strong>
-                </div>
 
-            </div>
-        `;
+                    // =================================================
+                    // FULL NORMAL
+                    // =================================================
+                    } else if (
+                        isFull
+                    ) {
+                        statusNFE = `
+                            <span
+                                style="
+                                    background:#dc3545;
+                                    color:white;
+                                    padding:4px 8px;
+                                    border-radius:5px;
+                                    font-size:11px;
+                                    white-space:nowrap;
+                                "
+                            >
+                                <i class="fas fa-warehouse"></i>
+                                NF-e ML
+                            </span>
+                        `;
 
+                        acoes = `
+                            <span
+                                style="
+                                    color:#6c757d;
+                                    font-size:11px;
+                                "
+                            >
+                                Automática
+                            </span>
+                        `;
 
-        acoes = `
-            <button
-                type="button"
-                class="btn btn-sm btn-warning btn-ver-nfe"
-                data-venda-id="${escaparHTMLNFE(
-                    vendaId
-                )}"
-            >
-                <i class="fas fa-eye"></i>
-                Ver
-            </button>
+                    // =================================================
+                    // NF-E EMITIDA
+                    // =================================================
+                    } else if (
+                        temNfe
+                    ) {
+                        statusNFE = `
+                            <div>
+                                <span
+                                    style="
+                                        background:#28a745;
+                                        color:white;
+                                        padding:4px 8px;
+                                        border-radius:5px;
+                                        font-size:11px;
+                                        white-space:nowrap;
+                                        display:inline-block;
+                                    "
+                                >
+                                    <i class="fas fa-check"></i>
+                                    Emitida
+                                </span>
 
-            <button
-                type="button"
-                class="btn btn-sm btn-danger btn-cancelar-nfe"
-                data-venda-id="${escaparHTMLNFE(
-                    vendaId
-                )}"
-            >
-                <i class="fas fa-times"></i>
-                Cancelar NF-e
-            </button>
-        `;
+                                <div
+                                    style="
+                                        margin-top:4px;
+                                        font-size:10px;
+                                        color:#495057;
+                                        white-space:nowrap;
+                                    "
+                                >
+                                    <i class="fas fa-user"></i>
 
+                                    Emitida por
 
-    // =============================================
-    // CANCELADA SEM NF-E
-    // =============================================
+                                    <strong>
+                                        ${escaparHTMLNFE(
+                                            emitidoPor ||
+                                            'não registrado'
+                                        )}
+                                    </strong>
+                                </div>
+                            </div>
+                        `;
 
-    } else {
+                        acoes = `
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-warning btn-ver-nfe"
+                                data-venda-id="${escaparHTMLNFE(
+                                    vendaId
+                                )}"
+                            >
+                                <i class="fas fa-eye"></i>
+                                Ver
+                            </button>
 
-        statusNFE = `
-            <span
-                style="
-                    background:#dc3545;
-                    color:white;
-                    padding:4px 8px;
-                    border-radius:5px;
-                    font-size:11px;
-                    white-space:nowrap;
-                "
-            >
-                <i class="fas fa-ban"></i>
-                Venda cancelada
-            </span>
-        `;
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-danger btn-cancelar-nfe"
+                                data-venda-id="${escaparHTMLNFE(
+                                    vendaId
+                                )}"
+                            >
+                                <i class="fas fa-times"></i>
+                                Cancelar
+                            </button>
+                        `;
 
+                    // =================================================
+                    // PENDENTE
+                    // =================================================
+                    } else {
+                        statusNFE = `
+                            <span
+                                style="
+                                    background:#ffc107;
+                                    color:#212529;
+                                    padding:4px 8px;
+                                    border-radius:5px;
+                                    font-size:11px;
+                                "
+                            >
+                                <i class="fas fa-clock"></i>
+                                Pendente
+                            </span>
+                        `;
 
-        acoes = `
-            <button
-                type="button"
-                class="btn btn-sm btn-secondary"
-                disabled
-                style="
-                    opacity:.65;
-                    cursor:not-allowed;
-                "
-                title="Não é possível emitir NF-e de venda cancelada"
-            >
-                <i class="fas fa-file-invoice"></i>
-                Emitir NF-e
-            </button>
-        `;
-    }
-
-
-// =================================================
-// FULL NORMAL
-// =================================================
-
-} else if (
-    isFull
-) {
-
-    statusNFE = `
-        <span
-            style="
-                background:#dc3545;
-                color:white;
-                padding:4px 8px;
-                border-radius:5px;
-                font-size:11px;
-                white-space:nowrap;
-            "
-        >
-            <i class="fas fa-warehouse"></i>
-            NF-e ML
-        </span>
-    `;
-
-
-    acoes = `
-        <span
-            style="
-                color:#6c757d;
-                font-size:11px;
-            "
-        >
-            Automática
-        </span>
-    `;
-
-
-// =================================================
-// NF-E EMITIDA
-// =================================================
-
-} else if (
-    temNfe
-) {
-
-    statusNFE = `
-        <div>
-
-            <span
-                style="
-                    background:#28a745;
-                    color:white;
-                    padding:4px 8px;
-                    border-radius:5px;
-                    font-size:11px;
-                    white-space:nowrap;
-                    display:inline-block;
-                "
-            >
-                <i class="fas fa-check"></i>
-                Emitida
-            </span>
-
-
-            <div
-                style="
-                    margin-top:4px;
-                    font-size:10px;
-                    color:#495057;
-                    white-space:nowrap;
-                "
-            >
-                <i class="fas fa-user"></i>
-
-                Emitida por
-
-                <strong>
-                    ${
-                        escaparHTMLNFE(
-                            emitidoPor ||
-                            'não registrado'
-                        )
+                        acoes = `
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-success btn-emitir-nfe"
+                                data-venda-id="${escaparHTMLNFE(
+                                    vendaId
+                                )}"
+                            >
+                                <i class="fas fa-file-invoice"></i>
+                                Emitir NF-e
+                            </button>
+                        `;
                     }
-                </strong>
-            </div>
-
-        </div>
-    `;
-
-
-    acoes = `
-        <button
-            type="button"
-            class="btn btn-sm btn-warning btn-ver-nfe"
-            data-venda-id="${escaparHTMLNFE(vendaId)}"
-        >
-            <i class="fas fa-eye"></i>
-            Ver
-        </button>
-
-        <button
-            type="button"
-            class="btn btn-sm btn-danger btn-cancelar-nfe"
-            data-venda-id="${escaparHTMLNFE(vendaId)}"
-        >
-            <i class="fas fa-times"></i>
-            Cancelar
-        </button>
-    `;
-
-
-// =================================================
-// PENDENTE
-// =================================================
-
-} else {
-
-    statusNFE = `
-        <span
-            style="
-                background:#ffc107;
-                color:#212529;
-                padding:4px 8px;
-                border-radius:5px;
-                font-size:11px;
-            "
-        >
-            <i class="fas fa-clock"></i>
-            Pendente
-        </span>
-    `;
-
-
-    acoes = `
-        <button
-            type="button"
-            class="btn btn-sm btn-success btn-emitir-nfe"
-            data-venda-id="${escaparHTMLNFE(vendaId)}"
-        >
-            <i class="fas fa-file-invoice"></i>
-            Emitir NF-e
-        </button>
-    `;
-}
-
 
                     // =================================================
                     // LINHA
+                    //
+                    // A ORDEM DESTAS TDs PRECISA SER A MESMA DE:
+                    //
+                    // COLUNAS_VENDAS_NFE
                     // =================================================
-
                     return `
-
-                        <tr>
-
+                        <tr
+                            data-venda-id-nfe="${escaparHTMLNFE(
+                                vendaId
+                            )}"
+                        >
+                            <!-- VENDA -->
                             <td>
                                 <strong>
-                                    ${escaparHTMLNFE(vendaId)}
+                                    ${escaparHTMLNFE(
+                                        vendaId
+                                    )}
                                 </strong>
+
                                 ${canceladaHtml}
-                                    <div
-                                            style="
-                                                color:#6c757d;
-                                                font-size:10px;
-                                                margin-top:3px;
-                                                white-space:nowrap;
-                                            "
-                                        >
-                                            <i
-                                                class="far fa-clock"
-                                                style="
-                                                    font-size:9px;
-                                                    margin-right:2px;
-                                                "
-                                            ></i>
 
-                                            Venda:
-                                            ${escaparHTMLNFE(
-                                                dataHoraVenda.data
-                                            )}
+                                <div
+                                    style="
+                                        color:#6c757d;
+                                        font-size:10px;
+                                        margin-top:3px;
+                                        white-space:nowrap;
+                                    "
+                                >
+                                    <i
+                                        class="far fa-clock"
+                                        style="
+                                            font-size:9px;
+                                            margin-right:2px;
+                                        "
+                                    ></i>
 
-                                            ${
+                                    Venda:
+
+                                    ${escaparHTMLNFE(
+                                        dataHoraVenda.data
+                                    )}
+
+                                    ${
+                                        dataHoraVenda.hora
+                                            ? ` às ${escaparHTMLNFE(
                                                 dataHoraVenda.hora
-                                                    ? ` às ${escaparHTMLNFE(
-                                                        dataHoraVenda.hora
-                                                    )}`
-                                                    : ''
-                                            }
-
-                                        </div>
-
+                                            )}`
+                                            : ''
+                                    }
+                                </div>
                             </td>
 
-
+                            <!-- ENVIO -->
                             <td>
-
                                 <strong>
-                                    ${formatarDataNFE(dataEnvio)}
+                                    ${formatarDataNFE(
+                                        dataEnvio
+                                    )}
                                 </strong>
 
                                 <div
@@ -27935,18 +27788,21 @@ if (
 
                                     ${
                                         hora
-                                            ? ` até ${escaparHTMLNFE(hora)}`
+                                            ? ` até ${escaparHTMLNFE(
+                                                hora
+                                            )}`
                                             : ''
                                     }
-
                                 </div>
-
                             </td>
 
-
+                            <!-- CLIENTE -->
                             <td>
-                                ${escaparHTMLNFE(cliente)}
+                                ${escaparHTMLNFE(
+                                    cliente
+                                )}
                             </td>
+
                             <!-- ANÚNCIO -->
                             <td
                                 style="
@@ -27956,6 +27812,8 @@ if (
                             >
                                 ${anuncioHtml}
                             </td>
+
+                            <!-- FOTO -->
                             <td
                                 style="
                                     width:75px;
@@ -27967,34 +27825,54 @@ if (
                                 ${fotoHtml}
                             </td>
 
+                            <!-- SKU -->
                             <td>
                                 ${skuHtml}
                             </td>
 
+                            <!-- VALOR -->
                             <td>
                                 <strong>
-                                    R$ ${valor.toFixed(2)}
+                                    R$ ${valor.toFixed(
+                                        2
+                                    )}
                                 </strong>
                             </td>
 
-
+                            <!-- PAGAMENTO -->
                             <td>
-                                ${htmlPagamento(venda)}
+                                ${htmlPagamento(
+                                    venda
+                                )}
                             </td>
 
-
+                            <!-- MODALIDADE -->
                             <td>
-                                ${badgeEnvio(venda)}
+                                ${badgeEnvio(
+                                    venda
+                                )}
                             </td>
 
-
+                            <!-- NF-E -->
                             <td>
                                 ${statusNFE}
                             </td>
 
-
+                            <!-- ESTOQUE -->
                             <td>
-                                ${htmlEstoque(venda)}
+                                ${htmlEstoque(
+                                    venda
+                                )}
+                            </td>
+
+                            <!-- ESTOQUE ANÚNCIO -->
+                            <td
+                                style="
+                                    min-width:110px;
+                                    vertical-align:middle;
+                                "
+                            >
+                                ${estoqueAnuncioHtml}
                             </td>
 
                             <!-- COMENTÁRIOS -->
@@ -28008,7 +27886,6 @@ if (
                                 ${comentariosHtml}
                             </td>
 
-
                             <!-- AÇÕES -->
                             <td
                                 style="
@@ -28017,56 +27894,65 @@ if (
                             >
                                 ${acoes}
                             </td>
-
                         </tr>
                     `;
                 }
             )
             .join('');
 
-            // =====================================================
-            // APLICAR COLUNAS ESCOLHIDAS PELO USUÁRIO
-            // =====================================================
+    // =====================================================
+    // COLUNAS PERSONALIZADAS
+    // =====================================================
+    aplicarPreferenciasColunasNFE();
 
-            aplicarPreferenciasColunasNFE();
+    // =====================================================
+    // ALERTAS FULL IMEDIATOS
+    //
+    // NÃO CONSULTA MERCADO LIVRE.
+    // NÃO CONSULTA SUPABASE.
+    //
+    // Simplesmente aplica o estado que já está salvo.
+    // =====================================================
+    if (
+        typeof aplicarEstadosFullTabelaNFE ===
+        'function'
+    ) {
+        aplicarEstadosFullTabelaNFE();
+    }
 
-            // =====================================================
-            // CARREGAR FOTOS DOS PRODUTOS
-            // =====================================================
+    // =====================================================
+    // FOTOS - SEGUNDO PLANO
+    // =====================================================
+    carregarFotosProdutosTabelaNFE()
+        .catch(
+            error => {
 
-            carregarFotosProdutosTabelaNFE()
-                .catch(
-                    error => {
-
-                        console.warn(
-                            '⚠️ Erro carregando fotos da tabela NF-e:',
-                            error
-                        );
-                    }
+                console.warn(
+                    '⚠️ Erro carregando fotos da tabela NF-e:',
+                    error
                 );
-
-                // =====================================================
-                // CARREGAR RESUMOS DOS COMENTÁRIOS
-                // =====================================================
-
-                carregarResumosComentariosVendasNFE(
-                    vendas
-                )
-                    .catch(
-                        error => {
-
-                            console.warn(
-                                '⚠️ Erro carregando comentários da tabela NF-e:',
-                                error
-                            );
-                        }
-                    );
-
+            }
+        );
 
     // =====================================================
-    // EVENTOS
+    // COMENTÁRIOS - SEGUNDO PLANO
     // =====================================================
+    carregarResumosComentariosVendasNFE(
+        vendas
+    )
+        .catch(
+            error => {
 
+                console.warn(
+                    '⚠️ Erro carregando comentários da tabela NF-e:',
+                    error
+                );
+            }
+        );
+
+    // =====================================================
+    // EVENTOS - EMITIR
+    // =====================================================
     document
         .querySelectorAll(
             '#vendasPendentesBody .btn-emitir-nfe'
@@ -28076,20 +27962,19 @@ if (
 
                 btn.removeEventListener(
                     'click',
-                    window
-                        .handleEmitirNFEClick
+                    window.handleEmitirNFEClick
                 );
-
 
                 btn.addEventListener(
                     'click',
-                    window
-                        .handleEmitirNFEClick
+                    window.handleEmitirNFEClick
                 );
             }
         );
 
-
+    // =====================================================
+    // EVENTOS - VER NF-E
+    // =====================================================
     document
         .querySelectorAll(
             '#vendasPendentesBody .btn-ver-nfe'
@@ -28099,20 +27984,19 @@ if (
 
                 btn.removeEventListener(
                     'click',
-                    window
-                        .handleVerNFEClick
+                    window.handleVerNFEClick
                 );
-
 
                 btn.addEventListener(
                     'click',
-                    window
-                        .handleVerNFEClick
+                    window.handleVerNFEClick
                 );
             }
         );
 
-
+    // =====================================================
+    // EVENTOS - CANCELAR NF-E
+    // =====================================================
     document
         .querySelectorAll(
             '#vendasPendentesBody .btn-cancelar-nfe'
@@ -28122,15 +28006,12 @@ if (
 
                 btn.removeEventListener(
                     'click',
-                    window
-                        .handleCancelarNFEClick
+                    window.handleCancelarNFEClick
                 );
-
 
                 btn.addEventListener(
                     'click',
-                    window
-                        .handleCancelarNFEClick
+                    window.handleCancelarNFEClick
                 );
             }
         );
@@ -31623,31 +31504,56 @@ async function carregarVendasPendentes(
 
 
 // =====================================================
-// CARREGAR ALERTAS FULL ANTES DE DESENHAR
+// ALERTAS FULL LOCAIS
+//
+// SEM INTERNET.
+// SEM SUPABASE.
+// SEM MERCADO LIVRE.
 // =====================================================
 
-try {
+hidratarEstadosFullLocalNFE();
 
-    await carregarEstadosFullNFE();
 
-} catch (
-    error
-) {
+hidratarRegrasFixasTipoAnuncioLocalNFE();
 
-    console.warn(
-        '⚠️ Não foi possível carregar alertas FULL antes da tabela:',
-        error
-    );
-}
+
+reconciliarEstadosFullComRegrasFixasNFE();
 
 
 // =====================================================
-// AGORA RENDERIZAR
+// DESENHAR PRIMEIRO
 // =====================================================
 
 renderizarVendasNFETabela(
     vendasCache
 );
+
+
+// =====================================================
+// SUPABASE EM SEGUNDO PLANO
+//
+// Serve apenas para atualizar o cache caso outro
+// computador tenha criado/modificado um alerta.
+// =====================================================
+
+carregarEstadosFullNFE(
+    true
+)
+    .then(
+        () => {
+
+            aplicarEstadosFullTabelaNFE();
+        }
+    )
+    .catch(
+        error => {
+
+            console.warn(
+                '⚠️ Atualização de estados FULL em segundo plano:',
+                error
+            );
+        }
+    );
 
     // =====================================================
 // VERIFICAR CANCELAMENTOS EM SEGUNDO PLANO
