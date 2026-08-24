@@ -12385,32 +12385,14 @@ async function salvarProdutoEstoque() {
             3000
         );
 
-
         return;
     }
-
 
     // =====================================================
     // COLETAR DADOS EXTRA
     // =====================================================
 
     const dadosExtra = {};
-
-
-    // =====================================================
-    // 🚚 PRESERVAR ESTOQUE "A CAMINHO"
-    //
-    // IMPORTANTE:
-    //
-    // Esses campos são salvos pelo botão:
-    // "Salvar a caminho".
-    //
-    // Como eles NÃO pertencem aos campos normais da
-    // categoria, precisamos copiá-los antes que o botão
-    // verde Salvar atualize o dados_extra.
-    //
-    // NÃO interfere em categorias/subcategorias.
-    // =====================================================
 
     if (
         (categoria === 'Raios' || categoria === 'Parafusos')
@@ -12427,7 +12409,6 @@ async function salvarProdutoEstoque() {
                 dadosExtraAnteriores.quantidade_a_caminho;
 
         }
-
 
         if (
             dadosExtraAnteriores.quantidade_a_caminho_atualizado_em
@@ -30230,11 +30211,34 @@ function baseSkuCadastroInicial(sku) {
 }
 
 
+// =========================================================
+// ANALISAR PLANILHA DO CADASTRO INICIAL
+//
+// SUPORTA:
+//
+// FORMATO ANTIGO:
+// C = EAN
+// D = SKU
+// E = NOME
+// F = UNIDADE
+// G = VALOR
+// H = QUANTIDADE
+//
+// FORMATO COM CABEÇALHOS:
+// SKU | Título | ESTOQUE
+//
+// E também outras variações de nomes de colunas.
+// =========================================================
+
 function analisarPlanilhaCadastroInicial(
     workbook,
     nomeArquivo,
     categoriaSelecionada
 ) {
+
+    // =====================================================
+    // VALIDAÇÕES
+    // =====================================================
 
     if (
         !workbook ||
@@ -30245,16 +30249,24 @@ function analisarPlanilhaCadastroInicial(
         throw new Error(
             'A planilha não possui nenhuma aba.'
         );
+
     }
 
 
-    if (!categoriaSelecionada) {
+    if (
+        !categoriaSelecionada
+    ) {
 
         throw new Error(
             'Nenhuma categoria foi selecionada.'
         );
+
     }
 
+
+    // =====================================================
+    // PRIMEIRA ABA
+    // =====================================================
 
     const nomeAba =
         workbook.SheetNames[0];
@@ -30266,20 +30278,482 @@ function analisarPlanilhaCadastroInicial(
         ];
 
 
+    if (!sheet) {
+
+        throw new Error(
+            'Não foi possível localizar a primeira aba da planilha.'
+        );
+
+    }
+
+
+    // =====================================================
+    // CONVERTER PLANILHA PARA ARRAY
+    // =====================================================
+
     const linhas =
         XLSX.utils.sheet_to_json(
             sheet,
             {
 
-                header: 1,
+                header:
+                    1,
 
-                defval: null,
+                defval:
+                    null,
 
-                raw: true
+                raw:
+                    true
 
             }
         );
 
+
+    if (
+        !Array.isArray(
+            linhas
+        )
+        ||
+        linhas.length === 0
+    ) {
+
+        throw new Error(
+            'A planilha está vazia.'
+        );
+
+    }
+
+
+    // =====================================================
+    // NORMALIZAR TEXTO DO CABEÇALHO
+    //
+    // Ex:
+    //
+    // "Título" -> "titulo"
+    // "Cód. Produto" -> "cod produto"
+    // "QUANTIDADE" -> "quantidade"
+    // =====================================================
+
+    function normalizarCabecalho(
+        valor
+    ) {
+
+        if (
+            valor === null ||
+            valor === undefined
+        ) {
+
+            return '';
+
+        }
+
+
+        return String(
+            valor
+        )
+            .trim()
+            .toLowerCase()
+
+            .normalize(
+                'NFD'
+            )
+
+            .replace(
+                /[\u0300-\u036f]/g,
+                ''
+            )
+
+            .replace(
+                /[_\-./\\]+/g,
+                ' '
+            )
+
+            .replace(
+                /[^a-z0-9 ]/g,
+                ''
+            )
+
+            .replace(
+                /\s+/g,
+                ' '
+            )
+
+            .trim();
+
+    }
+
+
+    // =====================================================
+    // ALIASES DE COLUNAS
+    // =====================================================
+
+    const aliases = {
+
+        sku: [
+
+            'sku',
+            'seller sku',
+            'codigo sku',
+            'cod sku',
+            'codigo produto',
+            'cod produto',
+            'codigo do produto',
+            'cod do produto',
+            'referencia',
+            'ref',
+            'referencia produto'
+
+        ],
+
+
+        nome: [
+
+            'titulo',
+            'titulo produto',
+            'nome',
+            'nome produto',
+            'nome do produto',
+            'produto',
+            'descricao produto',
+            'descricao do produto'
+
+        ],
+
+
+        quantidade: [
+
+            'estoque',
+            'estoque atual',
+            'quantidade',
+            'qtd',
+            'qtd estoque',
+            'quantidade estoque',
+            'saldo',
+            'saldo estoque'
+
+        ],
+
+
+        ean: [
+
+            'ean',
+            'gtin',
+            'codigo barras',
+            'codigo de barras',
+            'cod barras',
+            'cod de barras',
+            'barcode'
+
+        ],
+
+
+        unidade: [
+
+            'unidade',
+            'un',
+            'und',
+            'unid',
+            'unidade medida',
+            'unidade de medida'
+
+        ],
+
+
+        valor: [
+
+            'valor',
+            'custo',
+            'valor custo',
+            'preco custo',
+            'preco de custo',
+            'preco',
+            'valor unitario',
+            'custo unitario'
+
+        ]
+
+    };
+
+
+    // =====================================================
+    // LOCALIZAR UMA COLUNA PELO CABEÇALHO
+    // =====================================================
+
+    function localizarColuna(
+        cabecalhos,
+        listaAliases
+    ) {
+
+        for (
+            let i = 0;
+            i < cabecalhos.length;
+            i++
+        ) {
+
+            if (
+                listaAliases.includes(
+                    cabecalhos[i]
+                )
+            ) {
+
+                return i;
+
+            }
+
+        }
+
+
+        return -1;
+    }
+
+
+    // =====================================================
+    // LOCALIZAR LINHA DE CABEÇALHO
+    //
+    // Procura nas primeiras 30 linhas.
+    // Para considerar um cabeçalho válido:
+    //
+    // precisa encontrar pelo menos SKU + Nome.
+    // =====================================================
+
+    let linhaCabecalho =
+        -1;
+
+
+    let indiceSKU =
+        -1;
+
+
+    let indiceNome =
+        -1;
+
+
+    let indiceQuantidade =
+        -1;
+
+
+    let indiceEAN =
+        -1;
+
+
+    let indiceUnidade =
+        -1;
+
+
+    let indiceValor =
+        -1;
+
+
+    const limiteBuscaCabecalho =
+        Math.min(
+            linhas.length,
+            30
+        );
+
+
+    for (
+        let i = 0;
+        i < limiteBuscaCabecalho;
+        i++
+    ) {
+
+        const linha =
+            linhas[i] ||
+            [];
+
+
+        const cabecalhos =
+            linha.map(
+                normalizarCabecalho
+            );
+
+
+        const skuEncontrado =
+            localizarColuna(
+                cabecalhos,
+                aliases.sku
+            );
+
+
+        const nomeEncontrado =
+            localizarColuna(
+                cabecalhos,
+                aliases.nome
+            );
+
+
+        // =============================================
+        // Para ser cabeçalho precisamos pelo menos:
+        //
+        // SKU + Nome/Título
+        // =============================================
+
+        if (
+            skuEncontrado !== -1 &&
+            nomeEncontrado !== -1
+        ) {
+
+            linhaCabecalho =
+                i;
+
+
+            indiceSKU =
+                skuEncontrado;
+
+
+            indiceNome =
+                nomeEncontrado;
+
+
+            indiceQuantidade =
+                localizarColuna(
+                    cabecalhos,
+                    aliases.quantidade
+                );
+
+
+            indiceEAN =
+                localizarColuna(
+                    cabecalhos,
+                    aliases.ean
+                );
+
+
+            indiceUnidade =
+                localizarColuna(
+                    cabecalhos,
+                    aliases.unidade
+                );
+
+
+            indiceValor =
+                localizarColuna(
+                    cabecalhos,
+                    aliases.valor
+                );
+
+
+            break;
+
+        }
+
+    }
+
+
+    // =====================================================
+    // FORMATO
+    // =====================================================
+
+    let formatoDetectado =
+        'ANTIGO_C_H';
+
+
+    let primeiraLinhaProduto =
+        0;
+
+
+    // =====================================================
+    // CABEÇALHOS ENCONTRADOS
+    // =====================================================
+
+    if (
+        linhaCabecalho !== -1
+    ) {
+
+        formatoDetectado =
+            'CABECALHOS';
+
+
+        primeiraLinhaProduto =
+            linhaCabecalho +
+            1;
+
+
+        console.log(
+            '✅ [IMPORTAR PRODUTOS] Cabeçalhos detectados:',
+            {
+
+                linha:
+                    linhaCabecalho +
+                    1,
+
+                sku:
+                    indiceSKU,
+
+                nome:
+                    indiceNome,
+
+                quantidade:
+                    indiceQuantidade,
+
+                ean:
+                    indiceEAN,
+
+                unidade:
+                    indiceUnidade,
+
+                valor:
+                    indiceValor
+
+            }
+        );
+
+    }
+
+
+    // =====================================================
+    // NÃO ACHOU CABEÇALHO
+    //
+    // MANTER TOTAL COMPATIBILIDADE COM O FORMATO ANTIGO:
+    //
+    // C = EAN
+    // D = SKU
+    // E = NOME
+    // F = UNIDADE
+    // G = VALOR
+    // H = QUANTIDADE
+    // =====================================================
+
+    else {
+
+        indiceEAN =
+            2;
+
+
+        indiceSKU =
+            3;
+
+
+        indiceNome =
+            4;
+
+
+        indiceUnidade =
+            5;
+
+
+        indiceValor =
+            6;
+
+
+        indiceQuantidade =
+            7;
+
+
+        primeiraLinhaProduto =
+            0;
+
+
+        console.log(
+            'ℹ️ [IMPORTAR PRODUTOS] Nenhum cabeçalho reconhecido. Usando formato antigo C-H.'
+        );
+
+    }
+
+
+    // =====================================================
+    // RESULTADO
+    // =====================================================
 
     const resultado = {
 
@@ -30287,20 +30761,54 @@ function analisarPlanilhaCadastroInicial(
 
         nomeAba,
 
-        // Agora existe UMA categoria escolhida
         categoriaSelecionada,
 
-        produtos: [],
+        formatoDetectado,
 
-        validos: [],
+        linhaCabecalho:
+            linhaCabecalho !== -1
+                ? linhaCabecalho + 1
+                : null,
 
-        duplicadosSistema: [],
+        colunasDetectadas: {
 
-        duplicadosPlanilha: [],
+            sku:
+                indiceSKU,
 
-        erros: [],
+            nome:
+                indiceNome,
 
-        categoriasNovas: [],
+            quantidade:
+                indiceQuantidade,
+
+            ean:
+                indiceEAN,
+
+            unidade:
+                indiceUnidade,
+
+            valor:
+                indiceValor
+
+        },
+
+        produtos:
+            [],
+
+        validos:
+            [],
+
+        duplicadosSistema:
+            [],
+
+        duplicadosPlanilha:
+            [],
+
+        erros:
+            [],
+
+        categoriasNovas:
+            [],
 
         categoriasEncontradas: [
             categoriaSelecionada
@@ -30309,12 +30817,18 @@ function analisarPlanilhaCadastroInicial(
     };
 
 
+    // =====================================================
+    // BASES QUE APARECERAM NA PRÓPRIA PLANILHA
+    // =====================================================
+
     const basesPlanilha =
         new Map();
 
 
     // =====================================================
     // INDEXAR PRODUTOS JÁ CADASTRADOS
+    //
+    // Mantém sua regra atual dos primeiros 8 caracteres.
     // =====================================================
 
     const produtosPorBase =
@@ -30352,7 +30866,9 @@ function analisarPlanilhaCadastroInicial(
 
 
         produtosPorBase
-            .get(base)
+            .get(
+                base
+            )
             .push(
                 produto
             );
@@ -30361,17 +30877,49 @@ function analisarPlanilhaCadastroInicial(
 
 
     // =====================================================
-    // LER PLANILHA
+    // PEGAR VALOR SE A COLUNA EXISTIR
+    // =====================================================
+
+    function pegarValorLinha(
+        linha,
+        indice
+    ) {
+
+        if (
+            indice === -1 ||
+            indice === null ||
+            indice === undefined
+        ) {
+
+            return null;
+
+        }
+
+
+        return linha[
+            indice
+        ];
+
+    }
+
+
+    // =====================================================
+    // LER PRODUTOS
     // =====================================================
 
     for (
-        let i = 0;
-        i < linhas.length;
+        let i =
+            primeiraLinhaProduto;
+
+        i <
+            linhas.length;
+
         i++
     ) {
 
         const linha =
-            linhas[i] || [];
+            linhas[i] ||
+            [];
 
 
         const numeroLinha =
@@ -30379,10 +30927,38 @@ function analisarPlanilhaCadastroInicial(
 
 
         // =================================================
-        // IGNORAR LINHA "Categoria : ..."
+        // LINHA VAZIA
         // =================================================
 
-        const colunaA =
+        const linhaTemConteudo =
+            linha.some(
+                valor =>
+                    valor !== null &&
+                    valor !== undefined &&
+                    String(
+                        valor
+                    ).trim() !==
+                    ''
+            );
+
+
+        if (
+            !linhaTemConteudo
+        ) {
+
+            continue;
+
+        }
+
+
+        // =================================================
+        // IGNORAR "Categoria : ..."
+        //
+        // Mesmo no formato novo continuamos ignorando isso.
+        // A categoria válida é SEMPRE a selecionada no sistema.
+        // =================================================
+
+        const primeiraCelula =
             linha[0] !== null &&
             linha[0] !== undefined
 
@@ -30395,7 +30971,7 @@ function analisarPlanilhaCadastroInicial(
 
         if (
             /^categoria\s*:/i.test(
-                colunaA
+                primeiraCelula
             )
         ) {
 
@@ -30405,82 +30981,143 @@ function analisarPlanilhaCadastroInicial(
 
 
         // =================================================
-        // SUA PLANILHA:
-        //
-        // C = EAN
-        // D = SKU
-        // E = NOME
-        // F = UNIDADE
-        // G = VALOR
-        // H = QUANTIDADE
+        // SKU
         // =================================================
 
-        const ean =
-            linha[2] !== null &&
-            linha[2] !== undefined
-
-                ? String(
-                    linha[2]
-                ).trim()
-
-                : '';
-
-
-        const sku =
-            linha[3] !== null &&
-            linha[3] !== undefined
-
-                ? String(
-                    linha[3]
-                ).trim()
-
-                : '';
-
-
-        const nome =
-            linha[4] !== null &&
-            linha[4] !== undefined
-
-                ? String(
-                    linha[4]
-                ).trim()
-
-                : '';
-
-
-        const unidade =
-            linha[5] !== null &&
-            linha[5] !== undefined
-
-                ? String(
-                    linha[5]
-                ).trim()
-
-                : '';
-
-
-        const valorPlanilha =
-            converterNumeroCadastroInicial(
-                linha[6]
+        const valorSku =
+            pegarValorLinha(
+                linha,
+                indiceSKU
             );
 
 
+        const sku =
+            valorSku !== null &&
+            valorSku !== undefined
+
+                ? String(
+                    valorSku
+                ).trim()
+
+                : '';
+
+
+        // =================================================
+        // NOME / TÍTULO
+        // =================================================
+
+        const valorNome =
+            pegarValorLinha(
+                linha,
+                indiceNome
+            );
+
+
+        const nome =
+            valorNome !== null &&
+            valorNome !== undefined
+
+                ? String(
+                    valorNome
+                ).trim()
+
+                : '';
+
+
+        // =================================================
+        // EAN
+        //
+        // Se a planilha não possuir, fica vazio.
+        // =================================================
+
+        const valorEAN =
+            pegarValorLinha(
+                linha,
+                indiceEAN
+            );
+
+
+        const ean =
+            valorEAN !== null &&
+            valorEAN !== undefined
+
+                ? String(
+                    valorEAN
+                ).trim()
+
+                : '';
+
+
+        // =================================================
+        // UNIDADE
+        //
+        // Se não existir, fica vazio.
+        // =================================================
+
+        const valorUnidade =
+            pegarValorLinha(
+                linha,
+                indiceUnidade
+            );
+
+
+        const unidade =
+            valorUnidade !== null &&
+            valorUnidade !== undefined
+
+                ? String(
+                    valorUnidade
+                ).trim()
+
+                : '';
+
+
+        // =================================================
+        // VALOR / CUSTO
+        //
+        // Se não existir, fica 0.
+        // =================================================
+
+        const valorPlanilha =
+            converterNumeroCadastroInicial(
+
+                pegarValorLinha(
+                    linha,
+                    indiceValor
+                )
+
+            );
+
+
+        // =================================================
+        // QUANTIDADE / ESTOQUE
+        //
+        // Se não existir, fica 0.
+        // =================================================
+
         const quantidade =
             Math.max(
+
                 0,
 
                 Math.trunc(
 
                     converterNumeroCadastroInicial(
-                        linha[7]
+
+                        pegarValorLinha(
+                            linha,
+                            indiceQuantidade
+                        )
+
                     )
 
                 )
+
             );
 
 
         // =================================================
-        // NÃO É LINHA DE PRODUTO
+        // NÃO É PRODUTO
         // =================================================
 
         if (
@@ -30492,6 +31129,10 @@ function analisarPlanilhaCadastroInicial(
 
         }
 
+
+        // =================================================
+        // PRODUTO
+        // =================================================
 
         const produto = {
 
@@ -30508,7 +31149,7 @@ function analisarPlanilhaCadastroInicial(
             nome,
 
             // =============================================
-            // SEMPRE A CATEGORIA ESCOLHIDA
+            // SEMPRE USA A CATEGORIA ESCOLHIDA NO SISTEMA
             // =============================================
 
             categoria:
@@ -30537,7 +31178,7 @@ function analisarPlanilhaCadastroInicial(
 
 
         // =================================================
-        // SKU
+        // VALIDAR SKU
         // =================================================
 
         if (!sku) {
@@ -30560,8 +31201,13 @@ function analisarPlanilhaCadastroInicial(
         }
 
 
+        // =================================================
+        // MÍNIMO 8 CARACTERES
+        // =================================================
+
         if (
-            sku.length < 8
+            sku.length <
+            8
         ) {
 
             produto.status =
@@ -30583,7 +31229,7 @@ function analisarPlanilhaCadastroInicial(
 
 
         // =================================================
-        // NOME
+        // VALIDAR NOME
         // =================================================
 
         if (!nome) {
@@ -30607,7 +31253,7 @@ function analisarPlanilhaCadastroInicial(
 
 
         // =================================================
-        // DUPLICIDADE DENTRO DA PLANILHA
+        // DUPLICIDADE NA PRÓPRIA PLANILHA
         // =================================================
 
         if (
@@ -30659,7 +31305,8 @@ function analisarPlanilhaCadastroInicial(
 
 
         if (
-            existentes.length > 0
+            existentes.length >
+            0
         ) {
 
             produto.status =
@@ -30667,7 +31314,9 @@ function analisarPlanilhaCadastroInicial(
 
 
             produto.mensagem =
-                `Já cadastrado: ${existentes.map(p => p.sku).join(', ')}`;
+                `Já cadastrado: ${existentes.map(
+                    p => p.sku
+                ).join(', ')}`;
 
 
             resultado
@@ -30691,6 +31340,45 @@ function analisarPlanilhaCadastroInicial(
         );
 
     }
+
+
+    // =====================================================
+    // LOG
+    // =====================================================
+
+    console.log(
+        '📊 [IMPORTAR PRODUTOS] Análise concluída:',
+        {
+
+            arquivo:
+                nomeArquivo,
+
+            aba:
+                nomeAba,
+
+            formato:
+                formatoDetectado,
+
+            categoria:
+                categoriaSelecionada,
+
+            encontrados:
+                resultado.produtos.length,
+
+            validos:
+                resultado.validos.length,
+
+            jaExistem:
+                resultado.duplicadosSistema.length,
+
+            duplicadosPlanilha:
+                resultado.duplicadosPlanilha.length,
+
+            erros:
+                resultado.erros.length
+
+        }
+    );
 
 
     return resultado;
