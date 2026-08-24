@@ -23336,10 +23336,6 @@ function garantirCelulaEstoqueAnuncioMonitorFullNFE(
 }
 
 
-// =========================================================
-// APLICAR ESTADOS NA TABELA
-// =========================================================
-
 function aplicarEstadosFullTabelaNFE() {
 
     garantirEstiloMonitorFullNFE();
@@ -23359,61 +23355,144 @@ function aplicarEstadosFullTabelaNFE() {
     }
 
 
+    const vendas =
+        Array.isArray(
+            vendasPendentes
+        )
+            ? vendasPendentes
+            : [];
+
+
+    const mapaVendaPorId =
+        new Map();
+
+
+    vendas.forEach(
+        venda => {
+
+            const id =
+                normalizarOrderIdML(
+                    venda.id_venda_ml ||
+                    venda.id
+                );
+
+
+            if (
+                id
+            ) {
+
+                mapaVendaPorId.set(
+                    id,
+                    venda
+                );
+            }
+        }
+    );
+
+
     tbody
         .querySelectorAll(
-            'tr'
+            ':scope > tr'
         )
         .forEach(
             tr => {
 
+                const cells =
+                    Array.from(
+                        tr.querySelectorAll(
+                            ':scope > td'
+                        )
+                    );
+
+
+                if (
+                    cells.length ===
+                    0
+                ) {
+
+                    return;
+                }
+
+
                 // =============================================
-                // REMOVER HTML ANTERIOR
+                // IDENTIFICAR VENDA
                 // =============================================
 
-                tr
-                    .querySelectorAll(
-                        '[data-monitor-full-nfe]'
-                    )
-                    .forEach(
-                        elemento =>
-                            elemento.remove()
+                let vendaId =
+                    tr.dataset
+                        .vendaIdNfe ||
+                    '';
+
+
+                if (
+                    !vendaId
+                ) {
+
+                    const textoPrimeiraCelula =
+                        cells[0]
+                            ?.textContent ||
+                        '';
+
+
+                    const match =
+                        textoPrimeiraCelula
+                            .match(
+                                /\d{8,}/
+                            );
+
+
+                    vendaId =
+                        match
+                            ? normalizarOrderIdML(
+                                match[0]
+                            )
+                            : '';
+                }
+
+
+                if (
+                    vendaId
+                ) {
+
+                    tr.dataset
+                        .vendaIdNfe =
+                        vendaId;
+                }
+
+
+                const venda =
+                    mapaVendaPorId.get(
+                        vendaId
                     );
 
 
-                tr.classList
-                    .remove(
-                        'alerta-full-nfe-ativo'
-                    );
+                if (
+                    !venda
+                ) {
+
+                    return;
+                }
 
 
-                const texto =
-                    String(
-                        tr.textContent ||
-                        ''
-                    );
-
+                // =============================================
+                // MLBS DA VENDA
+                // =============================================
 
                 const mlbs =
-                    [
-                        ...new Set(
-                            (
-                                texto.match(
-                                    /MLB\d+/gi
-                                ) ||
-                                []
-                            )
-                                .map(
-                                    normalizarMLBFullNFE
-                                )
-                                .filter(Boolean)
-                        )
-                    ];
+                    obterMLBsVendaFullNFE(
+                        venda
+                    );
 
 
                 if (
                     mlbs.length ===
                     0
                 ) {
+
+                    tr.classList
+                        .remove(
+                            'alerta-full-nfe-ativo'
+                        );
 
                     return;
                 }
@@ -23432,16 +23511,22 @@ function aplicarEstadosFullTabelaNFE() {
                         .filter(Boolean);
 
 
-                if (
-                    estados.length ===
-                    0
-                ) {
+                const estadosComHtml =
+                    estados.filter(
+                        estado =>
+                            [
+                                'full_zero_aguardando_retirada',
+                                'full_zero_sync_erro',
+                                'full_zero_concluido',
+                                'exposicao_pendente',
+                                'exposicao_ok'
+                            ].includes(
+                                estado.status
+                            )
+                    );
 
-                    return;
-                }
 
-
-                const temAtivo =
+                const possuiAlerta =
                     estados.some(
                         estado =>
                             estado.ativo ===
@@ -23449,12 +23534,20 @@ function aplicarEstadosFullTabelaNFE() {
                     );
 
 
+                // =============================================
+                // PISCAR OU NÃO
+                // =============================================
+
                 tr.classList
                     .toggle(
                         'alerta-full-nfe-ativo',
-                        temAtivo
+                        possuiAlerta
                     );
 
+
+                // =============================================
+                // PEGAR CÉLULA ESTOQUE ANÚNCIO
+                // =============================================
 
                 const td =
                     garantirCelulaEstoqueAnuncioMonitorFullNFE(
@@ -23470,30 +23563,69 @@ function aplicarEstadosFullTabelaNFE() {
                 }
 
 
-                estados.forEach(
-                    estado => {
+                // =============================================
+                // CONTAINER DO MONITOR
+                //
+                // Um único container por linha.
+                // =============================================
 
-                        const html =
-                            montarEstadoFullHtmlNFE(
-                                estado
-                            );
+                let container =
+                    td.querySelector(
+                        ':scope > [data-container-monitor-full-nfe]'
+                    );
 
 
-                        if (
-                            html
-                        ) {
+                if (
+                    !container
+                ) {
 
-                            td.insertAdjacentHTML(
-                                'beforeend',
-                                html
-                            );
-                        }
-                    }
-                );
+                    container =
+                        document.createElement(
+                            'div'
+                        );
+
+
+                    container.dataset
+                        .containerMonitorFullNfe =
+                        '1';
+
+
+                    td.appendChild(
+                        container
+                    );
+                }
+
+
+                const novoHtml =
+                    estadosComHtml
+                        .map(
+                            estado =>
+                                montarEstadoFullHtmlNFE(
+                                    estado
+                                )
+                        )
+                        .filter(Boolean)
+                        .join(
+                            ''
+                        );
 
 
                 // =============================================
-                // RESPEITAR COLUNA OCULTA
+                // SÓ ALTERAR DOM SE REALMENTE MUDOU
+                // =============================================
+
+                if (
+                    container.innerHTML !==
+                    novoHtml
+                ) {
+
+                    container.innerHTML =
+                        novoHtml;
+                }
+
+
+                // =============================================
+                // COLUNA OCULTA
                 // =============================================
 
                 if (
@@ -23517,10 +23649,6 @@ function aplicarEstadosFullTabelaNFE() {
 }
 
 
-// =========================================================
-// VERIFICAR TODOS OS MLBS FULL DAS VENDAS DA TELA
-// =========================================================
-
 async function verificarMonitorFullVendasNFE(
     {
         forcar = false
@@ -23531,6 +23659,10 @@ async function verificarMonitorFullVendasNFE(
         window
             ._monitorFullNFEEmAndamento
     ) {
+
+        console.log(
+            'ℹ️ Verificação FULL já está em andamento.'
+        );
 
         return;
     }
@@ -23554,12 +23686,12 @@ async function verificarMonitorFullVendasNFE(
                 : [];
 
 
-        const mapa =
-            new Map();
+        // =====================================================
+        // SOMENTE VENDAS FULL
+        // =====================================================
 
-
-        vendas
-            .filter(
+        const vendasFull =
+            vendas.filter(
                 venda =>
                     Boolean(
                         venda._is_full
@@ -23567,63 +23699,134 @@ async function verificarMonitorFullVendasNFE(
                     detectarVendaFullNFE(
                         venda
                     )
-            )
-            .forEach(
-                venda => {
-
-                    const mlbs =
-                        obterMLBsVendaFullNFE(
-                            venda
-                        );
-
-
-                    mlbs.forEach(
-                        mlb => {
-
-                            if (
-                                !mapa.has(
-                                    mlb
-                                )
-                            ) {
-
-                                mapa.set(
-                                    mlb,
-                                    venda
-                                );
-                            }
-                        }
-                    );
-                }
             );
+
+
+        const mapa =
+            new Map();
+
+
+        vendasFull.forEach(
+            venda => {
+
+                const mlbs =
+                    obterMLBsVendaFullNFE(
+                        venda
+                    );
+
+
+                mlbs.forEach(
+                    mlb => {
+
+                        if (
+                            !mapa.has(
+                                mlb
+                            )
+                        ) {
+
+                            mapa.set(
+                                mlb,
+                                venda
+                            );
+                        }
+                    }
+                );
+            }
+        );
+
+
+        console.log(
+            `🏭 Monitor FULL: ${mapa.size} MLB(s) único(s) para conferir`
+        );
+
+
+        const entradas =
+            Array.from(
+                mapa.entries()
+            );
+
+
+        // =====================================================
+        // PROCESSAR 2 MLBs POR VEZ
+        // =====================================================
+
+        const TAMANHO_LOTE =
+            2;
 
 
         for (
-            const [
-                mlb,
-                venda
-            ]
-            of mapa
+            let i = 0;
+            i < entradas.length;
+            i += TAMANHO_LOTE
         ) {
 
-            await processarMLBMonitorFullNFE(
+            const lote =
+                entradas.slice(
+                    i,
+                    i +
+                        TAMANHO_LOTE
+                );
 
-                mlb,
 
-                venda,
+            await Promise.all(
 
-                {
-                    forcar
-                }
+                lote.map(
+                    async (
+                        [
+                            mlb,
+                            venda
+                        ]
+                    ) => {
+
+                        try {
+
+                            await processarMLBMonitorFullNFE(
+
+                                mlb,
+
+                                venda,
+
+                                {
+                                    forcar
+                                }
+                            );
+
+
+                        } catch (
+                            error
+                        ) {
+
+                            console.warn(
+                                `⚠️ Falha verificando ${mlb}:`,
+                                error
+                            );
+                        }
+                    }
+                )
             );
 
 
-            await new Promise(
-                resolve =>
-                    setTimeout(
-                        resolve,
-                        120
-                    )
-            );
+            // =============================================
+            // ATUALIZAR VISUAL A CADA LOTE
+            // =============================================
+
+            aplicarEstadosFullTabelaNFE();
+
+
+            if (
+                i +
+                    TAMANHO_LOTE <
+                entradas.length
+            ) {
+
+                await new Promise(
+                    resolve =>
+                        setTimeout(
+                            resolve,
+                            300
+                        )
+                );
+            }
         }
 
 
@@ -23631,6 +23834,11 @@ async function verificarMonitorFullVendasNFE(
 
 
         aplicarEstadosFullTabelaNFE();
+
+
+        console.log(
+            '✅ Verificação FULL finalizada'
+        );
 
 
     } catch (
@@ -23652,75 +23860,57 @@ async function verificarMonitorFullVendasNFE(
 }
 
 
-// =========================================================
-// AGENDAR VERIFICAÇÃO
-// =========================================================
-
 function agendarVerificacaoMonitorFullNFE(
-    atraso = 1000
+    atraso = 1500,
+    forcar = false
 ) {
 
-    const chave =
-        'principal';
-
-
-    const anterior =
-        window
-            ._monitorFullNFETimers
-            .get(
-                chave
-            );
-
-
     if (
-        anterior
+        window
+            ._timerVerificacaoMonitorFullNFE
     ) {
 
         clearTimeout(
-            anterior
+            window
+                ._timerVerificacaoMonitorFullNFE
         );
     }
 
 
-    const timer =
+    window
+        ._timerVerificacaoMonitorFullNFE =
         setTimeout(
-            () => {
+            async () => {
 
                 window
-                    ._monitorFullNFETimers
-                    .delete(
-                        chave
-                    );
+                    ._timerVerificacaoMonitorFullNFE =
+                    null;
 
 
-                verificarMonitorFullVendasNFE()
-                    .catch(
-                        error => {
+                try {
 
-                            console.warn(
-                                '⚠️ Monitor FULL:',
-                                error
-                            );
+                    await verificarMonitorFullVendasNFE(
+                        {
+                            forcar
                         }
                     );
+
+
+                } catch (
+                    error
+                ) {
+
+                    console.warn(
+                        '⚠️ Erro na verificação agendada FULL:',
+                        error
+                    );
+                }
 
             },
             atraso
         );
-
-
-    window
-        ._monitorFullNFETimers
-        .set(
-            chave,
-            timer
-        );
 }
 
-
-// =========================================================
-// INICIALIZAR MONITOR
-// =========================================================
 
 function inicializarMonitorFullNFE() {
 
@@ -23738,90 +23928,62 @@ function inicializarMonitorFullNFE() {
         true;
 
 
+    console.log(
+        '🏭 Inicializando monitor FULL NF-e...'
+    );
+
+
     garantirEstiloMonitorFullNFE();
 
 
-    const iniciarObserver =
-        () => {
+    // =====================================================
+    // CARREGAR APENAS OS ALERTAS JÁ SALVOS
+    //
+    // NÃO COMEÇA A VARRER O ML IMEDIATAMENTE.
+    // =====================================================
 
-            const tbody =
-                document.getElementById(
-                    'vendasPendentesBody'
-                );
+    setTimeout(
+        async () => {
+
+            try {
+
+                await carregarEstadosFullNFE();
 
 
-            if (
-                !tbody
+                aplicarEstadosFullTabelaNFE();
+
+
+            } catch (
+                error
             ) {
 
-                setTimeout(
-                    iniciarObserver,
-                    1000
+                console.warn(
+                    '⚠️ Erro na carga inicial do monitor FULL:',
+                    error
                 );
-
-                return;
             }
 
-
-            const observer =
-                new MutationObserver(
-                    () => {
-
-                        // Reaplicar imediatamente os estados
-                        aplicarEstadosFullTabelaNFE();
+        },
+        1200
+    );
 
 
-                        // E agendar nova conferência ML
-                        agendarVerificacaoMonitorFullNFE(
-                            1200
-                        );
-                    }
-                );
+    // =====================================================
+    // VERIFICAÇÃO PERIÓDICA
+    //
+    // SEM OBSERVAR ALTERAÇÕES DO DOM.
+    //
+    // A cada 5 minutos verifica somente os MLBs FULL
+    // presentes na tela.
+    // =====================================================
 
+    if (
+        !window
+            ._intervalMonitorFullNFE
+    ) {
 
-            observer.observe(
-                tbody,
-                {
-                    childList:
-                        true,
-
-                    subtree:
-                        true
-                }
-            );
-
-
-            // =============================================
-            // PRIMEIRA CARGA
-            // =============================================
-
-            setTimeout(
-                async () => {
-
-                    await carregarEstadosFullNFE();
-
-
-                    aplicarEstadosFullTabelaNFE();
-
-
-                    await verificarMonitorFullVendasNFE({
-
-                        forcar:
-                            true
-                    });
-
-                },
-                1500
-            );
-
-
-            // =============================================
-            // CONFERÊNCIA PERIÓDICA
-            //
-            // A tabela também dispara ao atualizar a data.
-            // Este intervalo é apenas uma segurança.
-            // =============================================
-
+        window
+            ._intervalMonitorFullNFE =
             setInterval(
                 () => {
 
@@ -23837,14 +23999,16 @@ function inicializarMonitorFullNFE() {
                         );
 
                 },
-                2 *
+                5 *
                 60 *
                 1000
             );
-        };
+    }
 
 
-    iniciarObserver();
+    console.log(
+        '✅ Monitor FULL NF-e inicializado sem MutationObserver'
+    );
 }
 
 
@@ -24016,6 +24180,41 @@ if (
 
 
     aplicarPreferenciasColunasNFE();
+
+    // =====================================================
+    // REAPLICAR STATUS FULL
+    // =====================================================
+
+    setTimeout(
+        () => {
+
+            if (
+                typeof aplicarEstadosFullTabelaNFE ===
+                'function'
+            ) {
+
+                aplicarEstadosFullTabelaNFE();
+            }
+
+        },
+        50
+    );
+    // =====================================================
+// AGENDAR CONFERÊNCIA FULL
+//
+// NÃO dispara imediatamente várias requisições.
+// =====================================================
+
+if (
+    typeof agendarVerificacaoMonitorFullNFE ===
+    'function'
+) {
+
+    agendarVerificacaoMonitorFullNFE(
+        1200,
+        false
+    );
+}
 
 
     return;
@@ -44072,6 +44271,15 @@ window.ehEntradaDevolucaoAvulsaNFE = ehEntradaDevolucaoAvulsaNFE;
 window.garantirCampoReferenciaDevolucaoAvulsaNFE = garantirCampoReferenciaDevolucaoAvulsaNFE;
 window.atualizarCampoReferenciaDevolucaoAvulsaNFE = atualizarCampoReferenciaDevolucaoAvulsaNFE;
 window.preencherSelectNaturezaNFE = preencherSelectNaturezaNFE;
+
+setTimeout(
+    () => {
+
+        inicializarMonitorFullNFE();
+
+    },
+    1200
+);
 
 // ===================== INICIALIZAR =====================
 document.addEventListener('DOMContentLoaded', function() {
