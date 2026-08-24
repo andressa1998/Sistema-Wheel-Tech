@@ -14,6 +14,139 @@ let preEntradaDadosBrutos = '';
 // ============================================
 const USUARIOS_AUTORIZADOS_FORNECEDORES = ['andressamiotto', 'ronald'];
 
+// ============================================
+// REGRAS DE PERMISSÃO DA ABA DE ENTRADAS
+// Bruna e Arthur podem trabalhar somente com XML
+// ============================================
+
+const USUARIOS_SOMENTE_XML_ENTRADAS = ['bruna', 'arthur'];
+
+function normalizarUsuarioEntradas(valor) {
+    return (valor || '')
+        .toString()
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+}
+
+function usuarioSomenteXMLEntradas() {
+    if (!currentUser) return false;
+
+    const username = normalizarUsuarioEntradas(currentUser.username);
+
+    const primeiroNome = normalizarUsuarioEntradas(
+        currentUser.name
+    ).split(/\s+/)[0];
+
+    return (
+        USUARIOS_SOMENTE_XML_ENTRADAS.includes(username) ||
+        USUARIOS_SOMENTE_XML_ENTRADAS.includes(primeiroNome)
+    );
+}
+
+
+// ============================================
+// VERIFICA SE UMA ENTRADA VEIO DE XML
+// ============================================
+
+function entradaEhXML(card) {
+    return (card?.tipo_entrada || '').toLowerCase() === 'xml';
+}
+
+
+// ============================================
+// OCULTA ENTRADA MANUAL PARA BRUNA E ARTHUR
+// ============================================
+
+function aplicarPermissoesEntradaUsuario() {
+
+    // Localiza o textarea da entrada manual
+    const pasteArea = document.getElementById('entradaPasteArea');
+
+    // Sobe até o card "Nova Entrada"
+    const cardEntradaManual = pasteArea
+        ? pasteArea.closest('.card')
+        : null;
+
+    if (!cardEntradaManual) return;
+
+    if (usuarioSomenteXMLEntradas()) {
+
+        // Bruna e Arthur não enxergam a entrada manual
+        cardEntradaManual.style.display = 'none';
+
+    } else {
+
+        // Ronald / Admin continuam vendo normalmente
+        cardEntradaManual.style.display = '';
+    }
+}
+
+
+// ============================================
+// ESTILO DE ENTRADA URGENTE
+// PRODUTO COM ESTOQUE ZERO
+// ============================================
+
+function injetarEstilosEntradasUrgentes() {
+
+    // Evita adicionar o CSS mais de uma vez
+    if (document.getElementById('estilosEntradasUrgentes')) {
+        return;
+    }
+
+    const style = document.createElement('style');
+
+    style.id = 'estilosEntradasUrgentes';
+
+    style.textContent = `
+
+        @keyframes entradaUrgentePiscarVermelho {
+
+            0%, 100% {
+                background-color: #ffe3e3;
+                color: #721c24;
+            }
+
+            50% {
+                background-color: #dc3545;
+                color: #ffffff;
+            }
+        }
+
+
+        /* Linha inteira do produto urgente */
+        tr.entrada-urgente-estoque-zero > td {
+            animation: entradaUrgentePiscarVermelho 1s ease-in-out infinite;
+            border-color: rgba(220, 53, 69, 0.45) !important;
+        }
+
+
+        tr.entrada-urgente-estoque-zero code,
+        tr.entrada-urgente-estoque-zero small,
+        tr.entrada-urgente-estoque-zero strong {
+            color: inherit !important;
+        }
+
+
+        /* Aviso URGENTE */
+        .badge-entrada-urgente {
+            display: inline-block;
+            background: #dc3545;
+            color: white;
+            border-radius: 4px;
+            padding: 4px 7px;
+            margin-bottom: 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+    `;
+
+    document.head.appendChild(style);
+}
+
 // ===== FUNÇÃO PARA AGUARDAR O CARREGAMENTO DO ESTOQUE =====
 function aguardarEstoqueCarregado(timeout = 30000) {
     return new Promise((resolve) => {
@@ -40,35 +173,90 @@ function aguardarEstoqueCarregado(timeout = 30000) {
 
 // ===== ABRIR SISTEMA =====
 window.abrirSistemaEntradas = function() {
+
     if (!currentUser) {
         showToast('⚠️ Faça login primeiro', 'warning');
         return;
     }
 
     const menuSystem = document.getElementById('menuSystem');
-    if (menuSystem) menuSystem.classList.add('hidden');
+
+    if (menuSystem) {
+        menuSystem.classList.add('hidden');
+    }
 
     const sistemasIds = [
-        'mainSystem', 'salesSystem', 'reembolsosSystem', 'caixaSystem', 'promocoesSystem',
-        'reviewsSystem', 'folgasSystem', 'shippingSystem', 'estoqueSystem',
-        'feedbackSystem', 'perguntasSystem', 'estoqueGestaoSystem', 'nfeSystem',
-        'precificacaoSystem', 'fullSystem'
+        'mainSystem',
+        'salesSystem',
+        'reembolsosSystem',
+        'caixaSystem',
+        'promocoesSystem',
+        'reviewsSystem',
+        'folgasSystem',
+        'shippingSystem',
+        'estoqueSystem',
+        'feedbackSystem',
+        'perguntasSystem',
+        'estoqueGestaoSystem',
+        'nfeSystem',
+        'precificacaoSystem',
+        'fullSystem'
     ];
+
     sistemasIds.forEach(id => {
+
         const el = document.getElementById(id);
-        if (el) el.classList.add('hidden');
+
+        if (el) {
+            el.classList.add('hidden');
+        }
+
     });
 
     const entradasSystem = document.getElementById('entradasSystem');
-    if (entradasSystem) entradasSystem.classList.remove('hidden');
 
-    document.getElementById('entradasUserName').textContent = currentUser.name;
-    document.getElementById('entradasUserAvatar').textContent = currentUser.avatar;
-    document.getElementById('entradasUserRole').textContent = currentUser.role;
+    if (entradasSystem) {
+        entradasSystem.classList.remove('hidden');
+    }
+
+
+    // ========================================
+    // DADOS DO USUÁRIO
+    // ========================================
+
+    document.getElementById('entradasUserName').textContent =
+        currentUser.name;
+
+    document.getElementById('entradasUserAvatar').textContent =
+        currentUser.avatar;
+
+    document.getElementById('entradasUserRole').textContent =
+        currentUser.role;
+
+
+    // ========================================
+    // NOVAS REGRAS
+    // ========================================
+
+    // Adiciona CSS do alerta urgente
+    injetarEstilosEntradasUrgentes();
+
+    // Bruna e Arthur não podem usar entrada manual
+    aplicarPermissoesEntradaUsuario();
+
+
+    // ========================================
+    // CARREGAMENTOS NORMAIS
+    // ========================================
 
     carregarFornecedores();
+
     carregarEntradas();
-    showToast('📦 Sistema de Entradas carregado', 'info');
+
+    showToast(
+        '📦 Sistema de Entradas carregado',
+        'info'
+    );
 };
 
 // ===== CARREGAR FORNECEDORES (com indexação por sku_fornecedor) =====
@@ -147,6 +335,24 @@ window.darEntradaItem = async function(cardId, itemId, produtoId) {
     const card = entradasCards.find(c => c.id == cardId);
     if (!card) {
         showToast('Card não encontrado', 'error');
+        return;
+    }
+
+        // ========================================
+    // BRUNA E ARTHUR SÓ PODEM DAR ENTRADA
+    // SE O CARD VEIO DE XML
+    // ========================================
+
+    if (
+        usuarioSomenteXMLEntradas() &&
+        !entradaEhXML(card)
+    ) {
+
+        showToast(
+            '🔒 Seu usuário pode dar entrada somente por XML.',
+            'warning'
+        );
+
         return;
     }
     const item = card.itens.find(i => i.id == itemId);
@@ -831,302 +1037,1456 @@ function adicionarBotaoObservacao(item, card) {
 }
 
 // ============================================
-// RENDERIZAR ENTRADAS (COM OCULTAÇÃO DE FORNECEDOR)
+// RENDERIZAR ENTRADAS
+// - OCULTAÇÃO DE FORNECEDOR
+// - ALERTA DE ESTOQUE ZERO
+// - BRUNA E ARTHUR SOMENTE XML
 // ============================================
 async function renderizarEntradas() {
-    if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
-        console.log('🔄 Forçando recarregamento do estoque antes de renderizar...');
+
+    // ============================================
+    // GARANTE QUE O ESTOQUE ESTEJA CARREGADO
+    // ============================================
+
+    if (
+        typeof produtosEstoque === 'undefined' ||
+        !Array.isArray(produtosEstoque) ||
+        produtosEstoque.length === 0
+    ) {
+
+        console.log(
+            '🔄 Forçando recarregamento do estoque antes de renderizar...'
+        );
+
         if (typeof carregarProdutosEstoque === 'function') {
+
             await carregarProdutosEstoque();
+
         } else {
-            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            await new Promise(
+                resolve => setTimeout(resolve, 2000)
+            );
         }
     }
 
-    const container = document.getElementById('entradasCardsContainer');
-    if (!container) return;
 
-    let cardsFiltrados = [...entradasCards];
-    if (filtroEntradasAtual === 'pendente') {
-        cardsFiltrados = cardsFiltrados.filter(c => c.status === 'pendente');
-    } else if (filtroEntradasAtual === 'finalizado') {
-        cardsFiltrados = cardsFiltrados.filter(c => c.status === 'finalizado');
-    }
+    // ============================================
+    // INJETA CSS DO ALERTA URGENTE
+    // ============================================
 
-    const busca = document.getElementById('buscaEntradas')?.value?.trim().toLowerCase() || '';
-    if (busca) {
-        cardsFiltrados = cardsFiltrados.filter(card => {
-            const cardMatch = card.numero_entrada.toLowerCase().includes(busca);
-            if (cardMatch) return true;
-            return card.itens.some(item =>
-                (item.rastreio || '').toLowerCase().includes(busca) ||
-                (item.produto || '').toLowerCase().includes(busca) ||
-                (item.sku_original || '').toLowerCase().includes(busca) ||
-                (item.sku_match || '').toLowerCase().includes(busca) ||
-                (item.fornecedor_nome || '').toLowerCase().includes(busca) ||
-                (item.cd_fornecedor || '').toLowerCase().includes(busca)
-            );
-        });
-    }
+    if (!document.getElementById('estilosEntradasUrgentes')) {
 
-    if (cardsFiltrados.length === 0) {
-        container.innerHTML = `
-            <div class="text-center py-5 text-muted">
-                <i class="fas fa-box-open fa-3x mb-3" style="opacity:0.3;"></i>
-                <h4>Nenhuma entrada encontrada</h4>
-                <p>${filtroEntradasAtual === 'pendente' ? 'Todas as entradas foram finalizadas!' : 
-                      filtroEntradasAtual === 'finalizado' ? 'Nenhuma entrada finalizada ainda.' : 
-                      'Cole os dados acima ou envie um XML e clique em "Processar Entrada" para começar.'}</p>
-            </div>
-        `;
-        return;
-    }
+        const style = document.createElement('style');
 
-    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
-    const podeEditarObservacoes = currentUser && (currentUser.username === 'ronald');
-    const isAdmin = currentUser && (currentUser.role === 'admin' || currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
-    const verFornecedor = podeVerFornecedores();
+        style.id = 'estilosEntradasUrgentes';
 
-    let html = '';
-    cardsFiltrados.forEach(card => {
-        const total = card.itens.filter(i => i.status !== 'ignorado').length;
-        const concluidos = card.itens.filter(i => 
-            i.status === 'entrada_realizada' || 
-            i.status === 'cadastrado' || 
-            i.status === 'ignorado'
-        ).length;
-        const progresso = total > 0 ? Math.round((concluidos / total) * 100) : 0;
-        const isFinalizado = card.status === 'finalizado';
-        const criadoEm = formatarDataHora(card.criado_em);
+        style.textContent = `
 
-        const origemBadge = card.tipo_entrada === 'xml' 
-            ? '<span class="badge badge-info ml-2">📄 XML</span>' 
-            : '';
+            @keyframes entradaUrgentePiscarVermelho {
 
-        // Verifica se o card é do tipo Excel (manual)
-        const isExcel = card.tipo_entrada === 'excel' || !card.tipo_entrada;
+                0%, 100% {
+                    background-color: #ffe3e3;
+                }
 
-        html += `
-            <div class="card mb-4 entrada-card" data-id="${card.id}" style="${!isFinalizado ? 'border-left: 4px solid #ffc107;' : ''}">
-                <div class="card-header" style="flex-wrap:wrap; gap:10px;">
-                    <div>
-                        <h3 class="card-title" style="margin:0;">
-                            <i class="fas fa-receipt"></i>
-                            ${card.numero_entrada}
-                            ${origemBadge}
-                            <span class="badge ${isFinalizado ? 'badge-success' : 'badge-warning'} ml-2">
-                                ${isFinalizado ? '✅ Finalizado' : '⏳ Pendente'}
-                            </span>
-                            ${isExcel && !verFornecedor ? '<span class="badge badge-secondary ml-2">🔒 Fornecedor oculto</span>' : ''}
-                        </h3>
-                        <small class="text-muted">
-                            Criado por: ${card.criado_por || 'Sistema'} em ${criadoEm}
-                            ${isFinalizado && card.finalizado_por ? ` • Finalizado por: ${card.finalizado_por}` : ''}
-                            ${card.fornecedor ? ` • Fornecedor: ${card.fornecedor}` : ''}
-                            ${card.nf_numero ? ` • NF: ${card.nf_numero}` : ''}
-                        </small>
-                    </div>
-                    <div class="d-flex gap-2 align-items-center">
-                        <div style="min-width:120px;">
-                            <div class="progress" style="height:8px; border-radius:4px; background:#e9ecef;">
-                                <div class="progress-bar ${progresso === 100 ? 'bg-success' : 'bg-primary'}" 
-                                     style="width:${progresso}%; border-radius:4px; transition:width 0.3s;">
-                                </div>
-                            </div>
-                            <small class="text-muted">${concluidos}/${total} itens (${progresso}%)</small>
-                        </div>
-                        ${!isFinalizado ? `
-                            <button class="btn btn-sm btn-danger" onclick="cancelarEntrada('${card.id}')" title="Cancelar entrada (excluir)">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        ` : ''}
-                        ${isFinalizado && isAdmin ? `
-                            <button class="btn btn-sm btn-danger" onclick="excluirEntradaFinalizada('${card.id}')" title="Excluir entrada finalizada (Admin)">
-                                <i class="fas fa-trash-alt"></i>
-                            </button>
-                        ` : ''}
-                    </div>
-                </div>
-
-                <div class="table-responsive">
-                    <table class="table table-sm table-hover" style="margin-bottom:0;">
-                        <thead>
-                            <tr>
-                                <th style="width:40px;">#</th>
-                                <th>Cd. Fornecedor</th>
-                                <th>Referência de entrada</th>
-                                <th style="width:80px;">Quant</th>
-                                <th>Produto</th>
-                                <th>SKU</th>
-                                ${verFornecedor ? '<th>Fornecedor</th>' : ''}
-                                <th style="width:70px;">Qtd Entrada</th>
-                                ${podeVerCusto ? '<th style="width:90px;">Custo Unit.</th>' : ''}
-                                <th style="min-width:180px;">Obs.</th>
-                                <th style="width:70px;">Status</th>
-                                <th style="width:300px;">Ação</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-
-        card.itens.forEach((item, idx) => {
-            const isConcluido = item.status !== 'pendente';
-            const isIgnorado = item.status === 'ignorado';
-            
-            let itemStatus = '';
-            let statusClass = '';
-            if (isIgnorado) {
-                itemStatus = '⏭️ Ignorado';
-                statusClass = 'badge-secondary';
-            } else if (item.status === 'entrada_realizada') {
-                itemStatus = '✅ Entrada';
-                statusClass = 'badge-success';
-            } else if (item.status === 'cadastrado') {
-                itemStatus = '📝 Cadastrado';
-                statusClass = 'badge-info';
-            } else {
-                itemStatus = '⏳ Pendente';
-                statusClass = 'badge-warning';
-            }
-
-            const skuParaVerificar = item.sku_match || item.sku_original;
-            const produtoExistente = verificarSKUExistente(skuParaVerificar);
-            let tituloProduto = '';
-            if (produtoExistente) {
-                tituloProduto = produtoExistente.nome || '';
-            }
-
-            const obsValue = item.observacao || '';
-            const obsId = `obs-${card.id}-${item.id}`;
-
-            let acaoHtml = '';
-
-            if (isConcluido && !isIgnorado) {
-                acaoHtml = `
-                    <span class="badge ${statusClass}">${itemStatus}</span>
-                    <small class="text-muted d-block">${item.responsavel || ''}</small>
-                    ${podeEditarObservacoes ? `
-                        <button class="btn btn-sm btn-outline-primary mt-1" onclick="abrirModalObservacao('${card.id}', ${item.id})" title="Editar observação">
-                            <i class="fas fa-edit"></i> Obs
-                        </button>
-                    ` : ''}
-                `;
-            } else if (isIgnorado) {
-                acaoHtml = `
-                    <span class="badge ${statusClass}">${itemStatus}</span>
-                    <small class="text-muted d-block">${item.responsavel || ''}</small>
-                    ${podeEditarObservacoes ? `
-                        <button class="btn btn-sm btn-outline-primary mt-1" onclick="abrirModalObservacao('${card.id}', ${item.id})" title="Editar observação">
-                            <i class="fas fa-edit"></i> Obs
-                        </button>
-                    ` : ''}
-                `;
-            } else {
-                if (produtoExistente) {
-                    acaoHtml = `
-                        <button class="btn btn-sm btn-success" onclick="darEntradaItem('${card.id}', ${item.id}, '${produtoExistente.id}')" title="Adicionar ao estoque">
-                            <i class="fas fa-arrow-right-to-bracket"></i> Dar Entrada
-                        </button>
-                        ${tituloProduto ? `<small class="d-block text-success">🔍 ${tituloProduto}</small>` : ''}
-                        <button class="btn btn-sm btn-secondary" onclick="ignorarItem('${card.id}', ${item.id})" title="Ignorar este item">
-                            <i class="fas fa-ban"></i> Ignorar
-                        </button>
-                        ${podeEditarObservacoes ? `
-                            <button class="btn btn-sm btn-outline-primary mt-1" onclick="abrirModalObservacao('${card.id}', ${item.id})" title="Editar observação">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                        ` : ''}
-                    `;
-                } else {
-                    acaoHtml = `
-                        <div class="d-flex flex-wrap gap-1">
-                            <button class="btn btn-sm btn-primary" onclick="abrirCadastroRapido('${card.id}', ${item.id})" title="Cadastrar novo produto">
-                                <i class="fas fa-plus-circle"></i> Cadastrar
-                            </button>
-                            <button class="btn btn-sm btn-info" onclick="vincularProdutoExistente('${card.id}', ${item.id})" title="Vincular a um produto já existente">
-                                <i class="fas fa-link"></i> Já existe
-                            </button>
-                            <button class="btn btn-sm btn-secondary" onclick="ignorarItem('${card.id}', ${item.id})" title="Ignorar este item">
-                                <i class="fas fa-ban"></i> Ignorar
-                            </button>
-                            ${podeEditarObservacoes ? `
-                                <button class="btn btn-sm btn-outline-primary" onclick="abrirModalObservacao('${card.id}', ${item.id})" title="Editar observação">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                            ` : ''}
-                        </div>
-                        <small class="d-block text-muted">⛔ Produto não encontrado</small>
-                    `;
+                50% {
+                    background-color: #dc3545;
+                    color: #ffffff;
                 }
             }
 
-            const skuDisplay = item.sku_match || item.sku_original || '-';
-            
-            // ===== OCULTA FORNECEDOR PARA ENTRADAS MANUAIS (EXCEL) =====
-            let fornecedorDisplay = item.fornecedor_nome || item.cd_fornecedor || '-';
-            if (isExcel && !verFornecedor) {
-                fornecedorDisplay = '🔒 Oculto';
-            }
-            
-            const qtdEntrada = item.quantidade_entrada && item.quantidade_entrada > 0 ? item.quantidade_entrada : '-';
-            const custoDisplay = podeVerCusto && item.valor_custo ? `R$ ${parseFloat(item.valor_custo).toFixed(2)}` : (podeVerCusto ? '-' : '');
 
-            let obsDisplay = obsValue || '-';
-            if (podeEditarObservacoes) {
-                obsDisplay = `
-                    <div class="d-flex align-items-center gap-1">
-                        <span id="${obsId}-text" style="font-size: 12px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${obsValue || '-'}">
-                            ${obsValue || '-'}
-                        </span>
-                        <button class="btn btn-sm btn-outline-primary" onclick="abrirModalObservacao('${card.id}', ${item.id})" style="padding: 2px 6px; font-size: 10px;" title="Editar observação">
-                            <i class="fas fa-pen"></i>
-                        </button>
+            tr.entrada-urgente-estoque-zero > td {
+                animation: entradaUrgentePiscarVermelho 1s ease-in-out infinite;
+                border-color: rgba(220, 53, 69, 0.45) !important;
+            }
+
+
+            tr.entrada-urgente-estoque-zero code,
+            tr.entrada-urgente-estoque-zero small,
+            tr.entrada-urgente-estoque-zero strong {
+                color: inherit !important;
+            }
+
+
+            .badge-entrada-urgente {
+                display: inline-block;
+                background: #dc3545;
+                color: #ffffff !important;
+                border-radius: 5px;
+                padding: 4px 8px;
+                margin-bottom: 4px;
+                font-size: 11px;
+                font-weight: 700;
+                white-space: nowrap;
+                box-shadow: 0 2px 5px rgba(220, 53, 69, 0.35);
+            }
+
+
+            .entrada-manual-bloqueada {
+                display: inline-block;
+                background: #6c757d;
+                color: #ffffff;
+                padding: 4px 8px;
+                border-radius: 5px;
+                font-size: 11px;
+                font-weight: 600;
+            }
+
+        `;
+
+        document.head.appendChild(style);
+    }
+
+
+    // ============================================
+    // CONTAINER PRINCIPAL
+    // ============================================
+
+    const container =
+        document.getElementById('entradasCardsContainer');
+
+    if (!container) {
+        return;
+    }
+
+
+    // ============================================
+    // IDENTIFICA USUÁRIO
+    // ============================================
+
+    const normalizarUsuario = valor => {
+
+        return (valor || '')
+            .toString()
+            .trim()
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '');
+
+    };
+
+
+    const usernameAtual =
+        normalizarUsuario(currentUser?.username);
+
+
+    const primeiroNomeAtual =
+        normalizarUsuario(currentUser?.name)
+            .split(/\s+/)[0];
+
+
+    // Se a função global já existir, usa ela.
+    // Caso contrário, faz a verificação aqui mesmo.
+    const somenteXML =
+        typeof usuarioSomenteXMLEntradas === 'function'
+            ? usuarioSomenteXMLEntradas()
+            : (
+                usernameAtual === 'arthur' ||
+                usernameAtual === 'bruna' ||
+                primeiroNomeAtual === 'arthur' ||
+                primeiroNomeAtual === 'bruna'
+            );
+
+
+    // ============================================
+    // OCULTA CARD DE ENTRADA MANUAL
+    // PARA BRUNA E ARTHUR
+    // ============================================
+
+    const entradaPasteArea =
+        document.getElementById('entradaPasteArea');
+
+    if (entradaPasteArea) {
+
+        const cardEntradaManual =
+            entradaPasteArea.closest('.card');
+
+        if (cardEntradaManual) {
+
+            cardEntradaManual.style.display =
+                somenteXML
+                    ? 'none'
+                    : '';
+        }
+    }
+
+
+    // ============================================
+    // FILTRO DE STATUS
+    // ============================================
+
+    let cardsFiltrados = [...entradasCards];
+
+
+    if (filtroEntradasAtual === 'pendente') {
+
+        cardsFiltrados =
+            cardsFiltrados.filter(
+                c => c.status === 'pendente'
+            );
+
+    } else if (filtroEntradasAtual === 'finalizado') {
+
+        cardsFiltrados =
+            cardsFiltrados.filter(
+                c => c.status === 'finalizado'
+            );
+    }
+
+
+    // ============================================
+    // BUSCA
+    // ============================================
+
+    const busca =
+        document
+            .getElementById('buscaEntradas')
+            ?.value
+            ?.trim()
+            .toLowerCase() || '';
+
+
+    if (busca) {
+
+        cardsFiltrados =
+            cardsFiltrados.filter(card => {
+
+                const numeroEntrada =
+                    (card.numero_entrada || '')
+                        .toLowerCase();
+
+
+                const cardMatch =
+                    numeroEntrada.includes(busca);
+
+
+                if (cardMatch) {
+                    return true;
+                }
+
+
+                return card.itens.some(item =>
+
+                    (item.rastreio || '')
+                        .toLowerCase()
+                        .includes(busca) ||
+
+                    (item.produto || '')
+                        .toLowerCase()
+                        .includes(busca) ||
+
+                    (item.sku_original || '')
+                        .toLowerCase()
+                        .includes(busca) ||
+
+                    (item.sku_match || '')
+                        .toLowerCase()
+                        .includes(busca) ||
+
+                    (item.fornecedor_nome || '')
+                        .toLowerCase()
+                        .includes(busca) ||
+
+                    (item.cd_fornecedor || '')
+                        .toLowerCase()
+                        .includes(busca)
+
+                );
+            });
+    }
+
+
+    // ============================================
+    // NENHUMA ENTRADA
+    // ============================================
+
+    if (cardsFiltrados.length === 0) {
+
+        container.innerHTML = `
+
+            <div class="text-center py-5 text-muted">
+
+                <i
+                    class="fas fa-box-open fa-3x mb-3"
+                    style="opacity:0.3;"
+                ></i>
+
+                <h4>Nenhuma entrada encontrada</h4>
+
+                <p>
+                    ${
+                        filtroEntradasAtual === 'pendente'
+                            ? 'Todas as entradas foram finalizadas!'
+                            :
+                        filtroEntradasAtual === 'finalizado'
+                            ? 'Nenhuma entrada finalizada ainda.'
+                            :
+                        somenteXML
+                            ? 'Envie um XML para começar uma nova entrada.'
+                            : 'Cole os dados acima ou envie um XML e clique em "Processar Entrada" para começar.'
+                    }
+                </p>
+
+            </div>
+        `;
+
+        return;
+    }
+
+
+    // ============================================
+    // PERMISSÕES
+    // ============================================
+
+    const podeVerCusto =
+        currentUser &&
+        (
+            currentUser.username === 'andressamiotto' ||
+            currentUser.username === 'ronald'
+        );
+
+
+    const podeEditarObservacoes =
+        currentUser &&
+        currentUser.username === 'ronald';
+
+
+    const isAdmin =
+        currentUser &&
+        (
+            currentUser.role === 'admin' ||
+            currentUser.username === 'andressamiotto' ||
+            currentUser.username === 'ronald'
+        );
+
+
+    const verFornecedor =
+        podeVerFornecedores();
+
+
+    // ============================================
+    // MONTA HTML
+    // ============================================
+
+    let html = '';
+
+
+    cardsFiltrados.forEach(card => {
+
+
+        // ========================================
+        // CONTADORES
+        // ========================================
+
+        const total =
+            card.itens.filter(
+                i => i.status !== 'ignorado'
+            ).length;
+
+
+        const concluidos =
+            card.itens.filter(i =>
+
+                i.status === 'entrada_realizada' ||
+                i.status === 'cadastrado' ||
+                i.status === 'ignorado'
+
+            ).length;
+
+
+        const progresso =
+            total > 0
+                ? Math.round(
+                    (concluidos / total) * 100
+                )
+                : 0;
+
+
+        const isFinalizado =
+            card.status === 'finalizado';
+
+
+        const criadoEm =
+            formatarDataHora(card.criado_em);
+
+
+        // ========================================
+        // TIPO DE ENTRADA
+        // ========================================
+
+        const cardEhXML =
+            (
+                card.tipo_entrada ||
+                ''
+            )
+                .toString()
+                .toLowerCase() === 'xml';
+
+
+        const isExcel =
+            card.tipo_entrada === 'excel' ||
+            !card.tipo_entrada;
+
+
+        // Bruna e Arthur não podem trabalhar
+        // com entradas manuais
+        const cardManualBloqueado =
+            somenteXML &&
+            !cardEhXML;
+
+
+        // ========================================
+        // BADGES
+        // ========================================
+
+        const origemBadge =
+            cardEhXML
+                ? `
+                    <span class="badge badge-info ml-2">
+                        📄 XML
+                    </span>
+                `
+                : `
+                    <span class="badge badge-secondary ml-2">
+                        📋 Manual
+                    </span>
+                `;
+
+
+        const badgeBloqueado =
+            cardManualBloqueado
+                ? `
+                    <span class="badge badge-danger ml-2">
+                        🔒 Somente XML
+                    </span>
+                `
+                : '';
+
+
+        // ========================================
+        // CARD
+        // ========================================
+
+        html += `
+
+            <div
+                class="card mb-4 entrada-card"
+                data-id="${card.id}"
+                style="${
+                    !isFinalizado
+                        ? 'border-left: 4px solid #ffc107;'
+                        : ''
+                }"
+            >
+
+                <div
+                    class="card-header"
+                    style="flex-wrap:wrap; gap:10px;"
+                >
+
+                    <div>
+
+                        <h3
+                            class="card-title"
+                            style="margin:0;"
+                        >
+
+                            <i class="fas fa-receipt"></i>
+
+                            ${card.numero_entrada}
+
+                            ${origemBadge}
+
+                            <span
+                                class="badge ${
+                                    isFinalizado
+                                        ? 'badge-success'
+                                        : 'badge-warning'
+                                } ml-2"
+                            >
+
+                                ${
+                                    isFinalizado
+                                        ? '✅ Finalizado'
+                                        : '⏳ Pendente'
+                                }
+
+                            </span>
+
+                            ${badgeBloqueado}
+
+                            ${
+                                isExcel && !verFornecedor
+                                    ? `
+                                        <span class="badge badge-secondary ml-2">
+                                            🔒 Fornecedor oculto
+                                        </span>
+                                    `
+                                    : ''
+                            }
+
+                        </h3>
+
+
+                        <small class="text-muted">
+
+                            Criado por:
+                            ${card.criado_por || 'Sistema'}
+                            em
+                            ${criadoEm}
+
+                            ${
+                                isFinalizado &&
+                                card.finalizado_por
+                                    ? `
+                                        • Finalizado por:
+                                        ${card.finalizado_por}
+                                    `
+                                    : ''
+                            }
+
+                            ${
+                                card.fornecedor
+                                    ? `
+                                        • Fornecedor:
+                                        ${card.fornecedor}
+                                    `
+                                    : ''
+                            }
+
+                            ${
+                                card.nf_numero
+                                    ? `
+                                        • NF:
+                                        ${card.nf_numero}
+                                    `
+                                    : ''
+                            }
+
+                        </small>
+
                     </div>
+
+
+                    <div
+                        class="d-flex gap-2 align-items-center"
+                    >
+
+                        <div style="min-width:120px;">
+
+                            <div
+                                class="progress"
+                                style="
+                                    height:8px;
+                                    border-radius:4px;
+                                    background:#e9ecef;
+                                "
+                            >
+
+                                <div
+                                    class="
+                                        progress-bar
+                                        ${
+                                            progresso === 100
+                                                ? 'bg-success'
+                                                : 'bg-primary'
+                                        }
+                                    "
+                                    style="
+                                        width:${progresso}%;
+                                        border-radius:4px;
+                                        transition:width 0.3s;
+                                    "
+                                ></div>
+
+                            </div>
+
+                            <small class="text-muted">
+
+                                ${concluidos}/${total}
+                                itens
+                                (${progresso}%)
+
+                            </small>
+
+                        </div>
+
+
+                        ${
+                            !isFinalizado
+                                ? `
+                                    <button
+                                        class="btn btn-sm btn-danger"
+                                        onclick="cancelarEntrada('${card.id}')"
+                                        title="Cancelar entrada (excluir)"
+                                    >
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                `
+                                : ''
+                        }
+
+
+                        ${
+                            isFinalizado && isAdmin
+                                ? `
+                                    <button
+                                        class="btn btn-sm btn-danger"
+                                        onclick="excluirEntradaFinalizada('${card.id}')"
+                                        title="Excluir entrada finalizada (Admin)"
+                                    >
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                `
+                                : ''
+                        }
+
+                    </div>
+
+                </div>
+
+
+                <div class="table-responsive">
+
+                    <table
+                        class="table table-sm table-hover"
+                        style="margin-bottom:0;"
+                    >
+
+                        <thead>
+
+                            <tr>
+
+                                <th style="width:40px;">
+                                    #
+                                </th>
+
+                                <th>
+                                    Cd. Fornecedor
+                                </th>
+
+                                <th>
+                                    Referência de entrada
+                                </th>
+
+                                <th style="width:80px;">
+                                    Quant
+                                </th>
+
+                                <th>
+                                    Produto
+                                </th>
+
+                                <th>
+                                    SKU
+                                </th>
+
+                                ${
+                                    verFornecedor
+                                        ? '<th>Fornecedor</th>'
+                                        : ''
+                                }
+
+                                <th style="width:70px;">
+                                    Qtd Entrada
+                                </th>
+
+                                ${
+                                    podeVerCusto
+                                        ? '<th style="width:90px;">Custo Unit.</th>'
+                                        : ''
+                                }
+
+                                <th style="min-width:180px;">
+                                    Obs.
+                                </th>
+
+                                <th style="width:70px;">
+                                    Status
+                                </th>
+
+                                <th style="width:300px;">
+                                    Ação
+                                </th>
+
+                            </tr>
+
+                        </thead>
+
+
+                        <tbody>
+        `;
+
+
+        // ========================================
+        // ITENS
+        // ========================================
+
+        card.itens.forEach((item, idx) => {
+
+
+            const isConcluido =
+                item.status !== 'pendente';
+
+
+            const isIgnorado =
+                item.status === 'ignorado';
+
+
+            // ====================================
+            // STATUS
+            // ====================================
+
+            let itemStatus = '';
+            let statusClass = '';
+
+
+            if (isIgnorado) {
+
+                itemStatus = '⏭️ Ignorado';
+                statusClass = 'badge-secondary';
+
+            } else if (
+                item.status === 'entrada_realizada'
+            ) {
+
+                itemStatus = '✅ Entrada';
+                statusClass = 'badge-success';
+
+            } else if (
+                item.status === 'cadastrado'
+            ) {
+
+                itemStatus = '📝 Cadastrado';
+                statusClass = 'badge-info';
+
+            } else {
+
+                itemStatus = '⏳ Pendente';
+                statusClass = 'badge-warning';
+
+            }
+
+
+            // ====================================
+            // PROCURA PRODUTO NO ESTOQUE
+            // ====================================
+
+            const skuParaVerificar =
+                item.sku_match ||
+                item.sku_original;
+
+
+            const produtoExistente =
+                verificarSKUExistente(
+                    skuParaVerificar
+                );
+
+
+            let tituloProduto = '';
+
+
+            if (produtoExistente) {
+
+                tituloProduto =
+                    produtoExistente.nome || '';
+
+            }
+
+
+            // ====================================
+            // ESTOQUE ATUAL
+            // ====================================
+
+            let quantidadeAtualProduto = null;
+
+
+            if (produtoExistente) {
+
+                const quantidadeConvertida =
+                    Number(
+                        produtoExistente.quantidade
+                    );
+
+
+                if (
+                    Number.isFinite(
+                        quantidadeConvertida
+                    )
+                ) {
+
+                    quantidadeAtualProduto =
+                        quantidadeConvertida;
+
+                }
+            }
+
+
+            // ====================================
+            // URGÊNCIA
+            //
+            // Somente:
+            // - produto encontrado
+            // - item pendente
+            // - estoque <= 0
+            // ====================================
+
+            const entradaUrgente =
+                !!produtoExistente &&
+                !isConcluido &&
+                quantidadeAtualProduto !== null &&
+                quantidadeAtualProduto <= 0;
+
+
+            // ====================================
+            // BLOQUEIO MANUAL
+            // ====================================
+
+            const entradaManualBloqueada =
+                cardManualBloqueado &&
+                !isConcluido;
+
+
+            // ====================================
+            // OBSERVAÇÃO
+            // ====================================
+
+            const obsValue =
+                item.observacao || '';
+
+
+            const obsId =
+                `obs-${card.id}-${item.id}`;
+
+
+            // ====================================
+            // AÇÕES
+            // ====================================
+
+            let acaoHtml = '';
+
+
+            // ====================================
+            // ITEM JÁ CONCLUÍDO
+            // ====================================
+
+            if (
+                isConcluido &&
+                !isIgnorado
+            ) {
+
+                acaoHtml = `
+
+                    <span
+                        class="badge ${statusClass}"
+                    >
+                        ${itemStatus}
+                    </span>
+
+                    <small
+                        class="text-muted d-block"
+                    >
+                        ${item.responsavel || ''}
+                    </small>
+
+                    ${
+                        podeEditarObservacoes
+                            ? `
+                                <button
+                                    class="btn btn-sm btn-outline-primary mt-1"
+                                    onclick="abrirModalObservacao('${card.id}', ${item.id})"
+                                    title="Editar observação"
+                                >
+                                    <i class="fas fa-edit"></i>
+                                    Obs
+                                </button>
+                            `
+                            : ''
+                    }
+
+                `;
+
+
+            // ====================================
+            // IGNORADO
+            // ====================================
+
+            } else if (isIgnorado) {
+
+                acaoHtml = `
+
+                    <span
+                        class="badge ${statusClass}"
+                    >
+                        ${itemStatus}
+                    </span>
+
+                    <small
+                        class="text-muted d-block"
+                    >
+                        ${item.responsavel || ''}
+                    </small>
+
+                    ${
+                        podeEditarObservacoes
+                            ? `
+                                <button
+                                    class="btn btn-sm btn-outline-primary mt-1"
+                                    onclick="abrirModalObservacao('${card.id}', ${item.id})"
+                                    title="Editar observação"
+                                >
+                                    <i class="fas fa-edit"></i>
+                                    Obs
+                                </button>
+                            `
+                            : ''
+                    }
+
+                `;
+
+
+            // ====================================
+            // BRUNA/ARTHUR EM ENTRADA MANUAL
+            // ====================================
+
+            } else if (entradaManualBloqueada) {
+
+                acaoHtml = `
+
+                    <span
+                        class="entrada-manual-bloqueada"
+                    >
+                        🔒 Apenas XML
+                    </span>
+
+                    <small
+                        class="text-muted d-block mt-1"
+                    >
+                        Entrada manual não permitida
+                        para este usuário.
+                    </small>
+
+                `;
+
+
+            // ====================================
+            // PRODUTO ENCONTRADO
+            // ====================================
+
+            } else if (produtoExistente) {
+
+                acaoHtml = `
+
+                    ${
+                        entradaUrgente
+                            ? `
+                                <span
+                                    class="badge-entrada-urgente"
+                                >
+                                    🚨 URGENTE — ESTOQUE ${quantidadeAtualProduto}
+                                </span>
+
+                                <br>
+                            `
+                            : ''
+                    }
+
+
+                    <button
+                        class="btn btn-sm btn-success"
+                        onclick="darEntradaItem(
+                            '${card.id}',
+                            ${item.id},
+                            '${produtoExistente.id}'
+                        )"
+                        title="Adicionar ao estoque"
+                    >
+                        <i class="fas fa-arrow-right-to-bracket"></i>
+                        Dar Entrada
+                    </button>
+
+
+                    ${
+                        tituloProduto
+                            ? `
+                                <small
+                                    class="d-block text-success"
+                                >
+                                    🔍 ${tituloProduto}
+                                </small>
+                            `
+                            : ''
+                    }
+
+
+                    <small
+                        class="d-block ${
+                            entradaUrgente
+                                ? ''
+                                : 'text-muted'
+                        }"
+                        style="
+                            margin-top:2px;
+                            font-size:11px;
+                        "
+                    >
+                        Estoque atual:
+                        <strong>
+                            ${
+                                quantidadeAtualProduto !== null
+                                    ? quantidadeAtualProduto
+                                    : '-'
+                            }
+                        </strong>
+                    </small>
+
+
+                    <button
+                        class="btn btn-sm btn-secondary"
+                        onclick="ignorarItem(
+                            '${card.id}',
+                            ${item.id}
+                        )"
+                        title="Ignorar este item"
+                    >
+                        <i class="fas fa-ban"></i>
+                        Ignorar
+                    </button>
+
+
+                    ${
+                        podeEditarObservacoes
+                            ? `
+                                <button
+                                    class="btn btn-sm btn-outline-primary mt-1"
+                                    onclick="abrirModalObservacao(
+                                        '${card.id}',
+                                        ${item.id}
+                                    )"
+                                    title="Editar observação"
+                                >
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                            `
+                            : ''
+                    }
+
+                `;
+
+
+            // ====================================
+            // PRODUTO NÃO ENCONTRADO
+            // ====================================
+
+            } else {
+
+                acaoHtml = `
+
+                    <div
+                        class="d-flex flex-wrap gap-1"
+                    >
+
+                        <button
+                            class="btn btn-sm btn-primary"
+                            onclick="abrirCadastroRapido(
+                                '${card.id}',
+                                ${item.id}
+                            )"
+                            title="Cadastrar novo produto"
+                        >
+                            <i class="fas fa-plus-circle"></i>
+                            Cadastrar
+                        </button>
+
+
+                        <button
+                            class="btn btn-sm btn-info"
+                            onclick="vincularProdutoExistente(
+                                '${card.id}',
+                                ${item.id}
+                            )"
+                            title="Vincular a um produto já existente"
+                        >
+                            <i class="fas fa-link"></i>
+                            Já existe
+                        </button>
+
+
+                        <button
+                            class="btn btn-sm btn-secondary"
+                            onclick="ignorarItem(
+                                '${card.id}',
+                                ${item.id}
+                            )"
+                            title="Ignorar este item"
+                        >
+                            <i class="fas fa-ban"></i>
+                            Ignorar
+                        </button>
+
+
+                        ${
+                            podeEditarObservacoes
+                                ? `
+                                    <button
+                                        class="btn btn-sm btn-outline-primary"
+                                        onclick="abrirModalObservacao(
+                                            '${card.id}',
+                                            ${item.id}
+                                        )"
+                                        title="Editar observação"
+                                    >
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                `
+                                : ''
+                        }
+
+                    </div>
+
+
+                    <small
+                        class="d-block text-muted"
+                    >
+                        ⛔ Produto não encontrado
+                    </small>
+
                 `;
             }
 
+
+            // ====================================
+            // SKU
+            // ====================================
+
+            const skuDisplay =
+                item.sku_match ||
+                item.sku_original ||
+                '-';
+
+
+            // ====================================
+            // FORNECEDOR
+            // ====================================
+
+            let fornecedorDisplay =
+                item.fornecedor_nome ||
+                item.cd_fornecedor ||
+                '-';
+
+
+            if (
+                isExcel &&
+                !verFornecedor
+            ) {
+
+                fornecedorDisplay =
+                    '🔒 Oculto';
+
+            }
+
+
+            // ====================================
+            // QUANTIDADE DA ENTRADA
+            // ====================================
+
+            const qtdEntrada =
+                item.quantidade_entrada &&
+                item.quantidade_entrada > 0
+                    ? item.quantidade_entrada
+                    : '-';
+
+
+            // ====================================
+            // CUSTO
+            // ====================================
+
+            const custoDisplay =
+                podeVerCusto &&
+                item.valor_custo
+
+                    ? `R$ ${parseFloat(
+                        item.valor_custo
+                    ).toFixed(2)}`
+
+                    : (
+                        podeVerCusto
+                            ? '-'
+                            : ''
+                    );
+
+
+            // ====================================
+            // OBSERVAÇÃO
+            // ====================================
+
+            let obsDisplay =
+                obsValue || '-';
+
+
+            if (podeEditarObservacoes) {
+
+                obsDisplay = `
+
+                    <div
+                        class="d-flex align-items-center gap-1"
+                    >
+
+                        <span
+                            id="${obsId}-text"
+                            style="
+                                font-size:12px;
+                                max-width:150px;
+                                overflow:hidden;
+                                text-overflow:ellipsis;
+                                white-space:nowrap;
+                            "
+                            title="${obsValue || '-'}"
+                        >
+                            ${obsValue || '-'}
+                        </span>
+
+
+                        <button
+                            class="btn btn-sm btn-outline-primary"
+                            onclick="abrirModalObservacao(
+                                '${card.id}',
+                                ${item.id}
+                            )"
+                            style="
+                                padding:2px 6px;
+                                font-size:10px;
+                            "
+                            title="Editar observação"
+                        >
+                            <i class="fas fa-pen"></i>
+                        </button>
+
+                    </div>
+
+                `;
+            }
+
+
+            // ====================================
+            // LINHA DA TABELA
+            // ====================================
+
+            const classeLinha = [
+
+                (
+                    isConcluido ||
+                    isIgnorado
+                )
+                    ? 'table-light'
+                    : '',
+
+                entradaUrgente
+                    ? 'entrada-urgente-estoque-zero'
+                    : ''
+
+            ]
+                .filter(Boolean)
+                .join(' ');
+
+
             html += `
-                <tr class="${isConcluido || isIgnorado ? 'table-light' : ''}">
-                    <td>${idx + 1}</td>
-                    <td>${item.cd_fornecedor || '-'}</td>
-                    <td>${item.rastreio || '-'}</td>
-                    <td><strong>${item.quantidade || 0}</strong></td>
-                    <td>${item.produto || '-'}</td>
-                    <td><code>${skuDisplay}</code></td>
-                    ${verFornecedor ? `<td>${fornecedorDisplay}</td>` : ''}
-                    <td>${qtdEntrada}</td>
-                    ${podeVerCusto ? `<td>${custoDisplay}</td>` : ''}
-                    <td>${obsDisplay}</td>
-                    <td><span class="badge ${statusClass}">${itemStatus}</span></td>
-                    <td>${acaoHtml}</td>
+
+                <tr class="${classeLinha}">
+
+                    <td>
+                        ${idx + 1}
+                    </td>
+
+
+                    <td>
+                        ${item.cd_fornecedor || '-'}
+                    </td>
+
+
+                    <td>
+                        ${item.rastreio || '-'}
+                    </td>
+
+
+                    <td>
+                        <strong>
+                            ${item.quantidade || 0}
+                        </strong>
+                    </td>
+
+
+                    <td>
+
+                        ${
+                            entradaUrgente
+                                ? `
+                                    <span
+                                        class="badge-entrada-urgente"
+                                    >
+                                        🚨 URGENTE — ESTOQUE 0
+                                    </span>
+
+                                    <br>
+                                `
+                                : ''
+                        }
+
+                        ${item.produto || '-'}
+
+                    </td>
+
+
+                    <td>
+                        <code>
+                            ${skuDisplay}
+                        </code>
+                    </td>
+
+
+                    ${
+                        verFornecedor
+                            ? `
+                                <td>
+                                    ${fornecedorDisplay}
+                                </td>
+                            `
+                            : ''
+                    }
+
+
+                    <td>
+                        ${qtdEntrada}
+                    </td>
+
+
+                    ${
+                        podeVerCusto
+                            ? `
+                                <td>
+                                    ${custoDisplay}
+                                </td>
+                            `
+                            : ''
+                    }
+
+
+                    <td>
+                        ${obsDisplay}
+                    </td>
+
+
+                    <td>
+
+                        <span
+                            class="badge ${statusClass}"
+                        >
+                            ${itemStatus}
+                        </span>
+
+                    </td>
+
+
+                    <td>
+                        ${acaoHtml}
+                    </td>
+
                 </tr>
+
             `;
+
         });
 
+
+        // ========================================
+        // FECHA TABELA / CARD
+        // ========================================
+
         html += `
+
                         </tbody>
+
                     </table>
+
                 </div>
 
-                ${!isFinalizado ? `
-                    <div class="card-footer bg-transparent d-flex justify-content-end gap-2">
-                        ${concluidos === total && total > 0 ? `
-                            <button class="btn btn-sm btn-success" onclick="finalizarEntrada('${card.id}')">
-                                <i class="fas fa-check-double"></i> Finalizar Entrada
-                            </button>
-                        ` : ''}
-                    </div>
-                ` : ''}
-                ${isFinalizado && isAdmin ? `
-                    <div class="card-footer bg-transparent d-flex justify-content-end gap-2">
-                        <button class="btn btn-sm btn-danger" onclick="excluirEntradaFinalizada('${card.id}')">
-                            <i class="fas fa-trash-alt"></i> Excluir Entrada (Admin)
-                        </button>
-                    </div>
-                ` : ''}
+
+                ${
+                    !isFinalizado
+                        ? `
+
+                            <div
+                                class="
+                                    card-footer
+                                    bg-transparent
+                                    d-flex
+                                    justify-content-end
+                                    gap-2
+                                "
+                            >
+
+                                ${
+                                    concluidos === total &&
+                                    total > 0
+                                        ? `
+                                            <button
+                                                class="btn btn-sm btn-success"
+                                                onclick="finalizarEntrada('${card.id}')"
+                                            >
+                                                <i class="fas fa-check-double"></i>
+                                                Finalizar Entrada
+                                            </button>
+                                        `
+                                        : ''
+                                }
+
+                            </div>
+
+                        `
+                        : ''
+                }
+
+
+                ${
+                    isFinalizado &&
+                    isAdmin
+                        ? `
+
+                            <div
+                                class="
+                                    card-footer
+                                    bg-transparent
+                                    d-flex
+                                    justify-content-end
+                                    gap-2
+                                "
+                            >
+
+                                <button
+                                    class="btn btn-sm btn-danger"
+                                    onclick="excluirEntradaFinalizada('${card.id}')"
+                                >
+                                    <i class="fas fa-trash-alt"></i>
+                                    Excluir Entrada (Admin)
+                                </button>
+
+                            </div>
+
+                        `
+                        : ''
+                }
+
             </div>
+
         `;
+
     });
+
+
+    // ============================================
+    // RENDERIZA
+    // ============================================
 
     container.innerHTML = html;
 }
@@ -1754,6 +3114,20 @@ window.processarXML = async function() {
 // PROCESSAR ENTRADA (Excel) - COM HORÁRIO CORRETO
 // ============================================
 window.processarEntrada = async function() {
+        // ========================================
+    // BLOQUEIO DE ENTRADA MANUAL
+    // BRUNA E ARTHUR SOMENTE XML
+    // ========================================
+
+    if (usuarioSomenteXMLEntradas()) {
+
+        showToast(
+            '🔒 Seu usuário pode criar entradas somente por XML.',
+            'warning'
+        );
+
+        return;
+    }
     if (typeof produtosEstoque === 'undefined' || !Array.isArray(produtosEstoque) || produtosEstoque.length === 0) {
         showToast('🔄 Carregando estoque...', 'info');
         if (typeof carregarProdutosEstoque === 'function') {
@@ -3176,54 +4550,236 @@ window.salvarProdutoEstoque = async function() {
 // ============================================
 
 function renderizarPreEntrada() {
-    const tbody = document.getElementById('preEntradaTableBody');
+
+    const tbody =
+        document.getElementById('preEntradaTableBody');
+
     if (!tbody) return;
 
-    const podeVerCusto = currentUser && (currentUser.username === 'andressamiotto' || currentUser.username === 'ronald');
+
+    const podeVerCusto =
+        currentUser &&
+        (
+            currentUser.username === 'andressamiotto' ||
+            currentUser.username === 'ronald'
+        );
+
+
+    // Garante que o estilo existe
+    injetarEstilosEntradasUrgentes();
+
+
+    // ========================================
+    // SEM ITENS
+    // ========================================
 
     if (preEntradaItens.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${podeVerCusto ? 10 : 9}" class="text-center text-muted">Nenhum item carregado.</td></tr>`;
-        return;
-    }
 
-    let html = '';
-    preEntradaItens.forEach((item, idx) => {
-        const skuDisplay = item.sku_match || item.sku_original || '-';
-        const fornecedorDisplay = item.fornecedor_nome || item.cd_fornecedor || '-';
-        const custoDisplay = podeVerCusto && item.valor_custo ? `R$ ${parseFloat(item.valor_custo).toFixed(2)}` : (podeVerCusto ? '-' : '');
-
-        html += `
+        tbody.innerHTML = `
             <tr>
-                <td>${idx + 1}</td>
-                <td>${item.cd_fornecedor || '-'}</td>
-                <td>${item.rastreio || '-'}</td>
-                <td><strong>${item.quantidade || 0}</strong></td>
-                <td>${item.produto || '-'}</td>
-                <td><code>${skuDisplay}</code></td>
-                <td>${fornecedorDisplay}</td>
-                ${podeVerCusto ? `<td>${custoDisplay}</td>` : ''}
-                <td>
-                    <input type="text" class="form-control form-control-sm pre-observacao" 
-                           data-idx="${idx}" value="${item.observacao || ''}" 
-                           placeholder="Observações..." style="min-width:150px;">
-                </td>
-                <td>
-                    <button class="btn btn-sm btn-danger" onclick="removerItemPreEntrada(${idx})" title="Remover item">
-                        <i class="fas fa-times"></i>
-                    </button>
+                <td
+                    colspan="${podeVerCusto ? 10 : 9}"
+                    class="text-center text-muted"
+                >
+                    Nenhum item carregado.
                 </td>
             </tr>
         `;
+
+        return;
+    }
+
+
+    let html = '';
+
+
+    preEntradaItens.forEach((item, idx) => {
+
+        const skuDisplay =
+            item.sku_match ||
+            item.sku_original ||
+            '-';
+
+
+        const fornecedorDisplay =
+            item.fornecedor_nome ||
+            item.cd_fornecedor ||
+            '-';
+
+
+        const custoDisplay =
+            podeVerCusto && item.valor_custo
+                ? `R$ ${parseFloat(item.valor_custo).toFixed(2)}`
+                : (
+                    podeVerCusto
+                        ? '-'
+                        : ''
+                );
+
+
+        // ========================================
+        // PROCURA O PRODUTO NO ESTOQUE
+        // ========================================
+
+        const produtoExistente =
+            verificarSKUExistente(
+                item.sku_match ||
+                item.sku_original
+            );
+
+
+        // ========================================
+        // PEGA QUANTIDADE ATUAL
+        // ========================================
+
+        const quantidadeAtualProduto =
+            produtoExistente
+                ? Number(produtoExistente.quantidade)
+                : NaN;
+
+
+        // ========================================
+        // ESTOQUE ZERADO = URGENTE
+        // ========================================
+
+        const entradaUrgente =
+            !!produtoExistente &&
+            Number.isFinite(quantidadeAtualProduto) &&
+            quantidadeAtualProduto <= 0;
+
+
+        // ========================================
+        // MONTA LINHA
+        // ========================================
+
+        html += `
+
+            <tr class="${
+                entradaUrgente
+                    ? 'entrada-urgente-estoque-zero'
+                    : ''
+            }">
+
+                <td>
+                    ${idx + 1}
+                </td>
+
+
+                <td>
+                    ${item.cd_fornecedor || '-'}
+                </td>
+
+
+                <td>
+                    ${item.rastreio || '-'}
+                </td>
+
+
+                <td>
+                    <strong>
+                        ${item.quantidade || 0}
+                    </strong>
+                </td>
+
+
+                <td>
+
+                    ${
+                        entradaUrgente
+                            ? `
+                                <span class="badge-entrada-urgente">
+                                    🚨 URGENTE — ESTOQUE ${quantidadeAtualProduto}
+                                </span>
+
+                                <br>
+                            `
+                            : ''
+                    }
+
+                    ${item.produto || '-'}
+
+                </td>
+
+
+                <td>
+                    <code>
+                        ${skuDisplay}
+                    </code>
+                </td>
+
+
+                <td>
+                    ${fornecedorDisplay}
+                </td>
+
+
+                ${
+                    podeVerCusto
+                        ? `
+                            <td>
+                                ${custoDisplay}
+                            </td>
+                        `
+                        : ''
+                }
+
+
+                <td>
+
+                    <input
+                        type="text"
+                        class="form-control form-control-sm pre-observacao"
+                        data-idx="${idx}"
+                        value="${item.observacao || ''}"
+                        placeholder="Observações..."
+                        style="min-width:150px;"
+                    >
+
+                </td>
+
+
+                <td>
+
+                    <button
+                        class="btn btn-sm btn-danger"
+                        onclick="removerItemPreEntrada(${idx})"
+                        title="Remover item"
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+
+                </td>
+
+            </tr>
+        `;
+
     });
+
 
     tbody.innerHTML = html;
 
-    document.querySelectorAll('.pre-observacao').forEach(input => {
-        input.addEventListener('input', function() {
-            const idx = parseInt(this.dataset.idx);
-            preEntradaItens[idx].observacao = this.value;
+
+    // ========================================
+    // OBSERVAÇÕES
+    // ========================================
+
+    document
+        .querySelectorAll('.pre-observacao')
+        .forEach(input => {
+
+            input.addEventListener(
+                'input',
+                function() {
+
+                    const idx =
+                        parseInt(this.dataset.idx);
+
+                    preEntradaItens[idx].observacao =
+                        this.value;
+                }
+            );
+
         });
-    });
 }
 
 // ============================================
