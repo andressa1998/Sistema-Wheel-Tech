@@ -44073,15 +44073,6 @@ window.garantirCampoReferenciaDevolucaoAvulsaNFE = garantirCampoReferenciaDevolu
 window.atualizarCampoReferenciaDevolucaoAvulsaNFE = atualizarCampoReferenciaDevolucaoAvulsaNFE;
 window.preencherSelectNaturezaNFE = preencherSelectNaturezaNFE;
 
-setTimeout(
-    () => {
-
-        inicializarMonitorFullNFE();
-
-    },
-    1200
-);
-
 // ===================== INICIALIZAR =====================
 document.addEventListener('DOMContentLoaded', function() {
     const confirmarBtn = document.getElementById('confirmarModalNFEBtn');
