@@ -711,7 +711,7 @@ function atualizarBarraAcoesMassaEstoque() {
 }
 
 // =========================================================
-// CAMPOS DA CATEGORIA / SUBCATEGORIA
+// OBTER CAMPOS DA CATEGORIA / SUBCATEGORIA
 // =========================================================
 
 function getCamposPorCategoria(
@@ -720,56 +720,83 @@ function getCamposPorCategoria(
 ) {
 
     // =====================================================
-    // CAMPOS DA CATEGORIA PAI
+    // CAMPOS DA CATEGORIA PRINCIPAL
     // =====================================================
 
     let camposPai = [];
 
 
+    // Categoria customizada
     if (
-        categoriasCustomizadas[
-            categoria
-        ]
+        typeof categoriasCustomizadas !== 'undefined' &&
+        categoriasCustomizadas &&
+        categoriasCustomizadas[categoria]
     ) {
 
         camposPai =
-            categoriasCustomizadas[
+            categoriasCustomizadas[categoria]
+                .campos || [];
+
+    }
+
+    // Categoria padrão
+    else if (
+        typeof camposPorCategoria !== 'undefined' &&
+        camposPorCategoria &&
+        camposPorCategoria[categoria]
+    ) {
+
+        camposPai =
+            camposPorCategoria[categoria] ||
+            [];
+
+    }
+
+    // Fallback
+    else {
+
+        camposPai =
+            (
+                typeof camposPorCategoria !== 'undefined' &&
+                camposPorCategoria?.outros
+            )
+                ? camposPorCategoria.outros
+                : [];
+
+    }
+
+
+    // =====================================================
+    // BUSCAR SUBCATEGORIAS DA CATEGORIA
+    // =====================================================
+
+    let subcategorias = {};
+
+
+    if (
+        typeof obterSubcategoriasCategoria ===
+        'function'
+    ) {
+
+        subcategorias =
+            obterSubcategoriasCategoria(
                 categoria
-            ].campos || [];
+            ) || {};
 
     }
 
     else if (
-        camposPorCategoria[
-            categoria
-        ]
+        typeof subcategoriasEstoque !==
+            'undefined' &&
+        subcategoriasEstoque
     ) {
 
-        camposPai =
-            camposPorCategoria[
+        subcategorias =
+            subcategoriasEstoque[
                 categoria
-            ] || [];
+            ] || {};
 
     }
-
-    else {
-
-        camposPai =
-            camposPorCategoria[
-                'outros'
-            ] || [];
-
-    }
-
-
-    // =====================================================
-    // SUBCATEGORIAS EXISTENTES
-    // =====================================================
-
-    const subcategorias =
-        obterSubcategoriasCategoria(
-            categoria
-        );
 
 
     const nomesSubcategorias =
@@ -778,71 +805,104 @@ function getCamposPorCategoria(
         );
 
 
-    // Não possui subcategoria.
+    // =====================================================
+    // CATEGORIA SEM SUBCATEGORIA
+    // =====================================================
+
     if (
         nomesSubcategorias.length ===
         0
     ) {
 
         return camposPai;
+
     }
 
 
     // =====================================================
-    // SE NÃO FOI INFORMADA SUBCATEGORIA
+    // SE SUBCATEGORIA NÃO FOI PASSADA
     //
-    // Quando chamado durante cadastro/edição,
-    // tentar descobrir pelo select atual.
+    // Isso é importante para salvarProdutoEstoque().
     //
-    // Fora do modal, manter comportamento antigo.
+    // salvarProdutoEstoque atualmente faz:
+    //
+    // getCamposPorCategoria(categoria)
+    //
+    // Então, se o modal estiver aberto, pegamos a
+    // subcategoria selecionada nele automaticamente.
     // =====================================================
 
     if (
         subcategoria === undefined
     ) {
 
-        const modal =
+        const modalProduto =
             document.getElementById(
                 'modalProdutoEstoque'
             );
 
 
-        const modalVisivel =
-            modal &&
-            (
-                modal.style.display ===
-                'flex' ||
-                !modal.classList.contains(
-                    'hidden'
-                )
+        const categoriaSelect =
+            document.getElementById(
+                'produtoCategoria'
             );
 
 
+        const selectSubcategoria =
+            document.getElementById(
+                'campo_subcategoria'
+            );
+
+
+        const modalVisivel =
+            modalProduto &&
+            !modalProduto.classList.contains(
+                'hidden'
+            ) &&
+            (
+                modalProduto.style.display ===
+                    'flex' ||
+                modalProduto.style.display ===
+                    'block'
+            );
+
+
+        // =============================================
+        // Estamos dentro do formulário do produto
+        // =============================================
+
         if (
-            modalVisivel
+            modalVisivel &&
+            categoriaSelect?.value ===
+                categoria &&
+            selectSubcategoria
         ) {
 
-            const selectSub =
-                document.getElementById(
-                    'campo_subcategoria'
-                );
-
-
             subcategoria =
-                selectSub?.value || '';
+                selectSubcategoria.value ||
+                '';
 
-        } else {
+        }
 
-            // Fora do formulário continua retornando
-            // somente os campos da categoria principal.
+        else {
+
+            // =========================================
+            // Fora do cadastro/edição:
+            //
+            // devolve somente os campos da categoria
+            // principal para não quebrar relatórios,
+            // gerenciamento de categorias etc.
+            // =========================================
+
             return camposPai;
 
         }
+
     }
 
 
     // =====================================================
-    // CAMPO DE ESCOLHA DA SUBCATEGORIA
+    // CAMPO "SUBCATEGORIA"
     // =====================================================
 
     const campoSubcategoria = {
@@ -860,7 +920,13 @@ function getCamposPorCategoria(
             false,
 
         opcoes:
-            nomesSubcategorias,
+            nomesSubcategorias.sort(
+                (a, b) =>
+                    a.localeCompare(
+                        b,
+                        'pt-BR'
+                    )
+            ),
 
         ehSubcategoria:
             true
@@ -869,73 +935,105 @@ function getCamposPorCategoria(
 
 
     // =====================================================
-    // SEM SUBCATEGORIA
+    // SEM SUBCATEGORIA SELECIONADA
     //
-    // Ex:
-    // Raios → produto é um raio normal.
+    // Exemplo:
+    //
+    // Categoria: Raios
+    // Subcategoria: nenhuma
+    //
+    // Mostra:
+    // - Subcategoria
+    // - Marca
+    // - Modelo
+    // - Cabeça
+    // - Tamanho
+    // - MLB
     // =====================================================
 
     if (
-        !subcategoria ||
-        !subcategorias[
-            subcategoria
-        ]
+        !subcategoria
     ) {
 
         return [
-
             campoSubcategoria,
-
             ...camposPai
-
         ];
 
     }
 
 
     // =====================================================
-    // COM SUBCATEGORIA
+    // SUBCATEGORIA INFORMADA MAS NÃO EXISTE
     // =====================================================
 
-    const configuracao =
+    const configuracaoSubcategoria =
         subcategorias[
             subcategoria
         ];
 
 
-    const camposSub =
-        configuracao.campos ||
-        [];
+    if (
+        !configuracaoSubcategoria
+    ) {
+
+        console.warn(
+            `⚠️ Subcategoria "${subcategoria}" não encontrada dentro de "${categoria}".`
+        );
+
+
+        return [
+            campoSubcategoria,
+            ...camposPai
+        ];
+
+    }
 
 
     // =====================================================
-    // HERDAR CAMPOS DA CATEGORIA PAI?
+    // CAMPOS DA SUBCATEGORIA
     // =====================================================
+
+    const camposSubcategoria =
+        Array.isArray(
+            configuracaoSubcategoria.campos
+        )
+            ? configuracaoSubcategoria.campos
+            : [];
+
 
     let camposEfetivos = [];
 
 
+    // =====================================================
+    // HERDAR CAMPOS DO PAI
+    // =====================================================
+
     if (
-        configuracao
-            .herdar_campos_pai
+        configuracaoSubcategoria
+            .herdar_campos_pai ===
+        true
     ) {
 
-        // Evitar repetir MLB Codes.
+        // Não traz MLB do pai porque a subcategoria
+        // já possui seu próprio MLB.
         camposEfetivos.push(
-
             ...camposPai.filter(
                 campo =>
                     campo.nome !==
                     'mlb_codes'
             )
-
         );
 
     }
 
 
+    // =====================================================
+    // CAMPOS ESPECÍFICOS DA SUBCATEGORIA
+    // =====================================================
+
     camposEfetivos.push(
-        ...camposSub
+        ...camposSubcategoria
     );
 
 
@@ -943,14 +1041,25 @@ function getCamposPorCategoria(
     // REMOVER CAMPOS DUPLICADOS
     // =====================================================
 
-    const mapa =
+    const mapaCampos =
         new Map();
 
 
     camposEfetivos.forEach(
         campo => {
 
-            mapa.set(
+            if (
+                !campo ||
+                !campo.nome
+            ) {
+                return;
+            }
+
+
+            // O campo mais recente vence.
+            // Então campo da subcategoria pode substituir
+            // um campo herdado do pai.
+            mapaCampos.set(
                 campo.nome,
                 campo
             );
@@ -961,7 +1070,7 @@ function getCamposPorCategoria(
 
     camposEfetivos =
         Array.from(
-            mapa.values()
+            mapaCampos.values()
         );
 
 
@@ -969,12 +1078,16 @@ function getCamposPorCategoria(
     // GARANTIR MLB CODES
     // =====================================================
 
-    if (
-        !camposEfetivos.some(
+    const possuiMLB =
+        camposEfetivos.some(
             campo =>
                 campo.nome ===
                 'mlb_codes'
-        )
+        );
+
+
+    if (
+        !possuiMLB
     ) {
 
         camposEfetivos.push({
@@ -991,16 +1104,20 @@ function getCamposPorCategoria(
             placeholder:
                 'MLB separados por vírgula',
 
-            rows:
-                2,
-
             obrigatorio:
-                false
+                false,
+
+            rows:
+                2
 
         });
 
     }
 
+
+    // =====================================================
+    // RESULTADO FINAL
+    // =====================================================
 
     return [
 
@@ -11546,7 +11663,7 @@ const camposPorCategoria = {
 
 // =========================================================
 // GERAR CAMPOS DINÂMICOS
-// COM SUPORTE A SUBCATEGORIA
+// CATEGORIA + SUBCATEGORIA + ESTOQUE A CAMINHO
 // =========================================================
 
 function gerarCamposDinamicos(
@@ -11560,10 +11677,16 @@ function gerarCamposDinamicos(
         );
 
 
-    if (!container) {
+    if (
+        !container
+    ) {
         return;
     }
 
+
+    // =====================================================
+    // LIMPAR CAMPOS ANTERIORES
+    // =====================================================
 
     container.innerHTML =
         '';
@@ -11579,6 +11702,10 @@ function gerarCamposDinamicos(
             subcategoria
         );
 
+
+    // =====================================================
+    // SEM CAMPOS
+    // =====================================================
 
     if (
         !campos ||
@@ -11597,6 +11724,10 @@ function gerarCamposDinamicos(
         `;
 
 
+        // =============================================
+        // ESCONDER BULK
+        // =============================================
+
         const bulkSection =
             document.getElementById(
                 'bulkAddSection'
@@ -11613,6 +11744,10 @@ function gerarCamposDinamicos(
         }
 
 
+        // =============================================
+        // KIT
+        // =============================================
+
         const kitContainer =
             document.getElementById(
                 'kitComposicaoContainer'
@@ -11627,9 +11762,27 @@ function gerarCamposDinamicos(
                 'block';
 
 
-            configurarEventosKit();
+            if (
+                typeof configurarEventosKit ===
+                'function'
+            ) {
+
+                configurarEventosKit();
+
+            }
 
         }
+
+
+        // =============================================
+        // REMOVER PAINEL A CAMINHO ANTIGO
+        // =============================================
+
+        document
+            .getElementById(
+                'blocoQuantidadeACaminhoRaios'
+            )
+            ?.remove();
 
 
         return;
@@ -11637,7 +11790,7 @@ function gerarCamposDinamicos(
 
 
     // =====================================================
-    // GRID
+    // GRID PRINCIPAL
     // =====================================================
 
     const grid =
@@ -11663,11 +11816,19 @@ function gerarCamposDinamicos(
 
 
     // =====================================================
-    // CAMPOS
+    // CRIAR CADA CAMPO
     // =====================================================
 
     campos.forEach(
         campo => {
+
+            if (
+                !campo ||
+                !campo.nome
+            ) {
+                return;
+            }
+
 
             const div =
                 document.createElement(
@@ -11680,7 +11841,7 @@ function gerarCamposDinamicos(
 
 
             // =================================================
-            // SUBCATEGORIA OCUPA A LINHA INTEIRA
+            // SUBCATEGORIA OCUPA DUAS COLUNAS
             // =================================================
 
             if (
@@ -11692,22 +11853,30 @@ function gerarCamposDinamicos(
 
 
                 div.style.background =
-                    '#f4efff';
+                    '#f5f0ff';
 
 
-                div.style.padding =
-                    '12px';
+                div.style.border =
+                    '1px solid #d2bfff';
+
+
+                div.style.borderLeft =
+                    '4px solid #6f42c1';
 
 
                 div.style.borderRadius =
                     '7px';
 
 
-                div.style.border =
-                    '1px solid #d2bfff';
+                div.style.padding =
+                    '12px';
 
             }
 
+
+            // =================================================
+            // LABEL
+            // =================================================
 
             const label =
                 document.createElement(
@@ -11728,7 +11897,7 @@ function gerarCamposDinamicos(
 
 
             label.textContent =
-                `${campo.label} ${
+                `${campo.label || campo.nome} ${
                     campo.obrigatorio
                         ? '*'
                         : ''
@@ -11805,14 +11974,14 @@ function gerarCamposDinamicos(
                     'blur',
                     function() {
 
-                        const val =
+                        const valor =
                             this.value.trim();
 
 
                         if (
-                            val !== '' &&
+                            valor !== '' &&
                             !/^[0-9]+(,[0-9]+)?$/.test(
-                                val
+                                valor
                             )
                         ) {
 
@@ -11877,6 +12046,10 @@ function gerarCamposDinamicos(
                 }
 
 
+                // =============================================
+                // OPÇÃO PADRÃO
+                // =============================================
+
                 const defaultOption =
                     document.createElement(
                         'option'
@@ -11887,15 +12060,22 @@ function gerarCamposDinamicos(
                     '';
 
 
-                defaultOption.textContent =
+                if (
                     campo.ehSubcategoria
+                ) {
 
-                        ? `Sem subcategoria / ${
+                    defaultOption.textContent =
+                        `Sem subcategoria / ${
                             categoria ||
                             'Categoria principal'
-                        }`
+                        }`;
 
-                        : 'Selecione...';
+                } else {
+
+                    defaultOption.textContent =
+                        'Selecione...';
+
+                }
 
 
                 select.appendChild(
@@ -11903,14 +12083,18 @@ function gerarCamposDinamicos(
                 );
 
 
+                // =============================================
+                // OPÇÕES
+                // =============================================
+
                 if (
-                    campo.opcoes &&
-                    campo.opcoes.length >
-                    0
+                    Array.isArray(
+                        campo.opcoes
+                    )
                 ) {
 
                     campo.opcoes.forEach(
-                        op => {
+                        opcao => {
 
                             const option =
                                 document.createElement(
@@ -11919,11 +12103,11 @@ function gerarCamposDinamicos(
 
 
                             option.value =
-                                op;
+                                opcao;
 
 
                             option.textContent =
-                                op;
+                                opcao;
 
 
                             select.appendChild(
@@ -11954,16 +12138,22 @@ function gerarCamposDinamicos(
                         function() {
 
                             const novaSubcategoria =
-                                this.value;
+                                this.value ||
+                                '';
 
 
                             console.log(
-                                `📂 Subcategoria selecionada: ${
+                                `📂 Categoria: ${categoria} | Subcategoria: ${
                                     novaSubcategoria ||
-                                    'categoria principal'
+                                    'sem subcategoria'
                                 }`
                             );
 
+
+                            // =================================
+                            // RECRIAR FORMULÁRIO
+                            // COM CAMPOS DA SUBCATEGORIA
+                            // =================================
 
                             gerarCamposDinamicos(
                                 categoria,
@@ -11982,18 +12172,25 @@ function gerarCamposDinamicos(
 
                 if (
                     categoria ===
-                    'Raios' &&
+                        'Raios' &&
                     campo.nome ===
-                    'marca'
+                        'marca'
                 ) {
 
                     select.addEventListener(
                         'change',
-                        e => {
+                        function() {
 
-                            atualizarModelosPorMarca(
-                                e.target.value
-                            );
+                            if (
+                                typeof atualizarModelosPorMarca ===
+                                'function'
+                            ) {
+
+                                atualizarModelosPorMarca(
+                                    this.value
+                                );
+
+                            }
 
                         }
                     );
@@ -12067,7 +12264,8 @@ function gerarCamposDinamicos(
 
 
                 checkLabel.textContent =
-                    campo.label;
+                    campo.label ||
+                    campo.nome;
 
 
                 wrapper.appendChild(
@@ -12118,7 +12316,8 @@ function gerarCamposDinamicos(
 
 
                 textarea.rows =
-                    campo.rows || 2;
+                    campo.rows ||
+                    2;
 
 
                 if (
@@ -12156,7 +12355,7 @@ function gerarCamposDinamicos(
 
 
             // =================================================
-            // INPUT NORMAL
+            // INPUT NORMAL / NUMBER
             // =================================================
 
             const input =
@@ -12179,7 +12378,8 @@ function gerarCamposDinamicos(
 
 
             if (
-                campo.step
+                campo.step !==
+                undefined
             ) {
 
                 input.step =
@@ -12195,6 +12395,17 @@ function gerarCamposDinamicos(
 
                 input.min =
                     campo.min;
+
+            }
+
+
+            if (
+                campo.max !==
+                undefined
+            ) {
+
+                input.max =
+                    campo.max;
 
             }
 
@@ -12232,6 +12443,10 @@ function gerarCamposDinamicos(
     );
 
 
+    // =====================================================
+    // COLOCAR GRID
+    // =====================================================
+
     container.appendChild(
         grid
     );
@@ -12252,7 +12467,9 @@ function gerarCamposDinamicos(
             );
 
 
-        if (!angulosDiv) {
+        if (
+            !angulosDiv
+        ) {
 
             angulosDiv =
                 document.createElement(
@@ -12291,7 +12508,9 @@ function gerarCamposDinamicos(
                     "
                 >
 
-                    <div class="campo-dinamico">
+                    <div
+                        class="campo-dinamico"
+                    >
 
                         <label
                             style="
@@ -12302,6 +12521,7 @@ function gerarCamposDinamicos(
                         >
                             Ângulo interno *
                         </label>
+
 
                         <input
                             type="text"
@@ -12314,7 +12534,9 @@ function gerarCamposDinamicos(
                     </div>
 
 
-                    <div class="campo-dinamico">
+                    <div
+                        class="campo-dinamico"
+                    >
 
                         <label
                             style="
@@ -12325,6 +12547,7 @@ function gerarCamposDinamicos(
                         >
                             Ângulo externo *
                         </label>
+
 
                         <input
                             type="text"
@@ -12338,9 +12561,12 @@ function gerarCamposDinamicos(
 
                 </div>
 
-                <small class="text-muted">
-                    Preencha os ângulos internos e externos
-                    (apenas números e vírgula).
+
+                <small
+                    class="text-muted"
+                >
+                    Preencha os ângulos internos
+                    e externos.
                 </small>
 
             `;
@@ -12353,77 +12579,86 @@ function gerarCamposDinamicos(
         }
 
 
+        // =============================================
+        // EXIBIR SOMENTE PARA CAIXA DE DIREÇÃO
+        //
+        // Mantendo a opção que já existe atualmente
+        // em camposPorCategoria.Rolamentos.
+        // =============================================
+
         function toggleAngulos(
-            valorAplicacao
+            aplicacao
         ) {
 
-            if (!angulosDiv) {
+            if (
+                !angulosDiv
+            ) {
                 return;
             }
 
 
-            const shouldShow =
-                valorAplicacao ===
-                'Cubo/Caixa de Direção';
+            const deveMostrar =
+                aplicacao ===
+                'Caixa de Direção';
 
 
             angulosDiv.style.display =
-                shouldShow
+                deveMostrar
                     ? 'block'
                     : 'none';
 
 
-            const angInt =
+            const interno =
                 document.getElementById(
                     'campo_angulo_interno'
                 );
 
 
-            const angExt =
+            const externo =
                 document.getElementById(
                     'campo_angulo_externo'
                 );
 
 
             if (
-                angInt
+                interno
             ) {
 
-                angInt.required =
-                    shouldShow;
+                interno.required =
+                    deveMostrar;
 
             }
 
 
             if (
-                angExt
+                externo
             ) {
 
-                angExt.required =
-                    shouldShow;
+                externo.required =
+                    deveMostrar;
 
             }
 
 
             if (
-                !shouldShow
+                !deveMostrar
             ) {
 
                 if (
-                    angInt
+                    interno
                 ) {
 
-                    angInt.value =
+                    interno.value =
                         '';
 
                 }
 
 
                 if (
-                    angExt
+                    externo
                 ) {
 
-                    angExt.value =
+                    externo.value =
                         '';
 
                 }
@@ -12443,27 +12678,12 @@ function gerarCamposDinamicos(
             selectAplicacao
         ) {
 
-            const novoSelect =
-                selectAplicacao
-                    .cloneNode(
-                        true
-                    );
-
-
-            selectAplicacao
-                .parentNode
-                .replaceChild(
-                    novoSelect,
-                    selectAplicacao
-                );
-
-
-            novoSelect.addEventListener(
+            selectAplicacao.addEventListener(
                 'change',
-                function(e) {
+                function() {
 
                     toggleAngulos(
-                        e.target.value
+                        this.value
                     );
 
                 }
@@ -12474,11 +12694,11 @@ function gerarCamposDinamicos(
                 () => {
 
                     toggleAngulos(
-                        novoSelect.value
+                        selectAplicacao.value
                     );
 
                 },
-                300
+                0
             );
 
         }
@@ -12487,7 +12707,7 @@ function gerarCamposDinamicos(
 
 
     // =====================================================
-    // KIT
+    // KIT DE PRODUTOS
     // =====================================================
 
     const kitContainer =
@@ -12504,7 +12724,14 @@ function gerarCamposDinamicos(
             'block';
 
 
-        configurarEventosKit();
+        if (
+            typeof configurarEventosKit ===
+            'function'
+        ) {
+
+            configurarEventosKit();
+
+        }
 
     }
 
@@ -12512,10 +12739,13 @@ function gerarCamposDinamicos(
     // =====================================================
     // BULK MODE DE RAIOS
     //
-    // IMPORTANTE:
-    // somente Raio principal.
+    // SOMENTE:
     //
-    // Nipples e outras subcategorias NÃO usam bulk de Raios.
+    // Categoria = Raios
+    // Subcategoria = nenhuma
+    // Produto novo
+    //
+    // Nipples não abre cadastro múltiplo de tamanhos.
     // =====================================================
 
     const bulkSection =
@@ -12524,14 +12754,19 @@ function gerarCamposDinamicos(
         );
 
 
-    const isEditing =
+    const produtoId =
         document.getElementById(
             'produtoId'
-        )?.value !== '';
+        )?.value || '';
+
+
+    const isEditing =
+        produtoId !== '';
 
 
     if (
-        categoria === 'Raios' &&
+        categoria ===
+            'Raios' &&
         !subcategoria &&
         !isEditing
     ) {
@@ -12544,11 +12779,20 @@ function gerarCamposDinamicos(
                 'block';
 
 
-            configurarBulkModeEvents();
+            if (
+                typeof configurarBulkModeEvents ===
+                'function'
+            ) {
+
+                configurarBulkModeEvents();
+
+            }
 
         }
 
-    } else {
+    }
+
+    else {
 
         if (
             bulkSection
@@ -12558,6 +12802,44 @@ function gerarCamposDinamicos(
                 'none';
 
         }
+
+    }
+
+
+    // =====================================================
+    // ESTOQUE A CAMINHO
+    //
+    // IMPORTANTE:
+    //
+    // NÃO sobrescrevemos gerarCamposDinamicos.
+    // Apenas acrescentamos o painel depois que todos
+    // os campos de categoria/subcategoria já existem.
+    // =====================================================
+
+    document
+        .getElementById(
+            'blocoQuantidadeACaminhoRaios'
+        )
+        ?.remove();
+
+
+    if (
+        categoria ===
+            'Raios' &&
+        typeof renderizarBlocoACaminhoRaios ===
+            'function'
+    ) {
+
+        setTimeout(
+            () => {
+
+                renderizarBlocoACaminhoRaios(
+                    categoria
+                );
+
+            },
+            0
+        );
 
     }
 }
@@ -18671,7 +18953,7 @@ function removerRegraIndividual() {
 
 // =========================================================
 // ABRIR MODAL PRODUTO ESTOQUE
-// COM SUPORTE A SUBCATEGORIA
+// CATEGORIAS + SUBCATEGORIAS + A CAMINHO
 // =========================================================
 
 function abrirModalProdutoEstoque(
@@ -18685,7 +18967,10 @@ function abrirModalProdutoEstoque(
     );
 
 
-    // Garantir categorias atualizadas
+    // =====================================================
+    // GARANTIR CATEGORIAS ATUALIZADAS
+    // =====================================================
+
     if (
         typeof atualizarSelectCategorias ===
         'function'
@@ -18696,13 +18981,19 @@ function abrirModalProdutoEstoque(
     }
 
 
+    // =====================================================
+    // MODAL
+    // =====================================================
+
     const modal =
         document.getElementById(
             'modalProdutoEstoque'
         );
 
 
-    if (!modal) {
+    if (
+        !modal
+    ) {
 
         console.error(
             '❌ Modal #modalProdutoEstoque não encontrado!'
@@ -18718,6 +19009,10 @@ function abrirModalProdutoEstoque(
         return;
     }
 
+
+    // =====================================================
+    // ELEMENTOS
+    // =====================================================
 
     const title =
         document.getElementById(
@@ -18779,7 +19074,8 @@ function abrirModalProdutoEstoque(
 
     const username =
         currentUser?.username
-            ?.toLowerCase() || '';
+            ?.toLowerCase() ||
+        '';
 
 
     const isAdmin =
@@ -18796,7 +19092,7 @@ function abrirModalProdutoEstoque(
 
 
     // =====================================================
-    // TOGGLE ML
+    // CONFIGURAR TOGGLE DE SINCRONIZAÇÃO
     // =====================================================
 
     if (
@@ -18815,16 +19111,24 @@ function abrirModalProdutoEstoque(
                 '🔒 Apenas administradores podem modificar a sincronização com o ML';
 
 
-            toggleSync.parentElement
-                .style.opacity =
-                '0.6';
+            if (
+                toggleSync.parentElement
+            ) {
+
+                toggleSync.parentElement
+                    .style.opacity =
+                    '0.6';
 
 
-            toggleSync.parentElement
-                .style.cursor =
-                'not-allowed';
+                toggleSync.parentElement
+                    .style.cursor =
+                    'not-allowed';
 
-        } else {
+            }
+
+        }
+
+        else {
 
             toggleSync.disabled =
                 false;
@@ -18834,19 +19138,29 @@ function abrirModalProdutoEstoque(
                 'Clique para alternar a sincronização com o ML';
 
 
-            toggleSync.parentElement
-                .style.opacity =
-                '1';
+            if (
+                toggleSync.parentElement
+            ) {
+
+                toggleSync.parentElement
+                    .style.opacity =
+                    '1';
 
 
-            toggleSync.parentElement
-                .style.cursor =
-                'pointer';
+                toggleSync.parentElement
+                    .style.cursor =
+                    'pointer';
+
+            }
 
         }
 
     }
 
+
+    // =====================================================
+    // AVISO ADMIN SYNC
+    // =====================================================
 
     const adminOnlyMsg =
         document.getElementById(
@@ -18902,7 +19216,7 @@ function abrirModalProdutoEstoque(
     ) {
 
         console.error(
-            '❌ Elementos do modal não encontrados!'
+            '❌ Elementos do modal de produto não encontrados!'
         );
 
 
@@ -18917,7 +19231,7 @@ function abrirModalProdutoEstoque(
 
 
     // =====================================================
-    // EDITANDO
+    // PRODUTO EXISTENTE
     // =====================================================
 
     if (
@@ -18934,15 +19248,18 @@ function abrirModalProdutoEstoque(
 
 
         nomeInput.value =
-            produto.nome || '';
+            produto.nome ||
+            '';
 
 
         skuInput.value =
-            produto.sku || '';
+            produto.sku ||
+            '';
 
 
         qtdInput.value =
-            produto.quantidade || 0;
+            produto.quantidade ||
+            0;
 
 
         qtdInput.readOnly =
@@ -18955,17 +19272,23 @@ function abrirModalProdutoEstoque(
 
 
         precoInput.value =
-            produto.preco || 0;
+            produto.preco ||
+            0;
 
 
         descInput.value =
-            produto.descricao || '';
+            produto.descricao ||
+            '';
 
 
         categoriaSelect.value =
             produto.categoria ||
             '';
 
+
+        // =================================================
+        // DADOS EXTRA
+        // =================================================
 
         const dadosExtra =
             produto.dados_extra ||
@@ -18977,8 +19300,27 @@ function abrirModalProdutoEstoque(
             '';
 
 
+        console.log(
+            '📦 Produto:',
+            produto.sku
+        );
+
+
+        console.log(
+            '📂 Categoria:',
+            produto.categoria
+        );
+
+
+        console.log(
+            '📂 Subcategoria:',
+            subcategoriaProduto ||
+            'sem subcategoria'
+        );
+
+
         // =================================================
-        // SYNC ML
+        // SINCRONIZAÇÃO
         // =================================================
 
         const syncBloqueado =
@@ -18993,32 +19335,31 @@ function abrirModalProdutoEstoque(
         ) {
 
             toggleSync.checked =
-                syncBloqueado;
+                !!syncBloqueado;
 
 
-            atualizarStatusSyncLabel(
-                toggleSync.checked
-            );
+            if (
+                typeof atualizarStatusSyncLabel ===
+                'function'
+            ) {
+
+                atualizarStatusSyncLabel(
+                    toggleSync.checked
+                );
+
+            }
 
         }
 
 
-        console.log(
-            '📦 Editando:',
-            produto.sku
-        );
-
-
-        console.log(
-            '📂 Subcategoria:',
-            subcategoriaProduto ||
-            'nenhuma'
-        );
-
-
         // =================================================
+        // CRIAR CAMPOS CORRETOS
+        //
         // IMPORTANTE:
-        // gerar os campos DA SUBCATEGORIA correta.
+        // Passamos a subcategoria salva.
+        //
+        // Raios → Nipples
+        // abre diretamente os campos de Nipples.
         // =================================================
 
         gerarCamposDinamicos(
@@ -19028,7 +19369,7 @@ function abrirModalProdutoEstoque(
 
 
         // =================================================
-        // PREENCHER DADOS EXTRA
+        // PREENCHER CAMPOS
         // =================================================
 
         Object.keys(
@@ -19043,7 +19384,9 @@ function abrirModalProdutoEstoque(
                     );
 
 
-                if (!campo) {
+                if (
+                    !campo
+                ) {
                     return;
                 }
 
@@ -19062,7 +19405,7 @@ function abrirModalProdutoEstoque(
 
                 else if (
                     chave ===
-                    'mlb_codes' &&
+                        'mlb_codes' &&
                     Array.isArray(
                         dadosExtra[
                             chave
@@ -19084,7 +19427,7 @@ function abrirModalProdutoEstoque(
                     campo.value =
                         dadosExtra[
                             chave
-                        ];
+                        ] ?? '';
 
                 }
 
@@ -19093,9 +19436,32 @@ function abrirModalProdutoEstoque(
 
 
         // =================================================
-        // MODELOS DOS RAIOS
+        // GARANTIR SUBCATEGORIA SELECIONADA
+        // =================================================
+
+        const selectSubcategoria =
+            document.getElementById(
+                'campo_subcategoria'
+            );
+
+
+        if (
+            selectSubcategoria &&
+            subcategoriaProduto
+        ) {
+
+            selectSubcategoria.value =
+                subcategoriaProduto;
+
+        }
+
+
+        // =================================================
+        // MARCA / MODELO DE RAIOS
         //
-        // Só executa se a subcategoria tiver campo marca/modelo.
+        // O select de modelo começa vazio.
+        // Primeiro carregamos modelos da marca,
+        // depois definimos o modelo salvo.
         // =================================================
 
         if (
@@ -19111,12 +19477,23 @@ function abrirModalProdutoEstoque(
 
             if (
                 marcaField &&
-                marcaField.value
+                dadosExtra.marca
             ) {
 
-                atualizarModelosPorMarca(
-                    marcaField.value
-                );
+                marcaField.value =
+                    dadosExtra.marca;
+
+
+                if (
+                    typeof atualizarModelosPorMarca ===
+                    'function'
+                ) {
+
+                    atualizarModelosPorMarca(
+                        dadosExtra.marca
+                    );
+
+                }
 
 
                 const modeloField =
@@ -19163,22 +19540,28 @@ function abrirModalProdutoEstoque(
 
             if (
                 anguloInt &&
-                dadosExtra.angulo_interno
+                dadosExtra
+                    .angulo_interno !==
+                    undefined
             ) {
 
                 anguloInt.value =
-                    dadosExtra.angulo_interno;
+                    dadosExtra
+                        .angulo_interno;
 
             }
 
 
             if (
                 anguloExt &&
-                dadosExtra.angulo_externo
+                dadosExtra
+                    .angulo_externo !==
+                    undefined
             ) {
 
                 anguloExt.value =
-                    dadosExtra.angulo_externo;
+                    dadosExtra
+                        .angulo_externo;
 
             }
 
@@ -19189,26 +19572,26 @@ function abrirModalProdutoEstoque(
                 );
 
 
+            const angulosDiv =
+                document.getElementById(
+                    'camposAngulosRolamento'
+                );
+
+
             if (
                 aplicacao &&
-                aplicacao.value ===
-                'Cubo/Caixa de Direção'
+                angulosDiv
             ) {
 
-                const angulosDiv =
-                    document.getElementById(
-                        'camposAngulosRolamento'
-                    );
+                const mostrarAngulos =
+                    aplicacao.value ===
+                    'Caixa de Direção';
 
 
-                if (
-                    angulosDiv
-                ) {
-
-                    angulosDiv.style.display =
-                        'block';
-
-                }
+                angulosDiv.style.display =
+                    mostrarAngulos
+                        ? 'block'
+                        : 'none';
 
             }
 
@@ -19216,7 +19599,7 @@ function abrirModalProdutoEstoque(
 
 
         // =================================================
-        // KIT
+        // CARREGAR COMPOSIÇÃO DO KIT
         // =================================================
 
         setTimeout(
@@ -19229,34 +19612,37 @@ function abrirModalProdutoEstoque(
 
 
                 if (
-                    skuAtual
+                    !skuAtual
                 ) {
-
-                    try {
-
-                        const skus =
-                            await carregarSkusKit(
-                                skuAtual
-                            );
+                    return;
+                }
 
 
-                        renderizarSkusKit(
-                            skus
-                        );
+                try {
 
-                    } catch (error) {
-
-                        console.error(
-                            '❌ Erro ao carregar SKUs do kit:',
-                            error
+                    const skus =
+                        await carregarSkusKit(
+                            skuAtual
                         );
 
 
-                        renderizarSkusKit(
-                            []
-                        );
+                    renderizarSkusKit(
+                        skus
+                    );
 
-                    }
+                }
+
+                catch (error) {
+
+                    console.error(
+                        '❌ Erro ao carregar SKUs do kit:',
+                        error
+                    );
+
+
+                    renderizarSkusKit(
+                        []
+                    );
 
                 }
 
@@ -19265,6 +19651,7 @@ function abrirModalProdutoEstoque(
         );
 
     }
+
 
     // =====================================================
     // NOVO PRODUTO
@@ -19313,6 +19700,10 @@ function abrirModalProdutoEstoque(
             '';
 
 
+        // =================================================
+        // SINCRONIZAÇÃO
+        // =================================================
+
         if (
             toggleSync
         ) {
@@ -19321,12 +19712,23 @@ function abrirModalProdutoEstoque(
                 false;
 
 
-            atualizarStatusSyncLabel(
-                false
-            );
+            if (
+                typeof atualizarStatusSyncLabel ===
+                'function'
+            ) {
+
+                atualizarStatusSyncLabel(
+                    false
+                );
+
+            }
 
         }
 
+
+        // =================================================
+        // LIMPAR CAMPOS
+        // =================================================
 
         gerarCamposDinamicos(
             '',
@@ -19338,11 +19740,19 @@ function abrirModalProdutoEstoque(
             []
         );
 
+
+        // Remover eventual bloco de produto anterior
+        document
+            .getElementById(
+                'blocoQuantidadeACaminhoRaios'
+            )
+            ?.remove();
+
     }
 
 
     // =====================================================
-    // EVENTO SYNC
+    // EVENTO DO TOGGLE ML
     // =====================================================
 
     if (
@@ -19352,9 +19762,16 @@ function abrirModalProdutoEstoque(
         toggleSync.onchange =
             function() {
 
-                atualizarStatusSyncLabel(
-                    this.checked
-                );
+                if (
+                    typeof atualizarStatusSyncLabel ===
+                    'function'
+                ) {
+
+                    atualizarStatusSyncLabel(
+                        this.checked
+                    );
+
+                }
 
             };
 
@@ -19378,18 +19795,28 @@ function abrirModalProdutoEstoque(
                 )?.value;
 
 
+            // =================================================
+            // PRODUTO EXISTENTE MUDANDO CATEGORIA
+            // =================================================
+
             if (
                 produtoAtual &&
                 produto &&
                 produto.categoria &&
                 novaCategoria !==
-                produto.categoria
+                    produto.categoria
             ) {
 
+                const confirmou =
+                    confirm(
+
+                        'Alterar a categoria limpará os atributos específicos e a subcategoria exibidos no formulário.\n\nDeseja continuar?'
+
+                    );
+
+
                 if (
-                    !confirm(
-                        'Alterar a categoria limpará os atributos específicos e a subcategoria. Deseja continuar?'
-                    )
+                    !confirmou
                 ) {
 
                     categoriaSelect.value =
@@ -19402,6 +19829,10 @@ function abrirModalProdutoEstoque(
 
             }
 
+
+            // =================================================
+            // NOVA CATEGORIA SEM SUBCATEGORIA SELECIONADA
+            // =================================================
 
             gerarCamposDinamicos(
                 novaCategoria,
@@ -19478,25 +19909,22 @@ function abrirModalProdutoEstoque(
         modalContent
     ) {
 
-        modalContent.style
-            .backgroundColor =
+        modalContent.style.backgroundColor =
             'white';
 
 
-        modalContent.style
-            .position =
+        modalContent.style.position =
             'relative';
 
 
-        modalContent.style
-            .zIndex =
+        modalContent.style.zIndex =
             '100000';
 
     }
 
 
     console.log(
-        '✅ Modal exibido com sucesso!'
+        '✅ Modal de produto exibido com sucesso!'
     );
 }
 
@@ -29741,7 +30169,6 @@ window.salvarQuantidadeACaminhoRaio = salvarQuantidadeACaminhoRaio;
 window.atualizarResumoACaminhoModal = atualizarResumoACaminhoModal;
 window.aplicarIndicadoresACaminhoTabela = aplicarIndicadoresACaminhoTabela;
 window.renderizarBlocoACaminhoRaios = renderizarBlocoACaminhoRaios;
-window.gerarCamposDinamicos = gerarCamposDinamicos;
 window.renderizarTabelaProdutos = renderizarTabelaProdutos;
 
 // =========================================================
@@ -30945,47 +31372,5 @@ function aplicarIndicadoresACaminhoTabela() {
         }
     );
 }
-
-// =========================================================
-// EXTENSÃO DE gerarCamposDinamicos
-//
-// NÃO substitui sua lógica de categoria/subcategoria.
-// Apenas acrescenta o bloco "A caminho" depois.
-// =========================================================
-
-const _gerarCamposDinamicosAntesACaminho =
-    gerarCamposDinamicos;
-
-
-gerarCamposDinamicos =
-    function(...args) {
-
-        const retorno =
-            _gerarCamposDinamicosAntesACaminho
-                .apply(
-                    this,
-                    args
-                );
-
-
-        const categoria =
-            args[0] ||
-            '';
-
-
-        setTimeout(
-            () => {
-
-                renderizarBlocoACaminhoRaios(
-                    categoria
-                );
-
-            },
-            0
-        );
-
-
-        return retorno;
-    };
 
 console.log('📦 Gestão de Estoque carregada com sucesso! (Versão completa com categorias customizadas)');
