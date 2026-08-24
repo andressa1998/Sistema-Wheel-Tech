@@ -16248,114 +16248,171 @@ async function obterRegraFixaTipoAnuncioML(itemId) {
 }
 
 
-// =========================================================
-// SALVAR REGRAS FIXAS
-// =========================================================
-
 async function salvarRegrasFixasTipoAnuncioML(
     novasRegras
 ) {
 
     try {
 
+        // =====================================================
+        // ESTADO ANTERIOR
+        // =====================================================
+
+        const regrasAnteriores = {
+
+            classico:
+                Array.isArray(
+                    regrasFixasTipoAnuncioML
+                        ?.classico
+                )
+                    ? [
+                        ...regrasFixasTipoAnuncioML
+                            .classico
+                    ]
+                    : [],
+
+            premium:
+                Array.isArray(
+                    regrasFixasTipoAnuncioML
+                        ?.premium
+                )
+                    ? [
+                        ...regrasFixasTipoAnuncioML
+                            .premium
+                    ]
+                    : []
+        };
+
+
+        // =====================================================
+        // NORMALIZAR
+        // =====================================================
+
         const classico =
-            [...new Set(
-                (novasRegras.classico || [])
-                    .map(normalizarMLBRegraFixa)
-                    .filter(Boolean)
-            )];
+            [
+                ...new Set(
+                    (
+                        novasRegras.classico ||
+                        []
+                    )
+                        .map(
+                            normalizarMLBRegraFixa
+                        )
+                        .filter(Boolean)
+                )
+            ];
 
 
         const premium =
-            [...new Set(
-                (novasRegras.premium || [])
-                    .map(normalizarMLBRegraFixa)
-                    .filter(Boolean)
-            )];
+            [
+                ...new Set(
+                    (
+                        novasRegras.premium ||
+                        []
+                    )
+                        .map(
+                            normalizarMLBRegraFixa
+                        )
+                        .filter(Boolean)
+                )
+            ];
 
 
-        // =================================================
-        // NÃO PERMITIR O MESMO MLB NAS DUAS LISTAS
-        // =================================================
+        // =====================================================
+        // NÃO PERMITIR MESMO MLB NAS DUAS LISTAS
+        // =====================================================
 
         const conflitos =
             classico.filter(
                 mlb =>
-                    premium.includes(mlb)
+                    premium.includes(
+                        mlb
+                    )
             );
 
 
         if (
-            conflitos.length > 0
+            conflitos.length >
+            0
         ) {
 
             throw new Error(
                 `Os seguintes MLBs estão simultaneamente em Clássico e Premium: ${conflitos.join(', ')}`
             );
-
         }
 
 
         const regrasLimpas = {
+
             classico,
+
             premium
         };
 
 
-        // =================================================
-        // LOCAL STORAGE
-        // =================================================
+        // =====================================================
+        // DESCOBRIR QUAIS MLBS MUDARAM
+        // =====================================================
 
-        localStorage.setItem(
-            'regras_fixas_tipo_anuncio_ml',
-            JSON.stringify(
-                regrasLimpas
-            )
-        );
+        const todosMLBs =
+            [
+                ...new Set([
+                    ...regrasAnteriores.classico,
+                    ...regrasAnteriores.premium,
+                    ...classico,
+                    ...premium
+                ])
+            ];
 
 
-        // =================================================
-        // SUPABASE
-        // =================================================
+        const descobrirTipo = (
+            regras,
+            mlb
+        ) => {
 
-        if (
-            window.supabaseClient
-        ) {
-
-            const { error } =
-                await window.supabaseClient
-                    .from(
-                        'configuracoes_sistema'
+            if (
+                regras.classico
+                    .includes(
+                        mlb
                     )
-                    .upsert({
+            ) {
 
-                        chave:
-                            'regras_fixas_tipo_anuncio_ml',
-
-                        valor:
-                            JSON.stringify(
-                                regrasLimpas
-                            ),
-
-                        atualizado_em:
-                            new Date()
-                                .toISOString(),
-
-                        atualizado_por:
-                            currentUser?.name ||
-                            'sistema'
-
-                    }, {
-                        onConflict: 'chave'
-                    });
-
-
-            if (error) {
-                throw error;
+                return 'gold_special';
             }
 
-        }
 
+            if (
+                regras.premium
+                    .includes(
+                        mlb
+                    )
+            ) {
+
+                return 'gold_pro';
+            }
+
+
+            return null;
+        };
+
+
+        const mlbsAlterados =
+            todosMLBs.filter(
+                mlb =>
+                    descobrirTipo(
+                        regrasAnteriores,
+                        mlb
+                    ) !==
+                    descobrirTipo(
+                        regrasLimpas,
+                        mlb
+                    )
+            );
+
+
+        // =====================================================
+        // ATUALIZAR MEMÓRIA PRIMEIRO
+        // =====================================================
 
         regrasFixasTipoAnuncioML =
             regrasLimpas;
@@ -16365,19 +16422,135 @@ async function salvarRegrasFixasTipoAnuncioML(
             true;
 
 
+        // =====================================================
+        // LOCALSTORAGE IMEDIATAMENTE
+        // =====================================================
+
+        localStorage.setItem(
+            'regras_fixas_tipo_anuncio_ml',
+            JSON.stringify(
+                regrasLimpas
+            )
+        );
+
+
+        // =====================================================
+        // AVISAR OUTRAS ROTINAS DESTA MESMA PÁGINA
+        //
+        // IMPORTANTE:
+        // storage event NÃO dispara na própria aba.
+        // Por isso usamos CustomEvent.
+        // =====================================================
+
+        try {
+
+            window.dispatchEvent(
+                new CustomEvent(
+                    'wheeltech:regras-fixas-tipo-anuncio-atualizadas',
+                    {
+                        detail: {
+
+                            regras:
+                                regrasLimpas,
+
+                            alterados:
+                                mlbsAlterados
+                        }
+                    }
+                )
+            );
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Não foi possível notificar alteração das regras fixas:',
+                error
+            );
+        }
+
+
+        // =====================================================
+        // SUPABASE
+        // =====================================================
+
+        if (
+            window.supabaseClient
+        ) {
+
+            const {
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'configuracoes_sistema'
+                    )
+                    .upsert(
+                        {
+
+                            chave:
+                                'regras_fixas_tipo_anuncio_ml',
+
+                            valor:
+                                JSON.stringify(
+                                    regrasLimpas
+                                ),
+
+                            atualizado_em:
+                                new Date()
+                                    .toISOString(),
+
+                            atualizado_por:
+                                currentUser?.name ||
+                                'sistema'
+
+                        },
+                        {
+                            onConflict:
+                                'chave'
+                        }
+                    );
+
+
+            if (
+                error
+            ) {
+
+                throw error;
+            }
+        }
+
+
         console.log(
             '✅ [TIPO ML] Regras fixas salvas:',
-            regrasFixasTipoAnuncioML
+            regrasLimpas
+        );
+
+
+        console.log(
+            '🔄 [TIPO ML] MLBs cuja regra mudou:',
+            mlbsAlterados
         );
 
 
         return {
-            success: true,
-            regras: regrasFixasTipoAnuncioML
+
+            success:
+                true,
+
+            regras:
+                regrasLimpas,
+
+            alterados:
+                mlbsAlterados
         };
 
 
-    } catch (error) {
+    } catch (
+        error
+    ) {
 
         console.error(
             '❌ [TIPO ML] Erro ao salvar regras fixas:',
@@ -16386,10 +16559,13 @@ async function salvarRegrasFixasTipoAnuncioML(
 
 
         return {
-            success: false,
-            error: error.message
-        };
 
+            success:
+                false,
+
+            error:
+                error.message
+        };
     }
 }
 
@@ -31500,6 +31676,9 @@ window.atualizarResumoACaminhoModal = atualizarResumoACaminhoModal;
 window.aplicarIndicadoresACaminhoTabela = aplicarIndicadoresACaminhoTabela;
 window.renderizarBlocoACaminhoRaios = renderizarBlocoACaminhoRaios;
 window.renderizarTabelaProdutos = renderizarTabelaProdutos;
+window.obterRegraFixaTipoAnuncioML = obterRegraFixaTipoAnuncioML;
+window.carregarRegrasFixasTipoAnuncioML = carregarRegrasFixasTipoAnuncioML;
+window.salvarRegrasFixasTipoAnuncioML = salvarRegrasFixasTipoAnuncioML;
 
 // =========================================================
 // INICIALIZAR REGRAS PARA CATEGORIAS CUSTOMIZADAS
