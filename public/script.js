@@ -10436,7 +10436,10 @@ function renderOrdersTable() {
 
                 !order.conferido &&
 
-                podeUsuarioConferirOS(order)
+                (
+                    isAdmin ||
+                    podeUsuarioConferirOS(order)
+                )
             ) {
 
                 actionButtons += `
