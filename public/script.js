@@ -7831,54 +7831,65 @@ async function saveOrderToSupabase(order) {
 
 // ============================================================
 // CONFERIR OS
+// Ronald: confere qualquer OS e contabiliza meta
+// Letícia: confere somente devolução e não contabiliza meta
 // ============================================================
 
 window.conferirOS =
     async function(orderId) {
-
-        // ====================================================
-        // SOMENTE RONALD
-        // ====================================================
-
-        if (
-            !currentUser ||
-            currentUser.username !==
-            META_RONALD_CONFIG.username
-        ) {
-
-            showToast(
-                '⚠️ A conferência das OS é responsabilidade do Ronald.',
-                'warning'
-            );
-
-            return;
-        }
-
-
         const order =
             orders.find(
-                o =>
-                    String(o.id) ===
+                item =>
+                    String(item.id) ===
                     String(orderId)
             );
 
-
         if (!order) {
-
             showToast(
-                'Ordem não encontrada',
+                '❌ Ordem não encontrada',
                 'error'
             );
 
             return;
         }
 
+        if (!currentUser) {
+            showToast(
+                '⚠️ Faça login primeiro',
+                'warning'
+            );
+
+            return;
+        }
+
+        const username =
+            getUsernameAtualOS();
+
+        if (
+            !podeUsuarioConferirOS(order)
+        ) {
+            if (
+                username ===
+                'leticia'
+            ) {
+                showToast(
+                    '⚠️ Letícia pode conferir somente OS do tipo Devolução.',
+                    'warning'
+                );
+            } else {
+                showToast(
+                    '⚠️ A conferência das OS é responsabilidade do Ronald.',
+                    'warning'
+                );
+            }
+
+            return;
+        }
 
         if (
             order.status !==
             'concluida'
         ) {
-
             showToast(
                 '⚠️ Apenas OS concluídas podem ser conferidas',
                 'warning'
@@ -7887,11 +7898,7 @@ window.conferirOS =
             return;
         }
 
-
-        if (
-            order.conferido
-        ) {
-
+        if (order.conferido) {
             showToast(
                 '⚠️ Esta OS já foi conferida',
                 'warning'
@@ -7900,162 +7907,242 @@ window.conferirOS =
             return;
         }
 
-
         if (
-            !confirm(
-                `Deseja marcar a OS "${order.productName}" como conferida?\n\nVocê não poderá desfazer esta ação.`
-            )
+            username ===
+                'leticia' &&
+            !ehOSDevolucao(order)
         ) {
+            showToast(
+                '⚠️ Letícia pode conferir somente OS do tipo Devolução.',
+                'warning'
+            );
 
             return;
         }
 
+        const mensagemConfirmacao =
+            username === 'leticia'
+                ? (
+                    `Deseja marcar a devolução "${order.productName}" como conferida?\n\n` +
+                    'Esta conferência não será contabilizada em uma meta.'
+                )
+                : (
+                    `Deseja marcar a OS "${order.productName}" como conferida?\n\n` +
+                    'Você não poderá desfazer esta ação.'
+                );
+
+        if (
+            !confirm(
+                mensagemConfirmacao
+            )
+        ) {
+            return;
+        }
 
         try {
-
             if (!supabaseClient) {
-
                 throw new Error(
                     'Supabase não conectado'
                 );
             }
 
-
-            // =================================================
-            // ATUALIZA OS + REGISTRA PONTO DA META
-            // EM UMA ÚNICA TRANSAÇÃO
-            // =================================================
-
-            const {
-                data,
-                error
-            } =
-                await supabaseClient
-                    .rpc(
-                        'processar_conferencia_os_ronald',
-                        {
-
-                            p_os_id:
-                                String(
-                                    orderId
-                                ),
-
-                            p_username:
-                                currentUser.username,
-
-                            p_nome:
-                                currentUser.name,
-
-                            p_resultado:
-                                'conferida',
-
-                            p_motivo:
-                                null
-
-                        }
-                    );
-
-
-            if (error) {
-                throw error;
-            }
-
-
             const agoraISO =
-                data
-                    ?.data_evento ||
                 new Date()
                     .toISOString();
 
+            // ====================================================
+            // RONALD — UTILIZA A RPC E CONTABILIZA META
+            // ====================================================
 
-            // =================================================
-            // ATUALIZAR LOCALMENTE
-            // =================================================
+            if (
+                username ===
+                'ronald'
+            ) {
+                const {
+                    data,
+                    error
+                } =
+                    await supabaseClient
+                        .rpc(
+                            'processar_conferencia_os_ronald',
+                            {
+                                p_os_id:
+                                    String(
+                                        orderId
+                                    ),
 
-            order.conferido =
-                true;
+                                p_username:
+                                    currentUser.username,
 
+                                p_nome:
+                                    currentUser.name,
 
-            order.conferidoPor =
-                currentUser.name;
+                                p_resultado:
+                                    'conferida',
 
+                                p_motivo:
+                                    null
+                            }
+                        );
 
-            order.dataConferencia =
-                agoraISO;
+                if (error) {
+                    throw error;
+                }
 
+                const dataEvento =
+                    data?.data_evento ||
+                    agoraISO;
 
-            order.updatedAt =
-                agoraISO;
+                order.conferido =
+                    true;
 
+                order.conferidoPor =
+                    currentUser.name;
 
-            updateCounters();
+                order.dataConferencia =
+                    dataEvento;
 
-            renderOrdersTable();
+                order.updatedAt =
+                    dataEvento;
 
+                updateCounters();
+                renderOrdersTable();
 
-            // =================================================
-            // RECALCULAR META
-            // =================================================
-
-            const status =
-                await verificarMetaRonald(
-                    {
-
+                const status =
+                    await verificarMetaRonald({
                         mostrarAviso:
                             false,
 
                         motivo:
                             'conferencia_realizada'
-
-                    }
-                );
-
-
-            if (
-                status &&
-                status.faltamHoje > 0
-            ) {
-
-                showToast(
-                    `✅ OS conferida. Faltam ${status.faltamHoje} para concluir sua meta.`,
-                    'success'
-                );
-
+                    });
 
                 if (
-                    bloqueioMetaRonaldAtivo
+                    status &&
+                    status.faltamHoje > 0
                 ) {
-
-                    atualizarBannerBloqueioMetaRonald(
-                        status,
-                        status.estado
-                            ?.motivo_bloqueio
+                    showToast(
+                        `✅ OS conferida. Faltam ${status.faltamHoje} para concluir sua meta.`,
+                        'success'
                     );
 
+                    if (
+                        bloqueioMetaRonaldAtivo
+                    ) {
+                        atualizarBannerBloqueioMetaRonald(
+                            status,
+                            status.estado
+                                ?.motivo_bloqueio
+                        );
 
-                    setTimeout(
-                        aplicarRestricaoVisualMetaRonald,
-                        0
+                        setTimeout(
+                            aplicarRestricaoVisualMetaRonald,
+                            0
+                        );
+                    }
+                } else {
+                    showToast(
+                        '🎯 OS conferida. Meta de conferência concluída!',
+                        'success'
                     );
                 }
 
+                return;
+            }
 
-            } else {
+            // ====================================================
+            // LETÍCIA — SOMENTE DEVOLUÇÃO E SEM META
+            // ====================================================
+
+            if (
+                username ===
+                'leticia'
+            ) {
+                if (
+                    !ehOSDevolucao(order)
+                ) {
+                    throw new Error(
+                        'Letícia pode conferir somente OS do tipo Devolução.'
+                    );
+                }
+
+                const {
+                    data,
+                    error
+                } =
+                    await supabaseClient
+                        .from(
+                            'ordens_service'
+                        )
+                        .update({
+                            conferido:
+                                true,
+
+                            conferido_por:
+                                currentUser.name,
+
+                            data_conferencia:
+                                agoraISO,
+
+                            ultima_atualizacao:
+                                agoraISO
+                        })
+                        .eq(
+                            'id',
+                            orderId
+                        )
+                        .eq(
+                            'status',
+                            'concluida'
+                        )
+                        .eq(
+                            'conferido',
+                            false
+                        )
+                        .eq(
+                            'tipo_os',
+                            'devolucao'
+                        )
+                        .select()
+                        .maybeSingle();
+
+                if (error) {
+                    throw error;
+                }
+
+                if (!data) {
+                    throw new Error(
+                        'A OS já foi conferida ou não é uma devolução concluída.'
+                    );
+                }
+
+                order.conferido =
+                    true;
+
+                order.conferidoPor =
+                    currentUser.name;
+
+                order.dataConferencia =
+                    data.data_conferencia ||
+                    agoraISO;
+
+                order.updatedAt =
+                    data.ultima_atualizacao ||
+                    agoraISO;
+
+                updateCounters();
+                renderOrdersTable();
 
                 showToast(
-                    '🎯 OS conferida. Meta de conferência concluída!',
+                    '✅ Devolução conferida por Letícia. Esta conferência não possui meta.',
                     'success'
                 );
             }
-
-
         } catch (error) {
-
             console.error(
                 '❌ Erro ao conferir OS:',
                 error
             );
-
 
             showToast(
                 '❌ Erro ao conferir OS: ' +
@@ -8247,30 +8334,130 @@ function generateOSCode() {
 }
 
 function filterOrdersByUser(ordersList) {
-    if (!currentUser) return [];
-
-    // 🔥 NOVO: Se o filtro atual NÃO for 'fotos_atualizar',
-    // removemos todas as OS com photoType === 'fotos_para_atualizar'
-    const filtroAtual = currentFilter || 'pendente';
-    let listaFiltrada = [...ordersList];
-
-    if (filtroAtual !== 'fotos_atualizar') {
-        listaFiltrada = listaFiltrada.filter(order => 
-            order.photoType !== 'fotos_para_atualizar'
-        );
+    if (!currentUser) {
+        return [];
     }
 
-    // Administrador vê TODAS as ordens (exceto as que foram filtradas acima)
-    if (currentUser.role === 'Administrador') {
+    const filtroAtual =
+        currentFilter ||
+        'pendente';
+
+    let listaFiltrada =
+        [...ordersList];
+
+    // Esconde as OS de atualização de fotos nos demais filtros
+    if (
+        filtroAtual !==
+        'fotos_atualizar'
+    ) {
+        listaFiltrada =
+            listaFiltrada.filter(
+                order =>
+                    order.photoType !==
+                    'fotos_para_atualizar'
+            );
+    }
+
+    // Administrador visualiza todas
+    if (
+        currentUser.role ===
+        'Administrador'
+    ) {
         return listaFiltrada;
     }
 
-    // Outros usuários só veem as ordens onde são responsáveis ou criadores
-    return listaFiltrada.filter(order => {
-        const isResponsible = order.responsibleName?.toLowerCase().includes(currentUser.name.toLowerCase());
-        const isCreator = order.createdBy?.toLowerCase().includes(currentUser.name.toLowerCase());
-        return isResponsible || isCreator;
-    });
+    const username =
+        getUsernameAtualOS();
+
+    return listaFiltrada.filter(
+        order => {
+            const nomeUsuario =
+                String(
+                    currentUser.name ||
+                    ''
+                ).toLowerCase();
+
+            const responsavel =
+                String(
+                    order.responsibleName ||
+                    ''
+                ).toLowerCase();
+
+            const criador =
+                String(
+                    order.createdBy ||
+                    ''
+                ).toLowerCase();
+
+            const isResponsible =
+                nomeUsuario &&
+                responsavel.includes(
+                    nomeUsuario
+                );
+
+            const isCreator =
+                nomeUsuario &&
+                criador.includes(
+                    nomeUsuario
+                );
+
+            // Letícia visualiza todas as devoluções
+            const isDevolucaoLeticia =
+                username === 'leticia' &&
+                ehOSDevolucao(order);
+
+            return (
+                isResponsible ||
+                isCreator ||
+                isDevolucaoLeticia
+            );
+        }
+    );
+}
+
+// ============================================
+// PERMISSÕES DE CONFERÊNCIA DE OS
+// ============================================
+function getUsernameAtualOS() {
+    return String(
+        currentUser?.username ||
+        currentUser?.login ||
+        currentUser?.name ||
+        ''
+    )
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+}
+
+function ehOSDevolucao(order) {
+    return String(
+        order?.osType ||
+        order?.tipo_os ||
+        ''
+    )
+        .trim()
+        .toLowerCase() === 'devolucao';
+}
+
+function podeUsuarioConferirOS(order) {
+    const username = getUsernameAtualOS();
+
+    // Ronald pode conferir qualquer OS e possui meta
+    if (username === 'ronald') {
+        return true;
+    }
+
+    // Letícia pode conferir somente devoluções e não possui meta
+    if (
+        username === 'leticia' &&
+        ehOSDevolucao(order)
+    ) {
+        return true;
+    }
+
+    return false;
 }
 
 function checkOrderPermission(order) {
@@ -10249,10 +10436,7 @@ function renderOrdersTable() {
 
                 !order.conferido &&
 
-                (
-                    hasPermission ||
-                    isAdmin
-                )
+                podeUsuarioConferirOS(order)
             ) {
 
                 actionButtons += `
