@@ -818,20 +818,6 @@ function getCamposPorCategoria(
 
     }
 
-
-    // =====================================================
-    // SE SUBCATEGORIA NÃO FOI PASSADA
-    //
-    // Isso é importante para salvarProdutoEstoque().
-    //
-    // salvarProdutoEstoque atualmente faz:
-    //
-    // getCamposPorCategoria(categoria)
-    //
-    // Então, se o modal estiver aberto, pegamos a
-    // subcategoria selecionada nele automaticamente.
-    // =====================================================
-
     if (
         subcategoria === undefined
     ) {
@@ -11234,373 +11220,1587 @@ async function gerarNumeroMovimentacao() {
 
 // =========================================================
 // FUNÇÕES DE SALVAR PRODUTO COM VERIFICAÇÃO DE DUPLICIDADE
+// PRESERVA:
+// - Categorias padrão
+// - Categorias customizadas
+// - Subcategorias
+// - Estoque "a caminho"
 // =========================================================
 
 async function salvarProdutoEstoque() {
-    const id = document.getElementById('produtoId').value;
-    const nome = document.getElementById('produtoNome').value.trim();
-    const preco = parseFloat(document.getElementById('produtoPreco').value) || 0;
-    const descricao = document.getElementById('produtoDescricao').value.trim();
-    const categoria = document.getElementById('produtoCategoria').value;
-    const toggleSync = document.getElementById('bloquearSyncML');
-    
-    const username = currentUser?.username?.toLowerCase() || '';
-    const isAdmin = usuariosAdmin.includes(username);
-    const podeModificarSync = usuariosAutorizadosSync.includes(username) || isAdmin;
-    
+
+    const id =
+        document.getElementById('produtoId').value;
+
+    const nome =
+        document.getElementById('produtoNome').value.trim();
+
+    const preco =
+        parseFloat(
+            document.getElementById('produtoPreco').value
+        ) || 0;
+
+    const descricao =
+        document.getElementById('produtoDescricao').value.trim();
+
+    const categoria =
+        document.getElementById('produtoCategoria').value;
+
+    const toggleSync =
+        document.getElementById('bloquearSyncML');
+
+
+    // =====================================================
+    // USUÁRIO / PERMISSÕES
+    // =====================================================
+
+    const username =
+        currentUser?.username?.toLowerCase() || '';
+
+    const isAdmin =
+        usuariosAdmin.includes(username);
+
+    const podeModificarSync =
+        usuariosAutorizadosSync.includes(username) ||
+        isAdmin;
+
+
+    // =====================================================
+    // PRODUTO EXISTENTE
+    //
+    // Usado SOMENTE para preservar informações já salvas
+    // que não fazem parte dos campos dinâmicos.
+    // =====================================================
+
+    const produtoExistenteAtual =
+        id
+            ? produtosEstoque.find(
+                p => p.id == id
+            )
+            : null;
+
+
+    const dadosExtraAnteriores =
+        produtoExistenteAtual?.dados_extra || {};
+
+
+    // =====================================================
+    // SINCRONIZAÇÃO ML
+    // =====================================================
+
     let bloquearSync = false;
-    if (podeModificarSync && toggleSync) {
-        bloquearSync = toggleSync.checked;
-    } else if (id) {
-        const produtoExistente = produtosEstoque.find(p => p.id == id);
+
+
+    if (
+        podeModificarSync &&
+        toggleSync
+    ) {
+
+        bloquearSync =
+            toggleSync.checked;
+
+    }
+
+    else if (id) {
+
+        const produtoExistente =
+            produtosEstoque.find(
+                p => p.id == id
+            );
+
+
         if (produtoExistente) {
-            bloquearSync = produtoExistente.bloquear_sync_ml || produtoExistente.dados_extra?.bloquear_sync_ml || false;
+
+            bloquearSync =
+                produtoExistente.bloquear_sync_ml ||
+                produtoExistente.dados_extra?.bloquear_sync_ml ||
+                false;
+
         }
+
     }
 
-    if (!nome || !categoria) {
-        if (window.showToast) showToast('Nome e Categoria são obrigatórios', 'warning');
+
+    // =====================================================
+    // CAMPOS OBRIGATÓRIOS
+    // =====================================================
+
+    if (
+        !nome ||
+        !categoria
+    ) {
+
+        if (
+            window.showToast
+        ) {
+
+            showToast(
+                'Nome e Categoria são obrigatórios',
+                'warning'
+            );
+
+        }
+
+
         return;
     }
 
-    // ===== VERIFICAÇÃO DE DUPLICIDADE POR 5 PRIMEIROS CARACTERES =====
-    const sku = document.getElementById('produtoSKU').value.trim();
+
+    // =====================================================
+    // SKU
+    // =====================================================
+
+    const sku =
+        document.getElementById(
+            'produtoSKU'
+        ).value.trim();
+
+
     if (!sku) {
-        showToast('SKU é obrigatório', 'warning');
-        return;
-    }
-    
-    const duplicidade = verificarDuplicidadeSKU(sku, id || null);
-    if (duplicidade.duplicado) {
-        showToast(`❌ ${duplicidade.mensagem}`, 'error');
-        document.getElementById('produtoSKU').focus();
-        document.getElementById('produtoSKU').style.borderColor = '#dc3545';
-        setTimeout(() => {
-            document.getElementById('produtoSKU').style.borderColor = '';
-        }, 3000);
+
+        showToast(
+            'SKU é obrigatório',
+            'warning'
+        );
+
         return;
     }
 
-    // Coletar dados extra
+
+    // =====================================================
+    // VERIFICAR DUPLICIDADE
+    // =====================================================
+
+    const duplicidade =
+        verificarDuplicidadeSKU(
+            sku,
+            id || null
+        );
+
+
+    if (
+        duplicidade.duplicado
+    ) {
+
+        showToast(
+            `❌ ${duplicidade.mensagem}`,
+            'error'
+        );
+
+
+        const campoSku =
+            document.getElementById(
+                'produtoSKU'
+            );
+
+
+        campoSku.focus();
+
+
+        campoSku.style.borderColor =
+            '#dc3545';
+
+
+        setTimeout(
+            () => {
+
+                campoSku.style.borderColor =
+                    '';
+
+            },
+            3000
+        );
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // COLETAR DADOS EXTRA
+    // =====================================================
+
     const dadosExtra = {};
-    const campos = getCamposPorCategoria(categoria);
-    
-    for (const campo of campos) {
-        const el = document.getElementById(`campo_${campo.nome}`);
+
+
+    // =====================================================
+    // 🚚 PRESERVAR ESTOQUE "A CAMINHO"
+    //
+    // IMPORTANTE:
+    //
+    // Esses campos são salvos pelo botão:
+    // "Salvar a caminho".
+    //
+    // Como eles NÃO pertencem aos campos normais da
+    // categoria, precisamos copiá-los antes que o botão
+    // verde Salvar atualize o dados_extra.
+    //
+    // NÃO interfere em categorias/subcategorias.
+    // =====================================================
+
+    if (
+        categoria === 'Raios' &&
+        produtoExistenteAtual
+    ) {
+
+        if (
+            dadosExtraAnteriores.quantidade_a_caminho !==
+            undefined
+        ) {
+
+            dadosExtra.quantidade_a_caminho =
+                dadosExtraAnteriores.quantidade_a_caminho;
+
+        }
+
+
+        if (
+            dadosExtraAnteriores.quantidade_a_caminho_atualizado_em
+        ) {
+
+            dadosExtra.quantidade_a_caminho_atualizado_em =
+                dadosExtraAnteriores
+                    .quantidade_a_caminho_atualizado_em;
+
+        }
+
+
+        if (
+            dadosExtraAnteriores.quantidade_a_caminho_atualizado_por
+        ) {
+
+            dadosExtra.quantidade_a_caminho_atualizado_por =
+                dadosExtraAnteriores
+                    .quantidade_a_caminho_atualizado_por;
+
+        }
+
+    }
+
+
+    // =====================================================
+    // CAMPOS DA CATEGORIA / SUBCATEGORIA
+    //
+    // NÃO ALTERADO:
+    //
+    // Continua usando sua getCamposPorCategoria atual.
+    // Portanto:
+    //
+    // Raios normal → campos de Raios
+    // Raios/Nipples → campos de Nipples
+    // Categorias customizadas → continuam funcionando
+    // =====================================================
+
+    const campos =
+        getCamposPorCategoria(
+            categoria
+        );
+
+
+    for (
+        const campo
+        of campos
+    ) {
+
+        const el =
+            document.getElementById(
+                `campo_${campo.nome}`
+            );
+
+
         if (el) {
-            if (campo.tipo === 'checkbox') {
-                dadosExtra[campo.nome] = el.checked;
-            } else if (campo.nome === 'mlb_codes' && el.value.trim()) {
-                const mlbText = el.value.trim();
-                if (!validarMLBCodes(mlbText)) {
-                    showToast(`Formato inválido para MLB Codes. Use: "MLB1496273494, MLB4220545731"`, 'error');
+
+            // =============================================
+            // CHECKBOX
+            // =============================================
+
+            if (
+                campo.tipo ===
+                'checkbox'
+            ) {
+
+                dadosExtra[
+                    campo.nome
+                ] =
+                    el.checked;
+
+            }
+
+
+            // =============================================
+            // MLB CODES
+            // =============================================
+
+            else if (
+                campo.nome ===
+                    'mlb_codes' &&
+                el.value.trim()
+            ) {
+
+                const mlbText =
+                    el.value.trim();
+
+
+                if (
+                    !validarMLBCodes(
+                        mlbText
+                    )
+                ) {
+
+                    showToast(
+                        `Formato inválido para MLB Codes. Use: "MLB1496273494, MLB4220545731"`,
+                        'error'
+                    );
+
+
                     el.focus();
+
+
                     return;
                 }
-                const valores = mlbText.split(',').map(v => v.trim()).filter(v => v);
-                dadosExtra[campo.nome] = valores;
-            } else {
-                let valor = el.value;
-                if (campo.tipo === 'number' && valor !== '') valor = parseFloat(valor);
-                if (campo.validacao === 'numero_virgula' && valor !== '') {
-                    if (!/^[0-9]+(,[0-9]+)?$/.test(valor)) {
-                        showToast(`O campo "${campo.label}" deve conter apenas números e vírgula`, 'warning');
+
+
+                const valores =
+                    mlbText
+                        .split(',')
+                        .map(
+                            v =>
+                                v.trim()
+                        )
+                        .filter(
+                            v => v
+                        );
+
+
+                dadosExtra[
+                    campo.nome
+                ] =
+                    valores;
+
+            }
+
+
+            // =============================================
+            // OUTROS CAMPOS
+            // =============================================
+
+            else {
+
+                let valor =
+                    el.value;
+
+
+                if (
+                    campo.tipo ===
+                        'number' &&
+                    valor !== ''
+                ) {
+
+                    valor =
+                        parseFloat(
+                            valor
+                        );
+
+                }
+
+
+                if (
+                    campo.validacao ===
+                        'numero_virgula' &&
+                    valor !== ''
+                ) {
+
+                    if (
+                        !/^[0-9]+(,[0-9]+)?$/.test(
+                            valor
+                        )
+                    ) {
+
+                        showToast(
+                            `O campo "${campo.label}" deve conter apenas números e vírgula`,
+                            'warning'
+                        );
+
+
                         el.focus();
+
+
                         return;
                     }
+
                 }
-                dadosExtra[campo.nome] = valor;
+
+
+                dadosExtra[
+                    campo.nome
+                ] =
+                    valor;
+
             }
+
         }
+
     }
 
-    if (podeModificarSync) {
-        dadosExtra.bloquear_sync_ml = bloquearSync;
-    } else {
-        delete dadosExtra.bloquear_sync_ml;
+
+    // =====================================================
+    // SINCRONIZAÇÃO ML
+    // =====================================================
+
+    if (
+        podeModificarSync
+    ) {
+
+        dadosExtra.bloquear_sync_ml =
+            bloquearSync;
+
     }
 
-    // Ângulos para Rolamentos
-    if (categoria === 'Rolamentos') {
-        const anguloInt = document.getElementById('campo_angulo_interno');
-        const anguloExt = document.getElementById('campo_angulo_externo');
-        const angulosDiv = document.getElementById('camposAngulosRolamento');
-        if (angulosDiv && angulosDiv.style.display !== 'none') {
-            if (anguloInt && anguloInt.value.trim() !== '') {
-                const val = anguloInt.value.trim();
-                if (!/^[0-9]+(,[0-9]+)?$/.test(val)) {
-                    showToast('Ângulo interno deve conter apenas números e vírgula', 'warning');
+    else {
+
+        delete dadosExtra
+            .bloquear_sync_ml;
+
+    }
+
+
+    // =====================================================
+    // ÂNGULOS PARA ROLAMENTOS
+    // =====================================================
+
+    if (
+        categoria ===
+        'Rolamentos'
+    ) {
+
+        const anguloInt =
+            document.getElementById(
+                'campo_angulo_interno'
+            );
+
+
+        const anguloExt =
+            document.getElementById(
+                'campo_angulo_externo'
+            );
+
+
+        const angulosDiv =
+            document.getElementById(
+                'camposAngulosRolamento'
+            );
+
+
+        if (
+            angulosDiv &&
+            angulosDiv.style.display !==
+                'none'
+        ) {
+
+            if (
+                anguloInt &&
+                anguloInt.value.trim() !==
+                    ''
+            ) {
+
+                const val =
+                    anguloInt.value.trim();
+
+
+                if (
+                    !/^[0-9]+(,[0-9]+)?$/.test(
+                        val
+                    )
+                ) {
+
+                    showToast(
+                        'Ângulo interno deve conter apenas números e vírgula',
+                        'warning'
+                    );
+
+
                     anguloInt.focus();
+
+
                     return;
                 }
-                dadosExtra.angulo_interno = val;
+
+
+                dadosExtra.angulo_interno =
+                    val;
+
             }
-            if (anguloExt && anguloExt.value.trim() !== '') {
-                const val = anguloExt.value.trim();
-                if (!/^[0-9]+(,[0-9]+)?$/.test(val)) {
-                    showToast('Ângulo externo deve conter apenas números e vírgula', 'warning');
+
+
+            if (
+                anguloExt &&
+                anguloExt.value.trim() !==
+                    ''
+            ) {
+
+                const val =
+                    anguloExt.value.trim();
+
+
+                if (
+                    !/^[0-9]+(,[0-9]+)?$/.test(
+                        val
+                    )
+                ) {
+
+                    showToast(
+                        'Ângulo externo deve conter apenas números e vírgula',
+                        'warning'
+                    );
+
+
                     anguloExt.focus();
+
+
                     return;
                 }
-                dadosExtra.angulo_externo = val;
+
+
+                dadosExtra.angulo_externo =
+                    val;
+
             }
+
         }
+
     }
 
-    // SKUs do kit
+
+    // =====================================================
+    // SKUs DO KIT
+    // =====================================================
+
     let skusKit = [];
-    const tbody = document.getElementById('kitSkusBody');
+
+
+    const tbody =
+        document.getElementById(
+            'kitSkusBody'
+        );
+
+
     if (tbody) {
-        const rows = tbody.querySelectorAll('tr');
-        rows.forEach((row) => {
-            const isMuted = row.querySelector('.text-muted');
-            if (isMuted) return;
-            
-            const skuFilhoInput = row.querySelector('.kit-sku-filho');
-            const quantidadeInput = row.querySelector('.kit-quantidade');
-            
-            if (skuFilhoInput && quantidadeInput) {
-                const skuFilho = skuFilhoInput.value.trim();
-                const quantidade = parseInt(quantidadeInput.value) || 1;
-                if (skuFilho) {
-                    skusKit.push({ sku_filho: skuFilho, quantidade });
+
+        const rows =
+            tbody.querySelectorAll(
+                'tr'
+            );
+
+
+        rows.forEach(
+            row => {
+
+                const isMuted =
+                    row.querySelector(
+                        '.text-muted'
+                    );
+
+
+                if (
+                    isMuted
+                ) {
+                    return;
                 }
+
+
+                const skuFilhoInput =
+                    row.querySelector(
+                        '.kit-sku-filho'
+                    );
+
+
+                const quantidadeInput =
+                    row.querySelector(
+                        '.kit-quantidade'
+                    );
+
+
+                if (
+                    skuFilhoInput &&
+                    quantidadeInput
+                ) {
+
+                    const skuFilho =
+                        skuFilhoInput
+                            .value
+                            .trim();
+
+
+                    const quantidade =
+                        parseInt(
+                            quantidadeInput.value
+                        ) || 1;
+
+
+                    if (
+                        skuFilho
+                    ) {
+
+                        skusKit.push({
+
+                            sku_filho:
+                                skuFilho,
+
+                            quantidade:
+                                quantidade
+
+                        });
+
+                    }
+
+                }
+
             }
-        });
+        );
+
     }
 
-        // Bulk mode para Raios
-    // ===== BULK MODE PARA RAIOS =====
-    const bulkPanel = document.getElementById('bulkModePanel');
-    const isBulkMode = (categoria === 'Raios' && !id && bulkPanel && bulkPanel.style.display === 'block');
 
-    if (isBulkMode) {
-        const rows = document.querySelectorAll('#bulkTamanhosBody tr');
-        const bulkItems = [];
-        const tamanhosSet = new Set();
-        const skusSet = new Set();
+    // =====================================================
+    // SUBCATEGORIA ATUAL
+    //
+    // ÚNICA PEQUENA CORREÇÃO NO BULK:
+    //
+    // Raios → bulk permitido
+    // Raios → Nipples → bulk NÃO permitido
+    // =====================================================
 
-        for (let row of rows) {
-            const tamanho = row.querySelector('.bulk-tamanho')?.value?.trim();
-            const skuItem = row.querySelector('.bulk-sku')?.value?.trim();
-            const quantidade = parseInt(row.querySelector('.bulk-quantidade')?.value) || 0;
+    const subcategoriaAtual =
+        document.getElementById(
+            'campo_subcategoria'
+        )?.value || '';
 
-            if (!tamanho || !skuItem) {
-                showToast('Todos os tamanhos e SKUs devem ser preenchidos', 'warning');
+
+    // =====================================================
+    // BULK MODE PARA RAIOS
+    // =====================================================
+
+    const bulkPanel =
+        document.getElementById(
+            'bulkModePanel'
+        );
+
+
+    const isBulkMode =
+        (
+            categoria ===
+                'Raios' &&
+
+            !subcategoriaAtual &&
+
+            !id &&
+
+            bulkPanel &&
+
+            bulkPanel.style.display ===
+                'block'
+        );
+
+
+    if (
+        isBulkMode
+    ) {
+
+        const rows =
+            document.querySelectorAll(
+                '#bulkTamanhosBody tr'
+            );
+
+
+        const bulkItems =
+            [];
+
+
+        const tamanhosSet =
+            new Set();
+
+
+        const skusSet =
+            new Set();
+
+
+        for (
+            let row
+            of rows
+        ) {
+
+            const tamanho =
+                row.querySelector(
+                    '.bulk-tamanho'
+                )?.value?.trim();
+
+
+            const skuItem =
+                row.querySelector(
+                    '.bulk-sku'
+                )?.value?.trim();
+
+
+            const quantidade =
+                parseInt(
+                    row.querySelector(
+                        '.bulk-quantidade'
+                    )?.value
+                ) || 0;
+
+
+            if (
+                !tamanho ||
+                !skuItem
+            ) {
+
+                showToast(
+                    'Todos os tamanhos e SKUs devem ser preenchidos',
+                    'warning'
+                );
+
+
                 return;
             }
-            
-            // Verificar duplicidade de cada SKU no bulk
-            const dupBulk = verificarDuplicidadeSKU(skuItem);
-            if (dupBulk.duplicado) {
-                showToast(`❌ SKU "${skuItem}" duplicado - ${dupBulk.mensagem}`, 'error');
+
+
+            // =============================================
+            // VERIFICAR DUPLICIDADE
+            // =============================================
+
+            const dupBulk =
+                verificarDuplicidadeSKU(
+                    skuItem
+                );
+
+
+            if (
+                dupBulk.duplicado
+            ) {
+
+                showToast(
+                    `❌ SKU "${skuItem}" duplicado - ${dupBulk.mensagem}`,
+                    'error'
+                );
+
+
                 return;
             }
-            
-            if (tamanhosSet.has(tamanho)) {
-                showToast(`Tamanho ${tamanho} duplicado`, 'warning');
+
+
+            if (
+                tamanhosSet.has(
+                    tamanho
+                )
+            ) {
+
+                showToast(
+                    `Tamanho ${tamanho} duplicado`,
+                    'warning'
+                );
+
+
                 return;
             }
-            if (skusSet.has(skuItem)) {
-                showToast(`SKU ${skuItem} duplicado`, 'warning');
+
+
+            if (
+                skusSet.has(
+                    skuItem
+                )
+            ) {
+
+                showToast(
+                    `SKU ${skuItem} duplicado`,
+                    'warning'
+                );
+
+
                 return;
             }
-            tamanhosSet.add(tamanho);
-            skusSet.add(skuItem);
-            bulkItems.push({ tamanho, quantidade, sku: skuItem });
+
+
+            tamanhosSet.add(
+                tamanho
+            );
+
+
+            skusSet.add(
+                skuItem
+            );
+
+
+            bulkItems.push({
+
+                tamanho,
+
+                quantidade,
+
+                sku:
+                    skuItem
+
+            });
+
         }
 
-        if (bulkItems.length === 0) {
-            showToast('Adicione pelo menos um tamanho', 'warning');
+
+        if (
+            bulkItems.length ===
+            0
+        ) {
+
+            showToast(
+                'Adicione pelo menos um tamanho',
+                'warning'
+            );
+
+
             return;
         }
 
-        if (!confirm(`Criar ${bulkItems.length} produto(s) com as mesmas informações de marca/modelo/cabeça?`)) return;
 
-        let created = 0;
-        let errors = [];
+        if (
+            !confirm(
+                `Criar ${bulkItems.length} produto(s) com as mesmas informações de marca/modelo/cabeça?`
+            )
+        ) {
 
-        // ===== PEGAR MLB CODES DO CAMPO =====
-        const mlbField = document.getElementById('campo_mlb_codes');
-        let mlbCodes = [];
-        if (mlbField && mlbField.value.trim()) {
-            const mlbText = mlbField.value.trim();
-            if (!validarMLBCodes(mlbText)) {
-                showToast(`Formato inválido para MLB Codes. Use: "MLB1496273494, MLB4220545731"`, 'error');
-                mlbField.focus();
-                return;
-            }
-            mlbCodes = mlbText.split(',').map(v => v.trim()).filter(v => v);
+            return;
         }
 
-        for (const item of bulkItems) {
-            // Verificar se já existe no banco
-            const { data: existing } = await window.supabaseClient
-                .from('produtos_estoque')
-                .select('id')
-                .eq('sku', item.sku)
-                .maybeSingle();
 
-            if (existing) {
-                errors.push(`${item.sku} (já existe)`);
+        let created =
+            0;
+
+
+        let errors =
+            [];
+
+
+        // =================================================
+        // PEGAR MLB CODES
+        // =================================================
+
+        const mlbField =
+            document.getElementById(
+                'campo_mlb_codes'
+            );
+
+
+        let mlbCodes =
+            [];
+
+
+        if (
+            mlbField &&
+            mlbField.value.trim()
+        ) {
+
+            const mlbText =
+                mlbField.value.trim();
+
+
+            if (
+                !validarMLBCodes(
+                    mlbText
+                )
+            ) {
+
+                showToast(
+                    `Formato inválido para MLB Codes. Use: "MLB1496273494, MLB4220545731"`,
+                    'error'
+                );
+
+
+                mlbField.focus();
+
+
+                return;
+            }
+
+
+            mlbCodes =
+                mlbText
+                    .split(',')
+                    .map(
+                        v =>
+                            v.trim()
+                    )
+                    .filter(
+                        v => v
+                    );
+
+        }
+
+
+        // =================================================
+        // CRIAR RAIOS
+        // =================================================
+
+        for (
+            const item
+            of bulkItems
+        ) {
+
+            // =============================================
+            // VERIFICAR SE JÁ EXISTE
+            // =============================================
+
+            const {
+                data: existing
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .select(
+                        'id'
+                    )
+                    .eq(
+                        'sku',
+                        item.sku
+                    )
+                    .maybeSingle();
+
+
+            if (
+                existing
+            ) {
+
+                errors.push(
+                    `${item.sku} (já existe)`
+                );
+
+
                 continue;
             }
 
-            // Criar uma cópia dos dados extra para este item
-            const produtoDadosExtra = { ...dadosExtra };
-            produtoDadosExtra.tamanhoraio = item.tamanho;
-            
-            // Adicionar MLB codes
-            if (mlbCodes.length > 0) {
-                produtoDadosExtra.mlb_codes = mlbCodes;
-            }
-            
-            if (podeModificarSync) {
-                produtoDadosExtra.bloquear_sync_ml = bloquearSync;
-            }
 
-            const produtoData = {
-                nome: nome,
-                sku: item.sku,
-                quantidade: item.quantidade,
-                preco: preco,
-                descricao: descricao,
-                categoria: categoria,
-                dados_extra: produtoDadosExtra,
-                ultimo_custo: 0,
-                custo_medio: 0,
-                historico_custos: [],
-                bloquear_sync_ml: podeModificarSync ? bloquearSync : false
+            // =============================================
+            // CÓPIA DOS DADOS EXTRA
+            // =============================================
+
+            const produtoDadosExtra = {
+
+                ...dadosExtra
+
             };
 
-            try {
-                const { data, error } = await window.supabaseClient
-                    .from('produtos_estoque')
-                    .insert([produtoData])
-                    .select();
-                if (error) throw error;
-                created++;
-                if (item.quantidade > 0) {
-                    await registrarMovimentacao(data[0].id, 'entrada', item.quantidade, 'Criação em massa - Raios', 'nova');
-                }
-            } catch (err) {
-                errors.push(`${item.sku}: ${err.message}`);
+
+            produtoDadosExtra.tamanhoraio =
+                item.tamanho;
+
+
+            // =============================================
+            // MLB
+            // =============================================
+
+            if (
+                mlbCodes.length >
+                0
+            ) {
+
+                produtoDadosExtra.mlb_codes =
+                    mlbCodes;
+
             }
+
+
+            // =============================================
+            // SYNC
+            // =============================================
+
+            if (
+                podeModificarSync
+            ) {
+
+                produtoDadosExtra.bloquear_sync_ml =
+                    bloquearSync;
+
+            }
+
+
+            // =============================================
+            // PRODUTO
+            // =============================================
+
+            const produtoData = {
+
+                nome:
+                    nome,
+
+                sku:
+                    item.sku,
+
+                quantidade:
+                    item.quantidade,
+
+                preco:
+                    preco,
+
+                descricao:
+                    descricao,
+
+                categoria:
+                    categoria,
+
+                dados_extra:
+                    produtoDadosExtra,
+
+                ultimo_custo:
+                    0,
+
+                custo_medio:
+                    0,
+
+                historico_custos:
+                    [],
+
+                bloquear_sync_ml:
+                    podeModificarSync
+                        ? bloquearSync
+                        : false
+
+            };
+
+
+            try {
+
+                const {
+                    data,
+                    error
+                } =
+                    await window
+                        .supabaseClient
+                        .from(
+                            'produtos_estoque'
+                        )
+                        .insert([
+                            produtoData
+                        ])
+                        .select();
+
+
+                if (
+                    error
+                ) {
+                    throw error;
+                }
+
+
+                created++;
+
+
+                if (
+                    item.quantidade >
+                    0
+                ) {
+
+                    await registrarMovimentacao(
+
+                        data[0].id,
+
+                        'entrada',
+
+                        item.quantidade,
+
+                        'Criação em massa - Raios',
+
+                        'nova'
+
+                    );
+
+                }
+
+            }
+
+            catch (
+                err
+            ) {
+
+                errors.push(
+                    `${item.sku}: ${err.message}`
+                );
+
+            }
+
         }
 
-        let msg = `✅ ${created} produto(s) criado(s)!`;
-        if (errors.length) {
-            msg += ` ⚠️ Erros: ${errors.join(', ')}`;
+
+        // =================================================
+        // RESULTADO DO BULK
+        // =================================================
+
+        let msg =
+            `✅ ${created} produto(s) criado(s)!`;
+
+
+        if (
+            errors.length
+        ) {
+
+            msg +=
+                ` ⚠️ Erros: ${errors.join(', ')}`;
+
         }
-        showToast(msg, errors.length > 0 ? 'warning' : 'success');
+
+
+        showToast(
+            msg,
+            errors.length > 0
+                ? 'warning'
+                : 'success'
+        );
+
 
         fecharModalProdutoEstoque();
+
+
         await carregarProdutosEstoque();
+
+
         return;
     }
 
-    // Modo normal (single)
-    const quantidade = parseInt(document.getElementById('produtoQuantidade').value) || 0;
 
-    let ultimoCusto = 0;
-    let custoMedio = 0;
-    let historicoCustos = [];
-    let bloquearSyncExistente = false;
-    
+    // =====================================================
+    // MODO NORMAL
+    // =====================================================
+
+    const quantidade =
+        parseInt(
+            document.getElementById(
+                'produtoQuantidade'
+            ).value
+        ) || 0;
+
+
+    let ultimoCusto =
+        0;
+
+
+    let custoMedio =
+        0;
+
+
+    let historicoCustos =
+        [];
+
+
+    let bloquearSyncExistente =
+        false;
+
+
     if (id) {
-        const produtoExistente = produtosEstoque.find(p => p.id == id);
-        if (produtoExistente) {
-            ultimoCusto = produtoExistente.ultimo_custo || produtoExistente.dados_extra?.ultimo_custo || 0;
-            custoMedio = produtoExistente.custo_medio || produtoExistente.dados_extra?.custo_medio || 0;
-            historicoCustos = produtoExistente.historico_custos || [];
-            bloquearSyncExistente = produtoExistente.bloquear_sync_ml || produtoExistente.dados_extra?.bloquear_sync_ml || false;
+
+        const produtoExistente =
+            produtosEstoque.find(
+                p =>
+                    p.id == id
+            );
+
+
+        if (
+            produtoExistente
+        ) {
+
+            ultimoCusto =
+                produtoExistente.ultimo_custo ||
+                produtoExistente.dados_extra?.ultimo_custo ||
+                0;
+
+
+            custoMedio =
+                produtoExistente.custo_medio ||
+                produtoExistente.dados_extra?.custo_medio ||
+                0;
+
+
+            historicoCustos =
+                produtoExistente.historico_custos ||
+                [];
+
+
+            bloquearSyncExistente =
+                produtoExistente.bloquear_sync_ml ||
+                produtoExistente.dados_extra?.bloquear_sync_ml ||
+                false;
+
         }
+
     }
 
+
+    // =====================================================
+    // DADOS DO PRODUTO
+    // =====================================================
+
     const produtoData = {
+
         nome,
+
         sku,
+
         quantidade,
+
         preco,
+
         descricao,
+
         categoria,
-        dados_extra: dadosExtra,
-        ultimo_custo: ultimoCusto,
-        custo_medio: custoMedio,
-        historico_custos: historicoCustos,
-        bloquear_sync_ml: podeModificarSync ? bloquearSync : bloquearSyncExistente
+
+        dados_extra:
+            dadosExtra,
+
+        ultimo_custo:
+            ultimoCusto,
+
+        custo_medio:
+            custoMedio,
+
+        historico_custos:
+            historicoCustos,
+
+        bloquear_sync_ml:
+            podeModificarSync
+                ? bloquearSync
+                : bloquearSyncExistente
+
     };
 
+
+    // =====================================================
+    // SALVAR
+    // =====================================================
+
     try {
+
         let produtoSalvo;
 
-        const idValido = id && id !== 'undefined' && id !== 'null' && id.trim() !== '';
 
-        if (idValido) {
-            const { data, error } = await window.supabaseClient
-                .from('produtos_estoque')
-                .update(produtoData)
-                .eq('id', parseInt(id))
-                .select();
-            if (error) throw error;
-            produtoSalvo = data && data[0] ? data[0] : null;
-            if (produtoSalvo) {
-                showToast('Produto atualizado!', 'success');
-            } else {
-                showToast('Erro: produto não encontrado para edição.', 'error');
+        const idValido =
+            id &&
+            id !==
+                'undefined' &&
+            id !==
+                'null' &&
+            id.trim() !==
+                '';
+
+
+        // =================================================
+        // ATUALIZAR
+        // =================================================
+
+        if (
+            idValido
+        ) {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update(
+                        produtoData
+                    )
+                    .eq(
+                        'id',
+                        parseInt(id)
+                    )
+                    .select();
+
+
+            if (
+                error
+            ) {
+                throw error;
+            }
+
+
+            produtoSalvo =
+                data &&
+                data[0]
+                    ? data[0]
+                    : null;
+
+
+            if (
+                produtoSalvo
+            ) {
+
+                showToast(
+                    'Produto atualizado!',
+                    'success'
+                );
+
+            }
+
+            else {
+
+                showToast(
+                    'Erro: produto não encontrado para edição.',
+                    'error'
+                );
+
+
                 return;
             }
-        } else {
-            const { data, error } = await window.supabaseClient
-                .from('produtos_estoque')
-                .insert([produtoData])
-                .select();
-            if (error) throw error;
-            produtoSalvo = data && data[0] ? data[0] : null;
-            if (produtoSalvo) {
-                if (quantidade > 0) {
-                    await registrarMovimentacao(produtoSalvo.id, 'entrada', quantidade, 'Criação do produto', 'nova');
+
+        }
+
+
+        // =================================================
+        // CRIAR
+        // =================================================
+
+        else {
+
+            const {
+                data,
+                error
+            } =
+                await window
+                    .supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .insert([
+                        produtoData
+                    ])
+                    .select();
+
+
+            if (
+                error
+            ) {
+                throw error;
+            }
+
+
+            produtoSalvo =
+                data &&
+                data[0]
+                    ? data[0]
+                    : null;
+
+
+            if (
+                produtoSalvo
+            ) {
+
+                if (
+                    quantidade >
+                    0
+                ) {
+
+                    await registrarMovimentacao(
+
+                        produtoSalvo.id,
+
+                        'entrada',
+
+                        quantidade,
+
+                        'Criação do produto',
+
+                        'nova'
+
+                    );
+
                 }
-                showToast('Produto adicionado!', 'success');
-            } else {
-                showToast('Erro ao criar produto.', 'error');
+
+
+                showToast(
+                    'Produto adicionado!',
+                    'success'
+                );
+
+            }
+
+            else {
+
+                showToast(
+                    'Erro ao criar produto.',
+                    'error'
+                );
+
+
                 return;
             }
+
         }
 
-        if (sku && skusKit.length > 0) {
-            const result = await salvarSkusKit(sku, skusKit);
-            if (!result.success) {
-                console.error('Erro ao salvar SKUs do kit:', result.error);
-                showToast('Erro ao salvar composição do kit: ' + result.error, 'warning');
+
+        // =================================================
+        // KIT
+        // =================================================
+
+        if (
+            sku &&
+            skusKit.length >
+            0
+        ) {
+
+            const result =
+                await salvarSkusKit(
+                    sku,
+                    skusKit
+                );
+
+
+            if (
+                !result.success
+            ) {
+
+                console.error(
+                    'Erro ao salvar SKUs do kit:',
+                    result.error
+                );
+
+
+                showToast(
+                    'Erro ao salvar composição do kit: ' +
+                    result.error,
+                    'warning'
+                );
+
             }
-        } else if (sku) {
-            await excluirSkusKit(sku);
+
         }
 
-        if (!entradaEmProcessamento) {
-            fecharModalProdutoEstoque();
+        else if (
+            sku
+        ) {
+
+            await excluirSkusKit(
+                sku
+            );
+
         }
+
+
+        // =================================================
+        // FECHAR MODAL
+        // =================================================
+
+        if (
+            !entradaEmProcessamento
+        ) {
+
+            fecharModalProdutoEstoque();
+
+        }
+
+
+        // =================================================
+        // RECARREGAR PRODUTOS
+        // =================================================
 
         await carregarProdutosEstoque();
 
-        const syncBloqueado = produtoSalvo?.bloquear_sync_ml || produtoSalvo?.dados_extra?.bloquear_sync_ml || false;
-        
-        if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length && !syncBloqueado) {
-            console.log(`🔄 Sincronizando produto ${produtoSalvo.sku} com ML (sincronização ATIVA)`);
-            setTimeout(() => {
-                sincronizarEstoqueML(produtoSalvo);
-            }, 500);
-        } else if (produtoSalvo && produtoSalvo.dados_extra?.mlb_codes?.length && syncBloqueado) {
-            console.log(`🔒 Produto ${produtoSalvo.sku} com sincronização BLOQUEADA. Não será sincronizado.`);
-            if (podeModificarSync) {
-                showToast(`🔒 Sincronização com ML bloqueada para este produto`, 'info');
-            }
+
+        // =================================================
+        // REAPLICAR INDICADOR "A CAMINHO"
+        //
+        // Isso garante que após clicar no botão verde
+        // a quantidade continue aparecendo imediatamente.
+        // =================================================
+
+        if (
+            typeof aplicarIndicadoresACaminhoTabela ===
+            'function'
+        ) {
+
+            setTimeout(
+                aplicarIndicadoresACaminhoTabela,
+                50
+            );
+
         }
 
-    } catch (error) {
-        console.error('Erro ao salvar produto:', error);
-        showToast('Erro: ' + error.message, 'error');
+
+        // =================================================
+        // SINCRONIZAÇÃO ML
+        // =================================================
+
+        const syncBloqueado =
+            produtoSalvo?.bloquear_sync_ml ||
+            produtoSalvo?.dados_extra?.bloquear_sync_ml ||
+            false;
+
+
+        if (
+            produtoSalvo &&
+            produtoSalvo.dados_extra?.mlb_codes?.length &&
+            !syncBloqueado
+        ) {
+
+            console.log(
+                `🔄 Sincronizando produto ${produtoSalvo.sku} com ML (sincronização ATIVA)`
+            );
+
+
+            setTimeout(
+                () => {
+
+                    sincronizarEstoqueML(
+                        produtoSalvo
+                    );
+
+                },
+                500
+            );
+
+        }
+
+        else if (
+            produtoSalvo &&
+            produtoSalvo.dados_extra?.mlb_codes?.length &&
+            syncBloqueado
+        ) {
+
+            console.log(
+                `🔒 Produto ${produtoSalvo.sku} com sincronização BLOQUEADA. Não será sincronizado.`
+            );
+
+
+            if (
+                podeModificarSync
+            ) {
+
+                showToast(
+                    '🔒 Sincronização com ML bloqueada para este produto',
+                    'info'
+                );
+
+            }
+
+        }
+
+    }
+
+    catch (
+        error
+    ) {
+
+        console.error(
+            'Erro ao salvar produto:',
+            error
+        );
+
+
+        showToast(
+            'Erro: ' +
+            error.message,
+            'error'
+        );
+
     }
 }
 
