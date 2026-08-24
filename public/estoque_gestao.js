@@ -92,6 +92,8 @@ let regrasEstoqueAtuais = {};
 let regrasEstoqueIndividuais = {};
 let categoriasCustomizadas = {};
 let subcategoriasEstoque = {};
+let subcategoriasEstoqueCarregadas = false;
+let promessaCarregamentoSubcategorias = null;
 
 // =========================================================
 // REGRAS FIXAS DE TIPO DE ANÚNCIO DO MERCADO LIVRE
@@ -113,6 +115,102 @@ let estadoFiltrosEstoque = {
     colunaOrdem: 'id',
     direcaoOrdem: 'asc'
 };
+
+// =========================================================
+// GARANTIR QUE AS SUBCATEGORIAS ESTEJAM CARREGADAS
+//
+// Evita abrir o cadastro antes do Supabase responder.
+// Se duas partes do sistema pedirem ao mesmo tempo,
+// reutiliza a mesma Promise em vez de fazer duas consultas.
+// =========================================================
+
+async function garantirSubcategoriasEstoqueCarregadas(
+    forcarRecarregamento = false
+) {
+
+    // Já terminou de carregar nesta sessão
+    if (
+        !forcarRecarregamento &&
+        subcategoriasEstoqueCarregadas
+    ) {
+
+        return subcategoriasEstoque;
+
+    }
+
+
+    // Já existe uma consulta em andamento
+    if (
+        !forcarRecarregamento &&
+        promessaCarregamentoSubcategorias
+    ) {
+
+        return await promessaCarregamentoSubcategorias;
+
+    }
+
+
+    promessaCarregamentoSubcategorias =
+        (async () => {
+
+            try {
+
+                console.log(
+                    '📂 Garantindo carregamento das subcategorias...'
+                );
+
+
+                const resultado =
+                    await carregarSubcategoriasEstoque();
+
+
+                if (
+                    resultado &&
+                    typeof resultado === 'object'
+                ) {
+
+                    subcategoriasEstoque =
+                        resultado;
+
+                }
+
+
+                subcategoriasEstoqueCarregadas =
+                    true;
+
+
+                console.log(
+                    '✅ Subcategorias prontas para uso:',
+                    subcategoriasEstoque
+                );
+
+
+                return subcategoriasEstoque;
+
+
+            } catch (error) {
+
+                console.error(
+                    '❌ Erro ao preparar subcategorias:',
+                    error
+                );
+
+
+                throw error;
+
+
+            } finally {
+
+                promessaCarregamentoSubcategorias =
+                    null;
+
+            }
+
+        })();
+
+
+    return await promessaCarregamentoSubcategorias;
+}
 
 // =========================================================
 // FUNÇÕES PARA VERIFICAÇÃO DE DUPLICIDADE POR 5 PRIMEIROS CARACTERES
@@ -20156,7 +20254,7 @@ function removerRegraIndividual() {
 // CATEGORIAS + SUBCATEGORIAS + A CAMINHO
 // =========================================================
 
-function abrirModalProdutoEstoque(
+async function abrirModalProdutoEstoque(
     produto = null
 ) {
 
@@ -20165,6 +20263,22 @@ function abrirModalProdutoEstoque(
         produto?.sku ||
         'NOVO PRODUTO'
     );
+
+    try {
+
+    await garantirSubcategoriasEstoqueCarregadas();
+
+    } catch (error) {
+
+        console.error(
+            '⚠️ Não foi possível carregar as subcategorias antes de abrir o produto:',
+            error
+        );
+
+        // Não bloqueamos o cadastro inteiro caso exista
+        // algum problema temporário no carregamento.
+
+    }
 
 
     // =====================================================
@@ -23862,6 +23976,22 @@ function renderizarSkusKit(skus) {
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 Inicializando Gestão de Estoque com Categorias Dinâmicas...');
+
+    // =============================================
+        // SUBCATEGORIAS
+        // =============================================
+
+        garantirSubcategoriasEstoqueCarregadas()
+            .catch(
+                error => {
+
+                    console.error(
+                        '❌ Erro carregando subcategorias:',
+                        error
+                    );
+
+                }
+            );
     
     const buscaInput = document.getElementById('buscaEstoqueInput');
     if (buscaInput) {
