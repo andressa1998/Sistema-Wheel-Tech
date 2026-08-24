@@ -13,10 +13,16 @@ let fullConfirmados = new Set();
 
 // ===== VARIÁVEIS DE ORDENAÇÃO =====
 let ordemColunaEstoque = { coluna: 'id', direcao: 'asc' };
-
 let produtosSelecionadosMassa = new Set();
-
 let produtosPaginaAtualMassa = [];
+
+// =========================================================
+// PRÉ-ENTRADAS / RASTREIOS DE COMPRAS
+// =========================================================
+
+let rastreiosCompraPorProduto = new Map();
+let produtosComHistoricoRastreioCompra = new Set();
+let selecaoProdutosRastreioCompra = new Map();
 
 // ===== USUÁRIOS AUTORIZADOS A MODIFICAR SINCRONIZAÇÃO =====
 const usuariosAutorizadosSync = ['andressamiotto', 'ronald', 'bruna', 'arthur'];
@@ -25301,6 +25307,16 @@ window.fecharRelatorioImportacaoML = fecharRelatorioImportacaoML;
 window.garantirMenuAcessibilidadeEstoque = garantirMenuAcessibilidadeEstoque;
 window.toggleMenuAcessibilidadeEstoque = toggleMenuAcessibilidadeEstoque;
 window.fecharMenuAcessibilidadeEstoque = fecharMenuAcessibilidadeEstoque;
+window.abrirModalInformarRastreioCompra = abrirModalInformarRastreioCompra;
+window.fecharModalInformarRastreioCompra = fecharModalInformarRastreioCompra;
+window.renderizarProdutosCompraRastreio = renderizarProdutosCompraRastreio;
+window.alterarSelecaoProdutoCompraRastreio = alterarSelecaoProdutoCompraRastreio;
+window.alterarQuantidadeProdutoCompraRastreio = alterarQuantidadeProdutoCompraRastreio;
+window.atualizarResumoCompraRastreio = atualizarResumoCompraRastreio;
+window.salvarCompraRastreio = salvarCompraRastreio;
+window.abrirDetalhesRastreioProduto = abrirDetalhesRastreioProduto;
+window.carregarPreEntradasRastreioEstoque = carregarPreEntradasRastreioEstoque;
+window.adicionarBotaoInformarRastreioCompra = adicionarBotaoInformarRastreioCompra;
 
 function adicionarBotaoCriarCategoria() {
 
@@ -32684,6 +32700,637 @@ abrirModalRegrasEstoque = function() {
 };
 
 // =========================================================
+// PERMISSÃO - INFORMAR RASTREIO
+// SOMENTE ADMIN
+// =========================================================
+
+function podeInformarRastreioCompra() {
+
+    const username =
+        currentUser?.username
+            ?.toLowerCase() || '';
+
+
+    return (
+        usuariosAdmin.includes(
+            username
+        )
+        ||
+        currentUser?.role ===
+            'admin'
+    );
+}
+
+
+// =========================================================
+// FORMATAR DATA BR
+// =========================================================
+
+function formatarDataRastreioBR(
+    data
+) {
+
+    if (!data) {
+        return '-';
+    }
+
+
+    try {
+
+        const partes =
+            String(data)
+                .substring(
+                    0,
+                    10
+                )
+                .split('-');
+
+
+        if (
+            partes.length === 3
+        ) {
+
+            return (
+                partes[2] +
+                '/' +
+                partes[1] +
+                '/' +
+                partes[0]
+            );
+
+        }
+
+
+        return new Date(
+            data
+        ).toLocaleDateString(
+            'pt-BR'
+        );
+
+
+    } catch (error) {
+
+        return String(
+            data
+        );
+
+    }
+}
+
+
+// =========================================================
+// CALCULAR PREVISÃO
+// =========================================================
+
+function calcularPrevisaoRastreioCompra(
+    dias
+) {
+
+    const quantidadeDias =
+        Math.max(
+            1,
+            parseInt(
+                dias
+            ) || 14
+        );
+
+
+    const hoje =
+        new Date();
+
+
+    const previsao =
+        new Date(
+
+            hoje.getFullYear(),
+
+            hoje.getMonth(),
+
+            hoje.getDate() +
+                quantidadeDias,
+
+            12,
+            0,
+            0
+
+        );
+
+
+    const ano =
+        previsao
+            .getFullYear();
+
+
+    const mes =
+        String(
+            previsao.getMonth() +
+            1
+        ).padStart(
+            2,
+            '0'
+        );
+
+
+    const dia =
+        String(
+            previsao.getDate()
+        ).padStart(
+            2,
+            '0'
+        );
+
+
+    return `${ano}-${mes}-${dia}`;
+}
+
+
+// =========================================================
+// CONVERTER VALOR BRASILEIRO
+// =========================================================
+
+function converterValorCompraRastreio(
+    valor
+) {
+
+    let texto =
+        String(
+            valor ?? ''
+        )
+        .trim()
+        .replace(
+            /R\$/gi,
+            ''
+        )
+        .replace(
+            /\s/g,
+            ''
+        );
+
+
+    if (!texto) {
+        return 0;
+    }
+
+
+    if (
+        texto.includes(',') &&
+        texto.includes('.')
+    ) {
+
+        texto =
+            texto
+                .replace(
+                    /\./g,
+                    ''
+                )
+                .replace(
+                    ',',
+                    '.'
+                );
+
+    }
+
+    else if (
+        texto.includes(',')
+    ) {
+
+        texto =
+            texto.replace(
+                ',',
+                '.'
+            );
+
+    }
+
+
+    const numero =
+        Number(
+            texto
+        );
+
+
+    return Number.isFinite(
+        numero
+    )
+        ? numero
+        : 0;
+}
+
+
+// =========================================================
+// PARSE DOS DADOS DO CARD
+// =========================================================
+
+function obterMetadadosRastreioCard(
+    card
+) {
+
+    if (!card) {
+        return {};
+    }
+
+
+    const bruto =
+        card.dados_brutos;
+
+
+    if (!bruto) {
+        return {};
+    }
+
+
+    if (
+        typeof bruto ===
+        'object'
+    ) {
+
+        return bruto;
+
+    }
+
+
+    try {
+
+        return JSON.parse(
+            bruto
+        );
+
+    } catch (error) {
+
+        return {};
+
+    }
+}
+
+
+// =========================================================
+// CARREGAR PRÉ-ENTRADAS DE RASTREIO
+//
+// AQUI PASSA A SER A FONTE DO "A CAMINHO"
+// =========================================================
+
+async function carregarPreEntradasRastreioEstoque() {
+
+    if (
+        !window.supabaseClient
+    ) {
+        return;
+    }
+
+
+    try {
+
+        const {
+            data: cards,
+            error: erroCards
+        } =
+            await window.supabaseClient
+                .from(
+                    'entradas_cards'
+                )
+                .select(
+                    'id, numero_entrada, status, tipo_entrada, fornecedor, dados_brutos, criado_em'
+                )
+                .eq(
+                    'tipo_entrada',
+                    'rastreio'
+                )
+                .order(
+                    'criado_em',
+                    {
+                        ascending:
+                            false
+                    }
+                );
+
+
+        if (
+            erroCards
+        ) {
+            throw erroCards;
+        }
+
+
+        rastreiosCompraPorProduto =
+            new Map();
+
+
+        produtosComHistoricoRastreioCompra =
+            new Set();
+
+
+        if (
+            !cards ||
+            cards.length === 0
+        ) {
+
+            aplicarIndicadoresACaminhoTabela();
+
+            return;
+        }
+
+
+        const idsCards =
+            cards.map(
+                card =>
+                    card.id
+            );
+
+
+        const {
+            data: itens,
+            error: erroItens
+        } =
+            await window.supabaseClient
+                .from(
+                    'entrada_items'
+                )
+                .select(
+                    'id, entrada_id, produto_id, sku_original, sku_match, quantidade, status, rastreio, fornecedor_nome, observacao, valor_custo'
+                )
+                .in(
+                    'entrada_id',
+                    idsCards
+                );
+
+
+        if (
+            erroItens
+        ) {
+            throw erroItens;
+        }
+
+
+        const cardsMap =
+            new Map(
+                cards.map(
+                    card => [
+                        String(
+                            card.id
+                        ),
+                        card
+                    ]
+                )
+            );
+
+
+        for (
+            const item
+            of itens || []
+        ) {
+
+            let produtoId =
+                item.produto_id;
+
+
+            // Fallback por SKU
+            if (
+                !produtoId
+            ) {
+
+                const skuBusca =
+                    item.sku_match ||
+                    item.sku_original ||
+                    '';
+
+
+                const produto =
+                    produtosEstoque.find(
+                        p =>
+                            String(
+                                p.sku ||
+                                ''
+                            ).trim()
+                            ===
+                            String(
+                                skuBusca
+                            ).trim()
+                    );
+
+
+                produtoId =
+                    produto?.id;
+
+            }
+
+
+            if (
+                !produtoId
+            ) {
+                continue;
+            }
+
+
+            const idProduto =
+                String(
+                    produtoId
+                );
+
+
+            // Já teve rastreio alguma vez.
+            produtosComHistoricoRastreioCompra
+                .add(
+                    idProduto
+                );
+
+
+            const card =
+                cardsMap.get(
+                    String(
+                        item.entrada_id
+                    )
+                );
+
+
+            if (!card) {
+                continue;
+            }
+
+
+            // Só "a caminho" enquanto CARD e ITEM
+            // estiverem pendentes.
+            if (
+                card.status !==
+                    'pendente'
+                ||
+                item.status !==
+                    'pendente'
+            ) {
+
+                continue;
+
+            }
+
+
+            const metadata =
+                obterMetadadosRastreioCard(
+                    card
+                );
+
+
+            const detalhe = {
+
+                entrada_id:
+                    card.id,
+
+                numero_entrada:
+                    card.numero_entrada,
+
+                rastreio:
+                    item.rastreio ||
+                    metadata.rastreio ||
+                    '',
+
+                fornecedor:
+                    item.fornecedor_nome ||
+                    card.fornecedor ||
+                    metadata.fornecedor ||
+                    '',
+
+                quantidade:
+                    Number(
+                        item.quantidade
+                    ) || 0,
+
+                custo_unitario:
+                    Number(
+                        item.valor_custo
+                    ) || 0,
+
+                valor_total_compra:
+                    Number(
+                        metadata
+                            .valor_total_compra
+                    ) || 0,
+
+                dias_para_chegar:
+                    Number(
+                        metadata
+                            .dias_para_chegar
+                    ) || 0,
+
+                previsao_chegada:
+                    metadata
+                        .previsao_chegada ||
+                    '',
+
+                observacao:
+                    metadata
+                        .observacao ||
+                    '',
+
+                criado_em:
+                    card.criado_em
+
+            };
+
+
+            if (
+                !rastreiosCompraPorProduto
+                    .has(
+                        idProduto
+                    )
+            ) {
+
+                rastreiosCompraPorProduto
+                    .set(
+                        idProduto,
+                        []
+                    );
+
+            }
+
+
+            rastreiosCompraPorProduto
+                .get(
+                    idProduto
+                )
+                .push(
+                    detalhe
+                );
+
+        }
+
+
+        console.log(
+            `🚚 Rastreios carregados para ${rastreiosCompraPorProduto.size} produto(s).`
+        );
+
+
+        aplicarIndicadoresACaminhoTabela();
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro carregando pré-entradas de rastreio:',
+            error
+        );
+
+    }
+}
+
+
+// =========================================================
+// DETALHES PENDENTES DE UM PRODUTO
+// =========================================================
+
+function obterRastreiosPendentesProduto(
+    produto
+) {
+
+    if (!produto) {
+        return [];
+    }
+
+
+    return (
+        rastreiosCompraPorProduto.get(
+            String(
+                produto.id
+            )
+        ) ||
+        []
+    );
+}
+
+
+// =========================================================
+// PRÓXIMA PREVISÃO
+// =========================================================
+
+function obterProximaPrevisaoProduto(
+    produto
+) {
+
+    const rastreios =
+        obterRastreiosPendentesProduto(
+            produto
+        )
+        .filter(
+            item =>
+                item.previsao_chegada
+        )
+        .sort(
+            (a, b) =>
+                String(
+                    a.previsao_chegada
+                ).localeCompare(
+                    String(
+                        b.previsao_chegada
+                    )
+                )
+        );
+
+
+    return (
+        rastreios[0]
+            ?.previsao_chegada ||
+        ''
+    );
+}
+
+// =========================================================
 // EXPORTAR FUNÇÕES
 // =========================================================
 
@@ -32861,6 +33508,13 @@ function podeEditarQuantidadeACaminhoRaios() {
 
 // =========================================================
 // PEGAR QUANTIDADE A CAMINHO
+//
+// NOVO:
+// usa as pré-entradas de rastreio.
+//
+// LEGADO:
+// se o produto nunca teve rastreio,
+// continua respeitando quantidade_a_caminho antiga.
 // =========================================================
 
 function obterQuantidadeACaminho(
@@ -32872,7 +33526,52 @@ function obterQuantidadeACaminho(
     }
 
 
-    const quantidade =
+    const idProduto =
+        String(
+            produto.id
+        );
+
+
+    // =====================================================
+    // PRODUTO JÁ UTILIZA O NOVO SISTEMA
+    // =====================================================
+
+    if (
+        produtosComHistoricoRastreioCompra
+            .has(
+                idProduto
+            )
+    ) {
+
+        const rastreios =
+            rastreiosCompraPorProduto.get(
+                idProduto
+            ) ||
+            [];
+
+
+        return rastreios.reduce(
+            (
+                total,
+                item
+            ) =>
+                total +
+                (
+                    Number(
+                        item.quantidade
+                    ) || 0
+                ),
+            0
+        );
+
+    }
+
+
+    // =====================================================
+    // SISTEMA ANTIGO / LEGADO
+    // =====================================================
+
+    const quantidadeAntiga =
         parseInt(
             produto.dados_extra
                 ?.quantidade_a_caminho
@@ -32880,13 +33579,1896 @@ function obterQuantidadeACaminho(
 
 
     return Number.isFinite(
-        quantidade
+        quantidadeAntiga
     )
         ? Math.max(
             0,
-            quantidade
+            quantidadeAntiga
         )
         : 0;
+}
+
+// =========================================================
+// ADICIONAR INFORMAR RASTREIO AO MENU ACESSIBILIDADE
+// =========================================================
+
+function adicionarBotaoInformarRastreioCompra() {
+
+    // Somente ADM
+    if (
+        !podeInformarRastreioCompra()
+    ) {
+
+        document
+            .getElementById(
+                'btnInformarRastreioCompra'
+            )
+            ?.remove();
+
+
+        return;
+    }
+
+
+    const existente =
+        document.getElementById(
+            'btnInformarRastreioCompra'
+        );
+
+
+    if (existente) {
+        return;
+    }
+
+
+    if (
+        typeof garantirMenuAcessibilidadeEstoque !==
+        'function'
+    ) {
+
+        return;
+    }
+
+
+    const menu =
+        garantirMenuAcessibilidadeEstoque();
+
+
+    if (!menu) {
+
+        setTimeout(
+            adicionarBotaoInformarRastreioCompra,
+            400
+        );
+
+        return;
+    }
+
+
+    const botao =
+        document.createElement(
+            'button'
+        );
+
+
+    botao.id =
+        'btnInformarRastreioCompra';
+
+
+    botao.type =
+        'button';
+
+
+    botao.innerHTML = `
+
+        <i class="fas fa-truck"></i>
+
+        Informar rastreio
+
+    `;
+
+
+    botao.title =
+        'Cadastrar uma compra que está a caminho';
+
+
+    botao.onclick =
+        function() {
+
+            fecharMenuAcessibilidadeEstoque?.();
+
+            abrirModalInformarRastreioCompra();
+
+        };
+
+
+    if (
+        typeof estilizarItemMenuAcessibilidadeEstoque ===
+        'function'
+    ) {
+
+        estilizarItemMenuAcessibilidadeEstoque(
+            botao
+        );
+
+    }
+
+
+    // Colocar antes de Regras, se existir
+    const btnRegras =
+        menu.querySelector(
+            'button[onclick*="abrirModalRegrasEstoque"]'
+        );
+
+
+    if (btnRegras) {
+
+        menu.insertBefore(
+            botao,
+            btnRegras
+        );
+
+    } else {
+
+        menu.appendChild(
+            botao
+        );
+
+    }
+}
+
+// =========================================================
+// ABRIR MODAL INFORMAR RASTREIO
+// =========================================================
+
+async function abrirModalInformarRastreioCompra(
+    produtoIdInicial = null
+) {
+
+    if (
+        !podeInformarRastreioCompra()
+    ) {
+
+        showToast(
+            '🔒 Apenas administradores podem informar rastreios.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !produtosEstoque ||
+        produtosEstoque.length ===
+            0
+    ) {
+
+        await carregarProdutosEstoque();
+
+    }
+
+
+    selecaoProdutosRastreioCompra =
+        new Map();
+
+
+    if (
+        produtoIdInicial
+    ) {
+
+        selecaoProdutosRastreioCompra
+            .set(
+                String(
+                    produtoIdInicial
+                ),
+                1
+            );
+
+    }
+
+
+    document
+        .getElementById(
+            'modalInformarRastreioCompra'
+        )
+        ?.remove();
+
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalInformarRastreioCompra';
+
+
+    modal.style.cssText = `
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.60);
+        z-index:100080;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+    `;
+
+
+    modal.innerHTML = `
+
+        <div
+            style="
+                width:96%;
+                max-width:1150px;
+                max-height:94vh;
+                overflow-y:auto;
+                background:white;
+                border-radius:12px;
+                padding:22px;
+            "
+        >
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    border-bottom:1px solid #dee2e6;
+                    padding-bottom:12px;
+                    margin-bottom:18px;
+                "
+            >
+
+                <div>
+
+                    <h3
+                        style="
+                            margin:0;
+                            color:#00ADEE;
+                        "
+                    >
+
+                        <i class="fas fa-truck"></i>
+
+                        Informar rastreio
+
+                    </h3>
+
+                    <small class="text-muted">
+                        Cria automaticamente uma pré-entrada
+                        na aba Entradas.
+                    </small>
+
+                </div>
+
+
+                <button
+                    type="button"
+                    onclick="fecharModalInformarRastreioCompra()"
+                    style="
+                        border:none;
+                        background:transparent;
+                        font-size:26px;
+                        cursor:pointer;
+                    "
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <!-- DADOS DA COMPRA -->
+
+            <div
+                style="
+                    display:grid;
+                    grid-template-columns:
+                        repeat(
+                            2,
+                            minmax(220px,1fr)
+                        );
+                    gap:12px;
+                "
+            >
+
+                <div>
+                    <label>
+                        Rastreio *
+                    </label>
+
+                    <input
+                        id="rastreioCompraCodigo"
+                        class="form-control"
+                        placeholder="Ex: LB123456789CN"
+                    >
+                </div>
+
+
+                <div>
+                    <label>
+                        Fornecedor *
+                    </label>
+
+                    <input
+                        id="rastreioCompraFornecedor"
+                        class="form-control"
+                        placeholder="Nome do fornecedor"
+                    >
+                </div>
+
+
+                <div>
+                    <label>
+                        Valor total da compra *
+                    </label>
+
+                    <input
+                        id="rastreioCompraValorTotal"
+                        class="form-control"
+                        placeholder="Ex: 1500,00"
+                        oninput="atualizarResumoCompraRastreio()"
+                    >
+                </div>
+
+
+                <div>
+                    <label>
+                        Dias para chegar *
+                    </label>
+
+                    <input
+                        type="number"
+                        id="rastreioCompraDias"
+                        class="form-control"
+                        value="14"
+                        min="1"
+                        step="1"
+                        oninput="atualizarResumoCompraRastreio()"
+                    >
+                </div>
+
+
+                <div
+                    style="
+                        grid-column:1 / -1;
+                    "
+                >
+                    <label>
+                        Observações
+                    </label>
+
+                    <textarea
+                        id="rastreioCompraObservacao"
+                        class="form-control"
+                        rows="2"
+                        placeholder="Opcional"
+                    ></textarea>
+                </div>
+
+            </div>
+
+
+            <!-- RESUMO -->
+
+            <div
+                id="resumoCompraRastreio"
+                style="
+                    margin-top:15px;
+                    background:#eef8ff;
+                    border-left:4px solid #00ADEE;
+                    border-radius:7px;
+                    padding:12px 15px;
+                "
+            ></div>
+
+
+            <hr>
+
+
+            <!-- FILTROS -->
+
+            <div
+                style="
+                    display:flex;
+                    gap:10px;
+                    flex-wrap:wrap;
+                    margin-bottom:12px;
+                "
+            >
+
+                <select
+                    id="filtroCategoriaCompraRastreio"
+                    class="form-control"
+                    style="max-width:200px;"
+                    onchange="renderizarProdutosCompraRastreio()"
+                >
+
+                    <option value="">
+                        Raios + Parafusos
+                    </option>
+
+                    <option value="Raios">
+                        Raios
+                    </option>
+
+                    <option value="Parafusos">
+                        Parafusos
+                    </option>
+
+                </select>
+
+
+                <input
+                    id="buscaProdutoCompraRastreio"
+                    class="form-control"
+                    style="
+                        flex:1;
+                        min-width:240px;
+                    "
+                    placeholder="Buscar por nome ou SKU..."
+                    oninput="renderizarProdutosCompraRastreio()"
+                >
+
+            </div>
+
+
+            <div
+                style="
+                    font-size:12px;
+                    color:#6c757d;
+                    margin-bottom:8px;
+                "
+            >
+                Marque os produtos pertencentes a este
+                rastreio e informe a quantidade comprada
+                de cada um.
+            </div>
+
+
+            <div
+                style="
+                    border:1px solid #dee2e6;
+                    border-radius:8px;
+                    max-height:430px;
+                    overflow:auto;
+                "
+            >
+
+                <table
+                    style="
+                        width:100%;
+                        border-collapse:collapse;
+                        font-size:12px;
+                    "
+                >
+
+                    <thead
+                        style="
+                            position:sticky;
+                            top:0;
+                            background:#f8f9fa;
+                            z-index:2;
+                        "
+                    >
+                        <tr>
+
+                            <th style="padding:9px;">
+                                Selecionar
+                            </th>
+
+                            <th style="padding:9px;">
+                                Produto
+                            </th>
+
+                            <th style="padding:9px;">
+                                SKU
+                            </th>
+
+                            <th style="padding:9px;">
+                                Categoria
+                            </th>
+
+                            <th style="padding:9px;">
+                                Estoque
+                            </th>
+
+                            <th
+                                style="
+                                    padding:9px;
+                                    width:150px;
+                                "
+                            >
+                                Qtd. comprada *
+                            </th>
+
+                        </tr>
+                    </thead>
+
+
+                    <tbody
+                        id="produtosCompraRastreioBody"
+                    ></tbody>
+
+                </table>
+
+            </div>
+
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:flex-end;
+                    gap:10px;
+                    margin-top:18px;
+                    border-top:1px solid #dee2e6;
+                    padding-top:15px;
+                "
+            >
+
+                <button
+                    class="btn btn-secondary"
+                    onclick="fecharModalInformarRastreioCompra()"
+                >
+                    Cancelar
+                </button>
+
+
+                <button
+                    id="btnSalvarCompraRastreio"
+                    class="btn btn-success"
+                    onclick="salvarCompraRastreio()"
+                >
+
+                    <i class="fas fa-save"></i>
+
+                    Criar Pré-Entrada
+
+                </button>
+
+            </div>
+
+        </div>
+
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+
+
+    renderizarProdutosCompraRastreio();
+
+    atualizarResumoCompraRastreio();
+}
+
+// =========================================================
+// RENDERIZAR RAIOS / PARAFUSOS
+// =========================================================
+
+function renderizarProdutosCompraRastreio() {
+
+    const tbody =
+        document.getElementById(
+            'produtosCompraRastreioBody'
+        );
+
+
+    if (!tbody) {
+        return;
+    }
+
+
+    const categoria =
+        document.getElementById(
+            'filtroCategoriaCompraRastreio'
+        )?.value || '';
+
+
+    const busca =
+        String(
+            document.getElementById(
+                'buscaProdutoCompraRastreio'
+            )?.value || ''
+        )
+        .trim()
+        .toLowerCase();
+
+
+    const produtos =
+        produtosEstoque
+            .filter(
+                produto =>
+                    (
+                        produto.categoria ===
+                            'Raios'
+                        ||
+                        produto.categoria ===
+                            'Parafusos'
+                    )
+            )
+            .filter(
+                produto =>
+                    !categoria ||
+                    produto.categoria ===
+                        categoria
+            )
+            .filter(
+                produto => {
+
+                    if (!busca) {
+                        return true;
+                    }
+
+
+                    return (
+
+                        String(
+                            produto.nome ||
+                            ''
+                        )
+                            .toLowerCase()
+                            .includes(
+                                busca
+                            )
+
+                        ||
+
+                        String(
+                            produto.sku ||
+                            ''
+                        )
+                            .toLowerCase()
+                            .includes(
+                                busca
+                            )
+
+                    );
+
+                }
+            )
+            .sort(
+                (a, b) =>
+                    String(
+                        a.nome ||
+                        ''
+                    ).localeCompare(
+                        String(
+                            b.nome ||
+                            ''
+                        ),
+                        'pt-BR'
+                    )
+            );
+
+
+    if (
+        produtos.length ===
+        0
+    ) {
+
+        tbody.innerHTML = `
+
+            <tr>
+
+                <td
+                    colspan="6"
+                    style="
+                        padding:30px;
+                        text-align:center;
+                        color:#6c757d;
+                    "
+                >
+                    Nenhum produto encontrado.
+                </td>
+
+            </tr>
+
+        `;
+
+        return;
+    }
+
+
+    tbody.innerHTML =
+        produtos
+            .map(
+                produto => {
+
+                    const id =
+                        String(
+                            produto.id
+                        );
+
+
+                    const selecionado =
+                        selecaoProdutosRastreioCompra
+                            .has(
+                                id
+                            );
+
+
+                    const quantidade =
+                        selecaoProdutosRastreioCompra
+                            .get(
+                                id
+                            ) || 1;
+
+
+                    const subcategoria =
+                        produto.dados_extra
+                            ?.subcategoria ||
+                        '';
+
+
+                    return `
+
+                        <tr
+                            style="
+                                border-top:
+                                    1px solid #eee;
+                            "
+                        >
+
+                            <td
+                                style="
+                                    padding:8px;
+                                    text-align:center;
+                                "
+                            >
+
+                                <input
+                                    type="checkbox"
+                                    ${selecionado ? 'checked' : ''}
+                                    onchange="
+                                        alterarSelecaoProdutoCompraRastreio(
+                                            '${id}',
+                                            this.checked
+                                        )
+                                    "
+                                >
+
+                            </td>
+
+
+                            <td style="padding:8px;">
+
+                                <strong>
+                                    ${escapeHtml(
+                                        String(
+                                            produto.nome ||
+                                            ''
+                                        )
+                                    )}
+                                </strong>
+
+                                ${
+                                    subcategoria
+
+                                        ? `
+
+                                            <div
+                                                style="
+                                                    font-size:10px;
+                                                    color:#6f42c1;
+                                                "
+                                            >
+                                                ${escapeHtml(
+                                                    String(
+                                                        subcategoria
+                                                    )
+                                                )}
+                                            </div>
+
+                                        `
+
+                                        : ''
+                                }
+
+                            </td>
+
+
+                            <td style="padding:8px;">
+
+                                <code>
+                                    ${escapeHtml(
+                                        String(
+                                            produto.sku ||
+                                            ''
+                                        )
+                                    )}
+                                </code>
+
+                            </td>
+
+
+                            <td style="padding:8px;">
+
+                                ${escapeHtml(
+                                    String(
+                                        produto.categoria ||
+                                        ''
+                                    )
+                                )}
+
+                            </td>
+
+
+                            <td style="padding:8px;">
+
+                                ${Number(
+                                    produto.quantidade
+                                ) || 0}
+
+                            </td>
+
+
+                            <td style="padding:8px;">
+
+                                <input
+                                    type="number"
+                                    class="form-control form-control-sm"
+                                    min="1"
+                                    step="1"
+                                    value="${quantidade}"
+                                    ${selecionado ? '' : 'disabled'}
+                                    onchange="
+                                        alterarQuantidadeProdutoCompraRastreio(
+                                            '${id}',
+                                            this.value
+                                        )
+                                    "
+                                >
+
+                            </td>
+
+                        </tr>
+
+                    `;
+
+                }
+            )
+            .join('');
+}
+
+
+// =========================================================
+
+function alterarSelecaoProdutoCompraRastreio(
+    produtoId,
+    selecionado
+) {
+
+    produtoId =
+        String(
+            produtoId
+        );
+
+
+    if (
+        selecionado
+    ) {
+
+        if (
+            !selecaoProdutosRastreioCompra
+                .has(
+                    produtoId
+                )
+        ) {
+
+            selecaoProdutosRastreioCompra
+                .set(
+                    produtoId,
+                    1
+                );
+
+        }
+
+    } else {
+
+        selecaoProdutosRastreioCompra
+            .delete(
+                produtoId
+            );
+
+    }
+
+
+    renderizarProdutosCompraRastreio();
+
+    atualizarResumoCompraRastreio();
+}
+
+
+// =========================================================
+
+function alterarQuantidadeProdutoCompraRastreio(
+    produtoId,
+    quantidade
+) {
+
+    produtoId =
+        String(
+            produtoId
+        );
+
+
+    if (
+        !selecaoProdutosRastreioCompra
+            .has(
+                produtoId
+            )
+    ) {
+
+        return;
+    }
+
+
+    const qtd =
+        Math.max(
+            1,
+            parseInt(
+                quantidade
+            ) || 1
+        );
+
+
+    selecaoProdutosRastreioCompra
+        .set(
+            produtoId,
+            qtd
+        );
+
+
+    atualizarResumoCompraRastreio();
+}
+
+
+// =========================================================
+// RESUMO
+// =========================================================
+
+function atualizarResumoCompraRastreio() {
+
+    const container =
+        document.getElementById(
+            'resumoCompraRastreio'
+        );
+
+
+    if (!container) {
+        return;
+    }
+
+
+    let totalUnidades =
+        0;
+
+
+    for (
+        const quantidade
+        of selecaoProdutosRastreioCompra
+            .values()
+    ) {
+
+        totalUnidades +=
+            Number(
+                quantidade
+            ) || 0;
+
+    }
+
+
+    const valorCompra =
+        converterValorCompraRastreio(
+            document.getElementById(
+                'rastreioCompraValorTotal'
+            )?.value
+        );
+
+
+    const dias =
+        parseInt(
+            document.getElementById(
+                'rastreioCompraDias'
+            )?.value
+        ) || 14;
+
+
+    const previsao =
+        calcularPrevisaoRastreioCompra(
+            dias
+        );
+
+
+    const custoUnitario =
+        totalUnidades > 0
+            ? valorCompra /
+                totalUnidades
+            : 0;
+
+
+    container.innerHTML = `
+
+        <div
+            style="
+                display:grid;
+                grid-template-columns:
+                    repeat(
+                        4,
+                        minmax(120px,1fr)
+                    );
+                gap:10px;
+                text-align:center;
+            "
+        >
+
+            <div>
+                <small>
+                    PRODUTOS
+                </small>
+
+                <div
+                    style="
+                        font-size:20px;
+                        font-weight:700;
+                    "
+                >
+                    ${selecaoProdutosRastreioCompra.size}
+                </div>
+            </div>
+
+
+            <div>
+                <small>
+                    UNIDADES
+                </small>
+
+                <div
+                    style="
+                        font-size:20px;
+                        font-weight:700;
+                    "
+                >
+                    ${totalUnidades}
+                </div>
+            </div>
+
+
+            <div>
+                <small>
+                    CUSTO UNITÁRIO
+                </small>
+
+                <div
+                    style="
+                        font-size:20px;
+                        font-weight:700;
+                        color:#28a745;
+                    "
+                >
+                    R$
+                    ${custoUnitario
+                        .toFixed(
+                            4
+                        )
+                        .replace(
+                            '.',
+                            ','
+                        )}
+                </div>
+            </div>
+
+
+            <div>
+                <small>
+                    PREVISÃO
+                </small>
+
+                <div
+                    style="
+                        font-size:18px;
+                        font-weight:700;
+                        color:#007bff;
+                    "
+                >
+                    ${formatarDataRastreioBR(
+                        previsao
+                    )}
+                </div>
+            </div>
+
+        </div>
+
+    `;
+}
+
+async function gerarNumeroEntradaRastreioCompra() {
+
+    const hoje =
+        new Date();
+
+
+    const ano =
+        hoje.getFullYear();
+
+
+    const mes =
+        String(
+            hoje.getMonth() +
+            1
+        ).padStart(
+            2,
+            '0'
+        );
+
+
+    const dia =
+        String(
+            hoje.getDate()
+        ).padStart(
+            2,
+            '0'
+        );
+
+
+    const prefixo =
+        `${ano}${mes}${dia}`;
+
+
+    const {
+        data,
+        error
+    } =
+        await window.supabaseClient
+            .from(
+                'entradas_cards'
+            )
+            .select(
+                'numero_entrada'
+            )
+            .ilike(
+                'numero_entrada',
+                `ENT-${prefixo}-%`
+            )
+            .order(
+                'numero_entrada',
+                {
+                    ascending:
+                        false
+                }
+            )
+            .limit(
+                1
+            );
+
+
+    if (error) {
+        throw error;
+    }
+
+
+    let sequencial =
+        1;
+
+
+    if (
+        data &&
+        data.length >
+            0
+    ) {
+
+        const ultimo =
+            data[0]
+                .numero_entrada;
+
+
+        const match =
+            ultimo.match(
+                /\d{4}$/
+            );
+
+
+        if (match) {
+
+            sequencial =
+                parseInt(
+                    match[0]
+                ) + 1;
+
+        }
+
+    }
+
+
+    return (
+        `ENT-${prefixo}-` +
+        String(
+            sequencial
+        ).padStart(
+            4,
+            '0'
+        )
+    );
+}
+
+async function salvarCompraRastreio() {
+
+    if (
+        !podeInformarRastreioCompra()
+    ) {
+
+        showToast(
+            '🔒 Apenas administradores podem realizar esta operação.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    const rastreio =
+        String(
+            document.getElementById(
+                'rastreioCompraCodigo'
+            )?.value || ''
+        ).trim();
+
+
+    const fornecedor =
+        String(
+            document.getElementById(
+                'rastreioCompraFornecedor'
+            )?.value || ''
+        ).trim();
+
+
+    const valorTotal =
+        converterValorCompraRastreio(
+            document.getElementById(
+                'rastreioCompraValorTotal'
+            )?.value
+        );
+
+
+    const dias =
+        parseInt(
+            document.getElementById(
+                'rastreioCompraDias'
+            )?.value
+        );
+
+
+    const observacao =
+        String(
+            document.getElementById(
+                'rastreioCompraObservacao'
+            )?.value || ''
+        ).trim();
+
+
+    // =====================================================
+    // OBRIGATÓRIOS
+    // =====================================================
+
+    if (!rastreio) {
+
+        showToast(
+            '⚠️ Rastreio é obrigatório.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (!fornecedor) {
+
+        showToast(
+            '⚠️ Fornecedor é obrigatório.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !Number.isFinite(
+            valorTotal
+        )
+        ||
+        valorTotal <=
+            0
+    ) {
+
+        showToast(
+            '⚠️ Valor total da compra é obrigatório.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        !Number.isFinite(
+            dias
+        )
+        ||
+        dias <=
+            0
+    ) {
+
+        showToast(
+            '⚠️ Informe a quantidade de dias para chegar.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        selecaoProdutosRastreioCompra
+            .size ===
+        0
+    ) {
+
+        showToast(
+            '⚠️ Selecione pelo menos um Raio ou Parafuso.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // PRODUTOS / QUANTIDADES
+    // =====================================================
+
+    const itens =
+        [];
+
+
+    let quantidadeTotal =
+        0;
+
+
+    for (
+        const [
+            produtoId,
+            quantidade
+        ]
+        of selecaoProdutosRastreioCompra
+            .entries()
+    ) {
+
+        const produto =
+            produtosEstoque.find(
+                p =>
+                    String(
+                        p.id
+                    ) ===
+                    String(
+                        produtoId
+                    )
+            );
+
+
+        if (!produto) {
+
+            showToast(
+                `❌ Produto ID ${produtoId} não encontrado.`,
+                'error'
+            );
+
+            return;
+        }
+
+
+        if (
+            produto.categoria !==
+                'Raios'
+            &&
+            produto.categoria !==
+                'Parafusos'
+        ) {
+
+            showToast(
+                `❌ ${produto.sku} não pertence a Raios ou Parafusos.`,
+                'error'
+            );
+
+            return;
+        }
+
+
+        const qtd =
+            parseInt(
+                quantidade
+            );
+
+
+        if (
+            !Number.isFinite(
+                qtd
+            )
+            ||
+            qtd <=
+                0
+        ) {
+
+            showToast(
+                `⚠️ Quantidade inválida para ${produto.sku}.`,
+                'warning'
+            );
+
+            return;
+        }
+
+
+        quantidadeTotal +=
+            qtd;
+
+
+        itens.push({
+            produto,
+            quantidade:
+                qtd
+        });
+
+    }
+
+
+    // =====================================================
+    // CUSTO UNITÁRIO
+    // =====================================================
+
+    const custoUnitario =
+        valorTotal /
+        quantidadeTotal;
+
+
+    const previsao =
+        calcularPrevisaoRastreioCompra(
+            dias
+        );
+
+
+    // =====================================================
+    // NÃO DUPLICAR RASTREIO
+    // =====================================================
+
+    const {
+        data: rastreioExistente,
+        error: erroDuplicidade
+    } =
+        await window.supabaseClient
+            .from(
+                'entrada_items'
+            )
+            .select(
+                'id, entrada_id'
+            )
+            .eq(
+                'rastreio',
+                rastreio
+            )
+            .limit(
+                1
+            );
+
+
+    if (
+        erroDuplicidade
+    ) {
+        throw erroDuplicidade;
+    }
+
+
+    if (
+        rastreioExistente &&
+        rastreioExistente.length >
+            0
+    ) {
+
+        showToast(
+            `❌ O rastreio "${rastreio}" já está cadastrado em uma entrada.`,
+            'error'
+        );
+
+        return;
+    }
+
+
+    if (
+        !confirm(
+
+            `Criar pré-entrada?\n\n` +
+
+            `Rastreio: ${rastreio}\n` +
+
+            `Fornecedor: ${fornecedor}\n` +
+
+            `Produtos: ${itens.length}\n` +
+
+            `Unidades: ${quantidadeTotal}\n` +
+
+            `Valor total: R$ ${valorTotal.toFixed(2)}\n` +
+
+            `Custo unitário: R$ ${custoUnitario.toFixed(4)}\n` +
+
+            `Previsão: ${formatarDataRastreioBR(previsao)}`
+
+        )
+    ) {
+
+        return;
+    }
+
+
+    const botao =
+        document.getElementById(
+            'btnSalvarCompraRastreio'
+        );
+
+
+    if (botao) {
+
+        botao.disabled =
+            true;
+
+
+        botao.innerHTML = `
+
+            <i class="fas fa-spinner fa-spin"></i>
+
+            Criando...
+
+        `;
+
+    }
+
+
+    let cardCriado =
+        null;
+
+
+    try {
+
+        // =================================================
+        // NUMERO DA ENTRADA
+        // =================================================
+
+        const numeroEntrada =
+            await gerarNumeroEntradaRastreioCompra();
+
+
+        // =================================================
+        // METADADOS
+        //
+        // Sem precisar criar coluna nova no banco.
+        // =================================================
+
+        const metadata = {
+
+            origem:
+                'pre_entrada_rastreio',
+
+            rastreio,
+
+            fornecedor,
+
+            valor_total_compra:
+                valorTotal,
+
+            quantidade_total:
+                quantidadeTotal,
+
+            custo_unitario:
+                custoUnitario,
+
+            dias_para_chegar:
+                dias,
+
+            previsao_chegada:
+                previsao,
+
+            observacao,
+
+            criado_por:
+                currentUser?.name ||
+                currentUser?.username ||
+                'admin',
+
+            criado_em:
+                new Date()
+                    .toISOString()
+
+        };
+
+
+        // =================================================
+        // CARD DA ENTRADA
+        // =================================================
+
+        const {
+            data: cards,
+            error: erroCard
+        } =
+            await window.supabaseClient
+                .from(
+                    'entradas_cards'
+                )
+                .insert([
+                    {
+
+                        numero_entrada:
+                            numeroEntrada,
+
+                        dados_brutos:
+                            JSON.stringify(
+                                metadata
+                            ),
+
+                        status:
+                            'pendente',
+
+                        criado_por:
+                            currentUser?.name ||
+                            currentUser?.username ||
+                            'Admin',
+
+                        criado_em:
+                            new Date()
+                                .toISOString(),
+
+                        total_items:
+                            itens.length,
+
+                        items_concluidos:
+                            0,
+
+                        tipo_entrada:
+                            'rastreio',
+
+                        fornecedor:
+                            fornecedor
+
+                    }
+                ])
+                .select();
+
+
+        if (
+            erroCard
+        ) {
+            throw erroCard;
+        }
+
+
+        cardCriado =
+            cards?.[0];
+
+
+        if (!cardCriado) {
+
+            throw new Error(
+                'A entrada não foi retornada pelo Supabase.'
+            );
+
+        }
+
+
+        // =================================================
+        // ITENS
+        // =================================================
+
+        const observacaoItem =
+            [
+
+                `Previsão: ${formatarDataRastreioBR(
+                    previsao
+                )}`,
+
+                observacao
+
+            ]
+            .filter(
+                Boolean
+            )
+            .join(
+                ' | '
+            );
+
+
+        const itensParaInserir =
+            itens.map(
+                item => ({
+
+                    entrada_id:
+                        cardCriado.id,
+
+                    cd_fornecedor:
+                        '',
+
+                    rastreio:
+                        rastreio,
+
+                    fornecedor_nome:
+                        fornecedor,
+
+                    quantidade:
+                        item.quantidade,
+
+                    produto:
+                        item.produto.nome ||
+                        '',
+
+                    sku_original:
+                        item.produto.sku ||
+                        '',
+
+                    sku_match:
+                        item.produto.sku ||
+                        '',
+
+                    produto_id:
+                        item.produto.id,
+
+                    observacao:
+                        observacaoItem,
+
+                    valor_custo:
+                        custoUnitario,
+
+                    status:
+                        'pendente',
+
+                    acao:
+                        null,
+
+                    responsavel:
+                        null,
+
+                    quantidade_entrada:
+                        0,
+
+                    data_acao:
+                        null,
+
+                    tipo_entrada:
+                        'rastreio'
+
+                })
+            );
+
+
+        const {
+            error: erroItens
+        } =
+            await window.supabaseClient
+                .from(
+                    'entrada_items'
+                )
+                .insert(
+                    itensParaInserir
+                );
+
+
+        if (
+            erroItens
+        ) {
+            throw erroItens;
+        }
+
+
+        // =================================================
+        // RECARREGAR
+        // =================================================
+
+        await carregarPreEntradasRastreioEstoque();
+
+
+        // Atualiza aba Entradas também
+        if (
+            typeof window.carregarEntradas ===
+            'function'
+        ) {
+
+            await window.carregarEntradas();
+
+        }
+
+
+        fecharModalInformarRastreioCompra();
+
+
+        showToast(
+            `✅ Pré-entrada ${numeroEntrada} criada! ${quantidadeTotal} unidade(s) a caminho.`,
+            'success'
+        );
+
+
+    } catch (error) {
+
+        console.error(
+            '❌ Erro criando pré-entrada de rastreio:',
+            error
+        );
+
+
+        // Se o card foi criado e os itens falharam,
+        // não deixar card vazio.
+        if (
+            cardCriado?.id
+        ) {
+
+            try {
+
+                await window.supabaseClient
+                    .from(
+                        'entradas_cards'
+                    )
+                    .delete()
+                    .eq(
+                        'id',
+                        cardCriado.id
+                    );
+
+            } catch (rollbackError) {
+
+                console.error(
+                    '❌ Erro no rollback do card:',
+                    rollbackError
+                );
+
+            }
+
+        }
+
+
+        showToast(
+            `❌ Não foi possível criar a pré-entrada: ${error.message}`,
+            'error'
+        );
+
+
+        if (botao) {
+
+            botao.disabled =
+                false;
+
+
+            botao.innerHTML = `
+
+                <i class="fas fa-save"></i>
+
+                Criar Pré-Entrada
+
+            `;
+
+        }
+
+    }
+}
+
+function fecharModalInformarRastreioCompra() {
+
+    document
+        .getElementById(
+            'modalInformarRastreioCompra'
+        )
+        ?.remove();
+
+
+    selecaoProdutosRastreioCompra =
+        new Map();
 }
 
 
@@ -33748,15 +36330,416 @@ async function salvarQuantidadeACaminhoRaio(
     }
 }
 
+function abrirDetalhesRastreioProduto(
+    produtoId
+) {
+
+    const produto =
+        produtosEstoque.find(
+            p =>
+                String(
+                    p.id
+                ) ===
+                String(
+                    produtoId
+                )
+        );
+
+
+    if (!produto) {
+        return;
+    }
+
+
+    const rastreios =
+        obterRastreiosPendentesProduto(
+            produto
+        );
+
+
+    const total =
+        obterQuantidadeACaminho(
+            produto
+        );
+
+
+    const podeVerValores =
+        podeInformarRastreioCompra();
+
+
+    document
+        .getElementById(
+            'modalDetalhesRastreioProduto'
+        )
+        ?.remove();
+
+
+    const modal =
+        document.createElement(
+            'div'
+        );
+
+
+    modal.id =
+        'modalDetalhesRastreioProduto';
+
+
+    modal.style.cssText = `
+        position:fixed;
+        inset:0;
+        background:rgba(0,0,0,.55);
+        z-index:100090;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+    `;
+
+
+    const detalhes =
+        rastreios.length > 0
+
+            ? rastreios
+                .map(
+                    item => `
+
+                        <div
+                            style="
+                                border:1px solid #b8daff;
+                                border-left:4px solid #007bff;
+                                border-radius:7px;
+                                padding:12px;
+                                margin-bottom:9px;
+                            "
+                        >
+
+                            <div
+                                style="
+                                    display:flex;
+                                    justify-content:space-between;
+                                    gap:10px;
+                                "
+                            >
+
+                                <strong>
+                                    🚚 ${escapeHtml(
+                                        String(
+                                            item.rastreio ||
+                                            'Sem rastreio'
+                                        )
+                                    )}
+                                </strong>
+
+
+                                <strong
+                                    style="
+                                        color:#007bff;
+                                    "
+                                >
+                                    +${item.quantidade}
+                                </strong>
+
+                            </div>
+
+
+                            <div
+                                style="
+                                    margin-top:5px;
+                                    font-size:12px;
+                                    color:#495057;
+                                "
+                            >
+
+                                Previsão:
+
+                                <strong>
+                                    ${formatarDataRastreioBR(
+                                        item.previsao_chegada
+                                    )}
+                                </strong>
+
+                            </div>
+
+
+                            ${
+                                podeVerValores
+
+                                    ? `
+
+                                        <div
+                                            style="
+                                                margin-top:4px;
+                                                font-size:11px;
+                                                color:#6c757d;
+                                            "
+                                        >
+                                            Fornecedor:
+                                            ${escapeHtml(
+                                                String(
+                                                    item.fornecedor ||
+                                                    '-'
+                                                )
+                                            )}
+                                            •
+                                            Custo unit.:
+                                            R$
+                                            ${Number(
+                                                item.custo_unitario
+                                            ).toFixed(4)}
+                                        </div>
+
+                                    `
+
+                                    : ''
+                            }
+
+
+                            ${
+                                item.observacao
+
+                                    ? `
+
+                                        <div
+                                            style="
+                                                margin-top:5px;
+                                                font-size:11px;
+                                                color:#6c757d;
+                                            "
+                                        >
+                                            ${escapeHtml(
+                                                String(
+                                                    item.observacao
+                                                )
+                                            )}
+                                        </div>
+
+                                    `
+
+                                    : ''
+                            }
+
+                        </div>
+
+                    `
+                )
+                .join('')
+
+            : `
+
+                <div
+                    style="
+                        padding:15px;
+                        text-align:center;
+                        color:#6c757d;
+                    "
+                >
+
+                    Existe uma quantidade antiga marcada
+                    como "a caminho", mas ainda sem rastreio
+                    vinculado.
+
+                </div>
+
+            `;
+
+
+    modal.innerHTML = `
+
+        <div
+            style="
+                width:92%;
+                max-width:650px;
+                max-height:85vh;
+                overflow:auto;
+                background:white;
+                border-radius:12px;
+                padding:20px;
+            "
+        >
+
+            <div
+                style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    margin-bottom:15px;
+                "
+            >
+
+                <div>
+
+                    <h3 style="margin:0;">
+                        ${escapeHtml(
+                            String(
+                                produto.nome ||
+                                ''
+                            )
+                        )}
+                    </h3>
+
+                    <small>
+                        ${escapeHtml(
+                            String(
+                                produto.sku ||
+                                ''
+                            )
+                        )}
+                    </small>
+
+                </div>
+
+
+                <button
+                    onclick="
+                        document
+                            .getElementById(
+                                'modalDetalhesRastreioProduto'
+                            )
+                            ?.remove()
+                    "
+                    style="
+                        border:none;
+                        background:transparent;
+                        font-size:25px;
+                    "
+                >
+                    &times;
+                </button>
+
+            </div>
+
+
+            <div
+                style="
+                    display:grid;
+                    grid-template-columns:
+                        1fr 1fr 1fr;
+                    gap:8px;
+                    margin-bottom:15px;
+                "
+            >
+
+                <div
+                    style="
+                        background:#f8f9fa;
+                        padding:10px;
+                        text-align:center;
+                        border-radius:6px;
+                    "
+                >
+                    <small>ESTOQUE</small>
+                    <div
+                        style="
+                            font-size:20px;
+                            font-weight:bold;
+                        "
+                    >
+                        ${Number(
+                            produto.quantidade
+                        ) || 0}
+                    </div>
+                </div>
+
+
+                <div
+                    style="
+                        background:#eef8ff;
+                        padding:10px;
+                        text-align:center;
+                        border-radius:6px;
+                    "
+                >
+                    <small>A CAMINHO</small>
+                    <div
+                        style="
+                            font-size:20px;
+                            font-weight:bold;
+                            color:#007bff;
+                        "
+                    >
+                        ${total}
+                    </div>
+                </div>
+
+
+                <div
+                    style="
+                        background:#f4efff;
+                        padding:10px;
+                        text-align:center;
+                        border-radius:6px;
+                    "
+                >
+                    <small>DEPOIS</small>
+                    <div
+                        style="
+                            font-size:20px;
+                            font-weight:bold;
+                            color:#6f42c1;
+                        "
+                    >
+                        ${
+                            (
+                                Number(
+                                    produto.quantidade
+                                ) || 0
+                            ) +
+                            total
+                        }
+                    </div>
+                </div>
+
+            </div>
+
+
+            ${detalhes}
+
+
+            ${
+                podeInformarRastreioCompra()
+
+                    ? `
+
+                        <button
+                            class="btn btn-primary"
+                            onclick="
+                                document
+                                    .getElementById(
+                                        'modalDetalhesRastreioProduto'
+                                    )
+                                    ?.remove();
+
+                                abrirModalInformarRastreioCompra(
+                                    '${produto.id}'
+                                );
+                            "
+                        >
+
+                            <i class="fas fa-plus"></i>
+
+                            Informar novo rastreio
+
+                        </button>
+
+                    `
+
+                    : ''
+            }
+
+        </div>
+
+    `;
+
+
+    document.body.appendChild(
+        modal
+    );
+}
+
 
 // =========================================================
-// INDICADOR NA TABELA
+// INDICADOR DE PRÉ-ENTRADA NA TABELA
 //
-// ESTOQUE: 0
-// 🚚 +100 a caminho
-//
-// Funciona tanto na tabela antiga quanto depois da
-// implementação dos checkboxes de edição em massa.
+// RAIOS + PARAFUSOS
 // =========================================================
 
 function aplicarIndicadoresACaminhoTabela() {
@@ -33780,14 +36763,17 @@ function aplicarIndicadoresACaminhoTabela() {
     }
 
 
-    // Remove indicadores anteriores
+    // =====================================================
+    // REMOVER ANTERIORES
+    // =====================================================
+
     tbody
         .querySelectorAll(
             '.indicador-a-caminho-raios'
         )
         .forEach(
-            el =>
-                el.remove()
+            elemento =>
+                elemento.remove()
         );
 
 
@@ -33799,10 +36785,6 @@ function aplicarIndicadoresACaminhoTabela() {
 
     linhas.forEach(
         linha => {
-
-            // =============================================
-            // SKU exibido na tabela
-            // =============================================
 
             const code =
                 linha.querySelector(
@@ -33824,46 +36806,55 @@ function aplicarIndicadoresACaminhoTabela() {
 
             const produto =
                 produtosEstoque.find(
-                    produto =>
+                    p =>
                         String(
-                            produto.sku ||
+                            p.sku ||
                             ''
                         ).trim() ===
                         sku
                 );
 
 
+            if (!produto) {
+                return;
+            }
+
+
+            // =================================================
+            // RAIOS + PARAFUSOS
+            // =================================================
+
             if (
-                !produto ||
                 produto.categoria !==
-                'Raios'
+                    'Raios'
+                &&
+                produto.categoria !==
+                    'Parafusos'
             ) {
 
                 return;
             }
 
 
-            const quantidadeACaminho =
+            const quantidade =
                 obterQuantidadeACaminho(
                     produto
                 );
 
 
             if (
-                quantidadeACaminho <=
+                quantidade <=
                 0
             ) {
-
                 return;
             }
 
 
-            // =============================================
-            // A CÉLULA DE QUANTIDADE É A PRÓXIMA DA CÉLULA SKU
-            //
-            // Isso continua funcionando mesmo se houver
-            // checkbox antes do ID.
-            // =============================================
+            const previsao =
+                obterProximaPrevisaoProduto(
+                    produto
+                );
+
 
             const tdSku =
                 code.closest(
@@ -33876,9 +36867,7 @@ function aplicarIndicadoresACaminhoTabela() {
                     ?.nextElementSibling;
 
 
-            if (
-                !tdQuantidade
-            ) {
+            if (!tdQuantidade) {
                 return;
             }
 
@@ -33895,35 +36884,50 @@ function aplicarIndicadoresACaminhoTabela() {
 
             badge.style.cssText = `
                 margin-top:4px;
-                display:inline-flex;
+                width:max-content;
+                display:flex;
                 align-items:center;
-                gap:4px;
+                gap:5px;
                 background:#e7f3ff;
                 color:#0056b3;
                 border:1px solid #b8daff;
                 border-radius:12px;
-                padding:2px 7px;
+                padding:3px 8px;
                 font-size:10px;
                 font-weight:600;
                 white-space:nowrap;
+                cursor:pointer;
             `;
+
+
+            badge.title =
+                'Clique para ver os rastreios';
 
 
             badge.innerHTML = `
 
                 <i class="fas fa-truck"></i>
 
-                +${quantidadeACaminho}
+                +${quantidade}
                 a caminho
+
+                ${
+                    previsao
+                        ? `• ${formatarDataRastreioBR(previsao)}`
+                        : ''
+                }
 
             `;
 
 
-            tdQuantidade.appendChild(
-                document.createElement(
-                    'br'
-                )
-            );
+            badge.onclick =
+                function() {
+
+                    abrirDetalhesRastreioProduto(
+                        produto.id
+                    );
+
+                };
 
 
             tdQuantidade.appendChild(
@@ -33932,6 +36936,53 @@ function aplicarIndicadoresACaminhoTabela() {
 
         }
     );
+}
+
+// =========================================================
+// INTEGRAR RASTREIOS NA ABERTURA DA GESTÃO
+// =========================================================
+
+if (
+    !window
+        .__integracaoRastreioCompraAtiva
+) {
+
+    window
+        .__integracaoRastreioCompraAtiva =
+        true;
+
+
+    const abrirGestaoAntesRastreio =
+        window.abrirGestaoEstoque;
+
+
+    window.abrirGestaoEstoque =
+        function(...args) {
+
+            const retorno =
+                abrirGestaoAntesRastreio
+                    ?.apply(
+                        this,
+                        args
+                    );
+
+
+            setTimeout(
+                async () => {
+
+                    adicionarBotaoInformarRastreioCompra();
+
+
+                    await carregarPreEntradasRastreioEstoque();
+
+                },
+                500
+            );
+
+
+            return retorno;
+        };
+
 }
 
 console.log('📦 Gestão de Estoque carregada com sucesso! (Versão completa com categorias customizadas)');
