@@ -6658,28 +6658,12 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(
 
 
                 return `
-
                     <div
                         style="
                             margin-bottom:5px;
-                            min-width:105px;
+                            min-width:70px;
                         "
                     >
-
-                        <div
-                            style="
-                                font-size:9px;
-                                color:#6c757d;
-                                white-space:nowrap;
-                            "
-                        >
-                            ${escaparHTMLNFE(
-                                item.sku ||
-                                item.item_id ||
-                                'Produto'
-                            )}
-                        </div>
-
 
                         ${
                             possuiQuantidade
@@ -14120,12 +14104,7 @@ window.preencherSelectTransportadoraAvulsaNFE = preencherSelectTransportadoraAvu
 window.prepararEmissaoAvulsaNFE = prepararEmissaoAvulsaNFE;
 window.limparFormAvulsa = limparFormAvulsa;
 
-// =========================================================
-// HANDLERS PARA OS BOTÕES DA TABELA
-// =========================================================
-
-// Handler para emitir NF-e
-function handleEmitirNFEClick(
+async function handleEmitirNFEClick(
     event
 ) {
 
@@ -14137,7 +14116,9 @@ function handleEmitirNFEClick(
         );
 
 
-    if (!vendaId) {
+    if (
+        !vendaId
+    ) {
 
         showToast(
             '❌ ID da venda não encontrado',
@@ -14147,12 +14128,6 @@ function handleEmitirNFEClick(
         return;
     }
 
-
-    // =====================================================
-    // LOCALIZAR VENDA QUE ESTÁ NA TELA
-    //
-    // vendasPendentes já está agrupado.
-    // =====================================================
 
     const venda =
         vendasPendentes.find(
@@ -14164,21 +14139,42 @@ function handleEmitirNFEClick(
                 vendaId
         );
 
-    window._nfeVendaAtual =
-        venda ||
-        null;
+
+    // =====================================================
+    // BLOQUEIO LOCAL
+    // =====================================================
+
+    if (
+        vendaEstaCanceladaNFE(
+            venda
+        )
+    ) {
+
+        showToast(
+            '🚫 Esta venda foi cancelada. Não é possível emitir NF-e.',
+            'warning'
+        );
+
+        return;
+    }
+
 
     const orderIds =
         venda?._eh_pack
-            ? venda._order_ids_pack
+
+            ? (
+                venda._order_ids_pack ||
+                []
+            )
+
             : [
                 vendaId
             ];
 
-    window._nfeOrderIdsAtuais =
+
+    const ids =
         [
             ...new Set(
-
                 orderIds
                     .map(
                         normalizarOrderIdML
@@ -14187,18 +14183,134 @@ function handleEmitirNFEClick(
             )
         ];
 
+
+    // =====================================================
+    // BLOQUEIO PELO BANCO
+    //
+    // Protege contra tela desatualizada.
+    // =====================================================
+
+    try {
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .select(`
+                    id_venda_ml,
+                    venda_cancelada,
+                    ml_status
+                `)
+                .in(
+                    'id_venda_ml',
+                    ids
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+        }
+
+
+        const cancelada =
+            (
+                data ||
+                []
+            ).find(
+                registro => {
+
+                    const status =
+                        String(
+                            registro.ml_status ||
+                            ''
+                        )
+                            .trim()
+                            .toLowerCase();
+
+
+                    return (
+                        registro.venda_cancelada ===
+                            true ||
+                        status ===
+                            'cancelled' ||
+                        status ===
+                            'canceled'
+                    );
+                }
+            );
+
+
+        if (
+            cancelada
+        ) {
+
+            showToast(
+                `🚫 Venda ${cancelada.id_venda_ml} está cancelada. Emissão bloqueada.`,
+                'warning'
+            );
+
+            return;
+        }
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro validando cancelamento antes da emissão:',
+            error
+        );
+
+
+        showToast(
+            '❌ Não foi possível validar o status da venda. A emissão foi bloqueada por segurança.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    window._nfeVendaAtual =
+        venda ||
+        null;
+
+
+    window._nfeOrderIdsAtuais =
+        ids.length >
+            0
+
+            ? ids
+
+            : [
+                vendaId
+            ];
+
+
     console.log(
         '🧾 NF-e selecionada:',
         {
             principal:
                 vendaId,
+
             pack:
                 Boolean(
                     venda?._eh_pack
                 ),
+
             orders:
                 window
                     ._nfeOrderIdsAtuais,
+
             produtos:
                 venda
                     ?.order_items
@@ -14209,6 +14321,7 @@ function handleEmitirNFEClick(
                     )
         }
     );
+
 
     abrirModalEdicaoProdutos(
         vendaId
@@ -17898,15 +18011,15 @@ async function restaurarEstoqueVendaCanceladaNFE(
             .from(
                 'vendas_nfe_cache'
             )
-            .select(`
-                id_venda_ml,
-                is_full,
-                estoque_baixado,
-                estoque_status,
-                estoque_detalhes,
-                estoque_restaurado_cancelamento,
-                estoque_restaurado_cancelamento_em
-            `)
+                .select(`
+                    id_venda_ml,
+                    is_full,
+                    venda_cancelada,
+                    ml_status,
+                    estoque_baixado,
+                    estoque_status,
+                    estoque_detalhes
+                `)
             .eq(
                 'id_venda_ml',
                 vendaId
@@ -24039,6 +24152,94 @@ window.aplicarEstadosFullTabelaNFE =
 window.inicializarMonitorFullNFE =
     inicializarMonitorFullNFE;
 
+    function vendaEstaCanceladaNFE(
+    venda
+) {
+
+    if (
+        !venda
+    ) {
+
+        return false;
+    }
+
+
+    // =====================================================
+    // PACK
+    //
+    // Se qualquer order do pack estiver cancelada,
+    // bloqueamos emissão/baixa do conjunto.
+    // =====================================================
+
+    if (
+        Array.isArray(
+            venda._membros_pack
+        ) &&
+        venda._membros_pack.length >
+            0
+    ) {
+
+        const algumCancelado =
+            venda._membros_pack.some(
+                membro => {
+
+                    const status =
+                        String(
+                            membro?._ml_status ||
+                            membro?.ml_status ||
+                            membro?.status ||
+                            ''
+                        )
+                            .trim()
+                            .toLowerCase();
+
+
+                    return (
+                        membro?._venda_cancelada ===
+                            true ||
+                        membro?.venda_cancelada ===
+                            true ||
+                        status ===
+                            'cancelled' ||
+                        status ===
+                            'canceled'
+                    );
+                }
+            );
+
+
+        if (
+            algumCancelado
+        ) {
+
+            return true;
+        }
+    }
+
+
+    const status =
+        String(
+            venda._ml_status ||
+            venda.ml_status ||
+            venda.status ||
+            ''
+        )
+            .trim()
+            .toLowerCase();
+
+
+    return (
+        venda._venda_cancelada ===
+            true ||
+        venda.venda_cancelada ===
+            true ||
+        status ===
+            'cancelled' ||
+        status ===
+            'canceled'
+    );
+}
+
 function renderizarVendasNFETabela(
     vendas
 ) {
@@ -24994,6 +25195,11 @@ if (
                     venda.id
                 );
 
+                const vendaCancelada =
+                    vendaEstaCanceladaNFE(
+                        venda
+                    );
+
                 const comentariosHtml =
                     montarCelulaComentariosVendaNFE(
                         vendaId
@@ -25003,6 +25209,237 @@ if (
                         venda._estoque_baixado_por_nome ||
                         null;
 
+                        // =====================================================
+// VENDA CANCELADA TEM PRIORIDADE SOBRE TODO O RESTO
+// =====================================================
+
+if (
+    vendaCancelada
+) {
+
+    const restaurado =
+        venda
+            ._estoque_restaurado_cancelamento ||
+        venda
+            ._estoque_status ===
+            'restaurado_cancelamento' ||
+        venda
+            ._estoque_status ===
+            'restaurado_cancelamento_sync_pendente';
+
+
+    // =================================================
+    // ESTOQUE JÁ RESTAURADO
+    // =================================================
+
+    if (
+        restaurado
+    ) {
+
+        const syncPendente =
+            venda
+                ._estoque_status ===
+            'restaurado_cancelamento_sync_pendente';
+
+
+        return `
+            <div>
+
+                <span
+                    style="
+                        display:inline-block;
+                        background:#17a2b8;
+                        color:white;
+                        padding:4px 8px;
+                        border-radius:5px;
+                        font-size:11px;
+                        font-weight:600;
+                        white-space:nowrap;
+                    "
+                >
+                    <i class="fas fa-undo-alt"></i>
+                    Estoque restaurado
+                </span>
+
+
+                <div
+                    style="
+                        color:#dc3545;
+                        font-size:10px;
+                        font-weight:700;
+                        margin-top:4px;
+                    "
+                >
+                    <i class="fas fa-ban"></i>
+                    Venda cancelada
+                </div>
+
+
+                ${
+                    baixadoPor
+
+                        ? `
+                            <div
+                                style="
+                                    margin-top:3px;
+                                    font-size:9px;
+                                    color:#6c757d;
+                                "
+                            >
+                                Baixa original por
+
+                                <strong>
+                                    ${escaparHTMLNFE(
+                                        baixadoPor
+                                    )}
+                                </strong>
+                            </div>
+                        `
+
+                        : ''
+                }
+
+
+                ${
+                    syncPendente
+
+                        ? `
+                            <div
+                                style="
+                                    color:#856404;
+                                    font-size:9px;
+                                    margin-top:3px;
+                                "
+                            >
+                                ⚠️ Sync ML pendente
+                            </div>
+                        `
+
+                        : ''
+                }
+
+            </div>
+        `;
+    }
+
+
+    // =================================================
+    // FULL CANCELADA
+    // =================================================
+
+    if (
+        venda._is_full
+    ) {
+
+        return `
+            <div>
+
+                <span
+                    style="
+                        display:inline-block;
+                        background:#dc3545;
+                        color:white;
+                        padding:4px 8px;
+                        border-radius:5px;
+                        font-size:11px;
+                        font-weight:700;
+                    "
+                >
+                    <i class="fas fa-ban"></i>
+                    Venda cancelada
+                </span>
+
+                <div
+                    style="
+                        margin-top:4px;
+                        font-size:9px;
+                        color:#6c757d;
+                    "
+                >
+                    Estoque era FULL
+                </div>
+
+            </div>
+        `;
+    }
+
+
+    // =================================================
+    // CANCELADA DEPOIS DA BAIXA,
+    // MAS RESTAURAÇÃO AINDA NÃO APARECEU
+    // =================================================
+
+    if (
+        venda._estoque_baixado
+    ) {
+
+        return `
+            <div>
+
+                <span
+                    style="
+                        display:inline-block;
+                        background:#dc3545;
+                        color:white;
+                        padding:4px 8px;
+                        border-radius:5px;
+                        font-size:11px;
+                    "
+                >
+                    <i class="fas fa-ban"></i>
+                    Venda cancelada
+                </span>
+
+                <div
+                    style="
+                        color:#856404;
+                        font-size:9px;
+                        margin-top:4px;
+                    "
+                >
+                    Aguardando restauração do estoque
+                </div>
+
+            </div>
+        `;
+    }
+
+
+    // =================================================
+    // CANCELADA SEM NUNCA TER DADO BAIXA
+    // =================================================
+
+    return `
+        <div>
+
+            <span
+                style="
+                    display:inline-block;
+                    background:#dc3545;
+                    color:white;
+                    padding:4px 8px;
+                    border-radius:5px;
+                    font-size:11px;
+                    font-weight:700;
+                "
+            >
+                <i class="fas fa-ban"></i>
+                Venda cancelada
+            </span>
+
+            <div
+                style="
+                    color:#6c757d;
+                    font-size:9px;
+                    margin-top:4px;
+                "
+            >
+                Baixa desabilitada
+            </div>
+
+        </div>
+    `;
+}
 
             // =============================================
             // FULL
@@ -25307,13 +25744,119 @@ if (
 
 
                     const temNfe =
-                        Boolean(
-                            venda._tem_nfe
-                        );
-                    
-                    const emitidoPor =
-                            venda._nfe_emitida_por_nome ||
-                            null;    
+    Boolean(
+        venda._tem_nfe
+    );
+
+
+const vendaCancelada =
+    vendaEstaCanceladaNFE(
+        venda
+    );
+
+
+const emitidoPor =
+    venda._nfe_emitida_por_nome ||
+    null;
+
+
+const canceladaEm =
+    venda._venda_cancelada_em ||
+    null;
+
+
+let canceladaHtml =
+    '';
+
+
+if (
+    vendaCancelada
+) {
+
+    let dataCancelamento =
+        '';
+
+
+    if (
+        canceladaEm
+    ) {
+
+        try {
+
+            dataCancelamento =
+                new Date(
+                    canceladaEm
+                )
+                    .toLocaleString(
+                        'pt-BR',
+                        {
+                            day:
+                                '2-digit',
+
+                            month:
+                                '2-digit',
+
+                            year:
+                                'numeric',
+
+                            hour:
+                                '2-digit',
+
+                            minute:
+                                '2-digit'
+                        }
+                    );
+
+        } catch (
+            error
+        ) {}
+    }
+
+
+    canceladaHtml = `
+        <div
+            style="
+                margin-top:5px;
+            "
+        >
+            <span
+                style="
+                    display:inline-block;
+                    background:#dc3545;
+                    color:white;
+                    padding:3px 7px;
+                    border-radius:5px;
+                    font-size:10px;
+                    font-weight:700;
+                    white-space:nowrap;
+                "
+            >
+                <i class="fas fa-ban"></i>
+                VENDA CANCELADA
+            </span>
+
+            ${
+                dataCancelamento
+
+                    ? `
+                        <div
+                            style="
+                                color:#dc3545;
+                                font-size:9px;
+                                margin-top:2px;
+                            "
+                        >
+                            ${escaparHTMLNFE(
+                                dataCancelamento
+                            )}
+                        </div>
+                    `
+
+                    : ''
+            }
+        </div>
+    `;
+}
 
                     const dataHoraVenda =
                         formatarDataHoraVendaNFE(
@@ -25489,147 +26032,362 @@ if (
                         );
 
 
-                    // =================================================
-                    // NF-E / AÇÕES
-                    // =================================================
-
                     let statusNFE;
-                    let acoes;
+let acoes;
 
 
-                    if (
-                        isFull
-                    ) {
+// =================================================
+// VENDA CANCELADA
+// =================================================
 
-                        statusNFE = `
-                            <span
-                                style="
-                                    background:#dc3545;
-                                    color:white;
-                                    padding:4px 8px;
-                                    border-radius:5px;
-                                    font-size:11px;
-                                    white-space:nowrap;
-                                "
-                            >
-                                <i class="fas fa-warehouse"></i>
-                                NF-e ML
-                            </span>
-                        `;
+if (
+    vendaCancelada
+) {
+
+    // =============================================
+    // FULL CANCELADA
+    // =============================================
+
+    if (
+        isFull
+    ) {
+
+        statusNFE = `
+            <div>
+
+                <span
+                    style="
+                        background:#dc3545;
+                        color:white;
+                        padding:4px 8px;
+                        border-radius:5px;
+                        font-size:11px;
+                        white-space:nowrap;
+                        display:inline-block;
+                    "
+                >
+                    <i class="fas fa-ban"></i>
+                    Venda cancelada
+                </span>
+
+                <div
+                    style="
+                        margin-top:4px;
+                        color:#6c757d;
+                        font-size:9px;
+                        white-space:nowrap;
+                    "
+                >
+                    <i class="fas fa-warehouse"></i>
+                    NF-e pelo Mercado Livre
+                </div>
+
+            </div>
+        `;
 
 
-                        acoes = `
-                            <span
-                                style="
-                                    color:#6c757d;
-                                    font-size:11px;
-                                "
-                            >
-                                Automática
-                            </span>
-                        `;
+        acoes = `
+            <button
+                type="button"
+                class="btn btn-sm btn-secondary"
+                disabled
+                style="
+                    opacity:.65;
+                    cursor:not-allowed;
+                "
+                title="Venda cancelada"
+            >
+                <i class="fas fa-ban"></i>
+                Cancelada
+            </button>
+        `;
 
-                    } else if (
-                        temNfe
-                    ) {
 
-                        statusNFE = `
+    // =============================================
+    // CANCELADA MAS NF-E JÁ FOI EMITIDA
+    //
+    // Continua permitindo visualizar/cancelar
+    // a NF-e que já existe.
+    // =============================================
 
-    <div>
+    } else if (
+        temNfe
+    ) {
 
+        statusNFE = `
+            <div>
+
+                <span
+                    style="
+                        background:#dc3545;
+                        color:white;
+                        padding:4px 8px;
+                        border-radius:5px;
+                        font-size:11px;
+                        white-space:nowrap;
+                        display:inline-block;
+                    "
+                >
+                    <i class="fas fa-ban"></i>
+                    Venda cancelada
+                </span>
+
+
+                <div
+                    style="
+                        margin-top:4px;
+                    "
+                >
+                    <span
+                        style="
+                            background:#28a745;
+                            color:white;
+                            padding:3px 6px;
+                            border-radius:4px;
+                            font-size:9px;
+                            display:inline-block;
+                        "
+                    >
+                        <i class="fas fa-check"></i>
+                        NF-e já emitida
+                    </span>
+                </div>
+
+
+                <div
+                    style="
+                        margin-top:3px;
+                        font-size:9px;
+                        color:#495057;
+                        white-space:nowrap;
+                    "
+                >
+                    Emitida por
+
+                    <strong>
+                        ${
+                            escaparHTMLNFE(
+                                emitidoPor ||
+                                'não registrado'
+                            )
+                        }
+                    </strong>
+                </div>
+
+            </div>
+        `;
+
+
+        acoes = `
+            <button
+                type="button"
+                class="btn btn-sm btn-warning btn-ver-nfe"
+                data-venda-id="${escaparHTMLNFE(
+                    vendaId
+                )}"
+            >
+                <i class="fas fa-eye"></i>
+                Ver
+            </button>
+
+            <button
+                type="button"
+                class="btn btn-sm btn-danger btn-cancelar-nfe"
+                data-venda-id="${escaparHTMLNFE(
+                    vendaId
+                )}"
+            >
+                <i class="fas fa-times"></i>
+                Cancelar NF-e
+            </button>
+        `;
+
+
+    // =============================================
+    // CANCELADA SEM NF-E
+    // =============================================
+
+    } else {
+
+        statusNFE = `
+            <span
+                style="
+                    background:#dc3545;
+                    color:white;
+                    padding:4px 8px;
+                    border-radius:5px;
+                    font-size:11px;
+                    white-space:nowrap;
+                "
+            >
+                <i class="fas fa-ban"></i>
+                Venda cancelada
+            </span>
+        `;
+
+
+        acoes = `
+            <button
+                type="button"
+                class="btn btn-sm btn-secondary"
+                disabled
+                style="
+                    opacity:.65;
+                    cursor:not-allowed;
+                "
+                title="Não é possível emitir NF-e de venda cancelada"
+            >
+                <i class="fas fa-file-invoice"></i>
+                Emitir NF-e
+            </button>
+        `;
+    }
+
+
+// =================================================
+// FULL NORMAL
+// =================================================
+
+} else if (
+    isFull
+) {
+
+    statusNFE = `
         <span
             style="
-                background:#28a745;
+                background:#dc3545;
                 color:white;
                 padding:4px 8px;
                 border-radius:5px;
                 font-size:11px;
                 white-space:nowrap;
-                display:inline-block;
             "
         >
-            <i class="fas fa-check"></i>
-            Emitida
+            <i class="fas fa-warehouse"></i>
+            NF-e ML
         </span>
+    `;
 
 
-        <div
+    acoes = `
+        <span
             style="
-                margin-top:4px;
-                font-size:10px;
-                color:#495057;
-                white-space:nowrap;
+                color:#6c757d;
+                font-size:11px;
             "
         >
-            <i class="fas fa-user"></i>
+            Automática
+        </span>
+    `;
 
-            Emitida por
 
-            <strong>
-                ${
-                    escaparHTMLNFE(
-                        emitidoPor ||
-                        'não registrado'
-                    )
-                }
-            </strong>
+// =================================================
+// NF-E EMITIDA
+// =================================================
+
+} else if (
+    temNfe
+) {
+
+    statusNFE = `
+        <div>
+
+            <span
+                style="
+                    background:#28a745;
+                    color:white;
+                    padding:4px 8px;
+                    border-radius:5px;
+                    font-size:11px;
+                    white-space:nowrap;
+                    display:inline-block;
+                "
+            >
+                <i class="fas fa-check"></i>
+                Emitida
+            </span>
+
+
+            <div
+                style="
+                    margin-top:4px;
+                    font-size:10px;
+                    color:#495057;
+                    white-space:nowrap;
+                "
+            >
+                <i class="fas fa-user"></i>
+
+                Emitida por
+
+                <strong>
+                    ${
+                        escaparHTMLNFE(
+                            emitidoPor ||
+                            'não registrado'
+                        )
+                    }
+                </strong>
+            </div>
 
         </div>
-
-    </div>
-`;
+    `;
 
 
-                        acoes = `
+    acoes = `
+        <button
+            type="button"
+            class="btn btn-sm btn-warning btn-ver-nfe"
+            data-venda-id="${escaparHTMLNFE(vendaId)}"
+        >
+            <i class="fas fa-eye"></i>
+            Ver
+        </button>
 
-                            <button
-                                type="button"
-                                class="btn btn-sm btn-warning btn-ver-nfe"
-                                data-venda-id="${escaparHTMLNFE(vendaId)}"
-                            >
-                                <i class="fas fa-eye"></i>
-                                Ver
-                            </button>
-
-                            <button
-                                type="button"
-                                class="btn btn-sm btn-danger btn-cancelar-nfe"
-                                data-venda-id="${escaparHTMLNFE(vendaId)}"
-                            >
-                                <i class="fas fa-times"></i>
-                                Cancelar
-                            </button>
-                        `;
-
-                    } else {
-
-                        statusNFE = `
-                            <span
-                                style="
-                                    background:#ffc107;
-                                    color:#212529;
-                                    padding:4px 8px;
-                                    border-radius:5px;
-                                    font-size:11px;
-                                "
-                            >
-                                <i class="fas fa-clock"></i>
-                                Pendente
-                            </span>
-                        `;
+        <button
+            type="button"
+            class="btn btn-sm btn-danger btn-cancelar-nfe"
+            data-venda-id="${escaparHTMLNFE(vendaId)}"
+        >
+            <i class="fas fa-times"></i>
+            Cancelar
+        </button>
+    `;
 
 
-                        acoes = `
-                            <button
-                                type="button"
-                                class="btn btn-sm btn-success btn-emitir-nfe"
-                                data-venda-id="${escaparHTMLNFE(vendaId)}"
-                            >
-                                <i class="fas fa-file-invoice"></i>
-                                Emitir NF-e
-                            </button>
-                        `;
-                    }
+// =================================================
+// PENDENTE
+// =================================================
+
+} else {
+
+    statusNFE = `
+        <span
+            style="
+                background:#ffc107;
+                color:#212529;
+                padding:4px 8px;
+                border-radius:5px;
+                font-size:11px;
+            "
+        >
+            <i class="fas fa-clock"></i>
+            Pendente
+        </span>
+    `;
+
+
+    acoes = `
+        <button
+            type="button"
+            class="btn btn-sm btn-success btn-emitir-nfe"
+            data-venda-id="${escaparHTMLNFE(vendaId)}"
+        >
+            <i class="fas fa-file-invoice"></i>
+            Emitir NF-e
+        </button>
+    `;
+}
 
 
                     // =================================================
@@ -25644,7 +26402,7 @@ if (
                                 <strong>
                                     ${escaparHTMLNFE(vendaId)}
                                 </strong>
-                                
+                                ${canceladaHtml}
                                     <div
                                             style="
                                                 color:#6c757d;
@@ -26176,6 +26934,28 @@ async function darBaixaEstoqueVenda(
             const venda
             of cache
         ) {
+
+            const statusML =
+    String(
+        venda.ml_status ||
+        ''
+    )
+        .trim()
+        .toLowerCase();
+
+        if (
+            venda.venda_cancelada ===
+                true ||
+            statusML ===
+                'cancelled' ||
+            statusML ===
+                'canceled'
+        ) {
+
+            throw new Error(
+                `Venda ${venda.id_venda_ml} está CANCELADA. Baixa de estoque bloqueada.`
+            );
+        }
 
             if (
                 venda.is_full ||
@@ -32106,6 +32886,107 @@ async function confirmarEmissaoNFEInterna() {
             )
         ];
 
+        // =====================================================
+// ÚLTIMA VALIDAÇÃO DE CANCELAMENTO ANTES DE EMITIR
+// =====================================================
+
+try {
+
+    const {
+        data:
+            statusOrders,
+
+        error:
+            erroStatus
+    } =
+        await window
+            .supabaseClient
+            .from(
+                'vendas_nfe_cache'
+            )
+            .select(`
+                id_venda_ml,
+                venda_cancelada,
+                ml_status
+            `)
+            .in(
+                'id_venda_ml',
+                orderIdsDaNFE
+            );
+
+
+    if (
+        erroStatus
+    ) {
+
+        throw erroStatus;
+    }
+
+
+    const cancelada =
+        (
+            statusOrders ||
+            []
+        ).find(
+            registro => {
+
+                const status =
+                    String(
+                        registro.ml_status ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
+
+
+                return (
+                    registro.venda_cancelada ===
+                        true ||
+                    status ===
+                        'cancelled' ||
+                    status ===
+                        'canceled'
+                );
+            }
+        );
+
+
+    if (
+        cancelada
+    ) {
+
+        showToast(
+            `🚫 Venda ${cancelada.id_venda_ml} foi cancelada. NF-e não será emitida.`,
+            'warning'
+        );
+
+
+        fecharModalEdicaoProdutos();
+
+
+        return;
+    }
+
+
+} catch (
+    error
+) {
+
+    console.error(
+        '❌ Erro validando cancelamento antes da NF-e:',
+        error
+    );
+
+
+    showToast(
+        '❌ Não foi possível confirmar o status da venda. Emissão bloqueada por segurança.',
+        'error'
+    );
+
+
+    return;
+}
+
 
     console.log(
         '📦 Orders desta NF-e:',
@@ -33869,16 +34750,15 @@ async function garantirBaixaEstoqueVenda(
                     'vendas_nfe_cache'
                 )
                 .select(`
-                    id_venda_ml,
-                    is_full,
-
-                    estoque_baixado,
-                    estoque_status,
-                    estoque_baixado_em,
-                    estoque_baixado_por_username,
-                    estoque_baixado_por_nome,
-                    estoque_detalhes
-                `)
+                        id_venda_ml,
+                        is_full,
+                        venda_cancelada,
+                        ml_status,
+                        estoque_baixado,
+                        estoque_status,
+                        estoque_baixado_em,
+                        estoque_detalhes
+                    `)
                 .eq(
                     'id_venda_ml',
                     vendaId
@@ -33902,6 +34782,51 @@ async function garantirBaixaEstoqueVenda(
                 `Venda ${vendaId} não encontrada no cache`
             );
         }
+
+        // =====================================================
+// VENDA CANCELADA
+//
+// BLOQUEIO ABSOLUTO DE NOVA BAIXA
+// =====================================================
+
+const statusML =
+    String(
+        vendaCache.ml_status ||
+        ''
+    )
+        .trim()
+        .toLowerCase();
+
+
+if (
+    vendaCache.venda_cancelada ===
+        true ||
+    statusML ===
+        'cancelled' ||
+    statusML ===
+        'canceled'
+) {
+
+    console.warn(
+        `🚫 ${vendaId}: venda cancelada. Baixa bloqueada.`
+    );
+
+
+    return {
+
+        success:
+            false,
+
+        cancelada:
+            true,
+
+        skipped:
+            true,
+
+        error:
+            'Venda cancelada. Não é permitido dar baixa no estoque.'
+    };
+}
 
 
         // =====================================================
