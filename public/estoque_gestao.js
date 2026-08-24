@@ -12413,7 +12413,8 @@ async function salvarProdutoEstoque() {
     // =====================================================
 
     if (
-        categoria === 'Raios' &&
+        (categoria === 'Raios' || categoria === 'Parafusos')
+        &&
         produtoExistenteAtual
     ) {
 
@@ -14998,24 +14999,28 @@ function gerarCamposDinamicos(
 
 
     if (
-        categoria ===
-            'Raios' &&
-        typeof renderizarBlocoACaminhoRaios ===
-            'function'
-    ) {
+    (
+        categoria === 'Raios'
+        ||
+        categoria === 'Parafusos'
+    )
+    &&
+    typeof renderizarBlocoACaminhoRaios ===
+        'function'
+) {
 
-        setTimeout(
-            () => {
+    setTimeout(
+        () => {
 
-                renderizarBlocoACaminhoRaios(
-                    categoria
-                );
+            renderizarBlocoACaminhoRaios(
+                categoria
+            );
 
-            },
-            0
-        );
+        },
+        0
+    );
 
-    }
+}
 }
 
 // ===== FUNÇÃO PARA LIMPAR LINHAS DO BULK =====
@@ -33507,14 +33512,12 @@ function podeEditarQuantidadeACaminhoRaios() {
 
 
 // =========================================================
-// PEGAR QUANTIDADE A CAMINHO
+// PEGAR QUANTIDADE TOTAL A CAMINHO
 //
-// NOVO:
-// usa as pré-entradas de rastreio.
-//
-// LEGADO:
-// se o produto nunca teve rastreio,
-// continua respeitando quantidade_a_caminho antiga.
+// TOTAL =
+// pré-entradas/rastreios pendentes
+// +
+// quantidade manual ainda sem rastreio
 // =========================================================
 
 function obterQuantidadeACaminho(
@@ -33526,66 +33529,62 @@ function obterQuantidadeACaminho(
     }
 
 
-    const idProduto =
+    const produtoId =
         String(
             produto.id
         );
 
 
     // =====================================================
-    // PRODUTO JÁ UTILIZA O NOVO SISTEMA
+    // 1. QUANTIDADE JÁ VINCULADA A RASTREIOS
     // =====================================================
 
-    if (
-        produtosComHistoricoRastreioCompra
-            .has(
-                idProduto
-            )
-    ) {
-
-        const rastreios =
-            rastreiosCompraPorProduto.get(
-                idProduto
-            ) ||
-            [];
+    const rastreios =
+        rastreiosCompraPorProduto.get(
+            produtoId
+        ) ||
+        [];
 
 
-        return rastreios.reduce(
+    const quantidadeComRastreio =
+        rastreios.reduce(
             (
                 total,
                 item
-            ) =>
-                total +
-                (
-                    Number(
-                        item.quantidade
-                    ) || 0
-                ),
+            ) => {
+
+                return (
+                    total +
+                    (
+                        Number(
+                            item.quantidade
+                        ) || 0
+                    )
+                );
+
+            },
             0
         );
 
-    }
-
 
     // =====================================================
-    // SISTEMA ANTIGO / LEGADO
+    // 2. QUANTIDADE AINDA SEM RASTREIO
     // =====================================================
 
-    const quantidadeAntiga =
-        parseInt(
-            produto.dados_extra
-                ?.quantidade_a_caminho
+    const quantidadeSemRastreio =
+        obterQuantidadeDisponivelParaNovoRastreio(
+            produto
         );
 
 
-    return Number.isFinite(
-        quantidadeAntiga
-    )
-        ? Math.max(
-            0,
-            quantidadeAntiga
-        )
-        : 0;
+    // =====================================================
+    // TOTAL
+    // =====================================================
+
+    return (
+        quantidadeComRastreio +
+        quantidadeSemRastreio
+    );
 }
 
 // =========================================================
@@ -33725,6 +33724,10 @@ async function abrirModalInformarRastreioCompra(
     produtoIdInicial = null
 ) {
 
+    // =====================================================
+    // SOMENTE ADMIN
+    // =====================================================
+
     if (
         !podeInformarRastreioCompra()
     ) {
@@ -33738,10 +33741,13 @@ async function abrirModalInformarRastreioCompra(
     }
 
 
+    // =====================================================
+    // GARANTIR PRODUTOS
+    // =====================================================
+
     if (
         !produtosEstoque ||
-        produtosEstoque.length ===
-            0
+        produtosEstoque.length === 0
     ) {
 
         await carregarProdutosEstoque();
@@ -33749,24 +33755,95 @@ async function abrirModalInformarRastreioCompra(
     }
 
 
+    // =====================================================
+    // IMPORTANTE:
+    // ATUALIZAR RASTREIOS ANTES DE MONTAR A LISTA
+    // =====================================================
+
+    await carregarPreEntradasRastreioEstoque();
+
+
+    // =====================================================
+    // LIMPAR SELEÇÃO
+    // =====================================================
+
     selecaoProdutosRastreioCompra =
         new Map();
 
+
+    // =====================================================
+    // PRODUTO INICIAL
+    // =====================================================
 
     if (
         produtoIdInicial
     ) {
 
-        selecaoProdutosRastreioCompra
-            .set(
-                String(
-                    produtoIdInicial
-                ),
-                1
+        const produtoInicial =
+            produtosEstoque.find(
+                produto =>
+                    String(
+                        produto.id
+                    ) ===
+                    String(
+                        produtoIdInicial
+                    )
             );
+
+
+        if (
+            produtoInicial
+        ) {
+
+            // =============================================
+            // NÃO SELECIONAR SE JÁ POSSUI RASTREIO
+            // =============================================
+
+            if (
+                produtoPossuiRastreioAtivo(
+                    produtoInicial
+                )
+            ) {
+
+                showToast(
+                    `ℹ️ ${produtoInicial.sku} já possui um rastreio pendente.`,
+                    'info'
+                );
+
+            }
+
+            else {
+
+                const quantidadeDisponivel =
+                    obterQuantidadeDisponivelParaNovoRastreio(
+                        produtoInicial
+                    );
+
+
+                if (
+                    quantidadeDisponivel > 0
+                ) {
+
+                    selecaoProdutosRastreioCompra
+                        .set(
+                            String(
+                                produtoInicial.id
+                            ),
+                            quantidadeDisponivel
+                        );
+
+                }
+
+            }
+
+        }
 
     }
 
+
+    // =====================================================
+    // REMOVER MODAL ANTERIOR
+    // =====================================================
 
     document
         .getElementById(
@@ -33774,6 +33851,10 @@ async function abrirModalInformarRastreioCompra(
         )
         ?.remove();
 
+
+    // =====================================================
+    // CRIAR MODAL
+    // =====================================================
 
     const modal =
         document.createElement(
@@ -33810,6 +33891,8 @@ async function abrirModalInformarRastreioCompra(
             "
         >
 
+            <!-- CABEÇALHO -->
+
             <div
                 style="
                     display:flex;
@@ -33836,9 +33919,12 @@ async function abrirModalInformarRastreioCompra(
 
                     </h3>
 
+
                     <small class="text-muted">
-                        Cria automaticamente uma pré-entrada
-                        na aba Entradas.
+
+                        Cria automaticamente uma
+                        pré-entrada na aba Entradas.
+
                     </small>
 
                 </div>
@@ -33846,7 +33932,9 @@ async function abrirModalInformarRastreioCompra(
 
                 <button
                     type="button"
-                    onclick="fecharModalInformarRastreioCompra()"
+                    onclick="
+                        fecharModalInformarRastreioCompra()
+                    "
                     style="
                         border:none;
                         background:transparent;
@@ -33875,6 +33963,7 @@ async function abrirModalInformarRastreioCompra(
             >
 
                 <div>
+
                     <label>
                         Rastreio *
                     </label>
@@ -33884,10 +33973,12 @@ async function abrirModalInformarRastreioCompra(
                         class="form-control"
                         placeholder="Ex: LB123456789CN"
                     >
+
                 </div>
 
 
                 <div>
+
                     <label>
                         Fornecedor *
                     </label>
@@ -33897,10 +33988,12 @@ async function abrirModalInformarRastreioCompra(
                         class="form-control"
                         placeholder="Nome do fornecedor"
                     >
+
                 </div>
 
 
                 <div>
+
                     <label>
                         Valor total da compra *
                     </label>
@@ -33909,12 +34002,16 @@ async function abrirModalInformarRastreioCompra(
                         id="rastreioCompraValorTotal"
                         class="form-control"
                         placeholder="Ex: 1500,00"
-                        oninput="atualizarResumoCompraRastreio()"
+                        oninput="
+                            atualizarResumoCompraRastreio()
+                        "
                     >
+
                 </div>
 
 
                 <div>
+
                     <label>
                         Dias para chegar *
                     </label>
@@ -33926,8 +34023,11 @@ async function abrirModalInformarRastreioCompra(
                         value="14"
                         min="1"
                         step="1"
-                        oninput="atualizarResumoCompraRastreio()"
+                        oninput="
+                            atualizarResumoCompraRastreio()
+                        "
                     >
+
                 </div>
 
 
@@ -33936,6 +34036,7 @@ async function abrirModalInformarRastreioCompra(
                         grid-column:1 / -1;
                     "
                 >
+
                     <label>
                         Observações
                     </label>
@@ -33946,6 +34047,7 @@ async function abrirModalInformarRastreioCompra(
                         rows="2"
                         placeholder="Opcional"
                     ></textarea>
+
                 </div>
 
             </div>
@@ -33983,7 +34085,9 @@ async function abrirModalInformarRastreioCompra(
                     id="filtroCategoriaCompraRastreio"
                     class="form-control"
                     style="max-width:200px;"
-                    onchange="renderizarProdutosCompraRastreio()"
+                    onchange="
+                        renderizarProdutosCompraRastreio()
+                    "
                 >
 
                     <option value="">
@@ -34009,7 +34113,9 @@ async function abrirModalInformarRastreioCompra(
                         min-width:240px;
                     "
                     placeholder="Buscar por nome ou SKU..."
-                    oninput="renderizarProdutosCompraRastreio()"
+                    oninput="
+                        renderizarProdutosCompraRastreio()
+                    "
                 >
 
             </div>
@@ -34022,11 +34128,15 @@ async function abrirModalInformarRastreioCompra(
                     margin-bottom:8px;
                 "
             >
-                Marque os produtos pertencentes a este
-                rastreio e informe a quantidade comprada
-                de cada um.
+
+                São exibidos somente Raios e Parafusos
+                que possuem quantidade a caminho e
+                <strong>ainda não possuem rastreio vinculado.</strong>
+
             </div>
 
+
+            <!-- TABELA -->
 
             <div
                 style="
@@ -34053,6 +34163,7 @@ async function abrirModalInformarRastreioCompra(
                             z-index:2;
                         "
                     >
+
                         <tr>
 
                             <th style="padding:9px;">
@@ -34085,6 +34196,7 @@ async function abrirModalInformarRastreioCompra(
                             </th>
 
                         </tr>
+
                     </thead>
 
 
@@ -34096,6 +34208,8 @@ async function abrirModalInformarRastreioCompra(
 
             </div>
 
+
+            <!-- BOTÕES -->
 
             <div
                 style="
@@ -34110,7 +34224,9 @@ async function abrirModalInformarRastreioCompra(
 
                 <button
                     class="btn btn-secondary"
-                    onclick="fecharModalInformarRastreioCompra()"
+                    onclick="
+                        fecharModalInformarRastreioCompra()
+                    "
                 >
                     Cancelar
                 </button>
@@ -34119,7 +34235,9 @@ async function abrirModalInformarRastreioCompra(
                 <button
                     id="btnSalvarCompraRastreio"
                     class="btn btn-success"
-                    onclick="salvarCompraRastreio()"
+                    onclick="
+                        salvarCompraRastreio()
+                    "
                 >
 
                     <i class="fas fa-save"></i>
@@ -34146,7 +34264,85 @@ async function abrirModalInformarRastreioCompra(
 }
 
 // =========================================================
-// RENDERIZAR RAIOS / PARAFUSOS
+// QUANTIDADE A CAMINHO AINDA SEM RASTREIO
+//
+// Representa a quantidade informada manualmente pelo
+// comprador que ainda não foi vinculada a uma pré-entrada.
+// =========================================================
+
+function obterQuantidadeDisponivelParaNovoRastreio(
+    produto
+) {
+
+    if (!produto) {
+        return 0;
+    }
+
+
+    const quantidade =
+        parseInt(
+            produto.dados_extra
+                ?.quantidade_a_caminho
+        );
+
+
+    if (
+        !Number.isFinite(
+            quantidade
+        )
+    ) {
+
+        return 0;
+    }
+
+
+    return Math.max(
+        0,
+        quantidade
+    );
+}
+
+// =========================================================
+// VERIFICAR SE PRODUTO JÁ POSSUI RASTREIO ATIVO
+//
+// Considera somente rastreios que ainda estão pendentes.
+// Quando a entrada for concluída, o produto fica liberado
+// novamente para uma futura compra.
+// =========================================================
+
+function produtoPossuiRastreioAtivo(
+    produto
+) {
+
+    if (!produto) {
+        return false;
+    }
+
+
+    const rastreios =
+        rastreiosCompraPorProduto.get(
+            String(
+                produto.id
+            )
+        ) || [];
+
+
+    return rastreios.some(
+        item =>
+            String(
+                item.rastreio ||
+                ''
+            ).trim() !== ''
+    );
+}
+
+// =========================================================
+// RENDERIZAR PRODUTOS PARA INFORMAR RASTREIO
+//
+// MOSTRA SOMENTE:
+// - Raios / Parafusos
+// - quantidade a caminho > 0
+// - SEM rastreio pendente
 // =========================================================
 
 function renderizarProdutosCompraRastreio() {
@@ -34174,12 +34370,18 @@ function renderizarProdutosCompraRastreio() {
                 'buscaProdutoCompraRastreio'
             )?.value || ''
         )
-        .trim()
-        .toLowerCase();
+            .trim()
+            .toLowerCase();
 
+
+    // =====================================================
+    // FILTRAR
+    // =====================================================
 
     const produtos =
         produtosEstoque
+
+            // RAIOS / PARAFUSOS
             .filter(
                 produto =>
                     (
@@ -34190,12 +34392,40 @@ function renderizarProdutosCompraRastreio() {
                             'Parafusos'
                     )
             )
+
+
+            // TEM QUANTIDADE A CAMINHO
             .filter(
                 produto =>
-                    !categoria ||
+                    obterQuantidadeDisponivelParaNovoRastreio(
+                        produto
+                    ) > 0
+            )
+
+
+            // =================================================
+            // NÃO PODE JÁ TER RASTREIO ATIVO
+            // =================================================
+
+            .filter(
+                produto =>
+                    !produtoPossuiRastreioAtivo(
+                        produto
+                    )
+            )
+
+
+            // FILTRO DE CATEGORIA
+            .filter(
+                produto =>
+                    !categoria
+                    ||
                     produto.categoria ===
                         categoria
             )
+
+
+            // BUSCA
             .filter(
                 produto => {
 
@@ -34204,32 +34434,34 @@ function renderizarProdutosCompraRastreio() {
                     }
 
 
-                    return (
-
+                    const nome =
                         String(
                             produto.nome ||
                             ''
-                        )
-                            .toLowerCase()
-                            .includes(
-                                busca
-                            )
+                        ).toLowerCase();
 
-                        ||
 
+                    const sku =
                         String(
                             produto.sku ||
                             ''
-                        )
-                            .toLowerCase()
-                            .includes(
-                                busca
-                            )
+                        ).toLowerCase();
 
+
+                    return (
+                        nome.includes(
+                            busca
+                        )
+                        ||
+                        sku.includes(
+                            busca
+                        )
                     );
 
                 }
             )
+
+
             .sort(
                 (a, b) =>
                     String(
@@ -34245,6 +34477,10 @@ function renderizarProdutosCompraRastreio() {
             );
 
 
+    // =====================================================
+    // NENHUM
+    // =====================================================
+
     if (
         produtos.length ===
         0
@@ -34257,21 +34493,42 @@ function renderizarProdutosCompraRastreio() {
                 <td
                     colspan="6"
                     style="
-                        padding:30px;
+                        padding:35px;
                         text-align:center;
                         color:#6c757d;
                     "
                 >
-                    Nenhum produto encontrado.
+
+                    <i
+                        class="fas fa-check-circle"
+                        style="
+                            display:block;
+                            font-size:26px;
+                            margin-bottom:8px;
+                            color:#28a745;
+                        "
+                    ></i>
+
+                    Nenhum produto aguardando
+                    vinculação de rastreio.
+
                 </td>
 
             </tr>
 
         `;
 
+
+        atualizarResumoCompraRastreio();
+
+
         return;
     }
 
+
+    // =====================================================
+    // LINHAS
+    // =====================================================
 
     tbody.innerHTML =
         produtos
@@ -34284,6 +34541,12 @@ function renderizarProdutosCompraRastreio() {
                         );
 
 
+                    const quantidadeACaminho =
+                        obterQuantidadeDisponivelParaNovoRastreio(
+                            produto
+                        );
+
+
                     const selecionado =
                         selecaoProdutosRastreioCompra
                             .has(
@@ -34292,10 +34555,18 @@ function renderizarProdutosCompraRastreio() {
 
 
                     const quantidade =
-                        selecaoProdutosRastreioCompra
-                            .get(
-                                id
-                            ) || 1;
+                        selecionado
+
+                            ? (
+                                selecaoProdutosRastreioCompra
+                                    .get(
+                                        id
+                                    )
+                                ||
+                                quantidadeACaminho
+                            )
+
+                            : quantidadeACaminho;
 
 
                     const subcategoria =
@@ -34308,10 +34579,11 @@ function renderizarProdutosCompraRastreio() {
 
                         <tr
                             style="
-                                border-top:
-                                    1px solid #eee;
+                                border-top:1px solid #eee;
                             "
                         >
+
+                            <!-- CHECK -->
 
                             <td
                                 style="
@@ -34322,7 +34594,13 @@ function renderizarProdutosCompraRastreio() {
 
                                 <input
                                     type="checkbox"
-                                    ${selecionado ? 'checked' : ''}
+
+                                    ${
+                                        selecionado
+                                            ? 'checked'
+                                            : ''
+                                    }
+
                                     onchange="
                                         alterarSelecaoProdutoCompraRastreio(
                                             '${id}',
@@ -34334,26 +34612,30 @@ function renderizarProdutosCompraRastreio() {
                             </td>
 
 
+                            <!-- PRODUTO -->
+
                             <td style="padding:8px;">
 
                                 <strong>
+
                                     ${escapeHtml(
                                         String(
                                             produto.nome ||
                                             ''
                                         )
                                     )}
+
                                 </strong>
+
 
                                 ${
                                     subcategoria
-
                                         ? `
-
                                             <div
                                                 style="
                                                     font-size:10px;
                                                     color:#6f42c1;
+                                                    margin-top:2px;
                                                 "
                                             >
                                                 ${escapeHtml(
@@ -34362,28 +34644,32 @@ function renderizarProdutosCompraRastreio() {
                                                     )
                                                 )}
                                             </div>
-
                                         `
-
                                         : ''
                                 }
 
                             </td>
 
 
+                            <!-- SKU -->
+
                             <td style="padding:8px;">
 
                                 <code>
+
                                     ${escapeHtml(
                                         String(
                                             produto.sku ||
                                             ''
                                         )
                                     )}
+
                                 </code>
 
                             </td>
 
+
+                            <!-- CATEGORIA -->
 
                             <td style="padding:8px;">
 
@@ -34397,31 +34683,68 @@ function renderizarProdutosCompraRastreio() {
                             </td>
 
 
+                            <!-- ESTOQUE -->
+
                             <td style="padding:8px;">
 
-                                ${Number(
-                                    produto.quantidade
-                                ) || 0}
+                                ${
+                                    Number(
+                                        produto.quantidade
+                                    ) || 0
+                                }
 
                             </td>
 
+
+                            <!-- COMPRADO -->
 
                             <td style="padding:8px;">
 
                                 <input
                                     type="number"
-                                    class="form-control form-control-sm"
+                                    class="
+                                        form-control
+                                        form-control-sm
+                                    "
+
                                     min="1"
+                                    max="${quantidadeACaminho}"
                                     step="1"
+
                                     value="${quantidade}"
-                                    ${selecionado ? '' : 'disabled'}
+
+                                    ${
+                                        selecionado
+                                            ? ''
+                                            : 'disabled'
+                                    }
+
                                     onchange="
                                         alterarQuantidadeProdutoCompraRastreio(
                                             '${id}',
                                             this.value
                                         )
                                     "
+
+                                    style="
+                                        font-weight:600;
+                                    "
                                 >
+
+
+                                <small
+                                    style="
+                                        display:block;
+                                        margin-top:3px;
+                                        color:#007bff;
+                                        white-space:nowrap;
+                                    "
+                                >
+
+                                    🚚 ${quantidadeACaminho}
+                                    a caminho
+
+                                </small>
 
                             </td>
 
@@ -34432,9 +34755,14 @@ function renderizarProdutosCompraRastreio() {
                 }
             )
             .join('');
+
+
+    atualizarResumoCompraRastreio();
 }
 
 
+// =========================================================
+// SELECIONAR PRODUTO NO RASTREIO
 // =========================================================
 
 function alterarSelecaoProdutoCompraRastreio(
@@ -34448,26 +34776,112 @@ function alterarSelecaoProdutoCompraRastreio(
         );
 
 
+    // =====================================================
+    // MARCOU
+    // =====================================================
+
     if (
         selecionado
     ) {
 
-        if (
-            !selecaoProdutosRastreioCompra
-                .has(
+        const produto =
+            produtosEstoque.find(
+                p =>
+                    String(
+                        p.id
+                    ) ===
                     produtoId
-                )
-        ) {
+            );
 
-            selecaoProdutosRastreioCompra
-                .set(
-                    produtoId,
-                    1
-                );
 
+        if (!produto) {
+
+            showToast(
+                '❌ Produto não encontrado.',
+                'error'
+            );
+
+            renderizarProdutosCompraRastreio();
+
+            return;
         }
 
-    } else {
+
+        // =================================================
+        // JÁ TEM RASTREIO
+        // =================================================
+
+        if (
+            produtoPossuiRastreioAtivo(
+                produto
+            )
+        ) {
+
+            showToast(
+                `⚠️ ${produto.sku} já possui um rastreio vinculado e não pode ser selecionado novamente.`,
+                'warning'
+            );
+
+
+            selecaoProdutosRastreioCompra
+                .delete(
+                    produtoId
+                );
+
+
+            renderizarProdutosCompraRastreio();
+
+
+            return;
+        }
+
+
+        // =================================================
+        // QUANTIDADE
+        // =================================================
+
+        const quantidadeACaminho =
+            obterQuantidadeDisponivelParaNovoRastreio(
+                produto
+            );
+
+
+        if (
+            quantidadeACaminho <=
+            0
+        ) {
+
+            showToast(
+                '⚠️ Este produto não possui quantidade a caminho aguardando rastreio.',
+                'warning'
+            );
+
+
+            renderizarProdutosCompraRastreio();
+
+
+            return;
+        }
+
+
+        // =================================================
+        // SELECIONAR TODA A QUANTIDADE
+        // =================================================
+
+        selecaoProdutosRastreioCompra
+            .set(
+                produtoId,
+                quantidadeACaminho
+            );
+
+    }
+
+
+    // =====================================================
+    // DESMARCOU
+    // =====================================================
+
+    else {
 
         selecaoProdutosRastreioCompra
             .delete(
@@ -34795,7 +35209,15 @@ async function gerarNumeroEntradaRastreioCompra() {
     );
 }
 
+// =========================================================
+// SALVAR COMPRA / RASTREIO
+// =========================================================
+
 async function salvarCompraRastreio() {
+
+    // =====================================================
+    // SEGURANÇA
+    // =====================================================
 
     if (
         !podeInformarRastreioCompra()
@@ -34809,6 +35231,10 @@ async function salvarCompraRastreio() {
         return;
     }
 
+
+    // =====================================================
+    // CAMPOS
+    // =====================================================
 
     const rastreio =
         String(
@@ -34851,7 +35277,7 @@ async function salvarCompraRastreio() {
 
 
     // =====================================================
-    // OBRIGATÓRIOS
+    // CAMPOS OBRIGATÓRIOS
     // =====================================================
 
     if (!rastreio) {
@@ -34860,6 +35286,13 @@ async function salvarCompraRastreio() {
             '⚠️ Rastreio é obrigatório.',
             'warning'
         );
+
+        document
+            .getElementById(
+                'rastreioCompraCodigo'
+            )
+            ?.focus();
+
 
         return;
     }
@@ -34871,6 +35304,13 @@ async function salvarCompraRastreio() {
             '⚠️ Fornecedor é obrigatório.',
             'warning'
         );
+
+        document
+            .getElementById(
+                'rastreioCompraFornecedor'
+            )
+            ?.focus();
+
 
         return;
     }
@@ -34919,7 +35359,7 @@ async function salvarCompraRastreio() {
     ) {
 
         showToast(
-            '⚠️ Selecione pelo menos um Raio ou Parafuso.',
+            '⚠️ Selecione pelo menos um produto.',
             'warning'
         );
 
@@ -34928,7 +35368,7 @@ async function salvarCompraRastreio() {
 
 
     // =====================================================
-    // PRODUTOS / QUANTIDADES
+    // VALIDAR PRODUTOS
     // =====================================================
 
     const itens =
@@ -34942,7 +35382,7 @@ async function salvarCompraRastreio() {
     for (
         const [
             produtoId,
-            quantidade
+            quantidadeSelecionada
         ]
         of selecaoProdutosRastreioCompra
             .entries()
@@ -34971,6 +35411,10 @@ async function salvarCompraRastreio() {
         }
 
 
+        // =============================================
+        // CATEGORIA
+        // =============================================
+
         if (
             produto.categoria !==
                 'Raios'
@@ -34988,18 +35432,28 @@ async function salvarCompraRastreio() {
         }
 
 
-        const qtd =
+        // =============================================
+        // DISPONÍVEL
+        // =============================================
+
+        const quantidadeDisponivel =
+            obterQuantidadeDisponivelParaNovoRastreio(
+                produto
+            );
+
+
+        const quantidade =
             parseInt(
-                quantidade
+                quantidadeSelecionada
             );
 
 
         if (
             !Number.isFinite(
-                qtd
+                quantidade
             )
             ||
-            qtd <=
+            quantidade <=
                 0
         ) {
 
@@ -35012,16 +35466,52 @@ async function salvarCompraRastreio() {
         }
 
 
+        // =============================================
+        // NÃO PODE VINCULAR MAIS QUE O "A CAMINHO"
+        // =============================================
+
+        if (
+            quantidade >
+            quantidadeDisponivel
+        ) {
+
+            showToast(
+                `⚠️ ${produto.sku}: existem ${quantidadeDisponivel} unidade(s) aguardando rastreio, mas você informou ${quantidade}.`,
+                'warning'
+            );
+
+            return;
+        }
+
+
         quantidadeTotal +=
-            qtd;
+            quantidade;
 
 
         itens.push({
+
             produto,
-            quantidade:
-                qtd
+
+            quantidade,
+
+            quantidadeDisponivel
+
         });
 
+    }
+
+
+    if (
+        quantidadeTotal <=
+        0
+    ) {
+
+        showToast(
+            '⚠️ Quantidade total inválida.',
+            'warning'
+        );
+
+        return;
     }
 
 
@@ -35041,50 +35531,75 @@ async function salvarCompraRastreio() {
 
 
     // =====================================================
-    // NÃO DUPLICAR RASTREIO
+    // RASTREIO DUPLICADO
     // =====================================================
 
-    const {
-        data: rastreioExistente,
-        error: erroDuplicidade
-    } =
-        await window.supabaseClient
-            .from(
-                'entrada_items'
-            )
-            .select(
-                'id, entrada_id'
-            )
-            .eq(
-                'rastreio',
-                rastreio
-            )
-            .limit(
-                1
+    try {
+
+        const {
+            data: rastreioExistente,
+            error: erroDuplicidade
+        } =
+            await window.supabaseClient
+                .from(
+                    'entrada_items'
+                )
+                .select(
+                    'id, entrada_id'
+                )
+                .eq(
+                    'rastreio',
+                    rastreio
+                )
+                .limit(
+                    1
+                );
+
+
+        if (
+            erroDuplicidade
+        ) {
+
+            throw erroDuplicidade;
+
+        }
+
+
+        if (
+            rastreioExistente &&
+            rastreioExistente.length >
+                0
+        ) {
+
+            showToast(
+                `❌ O rastreio "${rastreio}" já está cadastrado em uma entrada.`,
+                'error'
             );
 
-
-    if (
-        erroDuplicidade
-    ) {
-        throw erroDuplicidade;
-    }
+            return;
+        }
 
 
-    if (
-        rastreioExistente &&
-        rastreioExistente.length >
-            0
-    ) {
+    } catch (error) {
+
+        console.error(
+            'Erro verificando rastreio:',
+            error
+        );
+
 
         showToast(
-            `❌ O rastreio "${rastreio}" já está cadastrado em uma entrada.`,
+            '❌ Não foi possível verificar o rastreio.',
             'error'
         );
 
         return;
     }
 
+
+    // =====================================================
+    // CONFIRMAÇÃO
+    // =====================================================
 
     if (
         !confirm(
@@ -35112,6 +35627,10 @@ async function salvarCompraRastreio() {
     }
 
 
+    // =====================================================
+    // BOTÃO
+    // =====================================================
+
     const botao =
         document.getElementById(
             'btnSalvarCompraRastreio'
@@ -35126,7 +35645,13 @@ async function salvarCompraRastreio() {
 
         botao.innerHTML = `
 
-            <i class="fas fa-spinner fa-spin"></i>
+            <i
+                class="
+                    fas
+                    fa-spinner
+                    fa-spin
+                "
+            ></i>
 
             Criando...
 
@@ -35139,10 +35664,14 @@ async function salvarCompraRastreio() {
         null;
 
 
+    let itensCriados =
+        false;
+
+
     try {
 
         // =================================================
-        // NUMERO DA ENTRADA
+        // NUMERO ENTRADA
         // =================================================
 
         const numeroEntrada =
@@ -35151,8 +35680,6 @@ async function salvarCompraRastreio() {
 
         // =================================================
         // METADADOS
-        //
-        // Sem precisar criar coluna nova no banco.
         // =================================================
 
         const metadata = {
@@ -35194,7 +35721,7 @@ async function salvarCompraRastreio() {
 
 
         // =================================================
-        // CARD DA ENTRADA
+        // CRIAR CARD
         // =================================================
 
         const {
@@ -35248,7 +35775,9 @@ async function salvarCompraRastreio() {
         if (
             erroCard
         ) {
+
             throw erroCard;
+
         }
 
 
@@ -35266,7 +35795,7 @@ async function salvarCompraRastreio() {
 
 
         // =================================================
-        // ITENS
+        // OBSERVAÇÃO DO ITEM
         // =================================================
 
         const observacaoItem =
@@ -35279,13 +35808,17 @@ async function salvarCompraRastreio() {
                 observacao
 
             ]
-            .filter(
-                Boolean
-            )
-            .join(
-                ' | '
-            );
+                .filter(
+                    Boolean
+                )
+                .join(
+                    ' | '
+                );
 
+
+        // =================================================
+        // ITENS
+        // =================================================
 
         const itensParaInserir =
             itens.map(
@@ -35364,18 +35897,113 @@ async function salvarCompraRastreio() {
         if (
             erroItens
         ) {
+
             throw erroItens;
+
+        }
+
+
+        itensCriados =
+            true;
+
+
+        // =================================================
+        // DESCONTAR DA QUANTIDADE "SEM RASTREIO"
+        //
+        // EXEMPLO:
+        //
+        // A caminho antigo = 100
+        // vinculado agora = 60
+        //
+        // restante sem rastreio = 40
+        // =================================================
+
+        for (
+            const item
+            of itens
+        ) {
+
+            const restante =
+                Math.max(
+                    0,
+                    item.quantidadeDisponivel -
+                        item.quantidade
+                );
+
+
+            const dadosExtraAtualizados = {
+
+                ...(
+                    item.produto
+                        .dados_extra ||
+                    {}
+                ),
+
+                quantidade_a_caminho:
+                    restante,
+
+                quantidade_a_caminho_atualizado_em:
+                    new Date()
+                        .toISOString(),
+
+                quantidade_a_caminho_atualizado_por:
+                    currentUser?.name ||
+                    currentUser?.username ||
+                    'admin'
+
+            };
+
+
+            const {
+                error:
+                    erroAtualizarProduto
+            } =
+                await window.supabaseClient
+                    .from(
+                        'produtos_estoque'
+                    )
+                    .update({
+
+                        dados_extra:
+                            dadosExtraAtualizados
+
+                    })
+                    .eq(
+                        'id',
+                        item.produto.id
+                    );
+
+
+            if (
+                erroAtualizarProduto
+            ) {
+
+                throw erroAtualizarProduto;
+
+            }
+
+
+            // =============================================
+            // ATUALIZAR MEMÓRIA LOCAL
+            // =============================================
+
+            item.produto.dados_extra =
+                dadosExtraAtualizados;
+
         }
 
 
         // =================================================
-        // RECARREGAR
+        // CARREGAR RASTREIOS
         // =================================================
 
         await carregarPreEntradasRastreioEstoque();
 
 
-        // Atualiza aba Entradas também
+        // =================================================
+        // ATUALIZAR ENTRADAS
+        // =================================================
+
         if (
             typeof window.carregarEntradas ===
             'function'
@@ -35386,11 +36014,22 @@ async function salvarCompraRastreio() {
         }
 
 
+        // =================================================
+        // ATUALIZAR TABELA
+        // =================================================
+
+        aplicarIndicadoresACaminhoTabela();
+
+
+        // =================================================
+        // FECHAR
+        // =================================================
+
         fecharModalInformarRastreioCompra();
 
 
         showToast(
-            `✅ Pré-entrada ${numeroEntrada} criada! ${quantidadeTotal} unidade(s) a caminho.`,
+            `✅ Pré-entrada ${numeroEntrada} criada! ${quantidadeTotal} unidade(s) vinculada(s) ao rastreio.`,
             'success'
         );
 
@@ -35403,13 +36042,32 @@ async function salvarCompraRastreio() {
         );
 
 
-        // Se o card foi criado e os itens falharam,
-        // não deixar card vazio.
+        // =================================================
+        // ROLLBACK BÁSICO
+        // =================================================
+
         if (
             cardCriado?.id
         ) {
 
             try {
+
+                if (
+                    itensCriados
+                ) {
+
+                    await window.supabaseClient
+                        .from(
+                            'entrada_items'
+                        )
+                        .delete()
+                        .eq(
+                            'entrada_id',
+                            cardCriado.id
+                        );
+
+                }
+
 
                 await window.supabaseClient
                     .from(
@@ -35421,10 +36079,13 @@ async function salvarCompraRastreio() {
                         cardCriado.id
                     );
 
-            } catch (rollbackError) {
+
+            } catch (
+                rollbackError
+            ) {
 
                 console.error(
-                    '❌ Erro no rollback do card:',
+                    '❌ Erro fazendo rollback:',
                     rollbackError
                 );
 
@@ -35439,7 +36100,9 @@ async function salvarCompraRastreio() {
         );
 
 
-        if (botao) {
+        if (
+            botao
+        ) {
 
             botao.disabled =
                 false;
@@ -35447,7 +36110,12 @@ async function salvarCompraRastreio() {
 
             botao.innerHTML = `
 
-                <i class="fas fa-save"></i>
+                <i
+                    class="
+                        fas
+                        fa-save
+                    "
+                ></i>
 
                 Criar Pré-Entrada
 
@@ -35507,14 +36175,17 @@ function formatarAtualizacaoACaminho(
 
 // =========================================================
 // CRIAR / ATUALIZAR BLOCO "A CAMINHO"
-// NO MODAL DO PRODUTO
+// RAIOS + PARAFUSOS
 // =========================================================
 
 function renderizarBlocoACaminhoRaios(
     categoria
 ) {
 
-    // Remove bloco anterior
+    // =====================================================
+    // REMOVER BLOCO ANTERIOR
+    // =====================================================
+
     document
         .getElementById(
             'blocoQuantidadeACaminhoRaios'
@@ -35523,12 +36194,13 @@ function renderizarBlocoACaminhoRaios(
 
 
     // =====================================================
-    // SOMENTE CATEGORIA RAIOS
+    // SOMENTE RAIOS E PARAFUSOS
     // =====================================================
 
     if (
-        categoria !==
-        'Raios'
+        categoria !== 'Raios'
+        &&
+        categoria !== 'Parafusos'
     ) {
 
         return;
@@ -35536,7 +36208,7 @@ function renderizarBlocoACaminhoRaios(
 
 
     // =====================================================
-    // SOMENTE ADMIN + ARTHUR VEEM
+    // ADMIN + ARTHUR PODEM VER
     // =====================================================
 
     if (
@@ -35559,7 +36231,7 @@ function renderizarBlocoACaminhoRaios(
 
 
     // =====================================================
-    // PRODUTO ATUAL
+    // PRODUTO
     // =====================================================
 
     const produtoId =
@@ -35580,17 +36252,27 @@ function renderizarBlocoACaminhoRaios(
         );
 
 
+    // =====================================================
+    // ESTOQUE ATUAL
+    // =====================================================
+
     const estoqueAtual =
         produto
+
             ? Number(
                 produto.quantidade
             ) || 0
+
             : Number(
                 document.getElementById(
                     'produtoQuantidade'
                 )?.value
             ) || 0;
 
+
+    // =====================================================
+    // QUANTIDADE A CAMINHO
+    // =====================================================
 
     const aCaminho =
         obterQuantidadeACaminho(
@@ -35603,9 +36285,17 @@ function renderizarBlocoACaminhoRaios(
         aCaminho;
 
 
+    // =====================================================
+    // PERMISSÃO DE EDIÇÃO
+    // =====================================================
+
     const podeEditar =
         podeEditarQuantidadeACaminhoRaios();
 
+
+    // =====================================================
+    // ÚLTIMA ATUALIZAÇÃO
+    // =====================================================
 
     const atualizadoEm =
         produto
@@ -35628,7 +36318,17 @@ function renderizarBlocoACaminhoRaios(
 
 
     // =====================================================
-    // BLOCO
+    // NOME DA CATEGORIA
+    // =====================================================
+
+    const descricaoCategoria =
+        categoria === 'Parafusos'
+            ? 'Parafuso'
+            : 'Raio';
+
+
+    // =====================================================
+    // CRIAR BLOCO
     // =====================================================
 
     const bloco =
@@ -35655,7 +36355,7 @@ function renderizarBlocoACaminhoRaios(
     bloco.innerHTML = `
 
         <!-- ============================================== -->
-        <!-- TÍTULO -->
+        <!-- CABEÇALHO -->
         <!-- ============================================== -->
 
         <div
@@ -35775,7 +36475,9 @@ function renderizarBlocoACaminhoRaios(
                         };
                     "
                 >
+
                     ${estoqueAtual}
+
                 </div>
 
             </div>
@@ -35799,7 +36501,9 @@ function renderizarBlocoACaminhoRaios(
                         color:#6c757d;
                     "
                 >
+
                     🚚 A CAMINHO
+
                 </div>
 
 
@@ -35811,13 +36515,15 @@ function renderizarBlocoACaminhoRaios(
                         color:#007bff;
                     "
                 >
+
                     ${aCaminho}
+
                 </div>
 
             </div>
 
 
-            <!-- TOTAL FUTURO -->
+            <!-- DEPOIS -->
 
             <div
                 style="
@@ -35835,7 +36541,9 @@ function renderizarBlocoACaminhoRaios(
                         color:#6c757d;
                     "
                 >
+
                     APÓS CHEGAR
+
                 </div>
 
 
@@ -35847,7 +36555,9 @@ function renderizarBlocoACaminhoRaios(
                         color:#6f42c1;
                     "
                 >
+
                     ${totalFuturo}
+
                 </div>
 
             </div>
@@ -35889,8 +36599,17 @@ function renderizarBlocoACaminhoRaios(
                     value="${aCaminho}"
                     min="0"
                     step="1"
-                    ${podeEditar ? '' : 'disabled'}
-                    oninput="atualizarResumoACaminhoModal()"
+
+                    ${
+                        podeEditar
+                            ? ''
+                            : 'disabled'
+                    }
+
+                    oninput="
+                        atualizarResumoACaminhoModal()
+                    "
+
                     style="
                         max-width:180px;
                         font-weight:600;
@@ -35906,11 +36625,13 @@ function renderizarBlocoACaminhoRaios(
                             <button
                                 type="button"
                                 class="btn btn-primary"
+
                                 onclick="
                                     salvarQuantidadeACaminhoRaio(
                                         '${produtoId || ''}'
                                     )
                                 "
+
                                 ${
                                     produtoId
                                         ? ''
@@ -35945,9 +36666,13 @@ function renderizarBlocoACaminhoRaios(
                                 color:#856404;
                             "
                         >
-                            Salve o produto primeiro.
-                            Depois abra novamente para informar
-                            a quantidade a caminho.
+
+                            Salve o ${descricaoCategoria.toLowerCase()}
+                            primeiro.
+
+                            Depois abra novamente para
+                            informar a quantidade a caminho.
+
                         </small>
 
                     `
@@ -35968,13 +36693,17 @@ function renderizarBlocoACaminhoRaios(
                                 color:#6c757d;
                             "
                         >
+
                             Você pode consultar esta informação,
-                            mas somente um administrador pode alterá-la.
+                            mas somente um administrador pode
+                            alterá-la.
+
                         </small>
 
                     `
 
                     : `
+
                         <small
                             style="
                                 display:block;
@@ -35982,10 +36711,14 @@ function renderizarBlocoACaminhoRaios(
                                 color:#6c757d;
                             "
                         >
+
                             Esta quantidade é apenas informativa.
+
                             Ela não entra no estoque disponível
                             e não é enviada ao Mercado Livre.
+
                         </small>
+
                     `
             }
 
@@ -36006,16 +36739,20 @@ function renderizarBlocoACaminhoRaios(
                             Última atualização:
 
                             <strong>
+
                                 ${escapeHtml(
                                     dataFormatada
                                 )}
+
                             </strong>
 
                             ${
                                 atualizadoPor
+
                                     ? ` por ${escapeHtml(
                                         atualizadoPor
                                     )}`
+
                                     : ''
                             }
 
@@ -36032,7 +36769,7 @@ function renderizarBlocoACaminhoRaios(
 
 
     // =====================================================
-    // COLOCAR ABAIXO DOS ATRIBUTOS
+    // INSERIR DEPOIS DOS ATRIBUTOS
     // =====================================================
 
     camposDinamicos
@@ -36116,6 +36853,7 @@ function atualizarResumoACaminhoModal() {
 
 // =========================================================
 // SALVAR QUANTIDADE A CAMINHO
+// RAIOS + PARAFUSOS
 // =========================================================
 
 async function salvarQuantidadeACaminhoRaio(
@@ -36123,7 +36861,7 @@ async function salvarQuantidadeACaminhoRaio(
 ) {
 
     // =====================================================
-    // SEGURANÇA
+    // SEGURANÇA - SOMENTE ADMIN
     // =====================================================
 
     if (
@@ -36139,6 +36877,10 @@ async function salvarQuantidadeACaminhoRaio(
     }
 
 
+    // =====================================================
+    // PRODUTO PRECISA EXISTIR
+    // =====================================================
+
     if (
         !produtoId
     ) {
@@ -36151,6 +36893,10 @@ async function salvarQuantidadeACaminhoRaio(
         return;
     }
 
+
+    // =====================================================
+    // LOCALIZAR PRODUTO
+    // =====================================================
 
     const produto =
         produtosEstoque.find(
@@ -36175,19 +36921,28 @@ async function salvarQuantidadeACaminhoRaio(
     }
 
 
+    // =====================================================
+    // SOMENTE RAIOS / PARAFUSOS
+    // =====================================================
+
     if (
-        produto.categoria !==
-        'Raios'
+        produto.categoria !== 'Raios'
+        &&
+        produto.categoria !== 'Parafusos'
     ) {
 
         showToast(
-            '⚠️ Esta função é destinada à categoria Raios.',
+            '⚠️ A quantidade a caminho está disponível apenas para Raios e Parafusos.',
             'warning'
         );
 
         return;
     }
 
+
+    // =====================================================
+    // QUANTIDADE
+    // =====================================================
 
     const input =
         document.getElementById(
@@ -36214,7 +36969,9 @@ async function salvarQuantidadeACaminhoRaio(
             'warning'
         );
 
+
         input?.focus();
+
 
         return;
     }
@@ -36248,6 +37005,10 @@ async function salvarQuantidadeACaminhoRaio(
 
     try {
 
+        // =================================================
+        // SALVAR
+        // =================================================
+
         const {
             data,
             error
@@ -36272,12 +37033,14 @@ async function salvarQuantidadeACaminhoRaio(
         if (
             error
         ) {
+
             throw error;
+
         }
 
 
         // =================================================
-        // ATUALIZAR MEMÓRIA
+        // ATUALIZAR MEMÓRIA LOCAL
         // =================================================
 
         produto.dados_extra =
@@ -36285,7 +37048,7 @@ async function salvarQuantidadeACaminhoRaio(
 
 
         // =================================================
-        // ATUALIZAR CARD
+        // ATUALIZAR RESUMO
         // =================================================
 
         atualizarResumoACaminhoModal();
@@ -36295,10 +37058,22 @@ async function salvarQuantidadeACaminhoRaio(
         // ATUALIZAR TABELA
         // =================================================
 
-        aplicarIndicadoresACaminhoTabela();
+        if (
+            typeof aplicarIndicadoresACaminhoTabela ===
+            'function'
+        ) {
 
+            aplicarIndicadoresACaminhoTabela();
+
+        }
+
+
+        // =================================================
+        // MENSAGEM
+        // =================================================
 
         showToast(
+
             quantidade > 0
 
                 ? `✅ ${quantidade} unidade(s) de ${produto.sku} marcada(s) como a caminho.`
@@ -36306,15 +37081,18 @@ async function salvarQuantidadeACaminhoRaio(
                 : `✅ Quantidade a caminho de ${produto.sku} zerada.`,
 
             'success'
+
         );
 
 
         console.log(
-            `🚚 ${produto.sku}: ${quantidade} unidade(s) a caminho`
+            `🚚 ${produto.categoria} ${produto.sku}: ${quantidade} unidade(s) a caminho`
         );
 
 
-    } catch (error) {
+    } catch (
+        error
+    ) {
 
         console.error(
             '❌ Erro salvando quantidade a caminho:',
