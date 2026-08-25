@@ -942,8 +942,8 @@ function gerarXmlNfe(dados) {
                 <xPais>BRASIL</xPais>
             </enderDest>
 
-            ${ieDestinatarioXml}
             <indIEDest>${indIEDest}</indIEDest>
+            ${ieDestinatarioXml}
         </dest>
 
         ${produtosXml}
