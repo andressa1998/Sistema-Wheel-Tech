@@ -531,10 +531,12 @@ async function buscarTransportadoraPorId(id) {
     }
 }
 
-// ===================== EMISSÃO DE NF-e =====================
 async function emitirNFe(req, res) {
 
-    console.log('📨 Requisição de emissão recebida');
+    console.log(
+        '📨 Requisição de emissão recebida'
+    );
+
 
     try {
 
@@ -543,24 +545,37 @@ async function emitirNFe(req, res) {
         // =====================================================
 
         const dados =
-            req.body || {};
+            req.body ||
+            {};
 
 
         const {
+
             venda_id,
+
             cliente,
+
             produtos,
+
             cfop,
+
             natureza_operacao,
+
             modalidade_frete,
+
             transportadora_id,
+
             ml_access_token,
 
             // NF-e avulsa / devolução
             emissao_avulsa,
+
             eh_devolucao,
+
             finalidade_nfe,
+
             tp_nf,
+
             chave_nfe_referenciada
 
         } = dados;
@@ -570,7 +585,9 @@ async function emitirNFe(req, res) {
         // VALIDAÇÕES INICIAIS
         // =====================================================
 
-        if (!cliente) {
+        if (
+            !cliente
+        ) {
 
             throw new Error(
                 'Cliente não informado'
@@ -579,8 +596,11 @@ async function emitirNFe(req, res) {
 
 
         if (
-            !Array.isArray(produtos) ||
-            produtos.length === 0
+            !Array.isArray(
+                produtos
+            ) ||
+            produtos.length ===
+                0
         ) {
 
             throw new Error(
@@ -589,7 +609,9 @@ async function emitirNFe(req, res) {
         }
 
 
-        if (!cfop) {
+        if (
+            !cfop
+        ) {
 
             throw new Error(
                 'CFOP não informado'
@@ -616,7 +638,8 @@ async function emitirNFe(req, res) {
 
         if (
             !buyerUF ||
-            buyerUF.length !== 2
+            buyerUF.length !==
+                2
         ) {
 
             throw new Error(
@@ -630,7 +653,9 @@ async function emitirNFe(req, res) {
                 natureza_operacao ||
                 ''
             )
-                .normalize('NFD')
+                .normalize(
+                    'NFD'
+                )
                 .replace(
                     /[\u0300-\u036f]/g,
                     ''
@@ -640,12 +665,14 @@ async function emitirNFe(req, res) {
 
 
         const ehDevolucao =
-            eh_devolucao === true ||
+            eh_devolucao ===
+                true ||
 
             String(
                 finalidade_nfe ||
                 ''
-            ) === '4' ||
+            ) ===
+                '4' ||
 
             naturezaNormalizada.includes(
                 'devolucao'
@@ -656,10 +683,15 @@ async function emitirNFe(req, res) {
             '🧾 Tipo da operação:',
             {
                 ehDevolucao,
+
                 natureza_operacao,
+
                 finalidade_nfe,
+
                 tp_nf,
+
                 cfop,
+
                 buyerUF
             }
         );
@@ -669,7 +701,9 @@ async function emitirNFe(req, res) {
         // VALIDAR CFOP
         // =====================================================
 
-        if (ehDevolucao) {
+        if (
+            ehDevolucao
+        ) {
 
             // =================================================
             // ENTRADA DE DEVOLUÇÃO
@@ -679,19 +713,25 @@ async function emitirNFe(req, res) {
             // =================================================
 
             const cfopEsperado =
-                buyerUF === SELLER_UF
+                buyerUF ===
+                    SELLER_UF
+
                     ? '1202'
+
                     : '2202';
 
 
             if (
-                String(cfop) !==
+                String(
+                    cfop
+                ) !==
                 cfopEsperado
             ) {
 
                 throw new Error(
 
-                    buyerUF === SELLER_UF
+                    buyerUF ===
+                        SELLER_UF
 
                         ? `Entrada de Devolução dentro do PR exige CFOP ${cfopEsperado}.`
 
@@ -726,9 +766,15 @@ async function emitirNFe(req, res) {
                 '↩️ DEVOLUÇÃO VALIDADA:',
                 {
                     buyerUF,
+
                     cfop,
-                    finalidade_nfe: '4',
-                    tpNF: '0',
+
+                    finalidade_nfe:
+                        '4',
+
+                    tpNF:
+                        '0',
+
                     chaveReferenciada
                 }
             );
@@ -741,8 +787,12 @@ async function emitirNFe(req, res) {
             // =================================================
 
             if (
-                buyerUF === SELLER_UF &&
-                String(cfop) !== '5102'
+                buyerUF ===
+                    SELLER_UF &&
+                String(
+                    cfop
+                ) !==
+                    '5102'
             ) {
 
                 throw new Error(
@@ -752,8 +802,12 @@ async function emitirNFe(req, res) {
 
 
             if (
-                buyerUF !== SELLER_UF &&
-                String(cfop) !== '6108'
+                buyerUF !==
+                    SELLER_UF &&
+                String(
+                    cfop
+                ) !==
+                    '6108'
             ) {
 
                 throw new Error(
@@ -781,8 +835,10 @@ async function emitirNFe(req, res) {
         if (
             !documento ||
             (
-                documento.length !== 11 &&
-                documento.length !== 14
+                documento.length !==
+                    11 &&
+                documento.length !==
+                    14
             )
         ) {
 
@@ -797,9 +853,79 @@ async function emitirNFe(req, res) {
 
 
         const tipoDoc =
-            documento.length === 14
+            documento.length ===
+                14
+
                 ? 'CNPJ'
+
                 : 'CPF';
+
+
+        // =====================================================
+        // INSCRIÇÃO ESTADUAL DO DESTINATÁRIO
+        //
+        // IMPORTANTE:
+        //
+        // Mantém como STRING para preservar zeros à esquerda.
+        //
+        // Exemplo:
+        // 0054238760077
+        //
+        // Nunca transformar IE em Number.
+        // =====================================================
+
+        let inscricaoEstadual =
+            tipoDoc ===
+                'CNPJ'
+
+                ? String(
+                    cliente.inscricao_estadual ||
+                    cliente.ie ||
+                    ''
+                )
+                    .trim()
+                    .toUpperCase()
+
+                : '';
+
+
+        // =====================================================
+        // LIMPAR FORMATAÇÃO DA IE
+        //
+        // ISENTO deve permanecer como ISENTO.
+        // =====================================================
+
+        if (
+            inscricaoEstadual &&
+            inscricaoEstadual !==
+                'ISENTO'
+        ) {
+
+            inscricaoEstadual =
+                inscricaoEstadual.replace(
+                    /[^0-9A-Z]/g,
+                    ''
+                );
+        }
+
+
+        console.log(
+            '🧾 Dados fiscais do destinatário recebidos:',
+            {
+                tipoDoc,
+
+                documento,
+
+                inscricaoEstadual:
+                    inscricaoEstadual ||
+                    null,
+
+                clienteRecebidoIE:
+                    cliente.inscricao_estadual ||
+                    cliente.ie ||
+                    null
+            }
+        );
 
 
         // =====================================================
@@ -846,7 +972,8 @@ async function emitirNFe(req, res) {
 
 
         if (
-            cep.length !== 8
+            cep.length !==
+            8
         ) {
 
             cep =
@@ -870,8 +997,11 @@ async function emitirNFe(req, res) {
             '🏙️ MUNICÍPIO DESTINATÁRIO:',
             {
                 cidade,
+
                 uf,
+
                 cep,
+
                 codigoIbge
             }
         );
@@ -910,18 +1040,64 @@ async function emitirNFe(req, res) {
         };
 
 
+        // =====================================================
+        // CPF
+        // =====================================================
+
         if (
-            tipoDoc === 'CPF'
+            tipoDoc ===
+            'CPF'
         ) {
 
             destinatario.CPF =
                 documento;
 
+
+        // =====================================================
+        // CNPJ
+        // =====================================================
+
         } else {
 
             destinatario.CNPJ =
                 documento;
+
+
+            // =================================================
+            // IE DO CNPJ
+            // =================================================
+
+            if (
+                inscricaoEstadual
+            ) {
+
+                destinatario.IE =
+                    inscricaoEstadual;
+            }
         }
+
+
+        console.log(
+            '🧾 Destinatário montado para o XML:',
+            {
+                documento,
+
+                tipoDoc,
+
+                IE:
+                    destinatario.IE ||
+                    null,
+
+                nome:
+                    destinatario.xNome,
+
+                cidade:
+                    destinatario.xMun,
+
+                uf:
+                    destinatario.UF
+            }
+        );
 
 
         // =====================================================
@@ -945,7 +1121,8 @@ async function emitirNFe(req, res) {
             try {
 
                 const {
-                    data: controle
+                    data:
+                        controle
                 } =
                     await supabase
                         .from(
@@ -966,7 +1143,8 @@ async function emitirNFe(req, res) {
                         controle
                             ?.ultimo_numero ||
                         50000
-                    ) + 1;
+                    ) +
+                    1;
 
 
                 const {
@@ -979,6 +1157,7 @@ async function emitirNFe(req, res) {
                         .upsert(
                             {
                                 serie,
+
                                 ultimo_numero:
                                     proximo
                             },
@@ -989,7 +1168,9 @@ async function emitirNFe(req, res) {
                         );
 
 
-                if (!error) {
+                if (
+                    !error
+                ) {
 
                     nNF =
                         proximo;
@@ -1004,7 +1185,9 @@ async function emitirNFe(req, res) {
                 }
 
 
-            } catch (err) {
+            } catch (
+                err
+            ) {
 
                 console.warn(
                     err
@@ -1022,7 +1205,9 @@ async function emitirNFe(req, res) {
         }
 
 
-        if (!nNF) {
+        if (
+            !nNF
+        ) {
 
             nNF =
                 Math.floor(
@@ -1041,19 +1226,25 @@ async function emitirNFe(req, res) {
             null;
 
 
-        if (transportadora_id) {
+        if (
+            transportadora_id
+        ) {
 
             try {
 
                 const {
-                    data: transp,
+                    data:
+                        transp,
+
                     error
                 } =
                     await supabase
                         .from(
                             'transportadoras'
                         )
-                        .select('*')
+                        .select(
+                            '*'
+                        )
                         .eq(
                             'id',
                             transportadora_id
@@ -1113,6 +1304,7 @@ async function emitirNFe(req, res) {
                             `✅ Transportadora carregada: ${transp.nome}`
                         );
 
+
                     } else {
 
                         console.warn(
@@ -1122,7 +1314,9 @@ async function emitirNFe(req, res) {
                 }
 
 
-            } catch (err) {
+            } catch (
+                err
+            ) {
 
                 console.warn(
                     '⚠️ Erro ao buscar transportadora:',
@@ -1206,8 +1400,11 @@ Fonte: IBPT/empresometro.com.br 92589A`;
         // =====================================================
 
         const tokenCSRT =
-            AMBIENTE === 'producao'
+            AMBIENTE ===
+                'producao'
+
                 ? CSRT_TOKEN_PRODUCAO
+
                 : CSRT_TOKEN_HOMOLOGACAO;
 
 
@@ -1223,7 +1420,9 @@ Fonte: IBPT/empresometro.com.br 92589A`;
                 modalidade_frete ??
                 (
                     emissao_avulsa
+
                         ? '9'
+
                         : '2'
                 )
             );
@@ -1242,8 +1441,10 @@ Fonte: IBPT/empresometro.com.br 92589A`;
 
                 tpAmb:
                     AMBIENTE ===
-                    'producao'
+                        'producao'
+
                         ? '1'
+
                         : '2',
 
                 destinatario,
@@ -1263,9 +1464,15 @@ Fonte: IBPT/empresometro.com.br 92589A`;
                     transportadoraDados,
 
                 volumes: {
-                    qVol: 1,
-                    pesoL: 0,
-                    pesoB: 0
+
+                    qVol:
+                        1,
+
+                    pesoL:
+                        0,
+
+                    pesoB:
+                        0
                 },
 
                 fatura:
@@ -1293,10 +1500,42 @@ Fonte: IBPT/empresometro.com.br 92589A`;
 
 
         // =====================================================
+        // CONFERIR IE NO XML ANTES DE ASSINAR
+        // =====================================================
+
+        console.log(
+            '🧾 IE antes da assinatura:',
+            {
+                tipoDoc,
+
+                documento,
+
+                ieRecebida:
+                    inscricaoEstadual ||
+                    null,
+
+                ieNoXml:
+                    xml.match(
+                        /<IE>([^<]+)<\/IE>/
+                    )?.[1] ||
+                    null,
+
+                indIEDest:
+                    xml.match(
+                        /<indIEDest>([^<]+)<\/indIEDest>/
+                    )?.[1] ||
+                    null
+            }
+        );
+
+
+        // =====================================================
         // AJUSTAR XML PARA DEVOLUÇÃO
         // =====================================================
 
-        if (ehDevolucao) {
+        if (
+            ehDevolucao
+        ) {
 
             console.log(
                 '↩️ Ajustando XML para ENTRADA DE DEVOLUÇÃO...'
@@ -1343,6 +1582,7 @@ Fonte: IBPT/empresometro.com.br 92589A`;
                         '<tpNF>0</tpNF>'
                     );
 
+
             } else {
 
                 throw new Error(
@@ -1368,6 +1608,7 @@ Fonte: IBPT/empresometro.com.br 92589A`;
                         /<finNFe>\d<\/finNFe>/,
                         '<finNFe>4</finNFe>'
                     );
+
 
             } else {
 
@@ -1405,6 +1646,7 @@ Fonte: IBPT/empresometro.com.br 92589A`;
                         '</ide>',
                         `${xmlReferencia}</ide>`
                     );
+
 
             } else {
 
@@ -1566,7 +1808,8 @@ Fonte: IBPT/empresometro.com.br 92589A`;
             // =================================================
 
             if (
-                tpNFXml !== '0'
+                tpNFXml !==
+                '0'
             ) {
 
                 throw new Error(
@@ -1576,7 +1819,8 @@ Fonte: IBPT/empresometro.com.br 92589A`;
 
 
             if (
-                finNFeXml !== '4'
+                finNFeXml !==
+                '4'
             ) {
 
                 throw new Error(
@@ -1597,7 +1841,8 @@ Fonte: IBPT/empresometro.com.br 92589A`;
 
 
             if (
-                tPagXml !== '90'
+                tPagXml !==
+                '90'
             ) {
 
                 throw new Error(
@@ -1610,7 +1855,8 @@ Fonte: IBPT/empresometro.com.br 92589A`;
                 Number(
                     vPagXml ||
                     0
-                ) !== 0
+                ) !==
+                0
             ) {
 
                 throw new Error(
@@ -1624,17 +1870,49 @@ Fonte: IBPT/empresometro.com.br 92589A`;
         // DEBUG FISCAL FINAL
         // =====================================================
 
+        // =====================================================
+        // PEGAR SOMENTE O BLOCO <dest>
+        //
+        // Isso evita confundir a IE do emitente com a IE
+        // do destinatário nos logs.
+        // =====================================================
+
+        const blocoDestinatario =
+            xml.match(
+                /<dest>[\s\S]*?<\/dest>/
+            )?.[0] ||
+            '';
+
+
         console.log(
             '🧾 DADOS FISCAIS DO XML:',
             {
                 operacao:
                     ehDevolucao
+
                         ? 'ENTRADA DE DEVOLUÇÃO'
+
                         : 'VENDA',
 
                 cfop,
 
                 buyerUF,
+
+                documento,
+
+                tipoDoc,
+
+                ieDestinatario:
+                    blocoDestinatario.match(
+                        /<IE>([^<]+)<\/IE>/
+                    )?.[1] ||
+                    null,
+
+                indIEDest:
+                    blocoDestinatario.match(
+                        /<indIEDest>([^<]+)<\/indIEDest>/
+                    )?.[1] ||
+                    null,
 
                 tpNF:
                     xml.match(
@@ -1668,6 +1946,58 @@ Fonte: IBPT/empresometro.com.br 92589A`;
                     )?.[1]
             }
         );
+
+
+        // =====================================================
+        // VALIDAÇÃO IMPORTANTE:
+        //
+        // Se recebemos CNPJ + IE real, o XML PRECISA conter IE
+        // e indIEDest=1 antes de ser enviado à SEFAZ.
+        // =====================================================
+
+        if (
+            tipoDoc ===
+                'CNPJ' &&
+            inscricaoEstadual &&
+            inscricaoEstadual !==
+                'ISENTO'
+        ) {
+
+            const ieXml =
+                blocoDestinatario.match(
+                    /<IE>([^<]+)<\/IE>/
+                )?.[1] ||
+                '';
+
+
+            const indIeXml =
+                blocoDestinatario.match(
+                    /<indIEDest>([^<]+)<\/indIEDest>/
+                )?.[1] ||
+                '';
+
+
+            if (
+                ieXml !==
+                inscricaoEstadual
+            ) {
+
+                throw new Error(
+                    `Erro interno: IE do destinatário não foi inserida corretamente no XML. Recebida=${inscricaoEstadual}, XML=${ieXml || 'vazio'}`
+                );
+            }
+
+
+            if (
+                indIeXml !==
+                '1'
+            ) {
+
+                throw new Error(
+                    `Erro interno: destinatário possui IE, mas indIEDest=${indIeXml || 'vazio'}. Esperado 1.`
+                );
+            }
+        }
 
 
         // =====================================================
@@ -1779,16 +2109,17 @@ Fonte: IBPT/empresometro.com.br 92589A`;
 
 
         const chaveMatch =
-            respostaSefaz
-                .match(
-                    /<chNFe>(\d+)<\/chNFe>/
-                );
+            respostaSefaz.match(
+                /<chNFe>(\d+)<\/chNFe>/
+            );
 
 
         let chaveAcesso;
 
 
-        if (chaveMatch) {
+        if (
+            chaveMatch
+        ) {
 
             chaveAcesso =
                 chaveMatch[1];
@@ -1797,6 +2128,7 @@ Fonte: IBPT/empresometro.com.br 92589A`;
             console.log(
                 `✅ Chave extraída da resposta SEFAZ: ${chaveAcesso}`
             );
+
 
         } else {
 
@@ -1812,7 +2144,9 @@ Fonte: IBPT/empresometro.com.br 92589A`;
         }
 
 
-        if (!protocolo) {
+        if (
+            !protocolo
+        ) {
 
             throw new Error(
                 'SEFAZ não retornou protocolo'
@@ -1841,17 +2175,18 @@ Fonte: IBPT/empresometro.com.br 92589A`;
         try {
 
             const protNFeMatch =
-                respostaSefaz
-                    .match(
-                        /<protNFe[^>]*>([\s\S]*?)<\/protNFe>/
-                    );
+                respostaSefaz.match(
+                    /<protNFe[^>]*>([\s\S]*?)<\/protNFe>/
+                );
 
 
             let protNFe =
                 '';
 
 
-            if (protNFeMatch) {
+            if (
+                protNFeMatch
+            ) {
 
                 protNFe =
                     protNFeMatch[0];
@@ -1899,7 +2234,9 @@ ${protNFe}
             );
 
 
-        } catch (err) {
+        } catch (
+            err
+        ) {
 
             console.warn(
                 '⚠️ Erro ao gerar XML para ML (não crítico):',
@@ -1961,7 +2298,8 @@ ${protNFe}
 
 
         const {
-            error: insertError
+            error:
+                insertError
         } =
             await supabase
                 .from(
@@ -1972,12 +2310,15 @@ ${protNFe}
                 );
 
 
-        if (insertError) {
+        if (
+            insertError
+        ) {
 
             console.error(
                 '❌ Erro ao salvar NF-e no Supabase:',
                 insertError
             );
+
 
         } else {
 
@@ -1991,7 +2332,9 @@ ${protNFe}
         // VENDA MERCADO LIVRE
         // =====================================================
 
-        if (venda_id) {
+        if (
+            venda_id
+        ) {
 
             try {
 
@@ -2032,10 +2375,13 @@ ${protNFe}
                     ml_access_token;
 
 
-                if (!tokenML) {
+                if (
+                    !tokenML
+                ) {
 
                     const {
-                        data: tokenData
+                        data:
+                            tokenData
                     } =
                         await supabase
                             .from(
@@ -2060,7 +2406,7 @@ ${protNFe}
                 if (
                     !tokenML &&
                     typeof getValidToken ===
-                    'function'
+                        'function'
                 ) {
 
                     const tokenObj =
@@ -2074,7 +2420,8 @@ ${protNFe}
 
 
                 const {
-                    data: venda
+                    data:
+                        venda
                 } =
                     await supabase
                         .from(
@@ -2116,7 +2463,11 @@ ${protNFe}
 
 
                         const proxyUrl =
-                            `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(orderUrl)}&token=${encodeURIComponent(tokenML)}`;
+                            `${WORKER_URL}/api/ml/proxy?url=${encodeURIComponent(
+                                orderUrl
+                            )}&token=${encodeURIComponent(
+                                tokenML
+                            )}`;
 
 
                         const orderRes =
@@ -2130,8 +2481,7 @@ ${protNFe}
                         ) {
 
                             const order =
-                                await orderRes
-                                    .json();
+                                await orderRes.json();
 
 
                             shipmentId =
@@ -2140,7 +2490,9 @@ ${protNFe}
                                 null;
 
 
-                            if (shipmentId) {
+                            if (
+                                shipmentId
+                            ) {
 
                                 await supabase
                                     .from(
@@ -2163,7 +2515,9 @@ ${protNFe}
                         }
 
 
-                    } catch (error) {
+                    } catch (
+                        error
+                    ) {
 
                         console.warn(
                             '⚠️ Erro ao buscar shipment_id:',
@@ -2190,11 +2544,14 @@ ${protNFe}
                         );
 
 
-                    if (isFull) {
+                    if (
+                        isFull
+                    ) {
 
                         console.log(
                             'ℹ️ Venda FULL - não é necessário importar NF-e.'
                         );
+
 
                     } else {
 
@@ -2233,6 +2590,7 @@ ${protNFe}
                                     venda_id
                                 );
 
+
                         } else {
 
                             console.warn(
@@ -2240,6 +2598,7 @@ ${protNFe}
                             );
                         }
                     }
+
 
                 } else {
 
@@ -2249,7 +2608,9 @@ ${protNFe}
                 }
 
 
-            } catch (error) {
+            } catch (
+                error
+            ) {
 
                 console.error(
                     '❌ Erro ao processar integração com ML:',
@@ -2283,7 +2644,9 @@ ${protNFe}
         });
 
 
-    } catch (error) {
+    } catch (
+        error
+    ) {
 
         console.error(
             '❌ Erro na emissão:',

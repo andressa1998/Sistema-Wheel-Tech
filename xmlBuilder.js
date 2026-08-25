@@ -44,108 +44,509 @@ function truncarTexto(texto, limite = 60) {
 }
 
 function gerarXmlNfe(dados) {
+
     const {
+
         nNF,
+
         serie = 1,
-        cNF = String(Math.floor(Math.random() * 100000000)).padStart(8, '0'),
+
+        cNF =
+            String(
+                Math.floor(
+                    Math.random() *
+                    100000000
+                )
+            )
+                .padStart(
+                    8,
+                    '0'
+                ),
+
         tpAmb = '2',
+
         emitente = {
-            CNPJ: '32830261000125',
-            xNome: 'Wheel Tech Bicycling Ltda',
-            xFant: 'Wheel Tech Bicycling',
-            IE: '9087859328',
-            IM: 'PR',
-            CNAE: '4763603',
-            CRT: '1',
-            fone: '4131501230',
+
+            CNPJ:
+                '32830261000125',
+
+            xNome:
+                'Wheel Tech Bicycling Ltda',
+
+            xFant:
+                'Wheel Tech Bicycling',
+
+            IE:
+                '9087859328',
+
+            IM:
+                'PR',
+
+            CNAE:
+                '4763603',
+
+            CRT:
+                '1',
+
+            fone:
+                '4131501230',
+
             enderEmit: {
-                xLgr: 'R. Lourenco Jasiocha',
-                nro: '1927',
-                xBairro: 'Centro',
-                cMun: '4101804',
-                xMun: 'Araucaria',
-                UF: 'PR',
-                CEP: '83702090',
-                cPais: '1058',
-                xPais: 'BRASIL'
+
+                xLgr:
+                    'R. Lourenco Jasiocha',
+
+                nro:
+                    '1927',
+
+                xBairro:
+                    'Centro',
+
+                cMun:
+                    '4101804',
+
+                xMun:
+                    'Araucaria',
+
+                UF:
+                    'PR',
+
+                CEP:
+                    '83702090',
+
+                cPais:
+                    '1058',
+
+                xPais:
+                    'BRASIL'
             }
         },
+
         destinatario,
+
         produtos,
+
         cfop,
-        natOp = 'Venda',
-        modFrete = '9',
-        transportadora = null,
-        volumes = { qVol: 0, pesoL: 0, pesoB: 0 },
-        fatura = null,
-        infAdic = null,
+
+        natOp =
+            'Venda',
+
+        modFrete =
+            '9',
+
+        transportadora =
+            null,
+
+        volumes = {
+
+            qVol:
+                0,
+
+            pesoL:
+                0,
+
+            pesoB:
+                0
+        },
+
+        fatura =
+            null,
+
+        infAdic =
+            null,
+
         respTec = {
-            CNPJ: '32830261000125',
-            xContato: 'WHEEL TECH BICYCLING LTDA',
-            email: 'wheeltechbicycling@gmail.com.br',
-            fone: '4131501230',
-            tokenCSRT: null,
-            idCSRT: null // Agora passamos o idCSRT explicitamente
+
+            CNPJ:
+                '32830261000125',
+
+            xContato:
+                'WHEEL TECH BICYCLING LTDA',
+
+            email:
+                'wheeltechbicycling@gmail.com.br',
+
+            fone:
+                '4131501230',
+
+            tokenCSRT:
+                null,
+
+            idCSRT:
+                null
         }
+
     } = dados;
 
-    if (!destinatario || !destinatario.xNome) {
-        throw new Error('Destinatário não informado corretamente');
+
+    // =====================================================
+    // VALIDAR DESTINATÁRIO
+    // =====================================================
+
+    if (
+        !destinatario ||
+        !destinatario.xNome
+    ) {
+
+        throw new Error(
+            'Destinatário não informado corretamente'
+        );
     }
 
-    const agora = new Date();
-    const dhEmi = agora.toLocaleString('sv-SE', { timeZone: 'America/Sao_Paulo' }).replace(' ', 'T') + '-03:00';
-    const dhSaiEnt = dhEmi;
-    const ano = agora.getFullYear().toString().slice(-2);
-    const mes = (agora.getMonth() + 1).toString().padStart(2, '0');
-    const cUF = '41';
 
-    // ===== CONSTRUIR CHAVE DE ACESSO =====
-    const chaveSemDV = cUF + ano + mes + emitente.CNPJ + '55' +
-        serie.toString().padStart(3, '0') +
-        nNF.toString().padStart(9, '0') +
-        '1' + cNF;
+    // =====================================================
+    // DATA / HORA
+    // =====================================================
 
-    const cDV = calcularDV(chaveSemDV);
-    const chaveAcesso = chaveSemDV + cDV;
-    const idNFe = `NFe${chaveAcesso}`;
+    const agora =
+        new Date();
 
-    // ===== CALCULAR HASHCSRT =====
-    // Garante dois dígitos preenchendo com zero à esquerda ('03' ou '04')
-    let idCSRT = respTec.idCSRT ? String(respTec.idCSRT).padStart(2, '0') : (tpAmb === '2' ? '03' : '04');
-    let hashCSRT = null;
 
-    if (respTec.tokenCSRT) {
-        // Mantém a ordem CORRETA de criptografia exigida (Chave + Token)
-        hashCSRT = calcularHashCSRT(respTec.tokenCSRT, chaveAcesso);
+    const dhEmi =
+        agora
+            .toLocaleString(
+                'sv-SE',
+                {
+                    timeZone:
+                        'America/Sao_Paulo'
+                }
+            )
+            .replace(
+                ' ',
+                'T'
+            ) +
+        '-03:00';
 
-        console.log(`🔐 idCSRT=${idCSRT}, hashCSRT=${hashCSRT}`);
-        console.log(`🔑 Token utilizado: ${respTec.tokenCSRT}`);
-        console.log(`🔑 Chave gerada: ${chaveAcesso}`);
+
+    const dhSaiEnt =
+        dhEmi;
+
+
+    const ano =
+        agora
+            .getFullYear()
+            .toString()
+            .slice(
+                -2
+            );
+
+
+    const mes =
+        (
+            agora.getMonth() +
+            1
+        )
+            .toString()
+            .padStart(
+                2,
+                '0'
+            );
+
+
+    const cUF =
+        '41';
+
+
+    // =====================================================
+    // CONSTRUIR CHAVE DE ACESSO
+    // =====================================================
+
+    const chaveSemDV =
+
+        cUF +
+
+        ano +
+
+        mes +
+
+        emitente.CNPJ +
+
+        '55' +
+
+        serie
+            .toString()
+            .padStart(
+                3,
+                '0'
+            ) +
+
+        nNF
+            .toString()
+            .padStart(
+                9,
+                '0'
+            ) +
+
+        '1' +
+
+        cNF;
+
+
+    const cDV =
+        calcularDV(
+            chaveSemDV
+        );
+
+
+    const chaveAcesso =
+        chaveSemDV +
+        cDV;
+
+
+    const idNFe =
+        `NFe${chaveAcesso}`;
+
+
+    // =====================================================
+    // CALCULAR HASH CSRT
+    // =====================================================
+
+    let idCSRT =
+        respTec.idCSRT
+
+            ? String(
+                respTec.idCSRT
+            )
+                .padStart(
+                    2,
+                    '0'
+                )
+
+            : (
+                tpAmb ===
+                    '2'
+
+                    ? '03'
+
+                    : '04'
+            );
+
+
+    let hashCSRT =
+        null;
+
+
+    if (
+        respTec.tokenCSRT
+    ) {
+
+        hashCSRT =
+            calcularHashCSRT(
+                respTec.tokenCSRT,
+                chaveAcesso
+            );
+
+
+        console.log(
+            `🔐 idCSRT=${idCSRT}, hashCSRT=${hashCSRT}`
+        );
+
+
+        console.log(
+            `🔑 Token utilizado: ${respTec.tokenCSRT}`
+        );
+
+
+        console.log(
+            `🔑 Chave gerada: ${chaveAcesso}`
+        );
+
+
     } else {
-        console.warn('⚠️ tokenCSRT não fornecido, usando fallback');
-        hashCSRT = 'z9ywwhAy7fsb/3QyV5mYiSRZnuA=';
+
+        console.warn(
+            '⚠️ tokenCSRT não fornecido, usando fallback'
+        );
+
+
+        hashCSRT =
+            'z9ywwhAy7fsb/3QyV5mYiSRZnuA=';
     }
 
-    // ========== DADOS DO DESTINATÁRIO ==========
-    let documento = (destinatario.CPF || destinatario.CNPJ || '').replace(/\D/g, '');
-    const tipoDoc = documento.length === 14 ? 'CNPJ' : 'CPF';
 
-    // ========== MONTAGEM DO XML ==========
-    let totalProd = 0;
-    let totalTrib = 0;
-    let produtosXml = '';
-    produtos.forEach((prod, idx) => {
-        const vProd = prod.quantidade * prod.valor_unitario;
-        totalProd += vProd;
-        const vTotTrib = vProd * 0.0402;
-        totalTrib += vTotTrib;
+    // =====================================================
+    // DOCUMENTO DO DESTINATÁRIO
+    // =====================================================
 
-        const nomeProd = escapeXml(prod.nome || '');
-        const sku = escapeXml(prod.sku || '');
-        const cfopProd = prod.cfop || cfop;
+    let documento =
+        String(
+            destinatario.CPF ||
+            destinatario.CNPJ ||
+            ''
+        )
+            .replace(
+                /\D/g,
+                ''
+            );
 
-        produtosXml += `
+
+    const tipoDoc =
+        documento.length ===
+            14
+
+            ? 'CNPJ'
+
+            : 'CPF';
+
+
+    // =====================================================
+    // INSCRIÇÃO ESTADUAL DO DESTINATÁRIO
+    //
+    // indIEDest:
+    //
+    // 1 = Contribuinte ICMS
+    // 2 = Contribuinte isento
+    // 9 = Não contribuinte
+    //
+    // CNPJ + IE:
+    //   <IE>...</IE>
+    //   <indIEDest>1</indIEDest>
+    //
+    // CNPJ + ISENTO:
+    //   sem <IE>
+    //   <indIEDest>2</indIEDest>
+    //
+    // CPF ou CNPJ sem IE:
+    //   sem <IE>
+    //   <indIEDest>9</indIEDest>
+    // =====================================================
+
+    let ieDestinatario =
+        String(
+            destinatario.IE ||
+            ''
+        )
+            .trim()
+            .toUpperCase();
+
+
+    if (
+        ieDestinatario &&
+        ieDestinatario !==
+            'ISENTO'
+    ) {
+
+        ieDestinatario =
+            ieDestinatario.replace(
+                /[^0-9A-Z]/g,
+                ''
+            );
+    }
+
+
+    let indIEDest =
+        '9';
+
+
+    let ieDestinatarioXml =
+        '';
+
+
+    if (
+        tipoDoc ===
+            'CNPJ' &&
+        ieDestinatario
+    ) {
+
+        if (
+            ieDestinatario ===
+                'ISENTO'
+        ) {
+
+            indIEDest =
+                '2';
+
+
+        } else {
+
+            indIEDest =
+                '1';
+
+
+            ieDestinatarioXml =
+                `<IE>${escapeXml(
+                    ieDestinatario
+                )}</IE>`;
+        }
+    }
+
+
+    console.log(
+        '🧾 Destinatário fiscal no XML:',
+        {
+            tipoDoc,
+
+            documento,
+
+            IE:
+                ieDestinatario ||
+                null,
+
+            indIEDest
+        }
+    );
+
+
+    // =====================================================
+    // PRODUTOS
+    // =====================================================
+
+    let totalProd =
+        0;
+
+
+    let totalTrib =
+        0;
+
+
+    let produtosXml =
+        '';
+
+
+    produtos.forEach(
+        (
+            prod,
+            idx
+        ) => {
+
+            const vProd =
+                prod.quantidade *
+                prod.valor_unitario;
+
+
+            totalProd +=
+                vProd;
+
+
+            const vTotTrib =
+                vProd *
+                0.0402;
+
+
+            totalTrib +=
+                vTotTrib;
+
+
+            const nomeProd =
+                escapeXml(
+                    prod.nome ||
+                    ''
+                );
+
+
+            const sku =
+                escapeXml(
+                    prod.sku ||
+                    ''
+                );
+
+
+            const cfopProd =
+                prod.cfop ||
+                cfop;
+
+
+            produtosXml += `
         <det nItem="${idx + 1}">
             <prod>
                 <cProd>${sku}</cProd>
@@ -189,33 +590,147 @@ function gerarXmlNfe(dados) {
                 </COFINS>
             </imposto>
         </det>`;
-    });
-
-    const xNomeEmit = escapeXml(emitente.xNome);
-    const xFantEmit = escapeXml(emitente.xFant);
-    const xLgrEmit = escapeXml(emitente.enderEmit.xLgr);
-    const xBairroEmit = escapeXml(emitente.enderEmit.xBairro);
-    const xMunEmit = escapeXml(emitente.enderEmit.xMun);
-
-    let xNomeDest = destinatario.xNome || '';
-        if (xNomeDest.length > 60) {
-            xNomeDest = xNomeDest.substring(0, 60);
-            console.warn(`✂️ Nome do destinatário truncado para 60 caracteres: ${xNomeDest}...`);
         }
-        xNomeDest = escapeXml(xNomeDest);
+    );
 
-    const xLgrDest = escapeXml(destinatario.xLgr || '');
-    const nroDest = escapeXml(destinatario.nro || 'S/N');
-    const xCplDest = escapeXml(destinatario.xCpl || '');
-    const xBairroDest = escapeXml(destinatario.xBairro || '');
-    const xMunDest = escapeXml(destinatario.xMun || '');
-    const cMunDest = destinatario.cMun || '4101804';
 
-    let transportaXml = '';
-    if (transportadora) {
-    const cnpj = transportadora.CNPJ ? transportadora.CNPJ.replace(/\D/g, '') : '';
-    if (cnpj && cnpj.length === 14) {
-        transportaXml = `
+    // =====================================================
+    // EMITENTE
+    // =====================================================
+
+    const xNomeEmit =
+        escapeXml(
+            emitente.xNome
+        );
+
+
+    const xFantEmit =
+        escapeXml(
+            emitente.xFant
+        );
+
+
+    const xLgrEmit =
+        escapeXml(
+            emitente.enderEmit.xLgr
+        );
+
+
+    const xBairroEmit =
+        escapeXml(
+            emitente.enderEmit.xBairro
+        );
+
+
+    const xMunEmit =
+        escapeXml(
+            emitente.enderEmit.xMun
+        );
+
+
+    // =====================================================
+    // DESTINATÁRIO
+    // =====================================================
+
+    let xNomeDest =
+        destinatario.xNome ||
+        '';
+
+
+    if (
+        xNomeDest.length >
+        60
+    ) {
+
+        xNomeDest =
+            xNomeDest.substring(
+                0,
+                60
+            );
+
+
+        console.warn(
+            `✂️ Nome do destinatário truncado para 60 caracteres: ${xNomeDest}...`
+        );
+    }
+
+
+    xNomeDest =
+        escapeXml(
+            xNomeDest
+        );
+
+
+    const xLgrDest =
+        escapeXml(
+            destinatario.xLgr ||
+            ''
+        );
+
+
+    const nroDest =
+        escapeXml(
+            destinatario.nro ||
+            'S/N'
+        );
+
+
+    const xCplDest =
+        escapeXml(
+            destinatario.xCpl ||
+            ''
+        );
+
+
+    const xBairroDest =
+        escapeXml(
+            destinatario.xBairro ||
+            ''
+        );
+
+
+    const xMunDest =
+        escapeXml(
+            destinatario.xMun ||
+            ''
+        );
+
+
+    const cMunDest =
+        destinatario.cMun ||
+        '4101804';
+
+
+    // =====================================================
+    // TRANSPORTADORA
+    // =====================================================
+
+    let transportaXml =
+        '';
+
+
+    if (
+        transportadora
+    ) {
+
+        const cnpj =
+            transportadora.CNPJ
+
+                ? transportadora.CNPJ.replace(
+                    /\D/g,
+                    ''
+                )
+
+                : '';
+
+
+        if (
+            cnpj &&
+            cnpj.length ===
+                14
+        ) {
+
+            transportaXml = `
         <transporta>
             <CNPJ>${cnpj}</CNPJ>
             <xNome>${escapeXml(transportadora.xNome || '')}</xNome>
@@ -224,10 +739,20 @@ function gerarXmlNfe(dados) {
             <xMun>${escapeXml(transportadora.xMun || '')}</xMun>
             <UF>${transportadora.UF || ''}</UF>
         </transporta>`;
-    } else {
-        console.warn('⚠️ Transportadora com CNPJ inválido, ignorando.');
+
+
+        } else {
+
+            console.warn(
+                '⚠️ Transportadora com CNPJ inválido, ignorando.'
+            );
+        }
     }
-}
+
+
+    // =====================================================
+    // VOLUMES
+    // =====================================================
 
     const volumesXml = `
         <vol>
@@ -236,8 +761,19 @@ function gerarXmlNfe(dados) {
             <pesoB>${(volumes.pesoB || 0).toFixed(3)}</pesoB>
         </vol>`;
 
-    let faturaXml = '';
-    if (fatura) {
+
+    // =====================================================
+    // FATURA
+    // =====================================================
+
+    let faturaXml =
+        '';
+
+
+    if (
+        fatura
+    ) {
+
         faturaXml = `
         <cobr>
             <fat>
@@ -249,6 +785,11 @@ function gerarXmlNfe(dados) {
         </cobr>`;
     }
 
+
+    // =====================================================
+    // PAGAMENTO
+    // =====================================================
+
     const pagXml = `
         <pag>
             <detPag>
@@ -259,15 +800,30 @@ function gerarXmlNfe(dados) {
             <vTroco>0.00</vTroco>
         </pag>`;
 
-    let infAdicXml = '';
-    if (infAdic) {
+
+    // =====================================================
+    // INFORMAÇÕES ADICIONAIS
+    // =====================================================
+
+    let infAdicXml =
+        '';
+
+
+    if (
+        infAdic
+    ) {
+
         infAdicXml = `
         <infAdic>
             <infCpl>${escapeXml(infAdic)}</infCpl>
         </infAdic>`;
     }
 
-    // ===== INFORMAÇÕES DO RESPONSÁVEL TÉCNICO =====
+
+    // =====================================================
+    // RESPONSÁVEL TÉCNICO
+    // =====================================================
+
     const respTecXml = `
         <infRespTec>
             <CNPJ>${respTec.CNPJ}</CNPJ>
@@ -278,15 +834,47 @@ function gerarXmlNfe(dados) {
             <hashCSRT>${hashCSRT}</hashCSRT>
         </infRespTec>`;
 
-    const idDest = (destinatario.UF === emitente.enderEmit.UF) ? '1' : '2';
 
-    let transpXml = `<modFrete>${modFrete}</modFrete>`;
-    if (transportadora) {
-        transpXml += transportaXml;
+    // =====================================================
+    // DESTINO DA OPERAÇÃO
+    // =====================================================
+
+    const idDest =
+        destinatario.UF ===
+            emitente.enderEmit.UF
+
+            ? '1'
+
+            : '2';
+
+
+    // =====================================================
+    // TRANSPORTE
+    // =====================================================
+
+    let transpXml =
+        `<modFrete>${modFrete}</modFrete>`;
+
+
+    if (
+        transportadora
+    ) {
+
+        transpXml +=
+            transportaXml;
     }
-    transpXml += volumesXml;
 
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+
+    transpXml +=
+        volumesXml;
+
+
+    // =====================================================
+    // XML
+    // =====================================================
+
+    const xml =
+`<?xml version="1.0" encoding="UTF-8"?>
 <NFe xmlns="http://www.portalfiscal.inf.br/nfe">
     <infNFe versao="4.00" Id="${idNFe}">
         <ide>
@@ -312,10 +900,12 @@ function gerarXmlNfe(dados) {
             <procEmi>0</procEmi>
             <verProc>0</verProc>
         </ide>
+
         <emit>
             <CNPJ>${emitente.CNPJ}</CNPJ>
             <xNome>${xNomeEmit}</xNome>
             <xFant>${xFantEmit}</xFant>
+
             <enderEmit>
                 <xLgr>${xLgrEmit}</xLgr>
                 <nro>${emitente.enderEmit.nro}</nro>
@@ -328,14 +918,17 @@ function gerarXmlNfe(dados) {
                 <xPais>${escapeXml(emitente.enderEmit.xPais)}</xPais>
                 <fone>${emitente.fone}</fone>
             </enderEmit>
+
             <IE>${emitente.IE}</IE>
             <IM>${emitente.IM || ''}</IM>
             <CNAE>${emitente.CNAE || ''}</CNAE>
             <CRT>${emitente.CRT}</CRT>
         </emit>
+
         <dest>
             <${tipoDoc}>${documento}</${tipoDoc}>
             <xNome>${xNomeDest}</xNome>
+
             <enderDest>
                 <xLgr>${xLgrDest}</xLgr>
                 <nro>${nroDest}</nro>
@@ -348,9 +941,13 @@ function gerarXmlNfe(dados) {
                 <cPais>1058</cPais>
                 <xPais>BRASIL</xPais>
             </enderDest>
-            <indIEDest>9</indIEDest>
+
+            ${ieDestinatarioXml}
+            <indIEDest>${indIEDest}</indIEDest>
         </dest>
+
         ${produtosXml}
+
         <total>
             <ICMSTot>
                 <vBC>0.00</vBC>
@@ -375,13 +972,53 @@ function gerarXmlNfe(dados) {
                 <vTotTrib>${totalTrib.toFixed(2)}</vTotTrib>
             </ICMSTot>
         </total>
+
         <transp>${transpXml}</transp>
+
         ${faturaXml}
+
         ${pagXml}
+
         ${infAdicXml}
+
         ${respTecXml}
+
     </infNFe>
 </NFe>`;
+
+
+    // =====================================================
+    // CONFERÊNCIA DO BLOCO DO DESTINATÁRIO
+    // =====================================================
+
+    const blocoDest =
+        xml.match(
+            /<dest>[\s\S]*?<\/dest>/
+        )?.[0] ||
+        '';
+
+
+    console.log(
+        '🧾 XML DESTINATÁRIO GERADO:',
+        {
+            documento,
+
+            tipoDoc,
+
+            IE:
+                blocoDest.match(
+                    /<IE>([^<]+)<\/IE>/
+                )?.[1] ||
+                null,
+
+            indIEDest:
+                blocoDest.match(
+                    /<indIEDest>([^<]+)<\/indIEDest>/
+                )?.[1] ||
+                null
+        }
+    );
+
 
     return xml;
 }

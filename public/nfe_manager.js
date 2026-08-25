@@ -2354,6 +2354,7 @@ async function abrirModalEdicaoProdutos(orderId) {
         orderId
     );
 
+
     // =====================================================
     // NORMALIZAR ORDER ID
     // =====================================================
@@ -2362,6 +2363,7 @@ async function abrirModalEdicaoProdutos(orderId) {
         normalizarOrderIdML(
             orderId
         );
+
 
     if (
         !orderId ||
@@ -2382,30 +2384,18 @@ async function abrirModalEdicaoProdutos(orderId) {
     // REMOVER MODAIS ANTIGOS
     // =====================================================
 
-    const modalClienteAntigo =
-        document.getElementById(
+    document
+        .getElementById(
             'modalDadosClienteNFE'
-        );
-
-    if (
-        modalClienteAntigo
-    ) {
-
-        modalClienteAntigo.remove();
-    }
+        )
+        ?.remove();
 
 
-    const modalAnterior =
-        document.getElementById(
+    document
+        .getElementById(
             'modalEdicaoProdutos'
-        );
-
-    if (
-        modalAnterior
-    ) {
-
-        modalAnterior.remove();
-    }
+        )
+        ?.remove();
 
 
     // =====================================================
@@ -2414,6 +2404,7 @@ async function abrirModalEdicaoProdutos(orderId) {
 
     vendaIdParaEdicao =
         orderId;
+
 
     pendingEmitOrderId =
         orderId;
@@ -2439,13 +2430,16 @@ async function abrirModalEdicaoProdutos(orderId) {
             await window
                 .getValidToken();
 
+
         token =
             tokenData
                 ?.access_token;
     }
 
 
-    if (!token) {
+    if (
+        !token
+    ) {
 
         showToast(
             '❌ Token ML não disponível',
@@ -2465,7 +2459,7 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
-        // LOCALIZAR VENDA ATUAL NA TABELA/CACHE
+        // VENDAS DISPONÍVEIS
         // =====================================================
 
         const vendasDisponiveis =
@@ -2478,6 +2472,7 @@ async function abrirModalEdicaoProdutos(orderId) {
 
         let vendaAtual =
             window._nfeVendaAtual ||
+
             vendasDisponiveis.find(
                 venda =>
                     normalizarOrderIdML(
@@ -2486,17 +2481,21 @@ async function abrirModalEdicaoProdutos(orderId) {
                     ) ===
                     orderId
             ) ||
+
             null;
 
 
         // =====================================================
-        // HELPERS LOCAIS PACK / SHIPMENT
+        // HELPERS PACK / SHIPMENT
         // =====================================================
 
         const obterPackIdLocal =
             venda => {
 
-                if (!venda) {
+                if (
+                    !venda
+                ) {
+
                     return null;
                 }
 
@@ -2511,7 +2510,10 @@ async function abrirModalEdicaoProdutos(orderId) {
                             venda
                         );
 
-                    if (resultado) {
+
+                    if (
+                        resultado
+                    ) {
 
                         return String(
                             resultado
@@ -2554,22 +2556,32 @@ async function abrirModalEdicaoProdutos(orderId) {
                     null;
 
 
-                return (
-                    packId !== null &&
-                    packId !== undefined &&
-                    packId !== ''
-                )
-                    ? String(
-                        packId
-                    )
-                    : null;
+                if (
+                    packId ===
+                        null ||
+                    packId ===
+                        undefined ||
+                    packId ===
+                        ''
+                ) {
+
+                    return null;
+                }
+
+
+                return String(
+                    packId
+                );
             };
 
 
         const obterShipmentIdLocal =
             venda => {
 
-                if (!venda) {
+                if (
+                    !venda
+                ) {
+
                     return null;
                 }
 
@@ -2584,7 +2596,10 @@ async function abrirModalEdicaoProdutos(orderId) {
                             venda
                         );
 
-                    if (resultado) {
+
+                    if (
+                        resultado
+                    ) {
 
                         return String(
                             resultado
@@ -2596,9 +2611,11 @@ async function abrirModalEdicaoProdutos(orderId) {
                 const info =
                     typeof parseInformacoesEnvioNFE ===
                         'function'
+
                         ? parseInformacoesEnvioNFE(
                             venda
                         )
+
                         : {};
 
 
@@ -2611,29 +2628,36 @@ async function abrirModalEdicaoProdutos(orderId) {
                     null;
 
 
-                return (
-                    shipmentId !== null &&
-                    shipmentId !== undefined &&
-                    shipmentId !== ''
-                )
-                    ? String(
-                        shipmentId
-                    )
-                    : null;
+                if (
+                    shipmentId ===
+                        null ||
+                    shipmentId ===
+                        undefined ||
+                    shipmentId ===
+                        ''
+                ) {
+
+                    return null;
+                }
+
+
+                return String(
+                    shipmentId
+                );
             };
 
 
         // =====================================================
-        // DESCOBRIR TODAS AS ORDERS QUE PERTENCEM À NOTA
+        // DESCOBRIR TODAS AS ORDERS DA MESMA NF-E
         // =====================================================
 
         let orderIdsDaNFE =
             [];
 
 
-        // -----------------------------------------------------
-        // 1. SE JÁ FOI AGRUPADO NA TABELA
-        // -----------------------------------------------------
+        // =====================================================
+        // 1. PACK JÁ AGRUPADO
+        // =====================================================
 
         if (
             vendaAtual &&
@@ -2654,9 +2678,9 @@ async function abrirModalEdicaoProdutos(orderId) {
         }
 
 
-        // -----------------------------------------------------
+        // =====================================================
         // 2. GLOBAL DEFINIDO PELO HANDLER
-        // -----------------------------------------------------
+        // =====================================================
 
         if (
             orderIdsDaNFE.length ===
@@ -2678,9 +2702,9 @@ async function abrirModalEdicaoProdutos(orderId) {
         }
 
 
-        // -----------------------------------------------------
-        // 3. PROCURAR MESMO PACK/SHIPMENT NAS VENDAS DA TELA
-        // -----------------------------------------------------
+        // =====================================================
+        // 3. PROCURAR MESMO PACK / SHIPMENT NA TELA
+        // =====================================================
 
         if (
             orderIdsDaNFE.length ===
@@ -2708,6 +2732,11 @@ async function abrirModalEdicaoProdutos(orderId) {
                     vendasDisponiveis.filter(
                         venda => {
 
+                            // =====================================
+                            // FULL NÃO ENTRA EM PACK PARA EMISSÃO
+                            // MANUAL
+                            // =====================================
+
                             if (
                                 detectarVendaFullNFE(
                                     venda
@@ -2725,7 +2754,9 @@ async function abrirModalEdicaoProdutos(orderId) {
                                 );
 
 
-                            if (!id) {
+                            if (
+                                !id
+                            ) {
 
                                 return false;
                             }
@@ -2786,9 +2817,9 @@ async function abrirModalEdicaoProdutos(orderId) {
         }
 
 
-        // -----------------------------------------------------
+        // =====================================================
         // 4. FALLBACK
-        // -----------------------------------------------------
+        // =====================================================
 
         if (
             orderIdsDaNFE.length ===
@@ -2801,7 +2832,10 @@ async function abrirModalEdicaoProdutos(orderId) {
         }
 
 
-        // Garantir principal
+        // =====================================================
+        // GARANTIR PRINCIPAL
+        // =====================================================
+
         if (
             !orderIdsDaNFE.includes(
                 orderId
@@ -2855,7 +2889,11 @@ async function abrirModalEdicaoProdutos(orderId) {
 
             window._nfeVendaAtual = {
 
-                ...(vendaAtual || membrosPack[0] || {}),
+                ...(
+                    vendaAtual ||
+                    membrosPack[0] ||
+                    {}
+                ),
 
                 _eh_pack:
                     true,
@@ -2867,6 +2905,7 @@ async function abrirModalEdicaoProdutos(orderId) {
                     membrosPack
             };
 
+
         } else {
 
             window._nfeVendaAtual =
@@ -2877,7 +2916,7 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
-        // BUSCAR TODAS AS ORDERS NO ML
+        // BUSCAR ORDER COMPLETA
         // =====================================================
 
         const buscarOrderCompleta =
@@ -2950,6 +2989,10 @@ async function abrirModalEdicaoProdutos(orderId) {
             };
 
 
+        // =====================================================
+        // BUSCAR TODAS AS ORDERS
+        // =====================================================
+
         const orders =
             await Promise.all(
 
@@ -2987,20 +3030,23 @@ async function abrirModalEdicaoProdutos(orderId) {
             pendingEmitOrderId =
                 null;
 
+
             vendaIdParaEdicao =
                 null;
+
 
             showToast(
                 '🚫 Este pacote contém venda FULL e não permite emissão manual.',
                 'warning'
             );
 
+
             return;
         }
 
 
         // =====================================================
-        // PRINCIPAL
+        // ORDER PRINCIPAL
         // =====================================================
 
         const principal =
@@ -3010,6 +3056,16 @@ async function abrirModalEdicaoProdutos(orderId) {
                     orderId
             ) ||
             orders[0];
+
+
+        if (
+            !principal
+        ) {
+
+            throw new Error(
+                'Venda principal não localizada.'
+            );
+        }
 
 
         const venda =
@@ -3022,6 +3078,7 @@ async function abrirModalEdicaoProdutos(orderId) {
 
         const items =
             [];
+
 
         let valorTotalProduto =
             0;
@@ -3214,6 +3271,7 @@ async function abrirModalEdicaoProdutos(orderId) {
             '📦 Produtos que entrarão na NF-e:',
             items.map(
                 item => ({
+
                     order:
                         item._order_id,
 
@@ -3231,7 +3289,7 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
-        // ENDEREÇO
+        // ENDEREÇO DE ENTREGA
         // =====================================================
 
         let address =
@@ -3256,7 +3314,11 @@ async function abrirModalEdicaoProdutos(orderId) {
 
                 const response =
                     await fetch(
-                        proxy
+                        proxy,
+                        {
+                            cache:
+                                'no-store'
+                        }
                     );
 
 
@@ -3298,96 +3360,21 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
-        // BILLING INFO
+        // DADOS FISCAIS DO CLIENTE
+        //
+        // Aqui entra:
+        // - CPF / CNPJ
+        // - Razão Social / Nome
+        // - Inscrição Estadual
+        // - Endereço fiscal
         // =====================================================
 
-        let billingInfo =
-            {};
-
-
-        try {
-
-            const billingUrl =
-                `https://api.mercadolibre.com/orders/${orderId}/billing_info`;
-
-
-            const proxy =
-                `${window.WORKER_URL}/api/ml/proxy?url=` +
-                `${encodeURIComponent(billingUrl)}` +
-                `&token=${encodeURIComponent(token)}`;
-
-
-            const response =
-                await fetch(
-                    proxy
-                );
-
-
-            if (
-                response.ok
-            ) {
-
-                const resultado =
-                    await response.json();
-
-
-                billingInfo =
-                    resultado?.billing_info ||
-                    resultado ||
-                    {};
-            }
-
-
-        } catch (
-            error
-        ) {
-
-            console.warn(
-                '⚠️ Billing info:',
-                error
+        const dadosFiscais =
+            await buscarDadosFiscaisCompradorMLNFE(
+                venda,
+                token
             );
-        }
 
-
-        // =====================================================
-        // ADDITIONAL INFO
-        // =====================================================
-
-        const infoExtra =
-            {};
-
-
-        if (
-            Array.isArray(
-                billingInfo.additional_info
-            )
-        ) {
-
-            billingInfo
-                .additional_info
-                .forEach(
-                    item => {
-
-                        if (
-                            item?.type
-                        ) {
-
-                            infoExtra[
-                                String(
-                                    item.type
-                                ).toUpperCase()
-                            ] =
-                                item.value ??
-                                '';
-                        }
-                    }
-                );
-        }
-
-
-        // =====================================================
-        // CLIENTE
-        // =====================================================
 
         const buyer =
             venda.buyer ||
@@ -3399,36 +3386,23 @@ async function abrirModalEdicaoProdutos(orderId) {
                 .trim();
 
 
-        const nomeBilling =
-            `${infoExtra.FIRST_NAME || ''} ${infoExtra.LAST_NAME || ''}`
-                .trim();
-
-
         const nomeCliente =
-            nomeBilling ||
+            dadosFiscais.nome ||
             nomeBuyer ||
             buyer.nickname ||
-            billingInfo.name ||
             '';
 
 
         const documentoCliente =
             String(
 
-                infoExtra.DOC_NUMBER ||
+                dadosFiscais.documento ||
 
-                billingInfo.doc_number ||
-
-                billingInfo.document_number ||
-
-                billingInfo.identification
-                    ?.number ||
-
-                buyer.identification
+                buyer
+                    .identification
                     ?.number ||
 
                 ''
-
             )
                 .replace(
                     /\D/g,
@@ -3437,35 +3411,71 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
-        // ENDEREÇO
+        // INSCRIÇÃO ESTADUAL
+        //
+        // Somente para CNPJ.
         // =====================================================
 
+        const inscricaoEstadual =
+            documentoCliente.length ===
+                14
+
+                ? String(
+                    dadosFiscais
+                        .inscricao_estadual ||
+                    ''
+                )
+                    .trim()
+                    .toUpperCase()
+
+                : '';
+
+
+        // =====================================================
+        // ENDEREÇO FISCAL
+        //
+        // Prioridade:
+        // 1. Billing Info
+        // 2. Endereço de entrega
+        // =====================================================
+
+        const enderecoFiscal =
+            dadosFiscais.endereco ||
+            {};
+
+
         let logradouro =
+            enderecoFiscal.street_name ||
             address.address_line ||
             address.street_name ||
-            infoExtra.STREET_NAME ||
             '';
 
 
         let numero =
+            enderecoFiscal.street_number ||
             address.street_number ||
-            infoExtra.STREET_NUMBER ||
             'S/N';
 
+
+        // =====================================================
+        // REMOVER NÚMERO DO FINAL DO LOGRADOURO
+        // =====================================================
 
         if (
             logradouro &&
             numero &&
-            numero !== 'S/N'
+            numero !==
+                'S/N'
         ) {
 
             const numeroEscapado =
                 String(
                     numero
-                ).replace(
-                    /[.*+?^${}()|[\]\\]/g,
-                    '\\$&'
-                );
+                )
+                    .replace(
+                        /[.*+?^${}()|[\]\\]/g,
+                        '\\$&'
+                    );
 
 
             const pattern =
@@ -3489,25 +3499,24 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         const bairro =
+            enderecoFiscal.neighborhood ||
             address.neighborhood?.name ||
             address.neighborhood ||
-            infoExtra.NEIGHBORHOOD ||
             '';
 
 
         const cidade =
+            enderecoFiscal.city_name ||
             address.city?.name ||
             address.city ||
-            infoExtra.CITY_NAME ||
-            infoExtra.CITY ||
             '';
 
 
         const ufOriginal =
+            enderecoFiscal.state?.name ||
+            enderecoFiscal.state?.code ||
             address.state?.name ||
             address.state ||
-            infoExtra.STATE_NAME ||
-            infoExtra.STATE ||
             '';
 
 
@@ -3519,14 +3528,50 @@ async function abrirModalEdicaoProdutos(orderId) {
 
         const cep =
             String(
+
+                enderecoFiscal.zip_code ||
+
                 address.zip_code ||
-                infoExtra.ZIP_CODE ||
+
                 ''
             )
                 .replace(
                     /\D/g,
                     ''
                 );
+
+
+        console.log(
+            '🧾 Dados fiscais ML:',
+            {
+
+                tipo:
+                    dadosFiscais
+                        .tipo_documento,
+
+                documento:
+                    documentoCliente,
+
+                ie:
+                    inscricaoEstadual,
+
+                contribuinte:
+                    dadosFiscais
+                        .tipo_contribuinte,
+
+                nome:
+                    nomeCliente,
+
+                endereco: {
+                    logradouro,
+                    numero,
+                    bairro,
+                    cidade,
+                    uf,
+                    cep
+                }
+            }
+        );
 
 
         // =====================================================
@@ -3662,7 +3707,7 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
-        // CORRIGIR CENTAVOS NO TOTAL
+        // CORRIGIR DIFERENÇA DE CENTAVOS
         // =====================================================
 
         const totalCalculado =
@@ -3754,8 +3799,179 @@ async function abrirModalEdicaoProdutos(orderId) {
         const textoOrders =
             orderIdsDaNFE.length >
                 1
-                ? `Pacote com ${orderIdsDaNFE.length} pedidos: ${orderIdsDaNFE.join(' / ')}`
+
+                ? (
+                    `Pacote com ${orderIdsDaNFE.length} pedidos: ` +
+                    `${orderIdsDaNFE.join(' / ')}`
+                )
+
                 : `Venda Mercado Livre: ${orderId}`;
+
+
+        // =====================================================
+        // HTML DOS PRODUTOS
+        // =====================================================
+
+        const produtosHtml =
+            produtosEditados
+                .map(
+                    (
+                        produto,
+                        index
+                    ) => `
+
+                        <tr
+                            data-index="${index}"
+                        >
+
+                            <td>
+
+                                <input
+                                    type="text"
+                                    class="
+                                        form-control
+                                        form-control-sm
+                                        nome-produto
+                                    "
+                                    data-index="${index}"
+                                    value="${esc(
+                                        produto.nome
+                                    )}"
+                                >
+
+                            </td>
+
+
+                            <td>
+
+                                <input
+                                    type="text"
+                                    class="
+                                        form-control
+                                        form-control-sm
+                                        sku-produto
+                                    "
+                                    data-index="${index}"
+                                    value="${esc(
+                                        produto.sku
+                                    )}"
+                                >
+
+                            </td>
+
+
+                            <td>
+
+                                <input
+                                    type="number"
+                                    class="
+                                        form-control
+                                        form-control-sm
+                                        qtd-produto
+                                    "
+                                    data-index="${index}"
+                                    value="${produto.quantidade}"
+                                    min="0.01"
+                                    step="0.01"
+                                >
+
+                            </td>
+
+
+                            <td>
+
+                                <input
+                                    type="number"
+                                    class="
+                                        form-control
+                                        form-control-sm
+                                        valor-produto
+                                    "
+                                    data-index="${index}"
+                                    value="${
+                                        Number(
+                                            produto
+                                                .valor_unitario ||
+                                            0
+                                        )
+                                            .toFixed(
+                                                2
+                                            )
+                                    }"
+                                    min="0"
+                                    step="0.01"
+                                >
+
+                            </td>
+
+
+                            <td>
+
+                                <input
+                                    type="text"
+                                    class="
+                                        form-control
+                                        form-control-sm
+                                        ncm-produto
+                                    "
+                                    data-index="${index}"
+                                    value="${esc(
+                                        produto.ncm
+                                    )}"
+                                    maxlength="8"
+                                >
+
+                            </td>
+
+
+                            <td
+                                class="subtotal-produto"
+                            >
+                                R$
+                                ${
+                                    (
+                                        Number(
+                                            produto.quantidade ||
+                                            0
+                                        ) *
+                                        Number(
+                                            produto.valor_unitario ||
+                                            0
+                                        )
+                                    )
+                                        .toFixed(
+                                            2
+                                        )
+                                }
+                            </td>
+
+                        </tr>
+                    `
+                )
+                .join(
+                    ''
+                );
+
+
+        const totalNota =
+            produtosEditados.reduce(
+                (
+                    total,
+                    produto
+                ) =>
+                    total +
+                    (
+                        Number(
+                            produto.quantidade ||
+                            0
+                        ) *
+                        Number(
+                            produto.valor_unitario ||
+                            0
+                        )
+                    ),
+                0
+            );
 
 
         // =====================================================
@@ -3764,651 +3980,826 @@ async function abrirModalEdicaoProdutos(orderId) {
 
         const modalHTML = `
 
-        <div
-            id="modalEdicaoProdutos"
-            class="modal"
-            style="
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                background:rgba(0,0,0,0.5);
-                z-index:10000;
-                position:fixed;
-                inset:0;
-            "
-        >
-
             <div
-                class="modal-content"
+                id="modalEdicaoProdutos"
+                class="modal"
                 style="
-                    max-width:1150px;
-                    width:96%;
-                    max-height:94vh;
-                    overflow-y:auto;
-                    background:white;
-                    padding:25px;
-                    border-radius:10px;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    background:rgba(0,0,0,0.5);
+                    z-index:10000;
+                    position:fixed;
+                    inset:0;
                 "
             >
 
                 <div
+                    class="modal-content"
                     style="
-                        display:flex;
-                        justify-content:space-between;
-                        align-items:center;
-                        margin-bottom:18px;
-                    "
-                >
-
-                    <div>
-
-                        <h3 style="margin:0;">
-                            <i class="fas fa-file-invoice"></i>
-                            Emitir NF-e
-                        </h3>
-
-                        <small style="color:#6c757d;">
-                            ${esc(textoOrders)}
-                        </small>
-
-                    </div>
-
-                    <button
-                        type="button"
-                        onclick="fecharModalEdicaoProdutos()"
-                        style="
-                            background:none;
-                            border:none;
-                            font-size:28px;
-                            cursor:pointer;
-                            color:#6c757d;
-                        "
-                    >
-                        &times;
-                    </button>
-
-                </div>
-
-
-                ${
-                    orderIdsDaNFE.length > 1
-                        ? `
-                            <div
-                                style="
-                                    background:#e8f4ff;
-                                    border:1px solid #b8daff;
-                                    padding:10px 14px;
-                                    border-radius:7px;
-                                    margin-bottom:15px;
-                                    color:#004085;
-                                "
-                            >
-                                <strong>
-                                    📦 Pacote Mercado Livre
-                                </strong>
-
-                                <br>
-
-                                Os ${orderIdsDaNFE.length} pedidos abaixo serão emitidos em
-                                <strong>uma única NF-e</strong>.
-                            </div>
-                        `
-                        : ''
-                }
-
-
-                <div
-                    style="
-                        background:#f8f9fa;
-                        padding:14px;
-                        border-radius:8px;
-                        margin-bottom:20px;
-                    "
-                >
-
-                    <strong>
-                        Valor sugerido da nota:
-                        R$
-                        ${valorTotalProduto.toFixed(2)}
-                    </strong>
-
-                    <span
-                        style="
-                            color:#6c757d;
-                            margin-left:8px;
-                        "
-                    >
-                        Você pode ajustar os valores abaixo.
-                    </span>
-
-                </div>
-
-
-                <h4>
-                    <i class="fas fa-box"></i>
-                    Produtos
-                </h4>
-
-
-                <div
-                    class="table-responsive"
-                    style="margin-bottom:22px;"
-                >
-
-                    <table
-                        class="table table-striped"
-                        style="min-width:980px;"
-                    >
-
-                        <thead>
-
-                            <tr>
-                                <th>Nome do produto</th>
-                                <th>SKU</th>
-                                <th>Qtd</th>
-                                <th>Valor unit.</th>
-                                <th>NCM</th>
-                                <th>Subtotal</th>
-                            </tr>
-
-                        </thead>
-
-
-                        <tbody
-                            id="produtosEditaveisBody"
-                        >
-
-                            ${
-                                produtosEditados
-                                    .map(
-                                        (
-                                            produto,
-                                            index
-                                        ) => `
-
-                                        <tr
-                                            data-index="${index}"
-                                        >
-
-                                            <td>
-
-                                                <input
-                                                    type="text"
-                                                    class="form-control form-control-sm nome-produto"
-                                                    data-index="${index}"
-                                                    value="${esc(produto.nome)}"
-                                                >
-
-                                            </td>
-
-                                            <td>
-
-                                                <input
-                                                    type="text"
-                                                    class="form-control form-control-sm sku-produto"
-                                                    data-index="${index}"
-                                                    value="${esc(produto.sku)}"
-                                                >
-
-                                            </td>
-
-                                            <td>
-
-                                                <input
-                                                    type="number"
-                                                    class="form-control form-control-sm qtd-produto"
-                                                    data-index="${index}"
-                                                    value="${produto.quantidade}"
-                                                    min="0.01"
-                                                    step="0.01"
-                                                >
-
-                                            </td>
-
-                                            <td>
-
-                                                <input
-                                                    type="number"
-                                                    class="form-control form-control-sm valor-produto"
-                                                    data-index="${index}"
-                                                    value="${produto.valor_unitario.toFixed(2)}"
-                                                    min="0"
-                                                    step="0.01"
-                                                >
-
-                                            </td>
-
-                                            <td>
-
-                                                <input
-                                                    type="text"
-                                                    class="form-control form-control-sm ncm-produto"
-                                                    data-index="${index}"
-                                                    value="${esc(produto.ncm)}"
-                                                    maxlength="8"
-                                                >
-
-                                            </td>
-
-                                            <td
-                                                class="subtotal-produto"
-                                            >
-                                                R$
-                                                ${(produto.quantidade * produto.valor_unitario).toFixed(2)}
-                                            </td>
-
-                                        </tr>
-
-                                    `
-                                    )
-                                    .join(
-                                        ''
-                                    )
-                            }
-
-                        </tbody>
-
-
-                        <tfoot>
-
-                            <tr
-                                style="
-                                    font-weight:bold;
-                                    background:#f8f9fa;
-                                "
-                            >
-
-                                <td
-                                    colspan="5"
-                                    style="text-align:right;"
-                                >
-                                    Total da Nota:
-                                </td>
-
-                                <td
-                                    id="totalGeralProdutos"
-                                >
-                                    R$
-                                    ${
-                                        produtosEditados
-                                            .reduce(
-                                                (
-                                                    total,
-                                                    produto
-                                                ) =>
-                                                    total +
-                                                    (
-                                                        Number(
-                                                            produto.quantidade ||
-                                                            0
-                                                        ) *
-                                                        Number(
-                                                            produto.valor_unitario ||
-                                                            0
-                                                        )
-                                                    ),
-                                                0
-                                            )
-                                            .toFixed(
-                                                2
-                                            )
-                                    }
-                                </td>
-
-                            </tr>
-
-                        </tfoot>
-
-                    </table>
-
-                </div>
-
-
-                <div
-                    style="
-                        margin-top:20px;
-                        margin-bottom:20px;
-                        padding:16px;
-                        background:#f8f9fa;
-                        border:1px solid #e1e5eb;
+                        max-width:1150px;
+                        width:96%;
+                        max-height:94vh;
+                        overflow-y:auto;
+                        background:white;
+                        padding:25px;
                         border-radius:10px;
                     "
                 >
 
-                    <h4
+                    <!-- ===================================== -->
+                    <!-- CABEÇALHO -->
+                    <!-- ===================================== -->
+
+                    <div
                         style="
-                            margin:0 0 14px 0;
                             display:flex;
+                            justify-content:space-between;
                             align-items:center;
-                            gap:8px;
+                            margin-bottom:18px;
                         "
                     >
-                        <i class="fas fa-user"></i>
-                        Dados do cliente
+
+                        <div>
+
+                            <h3
+                                style="margin:0;"
+                            >
+                                <i
+                                    class="fas fa-file-invoice"
+                                ></i>
+
+                                Emitir NF-e
+                            </h3>
+
+                            <small
+                                style="
+                                    color:#6c757d;
+                                "
+                            >
+                                ${esc(
+                                    textoOrders
+                                )}
+                            </small>
+
+                        </div>
+
+
+                        <button
+                            type="button"
+                            onclick="
+                                fecharModalEdicaoProdutos()
+                            "
+                            style="
+                                background:none;
+                                border:none;
+                                font-size:28px;
+                                cursor:pointer;
+                                color:#6c757d;
+                            "
+                        >
+                            &times;
+                        </button>
+
+                    </div>
+
+
+                    ${
+                        orderIdsDaNFE.length >
+                        1
+
+                            ? `
+
+                                <div
+                                    style="
+                                        background:#e8f4ff;
+                                        border:1px solid #b8daff;
+                                        padding:10px 14px;
+                                        border-radius:7px;
+                                        margin-bottom:15px;
+                                        color:#004085;
+                                    "
+                                >
+
+                                    <strong>
+                                        📦 Pacote Mercado Livre
+                                    </strong>
+
+                                    <br>
+
+                                    Os
+                                    ${orderIdsDaNFE.length}
+                                    pedidos abaixo serão emitidos
+                                    em
+
+                                    <strong>
+                                        uma única NF-e
+                                    </strong>.
+
+                                </div>
+                            `
+
+                            : ''
+                    }
+
+
+                    <!-- ===================================== -->
+                    <!-- VALOR -->
+                    <!-- ===================================== -->
+
+                    <div
+                        style="
+                            background:#f8f9fa;
+                            padding:14px;
+                            border-radius:8px;
+                            margin-bottom:20px;
+                        "
+                    >
+
+                        <strong>
+                            Valor sugerido da nota:
+                            R$
+                            ${valorTotalProduto.toFixed(
+                                2
+                            )}
+                        </strong>
+
+
+                        <span
+                            style="
+                                color:#6c757d;
+                                margin-left:8px;
+                            "
+                        >
+                            Você pode ajustar os valores abaixo.
+                        </span>
+
+                    </div>
+
+
+                    <!-- ===================================== -->
+                    <!-- PRODUTOS -->
+                    <!-- ===================================== -->
+
+                    <h4>
+
+                        <i
+                            class="fas fa-box"
+                        ></i>
+
+                        Produtos
+
                     </h4>
 
 
                     <div
+                        class="table-responsive"
                         style="
-                            display:grid;
-                            grid-template-columns:repeat(12, 1fr);
-                            gap:12px;
-                            align-items:end;
+                            margin-bottom:22px;
                         "
                     >
 
-                        <div style="grid-column:span 8;">
+                        <table
+                            class="
+                                table
+                                table-striped
+                            "
+                            style="
+                                min-width:980px;
+                            "
+                        >
 
-                            <label
+                            <thead>
+
+                                <tr>
+
+                                    <th>
+                                        Nome do produto
+                                    </th>
+
+                                    <th>
+                                        SKU
+                                    </th>
+
+                                    <th>
+                                        Qtd
+                                    </th>
+
+                                    <th>
+                                        Valor unit.
+                                    </th>
+
+                                    <th>
+                                        NCM
+                                    </th>
+
+                                    <th>
+                                        Subtotal
+                                    </th>
+
+                                </tr>
+
+                            </thead>
+
+
+                            <tbody
+                                id="produtosEditaveisBody"
+                            >
+                                ${produtosHtml}
+                            </tbody>
+
+
+                            <tfoot>
+
+                                <tr
+                                    style="
+                                        font-weight:bold;
+                                        background:#f8f9fa;
+                                    "
+                                >
+
+                                    <td
+                                        colspan="5"
+                                        style="
+                                            text-align:right;
+                                        "
+                                    >
+                                        Total da Nota:
+                                    </td>
+
+
+                                    <td
+                                        id="totalGeralProdutos"
+                                    >
+                                        R$
+                                        ${totalNota.toFixed(
+                                            2
+                                        )}
+                                    </td>
+
+                                </tr>
+
+                            </tfoot>
+
+                        </table>
+
+                    </div>
+
+
+                    <!-- ===================================== -->
+                    <!-- CLIENTE -->
+                    <!-- ===================================== -->
+
+                    <div
+                        style="
+                            margin-top:20px;
+                            margin-bottom:20px;
+                            padding:16px;
+                            background:#f8f9fa;
+                            border:1px solid #e1e5eb;
+                            border-radius:10px;
+                        "
+                    >
+
+                        <h4
+                            style="
+                                margin:0 0 14px 0;
+                                display:flex;
+                                align-items:center;
+                                gap:8px;
+                            "
+                        >
+
+                            <i
+                                class="fas fa-user"
+                            ></i>
+
+                            Dados do cliente
+
+                        </h4>
+
+
+                        <div
+                            style="
+                                display:grid;
+                                grid-template-columns:
+                                    repeat(
+                                        12,
+                                        1fr
+                                    );
+                                gap:12px;
+                                align-items:end;
+                            "
+                        >
+
+                            <!-- ============================= -->
+                            <!-- NOME -->
+                            <!-- ============================= -->
+
+                            <div
                                 style="
-                                    display:block;
-                                    font-weight:600;
-                                    margin-bottom:5px;
+                                    grid-column:span 6;
                                 "
                             >
-                                Nome completo *
-                            </label>
 
-                            <input
-                                type="text"
-                                id="clienteNome"
-                                class="form-control"
-                                value="${esc(nomeCliente)}"
-                                required
-                            >
-
-                        </div>
+                                <label
+                                    style="
+                                        display:block;
+                                        font-weight:600;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    Nome / Razão Social *
+                                </label>
 
 
-                        <div style="grid-column:span 4;">
+                                <input
+                                    type="text"
+                                    id="clienteNome"
+                                    class="form-control"
+                                    value="${esc(
+                                        nomeCliente
+                                    )}"
+                                    required
+                                >
 
-                            <label
+                            </div>
+
+
+                            <!-- ============================= -->
+                            <!-- CPF / CNPJ -->
+                            <!-- ============================= -->
+
+                            <div
                                 style="
-                                    display:block;
-                                    font-weight:600;
-                                    margin-bottom:5px;
+                                    grid-column:span 3;
                                 "
                             >
-                                CPF / CNPJ *
-                            </label>
 
-                            <input
-                                type="text"
-                                id="clienteDocumento"
-                                class="form-control"
-                                value="${esc(documentoCliente)}"
-                                required
-                            >
-
-                        </div>
+                                <label
+                                    style="
+                                        display:block;
+                                        font-weight:600;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    CPF / CNPJ *
+                                </label>
 
 
-                        <div style="grid-column:span 6;">
+                                <input
+                                    type="text"
+                                    id="clienteDocumento"
+                                    class="form-control"
+                                    value="${esc(
+                                        documentoCliente
+                                    )}"
+                                    required
+                                >
 
-                            <label
+                            </div>
+
+
+                            <!-- ============================= -->
+                            <!-- INSCRIÇÃO ESTADUAL -->
+                            <!-- ============================= -->
+
+                            <div
                                 style="
-                                    display:block;
-                                    font-weight:600;
-                                    margin-bottom:5px;
+                                    grid-column:span 3;
                                 "
                             >
-                                Endereço *
-                            </label>
 
-                            <input
-                                type="text"
-                                id="clienteEndereco"
-                                class="form-control"
-                                value="${esc(logradouro)}"
-                                required
-                            >
-
-                        </div>
+                                <label
+                                    style="
+                                        display:block;
+                                        font-weight:600;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    Inscrição Estadual
+                                </label>
 
 
-                        <div style="grid-column:span 2;">
+                                <input
+                                    type="text"
+                                    id="clienteInscricaoEstadual"
+                                    class="form-control"
+                                    value="${esc(
+                                        inscricaoEstadual
+                                    )}"
+                                    placeholder="
+                                        CNPJ contribuinte
+                                    "
+                                >
 
-                            <label
+                            </div>
+
+
+                            <!-- ============================= -->
+                            <!-- ENDEREÇO -->
+                            <!-- ============================= -->
+
+                            <div
                                 style="
-                                    display:block;
-                                    font-weight:600;
-                                    margin-bottom:5px;
+                                    grid-column:span 6;
                                 "
                             >
-                                Número
-                            </label>
 
-                            <input
-                                type="text"
-                                id="clienteNumero"
-                                class="form-control"
-                                value="${esc(numero || 'S/N')}"
-                            >
+                                <label
+                                    style="
+                                        display:block;
+                                        font-weight:600;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    Endereço *
+                                </label>
 
-                        </div>
+
+                                <input
+                                    type="text"
+                                    id="clienteEndereco"
+                                    class="form-control"
+                                    value="${esc(
+                                        logradouro
+                                    )}"
+                                    required
+                                >
+
+                            </div>
 
 
-                        <div style="grid-column:span 4;">
+                            <!-- ============================= -->
+                            <!-- NÚMERO -->
+                            <!-- ============================= -->
 
-                            <label
+                            <div
                                 style="
-                                    display:block;
-                                    font-weight:600;
-                                    margin-bottom:5px;
+                                    grid-column:span 2;
                                 "
                             >
-                                Bairro
-                            </label>
 
-                            <input
-                                type="text"
-                                id="clienteBairro"
-                                class="form-control"
-                                value="${esc(bairro)}"
-                            >
+                                <label
+                                    style="
+                                        display:block;
+                                        font-weight:600;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    Número
+                                </label>
 
-                        </div>
+
+                                <input
+                                    type="text"
+                                    id="clienteNumero"
+                                    class="form-control"
+                                    value="${esc(
+                                        numero ||
+                                        'S/N'
+                                    )}"
+                                >
+
+                            </div>
 
 
-                        <div style="grid-column:span 6;">
+                            <!-- ============================= -->
+                            <!-- BAIRRO -->
+                            <!-- ============================= -->
 
-                            <label
+                            <div
                                 style="
-                                    display:block;
-                                    font-weight:600;
-                                    margin-bottom:5px;
+                                    grid-column:span 4;
                                 "
                             >
-                                Cidade *
-                            </label>
 
-                            <input
-                                type="text"
-                                id="clienteCidade"
-                                class="form-control"
-                                value="${esc(cidade)}"
-                                required
-                            >
-
-                        </div>
+                                <label
+                                    style="
+                                        display:block;
+                                        font-weight:600;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    Bairro
+                                </label>
 
 
-                        <div style="grid-column:span 2;">
+                                <input
+                                    type="text"
+                                    id="clienteBairro"
+                                    class="form-control"
+                                    value="${esc(
+                                        bairro
+                                    )}"
+                                >
 
-                            <label
+                            </div>
+
+
+                            <!-- ============================= -->
+                            <!-- CIDADE -->
+                            <!-- ============================= -->
+
+                            <div
                                 style="
-                                    display:block;
-                                    font-weight:600;
-                                    margin-bottom:5px;
+                                    grid-column:span 6;
                                 "
                             >
-                                UF *
-                            </label>
 
-                            <input
-                                type="text"
-                                id="clienteUF"
-                                class="form-control"
-                                value="${esc(uf)}"
-                                maxlength="2"
-                                required
-                            >
-
-                        </div>
+                                <label
+                                    style="
+                                        display:block;
+                                        font-weight:600;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    Cidade *
+                                </label>
 
 
-                        <div style="grid-column:span 4;">
+                                <input
+                                    type="text"
+                                    id="clienteCidade"
+                                    class="form-control"
+                                    value="${esc(
+                                        cidade
+                                    )}"
+                                    required
+                                >
 
-                            <label
+                            </div>
+
+
+                            <!-- ============================= -->
+                            <!-- UF -->
+                            <!-- ============================= -->
+
+                            <div
                                 style="
-                                    display:block;
-                                    font-weight:600;
-                                    margin-bottom:5px;
+                                    grid-column:span 2;
                                 "
                             >
-                                CEP
-                            </label>
 
-                            <input
-                                type="text"
-                                id="clienteCEP"
-                                class="form-control"
-                                value="${esc(cep)}"
+                                <label
+                                    style="
+                                        display:block;
+                                        font-weight:600;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    UF *
+                                </label>
+
+
+                                <input
+                                    type="text"
+                                    id="clienteUF"
+                                    class="form-control"
+                                    value="${esc(
+                                        uf
+                                    )}"
+                                    maxlength="2"
+                                    required
+                                >
+
+                            </div>
+
+
+                            <!-- ============================= -->
+                            <!-- CEP -->
+                            <!-- ============================= -->
+
+                            <div
+                                style="
+                                    grid-column:span 4;
+                                "
                             >
+
+                                <label
+                                    style="
+                                        display:block;
+                                        font-weight:600;
+                                        margin-bottom:5px;
+                                    "
+                                >
+                                    CEP
+                                </label>
+
+
+                                <input
+                                    type="text"
+                                    id="clienteCEP"
+                                    class="form-control"
+                                    value="${esc(
+                                        cep
+                                    )}"
+                                >
+
+                            </div>
 
                         </div>
 
                     </div>
 
-                </div>
+
+                    <!-- ===================================== -->
+                    <!-- FISCAL / TRANSPORTE -->
+                    <!-- ===================================== -->
+
+                    <h4>
+
+                        <i
+                            class="fas fa-receipt"
+                        ></i>
+
+                        Dados fiscais e transporte
+
+                    </h4>
 
 
-                <h4>
-    <i class="fas fa-receipt"></i>
-    Dados fiscais e transporte
-</h4>
-
-
-<div class="row">
-
-    <!-- CFOP -->
-    <div class="col-md-4">
-
-        <div class="form-group">
-
-            <label>
-                CFOP *
-            </label>
-
-            <select
-                id="nfeCfop"
-                class="form-control"
-                required
-            >
-
-                <option value="6108">
-                    6108 - Venda interestadual
-                </option>
-
-                <option value="5102">
-                    5102 - Venda dentro do estado
-                </option>
-
-                <option value="5405">
-                    5405 - Venda de produção
-                </option>
-
-            </select>
-
-        </div>
-
-    </div>
-
-
-    <!-- NATUREZA DA OPERAÇÃO -->
-    <div class="col-md-4">
-
-        <div class="form-group">
-
-            <label>
-                Natureza da Operação *
-            </label>
-
-            <select
-                id="nfeNaturezaOperacao"
-                class="form-control"
-                required
-            >
-
-                <option value="">
-                    Carregando Naturezas...
-                </option>
-
-            </select>
-
-        </div>
-
-    </div>
-
-
-    <!-- TRANSPORTADORA -->
-    <div class="col-md-4">
-
-        <div class="form-group">
-
-            <label>
-                Transportadora
-            </label>
-
-            <select
-                id="nfeTransportadora"
-                class="form-control"
-            >
-
-                <option value="">
-                    Selecione uma transportadora
-                </option>
-
-            </select>
-
-        </div>
-
-    </div>
-
-</div>
-
-
-                <div
-                    class="d-flex justify-content-end gap-2 mt-3"
-                >
-
-                    <button
-                        type="button"
-                        class="btn btn-secondary"
-                        onclick="fecharModalEdicaoProdutos()"
-                    >
-                        Cancelar
-                    </button>
-
-
-                    <button
-                        type="button"
-                        class="btn btn-success"
-                        id="confirmarProdutosFinalBtn"
+                    <div
+                        class="row"
                     >
 
-                        <i class="fas fa-file-invoice"></i>
-                        Confirmar e Emitir NF-e
+                        <!-- ============================= -->
+                        <!-- CFOP -->
+                        <!-- ============================= -->
 
-                    </button>
+                        <div
+                            class="col-md-4"
+                        >
+
+                            <div
+                                class="form-group"
+                            >
+
+                                <label>
+                                    CFOP *
+                                </label>
+
+
+                                <select
+                                    id="nfeCfop"
+                                    class="form-control"
+                                    required
+                                >
+
+                                    <option
+                                        value="6108"
+                                    >
+                                        6108 - Venda interestadual
+                                    </option>
+
+
+                                    <option
+                                        value="5102"
+                                    >
+                                        5102 - Venda dentro do estado
+                                    </option>
+
+
+                                    <option
+                                        value="5405"
+                                    >
+                                        5405 - Venda de produção
+                                    </option>
+
+                                </select>
+
+                            </div>
+
+                        </div>
+
+
+                        <!-- ============================= -->
+                        <!-- NATUREZA -->
+                        <!-- ============================= -->
+
+                        <div
+                            class="col-md-4"
+                        >
+
+                            <div
+                                class="form-group"
+                            >
+
+                                <label>
+                                    Natureza da Operação *
+                                </label>
+
+
+                                <select
+                                    id="nfeNaturezaOperacao"
+                                    class="form-control"
+                                    required
+                                >
+
+                                    <option
+                                        value=""
+                                    >
+                                        Carregando Naturezas...
+                                    </option>
+
+                                </select>
+
+                            </div>
+
+                        </div>
+
+
+                        <!-- ============================= -->
+                        <!-- TRANSPORTADORA -->
+                        <!-- ============================= -->
+
+                        <div
+                            class="col-md-4"
+                        >
+
+                            <div
+                                class="form-group"
+                            >
+
+                                <label>
+                                    Transportadora
+                                </label>
+
+
+                                <select
+                                    id="nfeTransportadora"
+                                    class="form-control"
+                                >
+
+                                    <option
+                                        value=""
+                                    >
+                                        Selecione uma transportadora
+                                    </option>
+
+                                </select>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- ===================================== -->
+                    <!-- BOTÕES -->
+                    <!-- ===================================== -->
+
+                    <div
+                        class="
+                            d-flex
+                            justify-content-end
+                            gap-2
+                            mt-3
+                        "
+                    >
+
+                        <button
+                            type="button"
+                            class="
+                                btn
+                                btn-secondary
+                            "
+                            onclick="
+                                fecharModalEdicaoProdutos()
+                            "
+                        >
+                            Cancelar
+                        </button>
+
+
+                        <button
+                            type="button"
+                            class="
+                                btn
+                                btn-success
+                            "
+                            id="confirmarProdutosFinalBtn"
+                        >
+
+                            <i
+                                class="fas fa-file-invoice"
+                            ></i>
+
+                            Confirmar e Emitir NF-e
+
+                        </button>
+
+                    </div>
 
                 </div>
 
             </div>
-
-        </div>
         `;
 
+
+        // =====================================================
+        // INSERIR MODAL
+        // =====================================================
 
         const container =
             document.createElement(
@@ -4440,10 +4831,93 @@ async function abrirModalEdicaoProdutos(orderId) {
         ) {
 
             cfopSelect.value =
-                uf === 'PR'
+                uf ===
+                    'PR'
+
                     ? '5102'
+
                     : '6108';
         }
+
+
+        // =====================================================
+        // INSCRIÇÃO ESTADUAL
+        //
+        // Se CPF, desabilita.
+        // Se CNPJ, deixa disponível.
+        // =====================================================
+
+        const documentoInput =
+            document.getElementById(
+                'clienteDocumento'
+            );
+
+
+        const ieInput =
+            document.getElementById(
+                'clienteInscricaoEstadual'
+            );
+
+
+        const atualizarEstadoIE =
+            () => {
+
+                if (
+                    !ieInput
+                ) {
+
+                    return;
+                }
+
+
+                const documento =
+                    String(
+                        documentoInput
+                            ?.value ||
+                        ''
+                    )
+                        .replace(
+                            /\D/g,
+                            ''
+                        );
+
+
+                const cnpj =
+                    documento.length ===
+                    14;
+
+
+                ieInput.disabled =
+                    !cnpj;
+
+
+                if (
+                    !cnpj
+                ) {
+
+                    ieInput.value =
+                        '';
+
+
+                    ieInput.placeholder =
+                        'Somente para CNPJ';
+
+                } else {
+
+                    ieInput.placeholder =
+                        'Inscrição Estadual';
+                }
+            };
+
+
+        documentoInput
+            ?.addEventListener(
+                'input',
+                atualizarEstadoIE
+            );
+
+
+        atualizarEstadoIE();
 
 
         // =====================================================
@@ -4464,8 +4938,9 @@ async function abrirModalEdicaoProdutos(orderId) {
             );
         }
 
+
         // =====================================================
-        // CARREGAR NATUREZAS DA OPERAÇÃO
+        // NATUREZAS DA OPERAÇÃO
         // =====================================================
 
         try {
@@ -4491,7 +4966,7 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
-        // RECALCULAR
+        // RECALCULAR TOTAL
         // =====================================================
 
         const recalcularTotalGeral =
@@ -4534,17 +5009,17 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
-        // INPUTS
+        // INPUTS DOS PRODUTOS
         // =====================================================
 
         document
             .querySelectorAll(
                 `
-                #modalEdicaoProdutos .nome-produto,
-                #modalEdicaoProdutos .sku-produto,
-                #modalEdicaoProdutos .qtd-produto,
-                #modalEdicaoProdutos .valor-produto,
-                #modalEdicaoProdutos .ncm-produto
+                    #modalEdicaoProdutos .nome-produto,
+                    #modalEdicaoProdutos .sku-produto,
+                    #modalEdicaoProdutos .qtd-produto,
+                    #modalEdicaoProdutos .valor-produto,
+                    #modalEdicaoProdutos .ncm-produto
                 `
             )
             .forEach(
@@ -4576,20 +5051,26 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
                             const produto =
-                                produtosEditados[index];
+                                produtosEditados[
+                                    index
+                                ];
 
 
                             produto.nome =
                                 row.querySelector(
                                     '.nome-produto'
-                                )?.value.trim() ||
+                                )
+                                    ?.value
+                                    .trim() ||
                                 'Produto';
 
 
                             produto.sku =
                                 row.querySelector(
                                     '.sku-produto'
-                                )?.value.trim() ||
+                                )
+                                    ?.value
+                                    .trim() ||
                                 'SEM_SKU';
 
 
@@ -4597,7 +5078,8 @@ async function abrirModalEdicaoProdutos(orderId) {
                                 parseFloat(
                                     row.querySelector(
                                         '.qtd-produto'
-                                    )?.value
+                                    )
+                                        ?.value
                                 ) ||
                                 0;
 
@@ -4606,7 +5088,8 @@ async function abrirModalEdicaoProdutos(orderId) {
                                 parseFloat(
                                     row.querySelector(
                                         '.valor-produto'
-                                    )?.value
+                                    )
+                                        ?.value
                                 ) ||
                                 0;
 
@@ -4614,7 +5097,9 @@ async function abrirModalEdicaoProdutos(orderId) {
                             produto.ncm =
                                 row.querySelector(
                                     '.ncm-produto'
-                                )?.value.trim() ||
+                                )
+                                    ?.value
+                                    .trim() ||
                                 '87149990';
 
 
@@ -4629,7 +5114,15 @@ async function abrirModalEdicaoProdutos(orderId) {
                             ) {
 
                                 subtotal.textContent =
-                                    `R$ ${(produto.quantidade * produto.valor_unitario).toFixed(2)}`;
+                                    `R$ ${
+                                        (
+                                            produto.quantidade *
+                                            produto.valor_unitario
+                                        )
+                                            .toFixed(
+                                                2
+                                            )
+                                    }`;
                             }
 
 
@@ -4641,7 +5134,7 @@ async function abrirModalEdicaoProdutos(orderId) {
 
 
         // =====================================================
-        // BOTÃO
+        // BOTÃO CONFIRMAR
         // =====================================================
 
         document
@@ -4653,7 +5146,9 @@ async function abrirModalEdicaoProdutos(orderId) {
                 async event => {
 
                     event.preventDefault();
+
                     event.stopPropagation();
+
 
                     await confirmarProdutosEditados();
                 }
@@ -4684,11 +5179,14 @@ async function abrirModalEdicaoProdutos(orderId) {
         pendingEmitOrderId =
             null;
 
+
         vendaIdParaEdicao =
             null;
 
+
         window._nfeOrderIdsAtuais =
             null;
+
 
         window._nfeVendaAtual =
             null;
@@ -6341,10 +6839,6 @@ function detectarVendaFullNFE(venda) {
     );
 }
 
-// =========================================================
-// COLUNAS PERSONALIZÁVEIS - TABELA DE VENDAS NF-E
-// =========================================================
-
 const COLUNAS_VENDAS_NFE = [
 
     {
@@ -6363,13 +6857,13 @@ const COLUNAS_VENDAS_NFE = [
     },
 
     {
-    id: 'anuncio',
-    nome: 'Anúncio'
+        id: 'anuncio',
+        nome: 'Anúncio'
     },
 
     {
-    id: 'foto',
-    nome: 'Foto'
+        id: 'foto',
+        nome: 'Foto'
     },
 
     {
@@ -6393,6 +6887,11 @@ const COLUNAS_VENDAS_NFE = [
     },
 
     {
+        id: 'separado',
+        nome: 'Separado'
+    },
+
+    {
         id: 'nfe',
         nome: 'NF-e'
     },
@@ -6403,19 +6902,20 @@ const COLUNAS_VENDAS_NFE = [
     },
 
     {
-    id: 'estoque_anuncio',
-    nome: 'Estoque anúncio'
+        id: 'estoque_anuncio',
+        nome: 'Estoque anúncio'
     },
 
     {
-    id: 'comentarios',
-    nome: 'Comentários'
+        id: 'comentarios',
+        nome: 'Comentários'
     },
 
     {
         id: 'acoes',
         nome: 'Ações'
     }
+
 ];
 
 function normalizarArrayJsonNFE(
@@ -6793,6 +7293,2297 @@ function obterChavePreferenciasColunasNFE() {
     );
 }
 
+// =========================================================
+// ORDEM PERSONALIZADA DAS COLUNAS
+// =========================================================
+
+function obterChaveOrdemColunasNFE() {
+
+    return (
+        `wheeltech_nfe_ordem_colunas_` +
+        obterUsuarioPreferenciasColunasNFE()
+    );
+}
+
+
+function carregarOrdemColunasNFE() {
+
+    const padrao =
+        COLUNAS_VENDAS_NFE.map(
+            coluna =>
+                coluna.id
+        );
+
+
+    try {
+
+        const bruto =
+            localStorage.getItem(
+                obterChaveOrdemColunasNFE()
+            );
+
+
+        if (
+            !bruto
+        ) {
+
+            return padrao;
+        }
+
+
+        const salva =
+            JSON.parse(
+                bruto
+            );
+
+
+        if (
+            !Array.isArray(
+                salva
+            )
+        ) {
+
+            return padrao;
+        }
+
+
+        const validas =
+            salva.filter(
+                id =>
+                    padrao.includes(
+                        id
+                    )
+            );
+
+
+        // =================================================
+        // NOVAS COLUNAS ENTRAM AUTOMATICAMENTE
+        // =================================================
+
+        padrao.forEach(
+            id => {
+
+                if (
+                    !validas.includes(
+                        id
+                    )
+                ) {
+
+                    validas.push(
+                        id
+                    );
+                }
+            }
+        );
+
+
+        return validas;
+
+
+    } catch (
+        error
+    ) {
+
+        console.warn(
+            '⚠️ Erro carregando ordem das colunas:',
+            error
+        );
+
+
+        return padrao;
+    }
+}
+
+
+function salvarOrdemColunasNFE(
+    ordem
+) {
+
+    try {
+
+        localStorage.setItem(
+
+            obterChaveOrdemColunasNFE(),
+
+            JSON.stringify(
+                ordem
+            )
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro salvando ordem das colunas:',
+            error
+        );
+    }
+}
+
+
+function moverColunaNFE(
+    colunaId,
+    direcao
+) {
+
+    const ordem =
+        carregarOrdemColunasNFE();
+
+
+    const indice =
+        ordem.indexOf(
+            colunaId
+        );
+
+
+    if (
+        indice <
+        0
+    ) {
+
+        return;
+    }
+
+
+    const novoIndice =
+        indice +
+        Number(
+            direcao
+        );
+
+
+    if (
+        novoIndice <
+            0 ||
+        novoIndice >=
+            ordem.length
+    ) {
+
+        return;
+    }
+
+
+    [
+        ordem[indice],
+        ordem[novoIndice]
+    ] = [
+        ordem[novoIndice],
+        ordem[indice]
+    ];
+
+
+    salvarOrdemColunasNFE(
+        ordem
+    );
+
+
+    reconstruirCabecalhoVendasNFE();
+
+
+    aplicarPreferenciasColunasNFE();
+
+
+    renderizarListaColunasNFE();
+}
+
+
+window.moverColunaNFE =
+    moverColunaNFE;
+
+    // =========================================================
+// FILTRO E ORDENAÇÃO FRONT-END
+// =========================================================
+
+window._filtrosColunasNFE =
+    window._filtrosColunasNFE ||
+    {};
+
+
+window._ordenacaoTabelaNFE =
+    window._ordenacaoTabelaNFE ||
+    {
+        coluna:
+            null,
+
+        direcao:
+            'asc'
+    };
+
+
+function normalizarTextoFiltroNFE(
+    valor
+) {
+
+    return String(
+        valor ||
+        ''
+    )
+        .normalize(
+            'NFD'
+        )
+        .replace(
+            /[\u0300-\u036f]/g,
+            ''
+        )
+        .trim()
+        .toLowerCase();
+}
+
+
+function alterarFiltroColunaNFE(
+    colunaId,
+    valor
+) {
+
+    valor =
+        String(
+            valor ||
+            ''
+        );
+
+
+    if (
+        valor
+    ) {
+
+        window
+            ._filtrosColunasNFE[
+                colunaId
+            ] =
+            valor;
+
+    } else {
+
+        delete window
+            ._filtrosColunasNFE[
+                colunaId
+            ];
+    }
+
+
+    aplicarFiltrosTabelaFrontendNFE();
+}
+
+
+function aplicarFiltrosTabelaFrontendNFE() {
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
+
+
+    if (
+        !tbody
+    ) {
+
+        return;
+    }
+
+
+    const filtros =
+        window
+            ._filtrosColunasNFE ||
+        {};
+
+
+    tbody
+        .querySelectorAll(
+            ':scope > tr'
+        )
+        .forEach(
+            tr => {
+
+                // =============================================
+                // LINHA "NENHUMA VENDA"
+                // =============================================
+
+                if (
+                    tr.querySelector(
+                        'td[colspan]'
+                    )
+                ) {
+
+                    tr.style.display =
+                        '';
+
+                    return;
+                }
+
+
+                let mostrar =
+                    true;
+
+
+                for (
+                    const [
+                        colunaId,
+                        valorFiltro
+                    ]
+                    of Object.entries(
+                        filtros
+                    )
+                ) {
+
+                    if (
+                        !valorFiltro
+                    ) {
+
+                        continue;
+                    }
+
+
+                    const td =
+                        tr.querySelector(
+                            `:scope > td[data-coluna-nfe="${colunaId}"]`
+                        );
+
+
+                    if (
+                        !td
+                    ) {
+
+                        continue;
+                    }
+
+
+                    const texto =
+                        normalizarTextoFiltroNFE(
+                            td.textContent
+                        );
+
+
+                    const busca =
+                        normalizarTextoFiltroNFE(
+                            valorFiltro
+                        );
+
+
+                    if (
+                        !texto.includes(
+                            busca
+                        )
+                    ) {
+
+                        mostrar =
+                            false;
+
+                        break;
+                    }
+                }
+
+
+                tr.style.display =
+                    mostrar
+                        ? ''
+                        : 'none';
+            }
+        );
+}
+
+
+function obterValorOrdenacaoCelulaNFE(
+    td,
+    colunaId
+) {
+
+    const texto =
+        String(
+            td?.textContent ||
+            ''
+        )
+            .replace(
+                /\s+/g,
+                ' '
+            )
+            .trim();
+
+
+    // =====================================================
+    // VALOR
+    // =====================================================
+
+    if (
+        colunaId ===
+        'valor'
+    ) {
+
+        const match =
+            texto.match(
+                /R\$\s*([\d.,]+)/
+            );
+
+
+        if (
+            match
+        ) {
+
+            let numero =
+                match[1];
+
+
+            if (
+                numero.includes(
+                    ','
+                )
+            ) {
+
+                numero =
+                    numero
+                        .replace(
+                            /\./g,
+                            ''
+                        )
+                        .replace(
+                            ',',
+                            '.'
+                        );
+            }
+
+
+            const valor =
+                Number(
+                    numero
+                );
+
+
+            if (
+                Number.isFinite(
+                    valor
+                )
+            ) {
+
+                return valor;
+            }
+        }
+    }
+
+
+    // =====================================================
+    // DATAS DD/MM/AAAA
+    // =====================================================
+
+    if (
+        [
+            'envio',
+            'venda',
+            'separado'
+        ].includes(
+            colunaId
+        )
+    ) {
+
+        const match =
+            texto.match(
+                /(\d{2})\/(\d{2})\/(\d{4})(?:.*?(\d{2}):(\d{2}))?/
+            );
+
+
+        if (
+            match
+        ) {
+
+            return new Date(
+                Number(
+                    match[3]
+                ),
+                Number(
+                    match[2]
+                ) -
+                    1,
+                Number(
+                    match[1]
+                ),
+                Number(
+                    match[4] ||
+                    0
+                ),
+                Number(
+                    match[5] ||
+                    0
+                )
+            )
+                .getTime();
+        }
+    }
+
+
+    return normalizarTextoFiltroNFE(
+        texto
+    );
+}
+
+
+function aplicarOrdenacaoAtualNFE() {
+
+    const configuracao =
+        window
+            ._ordenacaoTabelaNFE;
+
+
+    if (
+        !configuracao
+            ?.coluna
+    ) {
+
+        return;
+    }
+
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
+
+
+    if (
+        !tbody
+    ) {
+
+        return;
+    }
+
+
+    const colunaId =
+        configuracao.coluna;
+
+
+    const direcao =
+        configuracao.direcao ===
+            'desc'
+            ? -1
+            : 1;
+
+
+    const linhas =
+        Array.from(
+            tbody.querySelectorAll(
+                ':scope > tr'
+            )
+        )
+            .filter(
+                tr =>
+                    !tr.querySelector(
+                        'td[colspan]'
+                    )
+            );
+
+
+    const collator =
+        new Intl.Collator(
+            'pt-BR',
+            {
+                numeric:
+                    true,
+
+                sensitivity:
+                    'base'
+            }
+        );
+
+
+    linhas.sort(
+        (
+            a,
+            b
+        ) => {
+
+            const tdA =
+                a.querySelector(
+                    `:scope > td[data-coluna-nfe="${colunaId}"]`
+                );
+
+
+            const tdB =
+                b.querySelector(
+                    `:scope > td[data-coluna-nfe="${colunaId}"]`
+                );
+
+
+            const valorA =
+                obterValorOrdenacaoCelulaNFE(
+                    tdA,
+                    colunaId
+                );
+
+
+            const valorB =
+                obterValorOrdenacaoCelulaNFE(
+                    tdB,
+                    colunaId
+                );
+
+
+            if (
+                typeof valorA ===
+                    'number' &&
+                typeof valorB ===
+                    'number'
+            ) {
+
+                return (
+                    valorA -
+                    valorB
+                ) *
+                direcao;
+            }
+
+
+            return (
+                collator.compare(
+                    String(
+                        valorA
+                    ),
+                    String(
+                        valorB
+                    )
+                ) *
+                direcao
+            );
+        }
+    );
+
+
+    linhas.forEach(
+        tr =>
+            tbody.appendChild(
+                tr
+            )
+    );
+
+
+    atualizarIndicadoresOrdenacaoNFE();
+}
+
+
+function ordenarTabelaVendasPorColunaNFE(
+    colunaId
+) {
+
+    const atual =
+        window
+            ._ordenacaoTabelaNFE;
+
+
+    if (
+        atual.coluna ===
+        colunaId
+    ) {
+
+        atual.direcao =
+            atual.direcao ===
+                'asc'
+                ? 'desc'
+                : 'asc';
+
+    } else {
+
+        atual.coluna =
+            colunaId;
+
+        atual.direcao =
+            'asc';
+    }
+
+
+    aplicarOrdenacaoAtualNFE();
+}
+
+
+function atualizarIndicadoresOrdenacaoNFE() {
+
+    document
+        .querySelectorAll(
+            '[data-sort-icon-nfe]'
+        )
+        .forEach(
+            elemento => {
+
+                const coluna =
+                    elemento.dataset
+                        .sortIconNfe;
+
+
+                if (
+                    window
+                        ._ordenacaoTabelaNFE
+                        .coluna !==
+                    coluna
+                ) {
+
+                    elemento.textContent =
+                        '↕';
+
+                    return;
+                }
+
+
+                elemento.textContent =
+                    window
+                        ._ordenacaoTabelaNFE
+                        .direcao ===
+                        'asc'
+                        ? '↑'
+                        : '↓';
+            }
+        );
+}
+
+
+window.alterarFiltroColunaNFE =
+    alterarFiltroColunaNFE;
+
+window.ordenarTabelaVendasPorColunaNFE =
+    ordenarTabelaVendasPorColunaNFE;
+
+    // =========================================================
+// CONTROLE DE SEPARAÇÃO
+// =========================================================
+
+function vendaEstaSeparadaNFE(
+    venda
+) {
+
+    if (
+        !venda
+    ) {
+
+        return false;
+    }
+
+
+    if (
+        Array.isArray(
+            venda._membros_pack
+        ) &&
+        venda._membros_pack.length >
+            0
+    ) {
+
+        return venda
+            ._membros_pack
+            .every(
+                membro =>
+                    membro?._separado ===
+                        true ||
+                    membro?.separado ===
+                        true
+            );
+    }
+
+
+    return (
+        venda._separado ===
+            true ||
+        venda.separado ===
+            true
+    );
+}
+
+
+function obterInfoSeparacaoNFE(
+    venda
+) {
+
+    if (
+        !venda
+    ) {
+
+        return {
+            separado:
+                false,
+
+            separado_em:
+                null,
+
+            separado_por:
+                null
+        };
+    }
+
+
+    if (
+        Array.isArray(
+            venda._membros_pack
+        ) &&
+        venda._membros_pack.length >
+            0
+    ) {
+
+        const todosSeparados =
+            vendaEstaSeparadaNFE(
+                venda
+            );
+
+
+        const datas =
+            venda
+                ._membros_pack
+                .map(
+                    membro =>
+                        membro
+                            ._separado_em ||
+                        membro
+                            .separado_em
+                )
+                .filter(Boolean)
+                .sort();
+
+
+        const nomes =
+            [
+                ...new Set(
+                    venda
+                        ._membros_pack
+                        .map(
+                            membro =>
+                                membro
+                                    ._separado_por_nome ||
+                                membro
+                                    .separado_por_nome
+                        )
+                        .filter(Boolean)
+                )
+            ];
+
+
+        return {
+
+            separado:
+                todosSeparados,
+
+            separado_em:
+                todosSeparados
+                    ? (
+                        datas.at(
+                            -1
+                        ) ||
+                        null
+                    )
+                    : null,
+
+            separado_por:
+                nomes.join(
+                    ' / '
+                ) ||
+                null
+        };
+    }
+
+
+    return {
+
+        separado:
+            vendaEstaSeparadaNFE(
+                venda
+            ),
+
+        separado_em:
+            venda._separado_em ||
+            venda.separado_em ||
+            null,
+
+        separado_por:
+            venda._separado_por_nome ||
+            venda.separado_por_nome ||
+            null
+    };
+}
+
+
+function montarCelulaSeparadoNFE(
+    venda
+) {
+
+    const isFull =
+        Boolean(
+            venda?._is_full
+        );
+
+
+    if (
+        isFull
+    ) {
+
+        return `
+            <div
+                style="
+                    color:#6c757d;
+                    font-size:10px;
+                    white-space:nowrap;
+                "
+            >
+                <i class="fas fa-warehouse"></i>
+                FULL
+                <div
+                    style="
+                        font-size:8px;
+                        margin-top:2px;
+                    "
+                >
+                    Não se aplica
+                </div>
+            </div>
+        `;
+    }
+
+
+    if (
+        vendaEstaCanceladaNFE(
+            venda
+        )
+    ) {
+
+        return `
+            <span
+                style="
+                    color:#dc3545;
+                    font-size:10px;
+                    font-weight:700;
+                "
+            >
+                <i class="fas fa-ban"></i>
+                Cancelada
+            </span>
+        `;
+    }
+
+
+    const info =
+        obterInfoSeparacaoNFE(
+            venda
+        );
+
+
+    if (
+        info.separado
+    ) {
+
+        let dataFormatada =
+            '';
+
+
+        if (
+            info.separado_em
+        ) {
+
+            try {
+
+                dataFormatada =
+                    new Date(
+                        info.separado_em
+                    )
+                        .toLocaleString(
+                            'pt-BR',
+                            {
+                                day:
+                                    '2-digit',
+
+                                month:
+                                    '2-digit',
+
+                                year:
+                                    'numeric',
+
+                                hour:
+                                    '2-digit',
+
+                                minute:
+                                    '2-digit'
+                            }
+                        );
+
+            } catch (
+                error
+            ) {}
+        }
+
+
+        return `
+            <div>
+                <span
+                    style="
+                        display:inline-block;
+                        background:#28a745;
+                        color:white;
+                        padding:4px 8px;
+                        border-radius:5px;
+                        font-size:11px;
+                        font-weight:700;
+                        white-space:nowrap;
+                    "
+                >
+                    <i class="fas fa-check"></i>
+                    Separado
+                </span>
+
+                ${
+                    dataFormatada
+                        ? `
+                            <div
+                                style="
+                                    margin-top:4px;
+                                    font-size:9px;
+                                    color:#495057;
+                                    white-space:nowrap;
+                                "
+                            >
+                                ${escaparHTMLNFE(
+                                    dataFormatada
+                                )}
+                            </div>
+                        `
+                        : ''
+                }
+
+                ${
+                    info.separado_por
+                        ? `
+                            <div
+                                style="
+                                    margin-top:2px;
+                                    font-size:9px;
+                                    color:#6c757d;
+                                    white-space:nowrap;
+                                "
+                            >
+                                por
+                                <strong>
+                                    ${escaparHTMLNFE(
+                                        info.separado_por
+                                    )}
+                                </strong>
+                            </div>
+                        `
+                        : ''
+                }
+            </div>
+        `;
+    }
+
+
+    const vendaId =
+        normalizarOrderIdML(
+            venda.id_venda_ml ||
+            venda.id
+        );
+
+
+    return `
+        <div>
+            <button
+                type="button"
+                class="btn btn-sm btn-primary"
+                onclick="marcarVendaComoSeparadaNFE('${escaparHTMLNFE(
+                    vendaId
+                )}')"
+            >
+                <i class="fas fa-box-open"></i>
+                Separado
+            </button>
+
+            <div
+                style="
+                    margin-top:3px;
+                    font-size:9px;
+                    color:#856404;
+                    white-space:nowrap;
+                "
+            >
+                Pendente separação
+            </div>
+        </div>
+    `;
+}
+
+
+async function marcarVendaComoSeparadaNFE(
+    vendaId
+) {
+
+    vendaId =
+        normalizarOrderIdML(
+            vendaId
+        );
+
+
+    if (
+        !vendaId
+    ) {
+
+        showToast(
+            '❌ Venda inválida.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    const venda =
+        (
+            Array.isArray(
+                vendasPendentes
+            )
+                ? vendasPendentes
+                : []
+        )
+            .find(
+                item => {
+
+                    const principal =
+                        normalizarOrderIdML(
+                            item.id_venda_ml ||
+                            item.id
+                        );
+
+
+                    if (
+                        principal ===
+                        vendaId
+                    ) {
+
+                        return true;
+                    }
+
+
+                    return (
+                        Array.isArray(
+                            item._order_ids_pack
+                        ) &&
+                        item
+                            ._order_ids_pack
+                            .map(
+                                normalizarOrderIdML
+                            )
+                            .includes(
+                                vendaId
+                            )
+                    );
+                }
+            );
+
+
+    if (
+        !venda
+    ) {
+
+        showToast(
+            '❌ Venda não encontrada.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    if (
+        vendaEstaCanceladaNFE(
+            venda
+        )
+    ) {
+
+        showToast(
+            '🚫 Venda cancelada.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    if (
+        venda._is_full
+    ) {
+
+        showToast(
+            'ℹ️ Venda FULL não precisa de separação local.',
+            'info'
+        );
+
+        return;
+    }
+
+
+    const ids =
+        [
+            ...new Set(
+                (
+                    Array.isArray(
+                        venda._order_ids_pack
+                    ) &&
+                    venda._order_ids_pack.length >
+                        0
+
+                        ? venda._order_ids_pack
+
+                        : [
+                            vendaId
+                        ]
+                )
+                    .map(
+                        normalizarOrderIdML
+                    )
+                    .filter(Boolean)
+            )
+        ];
+
+
+    const usuario =
+        obterUsuarioOperacaoNFE();
+
+
+    const agora =
+        new Date()
+            .toISOString();
+
+
+    try {
+
+        const {
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .update({
+
+                    separado:
+                        true,
+
+                    separado_em:
+                        agora,
+
+                    separado_por_username:
+                        usuario.username,
+
+                    separado_por_nome:
+                        usuario.nome
+                })
+                .in(
+                    'id_venda_ml',
+                    ids
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+        }
+
+
+        // =================================================
+        // ATUALIZAR MEMÓRIA IMEDIATAMENTE
+        // =================================================
+
+        const atualizarVenda =
+            item => {
+
+                const id =
+                    normalizarOrderIdML(
+                        item.id_venda_ml ||
+                        item.id
+                    );
+
+
+                if (
+                    !ids.includes(
+                        id
+                    )
+                ) {
+
+                    return;
+                }
+
+
+                item._separado =
+                    true;
+
+                item.separado =
+                    true;
+
+                item._separado_em =
+                    agora;
+
+                item.separado_em =
+                    agora;
+
+                item._separado_por_username =
+                    usuario.username;
+
+                item.separado_por_username =
+                    usuario.username;
+
+                item._separado_por_nome =
+                    usuario.nome;
+
+                item.separado_por_nome =
+                    usuario.nome;
+            };
+
+
+        (
+            Array.isArray(
+                window._vendasTabelaNFEBase
+            )
+                ? window._vendasTabelaNFEBase
+                : []
+        )
+            .forEach(
+                atualizarVenda
+            );
+
+            (
+    Array.isArray(
+        vendasPendentes
+    )
+        ? vendasPendentes
+        : []
+)
+    .forEach(
+        atualizarVenda
+    );
+
+
+        showToast(
+            ids.length >
+                1
+                ? `✅ Pacote separado. ${ids.length} vendas marcadas.`
+                : '✅ Produto marcado como separado.',
+            'success'
+        );
+
+
+        renderizarVendasNFETabela(
+            window._vendasTabelaNFEBase ||
+            []
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro marcando separação:',
+            error
+        );
+
+
+        showToast(
+            `❌ Não foi possível marcar como separado: ${error.message}`,
+            'error'
+        );
+    }
+}
+
+
+window.marcarVendaComoSeparadaNFE =
+    marcarVendaComoSeparadaNFE;
+
+    async function enriquecerVendasComSeparacaoNFE(
+    vendas
+) {
+
+    if (
+        !Array.isArray(
+            vendas
+        ) ||
+        vendas.length ===
+            0
+    ) {
+
+        return [];
+    }
+
+
+    const ids =
+        [
+            ...new Set(
+                vendas
+                    .map(
+                        venda =>
+                            normalizarOrderIdML(
+                                venda.id_venda_ml ||
+                                venda.id
+                            )
+                    )
+                    .filter(Boolean)
+            )
+        ];
+
+
+    const mapa =
+        new Map();
+
+
+    const TAMANHO_LOTE =
+        200;
+
+
+    for (
+        let i = 0;
+        i < ids.length;
+        i += TAMANHO_LOTE
+    ) {
+
+        const lote =
+            ids.slice(
+                i,
+                i +
+                    TAMANHO_LOTE
+            );
+
+
+        const {
+            data,
+            error
+        } =
+            await window
+                .supabaseClient
+                .from(
+                    'vendas_nfe_cache'
+                )
+                .select(`
+                    id_venda_ml,
+                    separado,
+                    separado_em,
+                    separado_por_username,
+                    separado_por_nome
+                `)
+                .in(
+                    'id_venda_ml',
+                    lote
+                );
+
+
+        if (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Erro carregando separação:',
+                error
+            );
+
+            continue;
+        }
+
+
+        (
+            data ||
+            []
+        )
+            .forEach(
+                registro => {
+
+                    mapa.set(
+                        normalizarOrderIdML(
+                            registro.id_venda_ml
+                        ),
+                        registro
+                    );
+                }
+            );
+    }
+
+
+    return vendas.map(
+        venda => {
+
+            const id =
+                normalizarOrderIdML(
+                    venda.id_venda_ml ||
+                    venda.id
+                );
+
+
+            const registro =
+                mapa.get(
+                    id
+                );
+
+
+            return {
+
+                ...venda,
+
+                _separado:
+                    Boolean(
+                        registro
+                            ?.separado
+                    ),
+
+                separado:
+                    Boolean(
+                        registro
+                            ?.separado
+                    ),
+
+                _separado_em:
+                    registro
+                        ?.separado_em ||
+                    null,
+
+                separado_em:
+                    registro
+                        ?.separado_em ||
+                    null,
+
+                _separado_por_username:
+                    registro
+                        ?.separado_por_username ||
+                    null,
+
+                separado_por_username:
+                    registro
+                        ?.separado_por_username ||
+                    null,
+
+                _separado_por_nome:
+                    registro
+                        ?.separado_por_nome ||
+                    null,
+
+                separado_por_nome:
+                    registro
+                        ?.separado_por_nome ||
+                    null
+            };
+        }
+    );
+}
+
+// =========================================================
+// PERÍODO NF-E
+// =========================================================
+
+function obterChavePeriodoNFE() {
+
+    return (
+        `wheeltech_nfe_periodo_` +
+        obterUsuarioPreferenciasColunasNFE()
+    );
+}
+
+
+function salvarPeriodoSelecionadoNFE(
+    inicio,
+    fim
+) {
+
+    try {
+
+        localStorage.setItem(
+            obterChavePeriodoNFE(),
+            JSON.stringify({
+                inicio,
+                fim
+            })
+        );
+
+    } catch (
+        error
+    ) {}
+}
+
+
+function carregarPeriodoSalvoNFE() {
+
+    const hoje =
+        obterDataHojeLocal();
+
+
+    try {
+
+        const bruto =
+            localStorage.getItem(
+                obterChavePeriodoNFE()
+            );
+
+
+        if (
+            bruto
+        ) {
+
+            const dados =
+                JSON.parse(
+                    bruto
+                );
+
+
+            if (
+                dados?.inicio &&
+                dados?.fim
+            ) {
+
+                return dados;
+            }
+        }
+
+    } catch (
+        error
+    ) {}
+
+
+    return {
+        inicio:
+            hoje,
+
+        fim:
+            hoje
+    };
+}
+
+
+function obterPeriodoSelecionadoNFE() {
+
+    const inicio =
+        document.getElementById(
+            'filtroDataInicioNFE'
+        )?.value ||
+        obterDataHojeLocal();
+
+
+    const fim =
+        document.getElementById(
+            'filtroDataFimNFE'
+        )?.value ||
+        inicio;
+
+
+    if (
+        inicio >
+        fim
+    ) {
+
+        return {
+            inicio:
+                fim,
+
+            fim:
+                inicio
+        };
+    }
+
+
+    return {
+        inicio,
+        fim
+    };
+}
+
+
+function listarDatasPeriodoNFE(
+    inicio,
+    fim
+) {
+
+    const resultado =
+        [];
+
+
+    const atual =
+        new Date(
+            `${inicio}T12:00:00`
+        );
+
+
+    const limite =
+        new Date(
+            `${fim}T12:00:00`
+        );
+
+
+    while (
+        atual <=
+        limite
+    ) {
+
+        const ano =
+            atual.getFullYear();
+
+
+        const mes =
+            String(
+                atual.getMonth() +
+                1
+            )
+                .padStart(
+                    2,
+                    '0'
+                );
+
+
+        const dia =
+            String(
+                atual.getDate()
+            )
+                .padStart(
+                    2,
+                    '0'
+                );
+
+
+        resultado.push(
+            `${ano}-${mes}-${dia}`
+        );
+
+
+        atual.setDate(
+            atual.getDate() +
+            1
+        );
+    }
+
+
+    return resultado;
+}
+
+
+function obterDataReferenciaVendaPeriodoNFE(
+    venda
+) {
+
+    const isFull =
+        Boolean(
+            venda?._is_full ||
+            venda?.is_full
+        );
+
+
+    const bruto =
+        isFull
+
+            ? (
+                venda.data_venda ||
+                venda.date_created
+            )
+
+            : (
+                venda._data_envio ||
+                venda.data_envio ||
+                venda.date_created
+            );
+
+
+    return normalizarDataEnvioML(
+        bruto
+    );
+}
+
+
+async function carregarVendasCachePeriodoNFE(
+    inicio = null,
+    fim = null
+) {
+
+    let vendas =
+        await carregarVendasCacheNFE(
+            null
+        );
+
+
+    if (
+        inicio ||
+        fim
+    ) {
+
+        inicio =
+            inicio ||
+            fim;
+
+
+        fim =
+            fim ||
+            inicio;
+
+
+        vendas =
+            vendas.filter(
+                venda => {
+
+                    const data =
+                        obterDataReferenciaVendaPeriodoNFE(
+                            venda
+                        );
+
+
+                    if (
+                        !data
+                    ) {
+
+                        return false;
+                    }
+
+
+                    return (
+                        data >=
+                            inicio &&
+                        data <=
+                            fim
+                    );
+                }
+            );
+    }
+
+
+    vendas =
+        await enriquecerVendasComSeparacaoNFE(
+            vendas
+        );
+
+
+    return vendas;
+}
+
+function montarFiltroCabecalhoNFE(
+    coluna
+) {
+
+    const valorAtual =
+        window
+            ._filtrosColunasNFE[
+                coluna.id
+            ] ||
+        '';
+
+
+    if (
+        coluna.id ===
+        'modalidade'
+    ) {
+
+        const atual =
+            window
+                ._filtroModalidadeNFE ||
+            'todas';
+
+
+        return `
+            <select
+                class="form-control"
+                onclick="event.stopPropagation()"
+                onchange="
+                    alterarFiltroModalidadeNFE(
+                        this.value
+                    )
+                "
+                style="
+                    height:27px;
+                    padding:2px 4px !important;
+                    font-size:10px !important;
+                    margin-top:4px;
+                    min-width:95px;
+                "
+            >
+                <option
+                    value="todas"
+                    ${
+                        atual ===
+                            'todas'
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    Todas
+                </option>
+
+                <option
+                    value="full"
+                    ${
+                        atual ===
+                            'full'
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    FULL
+                </option>
+
+                <option
+                    value="me"
+                    ${
+                        atual ===
+                            'me'
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    ME
+                </option>
+            </select>
+        `;
+    }
+
+
+    if (
+        coluna.id ===
+        'separado'
+    ) {
+
+        return `
+            <select
+                class="form-control"
+                onclick="event.stopPropagation()"
+                onchange="
+                    alterarFiltroColunaNFE(
+                        'separado',
+                        this.value
+                    )
+                "
+                style="
+                    height:27px;
+                    padding:2px 4px !important;
+                    font-size:10px !important;
+                    margin-top:4px;
+                    min-width:100px;
+                "
+            >
+                <option value="">
+                    Todos
+                </option>
+
+                <option
+                    value="separado"
+                    ${
+                        valorAtual ===
+                            'separado'
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    Separados
+                </option>
+
+                <option
+                    value="pendente"
+                    ${
+                        valorAtual ===
+                            'pendente'
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    Pendentes
+                </option>
+            </select>
+        `;
+    }
+
+
+    if (
+        [
+            'foto',
+            'acoes'
+        ].includes(
+            coluna.id
+        )
+    ) {
+
+        return '';
+    }
+
+
+    return `
+        <input
+            type="text"
+            class="form-control"
+            value="${escaparHTMLNFE(
+                valorAtual
+            )}"
+            placeholder="Filtrar..."
+            onclick="event.stopPropagation()"
+            oninput="
+                alterarFiltroColunaNFE(
+                    '${coluna.id}',
+                    this.value
+                )
+            "
+            style="
+                height:27px;
+                padding:2px 5px !important;
+                font-size:10px !important;
+                margin-top:4px;
+                min-width:75px;
+            "
+        >
+    `;
+}
+
+
+function reconstruirCabecalhoVendasNFE() {
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
+
+
+    const tabela =
+        tbody
+            ?.closest(
+                'table'
+            );
+
+
+    const header =
+        tabela
+            ?.querySelector(
+                'thead tr'
+            );
+
+
+    if (
+        !header
+    ) {
+
+        return;
+    }
+
+
+    const ordem =
+        carregarOrdemColunasNFE();
+
+
+    const mapa =
+        new Map(
+            COLUNAS_VENDAS_NFE.map(
+                coluna => [
+                    coluna.id,
+                    coluna
+                ]
+            )
+        );
+
+
+    header.innerHTML =
+        ordem
+            .map(
+                id => {
+
+                    const coluna =
+                        mapa.get(
+                            id
+                        );
+
+
+                    if (
+                        !coluna
+                    ) {
+
+                        return '';
+                    }
+
+
+                    return `
+                        <th
+                            data-coluna-nfe="${coluna.id}"
+                            style="
+                                vertical-align:top;
+                                white-space:nowrap;
+                            "
+                        >
+                            <div
+                                onclick="
+                                    ordenarTabelaVendasPorColunaNFE(
+                                        '${coluna.id}'
+                                    )
+                                "
+                                style="
+                                    display:flex;
+                                    gap:5px;
+                                    align-items:center;
+                                    cursor:pointer;
+                                    user-select:none;
+                                    font-weight:700;
+                                "
+                                title="Clique para ordenar"
+                            >
+                                ${escaparHTMLNFE(
+                                    coluna.nome
+                                )}
+
+                                <span
+                                    data-sort-icon-nfe="${coluna.id}"
+                                    style="
+                                        color:#6c757d;
+                                        font-size:10px;
+                                    "
+                                >
+                                    ↕
+                                </span>
+                            </div>
+
+                            ${montarFiltroCabecalhoNFE(
+                                coluna
+                            )}
+                        </th>
+                    `;
+                }
+            )
+            .join(
+                ''
+            );
+
+
+    atualizarIndicadoresOrdenacaoNFE();
+}
+
+function renderizarListaColunasNFE() {
+
+    const container =
+        document.getElementById(
+            'listaColunasNFE'
+        );
+
+
+    if (
+        !container
+    ) {
+
+        return;
+    }
+
+
+    const ordem =
+        carregarOrdemColunasNFE();
+
+
+    const ocultas =
+        carregarColunasOcultasNFE();
+
+
+    const mapa =
+        new Map(
+            COLUNAS_VENDAS_NFE.map(
+                coluna => [
+                    coluna.id,
+                    coluna
+                ]
+            )
+        );
+
+
+    container.innerHTML =
+        ordem
+            .map(
+                (
+                    id,
+                    index
+                ) => {
+
+                    const coluna =
+                        mapa.get(
+                            id
+                        );
+
+
+                    if (
+                        !coluna
+                    ) {
+
+                        return '';
+                    }
+
+
+                    return `
+                        <div
+                            style="
+                                display:flex;
+                                align-items:center;
+                                gap:6px;
+                                padding:5px;
+                                border-bottom:1px solid #f1f3f5;
+                            "
+                        >
+                            <input
+                                type="checkbox"
+                                data-coluna-nfe="${id}"
+                                ${
+                                    ocultas.has(
+                                        id
+                                    )
+                                        ? ''
+                                        : 'checked'
+                                }
+                                onchange="
+                                    alterarVisibilidadeColunaNFE(
+                                        '${id}',
+                                        this.checked
+                                    )
+                                "
+                            >
+
+                            <span
+                                style="
+                                    flex:1;
+                                    font-size:12px;
+                                "
+                            >
+                                ${index + 1}.
+                                ${escaparHTMLNFE(
+                                    coluna.nome
+                                )}
+                            </span>
+
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-light"
+                                onclick="
+                                    event.stopPropagation();
+                                    moverColunaNFE(
+                                        '${id}',
+                                        -1
+                                    )
+                                "
+                                ${
+                                    index ===
+                                        0
+                                        ? 'disabled'
+                                        : ''
+                                }
+                                title="Mover para cima"
+                            >
+                                ↑
+                            </button>
+
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-light"
+                                onclick="
+                                    event.stopPropagation();
+                                    moverColunaNFE(
+                                        '${id}',
+                                        1
+                                    )
+                                "
+                                ${
+                                    index ===
+                                        ordem.length -
+                                            1
+                                        ? 'disabled'
+                                        : ''
+                                }
+                                title="Mover para baixo"
+                            >
+                                ↓
+                            </button>
+                        </div>
+                    `;
+                }
+            )
+            .join(
+                ''
+            );
+}
+
 
 // =========================================================
 // CARREGAR COLUNAS OCULTAS
@@ -6982,37 +9773,29 @@ function aplicarPreferenciasColunasNFE() {
         carregarColunasOcultasNFE();
 
 
-    const indiceEstoque =
-        COLUNAS_VENDAS_NFE.findIndex(
+    const ordem =
+        carregarOrdemColunasNFE();
+
+
+    const ordemPadrao =
+        COLUNAS_VENDAS_NFE.map(
             coluna =>
-                coluna.id ===
-                'estoque'
+                coluna.id
         );
 
-
-    const indiceEstoqueAnuncio =
-        COLUNAS_VENDAS_NFE.findIndex(
-            coluna =>
-                coluna.id ===
-                'estoque_anuncio'
-        );
-
-
-    // =====================================================
-    // MAPA DAS VENDAS
-    // =====================================================
 
     const mapaVendas =
         new Map();
 
 
-    if (
+    (
         Array.isArray(
             vendasPendentes
         )
-    ) {
-
-        vendasPendentes.forEach(
+            ? vendasPendentes
+            : []
+    )
+        .forEach(
             venda => {
 
                 const id =
@@ -7033,7 +9816,6 @@ function aplicarPreferenciasColunasNFE() {
                 }
             }
         );
-    }
 
 
     // =====================================================
@@ -7041,21 +9823,38 @@ function aplicarPreferenciasColunasNFE() {
     // =====================================================
 
     const headers =
-        tabela.querySelectorAll(
-            'thead tr th'
+        Array.from(
+            tabela.querySelectorAll(
+                'thead tr th[data-coluna-nfe]'
+            )
         );
 
 
-    COLUNAS_VENDAS_NFE.forEach(
-        (
-            coluna,
-            index
-        ) => {
+    const mapaHeaders =
+        new Map(
+            headers.map(
+                th => [
+                    th.dataset
+                        .colunaNfe,
+                    th
+                ]
+            )
+        );
+
+
+    const headerRow =
+        tabela.querySelector(
+            'thead tr'
+        );
+
+
+    ordem.forEach(
+        id => {
 
             const th =
-                headers[
-                    index
-                ];
+                mapaHeaders.get(
+                    id
+                );
 
 
             if (
@@ -7066,16 +9865,17 @@ function aplicarPreferenciasColunasNFE() {
             }
 
 
-            th.dataset.colunaNfe =
-                coluna.id;
-
-
             th.style.display =
                 ocultas.has(
-                    coluna.id
+                    id
                 )
                     ? 'none'
                     : '';
+
+
+            headerRow.appendChild(
+                th
+            );
         }
     );
 
@@ -7086,10 +9886,30 @@ function aplicarPreferenciasColunasNFE() {
 
     tbody
         .querySelectorAll(
-            'tr'
+            ':scope > tr'
         )
         .forEach(
             tr => {
+
+                if (
+                    tr.querySelector(
+                        'td[colspan]'
+                    )
+                ) {
+
+                    const td =
+                        tr.querySelector(
+                            'td[colspan]'
+                        );
+
+
+                    td.colSpan =
+                        obterQuantidadeColunasVisiveisNFE();
+
+
+                    return;
+                }
+
 
                 let cells =
                     Array.from(
@@ -7109,35 +9929,39 @@ function aplicarPreferenciasColunasNFE() {
 
 
                 // =============================================
-                // ID DA VENDA
+                // IDENTIFICAR VENDA ANTES DE MOVER COLUNAS
                 // =============================================
 
                 let vendaId =
-                    tr.dataset
-                        .vendaIdNfe ||
-                    '';
+                    normalizarOrderIdML(
+                        tr.dataset
+                            .vendaIdNfe ||
+                        ''
+                    );
 
 
                 if (
                     !vendaId
                 ) {
 
-                    const textoId =
-                        cells[0]
-                            ?.querySelector(
-                                'strong'
-                            )
-                            ?.textContent ||
+                    const texto =
                         cells[0]
                             ?.textContent ||
                         '';
+
+
+                    const match =
+                        texto.match(
+                            /\d{8,}/
+                        );
 
 
                     vendaId =
-                        normalizarOrderIdML(
-                            textoId
-                        ) ||
-                        '';
+                        match
+                            ? normalizarOrderIdML(
+                                match[0]
+                            )
+                            : '';
                 }
 
 
@@ -7152,228 +9976,263 @@ function aplicarPreferenciasColunasNFE() {
 
 
                 const venda =
-                    vendaId
-                        ? mapaVendas.get(
-                            vendaId
-                        )
-                        : null;
+                    mapaVendas.get(
+                        vendaId
+                    ) ||
+                    null;
 
 
                 // =============================================
-                // INSERIR "ESTOQUE ANÚNCIO"
+                // PRIMEIRA EXECUÇÃO APÓS O RENDER
+                //
+                // A render atual pode vir:
+                // 13 células = sem Separado e sem Estoque anúncio
+                // 14 células = já tem Estoque anúncio
                 // =============================================
 
-                if (
-                    indiceEstoqueAnuncio >=
-                        0 &&
-                    cells.length ===
-                        COLUNAS_VENDAS_NFE.length -
-                            1
-                ) {
-
-                    const td =
-                        document.createElement(
-                            'td'
-                        );
-
-
-                    td.style.verticalAlign =
-                        'middle';
-
-                    td.style.minWidth =
-                        '110px';
-
-
-                    td.innerHTML =
-                        venda
-
-                            ? montarEstoqueAnuncioPosVendaHtmlNFE(
-                                venda
+                const temIdentificacao =
+                    cells.some(
+                        td =>
+                            Boolean(
+                                td.dataset
+                                    .colunaNfe
                             )
-
-                            : `
-                                <span
-                                    style="
-                                        color:#adb5bd;
-                                        font-size:10px;
-                                    "
-                                >
-                                    Não capturado
-                                </span>
-                            `;
-
-
-                    const referencia =
-                        cells[
-                            indiceEstoqueAnuncio
-                        ] ||
-                        null;
-
-
-                    tr.insertBefore(
-                        td,
-                        referencia
                     );
 
 
-                    cells =
-                        Array.from(
-                            tr.querySelectorAll(
-                                ':scope > td'
-                            )
-                        );
-                }
-
-
-                // Linha de "nenhuma venda"
                 if (
-                    cells.length !==
-                    COLUNAS_VENDAS_NFE.length
+                    !temIdentificacao
                 ) {
 
-                    return;
-                }
-
-
-                // =============================================
-                // QUEM DEU BAIXA
-                // =============================================
-
-                if (
-                    venda &&
-                    indiceEstoque >=
-                        0
-                ) {
-
-                    const tdEstoque =
-                        cells[
-                            indiceEstoque
-                        ];
-
-
-                    const deveMostrarResponsavel =
-                        !venda._is_full &&
-                        Boolean(
-                            venda
-                                ._estoque_baixado
-                        );
-
+                    // =========================================
+                    // INSERIR SEPARADO
+                    // Posição padrão = 9
+                    // =========================================
 
                     if (
-                        tdEstoque &&
-                        deveMostrarResponsavel &&
-                        !tdEstoque.querySelector(
-                            '[data-responsavel-baixa-nfe]'
-                        )
+                        cells.length <=
+                        ordemPadrao.length -
+                            1
                     ) {
 
-                        const responsavel =
-                            venda
-                                ._estoque_baixado_por_nome ||
-                            'não registrado';
-
-
-                        const restaurado =
-                            Boolean(
-                                venda
-                                    ._estoque_restaurado_cancelamento
-                            ) ||
-                            venda
-                                ._estoque_status ===
-                                'restaurado_cancelamento' ||
-                            venda
-                                ._estoque_status ===
-                                'restaurado_cancelamento_sync_pendente';
-
-
-                        const infoResponsavel =
+                        const tdSeparado =
                             document.createElement(
-                                'div'
+                                'td'
                             );
 
 
-                        infoResponsavel
-                            .dataset
-                            .responsavelBaixaNfe =
-                            '1';
+                        tdSeparado.dataset
+                            .colunaNfe =
+                            'separado';
 
 
-                        infoResponsavel.style.cssText = `
-                            margin-top:4px;
-                            font-size:10px;
-                            color:#495057;
-                            white-space:nowrap;
-                        `;
+                        tdSeparado.style
+                            .verticalAlign =
+                            'middle';
 
 
-                        const icone =
-                            document.createElement(
-                                'i'
-                            );
+                        tdSeparado.innerHTML =
+                            venda
+                                ? montarCelulaSeparadoNFE(
+                                    venda
+                                )
+                                : '';
 
 
-                        icone.className =
-                            'fas fa-user';
-
-                        icone.style
-                            .marginRight =
-                            '3px';
-
-
-                        infoResponsavel
-                            .appendChild(
-                                icone
-                            );
+                        tr.insertBefore(
+                            tdSeparado,
+                            cells[9] ||
+                            null
+                        );
 
 
-                        infoResponsavel
-                            .appendChild(
-                                document.createTextNode(
-                                    restaurado
-                                        ? 'Baixa original por '
-                                        : 'Baixa por '
+                        cells =
+                            Array.from(
+                                tr.querySelectorAll(
+                                    ':scope > td'
                                 )
                             );
+                    }
 
 
-                        const strong =
+                    // =========================================
+                    // SE AINDA FALTA UMA CÉLULA,
+                    // É ESTOQUE DO ANÚNCIO
+                    // =========================================
+
+                    if (
+                        cells.length ===
+                        ordemPadrao.length -
+                            1
+                    ) {
+
+                        const tdEstoqueAnuncio =
                             document.createElement(
-                                'strong'
+                                'td'
                             );
 
 
-                        strong.textContent =
-                            responsavel;
+                        tdEstoqueAnuncio.dataset
+                            .colunaNfe =
+                            'estoque_anuncio';
 
 
-                        infoResponsavel
-                            .appendChild(
-                                strong
+                        tdEstoqueAnuncio.style
+                            .verticalAlign =
+                            'middle';
+
+
+                        tdEstoqueAnuncio.style
+                            .minWidth =
+                            '110px';
+
+
+                        tdEstoqueAnuncio.innerHTML =
+                            venda
+                                ? montarEstoqueAnuncioPosVendaHtmlNFE(
+                                    venda
+                                )
+                                : '';
+
+
+                        tr.insertBefore(
+                            tdEstoqueAnuncio,
+                            cells[12] ||
+                            null
+                        );
+
+
+                        cells =
+                            Array.from(
+                                tr.querySelectorAll(
+                                    ':scope > td'
+                                )
                             );
+                    }
 
 
-                        tdEstoque
-                            .appendChild(
-                                infoResponsavel
-                            );
+                    // =========================================
+                    // MARCAR AS CÉLULAS
+                    // =========================================
+
+                    if (
+                        cells.length ===
+                        ordemPadrao.length
+                    ) {
+
+                        cells.forEach(
+                            (
+                                td,
+                                index
+                            ) => {
+
+                                if (
+                                    !td.dataset
+                                        .colunaNfe
+                                ) {
+
+                                    td.dataset
+                                        .colunaNfe =
+                                        ordemPadrao[
+                                            index
+                                        ];
+                                }
+                            }
+                        );
                     }
                 }
 
 
                 // =============================================
-                // VISIBILIDADE
+                // GARANTIA PARA SEPARADO
                 // =============================================
 
-                COLUNAS_VENDAS_NFE.forEach(
-                    (
-                        coluna,
-                        index
-                    ) => {
+                let tdSeparado =
+                    tr.querySelector(
+                        ':scope > td[data-coluna-nfe="separado"]'
+                    );
+
+
+                if (
+                    !tdSeparado
+                ) {
+
+                    tdSeparado =
+                        document.createElement(
+                            'td'
+                        );
+
+
+                    tdSeparado.dataset
+                        .colunaNfe =
+                        'separado';
+
+
+                    tdSeparado.innerHTML =
+                        venda
+                            ? montarCelulaSeparadoNFE(
+                                venda
+                            )
+                            : '';
+
+
+                    const referencia =
+                        tr.querySelector(
+                            ':scope > td[data-coluna-nfe="nfe"]'
+                        );
+
+
+                    tr.insertBefore(
+                        tdSeparado,
+                        referencia ||
+                        null
+                    );
+                }
+
+
+                // =============================================
+                // ATUALIZAR CONTEÚDO SEPARADO
+                // =============================================
+
+                if (
+                    venda
+                ) {
+
+                    tdSeparado.innerHTML =
+                        montarCelulaSeparadoNFE(
+                            venda
+                        );
+                }
+
+
+                // =============================================
+                // REORDENAR
+                // =============================================
+
+                const mapaCells =
+                    new Map(
+                        Array.from(
+                            tr.querySelectorAll(
+                                ':scope > td[data-coluna-nfe]'
+                            )
+                        )
+                            .map(
+                                td => [
+                                    td.dataset
+                                        .colunaNfe,
+                                    td
+                                ]
+                            )
+                    );
+
+
+                ordem.forEach(
+                    id => {
 
                         const td =
-                            cells[
-                                index
-                            ];
+                            mapaCells.get(
+                                id
+                            );
 
 
                         if (
@@ -7384,49 +10243,34 @@ function aplicarPreferenciasColunasNFE() {
                         }
 
 
-                        td.dataset.colunaNfe =
-                            coluna.id;
-
-
                         td.style.display =
                             ocultas.has(
-                                coluna.id
+                                id
                             )
                                 ? 'none'
                                 : '';
+
+
+                        tr.appendChild(
+                            td
+                        );
                     }
                 );
             }
         );
 
 
-    // =====================================================
-    // CHECKBOXES
-    // =====================================================
-
-    document
-        .querySelectorAll(
-            '#painelColunasNFE input[data-coluna-nfe]'
-        )
-        .forEach(
-            checkbox => {
-
-                const id =
-                    checkbox.dataset
-                        .colunaNfe;
+    renderizarListaColunasNFE();
 
 
-                checkbox.checked =
-                    !ocultas.has(
-                        id
-                    );
-            }
-        );
+    aplicarEstadoSeparacaoBotoesNFE();
 
 
-    // =====================================================
-    // CONTADOR
-    // =====================================================
+    aplicarFiltrosTabelaFrontendNFE();
+
+
+    aplicarOrdenacaoAtualNFE();
+
 
     const botao =
         document.getElementById(
@@ -7446,7 +10290,6 @@ function aplicarPreferenciasColunasNFE() {
         botao.innerHTML = `
             <i class="fas fa-columns"></i>
             Colunas
-
             <span
                 style="
                     background:rgba(255,255,255,.25);
@@ -7459,6 +10302,104 @@ function aplicarPreferenciasColunasNFE() {
             </span>
         `;
     }
+}
+
+function aplicarEstadoSeparacaoBotoesNFE() {
+
+    const vendas =
+        Array.isArray(
+            vendasPendentes
+        )
+            ? vendasPendentes
+            : [];
+
+
+    document
+        .querySelectorAll(
+            '#vendasPendentesBody .btn-emitir-nfe'
+        )
+        .forEach(
+            btn => {
+
+                const vendaId =
+                    normalizarOrderIdML(
+                        btn.dataset
+                            .vendaId
+                    );
+
+
+                const venda =
+                    vendas.find(
+                        item =>
+                            normalizarOrderIdML(
+                                item.id_venda_ml ||
+                                item.id
+                            ) ===
+                            vendaId
+                    );
+
+
+                const separado =
+                    vendaEstaSeparadaNFE(
+                        venda
+                    );
+
+
+                if (
+                    separado
+                ) {
+
+                    btn.disabled =
+                        false;
+
+
+                    btn.classList.remove(
+                        'btn-secondary'
+                    );
+
+
+                    btn.classList.add(
+                        'btn-success'
+                    );
+
+
+                    btn.title =
+                        'Emitir NF-e';
+
+
+                    btn.innerHTML = `
+                        <i class="fas fa-file-invoice"></i>
+                        Emitir NF-e
+                    `;
+
+
+                } else {
+
+                    btn.disabled =
+                        true;
+
+
+                    btn.classList.remove(
+                        'btn-success'
+                    );
+
+
+                    btn.classList.add(
+                        'btn-secondary'
+                    );
+
+
+                    btn.title =
+                        'Separe o produto antes de emitir a NF-e';
+
+
+                    btn.innerHTML = `
+                        <i class="fas fa-lock"></i>
+                        Separe antes
+                    `;
+                }
+            }
+        );
 }
 
 
@@ -7539,10 +10480,6 @@ function ocultarTodasColunasNFE() {
 }
 
 
-// =========================================================
-// RESTAURAR PADRÃO
-// =========================================================
-
 function restaurarColunasPadraoNFE() {
 
     try {
@@ -7552,11 +10489,22 @@ function restaurarColunasPadraoNFE() {
         );
 
 
+        localStorage.removeItem(
+            obterChaveOrdemColunasNFE()
+        );
+
+
+        reconstruirCabecalhoVendasNFE();
+
+
         aplicarPreferenciasColunasNFE();
 
 
+        renderizarListaColunasNFE();
+
+
         showToast(
-            '✅ Colunas restauradas para o padrão.',
+            '✅ Colunas e ordem restauradas para o padrão.',
             'success'
         );
 
@@ -7772,7 +10720,9 @@ function garantirControlesVendasNFE() {
         );
 
 
-    if (!tbody) {
+    if (
+        !tbody
+    ) {
 
         return;
     }
@@ -7784,169 +10734,60 @@ function garantirControlesVendasNFE() {
         );
 
 
-    if (!tabela) {
+    if (
+        !tabela
+    ) {
 
         return;
     }
 
 
-    // =====================================================
-    // CABEÇALHO
-    // =====================================================
-
-    const header =
-        tabela.querySelector(
-            'thead tr'
-        );
-
-
-    if (
-        header
-    ) {
-
-        const filtroAtualModalidade =
-    window._filtroModalidadeNFE ||
-    'todas';
-
-
-header.innerHTML =
-    COLUNAS_VENDAS_NFE
-        .map(
-            coluna => {
-
-                // =============================================
-                // MODALIDADE COM FILTRO
-                // =============================================
-
-                if (
-                    coluna.id ===
-                    'modalidade'
-                ) {
-
-                    return `
-                        <th
-                            data-coluna-nfe="modalidade"
-                            style="
-                                min-width:125px;
-                            "
-                        >
-
-                            <div
-                                style="
-                                    margin-bottom:5px;
-                                "
-                            >
-                                Modalidade
-                            </div>
-
-
-                            <select
-                                id="filtroModalidadeNFE"
-                                class="form-control"
-                                onclick="
-                                    event.stopPropagation();
-                                "
-                                onchange="
-                                    alterarFiltroModalidadeNFE(
-                                        this.value
-                                    );
-                                "
-                                style="
-                                    min-width:110px;
-                                    padding:4px 6px !important;
-                                    height:30px;
-                                    font-size:11px !important;
-                                    font-weight:500;
-                                "
-                            >
-
-                                <option
-                                    value="todas"
-                                    ${
-                                        filtroAtualModalidade ===
-                                        'todas'
-                                            ? 'selected'
-                                            : ''
-                                    }
-                                >
-                                    Todas
-                                </option>
-
-
-                                <option
-                                    value="full"
-                                    ${
-                                        filtroAtualModalidade ===
-                                        'full'
-                                            ? 'selected'
-                                            : ''
-                                    }
-                                >
-                                    Só FULL
-                                </option>
-
-
-                                <option
-                                    value="me"
-                                    ${
-                                        filtroAtualModalidade ===
-                                        'me'
-                                            ? 'selected'
-                                            : ''
-                                    }
-                                >
-                                    Só ME
-                                </option>
-
-                            </select>
-
-                        </th>
-                    `;
-                }
-
-
-                // =============================================
-                // DEMAIS COLUNAS
-                // =============================================
-
-                return `
-                    <th
-                        data-coluna-nfe="${coluna.id}"
-                    >
-                        ${escaparHTMLNFE(
-                            coluna.nome
-                        )}
-                    </th>
-                `;
-            }
-        )
-        .join('');
-    }
-
-
-    // =====================================================
-    // CONTROLES JÁ EXISTEM
-    // =====================================================
-
-    const controlesExistentes =
+    let controlesExistentes =
         document.getElementById(
             'controlesVendasNFE'
         );
+
+
+    // =====================================================
+    // SE AINDA É A VERSÃO ANTIGA DE UMA DATA,
+    // REMOVER E RECRIAR
+    // =====================================================
+
+    if (
+        controlesExistentes &&
+        !document.getElementById(
+            'filtroDataInicioNFE'
+        )
+    ) {
+
+        controlesExistentes.remove();
+
+
+        controlesExistentes =
+            null;
+    }
+
+
+    reconstruirCabecalhoVendasNFE();
 
 
     if (
         controlesExistentes
     ) {
 
+        renderizarListaColunasNFE();
+
+
         aplicarPreferenciasColunasNFE();
+
 
         return;
     }
 
 
-    // =====================================================
-    // CRIAR CONTAINER
-    // =====================================================
+    const periodoSalvo =
+        carregarPeriodoSalvoNFE();
+
 
     const container =
         document.createElement(
@@ -7972,68 +10813,9 @@ header.innerHTML =
     `;
 
 
-    // =====================================================
-    // CHECKBOXES
-    // =====================================================
-
-    const htmlColunas =
-        COLUNAS_VENDAS_NFE
-            .map(
-                coluna => `
-
-                    <label
-                        style="
-                            display:flex;
-                            align-items:center;
-                            gap:7px;
-                            padding:7px 8px;
-                            border-radius:5px;
-                            cursor:pointer;
-                            font-size:12px;
-                            margin:0;
-                        "
-                        onmouseenter="
-                            this.style.background='#f1f3f5'
-                        "
-                        onmouseleave="
-                            this.style.background=''
-                        "
-                    >
-
-                        <input
-                            type="checkbox"
-                            data-coluna-nfe="${coluna.id}"
-                            onchange="
-                                alterarVisibilidadeColunaNFE(
-                                    '${coluna.id}',
-                                    this.checked
-                                )
-                            "
-                            style="
-                                width:16px;
-                                height:16px;
-                                cursor:pointer;
-                            "
-                        >
-
-                        <span>
-                            ${escaparHTMLNFE(
-                                coluna.nome
-                            )}
-                        </span>
-
-                    </label>
-                `
-            )
-            .join(
-                ''
-            );
-
-
     container.innerHTML = `
 
         <div>
-
             <label
                 style="
                     display:block;
@@ -8041,18 +10823,44 @@ header.innerHTML =
                     margin-bottom:4px;
                 "
             >
-                Data de envio
+                Data inicial
             </label>
 
             <input
                 type="date"
-                id="filtroDataEnvioNFE"
+                id="filtroDataInicioNFE"
                 class="form-control"
-                style="width:175px;"
+                value="${periodoSalvo.inicio}"
+                style="width:160px;"
             >
-
         </div>
 
+        <div>
+            <label
+                style="
+                    display:block;
+                    font-weight:600;
+                    margin-bottom:4px;
+                "
+            >
+                Data final
+            </label>
+
+            <input
+                type="date"
+                id="filtroDataFimNFE"
+                class="form-control"
+                value="${periodoSalvo.fim}"
+                style="width:160px;"
+            >
+        </div>
+
+        <!-- Compatibilidade com funções antigas -->
+        <input
+            type="hidden"
+            id="filtroDataEnvioNFE"
+            value="${periodoSalvo.inicio}"
+        >
 
         <button
             type="button"
@@ -8060,9 +10868,8 @@ header.innerHTML =
             id="btnAtualizarDataNFE"
         >
             <i class="fas fa-sync-alt"></i>
-            Atualizar esta data
+            Atualizar período
         </button>
-
 
         <button
             type="button"
@@ -8073,17 +10880,11 @@ header.innerHTML =
             Todas salvas
         </button>
 
-
-        <!-- =============================================== -->
-        <!-- CONFIGURAÇÃO DE COLUNAS -->
-        <!-- =============================================== -->
-
         <div
             style="
                 position:relative;
             "
         >
-
             <button
                 type="button"
                 class="btn btn-secondary"
@@ -8097,7 +10898,6 @@ header.innerHTML =
                 Colunas
             </button>
 
-
             <div
                 id="painelColunasNFE"
                 onclick="
@@ -8108,7 +10908,7 @@ header.innerHTML =
                     position:absolute;
                     top:calc(100% + 7px);
                     right:0;
-                    width:260px;
+                    width:330px;
                     background:white;
                     border:1px solid #dee2e6;
                     border-radius:10px;
@@ -8117,7 +10917,6 @@ header.innerHTML =
                     z-index:9999;
                 "
             >
-
                 <div
                     style="
                         font-weight:700;
@@ -8125,9 +10924,8 @@ header.innerHTML =
                         margin-bottom:4px;
                     "
                 >
-                    Colunas visíveis
+                    Colunas e ordem
                 </div>
-
 
                 <div
                     style="
@@ -8136,21 +10934,18 @@ header.innerHTML =
                         margin-bottom:10px;
                     "
                 >
-                    Esta configuração é individual para seu usuário.
+                    Marque para mostrar.
+                    Use ↑ e ↓ para escolher a ordem.
+                    A configuração é individual por usuário.
                 </div>
-
 
                 <div
+                    id="listaColunasNFE"
                     style="
-                        max-height:320px;
+                        max-height:390px;
                         overflow-y:auto;
                     "
-                >
-
-                    ${htmlColunas}
-
-                </div>
-
+                ></div>
 
                 <div
                     style="
@@ -8162,48 +10957,35 @@ header.innerHTML =
                         gap:5px;
                     "
                 >
-
                     <button
                         type="button"
                         class="btn btn-sm btn-primary"
-                        onclick="
-                            mostrarTodasColunasNFE()
-                        "
+                        onclick="mostrarTodasColunasNFE()"
                     >
                         <i class="fas fa-eye"></i>
                         Todas
                     </button>
 
-
                     <button
                         type="button"
                         class="btn btn-sm btn-secondary"
-                        onclick="
-                            ocultarTodasColunasNFE()
-                        "
+                        onclick="ocultarTodasColunasNFE()"
                     >
                         <i class="fas fa-eye-slash"></i>
                         Nenhuma
                     </button>
 
-
                     <button
                         type="button"
                         class="btn btn-sm btn-warning"
-                        onclick="
-                            restaurarColunasPadraoNFE()
-                        "
+                        onclick="restaurarColunasPadraoNFE()"
                     >
                         <i class="fas fa-undo"></i>
                         Padrão
                     </button>
-
                 </div>
-
             </div>
-
         </div>
-
 
         <span
             id="statusAtualizacaoNFE"
@@ -8214,10 +10996,6 @@ header.innerHTML =
         ></span>
     `;
 
-
-    // =====================================================
-    // INSERIR ANTES DA TABELA
-    // =====================================================
 
     const wrapper =
         tabela.parentElement;
@@ -8230,42 +11008,54 @@ header.innerHTML =
         );
 
 
-    // =====================================================
-    // DATA PADRÃO
-    // =====================================================
+    const atualizarPeriodoSalvo =
+        () => {
 
-    const input =
-        document.getElementById(
-            'filtroDataEnvioNFE'
-        );
+            const periodo =
+                obterPeriodoSelecionadoNFE();
 
 
-    if (
-        input
-    ) {
-
-        input.value =
-            obterDataHojeLocal();
+            salvarPeriodoSelecionadoNFE(
+                periodo.inicio,
+                periodo.fim
+            );
 
 
-        input.addEventListener(
-            'change',
-            async () => {
-
-                window
-                    ._nfeFiltroTodas =
-                    false;
+            const legado =
+                document.getElementById(
+                    'filtroDataEnvioNFE'
+                );
 
 
-                await atualizarVendasDataSelecionada();
+            if (
+                legado
+            ) {
+
+                legado.value =
+                    periodo.inicio;
             }
+        };
+
+
+    document
+        .getElementById(
+            'filtroDataInicioNFE'
+        )
+        ?.addEventListener(
+            'change',
+            atualizarPeriodoSalvo
         );
-    }
 
 
-    // =====================================================
-    // ATUALIZAR DATA
-    // =====================================================
+    document
+        .getElementById(
+            'filtroDataFimNFE'
+        )
+        ?.addEventListener(
+            'change',
+            atualizarPeriodoSalvo
+        );
+
 
     document
         .getElementById(
@@ -8277,10 +11067,6 @@ header.innerHTML =
         );
 
 
-    // =====================================================
-    // TODAS SALVAS
-    // =====================================================
-
     document
         .getElementById(
             'btnTodasVendasNFE'
@@ -8291,15 +11077,16 @@ header.innerHTML =
         );
 
 
-    // =====================================================
-    // FECHAR MENU AO CLICAR FORA
-    // =====================================================
+    renderizarListaColunasNFE();
+
 
     if (
-        !window._listenerColunasNFEInstalado
+        !window
+            ._listenerColunasNFEInstalado
     ) {
 
-        window._listenerColunasNFEInstalado =
+        window
+            ._listenerColunasNFEInstalado =
             true;
 
 
@@ -8349,38 +11136,43 @@ header.innerHTML =
     }
 
 
-    // =====================================================
-    // APLICAR CONFIGURAÇÃO DO USUÁRIO
-    // =====================================================
-
     aplicarPreferenciasColunasNFE();
 }
 
 async function mostrarTodasVendasCacheNFE() {
 
-    window
-        ._nfeFiltroTodas =
+    window._nfeFiltroTodas =
         true;
+
 
     const status =
         document.getElementById(
             'statusAtualizacaoNFE'
         );
 
-    if (status) {
+
+    if (
+        status
+    ) {
 
         status.textContent =
             'Exibindo todas as vendas salvas';
     }
 
+
     const vendas =
-        await carregarVendasCacheNFE(
+        await carregarVendasCachePeriodoNFE(
+            null,
             null
         );
+
 
     renderizarVendasNFETabela(
         vendas
     );
+
+
+    aplicarPreferenciasColunasNFE();
 }
 
 async function atualizarVendasDataSelecionada() {
@@ -8389,15 +11181,24 @@ async function atualizarVendasDataSelecionada() {
         false;
 
 
-    const input =
-        document.getElementById(
-            'filtroDataEnvioNFE'
+    const {
+        inicio,
+        fim
+    } =
+        obterPeriodoSelecionadoNFE();
+
+
+    salvarPeriodoSelecionadoNFE(
+        inicio,
+        fim
+    );
+
+
+    const datas =
+        listarDatasPeriodoNFE(
+            inicio,
+            fim
         );
-
-
-    const data =
-        input?.value ||
-        obterDataHojeLocal();
 
 
     const status =
@@ -8420,15 +11221,6 @@ async function atualizarVendasDataSelecionada() {
     try {
 
         if (
-            status
-        ) {
-
-            status.textContent =
-                'Atualizando vendas...';
-        }
-
-
-        if (
             btn
         ) {
 
@@ -8441,13 +11233,23 @@ async function atualizarVendasDataSelecionada() {
         }
 
 
+        if (
+            status
+        ) {
+
+            status.textContent =
+                'Carregando período...';
+        }
+
+
         // =====================================================
-        // CACHE PRIMEIRO
+        // CACHE IMEDIATO
         // =====================================================
 
         const cache =
-            await carregarVendasCacheNFE(
-                data
+            await carregarVendasCachePeriodoNFE(
+                inicio,
+                fim
             );
 
 
@@ -8457,13 +11259,69 @@ async function atualizarVendasDataSelecionada() {
 
 
         // =====================================================
-        // VENDAS ML
+        // SINCRONIZAR CADA DIA DO PERÍODO
         // =====================================================
 
-        await sincronizarVendasPendentesML(
-            data,
-            true
-        );
+        let processadas =
+            0;
+
+
+        const erros =
+            [];
+
+
+        for (
+            const data
+            of datas
+        ) {
+
+            processadas++;
+
+
+            if (
+                status
+            ) {
+
+                status.textContent =
+                    `Sincronizando ${processadas}/${datas.length}: ${formatarDataNFE(
+                        data
+                    )}`;
+            }
+
+
+            try {
+
+                await sincronizarVendasPendentesML(
+                    data,
+                    true
+                );
+
+
+                localStorage.setItem(
+                    `nfe_sync_${data}`,
+                    String(
+                        Date.now()
+                    )
+                );
+
+
+            } catch (
+                error
+            ) {
+
+                console.warn(
+                    `⚠️ Erro sincronizando ${data}:`,
+                    error
+                );
+
+
+                erros.push({
+                    data,
+                    error:
+                        error.message
+                });
+            }
+        }
 
 
         // =====================================================
@@ -8474,12 +11332,13 @@ async function atualizarVendasDataSelecionada() {
 
 
         // =====================================================
-        // CACHE ATUALIZADO
+        // RECARREGAR PERÍODO
         // =====================================================
 
         const atualizado =
-            await carregarVendasCacheNFE(
-                data
+            await carregarVendasCachePeriodoNFE(
+                inicio,
+                fim
             );
 
 
@@ -8488,12 +11347,7 @@ async function atualizarVendasDataSelecionada() {
         );
 
 
-        localStorage.setItem(
-            `nfe_sync_${data}`,
-            String(
-                Date.now()
-            )
-        );
+        aplicarPreferenciasColunasNFE();
 
 
         if (
@@ -8501,63 +11355,56 @@ async function atualizarVendasDataSelecionada() {
         ) {
 
             status.textContent =
-                'Vendas atualizadas. Conferindo estoques...';
+                `Período ${formatarDataNFE(
+                    inicio
+                )} a ${formatarDataNFE(
+                    fim
+                )} — ${atualizado.length} venda(s)`;
         }
 
 
         showToast(
-            `✅ ${atualizado.length} venda(s) atualizada(s). Conferindo estoques dos anúncios...`,
+            `✅ ${atualizado.length} venda(s) carregada(s) no período.`,
             'success'
         );
 
 
         // =====================================================
-        // CONFERIR ESTOQUES EM SEGUNDO PLANO
-        //
-        // FULL + ME + ANÚNCIOS ZERADOS
+        // MONITOR DE ESTOQUE / ALERTAS
+        // SOMENTE CONSULTA, COMO DEFINIMOS
         // =====================================================
 
-        verificarMonitorFullVendasNFE({
+        if (
+            typeof verificarMonitorFullVendasNFE ===
+            'function'
+        ) {
 
-            forcar:
-                true
+            verificarMonitorFullVendasNFE({
+                forcar:
+                    true
+            })
+                .catch(
+                    error => {
 
-        })
-            .then(
-                () => {
-
-                    if (
-                        status
-                    ) {
-
-                        status.textContent =
-                            `Atualizado às ${new Date().toLocaleTimeString(
-                                'pt-BR'
-                            )}`;
+                        console.warn(
+                            '⚠️ Conferência de estoques:',
+                            error
+                        );
                     }
+                );
+        }
 
 
-                    aplicarEstadosFullTabelaNFE();
-                }
-            )
-            .catch(
-                error => {
+        if (
+            erros.length >
+            0
+        ) {
 
-                    console.warn(
-                        '⚠️ Conferência de estoque:',
-                        error
-                    );
-
-
-                    if (
-                        status
-                    ) {
-
-                        status.textContent =
-                            'Vendas atualizadas; houve erro ao conferir alguns estoques.';
-                    }
-                }
+            console.warn(
+                '⚠️ Datas com erro:',
+                erros
             );
+        }
 
 
     } catch (
@@ -8565,7 +11412,7 @@ async function atualizarVendasDataSelecionada() {
     ) {
 
         console.error(
-            '❌ Erro atualizando vendas:',
+            '❌ Erro atualizando período:',
             error
         );
 
@@ -8580,7 +11427,7 @@ async function atualizarVendasDataSelecionada() {
 
 
         showToast(
-            `❌ Erro ao atualizar vendas: ${error.message}`,
+            `❌ Erro ao atualizar período: ${error.message}`,
             'error'
         );
 
@@ -8597,7 +11444,7 @@ async function atualizarVendasDataSelecionada() {
 
             btn.innerHTML =
                 textoOriginal ||
-                '<i class="fas fa-sync-alt"></i> Atualizar esta data';
+                '<i class="fas fa-sync-alt"></i> Atualizar período';
         }
     }
 }
@@ -8607,18 +11454,56 @@ function inicializarFiltroDataNFE() {
 
     garantirControlesVendasNFE();
 
-    const input =
+
+    const periodo =
+        carregarPeriodoSalvoNFE();
+
+
+    const inicio =
+        document.getElementById(
+            'filtroDataInicioNFE'
+        );
+
+
+    const fim =
+        document.getElementById(
+            'filtroDataFimNFE'
+        );
+
+
+    if (
+        inicio &&
+        !inicio.value
+    ) {
+
+        inicio.value =
+            periodo.inicio;
+    }
+
+
+    if (
+        fim &&
+        !fim.value
+    ) {
+
+        fim.value =
+            periodo.fim;
+    }
+
+
+    const legado =
         document.getElementById(
             'filtroDataEnvioNFE'
         );
 
+
     if (
-        input &&
-        !input.value
+        legado
     ) {
 
-        input.value =
-            obterDataHojeLocal();
+        legado.value =
+            inicio?.value ||
+            periodo.inicio;
     }
 }
 
@@ -14188,12 +17073,26 @@ async function handleEmitirNFEClick(
     event
 ) {
 
+    const btn =
+        event?.currentTarget;
+
+
     const vendaId =
         normalizarOrderIdML(
-            event.currentTarget
-                .dataset
-                .vendaId
+            btn
+                ?.dataset
+                ?.vendaId
         );
+
+
+    console.log(
+        '🧾 [NF-e] Clique em emitir:',
+        {
+            vendaId,
+            dataset:
+                btn?.dataset
+        }
+    );
 
 
     if (
@@ -14201,7 +17100,7 @@ async function handleEmitirNFEClick(
     ) {
 
         showToast(
-            '❌ ID da venda não encontrado',
+            '❌ ID da venda não encontrado.',
             'error'
         );
 
@@ -14209,19 +17108,71 @@ async function handleEmitirNFEClick(
     }
 
 
-    const venda =
-        vendasPendentes.find(
+    // =====================================================
+    // LOCALIZAR VENDA
+    // =====================================================
+
+    const vendas =
+        Array.isArray(
+            vendasPendentes
+        )
+            ? vendasPendentes
+            : [];
+
+
+    let venda =
+        vendas.find(
             item =>
                 normalizarOrderIdML(
                     item.id_venda_ml ||
                     item.id
                 ) ===
                 vendaId
-        );
+        ) ||
+        null;
 
 
     // =====================================================
-    // BLOQUEIO LOCAL
+    // FALLBACK NA BASE DA TABELA
+    // =====================================================
+
+    if (
+        !venda &&
+        Array.isArray(
+            window._vendasTabelaNFEBase
+        )
+    ) {
+
+        venda =
+            window
+                ._vendasTabelaNFEBase
+                .find(
+                    item =>
+                        normalizarOrderIdML(
+                            item.id_venda_ml ||
+                            item.id
+                        ) ===
+                            vendaId
+                ) ||
+            null;
+    }
+
+
+    if (
+        !venda
+    ) {
+
+        showToast(
+            '❌ Venda não encontrada.',
+            'error'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // VENDA CANCELADA
     // =====================================================
 
     if (
@@ -14239,36 +17190,118 @@ async function handleEmitirNFEClick(
     }
 
 
-    const orderIds =
-        venda?._eh_pack
+    // =====================================================
+    // IDENTIFICAR ORDERS DA NF-E
+    // =====================================================
 
-            ? (
-                venda._order_ids_pack ||
-                []
-            )
-
-            : [
-                vendaId
-            ];
+    let ids =
+        [];
 
 
-    const ids =
+    if (
+        Array.isArray(
+            venda._order_ids_pack
+        ) &&
+        venda._order_ids_pack.length >
+            0
+    ) {
+
+        ids =
+            venda
+                ._order_ids_pack
+                .map(
+                    normalizarOrderIdML
+                )
+                .filter(Boolean);
+    }
+
+
+    if (
+        ids.length ===
+        0
+    ) {
+
+        ids = [
+            vendaId
+        ];
+    }
+
+
+    if (
+        !ids.includes(
+            vendaId
+        )
+    ) {
+
+        ids.unshift(
+            vendaId
+        );
+    }
+
+
+    ids =
         [
             ...new Set(
-                orderIds
-                    .map(
-                        normalizarOrderIdML
-                    )
-                    .filter(Boolean)
+                ids
             )
         ];
 
 
+    console.log(
+        '📦 [NF-e] Orders que precisam estar separadas:',
+        ids
+    );
+
+
     // =====================================================
-    // BLOQUEIO PELO BANCO
+    // VERIFICAR ESTADO LOCAL PRIMEIRO
+    // =====================================================
+
+    const separadoLocal =
+        vendaEstaSeparadaNFE(
+            venda
+        );
+
+
+    console.log(
+        '📦 [NF-e] Separação local:',
+        {
+            vendaId,
+            separadoLocal,
+            separado:
+                venda.separado,
+            _separado:
+                venda._separado,
+            separado_em:
+                venda.separado_em,
+            _separado_em:
+                venda._separado_em
+        }
+    );
+
+
+    if (
+        !separadoLocal
+    ) {
+
+        showToast(
+            '📦 Esta venda ainda não foi marcada como separada.',
+            'warning'
+        );
+
+        return;
+    }
+
+
+    // =====================================================
+    // CONFIRMAR SEPARAÇÃO NO BANCO
     //
-    // Protege contra tela desatualizada.
+    // Consulta SOMENTE os campos necessários.
     // =====================================================
+
+    let separacaoConfirmadaBanco =
+        false;
+
 
     try {
 
@@ -14283,8 +17316,7 @@ async function handleEmitirNFEClick(
                 )
                 .select(`
                     id_venda_ml,
-                    venda_cancelada,
-                    ml_status
+                    separado
                 `)
                 .in(
                     'id_venda_ml',
@@ -14296,49 +17328,211 @@ async function handleEmitirNFEClick(
             error
         ) {
 
+            console.error(
+                '❌ [NF-e] Supabase retornou erro validando separação:',
+                {
+                    error,
+                    message:
+                        error.message,
+                    details:
+                        error.details,
+                    hint:
+                        error.hint,
+                    code:
+                        error.code,
+                    ids
+                }
+            );
+
+
             throw error;
         }
 
 
-        const cancelada =
-            (
-                data ||
-                []
-            ).find(
-                registro => {
+        const registros =
+            Array.isArray(
+                data
+            )
+                ? data
+                : [];
 
-                    const status =
-                        String(
-                            registro.ml_status ||
-                            ''
-                        )
-                            .trim()
-                            .toLowerCase();
+
+        console.log(
+            '📥 [NF-e] Separação retornada pelo banco:',
+            registros
+        );
+
+
+        // =================================================
+        // MAPEAR PELO ID NORMALIZADO
+        // =================================================
+
+        const mapa =
+            new Map();
+
+
+        registros.forEach(
+            registro => {
+
+                const id =
+                    normalizarOrderIdML(
+                        registro.id_venda_ml
+                    );
+
+
+                if (
+                    id
+                ) {
+
+                    mapa.set(
+                        id,
+                        registro
+                    );
+                }
+            }
+        );
+
+
+        // =================================================
+        // TODAS AS ORDERS DA NF-E DEVEM EXISTIR
+        // E ESTAR separadas
+        // =================================================
+
+        const naoSeparadas =
+            ids.filter(
+                id => {
+
+                    const registro =
+                        mapa.get(
+                            id
+                        );
+
+
+                    if (
+                        !registro
+                    ) {
+
+                        return true;
+                    }
 
 
                     return (
-                        registro.venda_cancelada ===
-                            true ||
-                        status ===
-                            'cancelled' ||
-                        status ===
-                            'canceled'
+                        registro.separado !==
+                        true
                     );
                 }
             );
 
 
         if (
-            cancelada
+            naoSeparadas.length >
+            0
         ) {
 
+            console.warn(
+                '⚠️ [NF-e] Orders ainda não separadas:',
+                naoSeparadas
+            );
+
+
             showToast(
-                `🚫 Venda ${cancelada.id_venda_ml} está cancelada. Emissão bloqueada.`,
+                naoSeparadas.length ===
+                    1
+
+                    ? `📦 A venda ${naoSeparadas[0]} ainda não está marcada como separada no banco.`
+
+                    : `📦 ${naoSeparadas.length} pedidos deste pacote ainda não estão separados.`,
                 'warning'
             );
 
+
             return;
         }
+
+
+        separacaoConfirmadaBanco =
+            true;
+
+
+    } catch (
+        error
+    ) {
+
+        // =================================================
+        // FALLBACK
+        //
+        // Se a gravação da separação já aconteceu e o
+        // objeto local está marcado como separado,
+        // não bloquear simplesmente por uma falha de leitura.
+        // =================================================
+
+        console.warn(
+            '⚠️ [NF-e] Falha consultando separação no banco. ' +
+            'Usando estado local já confirmado.',
+            error
+        );
+
+
+        if (
+            separadoLocal ===
+            true
+        ) {
+
+            separacaoConfirmadaBanco =
+                true;
+
+
+            showToast(
+                '⚠️ Separação já confirmada. Houve apenas uma falha na consulta ao banco.',
+                'warning'
+            );
+
+
+        } else {
+
+            showToast(
+                `❌ Não foi possível validar a separação da venda: ${
+                    error?.message ||
+                    'erro desconhecido'
+                }`,
+                'error'
+            );
+
+
+            return;
+        }
+    }
+
+
+    if (
+        !separacaoConfirmadaBanco
+    ) {
+
+        return;
+    }
+
+
+    // =====================================================
+    // GUARDAR VENDA ATUAL
+    // =====================================================
+
+    window._nfeVendaAtual =
+        venda;
+
+
+    window._nfeOrderIdsAtuais =
+        ids;
+
+
+    // =====================================================
+    // ABRIR EMISSÃO
+    // =====================================================
+
+    try {
+
+        await abrirModalEdicaoProdutos(
+            vendaId
+        );
 
 
     } catch (
@@ -14346,66 +17540,322 @@ async function handleEmitirNFEClick(
     ) {
 
         console.error(
-            '❌ Erro validando cancelamento antes da emissão:',
+            '❌ [NF-e] Erro abrindo modal:',
             error
         );
 
 
         showToast(
-            '❌ Não foi possível validar o status da venda. A emissão foi bloqueada por segurança.',
+            `❌ Não foi possível abrir a emissão: ${
+                error?.message ||
+                'erro desconhecido'
+            }`,
             'error'
         );
-
-        return;
     }
+}
+
+async function buscarDadosFiscaisCompradorMLNFE(
+    venda,
+    token
+) {
+
+    const orderId =
+        normalizarOrderIdML(
+            venda?.id
+        );
 
 
-    window._nfeVendaAtual =
-        venda ||
+    let billingInfoId =
+        venda
+            ?.buyer
+            ?.billing_info
+            ?.id ||
         null;
 
 
-    window._nfeOrderIdsAtuais =
-        ids.length >
-            0
+    // =====================================================
+    // SE A ORDER CARREGADA AINDA NÃO TEM billing_info.id,
+    // CONSULTAR ORDER NOVAMENTE
+    // =====================================================
 
-            ? ids
+    if (
+        !billingInfoId &&
+        orderId
+    ) {
 
-            : [
-                vendaId
-            ];
+        try {
+
+            const url =
+                `https://api.mercadolibre.com/orders/${orderId}`;
 
 
-    console.log(
-        '🧾 NF-e selecionada:',
-        {
-            principal:
-                vendaId,
+            const {
+                data
+            } =
+                await consultarGETMLFullNFE(
+                    url,
+                    token
+                );
 
-            pack:
-                Boolean(
-                    venda?._eh_pack
-                ),
 
-            orders:
-                window
-                    ._nfeOrderIdsAtuais,
+            billingInfoId =
+                data
+                    ?.buyer
+                    ?.billing_info
+                    ?.id ||
+                null;
 
-            produtos:
-                venda
-                    ?.order_items
-                    ?.map(
-                        item =>
-                            item.item
-                                ?.seller_sku
-                    )
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Não foi possível obter billing_info.id:',
+                error
+            );
         }
-    );
+    }
 
 
-    abrirModalEdicaoProdutos(
-        vendaId
-    );
+    let billingInfo =
+        {};
+
+
+    // =====================================================
+    // NOVA API OFICIAL
+    // =====================================================
+
+    if (
+        billingInfoId
+    ) {
+
+        try {
+
+            const url =
+                `https://api.mercadolibre.com/orders/billing-info/MLB/${encodeURIComponent(
+                    billingInfoId
+                )}`;
+
+
+            const {
+                data
+            } =
+                await consultarGETMLFullNFE(
+                    url,
+                    token
+                );
+
+
+            billingInfo =
+                data
+                    ?.buyer
+                    ?.billing_info ||
+                data
+                    ?.billing_info ||
+                {};
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Nova Billing Info:',
+                error
+            );
+        }
+    }
+
+
+    // =====================================================
+    // FALLBACK TEMPORÁRIO PARA API ANTIGA
+    // =====================================================
+
+    if (
+        Object.keys(
+            billingInfo
+        ).length ===
+            0 &&
+        orderId
+    ) {
+
+        try {
+
+            const url =
+                `https://api.mercadolibre.com/orders/${orderId}/billing_info`;
+
+
+            const {
+                data
+            } =
+                await consultarGETMLFullNFE(
+                    url,
+                    token
+                );
+
+
+            billingInfo =
+                data
+                    ?.billing_info ||
+                data ||
+                {};
+
+
+        } catch (
+            error
+        ) {
+
+            console.warn(
+                '⚠️ Billing Info legado:',
+                error
+            );
+        }
+    }
+
+
+    // =====================================================
+    // FORMATO ANTIGO additional_info
+    // =====================================================
+
+    const infoExtra =
+        {};
+
+
+    if (
+        Array.isArray(
+            billingInfo
+                .additional_info
+        )
+    ) {
+
+        billingInfo
+            .additional_info
+            .forEach(
+                item => {
+
+                    if (
+                        item?.type
+                    ) {
+
+                        infoExtra[
+                            String(
+                                item.type
+                            )
+                                .toUpperCase()
+                        ] =
+                            item.value ??
+                            '';
+                    }
+                }
+            );
+    }
+
+
+    const identificacao =
+        billingInfo
+            .identification ||
+        {};
+
+
+    const tipoDocumento =
+        String(
+            identificacao.type ||
+            billingInfo.doc_type ||
+            infoExtra.DOC_TYPE ||
+            ''
+        )
+            .trim()
+            .toUpperCase();
+
+
+    const documento =
+        String(
+            identificacao.number ||
+            billingInfo.doc_number ||
+            billingInfo.document_number ||
+            infoExtra.DOC_NUMBER ||
+            ''
+        )
+            .replace(
+                /\D/g,
+                ''
+            );
+
+
+    let nome =
+        '';
+
+
+    if (
+        tipoDocumento ===
+        'CNPJ'
+    ) {
+
+        nome =
+            billingInfo.name ||
+            infoExtra.BUSINESS_NAME ||
+            '';
+
+    } else {
+
+        nome =
+            `${billingInfo.name || infoExtra.FIRST_NAME || ''} ${billingInfo.last_name || infoExtra.LAST_NAME || ''}`
+                .trim();
+    }
+
+
+    const inscricaoEstadual =
+        String(
+            billingInfo
+                ?.taxes
+                ?.inscriptions
+                ?.state_registration ||
+            infoExtra.STATE_REGISTRATION ||
+            ''
+        )
+            .trim()
+            .toUpperCase();
+
+
+    const tipoContribuinte =
+        billingInfo
+            ?.taxes
+            ?.taxpayer_type
+            ?.description ||
+        infoExtra.TAXPAYER_TYPE ||
+        infoExtra.TAXPAYER_TYPE_ID ||
+        '';
+
+
+    const endereco =
+        billingInfo
+            .address ||
+        {};
+
+
+    return {
+
+        billingInfo,
+
+        billing_info_id:
+            billingInfoId,
+
+        tipo_documento:
+            tipoDocumento,
+
+        documento,
+
+        nome,
+
+        inscricao_estadual:
+            inscricaoEstadual,
+
+        tipo_contribuinte:
+            tipoContribuinte,
+
+        endereco
+    };
 }
 
 // Handler para ver NF-e
@@ -18096,6 +21546,7 @@ async function restaurarEstoqueVendaCanceladaNFE(
                     is_full,
                     venda_cancelada,
                     ml_status,
+                    separado,
                     estoque_baixado,
                     estoque_status,
                     estoque_detalhes
@@ -22699,7 +26150,8 @@ async function confirmarAjusteAnuncioFullNFE(
 
     // =====================================================
     // COMPATIBILIDADE:
-    // se recebeu somente MLB, achar o alerta ativo dele.
+    //
+    // CASO TENHA RECEBIDO SOMENTE MLB.
     // =====================================================
 
     if (
@@ -22794,7 +26246,7 @@ async function confirmarAjusteAnuncioFullNFE(
 
 
         // =================================================
-        // CONSULTA SOMENTE ESTE MLB
+        // CONSULTAR NOVAMENTE O MERCADO LIVRE
         // =================================================
 
         const situacao =
@@ -22802,6 +26254,10 @@ async function confirmarAjusteAnuncioFullNFE(
                 mlb
             );
 
+
+        // =================================================
+        // REPROCESSAR SOMENTE ESTE ALERTA
+        // =================================================
 
         const novoEstado =
             await processarMLBMonitorFullNFE(
@@ -22832,6 +26288,100 @@ async function confirmarAjusteAnuncioFullNFE(
             return;
         }
 
+
+        // =================================================
+        // REGRA ESPECIAL:
+        //
+        // DEPÓSITO ZERADO
+        // +
+        // PRODUTO NÃO CADASTRADO
+        //
+        // Nesse cenário o usuário pode escolher deixar
+        // o depósito em ZERO porque o produto pode existir
+        // somente no FULL.
+        //
+        // O clique em AJUSTADO significa:
+        //
+        // "Sim, está correto permanecer zerado."
+        // =================================================
+
+        if (
+            novoEstado.status ===
+                'deposito_zero' &&
+            novoEstado
+                ?.resumo_automatico
+                ?.estoque_cadastro_encontrado !==
+                true
+        ) {
+
+            const usuario =
+                obterUsuarioOperacaoNFE();
+
+
+            const estadoResolvido = {
+
+                ...novoEstado,
+
+                ativo:
+                    false,
+
+                status:
+                    'deposito_zero_aceito_sem_cadastro',
+
+                mensagem:
+                    'Depósito zerado aceito manualmente. Produto não cadastrado no estoque interno.',
+
+                resumo_automatico: {
+
+                    ...(
+                        novoEstado
+                            .resumo_automatico ||
+                        {}
+                    ),
+
+                    zero_deposito_aceito:
+                        true,
+
+                    motivo_zero_aceito:
+                        'produto_nao_cadastrado',
+
+                    estoque_local_mantido_zero:
+                        true
+                },
+
+                resolvido_em:
+                    new Date()
+                        .toISOString(),
+
+                resolvido_por_username:
+                    usuario.username,
+
+                resolvido_por_nome:
+                    usuario.nome
+            };
+
+
+            await salvarEstadoFullNFE(
+                estadoResolvido
+            );
+
+
+            aplicarEstadosFullTabelaNFE();
+
+
+            showToast(
+                '✅ Depósito zerado confirmado. Como o produto não está cadastrado no estoque interno, o anúncio pode permanecer com estoque local 0.',
+                'success'
+            );
+
+
+            return;
+        }
+
+
+        // =================================================
+        // AJUSTE REALMENTE CONFIRMADO
+        // =================================================
 
         if (
             novoEstado.ativo ===
@@ -22874,6 +26424,10 @@ async function confirmarAjusteAnuncioFullNFE(
         }
 
 
+        // =================================================
+        // CONTINUA COM PROBLEMA
+        // =================================================
+
         aplicarEstadosFullTabelaNFE();
 
 
@@ -22881,15 +26435,29 @@ async function confirmarAjusteAnuncioFullNFE(
             novoEstado.status
         ) {
 
+            // =============================================
+            // FULL ZERADO
+            //
+            // NÃO ACEITAMOS MANUALMENTE.
+            //
+            // Tem que realmente sair do FULL.
+            // =============================================
+
             case 'full_zero_aguardando_ajuste':
 
                 showToast(
-                    '❌ O anúncio ainda está vinculado ao FULL.',
+                    '❌ O anúncio ainda está vinculado ao FULL. Retire do FULL e tente novamente.',
                     'error'
                 );
 
                 break;
 
+
+            // =============================================
+            // EXPOSIÇÃO
+            //
+            // TEM QUE REALMENTE ESTAR CORRETA.
+            // =============================================
 
             case 'exposicao_pendente':
 
@@ -22907,15 +26475,25 @@ async function confirmarAjusteAnuncioFullNFE(
                 break;
 
 
+            // =============================================
+            // DEPÓSITO ZERO + PRODUTO CADASTRADO
+            //
+            // Aqui NÃO aceita continuar em zero.
+            // =============================================
+
             case 'deposito_zero':
 
                 showToast(
-                    '❌ O estoque local/depósito ainda está zerado.',
+                    '❌ O depósito continua zerado e existe produto cadastrado no estoque interno. Adicione estoque ao depósito e tente novamente.',
                     'error'
                 );
 
                 break;
 
+
+            // =============================================
+            // ANÚNCIO NORMAL ZERADO
+            // =============================================
 
             case 'anuncio_zero':
 
@@ -22975,19 +26553,30 @@ async function confirmarExposicaoFullNFE(
 }
 
 
-// =========================================================
-// CSS PISCANDO
-// =========================================================
-
 function garantirEstiloMonitorFullNFE() {
 
-    if (
+    const idStyle =
+        'styleMonitorFullNFE';
+
+
+    const existente =
         document.getElementById(
-            'styleMonitorFullNFE'
-        )
+            idStyle
+        );
+
+
+    // =====================================================
+    // IMPORTANTE
+    //
+    // Remover o style antigo para garantir que,
+    // mesmo dentro da SPA, a nova versão seja aplicada.
+    // =====================================================
+
+    if (
+        existente
     ) {
 
-        return;
+        existente.remove();
     }
 
 
@@ -22998,10 +26587,18 @@ function garantirEstiloMonitorFullNFE() {
 
 
     style.id =
-        'styleMonitorFullNFE';
+        idStyle;
 
 
     style.textContent = `
+
+        /* =================================================
+           ALERTA VERMELHO
+
+           FULL zerado
+           exposição errada
+           anúncio normal zerado
+           ================================================= */
 
         @keyframes piscarLinhaFullNFE {
 
@@ -23046,6 +26643,59 @@ function garantirEstiloMonitorFullNFE() {
             border-bottom:
                 2px solid
                 #dc3545 !important;
+        }
+
+
+        /* =================================================
+           ALERTA ROXO
+
+           VENDA ME / FORA DO FULL
+           + DEPÓSITO LOCAL ZERADO
+           ================================================= */
+
+        @keyframes piscarLinhaDepositoNFE {
+
+            0%,
+            100% {
+
+                background-color:
+                    rgba(
+                        111,
+                        66,
+                        193,
+                        0.05
+                    );
+            }
+
+            50% {
+
+                background-color:
+                    rgba(
+                        111,
+                        66,
+                        193,
+                        0.35
+                    );
+            }
+        }
+
+
+        #vendasPendentesBody
+        tr.alerta-deposito-nfe-ativo
+        > td {
+
+            animation:
+                piscarLinhaDepositoNFE
+                .85s
+                infinite;
+
+            border-top:
+                2px solid
+                #6f42c1 !important;
+
+            border-bottom:
+                2px solid
+                #6f42c1 !important;
         }
 
     `;
@@ -23754,11 +27404,9 @@ function montarEstadoFullHtmlNFE(
 
 
     const chave =
-        escaparHTMLNFE(
-            estado
-                .chave_alerta ||
-            ''
-        );
+        estado
+            .chave_alerta ||
+        '';
 
 
     const url =
@@ -23794,7 +27442,9 @@ function montarEstadoFullHtmlNFE(
                     "
                 >
                     <i class="fas fa-lock"></i>
+
                     REGRA FIXA:
+
                     ${escaparHTMLNFE(
                         regraFixaNome
                     )}
@@ -23804,39 +27454,44 @@ function montarEstadoFullHtmlNFE(
             : '';
 
 
-    const botoes = `
-        <a
-            href="${url}"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="btn btn-sm btn-warning"
-            style="
-                margin-top:6px;
-                width:100%;
-                text-decoration:none;
-            "
-        >
-            <i class="fas fa-edit"></i>
-            Modificar anúncio
-        </a>
+    const montarBotoes =
+        (
+            corBotao = 'success'
+        ) => `
+            <a
+                href="${url}"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="btn btn-sm btn-warning"
+                style="
+                    margin-top:6px;
+                    width:100%;
+                    text-decoration:none;
+                "
+            >
+                <i class="fas fa-edit"></i>
+                Modificar anúncio
+            </a>
 
-        <button
-            type="button"
-            class="btn btn-sm btn-success"
-            onclick="confirmarAjusteAnuncioFullNFE('${chave}')"
-            style="
-                margin-top:4px;
-                width:100%;
-            "
-        >
-            <i class="fas fa-check"></i>
-            Ajustado
-        </button>
-    `;
+            <button
+                type="button"
+                class="btn btn-sm btn-${corBotao}"
+                onclick="confirmarAjusteAnuncioFullNFE('${chave}')"
+                style="
+                    margin-top:4px;
+                    width:100%;
+                "
+            >
+                <i class="fas fa-check"></i>
+                Ajustado
+            </button>
+        `;
 
 
     // =====================================================
     // FULL ESGOTADO
+    //
+    // CONTINUA VERMELHO.
     // =====================================================
 
     if (
@@ -23910,6 +27565,7 @@ function montarEstadoFullHtmlNFE(
                     "
                 >
                     Exposição atual:
+
                     <strong>
                         ${escaparHTMLNFE(
                             atual
@@ -23923,6 +27579,7 @@ function montarEstadoFullHtmlNFE(
                     "
                 >
                     Exposição recomendada:
+
                     <strong>
                         ${escaparHTMLNFE(
                             esperado
@@ -23962,6 +27619,7 @@ function montarEstadoFullHtmlNFE(
                                 "
                             >
                                 Pode ativar aproximadamente:
+
                                 ${Number(
                                     quantidadeCadastro
                                 )}
@@ -23985,7 +27643,7 @@ function montarEstadoFullHtmlNFE(
                     e conferir a exposição.
                 </div>
 
-                ${botoes}
+                ${montarBotoes()}
             </div>
         `;
     }
@@ -23993,6 +27651,8 @@ function montarEstadoFullHtmlNFE(
 
     // =====================================================
     // EXPOSIÇÃO FULL INCORRETA
+    //
+    // CONTINUA VERMELHO.
     // =====================================================
 
     if (
@@ -24031,6 +27691,7 @@ function montarEstadoFullHtmlNFE(
                     "
                 >
                     Estoque FULL:
+
                     <strong>
                         ${Number(
                             estado.full_total ||
@@ -24046,6 +27707,7 @@ function montarEstadoFullHtmlNFE(
                     "
                 >
                     Atual:
+
                     <strong>
                         ${escaparHTMLNFE(
                             nomeListingTypeFullNFE(
@@ -24064,6 +27726,7 @@ function montarEstadoFullHtmlNFE(
                     "
                 >
                     Correto:
+
                     ${escaparHTMLNFE(
                         nomeListingTypeFullNFE(
                             estado
@@ -24072,15 +27735,16 @@ function montarEstadoFullHtmlNFE(
                     )}
                 </div>
 
-                ${botoes}
+                ${montarBotoes()}
             </div>
         `;
     }
 
 
     // =====================================================
-    // VENDA ME EM ANÚNCIO QUE TAMBÉM TEM FULL
-    // DEPÓSITO LOCAL ZEROU
+    // DEPÓSITO ZERADO
+    //
+    // AGORA ROXO.
     // =====================================================
 
     if (
@@ -24088,12 +27752,18 @@ function montarEstadoFullHtmlNFE(
         'deposito_zero'
     ) {
 
+        const produtoCadastrado =
+            resumo
+                .estoque_cadastro_encontrado ===
+            true;
+
+
         return `
             <div
                 data-monitor-full-nfe="${mlb}"
                 style="
-                    border:2px solid #dc3545;
-                    background:#fff5f5;
+                    border:2px solid #6f42c1;
+                    background:#f7f1ff;
                     border-radius:6px;
                     padding:8px;
                     margin-top:7px;
@@ -24102,12 +27772,12 @@ function montarEstadoFullHtmlNFE(
             >
                 <div
                     style="
-                        color:#dc3545;
+                        color:#6f42c1;
                         font-size:11px;
                         font-weight:800;
                     "
                 >
-                    <i class="fas fa-exclamation-triangle"></i>
+                    <i class="fas fa-warehouse"></i>
                     DEPÓSITO ZERADO
                 </div>
 
@@ -24115,6 +27785,7 @@ function montarEstadoFullHtmlNFE(
                     style="
                         font-size:9px;
                         margin-top:5px;
+                        color:#4c2a85;
                     "
                 >
                     Venda fora do FULL.
@@ -24123,8 +27794,9 @@ function montarEstadoFullHtmlNFE(
                 <div
                     style="
                         font-size:9px;
-                        color:#dc3545;
-                        font-weight:700;
+                        color:#6f42c1;
+                        font-weight:800;
+                        margin-top:3px;
                     "
                 >
                     Estoque local/depósito:
@@ -24134,9 +27806,11 @@ function montarEstadoFullHtmlNFE(
                 <div
                     style="
                         font-size:9px;
+                        color:#343a40;
                     "
                 >
                     Estoque FULL:
+
                     <strong>
                         ${Number(
                             resumo
@@ -24150,11 +27824,12 @@ function montarEstadoFullHtmlNFE(
 
                 <div
                     style="
-                        border-top:1px solid #f5c6cb;
+                        border-top:1px solid #d9c8f4;
                         margin-top:6px;
                         padding-top:5px;
                         font-size:9px;
                         font-weight:700;
+                        color:#4c2a85;
                     "
                 >
                     Estoque interno:
@@ -24164,19 +27839,46 @@ function montarEstadoFullHtmlNFE(
                     estado
                 )}
 
-                <div
-                    style="
-                        margin-top:6px;
-                        font-size:9px;
-                        color:#721c24;
-                        font-weight:700;
-                    "
-                >
-                    Adicione estoque ao depósito/local
-                    do anúncio.
-                </div>
+                ${
+                    produtoCadastrado
 
-                ${botoes}
+                        ? `
+                            <div
+                                style="
+                                    margin-top:6px;
+                                    font-size:9px;
+                                    color:#4c2a85;
+                                    font-weight:700;
+                                "
+                            >
+                                Adicione estoque ao depósito/local
+                                do anúncio.
+                            </div>
+                        `
+
+                        : `
+                            <div
+                                style="
+                                    margin-top:6px;
+                                    padding:5px;
+                                    background:#ede2ff;
+                                    border-radius:4px;
+                                    font-size:9px;
+                                    color:#4c2a85;
+                                    font-weight:700;
+                                "
+                            >
+                                Produto não cadastrado.
+
+                                Se este produto existe somente no FULL,
+                                o depósito pode permanecer zerado.
+
+                                Clique em "Ajustado" para confirmar.
+                            </div>
+                        `
+                }
+
+                ${montarBotoes()}
             </div>
         `;
     }
@@ -24184,6 +27886,8 @@ function montarEstadoFullHtmlNFE(
 
     // =====================================================
     // ANÚNCIO NORMAL ZERADO
+    //
+    // CONTINUA VERMELHO.
     // =====================================================
 
     if (
@@ -24221,7 +27925,10 @@ function montarEstadoFullHtmlNFE(
                     "
                 >
                     Estoque no Mercado Livre:
-                    <strong>0 un.</strong>
+
+                    <strong>
+                        0 un.
+                    </strong>
                 </div>
 
                 ${
@@ -24280,7 +27987,7 @@ function montarEstadoFullHtmlNFE(
                         : ''
                 }
 
-                ${botoes}
+                ${montarBotoes()}
             </div>
         `;
     }
@@ -24519,6 +28226,16 @@ function aplicarEstadosFullTabelaNFE() {
                     !venda
                 ) {
 
+                    tr.classList.remove(
+                        'alerta-full-nfe-ativo'
+                    );
+
+
+                    tr.classList.remove(
+                        'alerta-deposito-nfe-ativo'
+                    );
+
+
                     return;
                 }
 
@@ -24551,6 +28268,10 @@ function aplicarEstadosFullTabelaNFE() {
                         .filter(Boolean);
 
 
+                // =================================================
+                // SOMENTE ALERTAS ATIVOS
+                // =================================================
+
                 const ativos =
                     estados.filter(
                         estado =>
@@ -24559,13 +28280,84 @@ function aplicarEstadosFullTabelaNFE() {
                     );
 
 
-                tr.classList
-                    .toggle(
-                        'alerta-full-nfe-ativo',
-                        ativos.length >
-                            0
+                // =================================================
+                // DEPÓSITO ZERADO = ROXO
+                // =================================================
+
+                const possuiDepositoZero =
+                    ativos.some(
+                        estado =>
+                            estado.status ===
+                            'deposito_zero'
                     );
 
+
+                // =================================================
+                // QUALQUER OUTRO ALERTA = VERMELHO
+                //
+                // FULL zerado continua vermelho.
+                //
+                // Se, excepcionalmente, houver vermelho + roxo
+                // na mesma linha, vermelho ganha prioridade.
+                // =================================================
+
+                const possuiAlertaVermelho =
+                    ativos.some(
+                        estado =>
+                            estado.status !==
+                            'deposito_zero'
+                    );
+
+
+                const usarRoxo =
+                    possuiDepositoZero &&
+                    !possuiAlertaVermelho;
+
+
+                const usarVermelho =
+                    possuiAlertaVermelho;
+
+
+                // =================================================
+                // REMOVER PRIMEIRO
+                // =================================================
+
+                tr.classList.remove(
+                    'alerta-full-nfe-ativo'
+                );
+
+
+                tr.classList.remove(
+                    'alerta-deposito-nfe-ativo'
+                );
+
+
+                // =================================================
+                // APLICAR COR
+                // =================================================
+
+                if (
+                    usarVermelho
+                ) {
+
+                    tr.classList.add(
+                        'alerta-full-nfe-ativo'
+                    );
+
+
+                } else if (
+                    usarRoxo
+                ) {
+
+                    tr.classList.add(
+                        'alerta-deposito-nfe-ativo'
+                    );
+                }
+
+
+                // =================================================
+                // CÉLULA ESTOQUE DO ANÚNCIO
+                // =================================================
 
                 const td =
                     garantirCelulaEstoqueAnuncioMonitorFullNFE(
@@ -24608,10 +28400,17 @@ function aplicarEstadosFullTabelaNFE() {
                 }
 
 
+                // =================================================
+                // SOMENTE ALERTAS ATIVOS APARECEM
+                // =================================================
+
                 const novoHtml =
                     ativos
                         .map(
-                            montarEstadoFullHtmlNFE
+                            estado =>
+                                montarEstadoFullHtmlNFE(
+                                    estado
+                                )
                         )
                         .filter(Boolean)
                         .join('');
@@ -24626,6 +28425,10 @@ function aplicarEstadosFullTabelaNFE() {
                         novoHtml;
                 }
 
+
+                // =================================================
+                // RESPEITAR COLUNA OCULTA
+                // =================================================
 
                 if (
                     typeof carregarColunasOcultasNFE ===
@@ -30976,81 +34779,119 @@ async function carregarVendasPendentes(
     inicializarFiltroDataNFE();
 
 
-    const input =
-        document.getElementById(
-            'filtroDataEnvioNFE'
-        );
+    let periodo =
+        obterPeriodoSelecionadoNFE();
 
 
-    const dataSelecionada =
-        dataForcada ||
-        input?.value ||
-        obterDataHojeLocal();
+    if (
+        dataForcada
+    ) {
+
+        periodo = {
+            inicio:
+                dataForcada,
+
+            fim:
+                dataForcada
+        };
+    }
 
 
-    const vendasCache =
+    let vendasCache;
+
+
+    if (
         window._nfeFiltroTodas
+    ) {
 
-            ? await carregarVendasCacheNFE(
+        vendasCache =
+            await carregarVendasCachePeriodoNFE(
+                null,
                 null
-            )
-
-            : await carregarVendasCacheNFE(
-                dataSelecionada
             );
 
 
-    // =====================================================
-    // ALERTAS LOCAIS PRIMEIRO
-    // =====================================================
+    } else {
 
-    hidratarEstadosFullLocalNFE();
-
-
-    hidratarRegrasFixasTipoAnuncioLocalNFE();
-
-
-    reconciliarEstadosFullComRegrasFixasNFE();
+        vendasCache =
+            await carregarVendasCachePeriodoNFE(
+                periodo.inicio,
+                periodo.fim
+            );
+    }
 
 
     // =====================================================
-    // DESENHAR SEM ESPERAR INTERNET
+    // ALERTAS LOCAIS IMEDIATOS
     // =====================================================
+
+    if (
+        typeof hidratarEstadosFullLocalNFE ===
+        'function'
+    ) {
+
+        hidratarEstadosFullLocalNFE();
+    }
+
+
+    if (
+        typeof hidratarRegrasFixasTipoAnuncioLocalNFE ===
+        'function'
+    ) {
+
+        hidratarRegrasFixasTipoAnuncioLocalNFE();
+    }
+
+
+    if (
+        typeof reconciliarEstadosFullComRegrasFixasNFE ===
+        'function'
+    ) {
+
+        reconciliarEstadosFullComRegrasFixasNFE();
+    }
+
 
     renderizarVendasNFETabela(
         vendasCache
     );
 
 
-    aplicarEstadosFullTabelaNFE();
+    aplicarPreferenciasColunasNFE();
 
 
     // =====================================================
-    // ATUALIZAR ALERTAS SALVOS PELO BANCO EM BACKGROUND
+    // ALERTAS DO BANCO EM BACKGROUND
     // =====================================================
 
-    carregarEstadosFullNFE(
-        true
-    )
-        .then(
-            () => {
+    if (
+        typeof carregarEstadosFullNFE ===
+        'function'
+    ) {
 
-                aplicarEstadosFullTabelaNFE();
-            }
+        carregarEstadosFullNFE(
+            true
         )
-        .catch(
-            error => {
+            .then(
+                () => {
 
-                console.warn(
-                    '⚠️ Alertas do banco:',
-                    error
-                );
-            }
-        );
+                    aplicarEstadosFullTabelaNFE();
+                }
+            )
+            .catch(
+                error => {
+
+                    console.warn(
+                        '⚠️ Alertas do banco:',
+                        error
+                    );
+                }
+            );
+    }
 
 
     // =====================================================
-    // CANCELAMENTOS EM SEGUNDO PLANO
+    // CANCELAMENTOS
     // =====================================================
 
     verificarCancelamentosVendasNFE()
@@ -31066,20 +34907,22 @@ async function carregarVendasPendentes(
                         0
                 ) {
 
-                    const vendasAtualizadas =
+                    const atualizadas =
                         window._nfeFiltroTodas
 
-                            ? await carregarVendasCacheNFE(
+                            ? await carregarVendasCachePeriodoNFE(
+                                null,
                                 null
                             )
 
-                            : await carregarVendasCacheNFE(
-                                dataSelecionada
+                            : await carregarVendasCachePeriodoNFE(
+                                periodo.inicio,
+                                periodo.fim
                             );
 
 
                     renderizarVendasNFETabela(
-                        vendasAtualizadas
+                        atualizadas
                     );
                 }
             }
@@ -31088,7 +34931,7 @@ async function carregarVendasPendentes(
             error => {
 
                 console.warn(
-                    '⚠️ Verificação automática de cancelamentos:',
+                    '⚠️ Cancelamentos:',
                     error
                 );
             }
@@ -31096,168 +34939,14 @@ async function carregarVendasPendentes(
 
 
     // =====================================================
-    // EVITAR DUPLICIDADE DE SYNC DE VENDAS
+    // ATUALIZAÇÃO FORÇADA
     // =====================================================
 
     if (
-        window
-            ._sincronizacaoVendasNFEEmAndamento
+        forcarAtualizacao
     ) {
 
-        return;
-    }
-
-
-    const chaveSync =
-        `nfe_sync_${dataSelecionada}`;
-
-
-    const ultimaSync =
-        Number(
-            localStorage.getItem(
-                chaveSync
-            ) ||
-            0
-        );
-
-
-    const precisaAtualizar =
-        forcarAtualizacao ||
-        vendasCache.length ===
-            0 ||
-        (
-            Date.now() -
-                ultimaSync >
-            2 *
-            60 *
-            1000
-        );
-
-
-    if (
-        precisaAtualizar
-    ) {
-
-        window
-            ._sincronizacaoVendasNFEEmAndamento =
-            true;
-
-
-        const processo =
-            sincronizarVendasPendentesML(
-                dataSelecionada,
-                true
-            )
-                .then(
-                    () => {
-
-                        localStorage.setItem(
-                            chaveSync,
-                            String(
-                                Date.now()
-                            )
-                        );
-                    }
-                )
-                .catch(
-                    error => {
-
-                        console.error(
-                            '❌ Atualização rápida:',
-                            error
-                        );
-                    }
-                )
-                .finally(
-                    () => {
-
-                        window
-                            ._sincronizacaoVendasNFEEmAndamento =
-                            false;
-                    }
-                );
-
-
-        if (
-            forcarAtualizacao
-        ) {
-
-            await processo;
-        }
-    }
-
-
-    // =====================================================
-    // SINCRONIZAÇÃO COMPLETA PERIÓDICA DAS VENDAS
-    //
-    // Isto é a sincronização de VENDAS, não dos alertas.
-    // Pode continuar.
-    // =====================================================
-
-    const ultimaCompleta =
-        Number(
-            localStorage.getItem(
-                'nfe_sync_completa'
-            ) ||
-            0
-        );
-
-
-    if (
-        Date.now() -
-            ultimaCompleta >
-            6 *
-            60 *
-            60 *
-            1000 &&
-        !window
-            ._nfeSyncCompleta
-    ) {
-
-        window
-            ._nfeSyncCompleta =
-            true;
-
-
-        setTimeout(
-            async () => {
-
-                try {
-
-                    await sincronizarVendasPendentesML(
-                        null,
-                        false
-                    );
-
-
-                    localStorage.setItem(
-                        'nfe_sync_completa',
-                        String(
-                            Date.now()
-                        )
-                    );
-
-
-                } catch (
-                    error
-                ) {
-
-                    console.warn(
-                        '⚠️ Sincronização completa:',
-                        error
-                    );
-
-
-                } finally {
-
-                    window
-                        ._nfeSyncCompleta =
-                        false;
-                }
-
-            },
-            1500
-        );
+        await atualizarVendasDataSelecionada();
     }
 }
 
@@ -33972,6 +37661,34 @@ try {
             );
 
 
+        // =====================================================
+// INSCRIÇÃO ESTADUAL
+// =====================================================
+
+const inscricaoEstadual =
+    documento.length ===
+        14
+
+        ? String(
+            campo(
+                '#clienteInscricaoEstadual'
+            )?.value ||
+            ''
+        )
+            .trim()
+            .toUpperCase()
+
+        : '';
+
+
+console.log(
+    '🧾 IE capturada do modal:',
+    {
+        documento,
+        inscricaoEstadual
+    }
+);
+
     const endereco =
         campo(
             '#clienteEndereco'
@@ -34476,6 +38193,8 @@ if (resultadoCliente.success) {
             cliente: {
                 nome,
                 documento,
+                inscricao_estadual: 
+                    inscricaoEstadual,
                 endereco,
                 numero,
                 bairro,
@@ -34505,21 +38224,43 @@ if (resultadoCliente.success) {
         };
 
 
-        console.log(
-            '📤 Payload NF-e PACK:',
-            {
-                orderPrincipal:
-                    orderIdPrincipal,
+console.log(
+    '📤 Payload NF-e PACK:',
+    {
+        orderPrincipal:
+            orderIdPrincipal,
 
-                todasOrders:
-                    orderIdsDaNFE,
+        todasOrders:
+            orderIdsDaNFE,
 
-                quantidadeProdutos:
-                    produtosFinal.length,
+        quantidadeProdutos:
+            produtosFinal.length,
 
-                payload
-            }
-        );
+        cliente: {
+            nome,
+            documento,
+            inscricao_estadual:
+                inscricaoEstadual,
+            endereco,
+            numero,
+            bairro,
+            cidade,
+            uf,
+            cep
+        },
+
+        payload
+    }
+);
+
+
+console.log(
+    '🧾 IE QUE SERÁ ENVIADA AO BACKEND:',
+    payload
+        ?.cliente
+        ?.inscricao_estadual ||
+    'VAZIA'
+);
 
 
         // =====================================================
