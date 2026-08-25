@@ -7238,11 +7238,12 @@ async function enriquecerSnapshotCadastroInternoNFE(
 }
 
 function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
-    const dados = Array.isArray(
-        venda?._estoque_anuncio_pos_venda
-    )
-        ? venda._estoque_anuncio_pos_venda
-        : [];
+    const dados =
+        Array.isArray(
+            venda?._estoque_anuncio_pos_venda
+        )
+            ? venda._estoque_anuncio_pos_venda
+            : [];
 
     if (dados.length === 0) {
         return `
@@ -7259,31 +7260,72 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
 
     return dados
         .map(item => {
-            const quantidade =
+            const quantidadeAnuncio =
+                item.quantidade_anuncio_restante ??
                 item.quantidade_restante;
 
-            const possuiQuantidade =
-                quantidade !== null &&
-                quantidade !== undefined &&
+            const possuiQuantidadeAnuncio =
+                quantidadeAnuncio !== null &&
+                quantidadeAnuncio !== undefined &&
                 Number.isFinite(
-                    Number(quantidade)
+                    Number(quantidadeAnuncio)
                 );
 
-            const numero =
-                possuiQuantidade
-                    ? Number(quantidade)
+            const numeroAnuncio =
+                possuiQuantidadeAnuncio
+                    ? Number(quantidadeAnuncio)
                     : null;
 
-            let cor = '#28a745';
+            const quantidadeFull =
+                item.quantidade_full_restante;
 
-            if (numero === 0) {
-                cor = '#dc3545';
-            } else if (
-                numero !== null &&
-                numero <= 2
-            ) {
-                cor = '#ffc107';
+            const possuiQuantidadeFull =
+                quantidadeFull !== null &&
+                quantidadeFull !== undefined &&
+                Number.isFinite(
+                    Number(quantidadeFull)
+                );
+
+            const numeroFull =
+                possuiQuantidadeFull
+                    ? Number(quantidadeFull)
+                    : null;
+
+            const ehFull =
+                String(
+                    item.modalidade ||
+                    ''
+                ).toUpperCase() === 'FULL' ||
+                String(
+                    item.origem_estoque ||
+                    ''
+                ).includes('full');
+
+            function obterCorEstoque(numero) {
+                if (numero === null) {
+                    return '#adb5bd';
+                }
+
+                if (numero === 0) {
+                    return '#dc3545';
+                }
+
+                if (numero <= 2) {
+                    return '#ffc107';
+                }
+
+                return '#28a745';
             }
+
+            const corAnuncio =
+                obterCorEstoque(
+                    numeroAnuncio
+                );
+
+            const corFull =
+                obterCorEstoque(
+                    numeroFull
+                );
 
             const exposicao =
                 item.listing_type_nome ||
@@ -7343,8 +7385,8 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
                                 return `
                                     <div
                                         style="
-                                            margin-top:3px;
-                                            padding-top:3px;
+                                            margin-top:4px;
+                                            padding-top:4px;
                                             border-top:1px solid #eeeeee;
                                         "
                                         title="${escaparHTMLNFE(
@@ -7383,7 +7425,7 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
                                                         style="
                                                             color:#6c757d;
                                                             font-size:8px;
-                                                            max-width:130px;
+                                                            max-width:140px;
                                                             overflow:hidden;
                                                             text-overflow:ellipsis;
                                                             white-space:nowrap;
@@ -7440,7 +7482,7 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
                                 color:#dc3545;
                                 font-size:9px;
                                 font-weight:700;
-                                margin-top:3px;
+                                margin-top:4px;
                             "
                         >
                             Sem cadastro
@@ -7449,25 +7491,98 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
                 }
             }
 
+            const estoqueFullHtml =
+                ehFull
+                    ? `
+                        <div
+                            style="
+                                margin-top:4px;
+                                padding:4px 5px;
+                                background:#fff3f3;
+                                border:1px solid #f5c6cb;
+                                border-radius:4px;
+                            "
+                        >
+                            <div
+                                style="
+                                    color:#721c24;
+                                    font-size:8px;
+                                    font-weight:700;
+                                    white-space:nowrap;
+                                "
+                            >
+                                ESTOQUE FULL
+                            </div>
+
+                            ${
+                                possuiQuantidadeFull
+                                    ? `
+                                        <div
+                                            style="
+                                                color:${corFull};
+                                                font-size:12px;
+                                                font-weight:700;
+                                                white-space:nowrap;
+                                            "
+                                        >
+                                            ${numeroFull} un.
+                                        </div>
+                                    `
+                                    : `
+                                        <div
+                                            style="
+                                                color:#adb5bd;
+                                                font-size:10px;
+                                            "
+                                        >
+                                            N/I
+                                        </div>
+                                    `
+                            }
+
+                            <div
+                                style="
+                                    color:#adb5bd;
+                                    font-size:8px;
+                                    white-space:nowrap;
+                                "
+                            >
+                                após a venda
+                            </div>
+                        </div>
+                    `
+                    : '';
+
             return `
                 <div
                     style="
                         margin-bottom:7px;
-                        min-width:105px;
+                        min-width:115px;
                     "
                 >
+                    <div
+                        style="
+                            color:#495057;
+                            font-size:8px;
+                            font-weight:700;
+                            white-space:nowrap;
+                        "
+                    >
+                        ESTOQUE ANÚNCIO
+                    </div>
+
                     ${
-                        possuiQuantidade
+                        possuiQuantidadeAnuncio
                             ? `
                                 <div
                                     style="
                                         font-weight:700;
-                                        color:${cor};
+                                        color:${corAnuncio};
                                         font-size:13px;
                                         white-space:nowrap;
                                     "
                                 >
-                                    ${numero} un.
+                                    ${numeroAnuncio} un.
                                 </div>
                             `
                             : `
@@ -7492,10 +7607,12 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
                         após a venda
                     </div>
 
+                    ${estoqueFullHtml}
+
                     <div
                         style="
                             display:inline-block;
-                            margin-top:3px;
+                            margin-top:4px;
                             padding:2px 5px;
                             border-radius:4px;
                             background:${
@@ -22790,157 +22907,311 @@ async function buscarEstoqueAnuncioPosVendaNFE(
                 }
 
                 resultado.push({
-                    item_id:
-                        candidato.item_id,
+    item_id:
+        candidato.item_id,
 
-                    variation_id:
-                        candidato.variation_id,
+    variation_id:
+        candidato.variation_id,
 
-                    sku:
-                        candidato.sku,
+    sku:
+        candidato.sku,
 
-                    quantidade_vendida:
-                        candidato.quantidade_vendida,
+    quantidade_vendida:
+        candidato.quantidade_vendida,
 
-                    quantidade_restante:
-                        detalhe?.estoque_full ??
-                        null,
+    // Estoque disponível no próprio anúncio/variação.
+    quantidade_anuncio_restante:
+        detalhe
+            ?.available_quantity_item ??
+        situacao
+            ?.item
+            ?.available_quantity ??
+        null,
 
-                    user_product_id:
-                        detalhe?.user_product_id ||
-                        null,
+    // Mantido para compatibilidade com as outras funções.
+    quantidade_restante:
+        detalhe
+            ?.available_quantity_item ??
+        situacao
+            ?.item
+            ?.available_quantity ??
+        null,
 
-                    inventory_id:
-                        detalhe?.inventory_id ||
-                        null,
+    // Quantidade fisicamente disponível no FULL.
+    quantidade_full_restante:
+        detalhe
+            ?.estoque_full ??
+        null,
 
-                    origem_estoque:
-                        'full_user_product',
+    user_product_id:
+        detalhe
+            ?.user_product_id ||
+        null,
 
-                    modalidade:
-                        'FULL',
+    inventory_id:
+        detalhe
+            ?.inventory_id ||
+        null,
 
-                    listing_type_id:
-                        situacao
-                            .listing_type_atual ||
-                        '',
+    origem_estoque:
+        'full_user_product',
 
-                    listing_type_nome:
-                        situacao
-                            .listing_type_atual_nome ||
-                        nomeListingTypeFullNFE(
-                            situacao
-                                .listing_type_atual
-                        ),
+    modalidade:
+        'FULL',
 
-                    capturado_em:
-                        new Date()
-                            .toISOString()
-                });
+    listing_type_id:
+        situacao
+            .listing_type_atual ||
+        '',
+
+    listing_type_nome:
+        situacao
+            .listing_type_atual_nome ||
+        nomeListingTypeFullNFE(
+            situacao
+                .listing_type_atual
+        ),
+
+    capturado_em:
+        new Date()
+            .toISOString()
+});
 
                 continue;
             }
 
             // =============================================
-            // VENDA NORMAL / MERCADO ENVIOS
-            // =============================================
-            const {
-                data: item
-            } =
-                await consultarGETMLFullNFE(
-                    `https://api.mercadolibre.com/items/${candidato.item_id}`,
-                    token
-                );
+// VENDA NORMAL / MERCADO ENVIOS
+//
+// Mesmo que a venda tenha ocorrido por ME,
+// o anúncio pode possuir estoque no depósito
+// e também estoque armazenado no FULL.
+// =============================================
+const {
+    data: item
+} =
+    await consultarGETMLFullNFE(
+        `https://api.mercadolibre.com/items/${candidato.item_id}`,
+        token
+    );
 
-            let quantidadeRestante =
-                null;
+let quantidadeAnuncio =
+    null;
 
-            if (
-                candidato.variation_id !== null &&
-                candidato.variation_id !== undefined
-            ) {
-                const variacao =
-                    Array.isArray(
-                        item.variations
+let quantidadeDeposito =
+    null;
+
+let quantidadeFull =
+    null;
+
+let detalheUserProduct =
+    null;
+
+// =================================================
+// QUANTIDADE DO ANÚNCIO/Variação
+// =================================================
+if (
+    candidato.variation_id !== null &&
+    candidato.variation_id !== undefined
+) {
+    const variacao =
+        Array.isArray(
+            item.variations
+        )
+            ? item.variations.find(
+                variacao =>
+                    String(
+                        variacao.id
+                    ) ===
+                    String(
+                        candidato.variation_id
                     )
-                        ? item.variations.find(
-                            variacao =>
-                                String(
-                                    variacao.id
-                                ) ===
-                                String(
-                                    candidato.variation_id
-                                )
+            )
+            : null;
+
+    if (variacao) {
+        const quantidade =
+            Number(
+                variacao.available_quantity
+            );
+
+        if (
+            Number.isFinite(
+                quantidade
+            )
+        ) {
+            quantidadeAnuncio =
+                quantidade;
+        }
+    }
+} else {
+    const quantidade =
+        Number(
+            item.available_quantity
+        );
+
+    if (
+        Number.isFinite(
+            quantidade
+        )
+    ) {
+        quantidadeAnuncio =
+            quantidade;
+    }
+}
+
+// =================================================
+// CONSULTAR ESTOQUE DO DEPÓSITO E DO FULL
+//
+// Essa consulta também é feita quando a venda saiu
+// por ME, pois o anúncio pode possuir os dois tipos
+// de estoque simultaneamente.
+// =================================================
+try {
+    let situacaoEstoque =
+        mapaSituacoes.get(
+            candidato.item_id
+        );
+
+    if (!situacaoEstoque) {
+        situacaoEstoque =
+            await consultarSituacaoMLBFullNFE(
+                candidato.item_id
+            );
+
+        mapaSituacoes.set(
+            candidato.item_id,
+            situacaoEstoque
+        );
+    }
+
+    if (
+        candidato.variation_id !== null &&
+        candidato.variation_id !== undefined
+    ) {
+        detalheUserProduct =
+            situacaoEstoque
+                ?.detalhes
+                ?.find(
+                    detalhe =>
+                        String(
+                            detalhe.variation_id
+                        ) ===
+                        String(
+                            candidato.variation_id
                         )
-                        : null;
+                ) ||
+            null;
+    } else {
+        detalheUserProduct =
+            situacaoEstoque
+                ?.detalhes
+                ?.[0] ||
+            null;
+    }
 
-                if (variacao) {
-                    const quantidade =
-                        Number(
-                            variacao
-                                .available_quantity
-                        );
+    const estoqueLocalConsultado =
+        Number(
+            detalheUserProduct
+                ?.estoque_local_ml
+        );
 
-                    if (
-                        Number.isFinite(
-                            quantidade
-                        )
-                    ) {
-                        quantidadeRestante =
-                            quantidade;
-                    }
-                }
-            } else {
-                const quantidade =
-                    Number(
-                        item.available_quantity
-                    );
+    const estoqueFullConsultado =
+        Number(
+            detalheUserProduct
+                ?.estoque_full
+        );
 
-                if (
-                    Number.isFinite(
-                        quantidade
-                    )
-                ) {
-                    quantidadeRestante =
-                        quantidade;
-                }
-            }
+    if (
+        Number.isFinite(
+            estoqueLocalConsultado
+        )
+    ) {
+        quantidadeDeposito =
+            estoqueLocalConsultado;
+    }
 
-            resultado.push({
-                item_id:
-                    candidato.item_id,
+    if (
+        Number.isFinite(
+            estoqueFullConsultado
+        )
+    ) {
+        quantidadeFull =
+            estoqueFullConsultado;
+    }
+} catch (error) {
+    console.warn(
+        `⚠️ Não foi possível consultar depósito/FULL do anúncio ${candidato.item_id}:`,
+        error
+    );
+}
 
-                variation_id:
-                    candidato.variation_id,
+// Se o endpoint de User Product não informar o depósito,
+// utilizar o estoque apresentado no anúncio.
+if (
+    quantidadeDeposito === null
+) {
+    quantidadeDeposito =
+        quantidadeAnuncio;
+}
 
-                sku:
-                    candidato.sku,
+resultado.push({
+    item_id:
+        candidato.item_id,
 
-                quantidade_vendida:
-                    candidato.quantidade_vendida,
+    variation_id:
+        candidato.variation_id,
 
-                quantidade_restante:
-                    quantidadeRestante,
+    sku:
+        candidato.sku,
 
-                origem_estoque:
-                    'anuncio',
+    quantidade_vendida:
+        candidato.quantidade_vendida,
 
-                modalidade:
-                    'ME',
+    quantidade_anuncio_restante:
+        quantidadeAnuncio,
 
-                listing_type_id:
-                    item.listing_type_id ||
-                    '',
+    quantidade_deposito_restante:
+        quantidadeDeposito,
 
-                listing_type_nome:
-                    nomeListingTypeFullNFE(
-                        item.listing_type_id
-                    ),
+    quantidade_full_restante:
+        quantidadeFull,
 
-                capturado_em:
-                    new Date()
-                        .toISOString()
-            });
+    // Compatibilidade com o sistema anterior.
+    quantidade_restante:
+        quantidadeAnuncio,
+
+    user_product_id:
+        detalheUserProduct
+            ?.user_product_id ||
+        null,
+
+    inventory_id:
+        detalheUserProduct
+            ?.inventory_id ||
+        null,
+
+    origem_estoque:
+        quantidadeFull !== null
+            ? 'anuncio_com_full'
+            : 'anuncio',
+
+    modalidade:
+        'ME',
+
+    listing_type_id:
+        item.listing_type_id ||
+        '',
+
+    listing_type_nome:
+        nomeListingTypeFullNFE(
+            item.listing_type_id
+        ),
+
+    capturado_em:
+        new Date()
+            .toISOString()
+});
         } catch (error) {
             console.warn(
                 `⚠️ Erro consultando estoque ${candidato.item_id}:`,
@@ -27343,8 +27614,165 @@ window.inicializarMonitorFullNFE =
     );
 }
 
+function vendaFullPrecisaMudarParaClassicoNFE(
+    venda
+) {
+    const snapshots =
+        Array.isArray(
+            venda?._estoque_anuncio_pos_venda
+        )
+            ? venda._estoque_anuncio_pos_venda
+            : [];
+
+    return snapshots.some(item => {
+        const estoqueDeposito =
+            Number(
+                item
+                    ?.quantidade_deposito_restante ??
+                item
+                    ?.quantidade_anuncio_restante ??
+                item
+                    ?.quantidade_restante
+            );
+
+        const estoqueFull =
+            Number(
+                item
+                    ?.quantidade_full_restante
+            );
+
+        const depositoFicouUm =
+            Number.isFinite(
+                estoqueDeposito
+            ) &&
+            estoqueDeposito === 1;
+
+        const fullFicouUm =
+            Number.isFinite(
+                estoqueFull
+            ) &&
+            estoqueFull === 1;
+
+        const listingType =
+            String(
+                item?.listing_type_id ||
+                ''
+            )
+                .trim()
+                .toLowerCase();
+
+        const nomeExposicao =
+            String(
+                item?.listing_type_nome ||
+                ''
+            )
+                .trim()
+                .toLowerCase();
+
+        const estaPremium =
+            listingType === 'gold_pro' ||
+            listingType === 'gold_premium' ||
+            nomeExposicao.includes(
+                'premium'
+            );
+
+        return (
+            estaPremium &&
+            (
+                depositoFicouUm ||
+                fullFicouUm
+            )
+        );
+    });
+}
+
+
+function garantirEstiloAlertaExposicaoFullNFE() {
+    if (
+        document.getElementById(
+            'estiloAlertaExposicaoFullNFE'
+        )
+    ) {
+        return;
+    }
+
+    const style =
+        document.createElement(
+            'style'
+        );
+
+    style.id =
+        'estiloAlertaExposicaoFullNFE';
+
+    style.textContent = `
+        @keyframes piscarLinhaExposicaoFullNFE {
+            0%,
+            100% {
+                background-color: #ffffff;
+                box-shadow:
+                    inset 5px 0 0 #dc3545,
+                    inset -5px 0 0 #dc3545;
+            }
+
+            50% {
+                background-color: #ffb3b3;
+                box-shadow:
+                    inset 5px 0 0 #dc3545,
+                    inset -5px 0 0 #dc3545;
+            }
+        }
+
+        tr.alerta-exposicao-full-nfe {
+            animation:
+                piscarLinhaExposicaoFullNFE
+                1s
+                infinite;
+        }
+
+        tr.alerta-exposicao-full-nfe > td {
+            background-color: transparent !important;
+            border-top: 2px solid #dc3545 !important;
+            border-bottom: 2px solid #dc3545 !important;
+        }
+
+        tr.alerta-exposicao-full-nfe > td:first-child {
+            border-left: 2px solid #dc3545 !important;
+        }
+
+        tr.alerta-exposicao-full-nfe > td:last-child {
+            border-right: 2px solid #dc3545 !important;
+        }
+
+        tr.alerta-exposicao-full-nfe:hover {
+            animation-play-state: paused;
+            background-color: #ffb3b3 !important;
+        }
+
+        .aviso-exposicao-full-nfe {
+            display: inline-block;
+            margin-top: 5px;
+            padding: 4px 7px;
+            border-radius: 5px;
+            background: #dc3545;
+            color: #ffffff;
+            font-size: 9px;
+            font-weight: 700;
+            line-height: 1.25;
+        }
+    `;
+
+    document.head.appendChild(
+        style
+    );
+}
+
 function renderizarVendasNFETabela(vendas) {
-    const tbody = document.getElementById('vendasPendentesBody');
+    garantirEstiloAlertaExposicaoFullNFE();
+
+    const tbody =
+        document.getElementById(
+            'vendasPendentesBody'
+        );
 
     if (!tbody) {
         return;
@@ -28835,6 +29263,29 @@ function renderizarVendasNFETabela(vendas) {
                             venda
                         );
 
+                        const precisaMudarParaClassico =
+                                vendaFullPrecisaMudarParaClassicoNFE(
+                                    venda
+                                );
+
+                            const classeAlertaExposicao =
+                                precisaMudarParaClassico
+                                    ? 'alerta-exposicao-full-nfe'
+                                    : '';
+
+                            const avisoExposicaoHtml =
+                                precisaMudarParaClassico
+                                    ? `
+                                        <div
+                                            class="aviso-exposicao-full-nfe"
+                                            title="O estoque FULL ficou em 1 unidade. A exposição deve ser alterada de Premium para Clássico."
+                                        >
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                            ALTERAR PARA CLÁSSICO
+                                        </div>
+                                    `
+                                    : '';
+
                     // =================================================
                     // VALOR
                     // =================================================
@@ -29179,9 +29630,17 @@ function renderizarVendasNFETabela(vendas) {
                     // =================================================
                     return `
                         <tr
+                            class="${classeAlertaExposicao}"
                             data-venda-id-nfe="${escaparHTMLNFE(
                                 vendaId
                             )}"
+                            ${
+                                precisaMudarParaClassico
+                                    ? `
+                                        title="Atenção: o estoque FULL ficou em 1 unidade e a exposição está Premium. Altere para Clássico."
+                                    `
+                                    : ''
+                            }
                         >
                             <!-- VENDA -->
                             <td>
@@ -29328,6 +29787,7 @@ function renderizarVendasNFETabela(vendas) {
                                 "
                             >
                                 ${estoqueAnuncioHtml}
+                                ${avisoExposicaoHtml}
                             </td>
 
                             <!-- COMENTÁRIOS -->
@@ -30658,7 +31118,11 @@ let precisaCapturarEstoque =
         item =>
             !item ||
             item.cadastro_consultado !== true ||
-            !item.listing_type_id
+            !item.listing_type_id ||
+            item.quantidade_deposito_restante ===
+                undefined ||
+            item.quantidade_full_restante ===
+                undefined
     );
 
 
