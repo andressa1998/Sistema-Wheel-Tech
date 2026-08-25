@@ -3957,35 +3957,796 @@ async function listarVendasComNFE(req, res) {
 }
 
 async function buscarXMLPorChave(req, res) {
-    const { chave } = req.query;
-    if (!chave) return res.status(400).json({ error: 'Chave não informada' });
-    
-    // Remove espaços e caracteres especiais (garante apenas números)
-    const chaveLimpa = chave.replace(/\D/g, '');
-    if (chaveLimpa.length !== 44) {
-        return res.status(400).json({ error: 'Chave inválida (deve ter 44 dígitos)' });
+
+    const {
+        chave
+    } =
+        req.query;
+
+
+    // =====================================================
+    // VALIDAR CHAVE
+    // =====================================================
+
+    if (
+        !chave
+    ) {
+
+        return res
+            .status(
+                400
+            )
+            .json({
+                success:
+                    false,
+
+                error:
+                    'Chave não informada'
+            });
     }
 
+
+    const chaveLimpa =
+        String(
+            chave
+        )
+            .replace(
+                /\D/g,
+                ''
+            );
+
+
+    if (
+        chaveLimpa.length !==
+        44
+    ) {
+
+        return res
+            .status(
+                400
+            )
+            .json({
+                success:
+                    false,
+
+                error:
+                    'Chave inválida. Deve possuir 44 dígitos.'
+            });
+    }
+
+
     try {
-        const { data, error } = await supabase
-            .from('nfe_emitidas')
-            .select('xml_assinado')   // ← nome correto da coluna
-            .eq('chave_acesso', chaveLimpa)   // ← nome correto da coluna
-            .maybeSingle();  // ← em vez de .single() para evitar erro se não achar
 
-        if (error) {
-            console.error('Erro no Supabase:', error);
-            return res.status(500).json({ error: 'Erro ao buscar XML' });
+        console.log(
+            `📄 Buscando XML processado da NF-e ${chaveLimpa}...`
+        );
+
+
+        // =====================================================
+        // BUSCAR NF-E NO BANCO
+        // =====================================================
+
+        const {
+            data,
+            error
+        } =
+            await supabase
+                .from(
+                    'nfe_emitidas'
+                )
+                .select(`
+                    id,
+                    chave_acesso,
+                    protocolo,
+                    xml_assinado,
+                    xml_processado,
+                    status,
+                    cancelada
+                `)
+                .eq(
+                    'chave_acesso',
+                    chaveLimpa
+                )
+                .maybeSingle();
+
+
+        if (
+            error
+        ) {
+
+            console.error(
+                '❌ Erro buscando NF-e no Supabase:',
+                error
+            );
+
+
+            return res
+                .status(
+                    500
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'Erro ao buscar XML da NF-e.'
+                });
         }
 
-        if (!data || !data.xml_assinado) {
-            return res.status(404).json({ error: 'XML não encontrado para esta chave' });
+
+        if (
+            !data
+        ) {
+
+            return res
+                .status(
+                    404
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'NF-e não encontrada para esta chave.'
+                });
         }
 
-        res.json({ xml: data.xml_assinado });
-    } catch (error) {
-        console.error('Erro em buscarXMLPorChave:', error);
-        res.status(500).json({ error: error.message });
+
+        // =====================================================
+        // 1. JÁ TEM XML PROCESSADO
+        // =====================================================
+
+        let xmlProcessado =
+            String(
+                data.xml_processado ||
+                ''
+            )
+                .trim();
+
+
+        if (
+            xmlProcessado
+        ) {
+
+            const possuiNfeProc =
+                /<nfeProc\b/i.test(
+                    xmlProcessado
+                );
+
+
+            const possuiProtNFe =
+                /<(?:\w+:)?protNFe\b/i.test(
+                    xmlProcessado
+                );
+
+
+            const possuiNProt =
+                /<(?:\w+:)?nProt>/i.test(
+                    xmlProcessado
+                );
+
+
+            const possuiAssinatura =
+                /<(?:\w+:)?Signature\b/i.test(
+                    xmlProcessado
+                );
+
+
+            if (
+                possuiNfeProc &&
+                possuiProtNFe &&
+                possuiNProt &&
+                possuiAssinatura
+            ) {
+
+                console.log(
+                    '✅ XML processado encontrado no banco.'
+                );
+
+
+                return res.json({
+
+                    success:
+                        true,
+
+                    xml:
+                        xmlProcessado,
+
+                    tipo:
+                        'nfeProc',
+
+                    tem_protocolo:
+                        true,
+
+                    recuperado_sefaz:
+                        false
+                });
+            }
+
+
+            console.warn(
+                '⚠️ xml_processado existente está incompleto. Será reconstruído.'
+            );
+        }
+
+
+        // =====================================================
+        // XML ASSINADO ORIGINAL
+        // =====================================================
+
+        let xmlAssinado =
+            String(
+                data.xml_assinado ||
+                ''
+            )
+                .trim();
+
+
+        if (
+            !xmlAssinado
+        ) {
+
+            return res
+                .status(
+                    404
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'XML assinado da NF-e não está salvo.'
+                });
+        }
+
+
+        // =====================================================
+        // ALGUNS REGISTROS ANTIGOS PODEM TER nfeProc
+        // SALVO ACIDENTALMENTE EM xml_assinado.
+        // =====================================================
+
+        if (
+            /<nfeProc\b/i.test(
+                xmlAssinado
+            ) &&
+            /<(?:\w+:)?protNFe\b/i.test(
+                xmlAssinado
+            ) &&
+            /<(?:\w+:)?nProt>/i.test(
+                xmlAssinado
+            )
+        ) {
+
+            console.log(
+                '✅ xml_assinado já contém nfeProc.'
+            );
+
+
+            await supabase
+                .from(
+                    'nfe_emitidas'
+                )
+                .update({
+
+                    xml_processado:
+                        xmlAssinado,
+
+                    xml_processado_em:
+                        new Date()
+                            .toISOString()
+                })
+                .eq(
+                    'id',
+                    data.id
+                );
+
+
+            return res.json({
+
+                success:
+                    true,
+
+                xml:
+                    xmlAssinado,
+
+                tipo:
+                    'nfeProc',
+
+                tem_protocolo:
+                    true,
+
+                recuperado_sefaz:
+                    false
+            });
+        }
+
+
+        // =====================================================
+        // EXTRAIR SOMENTE <NFe>...</NFe>
+        //
+        // O banco pode ter:
+        //
+        // <NFe>...</NFe>
+        //
+        // ou
+        //
+        // <enviNFe>
+        //    <NFe>...</NFe>
+        // </enviNFe>
+        // =====================================================
+
+        const nfeMatch =
+            xmlAssinado.match(
+                /<(?:\w+:)?NFe\b[^>]*>[\s\S]*?<\/(?:\w+:)?NFe>/i
+            );
+
+
+        if (
+            !nfeMatch
+        ) {
+
+            console.error(
+                '❌ Não foi possível localizar <NFe> no XML salvo.'
+            );
+
+
+            return res
+                .status(
+                    500
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'O XML salvo não contém uma NF-e válida.'
+                });
+        }
+
+
+        const nfeAssinada =
+            nfeMatch[0]
+                .trim();
+
+
+        // =====================================================
+        // VERIFICAR ASSINATURA
+        // =====================================================
+
+        if (
+            !/<(?:\w+:)?Signature\b/i.test(
+                nfeAssinada
+            )
+        ) {
+
+            console.error(
+                '❌ NF-e armazenada não possui assinatura digital.'
+            );
+
+
+            return res
+                .status(
+                    500
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'A NF-e armazenada não possui assinatura digital.'
+                });
+        }
+
+
+        // =====================================================
+        // CONSULTAR A SEFAZ
+        //
+        // Isso permite recuperar o protNFe mesmo de notas
+        // antigas, emitidas antes de criarmos xml_processado.
+        // =====================================================
+
+        console.log(
+            `🔎 Consultando protocolo da NF-e ${chaveLimpa} na SEFAZ...`
+        );
+
+
+        const certData =
+            loadCertificates();
+
+
+        const nfeService =
+            new NFEService(
+                AMBIENTE
+            );
+
+
+        const respostaSefaz =
+            await nfeService
+                .consultarStatus(
+                    chaveLimpa,
+                    certData
+                );
+
+
+        console.log(
+            '📨 Consulta SEFAZ recebida.'
+        );
+
+
+        // =====================================================
+        // STATUS
+        // =====================================================
+
+        const statusMatches =
+            [
+                ...String(
+                    respostaSefaz ||
+                    ''
+                )
+                    .matchAll(
+                        /<(?:\w+:)?cStat>(\d+)<\/(?:\w+:)?cStat>/gi
+                    )
+            ];
+
+
+        const statusEncontrados =
+            statusMatches.map(
+                match =>
+                    match[1]
+            );
+
+
+        console.log(
+            '📊 cStat encontrados na consulta:',
+            statusEncontrados
+        );
+
+
+        // =====================================================
+        // PROTOCOLO COMPLETO
+        //
+        // NÃO BASTA possuir somente o número nProt.
+        //
+        // Mercado Livre precisa do XML autorizado:
+        //
+        // <nfeProc>
+        //    <NFe>...</NFe>
+        //    <protNFe>...</protNFe>
+        // </nfeProc>
+        // =====================================================
+
+        const protMatch =
+            String(
+                respostaSefaz ||
+                ''
+            )
+                .match(
+                    /<(?:\w+:)?protNFe\b[^>]*>[\s\S]*?<\/(?:\w+:)?protNFe>/i
+                );
+
+
+        if (
+            !protMatch
+        ) {
+
+            console.error(
+                '❌ SEFAZ não retornou protNFe.',
+                respostaSefaz
+            );
+
+
+            return res
+                .status(
+                    409
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'A SEFAZ não retornou o protocolo completo desta NF-e. Não é possível gerar o XML autorizado para envio ao Mercado Livre.'
+                });
+        }
+
+
+        let protNFe =
+            protMatch[0]
+                .trim();
+
+
+        // =====================================================
+        // VALIDAR CHAVE DENTRO DO PROTOCOLO
+        // =====================================================
+
+        const chaveProtocolo =
+            protNFe.match(
+                /<(?:\w+:)?chNFe>(\d{44})<\/(?:\w+:)?chNFe>/i
+            )?.[1] ||
+            '';
+
+
+        if (
+            chaveProtocolo &&
+            chaveProtocolo !==
+                chaveLimpa
+        ) {
+
+            console.error(
+                '❌ Protocolo SEFAZ pertence a outra chave:',
+                {
+                    solicitada:
+                        chaveLimpa,
+
+                    protocolo:
+                        chaveProtocolo
+                }
+            );
+
+
+            return res
+                .status(
+                    500
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'O protocolo retornado pela SEFAZ não corresponde à chave solicitada.'
+                });
+        }
+
+
+        const numeroProtocolo =
+            protNFe.match(
+                /<(?:\w+:)?nProt>([^<]+)<\/(?:\w+:)?nProt>/i
+            )?.[1] ||
+            '';
+
+
+        if (
+            !numeroProtocolo
+        ) {
+
+            return res
+                .status(
+                    409
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'A SEFAZ retornou protNFe sem número de protocolo.'
+                });
+        }
+
+
+        // =====================================================
+        // VERIFICAR AUTORIZAÇÃO DENTRO DO protNFe
+        // =====================================================
+
+        const cStatProtocolo =
+            protNFe.match(
+                /<(?:\w+:)?cStat>(\d+)<\/(?:\w+:)?cStat>/i
+            )?.[1] ||
+            '';
+
+
+        if (
+            cStatProtocolo &&
+            cStatProtocolo !==
+                '100' &&
+            cStatProtocolo !==
+                '150'
+        ) {
+
+            console.warn(
+                `⚠️ Protocolo encontrado com cStat=${cStatProtocolo}`
+            );
+
+
+            return res
+                .status(
+                    409
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        `A NF-e não possui protocolo de autorização válido para upload. cStat=${cStatProtocolo}`
+                });
+        }
+
+
+        // =====================================================
+        // REMOVER DECLARAÇÃO XML INTERNA, SE EXISTIR
+        // =====================================================
+
+        const nfeSemDeclaracao =
+            nfeAssinada
+                .replace(
+                    /^<\?xml[^?]*\?>\s*/i,
+                    ''
+                )
+                .trim();
+
+
+        // =====================================================
+        // MONTAR XML PROCESSADO
+        // =====================================================
+
+        xmlProcessado =
+            `<?xml version="1.0" encoding="UTF-8"?>` +
+            `<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">` +
+            `${nfeSemDeclaracao}` +
+            `${protNFe}` +
+            `</nfeProc>`;
+
+
+        // =====================================================
+        // VALIDAÇÃO FINAL
+        // =====================================================
+
+        const validacoes = {
+
+            nfeProc:
+                /<nfeProc\b/i.test(
+                    xmlProcessado
+                ),
+
+            NFe:
+                /<(?:\w+:)?NFe\b/i.test(
+                    xmlProcessado
+                ),
+
+            assinatura:
+                /<(?:\w+:)?Signature\b/i.test(
+                    xmlProcessado
+                ),
+
+            protNFe:
+                /<(?:\w+:)?protNFe\b/i.test(
+                    xmlProcessado
+                ),
+
+            nProt:
+                /<(?:\w+:)?nProt>/i.test(
+                    xmlProcessado
+                )
+        };
+
+
+        console.log(
+            '🧾 Validação do XML processado:',
+            validacoes
+        );
+
+
+        if (
+            Object
+                .values(
+                    validacoes
+                )
+                .some(
+                    valor =>
+                        valor !==
+                        true
+                )
+        ) {
+
+            return res
+                .status(
+                    500
+                )
+                .json({
+                    success:
+                        false,
+
+                    error:
+                        'Falha interna ao montar o XML processado da NF-e.'
+                });
+        }
+
+
+        // =====================================================
+        // SALVAR PARA NÃO PRECISAR CONSULTAR A SEFAZ NOVAMENTE
+        // =====================================================
+
+        const {
+            error:
+                erroUpdate
+        } =
+            await supabase
+                .from(
+                    'nfe_emitidas'
+                )
+                .update({
+
+                    xml_processado:
+                        xmlProcessado,
+
+                    xml_processado_em:
+                        new Date()
+                            .toISOString(),
+
+                    protocolo:
+                        numeroProtocolo
+                })
+                .eq(
+                    'id',
+                    data.id
+                );
+
+
+        if (
+            erroUpdate
+        ) {
+
+            console.warn(
+                '⚠️ XML processado foi gerado, mas não foi salvo:',
+                erroUpdate
+            );
+
+
+        } else {
+
+            console.log(
+                '✅ XML processado salvo no Supabase.'
+            );
+        }
+
+
+        // =====================================================
+        // RETORNO
+        // =====================================================
+
+        return res.json({
+
+            success:
+                true,
+
+            xml:
+                xmlProcessado,
+
+            tipo:
+                'nfeProc',
+
+            tem_protocolo:
+                true,
+
+            protocolo:
+                numeroProtocolo,
+
+            recuperado_sefaz:
+                true
+        });
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro em buscarXMLPorChave:',
+            error
+        );
+
+
+        return res
+            .status(
+                500
+            )
+            .json({
+
+                success:
+                    false,
+
+                error:
+                    error.message ||
+                    'Erro ao preparar XML da NF-e.'
+            });
     }
 }
 

@@ -41492,25 +41492,314 @@ async function visualizarNFE(chaveAcesso) {
     }
 }
 
-async function baixarXMLNFE(chaveAcesso) {
+async function baixarXMLNFE(
+    chaveAcesso
+) {
+
     try {
-        const response = await fetch(`${window.API_BASE_URL}/nfe/buscar-xml?chave=${chaveAcesso}`);
-        const data = await response.json();
-        if (!data.xml) {
-            window.showToast('XML não encontrado', 'error');
+
+        const chave =
+            String(
+                chaveAcesso ||
+                ''
+            )
+                .replace(
+                    /\D/g,
+                    ''
+                );
+
+
+        if (
+            chave.length !==
+            44
+        ) {
+
+            showToast(
+                '❌ Chave da NF-e inválida.',
+                'error'
+            );
+
             return;
         }
-        const blob = new Blob([data.xml], { type: 'application/xml' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `NFe_${chaveAcesso}.xml`;
-        document.body.appendChild(a);
+
+
+        showToast(
+            '🔄 Preparando XML autorizado...',
+            'info'
+        );
+
+
+        // =====================================================
+        // PEDIR XML PROCESSADO AO BACKEND
+        //
+        // Se for NF-e antiga, o backend consulta SEFAZ,
+        // monta o nfeProc e salva no banco.
+        // =====================================================
+
+        const response =
+            await fetch(
+                `${window.API_BASE_URL}/nfe/buscar-xml?chave=${encodeURIComponent(
+                    chave
+                )}`,
+                {
+                    cache:
+                        'no-store'
+                }
+            );
+
+
+        let data =
+            {};
+
+
+        try {
+
+            data =
+                await response.json();
+
+        } catch (
+            error
+        ) {
+
+            throw new Error(
+                `Servidor retornou resposta inválida. HTTP ${response.status}`
+            );
+        }
+
+
+        if (
+            !response.ok
+        ) {
+
+            throw new Error(
+                data.error ||
+                `Erro HTTP ${response.status}`
+            );
+        }
+
+
+        if (
+            !data.xml
+        ) {
+
+            throw new Error(
+                'XML não encontrado.'
+            );
+        }
+
+
+        let xml =
+            String(
+                data.xml
+            )
+                .trim();
+
+
+        // =====================================================
+        // GARANTIR DECLARAÇÃO
+        // =====================================================
+
+        if (
+            !xml.startsWith(
+                '<?xml'
+            )
+        ) {
+
+            xml =
+                '<?xml version="1.0" encoding="UTF-8"?>' +
+                xml;
+        }
+
+
+        // =====================================================
+        // VALIDAÇÃO ANTES DO DOWNLOAD
+        // =====================================================
+
+        const possuiNfeProc =
+            /<nfeProc\b/i.test(
+                xml
+            );
+
+
+        const possuiNFe =
+            /<(?:\w+:)?NFe\b/i.test(
+                xml
+            );
+
+
+        const possuiAssinatura =
+            /<(?:\w+:)?Signature\b/i.test(
+                xml
+            );
+
+
+        const possuiProtNFe =
+            /<(?:\w+:)?protNFe\b/i.test(
+                xml
+            );
+
+
+        const possuiNProt =
+            /<(?:\w+:)?nProt>/i.test(
+                xml
+            );
+
+
+        console.log(
+            '🧾 XML para download:',
+            {
+                chave,
+
+                nfeProc:
+                    possuiNfeProc,
+
+                NFe:
+                    possuiNFe,
+
+                assinatura:
+                    possuiAssinatura,
+
+                protNFe:
+                    possuiProtNFe,
+
+                nProt:
+                    possuiNProt,
+
+                recuperadoSEFAZ:
+                    data.recuperado_sefaz ===
+                    true
+            }
+        );
+
+
+        // =====================================================
+        // NÃO DEIXAR BAIXAR XML INCOMPLETO
+        //
+        // É justamente o problema que estava acontecendo.
+        // =====================================================
+
+        if (
+            !possuiNfeProc ||
+            !possuiNFe ||
+            !possuiAssinatura ||
+            !possuiProtNFe ||
+            !possuiNProt
+        ) {
+
+            console.error(
+                '❌ XML incompleto:',
+                xml.substring(
+                    0,
+                    1000
+                )
+            );
+
+
+            throw new Error(
+                'O XML ainda não está completo/autorizado. O download foi bloqueado para evitar enviar um arquivo inválido ao Mercado Livre.'
+            );
+        }
+
+
+        // =====================================================
+        // COMPACTAR SOMENTE ESPAÇOS ENTRE TAGS
+        //
+        // NÃO altera o conteúdo assinado.
+        // =====================================================
+
+        xml =
+            xml.replace(
+                />\s+</g,
+                '><'
+            );
+
+
+        // =====================================================
+        // DOWNLOAD
+        // =====================================================
+
+        const blob =
+            new Blob(
+                [
+                    xml
+                ],
+                {
+                    type:
+                        'application/xml;charset=utf-8'
+                }
+            );
+
+
+        const url =
+            URL.createObjectURL(
+                blob
+            );
+
+
+        const a =
+            document.createElement(
+                'a'
+            );
+
+
+        a.href =
+            url;
+
+
+        // Nome padrão comum de NF-e processada
+        a.download =
+            `${chave}-procNFe.xml`;
+
+
+        document.body
+            .appendChild(
+                a
+            );
+
+
         a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    } catch (error) {
-        window.showToast('Erro ao baixar XML', 'error');
+
+
+        document.body
+            .removeChild(
+                a
+            );
+
+
+        setTimeout(
+            () =>
+                URL.revokeObjectURL(
+                    url
+                ),
+            5000
+        );
+
+
+        showToast(
+            data.recuperado_sefaz ===
+                true
+
+                ? '✅ XML autorizado recuperado da SEFAZ e baixado.'
+
+                : '✅ XML autorizado baixado.',
+            'success'
+        );
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro ao baixar XML autorizado:',
+            error
+        );
+
+
+        showToast(
+            `❌ Não foi possível preparar o XML: ${error.message}`,
+            'error'
+        );
     }
 }
 
