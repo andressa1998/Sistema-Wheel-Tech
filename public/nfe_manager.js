@@ -7073,23 +7073,178 @@ function consolidarSnapshotsEstoqueAnuncioNFE(
     );
 }
 
-function montarEstoqueAnuncioPosVendaHtmlNFE(
-    venda
+async function enriquecerSnapshotCadastroInternoNFE(
+    snapshot
 ) {
+    const skuAnuncio =
+        String(
+            snapshot?.sku ||
+            ''
+        ).trim();
 
-    const dados =
-        Array.isArray(
-            venda?._estoque_anuncio_pos_venda
-        )
-            ? venda._estoque_anuncio_pos_venda
-            : [];
+    let componentes = [];
 
+    try {
+        componentes =
+            decomporSkuCompostoNFE(
+                skuAnuncio,
+                1
+            ) || [];
+    } catch (error) {
+        console.warn(
+            `⚠️ Não foi possível decompor o SKU ${skuAnuncio}:`,
+            error
+        );
+    }
 
-    if (
-        dados.length ===
-        0
+    if (componentes.length === 0) {
+        componentes = [
+            {
+                sku:
+                    skuAnuncio,
+
+                quantidade_venda:
+                    1
+            }
+        ];
+    }
+
+    const cadastroItens = [];
+
+    for (
+        const componente
+        of componentes
     ) {
+        const skuComponente =
+            String(
+                componente?.sku ||
+                ''
+            ).trim();
 
+        if (
+            !skuComponente ||
+            skuComponente === 'SEM_SKU' ||
+            skuComponente === 'N/A'
+        ) {
+            cadastroItens.push({
+                sku:
+                    skuComponente ||
+                    'SEM_SKU',
+
+                encontrado:
+                    false,
+
+                motivo:
+                    'Venda sem SKU'
+            });
+
+            continue;
+        }
+
+        try {
+            const {
+                produto,
+                error
+            } =
+                await buscarProdutoEstoquePorSkuNFE(
+                    skuComponente
+                );
+
+            if (
+                error ||
+                !produto
+            ) {
+                cadastroItens.push({
+                    sku:
+                        skuComponente,
+
+                    encontrado:
+                        false,
+
+                    motivo:
+                        'Não cadastrado no estoque'
+                });
+
+                continue;
+            }
+
+            cadastroItens.push({
+                sku:
+                    produto.sku,
+
+                nome:
+                    produto.nome ||
+                    '',
+
+                produto_id:
+                    produto.id,
+
+                encontrado:
+                    true,
+
+                estoque_atual:
+                    Number(
+                        produto.quantidade ||
+                        0
+                    ),
+
+                quantidade_por_anuncio:
+                    Math.max(
+                        1,
+                        Number(
+                            componente
+                                .quantidade_venda ||
+                            1
+                        )
+                    )
+            });
+        } catch (error) {
+            cadastroItens.push({
+                sku:
+                    skuComponente,
+
+                encontrado:
+                    false,
+
+                motivo:
+                    error.message ||
+                    'Erro consultando cadastro'
+            });
+        }
+    }
+
+    return {
+        ...snapshot,
+
+        cadastro_consultado:
+            true,
+
+        tem_cadastro:
+            cadastroItens.some(
+                cadastro =>
+                    cadastro.encontrado === true
+            ),
+
+        todos_cadastrados:
+            cadastroItens.length > 0 &&
+            cadastroItens.every(
+                cadastro =>
+                    cadastro.encontrado === true
+            ),
+
+        cadastro_itens:
+            cadastroItens
+    };
+}
+
+function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
+    const dados = Array.isArray(
+        venda?._estoque_anuncio_pos_venda
+    )
+        ? venda._estoque_anuncio_pos_venda
+        : [];
+
+    if (dados.length === 0) {
         return `
             <span
                 style="
@@ -7102,112 +7257,267 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(
         `;
     }
 
-
     return dados
-        .map(
-            item => {
+        .map(item => {
+            const quantidade =
+                item.quantidade_restante;
 
-                const quantidade =
-                    item.quantidade_restante;
+            const possuiQuantidade =
+                quantidade !== null &&
+                quantidade !== undefined &&
+                Number.isFinite(
+                    Number(quantidade)
+                );
 
+            const numero =
+                possuiQuantidade
+                    ? Number(quantidade)
+                    : null;
 
-                const possuiQuantidade =
-                    quantidade !==
-                        null &&
-                    quantidade !==
-                        undefined &&
-                    Number.isFinite(
-                        Number(
-                            quantidade
-                        )
-                    );
+            let cor = '#28a745';
 
+            if (numero === 0) {
+                cor = '#dc3545';
+            } else if (
+                numero !== null &&
+                numero <= 2
+            ) {
+                cor = '#ffc107';
+            }
 
-                const numero =
-                    possuiQuantidade
+            const exposicao =
+                item.listing_type_nome ||
+                nomeListingTypeFullNFE(
+                    item.listing_type_id
+                );
 
-                        ? Number(
-                            quantidade
-                        )
+            const cadastroItens =
+                Array.isArray(
+                    item.cadastro_itens
+                )
+                    ? item.cadastro_itens
+                    : [];
 
-                        : null;
+            const cadastrados =
+                cadastroItens.filter(
+                    cadastro =>
+                        cadastro.encontrado === true
+                );
 
+            const naoCadastrados =
+                cadastroItens.filter(
+                    cadastro =>
+                        cadastro.encontrado !== true
+                );
 
-                let cor =
-                    '#28a745';
+            let cadastroHtml = '';
 
+            if (
+                item.cadastro_consultado === true
+            ) {
+                if (cadastrados.length > 0) {
+                    cadastroHtml =
+                        cadastrados
+                            .map(cadastro => {
+                                const nome =
+                                    cadastro.nome ||
+                                    cadastro.sku ||
+                                    'Produto';
 
-                if (
-                    numero ===
-                    0
-                ) {
+                                const estoqueInterno =
+                                    Number(
+                                        cadastro.estoque_atual ||
+                                        0
+                                    );
 
-                    cor =
-                        '#dc3545';
+                                const quantidadePorAnuncio =
+                                    Math.max(
+                                        1,
+                                        Number(
+                                            cadastro
+                                                .quantidade_por_anuncio ||
+                                            1
+                                        )
+                                    );
 
-                } else if (
-                    numero !==
-                        null &&
-                    numero <=
-                        2
-                ) {
-
-                    cor =
-                        '#ffc107';
-                }
-
-
-                return `
-                    <div
-                        style="
-                            margin-bottom:5px;
-                            min-width:70px;
-                        "
-                    >
-
-                        ${
-                            possuiQuantidade
-
-                                ? `
+                                return `
                                     <div
                                         style="
-                                            font-weight:700;
-                                            color:${cor};
-                                            font-size:13px;
-                                            white-space:nowrap;
+                                            margin-top:3px;
+                                            padding-top:3px;
+                                            border-top:1px solid #eeeeee;
                                         "
+                                        title="${escaparHTMLNFE(
+                                            nome
+                                        )}"
                                     >
-                                        ${numero} un.
+                                        <div
+                                            style="
+                                                color:#495057;
+                                                font-size:9px;
+                                            "
+                                        >
+                                            Estoque interno:
+                                        </div>
+
+                                        <div
+                                            style="
+                                                color:${
+                                                    estoqueInterno > 0
+                                                        ? '#28a745'
+                                                        : '#dc3545'
+                                                };
+                                                font-size:11px;
+                                                font-weight:700;
+                                                white-space:nowrap;
+                                            "
+                                        >
+                                            ${estoqueInterno} un.
+                                        </div>
+
+                                        ${
+                                            cadastroItens.length > 1 ||
+                                            quantidadePorAnuncio > 1
+                                                ? `
+                                                    <div
+                                                        style="
+                                                            color:#6c757d;
+                                                            font-size:8px;
+                                                            max-width:130px;
+                                                            overflow:hidden;
+                                                            text-overflow:ellipsis;
+                                                            white-space:nowrap;
+                                                        "
+                                                        title="${escaparHTMLNFE(
+                                                            nome
+                                                        )}"
+                                                    >
+                                                        ${escaparHTMLNFE(
+                                                            nome
+                                                        )}
+                                                    </div>
+
+                                                    ${
+                                                        quantidadePorAnuncio > 1
+                                                            ? `
+                                                                <div
+                                                                    style="
+                                                                        color:#6c757d;
+                                                                        font-size:8px;
+                                                                    "
+                                                                >
+                                                                    Usa ${quantidadePorAnuncio} por anúncio
+                                                                </div>
+                                                            `
+                                                            : ''
+                                                    }
+                                                `
+                                                : ''
+                                        }
                                     </div>
-                                `
+                                `;
+                            })
+                            .join('');
 
-                                : `
-                                    <div
-                                        style="
-                                            color:#adb5bd;
-                                            font-size:10px;
-                                        "
-                                    >
-                                        N/I
-                                    </div>
-                                `
-                        }
-
-
+                    if (naoCadastrados.length > 0) {
+                        cadastroHtml += `
+                            <div
+                                style="
+                                    color:#dc3545;
+                                    font-size:9px;
+                                    font-weight:700;
+                                    margin-top:3px;
+                                "
+                            >
+                                Cadastro incompleto
+                            </div>
+                        `;
+                    }
+                } else {
+                    cadastroHtml = `
                         <div
                             style="
-                                color:#adb5bd;
-                                font-size:8px;
-                                white-space:nowrap;
+                                color:#dc3545;
+                                font-size:9px;
+                                font-weight:700;
+                                margin-top:3px;
                             "
                         >
-                            após a venda
+                            Sem cadastro
                         </div>
-
-                    </div>
-                `;
+                    `;
+                }
             }
-        )
+
+            return `
+                <div
+                    style="
+                        margin-bottom:7px;
+                        min-width:105px;
+                    "
+                >
+                    ${
+                        possuiQuantidade
+                            ? `
+                                <div
+                                    style="
+                                        font-weight:700;
+                                        color:${cor};
+                                        font-size:13px;
+                                        white-space:nowrap;
+                                    "
+                                >
+                                    ${numero} un.
+                                </div>
+                            `
+                            : `
+                                <div
+                                    style="
+                                        color:#adb5bd;
+                                        font-size:10px;
+                                    "
+                                >
+                                    N/I
+                                </div>
+                            `
+                    }
+
+                    <div
+                        style="
+                            color:#adb5bd;
+                            font-size:8px;
+                            white-space:nowrap;
+                        "
+                    >
+                        após a venda
+                    </div>
+
+                    <div
+                        style="
+                            display:inline-block;
+                            margin-top:3px;
+                            padding:2px 5px;
+                            border-radius:4px;
+                            background:${
+                                String(exposicao)
+                                    .toLowerCase()
+                                    .includes('premium')
+                                    ? '#6f42c1'
+                                    : '#17a2b8'
+                            };
+                            color:#ffffff;
+                            font-size:8px;
+                            font-weight:700;
+                            white-space:nowrap;
+                        "
+                    >
+                        ${escaparHTMLNFE(exposicao)}
+                    </div>
+
+                    ${cadastroHtml}
+                </div>
+            `;
+        })
         .join('');
 }
 
@@ -22335,15 +22645,10 @@ function obterUsuarioOperacaoNFE() {
 async function buscarEstoqueAnuncioPosVendaNFE(
     venda
 ) {
-
     const token =
         await obterTokenMLNFE();
 
-
-    if (
-        !token
-    ) {
-
+    if (!token) {
         console.warn(
             '⚠️ Token ML não disponível para consultar estoque pós-venda'
         );
@@ -22351,12 +22656,8 @@ async function buscarEstoqueAnuncioPosVendaNFE(
         return [];
     }
 
-
     const isFull =
-        detectarVendaFullNFE(
-            venda
-        );
-
+        detectarVendaFullNFE(venda);
 
     const orderItems =
         Array.isArray(
@@ -22365,86 +22666,59 @@ async function buscarEstoqueAnuncioPosVendaNFE(
             ? venda.order_items
             : [];
 
+    const candidatos = [];
 
-    const candidatos =
-        [];
+    orderItems.forEach(orderItem => {
+        const itemId =
+            normalizarMLBFullNFE(
+                orderItem
+                    ?.item
+                    ?.id
+            );
 
-
-    // =====================================================
-    // ORDER ITEMS
-    // =====================================================
-
-    orderItems.forEach(
-        orderItem => {
-
-            const itemId =
-                normalizarMLBFullNFE(
-                    orderItem
-                        ?.item
-                        ?.id
-                );
-
-
-            if (
-                !itemId
-            ) {
-
-                return;
-            }
-
-
-            candidatos.push({
-
-                item_id:
-                    itemId,
-
-                variation_id:
-                    orderItem
-                        ?.item
-                        ?.variation_id ??
-                    null,
-
-                sku:
-                    orderItem
-                        ?.item
-                        ?.seller_sku ||
-                    'SEM_SKU',
-
-                quantidade_vendida:
-                    Number(
-                        orderItem
-                            ?.quantity ||
-                        1
-                    )
-            });
+        if (!itemId) {
+            return;
         }
-    );
 
+        candidatos.push({
+            item_id:
+                itemId,
 
-    if (
-        candidatos.length ===
-        0
-    ) {
+            variation_id:
+                orderItem
+                    ?.item
+                    ?.variation_id ??
+                null,
 
+            sku:
+                orderItem
+                    ?.item
+                    ?.seller_sku ||
+                'SEM_SKU',
+
+            quantidade_vendida:
+                Number(
+                    orderItem
+                        ?.quantity ||
+                    1
+                )
+        });
+    });
+
+    if (candidatos.length === 0) {
         const itemId =
             normalizarMLBFullNFE(
                 venda?.item_id ||
                 venda?.item?.id
             );
 
-
-        if (
-            itemId
-        ) {
-
+        if (itemId) {
             candidatos.push({
-
                 item_id:
                     itemId,
 
                 variation_id:
-                    venda
-                        ?.variation_id ??
+                    venda?.variation_id ??
                     null,
 
                 sku:
@@ -22454,135 +22728,90 @@ async function buscarEstoqueAnuncioPosVendaNFE(
 
                 quantidade_vendida:
                     Number(
-                        venda
-                            ?.quantidade ||
+                        venda?.quantidade ||
                         1
                     )
             });
         }
     }
 
-
-    const resultado =
-        [];
-
+    const resultado = [];
 
     const mapaSituacoes =
         new Map();
-
 
     for (
         const candidato
         of candidatos
     ) {
-
         try {
-
-            // =================================================
-            // FULL
-            // =================================================
-
-            if (
-                isFull
-            ) {
-
+            // =============================================
+            // VENDA FULL
+            // =============================================
+            if (isFull) {
                 let situacao =
                     mapaSituacoes.get(
-                        candidato
-                            .item_id
+                        candidato.item_id
                     );
 
-
-                if (
-                    !situacao
-                ) {
-
+                if (!situacao) {
                     situacao =
                         await consultarSituacaoMLBFullNFE(
-                            candidato
-                                .item_id
+                            candidato.item_id
                         );
 
-
                     mapaSituacoes.set(
-                        candidato
-                            .item_id,
+                        candidato.item_id,
                         situacao
                     );
                 }
 
-
-                let detalhe =
-                    null;
-
+                let detalhe = null;
 
                 if (
-                    candidato
-                        .variation_id !==
-                        null &&
-                    candidato
-                        .variation_id !==
-                        undefined
+                    candidato.variation_id !== null &&
+                    candidato.variation_id !== undefined
                 ) {
-
                     detalhe =
-                        situacao
-                            .detalhes
-                            .find(
-                                item =>
-                                    String(
-                                        item
-                                            .variation_id
-                                    ) ===
-                                    String(
-                                        candidato
-                                            .variation_id
-                                    )
-                            ) ||
+                        situacao.detalhes.find(
+                            item =>
+                                String(
+                                    item.variation_id
+                                ) ===
+                                String(
+                                    candidato.variation_id
+                                )
+                        ) ||
                         null;
-
-
                 } else {
-
                     detalhe =
-                        situacao
-                            .detalhes
-                            [0] ||
+                        situacao.detalhes[0] ||
                         null;
                 }
 
-
                 resultado.push({
-
                     item_id:
-                        candidato
-                            .item_id,
+                        candidato.item_id,
 
                     variation_id:
-                        candidato
-                            .variation_id,
+                        candidato.variation_id,
 
                     sku:
-                        candidato
-                            .sku,
+                        candidato.sku,
 
                     quantidade_vendida:
-                        candidato
-                            .quantidade_vendida,
+                        candidato.quantidade_vendida,
 
                     quantidade_restante:
-                        detalhe
-                            ?.estoque_full ??
+                        detalhe?.estoque_full ??
                         null,
 
                     user_product_id:
-                        detalhe
-                            ?.user_product_id ||
+                        detalhe?.user_product_id ||
                         null,
 
                     inventory_id:
-                        detalhe
-                            ?.inventory_id ||
+                        detalhe?.inventory_id ||
                         null,
 
                     origem_estoque:
@@ -22591,128 +22820,104 @@ async function buscarEstoqueAnuncioPosVendaNFE(
                     modalidade:
                         'FULL',
 
+                    listing_type_id:
+                        situacao
+                            .listing_type_atual ||
+                        '',
+
+                    listing_type_nome:
+                        situacao
+                            .listing_type_atual_nome ||
+                        nomeListingTypeFullNFE(
+                            situacao
+                                .listing_type_atual
+                        ),
+
                     capturado_em:
                         new Date()
                             .toISOString()
                 });
 
-
                 continue;
             }
 
-
-            // =================================================
-            // NÃO FULL
-            // =================================================
-
+            // =============================================
+            // VENDA NORMAL / MERCADO ENVIOS
+            // =============================================
             const {
-                data:
-                    item
+                data: item
             } =
                 await consultarGETMLFullNFE(
-
                     `https://api.mercadolibre.com/items/${candidato.item_id}`,
-
                     token
                 );
-
 
             let quantidadeRestante =
                 null;
 
-
             if (
-                candidato
-                    .variation_id !==
-                    null &&
-                candidato
-                    .variation_id !==
-                    undefined
+                candidato.variation_id !== null &&
+                candidato.variation_id !== undefined
             ) {
-
                 const variacao =
                     Array.isArray(
-                        item
-                            .variations
+                        item.variations
                     )
-
-                        ? item
-                            .variations
-                            .find(
-                                variacao =>
-                                    String(
-                                        variacao.id
-                                    ) ===
-                                    String(
-                                        candidato
-                                            .variation_id
-                                    )
-                            )
-
+                        ? item.variations.find(
+                            variacao =>
+                                String(
+                                    variacao.id
+                                ) ===
+                                String(
+                                    candidato.variation_id
+                                )
+                        )
                         : null;
 
-
-                if (
-                    variacao
-                ) {
-
+                if (variacao) {
                     const quantidade =
                         Number(
                             variacao
                                 .available_quantity
                         );
 
-
                     if (
                         Number.isFinite(
                             quantidade
                         )
                     ) {
-
                         quantidadeRestante =
                             quantidade;
                     }
                 }
-
-
             } else {
-
                 const quantidade =
                     Number(
-                        item
-                            .available_quantity
+                        item.available_quantity
                     );
-
 
                 if (
                     Number.isFinite(
                         quantidade
                     )
                 ) {
-
                     quantidadeRestante =
                         quantidade;
                 }
             }
 
-
             resultado.push({
-
                 item_id:
-                    candidato
-                        .item_id,
+                    candidato.item_id,
 
                 variation_id:
-                    candidato
-                        .variation_id,
+                    candidato.variation_id,
 
                 sku:
-                    candidato
-                        .sku,
+                    candidato.sku,
 
                 quantidade_vendida:
-                    candidato
-                        .quantidade_vendida,
+                    candidato.quantidade_vendida,
 
                 quantidade_restante:
                     quantidadeRestante,
@@ -22723,16 +22928,20 @@ async function buscarEstoqueAnuncioPosVendaNFE(
                 modalidade:
                     'ME',
 
+                listing_type_id:
+                    item.listing_type_id ||
+                    '',
+
+                listing_type_nome:
+                    nomeListingTypeFullNFE(
+                        item.listing_type_id
+                    ),
+
                 capturado_em:
                     new Date()
                         .toISOString()
             });
-
-
-        } catch (
-            error
-        ) {
-
+        } catch (error) {
             console.warn(
                 `⚠️ Erro consultando estoque ${candidato.item_id}:`,
                 error
@@ -22740,8 +22949,23 @@ async function buscarEstoqueAnuncioPosVendaNFE(
         }
     }
 
+    // =====================================================
+    // CONSULTAR CADASTRO E ESTOQUE INTERNO
+    // =====================================================
+    const resultadoEnriquecido = [];
 
-    return resultado;
+    for (
+        const snapshot
+        of resultado
+    ) {
+        resultadoEnriquecido.push(
+            await enriquecerSnapshotCadastroInternoNFE(
+                snapshot
+            )
+        );
+    }
+
+    return resultadoEnriquecido;
 }
 
 // =========================================================
@@ -30428,13 +30652,14 @@ if (
 }
 
 
-// =================================================
-// VERIFICAR SE O SNAPSHOT ATUAL É VÁLIDO
-// =================================================
-
 let precisaCapturarEstoque =
-    estoqueAnuncioPosVenda.length ===
-    0;
+    estoqueAnuncioPosVenda.length === 0 ||
+    estoqueAnuncioPosVenda.some(
+        item =>
+            !item ||
+            item.cadastro_consultado !== true ||
+            !item.listing_type_id
+    );
 
 
 // =================================================
