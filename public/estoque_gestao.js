@@ -18629,125 +18629,702 @@ function calcularQuantidadeComRegras(
     return quantidadeFinal;
 }
 
-    // ===== ATUALIZAR ESTOQUE FULL COM CONVIVÊNCIA =====
-    async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, token, workerUrl, item) {
-        try {
-            console.log(`📦 [FULL] Atualizando estoque do item ${itemId} para ${quantidade} unidades`);
-            
-            if (!userProductId) {
-                console.warn('⚠️ userProductId vazio, tentando obter do item...');
-                if (item && item.user_product_id) {
-                    userProductId = item.user_product_id;
-                } else {
-                    return { success: false, error: 'user_product_id não disponível' };
-                }
-            }
-            
-            // Método 1: /items/{item_id}/stock
-            try {
-                const stockUrl = `https://api.mercadolibre.com/items/${itemId}/stock`;
-                const stockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`;
-                
-                const getStockRes = await fetch(stockProxy);
-                if (getStockRes.ok) {
-                    const stockData = await getStockRes.json();
-                    const requestBody = { available_quantity: quantidade };
-                    
-                    const updateRes = await fetch(stockProxy, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(requestBody)
-                    });
-                    
-                    if (updateRes.status === 200 || updateRes.status === 204) {
-                        console.log(`✅ [FULL] Estoque atualizado para ${quantidade} (${itemId}) via /items/stock`);
-                        return { success: true, method: 'items_stock' };
+    async function atualizarEstoqueFullConvivio(
+    itemId,
+    userProductId,
+    quantidade,
+    token,
+    workerUrl,
+    item,
+    variacaoAlvo = null
+) {
+
+    try {
+
+        console.log(
+            `📦 [FULL→LOCAL] ${itemId}` +
+            `${variacaoAlvo ? ` / variação ${variacaoAlvo.id}` : ''}` +
+            ` → ${quantidade} un.`
+        );
+
+
+        if (
+            !userProductId
+        ) {
+
+            userProductId =
+                variacaoAlvo
+                    ?.user_product_id ||
+                item
+                    ?.user_product_id ||
+                null;
+        }
+
+
+        // =====================================================
+        // TENTAR PELO USER PRODUCT
+        //
+        // É A FORMA CORRETA PARA ESTOQUE DISTRIBUÍDO /
+        // MULTIORIGEM.
+        // =====================================================
+
+        if (
+            userProductId
+        ) {
+
+            const consultarStock =
+                async () => {
+
+                    const stockUrl =
+                        `https://api.mercadolibre.com/user-products/${encodeURIComponent(
+                            userProductId
+                        )}/stock`;
+
+
+                    const proxy =
+                        `${workerUrl}/api/ml/proxy?url=` +
+                        `${encodeURIComponent(stockUrl)}` +
+                        `&token=${encodeURIComponent(token)}`;
+
+
+                    const response =
+                        await fetch(
+                            proxy,
+                            {
+                                cache:
+                                    'no-store'
+                            }
+                        );
+
+
+                    if (
+                        !response.ok
+                    ) {
+
+                        throw new Error(
+                            `GET stock UP: HTTP ${response.status}`
+                        );
                     }
-                }
-            } catch (e) {
-                console.warn('⚠️ Método /items/stock falhou:', e.message);
-            }
-            
-            // Método 2: /user-products/{userProductId}/stock
-            try {
-                const userStockUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock`;
-                const userStockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(userStockUrl)}&token=${encodeURIComponent(token)}`;
-                
-                const getUserStockRes = await fetch(userStockProxy);
-                if (getUserStockRes.ok) {
-                    const stockData = await getUserStockRes.json();
-                    const locations = stockData.locations || [];
-                    const updatedLocations = locations.map(loc => {
-                        if (loc.type === 'seller_warehouse' || loc.type === 'selling_address') {
-                            return { ...loc, quantity: quantidade };
+
+
+                    const data =
+                        await response.json();
+
+
+                    return {
+
+                        data,
+
+                        xVersion:
+                            response
+                                .headers
+                                .get(
+                                    'x-version'
+                                ) ||
+                            null
+                    };
+                };
+
+
+            const atualizarComVersao =
+                async (
+                    tipo,
+                    body
+                ) => {
+
+                    let tentativa =
+                        0;
+
+
+                    while (
+                        tentativa <
+                        2
+                    ) {
+
+                        tentativa++;
+
+
+                        const stockAtual =
+                            await consultarStock();
+
+
+                        if (
+                            !stockAtual.xVersion
+                        ) {
+
+                            return {
+
+                                success:
+                                    false,
+
+                                error:
+                                    'Mercado Livre não retornou x-version do estoque.'
+                            };
                         }
-                        return loc;
-                    });
-                    
-                    const requestBody = { locations: updatedLocations };
-                    
-                    const updateRes = await fetch(userStockProxy, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(requestBody)
-                    });
-                    
-                    if (updateRes.status === 200 || updateRes.status === 204) {
-                        console.log(`✅ [FULL] Estoque atualizado via user-products para ${quantidade}`);
-                        return { success: true, method: 'user_products_stock' };
-                    }
-                }
-            } catch (e) {
-                console.warn('⚠️ Método /user-products/stock falhou:', e.message);
-            }
-            
-            // Método 3: item principal
-            try {
-                const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
-                const itemProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
-                
-                const getItemRes = await fetch(itemProxy);
-                if (!getItemRes.ok) {
-                    return { success: false, error: `GET item ${getItemRes.status}` };
-                }
-                
-                const itemData = await getItemRes.json();
-                const xVersion = getItemRes.headers.get('x-version');
-                
-                const updateBody = { available_quantity: quantidade };
-                const headers = { 'Content-Type': 'application/json' };
-                if (xVersion) headers['x-version'] = xVersion;
-                
-                const putItemRes = await fetch(itemProxy, {
-                    method: 'PUT',
-                    headers: headers,
-                    body: JSON.stringify(updateBody)
-                });
-                
-                if (putItemRes.ok) {
-                    console.log(`✅ [FULL] Item principal atualizado para ${quantidade}`);
-                    return { success: true, method: 'item_principal' };
-                } else {
-                    const errorText = await putItemRes.text();
-                    if (errorText.includes('not_modifiable') || errorText.includes('field_not_updatable')) {
-                        return { 
-                            success: false, 
-                            error: 'FULL - atualize manualmente no ML',
-                            tipo: 'full_puro'
+
+
+                        const url =
+                            `https://api.mercadolibre.com/user-products/${encodeURIComponent(
+                                userProductId
+                            )}/stock/type/${encodeURIComponent(
+                                tipo
+                            )}`;
+
+
+                        const proxy =
+                            `${workerUrl}/api/ml/proxy?url=` +
+                            `${encodeURIComponent(url)}` +
+                            `&token=${encodeURIComponent(token)}`;
+
+
+                        const response =
+                            await fetch(
+                                proxy,
+                                {
+
+                                    method:
+                                        'PUT',
+
+                                    headers: {
+
+                                        'Content-Type':
+                                            'application/json',
+
+                                        'x-version':
+                                            stockAtual.xVersion
+                                    },
+
+                                    body:
+                                        JSON.stringify(
+                                            body
+                                        )
+                                }
+                            );
+
+
+                        if (
+                            response.ok
+                        ) {
+
+                            return {
+
+                                success:
+                                    true,
+
+                                method:
+                                    `user_product_${tipo}`,
+
+                                status:
+                                    response.status
+                            };
+                        }
+
+
+                        const texto =
+                            await response
+                                .text()
+                                .catch(
+                                    () => ''
+                                );
+
+
+                        // =============================================
+                        // 409 = x-version mudou.
+                        //
+                        // O while consulta novamente e tenta 1 vez.
+                        // =============================================
+
+                        if (
+                            response.status ===
+                                409 &&
+                            tentativa <
+                                2
+                        ) {
+
+                            console.warn(
+                                `⚠️ ${userProductId}: x-version alterado. Tentando novamente...`
+                            );
+
+
+                            continue;
+                        }
+
+
+                        return {
+
+                            success:
+                                false,
+
+                            status:
+                                response.status,
+
+                            error:
+                                texto ||
+                                `HTTP ${response.status}`
                         };
                     }
-                    return { success: false, error: `item ${putItemRes.status}` };
+
+
+                    return {
+
+                        success:
+                            false,
+
+                        error:
+                            'Não foi possível atualizar estoque após atualizar x-version.'
+                    };
+                };
+
+
+            try {
+
+                const stock =
+                    await consultarStock();
+
+
+                const locations =
+                    Array.isArray(
+                        stock
+                            ?.data
+                            ?.locations
+                    )
+                        ? stock.data.locations
+                        : [];
+
+
+                const warehouses =
+                    locations.filter(
+                        location =>
+                            String(
+                                location
+                                    ?.type ||
+                                ''
+                            )
+                                .toLowerCase() ===
+                            'seller_warehouse'
+                    );
+
+
+                const sellingAddress =
+                    locations.find(
+                        location =>
+                            String(
+                                location
+                                    ?.type ||
+                                ''
+                            )
+                                .toLowerCase() ===
+                            'selling_address'
+                    );
+
+
+                // =================================================
+                // SELLER WAREHOUSE
+                //
+                // Multi Origem.
+                // =================================================
+
+                if (
+                    warehouses.length ===
+                    1
+                ) {
+
+                    const warehouse =
+                        warehouses[0];
+
+
+                    const resultado =
+                        await atualizarComVersao(
+                            'seller_warehouse',
+                            {
+
+                                locations: [
+                                    {
+
+                                        store_id:
+                                            warehouse
+                                                .store_id,
+
+                                        network_node_id:
+                                            warehouse
+                                                .network_node_id,
+
+                                        quantity:
+                                            Number(
+                                                quantidade ||
+                                                0
+                                            )
+                                    }
+                                ]
+                            }
+                        );
+
+
+                    if (
+                        resultado.success
+                    ) {
+
+                        console.log(
+                            `✅ [FULL→LOCAL] ${userProductId}: seller_warehouse = ${quantidade}`
+                        );
+
+
+                        return {
+
+                            ...resultado,
+
+                            user_product_id:
+                                userProductId,
+
+                            variation_id:
+                                variacaoAlvo
+                                    ?.id ||
+                                null,
+
+                            estoque_enviado:
+                                quantidade
+                        };
+                    }
+
+
+                    console.warn(
+                        `⚠️ seller_warehouse falhou:`,
+                        resultado
+                    );
                 }
-            } catch (e) {
-                console.warn('⚠️ Método item principal falhou:', e.message);
-                return { success: false, error: e.message };
+
+
+                // =================================================
+                // MAIS DE UM DEPÓSITO
+                //
+                // Não vamos colocar a quantidade total em TODOS
+                // porque duplicaria artificialmente o estoque.
+                // =================================================
+
+                if (
+                    warehouses.length >
+                    1
+                ) {
+
+                    console.warn(
+                        `⚠️ ${userProductId} possui ${warehouses.length} seller_warehouse. Não é seguro distribuir automaticamente.`
+                    );
+
+
+                    return {
+
+                        success:
+                            false,
+
+                        tipo:
+                            'multiplos_warehouses',
+
+                        error:
+                            'O User Product possui mais de um depósito local. É necessário definir como distribuir o estoque entre eles.',
+
+                        user_product_id:
+                            userProductId
+                    };
+                }
+
+
+                // =================================================
+                // SELLING ADDRESS
+                // =================================================
+
+                if (
+                    sellingAddress
+                ) {
+
+                    const resultado =
+                        await atualizarComVersao(
+                            'selling_address',
+                            {
+
+                                quantity:
+                                    Number(
+                                        quantidade ||
+                                        0
+                                    )
+                            }
+                        );
+
+
+                    if (
+                        resultado.success
+                    ) {
+
+                        console.log(
+                            `✅ [FULL→LOCAL] ${userProductId}: selling_address = ${quantidade}`
+                        );
+
+
+                        return {
+
+                            ...resultado,
+
+                            user_product_id:
+                                userProductId,
+
+                            variation_id:
+                                variacaoAlvo
+                                    ?.id ||
+                                null,
+
+                            estoque_enviado:
+                                quantidade
+                        };
+                    }
+
+
+                    console.warn(
+                        `⚠️ selling_address falhou:`,
+                        resultado
+                    );
+                }
+
+
+            } catch (
+                erroUserProduct
+            ) {
+
+                console.warn(
+                    `⚠️ User Product ${userProductId}:`,
+                    erroUserProduct
+                );
             }
-            
-        } catch (error) {
-            console.error(`❌ [FULL] Erro:`, error);
-            return { success: false, error: error.message };
         }
+
+
+        // =====================================================
+        // FALLBACK
+        //
+        // Se não existe estoque distribuído editável,
+        // tenta available_quantity normal.
+        // =====================================================
+
+        if (
+            variacaoAlvo
+                ?.id
+        ) {
+
+            try {
+
+                const url =
+                    `https://api.mercadolibre.com/items/${encodeURIComponent(
+                        itemId
+                    )}/variations/${encodeURIComponent(
+                        variacaoAlvo.id
+                    )}`;
+
+
+                const proxy =
+                    `${workerUrl}/api/ml/proxy?url=` +
+                    `${encodeURIComponent(url)}` +
+                    `&token=${encodeURIComponent(token)}`;
+
+
+                const response =
+                    await fetch(
+                        proxy,
+                        {
+
+                            method:
+                                'PUT',
+
+                            headers: {
+
+                                'Content-Type':
+                                    'application/json'
+                            },
+
+                            body:
+                                JSON.stringify({
+
+                                    available_quantity:
+                                        Number(
+                                            quantidade ||
+                                            0
+                                        )
+                                })
+                        }
+                    );
+
+
+                if (
+                    response.ok
+                ) {
+
+                    console.log(
+                        `✅ [FULL→LOCAL] Variação ${variacaoAlvo.id} atualizada via available_quantity`
+                    );
+
+
+                    return {
+
+                        success:
+                            true,
+
+                        method:
+                            'variation_available_quantity',
+
+                        variation_id:
+                            variacaoAlvo.id,
+
+                        estoque_enviado:
+                            quantidade
+                    };
+                }
+
+
+                const texto =
+                    await response
+                        .text()
+                        .catch(
+                            () => ''
+                        );
+
+
+                console.warn(
+                    `⚠️ Variação ${variacaoAlvo.id}: HTTP ${response.status} ${texto}`
+                );
+
+
+            } catch (
+                error
+            ) {
+
+                console.warn(
+                    '⚠️ Fallback variação:',
+                    error
+                );
+            }
+
+
+        } else {
+
+            try {
+
+                const url =
+                    `https://api.mercadolibre.com/items/${encodeURIComponent(
+                        itemId
+                    )}`;
+
+
+                const proxy =
+                    `${workerUrl}/api/ml/proxy?url=` +
+                    `${encodeURIComponent(url)}` +
+                    `&token=${encodeURIComponent(token)}`;
+
+
+                const response =
+                    await fetch(
+                        proxy,
+                        {
+
+                            method:
+                                'PUT',
+
+                            headers: {
+
+                                'Content-Type':
+                                    'application/json'
+                            },
+
+                            body:
+                                JSON.stringify({
+
+                                    available_quantity:
+                                        Number(
+                                            quantidade ||
+                                            0
+                                        )
+                                })
+                        }
+                    );
+
+
+                if (
+                    response.ok
+                ) {
+
+                    console.log(
+                        `✅ [FULL→LOCAL] ${itemId}: available_quantity = ${quantidade}`
+                    );
+
+
+                    return {
+
+                        success:
+                            true,
+
+                        method:
+                            'item_available_quantity',
+
+                        estoque_enviado:
+                            quantidade
+                    };
+                }
+
+
+                const texto =
+                    await response
+                        .text()
+                        .catch(
+                            () => ''
+                        );
+
+
+                console.warn(
+                    `⚠️ ${itemId}: ${response.status} ${texto}`
+                );
+
+
+            } catch (
+                error
+            ) {
+
+                console.warn(
+                    '⚠️ Fallback item:',
+                    error
+                );
+            }
+        }
+
+
+        return {
+
+            success:
+                false,
+
+            tipo:
+                'full_sem_estoque_local_editavel',
+
+            error:
+                'Não foi possível disponibilizar estoque local para este anúncio FULL.'
+        };
+
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            `❌ [FULL→LOCAL] ${itemId}:`,
+            error
+        );
+
+
+        return {
+
+            success:
+                false,
+
+            error:
+                error.message
+        };
     }
+}
 
     // ===== OBTER REGRA PARA RAIOS =====
     function obterRegraRaios(marca, modelo) {
@@ -18883,8 +19460,11 @@ try {
             }
 
             // ===== FULL COM CONVIVÊNCIA =====
-            if (isFulfillment && hasSelfService) {
-                console.log(`📦 Item ${itemId} é FULL com CONVIVÊNCIA (Full+Flex)`);
+                if (isFulfillment && hasSelfService) {
+                console.log(forcarLocalFullZero
+                            ? `🚨 Item ${itemId}: FULL zerou → acionando fluxo LOCAL`
+                            : `📦 Item ${itemId}: FULL com convivência`
+                            );
                 
                 let userProductId = null;
                 
@@ -18920,9 +19500,26 @@ try {
 
                 console.log(`📊 [FULL] Quantidade a ser enviada: ${quantidadeParaEnviar}`);
 
-                const resultado = await atualizarEstoqueFullConvivio(
-                    itemId, userProductId, quantidadeParaEnviar, token, WORKER_URL, item
-                );
+                const variacaoAlvoFull =
+                    item.variations &&
+                    item.variations.length > 0
+
+                        ? encontrarVariacaoPorSKU(
+                            item,
+                            skuProduto
+                        )
+                        : null;
+
+                const resultado =
+                    await atualizarEstoqueFullConvivio(
+                        itemId,
+                        userProductId,
+                        quantidadeParaEnviar,
+                        token,
+                        WORKER_URL,
+                        item,
+                        variacaoAlvoFull
+                    );
 
                 if (resultado.success) {
                     results.push({ 
@@ -18946,22 +19543,22 @@ try {
 
             // ===== FULL PURO =====
             if (isFulfillment && !hasSelfService) {
-                console.log(`📦 Item ${itemId} é FULL PURO (sem convivência)`);
-                const skuAnuncioLocal = obterSkuAnuncio(item, skuProduto);
-                
-                results.push({ 
-                    codigo: itemId, 
-                    success: false, 
-                    error: 'FULL puro - atualize manualmente no ML',
-                    tipo: 'full_puro',
-                    ignorado: true,
-                    sku: skuAnuncioLocal,
-                    link: `https://www.mercadolivre.com.br/item/${itemId}`,
-                    estoque: quantidadeReal,
-                    nome: produto.nome || 'Produto'
+            console.log(`📦 Item ${itemId} é FULL PURO (sem convivência)`);
+
+            const skuAnuncioLocal = obterSkuAnuncio(item, skuProduto);
+             results.push({          
+                codigo: itemId,
+                success: false,
+                error: 'FULL puro - atualize manualmente no ML',
+                tipo: 'full_puro',
+                ignorado: true,
+                sku: skuAnuncioLocal,
+                link: `https://www.mercadolivre.com.br/item/${itemId}`,
+                estoque: quantidadeReal,
+                nome: produto.nome || 'Produto'
                 });
-                continue;
-            }
+    continue;
+}
 
 // ===== ITEM NORMAL =====
 console.log(
@@ -19855,162 +20452,6 @@ function fecharModalFullDetectados() {
     }
     fullDetectados = [];
     fullConfirmados = new Set();
-}
-
-async function atualizarEstoqueFullConvivio(itemId, userProductId, quantidade, token, workerUrl, item) {
-    try {
-        console.log(`📦 [FULL] Atualizando estoque do item ${itemId} para ${quantidade} unidades`);
-        
-        // 🔥 VERIFICA SE O USER_PRODUCT_ID É VÁLIDO
-        if (!userProductId) {
-            console.warn('⚠️ userProductId vazio, tentando obter do item...');
-            if (item && item.user_product_id) {
-                userProductId = item.user_product_id;
-            } else {
-                return { success: false, error: 'user_product_id não disponível' };
-            }
-        }
-        
-        // Método 1: /items/{item_id}/stock
-        const stockUrl = `https://api.mercadolibre.com/items/${itemId}/stock`;
-        const stockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(stockUrl)}&token=${encodeURIComponent(token)}`;
-        
-        try {
-            const getStockRes = await fetch(stockProxy);
-            if (getStockRes.ok) {
-                const stockData = await getStockRes.json();
-                const requestBody = { available_quantity: quantidade };
-                
-                const updateRes = await fetch(stockProxy, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody)
-                });
-                
-                if (updateRes.status === 200 || updateRes.status === 204) {
-                    console.log(`✅ [FULL] Estoque atualizado para ${quantidade} (${itemId}) via /items/stock`);
-                    return { success: true, method: 'items_stock' };
-                }
-            }
-        } catch (e) {
-            console.warn('⚠️ Método /items/stock falhou:', e.message);
-        }
-        
-        // Método 2: /user-products/{userProductId}/stock
-        const userStockUrl = `https://api.mercadolibre.com/user-products/${userProductId}/stock`;
-        const userStockProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(userStockUrl)}&token=${encodeURIComponent(token)}`;
-        
-        try {
-            const getUserStockRes = await fetch(userStockProxy);
-            if (getUserStockRes.ok) {
-                const stockData = await getUserStockRes.json();
-                const locations = stockData.locations || [];
-                const updatedLocations = locations.map(loc => {
-                    if (loc.type === 'seller_warehouse' || loc.type === 'selling_address') {
-                        return { ...loc, quantity: quantidade };
-                    }
-                    return loc;
-                });
-                
-                const requestBody = { locations: updatedLocations };
-                
-                const updateRes = await fetch(userStockProxy, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(requestBody)
-                });
-                
-                if (updateRes.status === 200 || updateRes.status === 204) {
-                    console.log(`✅ [FULL] Estoque atualizado via user-products para ${quantidade}`);
-                    return { success: true, method: 'user_products_stock' };
-                }
-            }
-        } catch (e) {
-            console.warn('⚠️ Método /user-products/stock falhou:', e.message);
-        }
-        
-        // Método 3: item principal com x-version
-        const itemUrl = `https://api.mercadolibre.com/items/${itemId}`;
-        const itemProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(itemUrl)}&token=${encodeURIComponent(token)}`;
-        
-        try {
-            const getItemRes = await fetch(itemProxy);
-            if (!getItemRes.ok) {
-                return { success: false, error: `GET item ${getItemRes.status}` };
-            }
-            
-            const itemData = await getItemRes.json();
-            const xVersion = getItemRes.headers.get('x-version');
-            
-            // 🔥 VERIFICA SE O ITEM TEM VARIATIONS
-            if (itemData.variations && itemData.variations.length > 0) {
-                // Tenta encontrar a variação correta
-                const skuBase = extrairSkuBase(item.seller_custom_field || '');
-                let variacaoEncontrada = null;
-                
-                for (const v of itemData.variations) {
-                    const vSku = v.seller_custom_field || '';
-                    const vBase = extrairSkuBase(vSku);
-                    if (vBase === skuBase) {
-                        variacaoEncontrada = v;
-                        break;
-                    }
-                }
-                
-                if (variacaoEncontrada) {
-                    const varUpdateUrl = `https://api.mercadolibre.com/items/${itemId}/variations/${variacaoEncontrada.id}`;
-                    const varProxy = `${workerUrl}/api/ml/proxy?url=${encodeURIComponent(varUpdateUrl)}&token=${encodeURIComponent(token)}`;
-                    
-                    const varUpdateRes = await fetch(varProxy, {
-                        method: 'PUT',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            ...(xVersion && { 'x-version': xVersion })
-                        },
-                        body: JSON.stringify({ available_quantity: quantidade })
-                    });
-                    
-                    if (varUpdateRes.ok) {
-                        console.log(`✅ [FULL] Variação ${variacaoEncontrada.id} atualizada para ${quantidade}`);
-                        return { success: true, method: 'variation_update' };
-                    }
-                }
-            }
-            
-            // Atualiza o item principal
-            const updateBody = { available_quantity: quantidade };
-            const headers = { 'Content-Type': 'application/json' };
-            if (xVersion) headers['x-version'] = xVersion;
-            
-            const putItemRes = await fetch(itemProxy, {
-                method: 'PUT',
-                headers: headers,
-                body: JSON.stringify(updateBody)
-            });
-            
-            if (putItemRes.ok) {
-                console.log(`✅ [FULL] Item principal atualizado para ${quantidade}`);
-                return { success: true, method: 'item_principal' };
-            } else {
-                const errorText = await putItemRes.text();
-                if (errorText.includes('not_modifiable') || errorText.includes('field_not_updatable')) {
-                    return { 
-                        success: false, 
-                        error: 'FULL - atualize manualmente no ML',
-                        tipo: 'full_puro'
-                    };
-                }
-                return { success: false, error: `item ${putItemRes.status}` };
-            }
-        } catch (e) {
-            console.warn('⚠️ Método item principal falhou:', e.message);
-            return { success: false, error: e.message };
-        }
-        
-    } catch (error) {
-        console.error(`❌ [FULL] Erro:`, error);
-        return { success: false, error: error.message };
-    }
 }
 
 window.sincronizarProdutoML = async function(produtoId) {

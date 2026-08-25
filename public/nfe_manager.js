@@ -8385,52 +8385,64 @@ async function mostrarTodasVendasCacheNFE() {
 
 async function atualizarVendasDataSelecionada() {
 
-    window
-        ._nfeFiltroTodas =
+    window._nfeFiltroTodas =
         false;
+
 
     const input =
         document.getElementById(
             'filtroDataEnvioNFE'
         );
 
+
     const data =
         input?.value ||
         obterDataHojeLocal();
+
 
     const status =
         document.getElementById(
             'statusAtualizacaoNFE'
         );
 
+
     const btn =
         document.getElementById(
             'btnAtualizarDataNFE'
         );
 
+
     const textoOriginal =
         btn?.innerHTML ||
         '';
 
+
     try {
 
-        if (status) {
+        if (
+            status
+        ) {
 
             status.textContent =
                 'Atualizando vendas...';
         }
 
-        if (btn) {
+
+        if (
+            btn
+        ) {
 
             btn.disabled =
                 true;
+
 
             btn.innerHTML =
                 '<span class="spinner"></span> Atualizando...';
         }
 
+
         // =====================================================
-        // MOSTRAR CACHE IMEDIATAMENTE
+        // CACHE PRIMEIRO
         // =====================================================
 
         const cache =
@@ -8438,12 +8450,14 @@ async function atualizarVendasDataSelecionada() {
                 data
             );
 
+
         renderizarVendasNFETabela(
             cache
         );
 
+
         // =====================================================
-        // SINCRONIZAR
+        // VENDAS ML
         // =====================================================
 
         await sincronizarVendasPendentesML(
@@ -8451,14 +8465,16 @@ async function atualizarVendasDataSelecionada() {
             true
         );
 
+
         // =====================================================
-        // VERIFICAR CANCELAMENTOS E DEVOLVER ESTOQUE
+        // CANCELAMENTOS
         // =====================================================
 
         await verificarCancelamentosVendasNFE();
 
+
         // =====================================================
-        // RECARREGAR CACHE
+        // CACHE ATUALIZADO
         // =====================================================
 
         const atualizado =
@@ -8466,9 +8482,11 @@ async function atualizarVendasDataSelecionada() {
                 data
             );
 
+
         renderizarVendasNFETabela(
             atualizado
         );
+
 
         localStorage.setItem(
             `nfe_sync_${data}`,
@@ -8477,16 +8495,70 @@ async function atualizarVendasDataSelecionada() {
             )
         );
 
-        if (status) {
+
+        if (
+            status
+        ) {
 
             status.textContent =
-                `Atualizado às ${new Date().toLocaleTimeString('pt-BR')}`;
+                'Vendas atualizadas. Conferindo estoques...';
         }
 
+
         showToast(
-            `✅ ${atualizado.length} venda(s) com envio em ${formatarDataNFE(data)}`,
+            `✅ ${atualizado.length} venda(s) atualizada(s). Conferindo estoques dos anúncios...`,
             'success'
         );
+
+
+        // =====================================================
+        // CONFERIR ESTOQUES EM SEGUNDO PLANO
+        //
+        // FULL + ME + ANÚNCIOS ZERADOS
+        // =====================================================
+
+        verificarMonitorFullVendasNFE({
+
+            forcar:
+                true
+
+        })
+            .then(
+                () => {
+
+                    if (
+                        status
+                    ) {
+
+                        status.textContent =
+                            `Atualizado às ${new Date().toLocaleTimeString(
+                                'pt-BR'
+                            )}`;
+                    }
+
+
+                    aplicarEstadosFullTabelaNFE();
+                }
+            )
+            .catch(
+                error => {
+
+                    console.warn(
+                        '⚠️ Conferência de estoque:',
+                        error
+                    );
+
+
+                    if (
+                        status
+                    ) {
+
+                        status.textContent =
+                            'Vendas atualizadas; houve erro ao conferir alguns estoques.';
+                    }
+                }
+            );
+
 
     } catch (
         error
@@ -8497,23 +8569,31 @@ async function atualizarVendasDataSelecionada() {
             error
         );
 
-        if (status) {
+
+        if (
+            status
+        ) {
 
             status.textContent =
                 'Erro na atualização';
         }
+
 
         showToast(
             `❌ Erro ao atualizar vendas: ${error.message}`,
             'error'
         );
 
+
     } finally {
 
-        if (btn) {
+        if (
+            btn
+        ) {
 
             btn.disabled =
                 false;
+
 
             btn.innerHTML =
                 textoOriginal ||
@@ -19977,6 +20057,664 @@ async function consultarEstoqueUserProductFullNFE(
     }
 }
 
+function montarChaveAlertaEstoqueVendaNFE(
+    vendaOuId,
+    mlb
+) {
+
+    const vendaId =
+        normalizarOrderIdML(
+            typeof vendaOuId === 'object'
+                ? (
+                    vendaOuId?.id_venda_ml ||
+                    vendaOuId?.id
+                )
+                : vendaOuId
+        );
+
+
+    mlb =
+        normalizarMLBFullNFE(
+            mlb
+        );
+
+
+    if (
+        !vendaId ||
+        !mlb
+    ) {
+
+        return '';
+    }
+
+
+    return `${vendaId}|${mlb}`;
+}
+
+
+// =========================================================
+// DETALHES / VARIAÇÕES DESTE MLB QUE PARTICIPARAM DA VENDA
+// =========================================================
+
+function obterDetalhesVendaNoMLBNFE(
+    situacao,
+    venda,
+    mlb
+) {
+
+    mlb =
+        normalizarMLBFullNFE(
+            mlb
+        );
+
+
+    const todos =
+        Array.isArray(
+            situacao?.detalhes
+        )
+            ? situacao.detalhes
+            : [];
+
+
+    const orderItems =
+        Array.isArray(
+            venda?.order_items
+        )
+            ? venda.order_items.filter(
+                orderItem =>
+                    normalizarMLBFullNFE(
+                        orderItem
+                            ?.item
+                            ?.id
+                    ) ===
+                    mlb
+            )
+            : [];
+
+
+    const variationIds =
+        new Set(
+            orderItems
+                .map(
+                    orderItem =>
+                        orderItem
+                            ?.item
+                            ?.variation_id
+                )
+                .filter(
+                    id =>
+                        id !==
+                            null &&
+                        id !==
+                            undefined
+                )
+                .map(
+                    id =>
+                        String(
+                            id
+                        )
+                )
+        );
+
+
+    if (
+        variationIds.size >
+        0
+    ) {
+
+        const encontrados =
+            todos.filter(
+                detalhe =>
+                    variationIds.has(
+                        String(
+                            detalhe
+                                .variation_id
+                        )
+                    )
+            );
+
+
+        if (
+            encontrados.length >
+            0
+        ) {
+
+            return encontrados;
+        }
+    }
+
+
+    const skus =
+        new Set(
+            orderItems
+                .map(
+                    orderItem =>
+                        String(
+                            orderItem
+                                ?.item
+                                ?.seller_sku ||
+                            ''
+                        )
+                            .trim()
+                            .toUpperCase()
+                )
+                .filter(Boolean)
+        );
+
+
+    if (
+        skus.size >
+        0
+    ) {
+
+        const porSku =
+            todos.filter(
+                detalhe =>
+                    skus.has(
+                        String(
+                            detalhe.sku ||
+                            ''
+                        )
+                            .trim()
+                            .toUpperCase()
+                    )
+            );
+
+
+        if (
+            porSku.length >
+            0
+        ) {
+
+            return porSku;
+        }
+    }
+
+
+    if (
+        todos.length ===
+        1
+    ) {
+
+        return todos;
+    }
+
+
+    return todos;
+}
+
+
+// =========================================================
+// RESUMO DO ESTOQUE ML DAS VARIAÇÕES VENDIDAS
+// =========================================================
+
+function obterResumoEstoqueAtualVendaNFE(
+    situacao,
+    venda,
+    mlb
+) {
+
+    const detalhes =
+        obterDetalhesVendaNoMLBNFE(
+            situacao,
+            venda,
+            mlb
+        );
+
+
+    const estoquesAnuncio =
+        detalhes
+            .map(
+                detalhe =>
+                    Number(
+                        detalhe
+                            .available_quantity_item
+                    )
+            )
+            .filter(
+                Number.isFinite
+            );
+
+
+    const estoquesLocal =
+        detalhes
+            .map(
+                detalhe =>
+                    detalhe
+                        .estoque_local_ml
+            )
+            .filter(
+                valor =>
+                    valor !==
+                        null &&
+                    valor !==
+                        undefined &&
+                    Number.isFinite(
+                        Number(
+                            valor
+                        )
+                    )
+            )
+            .map(Number);
+
+
+    const estoqueAnuncioMin =
+        estoquesAnuncio.length >
+        0
+
+            ? Math.min(
+                ...estoquesAnuncio
+            )
+
+            : null;
+
+
+    const estoqueAnuncioTotal =
+        estoquesAnuncio.reduce(
+            (
+                total,
+                quantidade
+            ) =>
+                total +
+                quantidade,
+            0
+        );
+
+
+    const estoqueLocalMin =
+        estoquesLocal.length >
+        0
+
+            ? Math.min(
+                ...estoquesLocal
+            )
+
+            : null;
+
+
+    const estoqueLocalTotal =
+        estoquesLocal.reduce(
+            (
+                total,
+                quantidade
+            ) =>
+                total +
+                quantidade,
+            0
+        );
+
+
+    const anuncioTemFull =
+        Boolean(
+            situacao
+                ?.item_ainda_fulfillment
+        ) ||
+        detalhes.some(
+            detalhe =>
+                detalhe
+                    .tem_meli_facility ===
+                true
+        );
+
+
+    return {
+
+        detalhes,
+
+        estoque_anuncio_min:
+            estoqueAnuncioMin,
+
+        estoque_anuncio_total:
+            estoqueAnuncioTotal,
+
+        estoque_local_min:
+            estoqueLocalMin,
+
+        estoque_local_total:
+            estoqueLocalTotal,
+
+        algum_anuncio_zerado:
+            estoquesAnuncio.some(
+                quantidade =>
+                    quantidade ===
+                    0
+            ),
+
+        algum_local_zerado:
+            estoquesLocal.some(
+                quantidade =>
+                    quantidade ===
+                    0
+            ),
+
+        todos_anuncio_positivos:
+            estoquesAnuncio.length >
+                0 &&
+            estoquesAnuncio.every(
+                quantidade =>
+                    quantidade >
+                    0
+            ),
+
+        todos_local_positivos:
+            estoquesLocal.length >
+                0 &&
+            estoquesLocal.every(
+                quantidade =>
+                    quantidade >
+                    0
+            ),
+
+        anuncio_tem_full:
+            anuncioTemFull
+    };
+}
+
+
+// =========================================================
+// BUSCAR ESTOQUE INTERNO SOMENTE DOS ITENS DESTA VENDA
+// =========================================================
+
+async function buscarProdutosCadastroVendaNFE(
+    situacao,
+    venda,
+    mlb,
+    todasVariacoes = false
+) {
+
+    const detalhes =
+        todasVariacoes
+
+            ? (
+                Array.isArray(
+                    situacao?.detalhes
+                )
+                    ? situacao.detalhes
+                    : []
+            )
+
+            : obterDetalhesVendaNoMLBNFE(
+                situacao,
+                venda,
+                mlb
+            );
+
+
+    return await buscarProdutosCadastroMLBFullNFE({
+
+        ...situacao,
+
+        detalhes
+    });
+}
+
+
+// =========================================================
+// CALCULAR QUANTAS UNIDADES DO ANÚNCIO PODERIAM SER
+// OFERTADAS COM O ESTOQUE CADASTRADO
+// =========================================================
+
+function calcularResumoCadastroAnuncioNFE(
+    cadastro
+) {
+
+    const detalhes =
+        Array.isArray(
+            cadastro?.detalhes
+        )
+            ? cadastro.detalhes
+            : [];
+
+
+    if (
+        detalhes.length ===
+        0
+    ) {
+
+        return {
+
+            tem_cadastro:
+                false,
+
+            todos_cadastrados:
+                false,
+
+            tem_estoque:
+                false,
+
+            quantidade_total_anuncio:
+                null
+        };
+    }
+
+
+    const grupos =
+        new Map();
+
+
+    detalhes.forEach(
+        item => {
+
+            const chave =
+                String(
+                    item.sku_anuncio ||
+                    'SEM_SKU'
+                );
+
+
+            if (
+                !grupos.has(
+                    chave
+                )
+            ) {
+
+                grupos.set(
+                    chave,
+                    []
+                );
+            }
+
+
+            grupos
+                .get(
+                    chave
+                )
+                .push(
+                    item
+                );
+        }
+    );
+
+
+    let todosCadastrados =
+        true;
+
+
+    let quantidadeTotal =
+        0;
+
+
+    let temEstoque =
+        false;
+
+
+    let temCadastro =
+        false;
+
+
+    for (
+        const itens
+        of grupos.values()
+    ) {
+
+        const algumNaoCadastrado =
+            itens.some(
+                item =>
+                    item.encontrado ===
+                    false
+            );
+
+
+        if (
+            algumNaoCadastrado
+        ) {
+
+            todosCadastrados =
+                false;
+
+            continue;
+        }
+
+
+        const cadastrados =
+            itens.filter(
+                item =>
+                    item.encontrado ===
+                    true
+            );
+
+
+        if (
+            cadastrados.length ===
+            0
+        ) {
+
+            todosCadastrados =
+                false;
+
+            continue;
+        }
+
+
+        temCadastro =
+            true;
+
+
+        const capacidades =
+            cadastrados.map(
+                item => {
+
+                    const estoque =
+                        Math.max(
+                            0,
+                            Number(
+                                item.estoque_atual ||
+                                0
+                            )
+                        );
+
+
+                    const precisa =
+                        Math.max(
+                            1,
+                            Number(
+                                item
+                                    .quantidade_por_anuncio ||
+                                1
+                            )
+                        );
+
+
+                    if (
+                        estoque >
+                        0
+                    ) {
+
+                        temEstoque =
+                            true;
+                    }
+
+
+                    return Math.floor(
+                        estoque /
+                        precisa
+                    );
+                }
+            );
+
+
+        quantidadeTotal +=
+            Math.min(
+                ...capacidades
+            );
+    }
+
+
+    return {
+
+        tem_cadastro:
+            temCadastro,
+
+        todos_cadastrados:
+            todosCadastrados,
+
+        tem_estoque:
+            temEstoque,
+
+        quantidade_total_anuncio:
+            todosCadastrados
+                ? quantidadeTotal
+                : null
+    };
+}
+
+
+// =========================================================
+// COMPACTAR DETALHES ANTES DE SALVAR ALERTA
+// =========================================================
+
+function compactarDetalhesMonitorEstoqueNFE(
+    detalhes
+) {
+
+    return (
+        Array.isArray(
+            detalhes
+        )
+            ? detalhes
+            : []
+    )
+        .map(
+            detalhe => ({
+
+                variation_id:
+                    detalhe.variation_id ??
+                    null,
+
+                user_product_id:
+                    detalhe.user_product_id ||
+                    null,
+
+                sku:
+                    detalhe.sku ||
+                    null,
+
+                estoque_full:
+                    detalhe.estoque_full ??
+                    null,
+
+                estoque_local_ml:
+                    detalhe.estoque_local_ml ??
+                    null,
+
+                available_quantity_item:
+                    detalhe.available_quantity_item ??
+                    null,
+
+                tem_meli_facility:
+                    Boolean(
+                        detalhe
+                            .tem_meli_facility
+                    ),
+
+                consulta_ok:
+                    Boolean(
+                        detalhe
+                            .consulta_ok
+                    )
+            })
+        );
+}
 
 async function consultarSituacaoMLBFullNFE(
     mlb
@@ -19998,12 +20736,6 @@ async function consultarSituacaoMLBFullNFE(
     }
 
 
-    // =====================================================
-    // REGRA FIXA DO MLB
-    //
-    // PRIORIDADE MÁXIMA
-    // =====================================================
-
     const regraFixa =
         await obterRegraFixaTipoAnuncioNFE(
             mlb
@@ -20024,108 +20756,81 @@ async function consultarSituacaoMLBFullNFE(
         [];
 
 
-    const TAMANHO_LOTE =
-        4;
-
-
     // =====================================================
-    // ESTOQUE DE CADA USER PRODUCT / VARIAÇÃO
+    // CONSULTAR CADA USER PRODUCT
+    //
+    // Fazemos sequencialmente para respeitar melhor
+    // o limite do endpoint /stock.
     // =====================================================
 
     for (
         let i = 0;
         i < unidades.length;
-        i += TAMANHO_LOTE
+        i++
     ) {
 
-        const lote =
-            unidades.slice(
-                i,
-                i +
-                    TAMANHO_LOTE
+        const unidade =
+            unidades[
+                i
+            ];
+
+
+        const estoque =
+            await consultarEstoqueUserProductFullNFE(
+
+                unidade
+                    .user_product_id,
+
+                token
             );
 
 
-        const respostas =
-            await Promise.all(
+        detalhes.push({
 
-                lote.map(
-                    unidade =>
-                        consultarEstoqueUserProductFullNFE(
+            ...unidade,
 
-                            unidade
-                                .user_product_id,
+            consulta_ok:
+                estoque.success,
 
-                            token
-                        )
-                )
-            );
+            estoque_full:
+                estoque
+                    .estoque_full,
 
+            estoque_local_ml:
+                estoque
+                    .estoque_local,
 
-        respostas.forEach(
-            (
-                estoque,
-                index
-            ) => {
+            tem_meli_facility:
+                estoque
+                    .tem_meli_facility,
 
-                const unidade =
-                    lote[
-                        index
-                    ];
+            locations:
+                estoque
+                    .locations,
 
-
-                detalhes.push({
-
-                    ...unidade,
-
-                    consulta_ok:
-                        estoque.success,
-
-                    estoque_full:
-                        estoque
-                            .estoque_full,
-
-                    estoque_local_ml:
-                        estoque
-                            .estoque_local,
-
-                    tem_meli_facility:
-                        estoque
-                            .tem_meli_facility,
-
-                    locations:
-                        estoque
-                            .locations,
-
-                    erro:
-                        estoque
-                            .error ||
-                        null
-                });
-            }
-        );
+            erro:
+                estoque
+                    .error ||
+                null
+        });
 
 
         if (
-            i +
-                TAMANHO_LOTE <
-            unidades.length
+            i <
+            unidades.length -
+                1
         ) {
 
             await new Promise(
                 resolve =>
                     setTimeout(
                         resolve,
-                        120
+                        650
                     )
             );
         }
     }
 
-
-    // =====================================================
-    // TODAS FORAM CONSULTADAS?
-    // =====================================================
 
     const todosConsultados =
         detalhes.length >
@@ -20137,18 +20842,6 @@ async function consultarSituacaoMLBFullNFE(
                 true
         );
 
-
-    // =====================================================
-    // SOMA DO FULL
-    //
-    // EX:
-    //
-    // variação A = 1
-    // variação B = 1
-    // variação C = 1
-    //
-    // TOTAL = 3
-    // =====================================================
 
     const estoqueTotalFull =
         detalhes.reduce(
@@ -20195,14 +20888,10 @@ async function consultarSituacaoMLBFullNFE(
         );
 
 
-    // =====================================================
-    // TIPO ATUAL
-    // =====================================================
-
     const listingTypeAtual =
         String(
             item
-                .listing_type_id ||
+                ?.listing_type_id ||
             ''
         )
             .trim()
@@ -20210,15 +20899,7 @@ async function consultarSituacaoMLBFullNFE(
 
 
     // =====================================================
-    // TIPO ESPERADO
-    //
-    // PRIORIDADE:
-    //
-    // 1. REGRA FIXA
-    // 2. REGRA POR QUANTIDADE
-    //
-    // Se FULL = 0, não usamos a exposição FULL porque
-    // entra no fluxo FULL → LOCAL.
+    // EXPOSIÇÃO CORRETA ENQUANTO EXISTE ESTOQUE FULL
     // =====================================================
 
     let listingTypeEsperado =
@@ -20246,11 +20927,6 @@ async function consultarSituacaoMLBFullNFE(
                 'regra_fixa';
 
 
-            console.log(
-                `🔒 [FULL NF-E] ${mlb}: regra fixa ${regraFixa.nome}`
-            );
-
-
         } else {
 
             listingTypeEsperado =
@@ -20260,14 +20936,10 @@ async function consultarSituacaoMLBFullNFE(
 
 
             origemRegraExposicao =
-                'estoque';
+                'estoque_full';
         }
     }
 
-
-    // =====================================================
-    // LOGÍSTICA
-    // =====================================================
 
     const logisticType =
         String(
@@ -20321,15 +20993,26 @@ async function consultarSituacaoMLBFullNFE(
         );
 
 
+    const aindaTemLocationFull =
+        detalhes.some(
+            detalhe =>
+                detalhe
+                    .tem_meli_facility ===
+                true
+        );
+
+
+    // =====================================================
+    // CONSIDERAMOS QUE REALMENTE SAIU DO FULL SOMENTE SE:
+    //
+    // - o item não estiver mais como fulfillment
+    // - nenhum UP continuar com meli_facility
+    // =====================================================
+
     const saiuDoFull =
-        todosFullZerados &&
-        itemAindaFulfillment ===
-            false;
+        !itemAindaFulfillment &&
+        !aindaTemLocationFull;
 
-
-    // =====================================================
-    // EXPOSIÇÃO CORRETA?
-    // =====================================================
 
     const exposicaoCorreta =
         listingTypeEsperado
@@ -20352,11 +21035,6 @@ async function consultarSituacaoMLBFullNFE(
 
         item,
 
-
-        // =============================================
-        // VARIAÇÕES
-        // =============================================
-
         total_variacoes:
             detalhes.length,
 
@@ -20364,11 +21042,6 @@ async function consultarSituacaoMLBFullNFE(
             todosConsultados,
 
         detalhes,
-
-
-        // =============================================
-        // ESTOQUE
-        // =============================================
 
         estoque_total_full:
             estoqueTotalFull,
@@ -20379,24 +21052,17 @@ async function consultarSituacaoMLBFullNFE(
         todos_full_zerados:
             todosFullZerados,
 
-
-        // =============================================
-        // FULL
-        // =============================================
-
         logistic_type:
             logisticType,
 
         item_ainda_fulfillment:
             itemAindaFulfillment,
 
+        ainda_tem_location_full:
+            aindaTemLocationFull,
+
         saiu_do_full:
             saiuDoFull,
-
-
-        // =============================================
-        // EXPOSIÇÃO
-        // =============================================
 
         listing_type_atual:
             listingTypeAtual,
@@ -20416,11 +21082,6 @@ async function consultarSituacaoMLBFullNFE(
 
         exposicao_correta:
             exposicaoCorreta,
-
-
-        // =============================================
-        // REGRA FIXA
-        // =============================================
 
         possui_regra_fixa:
             Boolean(
@@ -20688,321 +21349,6 @@ async function buscarProdutosCadastroMLBFullNFE(
     };
 }
 
-
-// =========================================================
-// RETIRAR ANÚNCIO DO FULL AUTOMATICAMENTE
-//
-// ATENÇÃO:
-//
-// A API PÚBLICA OFICIAL DO MERCADO LIVRE NÃO EXPÕE,
-// NA DOCUMENTAÇÃO ATUAL, UM ENDPOINT SUPORTADO PARA
-// DESATIVAR FULFILLMENT DO ITEM/UP.
-//
-// POR ISSO ESTA FUNÇÃO NÃO INVENTA UMA CHAMADA.
-//
-// QUANDO O ML PUBLICAR O ENDPOINT OFICIAL,
-// É SOMENTE ESTA FUNÇÃO QUE PRECISARÁ SER SUBSTITUÍDA.
-// =========================================================
-
-async function retirarAnuncioDoFullAutomaticamenteNFE(
-    mlb,
-    situacao
-) {
-
-    mlb =
-        normalizarMLBFullNFE(
-            mlb
-        );
-
-
-    if (
-        !mlb
-    ) {
-
-        return {
-
-            success:
-                false,
-
-            automatico:
-                false,
-
-            error:
-                'MLB inválido'
-        };
-    }
-
-
-    if (
-        !situacao
-            ?.todos_full_zerados
-    ) {
-
-        return {
-
-            success:
-                false,
-
-            automatico:
-                false,
-
-            error:
-                'Ainda existe estoque disponível no FULL'
-        };
-    }
-
-
-    // =====================================================
-    // SE JÁ SAIU DO FULL ANTES DA VERIFICAÇÃO,
-    // CONSIDERAMOS A ETAPA CUMPRIDA.
-    // =====================================================
-
-    if (
-        situacao
-            .saiu_do_full
-    ) {
-
-        return {
-
-            success:
-                true,
-
-            automatico:
-                false,
-
-            ja_retirado:
-                true
-        };
-    }
-
-
-    return {
-
-        success:
-            false,
-
-        automatico:
-            false,
-
-        precisa_intervencao:
-            true,
-
-        error:
-            'A API pública do Mercado Livre não disponibiliza uma operação suportada para retirar o anúncio do Fulfillment automaticamente.'
-    };
-}
-
-
-// =========================================================
-// SINCRONIZAR TODOS OS PRODUTOS CADASTRADOS
-//
-// ESSA FUNÇÃO SÓ PODE SER CHAMADA DEPOIS QUE
-// situacao.saiu_do_full === true
-// =========================================================
-
-async function sincronizarProdutosCadastroDepoisFullNFE(
-    mlb,
-    situacao
-) {
-
-    mlb =
-        normalizarMLBFullNFE(
-            mlb
-        );
-
-
-    if (
-        !situacao
-            ?.saiu_do_full
-    ) {
-
-        return {
-
-            success:
-                false,
-
-            bloqueado:
-                true,
-
-            error:
-                'Sincronização local bloqueada: o anúncio ainda não foi confirmado fora do FULL.',
-
-            resultados:
-                []
-        };
-    }
-
-
-    if (
-        typeof window
-            .sincronizarEstoqueML !==
-        'function'
-    ) {
-
-        return {
-
-            success:
-                false,
-
-            error:
-                'window.sincronizarEstoqueML não está disponível.',
-
-            resultados:
-                []
-        };
-    }
-
-
-    const cadastro =
-        await buscarProdutosCadastroMLBFullNFE(
-            situacao
-        );
-
-
-    const produtos =
-        cadastro.produtos;
-
-
-    const resultados =
-        [];
-
-
-    for (
-        const produto
-        of produtos
-    ) {
-
-        try {
-
-            console.log(
-                `🚀 [FULL→LOCAL] ${mlb} | sincronizando ${produto.sku} | cadastro ${produto.quantidade}`
-            );
-
-
-            const resposta =
-                await window
-                    .sincronizarEstoqueML(
-                        produto
-                    );
-
-
-            const sucesso =
-                !resposta ||
-                resposta.success !==
-                    false;
-
-
-            resultados.push({
-
-                produto_id:
-                    produto.id,
-
-                sku:
-                    produto.sku,
-
-                nome:
-                    produto.nome ||
-                    '',
-
-                estoque_cadastro:
-                    Number(
-                        produto.quantidade ||
-                        0
-                    ),
-
-                success:
-                    sucesso,
-
-                resposta:
-                    resposta ||
-                    null
-            });
-
-
-        } catch (
-            error
-        ) {
-
-            console.error(
-                `❌ [FULL→LOCAL] Erro ${produto.sku}:`,
-                error
-            );
-
-
-            resultados.push({
-
-                produto_id:
-                    produto.id,
-
-                sku:
-                    produto.sku,
-
-                nome:
-                    produto.nome ||
-                    '',
-
-                estoque_cadastro:
-                    Number(
-                        produto.quantidade ||
-                        0
-                    ),
-
-                success:
-                    false,
-
-                error:
-                    error.message
-            });
-        }
-
-
-        await new Promise(
-            resolve =>
-                setTimeout(
-                    resolve,
-                    150
-                )
-        );
-    }
-
-
-    const cadastradosNaoEncontrados =
-        cadastro.detalhes
-            .filter(
-                item =>
-                    item.encontrado ===
-                    false
-            );
-
-
-    const falhas =
-        resultados.filter(
-            resultado =>
-                resultado.success ===
-                false
-        );
-
-
-    return {
-
-        success:
-            falhas.length ===
-            0,
-
-        produtos_encontrados:
-            produtos.length,
-
-        produtos_nao_cadastrados:
-            cadastradosNaoEncontrados.length,
-
-        resultados,
-
-        nao_cadastrados:
-            cadastradosNaoEncontrados
-    };
-}
-
-
 async function salvarEstadoFullNFE(
     estado
 ) {
@@ -21013,8 +21359,29 @@ async function salvarEstadoFullNFE(
         );
 
 
+    const vendaId =
+        normalizarOrderIdML(
+            estado
+                ?.venda_id_origem
+        );
+
+
+    const chaveAlerta =
+        String(
+            estado
+                ?.chave_alerta ||
+            montarChaveAlertaEstoqueVendaNFE(
+                vendaId,
+                mlb
+            )
+        )
+            .trim();
+
+
     if (
-        !mlb
+        !mlb ||
+        !vendaId ||
+        !chaveAlerta
     ) {
 
         return false;
@@ -21025,19 +21392,25 @@ async function salvarEstadoFullNFE(
         window
             ._estadosFullNFE
             .get(
-                mlb
+                chaveAlerta
             ) ||
         {};
 
 
+    const ativo =
+        Boolean(
+            estado.ativo
+        );
+
+
     const payload = {
+
+        chave_alerta:
+            chaveAlerta,
 
         mlb,
 
-        ativo:
-            Boolean(
-                estado.ativo
-            ),
+        ativo,
 
         status:
             estado.status ||
@@ -21045,9 +21418,7 @@ async function salvarEstadoFullNFE(
             'monitorando',
 
         venda_id_origem:
-            estado.venda_id_origem ||
-            anterior.venda_id_origem ||
-            null,
+            vendaId,
 
         full_total:
             estado.full_total ??
@@ -21055,18 +21426,18 @@ async function salvarEstadoFullNFE(
             null,
 
         listing_type_atual:
-            estado.listing_type_atual ||
-            anterior.listing_type_atual ||
+            estado.listing_type_atual ??
+            anterior.listing_type_atual ??
             null,
 
         listing_type_esperado:
-            estado.listing_type_esperado ||
-            anterior.listing_type_esperado ||
+            estado.listing_type_esperado ??
+            anterior.listing_type_esperado ??
             null,
 
         mensagem:
-            estado.mensagem ||
-            anterior.mensagem ||
+            estado.mensagem ??
+            anterior.mensagem ??
             null,
 
         detalhes_variacoes:
@@ -21074,7 +21445,6 @@ async function salvarEstadoFullNFE(
                 estado.detalhes_variacoes
             )
                 ? estado.detalhes_variacoes
-
                 : (
                     Array.isArray(
                         anterior.detalhes_variacoes
@@ -21088,7 +21458,6 @@ async function salvarEstadoFullNFE(
                 estado.estoque_local
             )
                 ? estado.estoque_local
-
                 : (
                     Array.isArray(
                         anterior.estoque_local
@@ -21098,18 +21467,7 @@ async function salvarEstadoFullNFE(
                 ),
 
         detalhes_sync:
-            Array.isArray(
-                estado.detalhes_sync
-            )
-                ? estado.detalhes_sync
-
-                : (
-                    Array.isArray(
-                        anterior.detalhes_sync
-                    )
-                        ? anterior.detalhes_sync
-                        : []
-                ),
+            [],
 
         resumo_automatico: {
 
@@ -21125,18 +21483,15 @@ async function salvarEstadoFullNFE(
         },
 
         full_retirado_confirmado:
-            estado.full_retirado_confirmado ??
-            anterior.full_retirado_confirmado ??
-            false,
+            Boolean(
+                estado
+                    .full_retirado_confirmado
+            ),
 
         sync_local_executado:
-            estado.sync_local_executado ??
-            anterior.sync_local_executado ??
             false,
 
         sync_local_sucesso:
-            estado.sync_local_sucesso ??
-            anterior.sync_local_sucesso ??
             null,
 
         ultima_verificacao_em:
@@ -21144,44 +21499,45 @@ async function salvarEstadoFullNFE(
                 .toISOString(),
 
         resolvido_em:
-            estado.resolvido_em ??
-            anterior.resolvido_em ??
-            null,
+            ativo
+                ? null
+                : (
+                    estado.resolvido_em ||
+                    anterior.resolvido_em ||
+                    new Date()
+                        .toISOString()
+                ),
 
         resolvido_por_username:
-            estado.resolvido_por_username ??
-            anterior.resolvido_por_username ??
+            estado
+                .resolvido_por_username ??
+            anterior
+                .resolvido_por_username ??
             null,
 
         resolvido_por_nome:
-            estado.resolvido_por_nome ??
-            anterior.resolvido_por_nome ??
+            estado
+                .resolvido_por_nome ??
+            anterior
+                .resolvido_por_nome ??
             null
     };
 
 
     // =====================================================
-    // 1. MEMÓRIA
+    // MEMÓRIA + CACHE PRIMEIRO
     // =====================================================
 
     window
         ._estadosFullNFE
         .set(
-            mlb,
+            chaveAlerta,
             payload
         );
 
 
-    // =====================================================
-    // 2. LOCALSTORAGE IMEDIATO
-    // =====================================================
-
     persistirEstadosFullLocalNFE();
 
-
-    // =====================================================
-    // 3. TELA IMEDIATA
-    // =====================================================
 
     if (
         typeof aplicarEstadosFullTabelaNFE ===
@@ -21193,7 +21549,7 @@ async function salvarEstadoFullNFE(
 
 
     // =====================================================
-    // 4. SUPABASE DEPOIS
+    // SUPABASE EM SEGUNDO PLANO DA OPERAÇÃO
     // =====================================================
 
     try {
@@ -21210,7 +21566,7 @@ async function salvarEstadoFullNFE(
                     payload,
                     {
                         onConflict:
-                            'mlb'
+                            'chave_alerta'
                     }
                 );
 
@@ -21231,7 +21587,7 @@ async function salvarEstadoFullNFE(
     ) {
 
         console.error(
-            `❌ Estado FULL ${mlb} ficou salvo localmente, mas houve erro no Supabase:`,
+            `❌ Erro salvando alerta ${chaveAlerta}:`,
             error
         );
 
@@ -21245,22 +21601,26 @@ async function carregarEstadosFullNFE(
     consultarBanco = true
 ) {
 
-    // =====================================================
-    // SEMPRE CARREGAR LOCAL PRIMEIRO
-    // =====================================================
-
     hidratarEstadosFullLocalNFE();
 
 
-    hidratarRegrasFixasTipoAnuncioLocalNFE();
+    if (
+        typeof hidratarRegrasFixasTipoAnuncioLocalNFE ===
+        'function'
+    ) {
+
+        hidratarRegrasFixasTipoAnuncioLocalNFE();
+    }
 
 
-    reconciliarEstadosFullComRegrasFixasNFE();
+    if (
+        typeof reconciliarEstadosFullComRegrasFixasNFE ===
+        'function'
+    ) {
 
+        reconciliarEstadosFullComRegrasFixasNFE();
+    }
 
-    // =====================================================
-    // SE NÃO PRECISA DO BANCO, JÁ TERMINOU
-    // =====================================================
 
     if (
         !consultarBanco
@@ -21307,18 +21667,21 @@ async function carregarEstadosFullNFE(
             .forEach(
                 estado => {
 
-                    const mlb =
-                        normalizarMLBFullNFE(
-                            estado?.mlb
-                        );
+                    const chave =
+                        String(
+                            estado
+                                ?.chave_alerta ||
+                            ''
+                        )
+                            .trim();
 
 
                     if (
-                        mlb
+                        chave
                     ) {
 
                         mapa.set(
-                            mlb,
+                            chave,
                             estado
                         );
                     }
@@ -21330,10 +21693,6 @@ async function carregarEstadosFullNFE(
             mapa;
 
 
-        // =================================================
-        // APLICAR REGRA FIXA ANTES DE SALVAR CACHE
-        // =================================================
-
         reconciliarEstadosFullComRegrasFixasNFE();
 
 
@@ -21341,11 +21700,6 @@ async function carregarEstadosFullNFE(
 
 
         aplicarEstadosFullTabelaNFE();
-
-
-        console.log(
-            `✅ ${mapa.size} estado(s) FULL atualizados pelo Supabase`
-        );
 
 
         return mapa;
@@ -21356,7 +21710,7 @@ async function carregarEstadosFullNFE(
     ) {
 
         console.warn(
-            '⚠️ Erro consultando estados FULL no Supabase. Usando cache local:',
+            '⚠️ Não foi possível atualizar alertas pelo Supabase:',
             error
         );
 
@@ -21479,25 +21833,6 @@ function instalarListenerRegrasFixasMonitorFullNFE() {
                 );
 
 
-            const alterados =
-                Array.isArray(
-                    event
-                        ?.detail
-                        ?.alterados
-                )
-                    ? event.detail.alterados
-                        .map(
-                            normalizarMLBFullNFE
-                        )
-                        .filter(Boolean)
-
-                    : [];
-
-
-            // =================================================
-            // ATUALIZAR CACHE IMEDIATAMENTE
-            // =================================================
-
             window._regrasFixasTipoAnuncioNFE =
                 regras;
 
@@ -21513,98 +21848,20 @@ function instalarListenerRegrasFixasMonitorFullNFE() {
 
 
             console.log(
-                '🔒 Monitor FULL recebeu novas regras fixas:',
-                {
-                    regras,
-                    alterados
-                }
-            );
-
-
-            // =================================================
-            // CONFERIR NO ML SOMENTE OS MLBS ALTERADOS
-            // E QUE ESTÃO NA TELA
-            //
-            // VISUAL JÁ FOI CORRIGIDO ANTES DESTA CONSULTA.
-            // =================================================
-
-            setTimeout(
-                async () => {
-
-                    for (
-                        const mlb
-                        of alterados
-                    ) {
-
-                        const venda =
-                            (
-                                Array.isArray(
-                                    vendasPendentes
-                                )
-                                    ? vendasPendentes
-                                    : []
-                            )
-                                .find(
-                                    venda =>
-                                        obterMLBsVendaFullNFE(
-                                            venda
-                                        )
-                                            .includes(
-                                                mlb
-                                            )
-                                );
-
-
-                        if (
-                            !venda
-                        ) {
-
-                            continue;
-                        }
-
-
-                        try {
-
-                            await processarMLBMonitorFullNFE(
-                                mlb,
-                                venda,
-                                {
-                                    forcar:
-                                        true
-                                }
-                            );
-
-                        } catch (
-                            error
-                        ) {
-
-                            console.warn(
-                                `⚠️ Erro reconferindo ${mlb} após alteração da regra fixa:`,
-                                error
-                            );
-                        }
-                    }
-
-
-                    aplicarEstadosFullTabelaNFE();
-
-                },
-                100
+                '🔒 Regras fixas atualizadas no monitor:',
+                regras
             );
         }
     );
 }
 
 
-// =========================================================
-// PROCESSAR UM MLB
-// =========================================================
-
 async function processarMLBMonitorFullNFE(
     mlb,
     venda = null,
     {
-        forcar = false
+        forcar = false,
+        situacaoPrecarregada = null
     } = {}
 ) {
 
@@ -21614,8 +21871,26 @@ async function processarMLBMonitorFullNFE(
         );
 
 
+    const vendaId =
+        normalizarOrderIdML(
+            venda
+                ?.id_venda_ml ||
+            venda
+                ?.id
+        );
+
+
+    const chaveAlerta =
+        montarChaveAlertaEstoqueVendaNFE(
+            vendaId,
+            mlb
+        );
+
+
     if (
-        !mlb
+        !mlb ||
+        !vendaId ||
+        !chaveAlerta
     ) {
 
         return null;
@@ -21626,24 +21901,27 @@ async function processarMLBMonitorFullNFE(
         window
             ._monitorFullNFEProcessando
             .has(
-                mlb
+                chaveAlerta
             )
     ) {
 
-        return null;
+        return (
+            window
+                ._estadosFullNFE
+                .get(
+                    chaveAlerta
+                ) ||
+            null
+        );
     }
 
-
-    // =====================================================
-    // CACHE DE CONSULTA
-    // =====================================================
 
     const ultima =
         Number(
             window
                 ._monitorFullNFEUltimaConsulta
                 .get(
-                    mlb
+                    chaveAlerta
                 ) ||
             0
         );
@@ -21661,7 +21939,7 @@ async function processarMLBMonitorFullNFE(
             window
                 ._estadosFullNFE
                 .get(
-                    mlb
+                    chaveAlerta
                 ) ||
             null
         );
@@ -21671,13 +21949,14 @@ async function processarMLBMonitorFullNFE(
     window
         ._monitorFullNFEProcessando
         .add(
-            mlb
+            chaveAlerta
         );
 
 
     try {
 
         const situacao =
+            situacaoPrecarregada ||
             await consultarSituacaoMLBFullNFE(
                 mlb
             );
@@ -21686,237 +21965,94 @@ async function processarMLBMonitorFullNFE(
         window
             ._monitorFullNFEUltimaConsulta
             .set(
-                mlb,
+                chaveAlerta,
                 Date.now()
             );
 
 
-        const vendaId =
-            normalizarOrderIdML(
-                venda?.id_venda_ml ||
-                venda?.id
+        const vendaFull =
+            Boolean(
+                venda?._is_full
+            ) ||
+            detectarVendaFullNFE(
+                venda
             );
 
 
-        const estadoAnterior =
-            window
-                ._estadosFullNFE
-                .get(
-                    mlb
-                ) ||
-            {};
-
-
-        console.log(
-            `🏭 [MONITOR FULL] ${mlb}:`,
-            situacao
-        );
-
-
         // =================================================
-        // NÃO CONSEGUIU CONSULTAR TODOS
+        // VENDA FULL
         // =================================================
 
         if (
-            !situacao
-                .todos_consultados
-        ) {
-
-            const estado = {
-
-                mlb,
-
-                ativo:
-                    estadoAnterior
-                        .ativo ||
-                    false,
-
-                status:
-                    'erro_consulta',
-
-                venda_id_origem:
-                    vendaId,
-
-                full_total:
-                    situacao
-                        .estoque_total_full,
-
-                listing_type_atual:
-                    situacao
-                        .listing_type_atual,
-
-                listing_type_esperado:
-                    situacao
-                        .listing_type_esperado,
-
-                mensagem:
-                    'Não foi possível confirmar o estoque FULL de todas as variações.',
-
-                detalhes_variacoes:
-                    situacao
-                        .detalhes,
-
-                estoque_local:
-                    estadoAnterior
-                        .estoque_local ||
-                    [],
-
-                detalhes_sync:
-                    estadoAnterior
-                        .detalhes_sync ||
-                    [],
-
-                resumo_automatico:
-                    estadoAnterior
-                        .resumo_automatico ||
-                    {},
-
-                full_retirado_confirmado:
-                    estadoAnterior
-                        .full_retirado_confirmado ||
-                    false,
-
-                sync_local_executado:
-                    estadoAnterior
-                        .sync_local_executado ||
-                    false,
-
-                sync_local_sucesso:
-                    estadoAnterior
-                        .sync_local_sucesso ??
-                    null
-            };
-
-
-            await salvarEstadoFullNFE(
-                estado
-            );
-
-
-            return estado;
-        }
-
-
-        // =================================================
-        // CENÁRIO 1
-        //
-        // TODO FULL = 0
-        // =================================================
-
-        if (
-            situacao
-                .todos_full_zerados
+            vendaFull
         ) {
 
             // =============================================
-            // JÁ FOI CONCLUÍDO ANTES
-            //
-            // NÃO SINCRONIZAR DE NOVO
+            // NÃO CONSEGUIU CONSULTAR O FULL
             // =============================================
 
             if (
-                estadoAnterior
-                    .status ===
-                    'full_zero_concluido' &&
-                estadoAnterior
-                    .sync_local_executado ===
-                    true &&
-                situacao
-                    .saiu_do_full
+                !situacao
+                    .todos_consultados
             ) {
 
-                return estadoAnterior;
-            }
+                const anterior =
+                    window
+                        ._estadosFullNFE
+                        .get(
+                            chaveAlerta
+                        );
 
 
-            // =============================================
-            // PRIMEIRA ETAPA OBRIGATÓRIA:
-            // RETIRAR FULL
-            // =============================================
+                // Não apagar um alerta válido por causa
+                // de uma falha momentânea de consulta.
+                if (
+                    anterior
+                        ?.ativo
+                ) {
 
-            const retirada =
-                await retirarAnuncioDoFullAutomaticamenteNFE(
-
-                    mlb,
-
-                    situacao
-                );
-
-
-            // =============================================
-            // NÃO CONSEGUIU RETIRAR AUTOMATICAMENTE
-            // =============================================
-
-            if (
-                !retirada.success
-            ) {
-
-                const cadastro =
-                    await buscarProdutosCadastroMLBFullNFE(
-                        situacao
-                    );
+                    return anterior;
+                }
 
 
                 const estado = {
 
+                    chave_alerta:
+                        chaveAlerta,
+
                     mlb,
-
-                    ativo:
-                        true,
-
-                    status:
-                        'full_zero_aguardando_retirada',
 
                     venda_id_origem:
                         vendaId,
 
+                    ativo:
+                        false,
+
+                    status:
+                        'erro_consulta',
+
                     full_total:
-                        0,
-
-                    listing_type_atual:
-                        situacao
-                            .listing_type_atual,
-
-                    listing_type_esperado:
                         null,
 
                     mensagem:
-                        'Todas as variações FULL zeraram. Retire o anúncio do FULL no Mercado Livre. O estoque local ainda NÃO foi sincronizado.',
+                        'Não foi possível consultar o estoque FULL.',
 
                     detalhes_variacoes:
-                        situacao
-                            .detalhes,
+                        compactarDetalhesMonitorEstoqueNFE(
+                            situacao.detalhes
+                        ),
 
                     estoque_local:
-                        cadastro
-                            .detalhes,
-
-                    detalhes_sync:
                         [],
 
                     resumo_automatico: {
 
-                        full_detectado_zero:
-                            true,
-
-                        retirada_full_automatica:
-                            false,
-
-                        estoque_local_sincronizado:
-                            false,
-
-                        motivo:
-                            retirada.error
+                        contexto:
+                            'erro'
                     },
 
                     full_retirado_confirmado:
-                        false,
-
-                    sync_local_executado:
-                        false,
-
-                    sync_local_sucesso:
-                        null
+                        false
                 };
 
 
@@ -21930,118 +22066,275 @@ async function processarMLBMonitorFullNFE(
 
 
             // =============================================
-            // FULL JÁ ESTAVA RETIRADO
-            // AGORA PODE SINCRONIZAR LOCAL
+            // TODAS AS VARIAÇÕES FULL = 0
             // =============================================
 
-            const sync =
-                await sincronizarProdutosCadastroDepoisFullNFE(
+            if (
+                situacao
+                    .estoque_total_full ===
+                0
+            ) {
+
+                const cadastro =
+                    await buscarProdutosCadastroVendaNFE(
+
+                        situacao,
+
+                        venda,
+
+                        mlb,
+
+                        true
+                    );
+
+
+                const resumoCadastro =
+                    calcularResumoCadastroAnuncioNFE(
+                        cadastro
+                    );
+
+
+                const regraFixa =
+                    situacao
+                        .regra_fixa ||
+                    null;
+
+
+                let exposicaoEsperada =
+                    regraFixa
+                        ?.tipo ||
+                    null;
+
+
+                if (
+                    !exposicaoEsperada &&
+                    resumoCadastro
+                        .quantidade_total_anuncio !==
+                        null &&
+                    resumoCadastro
+                        .quantidade_total_anuncio >
+                        0
+                ) {
+
+                    exposicaoEsperada =
+                        obterListingTypeEsperadoFullNFE(
+                            resumoCadastro
+                                .quantidade_total_anuncio
+                        );
+                }
+
+
+                const saiuDoFull =
+                    situacao
+                        .saiu_do_full ===
+                    true;
+
+
+                const estado = {
+
+                    chave_alerta:
+                        chaveAlerta,
 
                     mlb,
 
-                    situacao
+                    venda_id_origem:
+                        vendaId,
+
+                    ativo:
+                        !saiuDoFull,
+
+                    status:
+                        saiuDoFull
+                            ? 'full_zero_resolvido'
+                            : 'full_zero_aguardando_ajuste',
+
+                    full_total:
+                        0,
+
+                    listing_type_atual:
+                        situacao
+                            .listing_type_atual,
+
+                    listing_type_esperado:
+                        exposicaoEsperada,
+
+                    mensagem:
+                        saiuDoFull
+
+                            ? 'Anúncio confirmado fora do FULL.'
+
+                            : 'Todas as variações FULL zeraram. Retire o anúncio do FULL e ative o estoque manualmente.',
+
+                    detalhes_variacoes:
+                        compactarDetalhesMonitorEstoqueNFE(
+                            situacao.detalhes
+                        ),
+
+                    estoque_local:
+                        cadastro
+                            .detalhes,
+
+                    resumo_automatico: {
+
+                        contexto:
+                            'full_zero',
+
+                        estoque_cadastro_encontrado:
+                            resumoCadastro
+                                .tem_cadastro,
+
+                        tem_estoque_cadastro:
+                            resumoCadastro
+                                .tem_estoque,
+
+                        todos_cadastrados:
+                            resumoCadastro
+                                .todos_cadastrados,
+
+                        estoque_cadastro_anuncio_total:
+                            resumoCadastro
+                                .quantidade_total_anuncio,
+
+                        possui_regra_fixa:
+                            Boolean(
+                                regraFixa
+                            ),
+
+                        regra_fixa_nome:
+                            regraFixa
+                                ?.nome ||
+                            null,
+
+                        regra_fixa_tipo:
+                            regraFixa
+                                ?.tipo ||
+                            null
+                    },
+
+                    full_retirado_confirmado:
+                        saiuDoFull,
+
+                    resolvido_em:
+                        saiuDoFull
+                            ? new Date()
+                                .toISOString()
+                            : null
+                };
+
+
+                await salvarEstadoFullNFE(
+                    estado
                 );
 
 
-            const usuario =
-                obterUsuarioOperacaoNFE();
+                return estado;
+            }
+
+
+            // =============================================
+            // AINDA TEM FULL
+            //
+            // 1 → CLÁSSICO
+            // >1 → PREMIUM
+            // REGRA FIXA SEMPRE TEM PRIORIDADE
+            // =============================================
+
+            const esperado =
+                situacao
+                    .listing_type_esperado;
+
+
+            const atual =
+                situacao
+                    .listing_type_atual;
+
+
+            const correto =
+                Boolean(
+                    esperado &&
+                    atual ===
+                        esperado
+                );
 
 
             const estado = {
 
+                chave_alerta:
+                    chaveAlerta,
+
                 mlb,
-
-                ativo:
-                    sync.success ===
-                    false,
-
-                status:
-                    sync.success
-                        ? 'full_zero_concluido'
-                        : 'full_zero_sync_erro',
 
                 venda_id_origem:
                     vendaId,
 
+                ativo:
+                    !correto,
+
+                status:
+                    correto
+                        ? 'exposicao_ok'
+                        : 'exposicao_pendente',
+
                 full_total:
-                    0,
+                    situacao
+                        .estoque_total_full,
 
                 listing_type_atual:
-                    situacao
-                        .listing_type_atual,
+                    atual,
 
                 listing_type_esperado:
-                    null,
+                    esperado,
 
                 mensagem:
-                    sync.success
+                    correto
 
-                        ? 'FULL retirado e estoque local sincronizado automaticamente.'
+                        ? 'Exposição correta.'
 
-                        : 'FULL retirado, porém houve falha na sincronização do estoque local.',
+                        : (
+                            `FULL restante: ${situacao.estoque_total_full}. ` +
+                            `Atual: ${nomeListingTypeFullNFE(atual)}. ` +
+                            `Correto: ${nomeListingTypeFullNFE(esperado)}.`
+                        ),
 
                 detalhes_variacoes:
-                    situacao
-                        .detalhes,
+                    compactarDetalhesMonitorEstoqueNFE(
+                        situacao.detalhes
+                    ),
 
                 estoque_local:
-                    (
-                        await buscarProdutosCadastroMLBFullNFE(
-                            situacao
-                        )
-                    )
-                        .detalhes,
-
-                detalhes_sync:
-                    sync.resultados,
+                    [],
 
                 resumo_automatico: {
 
-                    full_detectado_zero:
-                        true,
+                    contexto:
+                        'full_exposicao',
 
-                    full_retirado_confirmado:
-                        true,
+                    possui_regra_fixa:
+                        Boolean(
+                            situacao
+                                .regra_fixa
+                        ),
 
-                    estoque_local_sincronizado:
-                        sync.success,
+                    regra_fixa_nome:
+                        situacao
+                            .regra_fixa
+                            ?.nome ||
+                        null,
 
-                    produtos_sincronizados:
-                        sync.resultados
-                            .filter(
-                                item =>
-                                    item.success
-                            )
-                            .length,
-
-                    produtos_nao_cadastrados:
-                        sync
-                            .produtos_nao_cadastrados
+                    regra_fixa_tipo:
+                        situacao
+                            .regra_fixa
+                            ?.tipo ||
+                        null
                 },
 
                 full_retirado_confirmado:
-                    true,
-
-                sync_local_executado:
-                    true,
-
-                sync_local_sucesso:
-                    sync.success,
+                    false,
 
                 resolvido_em:
-                    sync.success
+                    correto
                         ? new Date()
                             .toISOString()
-                        : null,
-
-                resolvido_por_username:
-                    sync.success
-                        ? usuario.username
-                        : null,
-
-                resolvido_por_nome:
-                    sync.success
-                        ? usuario.nome
                         : null
             };
 
@@ -22055,186 +22348,308 @@ async function processarMLBMonitorFullNFE(
         }
 
 
-// =================================================
-// CENÁRIO 2
-//
-// AINDA TEM FULL
-//
-// VERIFICAR EXPOSIÇÃO
-//
-// REGRA FIXA TEM PRIORIDADE MÁXIMA.
-// =================================================
+        // =================================================
+        // VENDA FORA DO FULL / ME
+        // =================================================
 
-const esperado =
-    situacao
-        .listing_type_esperado;
+        const resumoVenda =
+            obterResumoEstoqueAtualVendaNFE(
 
+                situacao,
 
-const atual =
-    situacao
-        .listing_type_atual;
+                venda,
 
-
-const regraFixa =
-    situacao
-        .regra_fixa ||
-    null;
-
-
-const correto =
-    esperado &&
-    atual ===
-        esperado;
-
-
-// =================================================
-// MENSAGEM
-// =================================================
-
-let mensagem;
-
-
-if (
-    regraFixa
-) {
-
-    mensagem =
-        correto
-
-            ? (
-                `${mlb} possui regra fixa: ` +
-                `${regraFixa.nome}. ` +
-                `Exposição atual correta.`
-            )
-
-            : (
-                `${mlb} possui REGRA FIXA em ` +
-                `${regraFixa.nome}. ` +
-                `Exposição atual: ` +
-                `${nomeListingTypeFullNFE(atual)}.`
+                mlb
             );
 
 
-} else {
+        // =================================================
+        // ANÚNCIO POSSUI FULL, MAS A VENDA FOI ME
+        //
+        // Se o estoque local/depósito zerou,
+        // alertar independentemente do FULL ainda ter estoque.
+        // =================================================
 
-    mensagem =
-        correto
+        if (
+            resumoVenda
+                .anuncio_tem_full &&
+            resumoVenda
+                .estoque_local_min ===
+                0
+        ) {
 
-            ? (
-                `FULL com ${situacao.estoque_total_full} ` +
-                `unidade(s). Exposição ` +
-                `${nomeListingTypeFullNFE(atual)} correta.`
-            )
+            const cadastro =
+                await buscarProdutosCadastroVendaNFE(
 
-            : (
-                `FULL com ${situacao.estoque_total_full} ` +
-                `unidade(s). Exposição atual ` +
-                `${nomeListingTypeFullNFE(atual)}, ` +
-                `mas deveria ser ` +
-                `${nomeListingTypeFullNFE(esperado)}.`
+                    situacao,
+
+                    venda,
+
+                    mlb,
+
+                    false
+                );
+
+
+            const resumoCadastro =
+                calcularResumoCadastroAnuncioNFE(
+                    cadastro
+                );
+
+
+            const estado = {
+
+                chave_alerta:
+                    chaveAlerta,
+
+                mlb,
+
+                venda_id_origem:
+                    vendaId,
+
+                ativo:
+                    true,
+
+                status:
+                    'deposito_zero',
+
+                full_total:
+                    situacao
+                        .estoque_total_full,
+
+                listing_type_atual:
+                    situacao
+                        .listing_type_atual,
+
+                listing_type_esperado:
+                    null,
+
+                mensagem:
+                    'A venda foi fora do FULL, mas o estoque local/depósito deste anúncio zerou.',
+
+                detalhes_variacoes:
+                    compactarDetalhesMonitorEstoqueNFE(
+                        resumoVenda.detalhes
+                    ),
+
+                estoque_local:
+                    cadastro
+                        .detalhes,
+
+                resumo_automatico: {
+
+                    contexto:
+                        'deposito_zero',
+
+                    estoque_local_ml:
+                        resumoVenda
+                            .estoque_local_min,
+
+                    estoque_anuncio_atual:
+                        resumoVenda
+                            .estoque_anuncio_min,
+
+                    estoque_full_atual:
+                        situacao
+                            .estoque_total_full,
+
+                    estoque_cadastro_encontrado:
+                        resumoCadastro
+                            .tem_cadastro,
+
+                    tem_estoque_cadastro:
+                        resumoCadastro
+                            .tem_estoque,
+
+                    estoque_cadastro_anuncio_total:
+                        resumoCadastro
+                            .quantidade_total_anuncio
+                },
+
+                full_retirado_confirmado:
+                    false
+            };
+
+
+            await salvarEstadoFullNFE(
+                estado
             );
-}
 
 
-const estado = {
-
-    mlb,
-
-    ativo:
-        !correto,
-
-    status:
-        correto
-            ? 'exposicao_ok'
-            : 'exposicao_pendente',
-
-    venda_id_origem:
-        vendaId,
-
-    full_total:
-        situacao
-            .estoque_total_full,
-
-    listing_type_atual:
-        atual,
-
-    listing_type_esperado:
-        esperado,
-
-    mensagem,
-
-    detalhes_variacoes:
-        situacao
-            .detalhes,
-
-    estoque_local:
-        [],
-
-    detalhes_sync:
-        [],
-
-    resumo_automatico: {
-
-        full_total:
-            situacao
-                .estoque_total_full,
-
-        exposicao_atual:
-            nomeListingTypeFullNFE(
-                atual
-            ),
-
-        exposicao_esperada:
-            nomeListingTypeFullNFE(
-                esperado
-            ),
-
-        exposicao_correta:
-            correto,
-
-        possui_regra_fixa:
-            Boolean(
-                regraFixa
-            ),
-
-        regra_fixa_tipo:
-            regraFixa
-                ?.tipo ||
-            null,
-
-        regra_fixa_nome:
-            regraFixa
-                ?.nome ||
-            null,
-
-        origem_regra_exposicao:
-            situacao
-                .origem_regra_exposicao
-    },
-
-    full_retirado_confirmado:
-        false,
-
-    sync_local_executado:
-        false,
-
-    sync_local_sucesso:
-        null,
-
-    resolvido_em:
-        correto
-            ? new Date()
-                .toISOString()
-            : null
-};
+            return estado;
+        }
 
 
-await salvarEstadoFullNFE(
-    estado
-);
+        // =================================================
+        // ANÚNCIO / VARIAÇÃO ZEROU
+        // =================================================
+
+        if (
+            resumoVenda
+                .estoque_anuncio_min ===
+                0
+        ) {
+
+            const cadastro =
+                await buscarProdutosCadastroVendaNFE(
+
+                    situacao,
+
+                    venda,
+
+                    mlb,
+
+                    false
+                );
 
 
-return estado;
+            const resumoCadastro =
+                calcularResumoCadastroAnuncioNFE(
+                    cadastro
+                );
+
+
+            const estado = {
+
+                chave_alerta:
+                    chaveAlerta,
+
+                mlb,
+
+                venda_id_origem:
+                    vendaId,
+
+                ativo:
+                    true,
+
+                status:
+                    'anuncio_zero',
+
+                full_total:
+                    situacao
+                        .estoque_total_full,
+
+                listing_type_atual:
+                    situacao
+                        .listing_type_atual,
+
+                listing_type_esperado:
+                    null,
+
+                mensagem:
+                    'O estoque do anúncio/variação zerou.',
+
+                detalhes_variacoes:
+                    compactarDetalhesMonitorEstoqueNFE(
+                        resumoVenda.detalhes
+                    ),
+
+                estoque_local:
+                    cadastro
+                        .detalhes,
+
+                resumo_automatico: {
+
+                    contexto:
+                        'anuncio_zero',
+
+                    estoque_anuncio_atual:
+                        0,
+
+                    estoque_cadastro_encontrado:
+                        resumoCadastro
+                            .tem_cadastro,
+
+                    tem_estoque_cadastro:
+                        resumoCadastro
+                            .tem_estoque,
+
+                    estoque_cadastro_anuncio_total:
+                        resumoCadastro
+                            .quantidade_total_anuncio
+                },
+
+                full_retirado_confirmado:
+                    false
+            };
+
+
+            await salvarEstadoFullNFE(
+                estado
+            );
+
+
+            return estado;
+        }
+
+
+        // =================================================
+        // FORA DO FULL E COM ESTOQUE
+        // =================================================
+
+        const estado = {
+
+            chave_alerta:
+                chaveAlerta,
+
+            mlb,
+
+            venda_id_origem:
+                vendaId,
+
+            ativo:
+                false,
+
+            status:
+                'estoque_ok',
+
+            full_total:
+                situacao
+                    .estoque_total_full,
+
+            listing_type_atual:
+                situacao
+                    .listing_type_atual,
+
+            listing_type_esperado:
+                null,
+
+            mensagem:
+                'Estoque do anúncio disponível.',
+
+            detalhes_variacoes:
+                compactarDetalhesMonitorEstoqueNFE(
+                    resumoVenda.detalhes
+                ),
+
+            estoque_local:
+                [],
+
+            resumo_automatico: {
+
+                contexto:
+                    'estoque_normal',
+
+                estoque_anuncio_atual:
+                    resumoVenda
+                        .estoque_anuncio_min,
+
+                estoque_local_ml:
+                    resumoVenda
+                        .estoque_local_min
+            },
+
+            full_retirado_confirmado:
+                false
+        };
+
+
+        await salvarEstadoFullNFE(
+            estado
+        );
+
+
+        return estado;
 
 
     } catch (
@@ -22242,7 +22657,7 @@ return estado;
     ) {
 
         console.error(
-            `❌ Monitor FULL ${mlb}:`,
+            `❌ Monitor de estoque ${mlb}:`,
             error
         );
 
@@ -22255,37 +22670,71 @@ return estado;
         window
             ._monitorFullNFEProcessando
             .delete(
-                mlb
+                chaveAlerta
             );
     }
 }
 
 
-// =========================================================
-// BOTÃO "AJUSTADO ANÚNCIO FULL"
-//
-// CONSULTA SOMENTE O MLB CLICADO.
-//
-// Se realmente saiu do FULL:
-// → sincroniza estoque interno automaticamente.
-// =========================================================
-
 async function confirmarAjusteAnuncioFullNFE(
-    mlb
+    chaveOuMlb
 ) {
 
-    mlb =
-        normalizarMLBFullNFE(
-            mlb
-        );
+    const texto =
+        String(
+            chaveOuMlb ||
+            ''
+        )
+            .trim();
+
+
+    let estado =
+        window
+            ._estadosFullNFE
+            .get(
+                texto
+            ) ||
+        null;
+
+
+    // =====================================================
+    // COMPATIBILIDADE:
+    // se recebeu somente MLB, achar o alerta ativo dele.
+    // =====================================================
+
+    if (
+        !estado
+    ) {
+
+        const mlbRecebido =
+            normalizarMLBFullNFE(
+                texto
+            );
+
+
+        estado =
+            Array.from(
+                window
+                    ._estadosFullNFE
+                    .values()
+            )
+                .find(
+                    item =>
+                        item.ativo ===
+                            true &&
+                        item.mlb ===
+                            mlbRecebido
+                ) ||
+            null;
+    }
 
 
     if (
-        !mlb
+        !estado
     ) {
 
         showToast(
-            '❌ MLB inválido',
+            '❌ Alerta não encontrado.',
             'error'
         );
 
@@ -22293,37 +22742,60 @@ async function confirmarAjusteAnuncioFullNFE(
     }
 
 
-    if (
-        window
-            ._monitorFullNFEProcessando
-            .has(
-                mlb
+    const mlb =
+        estado.mlb;
+
+
+    const vendaId =
+        normalizarOrderIdML(
+            estado
+                .venda_id_origem
+        );
+
+
+    const venda =
+        (
+            Array.isArray(
+                vendasPendentes
             )
+                ? vendasPendentes
+                : []
+        )
+            .find(
+                item =>
+                    normalizarOrderIdML(
+                        item.id_venda_ml ||
+                        item.id
+                    ) ===
+                    vendaId
+            ) ||
+        null;
+
+
+    if (
+        !venda
     ) {
 
         showToast(
-            `⏳ ${mlb} já está sendo verificado.`,
-            'warning'
+            '❌ Venda não localizada na tela.',
+            'error'
         );
 
         return;
     }
 
 
-    window
-        ._monitorFullNFEProcessando
-        .add(
-            mlb
-        );
-
-
     try {
 
         showToast(
-            `🔎 Verificando somente ${mlb}...`,
+            `🔎 Verificando ${mlb}...`,
             'info'
         );
 
+
+        // =================================================
+        // CONSULTA SOMENTE ESTE MLB
+        // =================================================
 
         const situacao =
             await consultarSituacaoMLBFullNFE(
@@ -22331,43 +22803,7 @@ async function confirmarAjusteAnuncioFullNFE(
             );
 
 
-        // =================================================
-        // FULL VOLTOU A TER ESTOQUE
-        // =================================================
-
-        if (
-            situacao
-                .estoque_total_full >
-            0
-        ) {
-
-            const venda =
-                (
-                    Array.isArray(
-                        vendasPendentes
-                    )
-                        ? vendasPendentes
-                        : []
-                )
-                    .find(
-                        venda =>
-                            obterMLBsVendaFullNFE(
-                                venda
-                            )
-                                .includes(
-                                    mlb
-                                )
-                    ) ||
-                null;
-
-
-            window
-                ._monitorFullNFEProcessando
-                .delete(
-                    mlb
-                );
-
-
+        const novoEstado =
             await processarMLBMonitorFullNFE(
 
                 mlb,
@@ -22376,247 +22812,127 @@ async function confirmarAjusteAnuncioFullNFE(
 
                 {
                     forcar:
-                        true
+                        true,
+
+                    situacaoPrecarregada:
+                        situacao
                 }
             );
 
 
-            await carregarEstadosFullNFE();
-
-
-            aplicarEstadosFullTabelaNFE();
-
+        if (
+            !novoEstado
+        ) {
 
             showToast(
-                `ℹ️ ${mlb} voltou a ter ${situacao.estoque_total_full} unidade(s) no FULL. Agora a exposição será verificada.`,
-                'info'
+                '❌ Não foi possível confirmar o ajuste.',
+                'error'
             );
-
 
             return;
         }
 
 
-        // =================================================
-        // AINDA CONSTA COMO FULFILLMENT
-        // =================================================
-
         if (
-            !situacao
-                .saiu_do_full
+            novoEstado.ativo ===
+            false
         ) {
 
-            const estadoAnterior =
-                window
-                    ._estadosFullNFE
-                    .get(
-                        mlb
-                    ) ||
-                {};
+            const usuario =
+                obterUsuarioOperacaoNFE();
 
 
             await salvarEstadoFullNFE({
 
-                ...estadoAnterior,
-
-                mlb,
+                ...novoEstado,
 
                 ativo:
-                    true,
-
-                status:
-                    'full_zero_aguardando_retirada',
-
-                full_total:
-                    0,
-
-                mensagem:
-                    `O ${mlb} ainda consta como Fulfillment no Mercado Livre. O estoque local NÃO foi sincronizado.`,
-
-                detalhes_variacoes:
-                    situacao
-                        .detalhes,
-
-                full_retirado_confirmado:
                     false,
 
-                sync_local_executado:
-                    false
+                resolvido_em:
+                    new Date()
+                        .toISOString(),
+
+                resolvido_por_username:
+                    usuario.username,
+
+                resolvido_por_nome:
+                    usuario.nome
             });
-
-
-            await carregarEstadosFullNFE();
 
 
             aplicarEstadosFullTabelaNFE();
 
 
             showToast(
-                '❌ O anúncio ainda consta como FULL. Ajuste no Mercado Livre e tente novamente.',
-                'error'
+                '✅ Ajuste confirmado. O alerta foi encerrado.',
+                'success'
             );
 
 
             return;
         }
-
-
-        // =================================================
-        // CONFIRMADO FORA DO FULL
-        //
-        // AGORA, E SOMENTE AGORA,
-        // SINCRONIZAR ESTOQUE LOCAL
-        // =================================================
-
-        showToast(
-            '✅ FULL removido. Sincronizando estoque local...',
-            'success'
-        );
-
-
-        const cadastro =
-            await buscarProdutosCadastroMLBFullNFE(
-                situacao
-            );
-
-
-        const sync =
-            await sincronizarProdutosCadastroDepoisFullNFE(
-
-                mlb,
-
-                situacao
-            );
-
-
-        const usuario =
-            obterUsuarioOperacaoNFE();
-
-
-        const estado = {
-
-            mlb,
-
-            ativo:
-                !sync.success,
-
-            status:
-                sync.success
-                    ? 'full_zero_concluido'
-                    : 'full_zero_sync_erro',
-
-            full_total:
-                0,
-
-            listing_type_atual:
-                situacao
-                    .listing_type_atual,
-
-            listing_type_esperado:
-                null,
-
-            mensagem:
-                sync.success
-
-                    ? 'FULL removido. Estoque local sincronizado automaticamente pela Gestão de Estoque.'
-
-                    : 'FULL removido, mas houve falha na sincronização local.',
-
-            detalhes_variacoes:
-                situacao
-                    .detalhes,
-
-            estoque_local:
-                cadastro
-                    .detalhes,
-
-            detalhes_sync:
-                sync
-                    .resultados,
-
-            resumo_automatico: {
-
-                full_zerado:
-                    true,
-
-                full_retirado_confirmado:
-                    true,
-
-                produtos_encontrados:
-                    sync
-                        .produtos_encontrados,
-
-                produtos_nao_cadastrados:
-                    sync
-                        .produtos_nao_cadastrados,
-
-                produtos_sincronizados:
-                    sync
-                        .resultados
-                        .filter(
-                            item =>
-                                item.success
-                        )
-                        .length,
-
-                sincronizacao_sucesso:
-                    sync.success
-            },
-
-            full_retirado_confirmado:
-                true,
-
-            sync_local_executado:
-                true,
-
-            sync_local_sucesso:
-                sync.success,
-
-            resolvido_em:
-                sync.success
-                    ? new Date()
-                        .toISOString()
-                    : null,
-
-            resolvido_por_username:
-                sync.success
-                    ? usuario.username
-                    : null,
-
-            resolvido_por_nome:
-                sync.success
-                    ? usuario.nome
-                    : null
-        };
-
-
-        await salvarEstadoFullNFE(
-            estado
-        );
-
-
-        await carregarEstadosFullNFE();
 
 
         aplicarEstadosFullTabelaNFE();
 
 
-        if (
-            sync.success
+        switch (
+            novoEstado.status
         ) {
 
-            showToast(
-                `✅ ${mlb}: FULL removido e ${sync.resultados.length} produto(s) processado(s) pela Gestão de Estoque.`,
-                'success'
-            );
+            case 'full_zero_aguardando_ajuste':
+
+                showToast(
+                    '❌ O anúncio ainda está vinculado ao FULL.',
+                    'error'
+                );
+
+                break;
 
 
-        } else {
+            case 'exposicao_pendente':
 
-            showToast(
-                `⚠️ ${mlb}: saiu do FULL, mas houve erro em parte da sincronização.`,
-                'warning'
-            );
+                showToast(
+                    `❌ A exposição ainda está ${nomeListingTypeFullNFE(
+                        novoEstado
+                            .listing_type_atual
+                    )}. O correto é ${nomeListingTypeFullNFE(
+                        novoEstado
+                            .listing_type_esperado
+                    )}.`,
+                    'error'
+                );
+
+                break;
+
+
+            case 'deposito_zero':
+
+                showToast(
+                    '❌ O estoque local/depósito ainda está zerado.',
+                    'error'
+                );
+
+                break;
+
+
+            case 'anuncio_zero':
+
+                showToast(
+                    '❌ O estoque do anúncio ainda está zerado.',
+                    'error'
+                );
+
+                break;
+
+
+            default:
+
+                showToast(
+                    '⚠️ O ajuste ainda não foi confirmado.',
+                    'warning'
+                );
         }
 
 
@@ -22625,7 +22941,7 @@ async function confirmarAjusteAnuncioFullNFE(
     ) {
 
         console.error(
-            `❌ Erro verificando ${mlb}:`,
+            `❌ Erro verificando ajuste ${mlb}:`,
             error
         );
 
@@ -22634,377 +22950,28 @@ async function confirmarAjusteAnuncioFullNFE(
             `❌ ${error.message}`,
             'error'
         );
-
-
-    } finally {
-
-        window
-            ._monitorFullNFEProcessando
-            .delete(
-                mlb
-            );
     }
 }
 
 
 async function confirmarExposicaoFullNFE(
-    mlb
+    mlb,
+    chaveAlerta = null
 ) {
 
-    mlb =
-        normalizarMLBFullNFE(
-            mlb
-        );
-
-
     if (
-        !mlb
+        chaveAlerta
     ) {
 
-        showToast(
-            '❌ MLB inválido',
-            'error'
+        return await confirmarAjusteAnuncioFullNFE(
+            chaveAlerta
         );
-
-        return;
     }
 
 
-    try {
-
-        showToast(
-            `🔎 Conferindo exposição do ${mlb}...`,
-            'info'
-        );
-
-
-        // =================================================
-        // FORÇAR RECARGA DAS REGRAS FIXAS
-        //
-        // Caso o usuário tenha acabado de alterar
-        // a lista na Gestão de Estoque.
-        // =================================================
-
-        await carregarRegrasFixasTipoAnuncioNFE(
-            true
-        );
-
-
-        const situacao =
-            await consultarSituacaoMLBFullNFE(
-                mlb
-            );
-
-
-        // =================================================
-        // FULL ZEROU ENQUANTO O ALERTA ESTAVA ABERTO
-        // =================================================
-
-        if (
-            situacao
-                .todos_full_zerados
-        ) {
-
-            const cadastro =
-                await buscarProdutosCadastroMLBFullNFE(
-                    situacao
-                );
-
-
-            await salvarEstadoFullNFE({
-
-                mlb,
-
-                ativo:
-                    true,
-
-                status:
-                    'full_zero_aguardando_retirada',
-
-                full_total:
-                    0,
-
-                listing_type_atual:
-                    situacao
-                        .listing_type_atual,
-
-                listing_type_esperado:
-                    null,
-
-                mensagem:
-                    'O estoque FULL zerou. Retire o anúncio do FULL antes da sincronização local.',
-
-                detalhes_variacoes:
-                    situacao
-                        .detalhes,
-
-                estoque_local:
-                    cadastro
-                        .detalhes,
-
-                detalhes_sync:
-                    [],
-
-                resumo_automatico: {
-
-                    mudou_de_exposicao_para_full_zero:
-                        true,
-
-                    possui_regra_fixa:
-                        Boolean(
-                            situacao
-                                .regra_fixa
-                        ),
-
-                    regra_fixa_nome:
-                        situacao
-                            .regra_fixa
-                            ?.nome ||
-                        null
-                },
-
-                full_retirado_confirmado:
-                    false,
-
-                sync_local_executado:
-                    false
-            });
-
-
-            await carregarEstadosFullNFE();
-
-
-            aplicarEstadosFullTabelaNFE();
-
-
-            showToast(
-                '⚠️ O FULL zerou. Agora é necessário retirar o anúncio do FULL.',
-                'warning'
-            );
-
-
-            return;
-        }
-
-
-        // =================================================
-        // EXPOSIÇÃO ESPERADA
-        //
-        // JÁ VEM CONSIDERANDO:
-        //
-        // 1. REGRA FIXA
-        // 2. QUANTIDADE
-        // =================================================
-
-        const esperado =
-            situacao
-                .listing_type_esperado;
-
-
-        const atual =
-            situacao
-                .listing_type_atual;
-
-
-        const regraFixa =
-            situacao
-                .regra_fixa ||
-            null;
-
-
-        const correto =
-            atual ===
-            esperado;
-
-
-        const usuario =
-            obterUsuarioOperacaoNFE();
-
-
-        let mensagem;
-
-
-        if (
-            correto
-        ) {
-
-            mensagem =
-                regraFixa
-
-                    ? (
-                        `Exposição confirmada: ` +
-                        `${regraFixa.nome} ` +
-                        `(regra fixa do MLB).`
-                    )
-
-                    : (
-                        `Exposição confirmada: ` +
-                        `${nomeListingTypeFullNFE(esperado)}.`
-                    );
-
-
-        } else {
-
-            mensagem =
-                regraFixa
-
-                    ? (
-                        `Ainda está ` +
-                        `${nomeListingTypeFullNFE(atual)}. ` +
-                        `Este MLB possui regra fixa e deve permanecer ` +
-                        `${regraFixa.nome}.`
-                    )
-
-                    : (
-                        `Ainda está ` +
-                        `${nomeListingTypeFullNFE(atual)}. ` +
-                        `Com ${situacao.estoque_total_full} ` +
-                        `unidade(s) FULL deve ficar ` +
-                        `${nomeListingTypeFullNFE(esperado)}.`
-                    );
-        }
-
-
-        await salvarEstadoFullNFE({
-
-            mlb,
-
-            ativo:
-                !correto,
-
-            status:
-                correto
-                    ? 'exposicao_ok'
-                    : 'exposicao_pendente',
-
-            full_total:
-                situacao
-                    .estoque_total_full,
-
-            listing_type_atual:
-                atual,
-
-            listing_type_esperado:
-                esperado,
-
-            mensagem,
-
-            detalhes_variacoes:
-                situacao
-                    .detalhes,
-
-            estoque_local:
-                [],
-
-            detalhes_sync:
-                [],
-
-            resumo_automatico: {
-
-                estoque_full:
-                    situacao
-                        .estoque_total_full,
-
-                atual:
-                    nomeListingTypeFullNFE(
-                        atual
-                    ),
-
-                esperado:
-                    nomeListingTypeFullNFE(
-                        esperado
-                    ),
-
-                correto,
-
-                possui_regra_fixa:
-                    Boolean(
-                        regraFixa
-                    ),
-
-                regra_fixa_tipo:
-                    regraFixa
-                        ?.tipo ||
-                    null,
-
-                regra_fixa_nome:
-                    regraFixa
-                        ?.nome ||
-                    null,
-
-                origem_regra_exposicao:
-                    situacao
-                        .origem_regra_exposicao
-            },
-
-            full_retirado_confirmado:
-                false,
-
-            sync_local_executado:
-                false,
-
-            resolvido_em:
-                correto
-                    ? new Date()
-                        .toISOString()
-                    : null,
-
-            resolvido_por_username:
-                correto
-                    ? usuario.username
-                    : null,
-
-            resolvido_por_nome:
-                correto
-                    ? usuario.nome
-                    : null
-        });
-
-
-        await carregarEstadosFullNFE();
-
-
-        aplicarEstadosFullTabelaNFE();
-
-
-        if (
-            correto
-        ) {
-
-            showToast(
-                regraFixa
-                    ? `✅ Correto: ${regraFixa.nome} — regra fixa do MLB.`
-                    : `✅ Correto: ${nomeListingTypeFullNFE(esperado)}.`,
-                'success'
-            );
-
-
-        } else {
-
-            showToast(
-                regraFixa
-                    ? `❌ Este MLB possui regra fixa: deve permanecer ${regraFixa.nome}.`
-                    : `❌ Ainda está ${nomeListingTypeFullNFE(atual)}. Deve ficar ${nomeListingTypeFullNFE(esperado)}.`,
-                'error'
-            );
-        }
-
-
-    } catch (
-        error
-    ) {
-
-        console.error(
-            `❌ Erro conferindo exposição ${mlb}:`,
-            error
-        );
-
-
-        showToast(
-            `❌ ${error.message}`,
-            'error'
-        );
-    }
+    return await confirmarAjusteAnuncioFullNFE(
+        mlb
+    );
 }
 
 
@@ -23167,10 +23134,6 @@ function montarVariacoesFullHtmlNFE(
 }
 
 
-// =========================================================
-// HTML ESTOQUE LOCAL
-// =========================================================
-
 function montarEstoqueLocalFullHtmlNFE(
     estado
 ) {
@@ -23187,7 +23150,17 @@ function montarEstoqueLocalFullHtmlNFE(
         0
     ) {
 
-        return '';
+        return `
+            <div
+                style="
+                    font-size:9px;
+                    color:#6c757d;
+                    margin-top:4px;
+                "
+            >
+                Produto não localizado no cadastro.
+            </div>
+        `;
     }
 
 
@@ -23200,7 +23173,9 @@ function montarEstoqueLocalFullHtmlNFE(
 
             const chave =
                 item.produto_id ||
-                `${item.sku || ''}|${item.sku_anuncio || ''}`;
+                item.sku ||
+                item.sku_anuncio ||
+                Math.random();
 
 
             if (
@@ -23218,43 +23193,57 @@ function montarEstoqueLocalFullHtmlNFE(
     );
 
 
-    return Array
-        .from(
+    const cadastrados =
+        Array.from(
             unicos.values()
         )
-        .map(
-            item => {
-
-                if (
+            .filter(
+                item =>
                     item.encontrado ===
-                    false
-                ) {
+                    true
+            );
 
-                    return `
 
-                        <div
-                            style="
-                                font-size:9px;
-                                color:#721c24;
-                                margin-top:3px;
-                            "
-                        >
-                            ${escaparHTMLNFE(
-                                item.sku ||
-                                item.sku_anuncio ||
-                                'SKU'
-                            )}
+    if (
+        cadastrados.length ===
+        0
+    ) {
 
-                            —
+        return `
+            <div
+                style="
+                    font-size:9px;
+                    color:#721c24;
+                    margin-top:4px;
+                    font-weight:700;
+                "
+            >
+                Produto não cadastrado no estoque.
+            </div>
+        `;
+    }
 
-                            não cadastrado
-                        </div>
-                    `;
-                }
+
+    return cadastrados
+        .map(
+            (
+                item,
+                index
+            ) => {
+
+                const nome =
+                    item.nome ||
+                    (
+                        cadastrados.length >
+                        1
+
+                            ? `Produto ${index + 1}`
+
+                            : 'Estoque no cadastro'
+                    );
 
 
                 return `
-
                     <div
                         style="
                             font-size:9px;
@@ -23262,8 +23251,7 @@ function montarEstoqueLocalFullHtmlNFE(
                         "
                     >
                         ${escaparHTMLNFE(
-                            item.sku ||
-                            ''
+                            nome
                         )}
 
                         :
@@ -23278,70 +23266,6 @@ function montarEstoqueLocalFullHtmlNFE(
                     </div>
                 `;
             }
-        )
-        .join('');
-}
-
-
-// =========================================================
-// HTML RESULTADO DE SYNC
-// =========================================================
-
-function montarResultadoSyncFullHtmlNFE(
-    estado
-) {
-
-    const resultados =
-        normalizarArrayJsonNFE(
-            estado
-                ?.detalhes_sync
-        );
-
-
-    if (
-        resultados.length ===
-        0
-    ) {
-
-        return '';
-    }
-
-
-    return resultados
-        .map(
-            item => `
-
-                <div
-                    style="
-                        font-size:9px;
-                        margin-top:3px;
-                        color:${
-                            item.success
-                                ? '#155724'
-                                : '#721c24'
-                        };
-                    "
-                >
-                    ${
-                        item.success
-                            ? '✓'
-                            : '✕'
-                    }
-
-                    ${escaparHTMLNFE(
-                        item.sku ||
-                        ''
-                    )}
-
-                    —
-
-                    cadastro:
-                    ${Number(
-                        item.estoque_cadastro ||
-                        0
-                    )}
-                </div>
-            `
         )
         .join('');
 }
@@ -23366,59 +23290,30 @@ function reconciliarEstadosFullComRegrasFixasNFE() {
     hidratarRegrasFixasTipoAnuncioLocalNFE();
 
 
-    let alterou =
+    let mudou =
         false;
 
 
     estados.forEach(
         (
             estado,
-            mlb
+            chave
         ) => {
 
-            if (
-                !estado
-            ) {
+            const contexto =
+                estado
+                    ?.resumo_automatico
+                    ?.contexto ||
+                '';
 
-                return;
-            }
-
-
-            // =================================================
-            // REGRA FIXA É SOBRE EXPOSIÇÃO.
-            //
-            // NÃO MEXER EM:
-            //
-            // full_zero_aguardando_retirada
-            // full_zero_sync_erro
-            // full_zero_concluido
-            //
-            // Porque FULL zerado é outro problema.
-            // =================================================
 
             if (
                 ![
-                    'exposicao_pendente',
-                    'exposicao_ok'
+                    'full_exposicao',
+                    'full_zero'
                 ].includes(
-                    estado.status
+                    contexto
                 )
-            ) {
-
-                return;
-            }
-
-
-            const fullTotal =
-                Number(
-                    estado.full_total ||
-                    0
-                );
-
-
-            if (
-                fullTotal <=
-                0
             ) {
 
                 return;
@@ -23427,35 +23322,56 @@ function reconciliarEstadosFullComRegrasFixasNFE() {
 
             const regraFixa =
                 obterRegraFixaTipoAnuncioLocalNFE(
-                    mlb
+                    estado.mlb
                 );
 
 
-            let esperado;
+            let quantidadeBase =
+                null;
 
 
             if (
-                regraFixa
+                contexto ===
+                'full_zero'
             ) {
 
-                esperado =
-                    regraFixa.tipo;
+                quantidadeBase =
+                    estado
+                        ?.resumo_automatico
+                        ?.estoque_cadastro_anuncio_total ??
+                    null;
 
 
             } else {
 
-                esperado =
-                    obterListingTypeEsperadoFullNFE(
-                        fullTotal
+                quantidadeBase =
+                    Number(
+                        estado.full_total ||
+                        0
                     );
             }
 
 
+            let esperado =
+                regraFixa
+                    ?.tipo ||
+                null;
+
+
             if (
-                !esperado
+                !esperado &&
+                quantidadeBase !==
+                    null &&
+                Number(
+                    quantidadeBase
+                ) >
+                    0
             ) {
 
-                return;
+                esperado =
+                    obterListingTypeEsperadoFullNFE(
+                        quantidadeBase
+                    );
             }
 
 
@@ -23469,156 +23385,79 @@ function reconciliarEstadosFullComRegrasFixasNFE() {
                     .toLowerCase();
 
 
-            const correto =
-                atual ===
-                esperado;
-
-
-            const novoResumo = {
-
-                ...(
-                    estado
-                        .resumo_automatico ||
-                    {}
-                ),
-
-                full_total:
-                    fullTotal,
-
-                exposicao_atual:
-                    nomeListingTypeFullNFE(
-                        atual
-                    ),
-
-                exposicao_esperada:
-                    nomeListingTypeFullNFE(
-                        esperado
-                    ),
-
-                exposicao_correta:
-                    correto,
-
-                possui_regra_fixa:
-                    Boolean(
-                        regraFixa
-                    ),
-
-                regra_fixa_tipo:
-                    regraFixa
-                        ?.tipo ||
-                    null,
-
-                regra_fixa_nome:
-                    regraFixa
-                        ?.nome ||
-                    null,
-
-                origem_regra_exposicao:
-                    regraFixa
-                        ? 'regra_fixa'
-                        : 'estoque'
-            };
-
-
-            const novoEstado = {
+            const novo = {
 
                 ...estado,
 
                 listing_type_esperado:
                     esperado,
 
-                ativo:
-                    !correto,
+                resumo_automatico: {
 
-                status:
-                    correto
-                        ? 'exposicao_ok'
-                        : 'exposicao_pendente',
+                    ...(
+                        estado
+                            .resumo_automatico ||
+                        {}
+                    ),
 
-                mensagem:
-                    regraFixa
-
-                        ? (
-                            correto
-
-                                ? `${mlb} está ${regraFixa.nome}, conforme a regra fixa.`
-
-                                : `${mlb} possui regra fixa em ${regraFixa.nome}. Atualmente está ${nomeListingTypeFullNFE(atual)}.`
-                        )
-
-                        : (
-                            correto
-
-                                ? `Exposição ${nomeListingTypeFullNFE(atual)} correta para ${fullTotal} unidade(s) FULL.`
-
-                                : `Exposição atual ${nomeListingTypeFullNFE(atual)}; deveria ser ${nomeListingTypeFullNFE(esperado)} para ${fullTotal} unidade(s) FULL.`
+                    possui_regra_fixa:
+                        Boolean(
+                            regraFixa
                         ),
 
-                resumo_automatico:
-                    novoResumo
+                    regra_fixa_nome:
+                        regraFixa
+                            ?.nome ||
+                        null,
+
+                    regra_fixa_tipo:
+                        regraFixa
+                            ?.tipo ||
+                        null
+                }
             };
 
 
-            const mudou =
-                estado.ativo !==
-                    novoEstado.ativo ||
-
-                estado.status !==
-                    novoEstado.status ||
-
-                estado.listing_type_esperado !==
-                    novoEstado.listing_type_esperado ||
-
-                estado
-                    ?.resumo_automatico
-                    ?.regra_fixa_tipo !==
-                    novoResumo
-                        .regra_fixa_tipo;
-
+            // =============================================
+            // EXPOSIÇÃO COM FULL > 0
+            // =============================================
 
             if (
-                mudou
+                contexto ===
+                'full_exposicao' &&
+                esperado
             ) {
 
-                estados.set(
-                    mlb,
-                    novoEstado
-                );
+                const correto =
+                    atual ===
+                    esperado;
 
 
-                alterou =
-                    true;
+                novo.ativo =
+                    !correto;
 
 
-                console.log(
-                    `🔒 [FULL] ${mlb} reconciliado com regra fixa:`,
-                    {
-                        atual:
-                            nomeListingTypeFullNFE(
-                                atual
-                            ),
-
-                        esperado:
-                            nomeListingTypeFullNFE(
-                                esperado
-                            ),
-
-                        regraFixa:
-                            regraFixa
-                                ?.nome ||
-                            null,
-
-                        ativo:
-                            !correto
-                    }
-                );
+                novo.status =
+                    correto
+                        ? 'exposicao_ok'
+                        : 'exposicao_pendente';
             }
+
+
+            estados.set(
+                chave,
+                novo
+            );
+
+
+            mudou =
+                true;
         }
     );
 
 
     if (
-        alterou
+        mudou
     ) {
 
         persistirEstadosFullLocalNFE();
@@ -23639,208 +23478,11 @@ function persistirEstadosFullLocalNFE() {
             );
 
 
-        // =====================================================
-        // CACHE VISUAL LEVE
-        //
-        // NÃO guardar locations, responses completas etc.
-        // =====================================================
-
-        const estadosCompactos =
-            estados.map(
-                estado => {
-
-                    const detalhesVariacoes =
-                        Array.isArray(
-                            estado.detalhes_variacoes
-                        )
-                            ? estado.detalhes_variacoes.map(
-                                detalhe => ({
-
-                                    variation_id:
-                                        detalhe.variation_id ??
-                                        null,
-
-                                    sku:
-                                        detalhe.sku ||
-                                        'SEM_SKU',
-
-                                    estoque_full:
-                                        detalhe.estoque_full ??
-                                        null,
-
-                                    estoque_local_ml:
-                                        detalhe.estoque_local_ml ??
-                                        null,
-
-                                    user_product_id:
-                                        detalhe.user_product_id ||
-                                        null
-                                })
-                            )
-                            : [];
-
-
-                    const estoqueLocal =
-                        Array.isArray(
-                            estado.estoque_local
-                        )
-                            ? estado.estoque_local.map(
-                                item => ({
-
-                                    sku:
-                                        item.sku ||
-                                        null,
-
-                                    sku_anuncio:
-                                        item.sku_anuncio ||
-                                        null,
-
-                                    produto_id:
-                                        item.produto_id ||
-                                        null,
-
-                                    encontrado:
-                                        item.encontrado ??
-                                        null,
-
-                                    estoque_atual:
-                                        item.estoque_atual ??
-                                        null,
-
-                                    motivo:
-                                        item.motivo ||
-                                        null
-                                })
-                            )
-                            : [];
-
-
-                    const detalhesSync =
-                        Array.isArray(
-                            estado.detalhes_sync
-                        )
-                            ? estado.detalhes_sync.map(
-                                item => ({
-
-                                    sku:
-                                        item.sku ||
-                                        null,
-
-                                    produto_id:
-                                        item.produto_id ||
-                                        null,
-
-                                    estoque_cadastro:
-                                        item.estoque_cadastro ??
-                                        null,
-
-                                    success:
-                                        item.success !==
-                                        false,
-
-                                    error:
-                                        item.error ||
-                                        null
-                                })
-                            )
-                            : [];
-
-
-                    return {
-
-                        mlb:
-                            estado.mlb,
-
-                        ativo:
-                            Boolean(
-                                estado.ativo
-                            ),
-
-                        status:
-                            estado.status ||
-                            'monitorando',
-
-                        venda_id_origem:
-                            estado.venda_id_origem ||
-                            null,
-
-                        full_total:
-                            estado.full_total ??
-                            null,
-
-                        listing_type_atual:
-                            estado.listing_type_atual ||
-                            null,
-
-                        listing_type_esperado:
-                            estado.listing_type_esperado ||
-                            null,
-
-                        mensagem:
-                            estado.mensagem ||
-                            null,
-
-                        detalhes_variacoes:
-                            detalhesVariacoes,
-
-                        estoque_local:
-                            estoqueLocal,
-
-                        detalhes_sync:
-                            detalhesSync,
-
-                        resumo_automatico:
-                            estado.resumo_automatico ||
-                            {},
-
-                        full_retirado_confirmado:
-                            Boolean(
-                                estado.full_retirado_confirmado
-                            ),
-
-                        sync_local_executado:
-                            Boolean(
-                                estado.sync_local_executado
-                            ),
-
-                        sync_local_sucesso:
-                            estado.sync_local_sucesso ??
-                            null,
-
-                        detectado_em:
-                            estado.detectado_em ||
-                            null,
-
-                        ultima_verificacao_em:
-                            estado.ultima_verificacao_em ||
-                            null,
-
-                        resolvido_em:
-                            estado.resolvido_em ||
-                            null,
-
-                        resolvido_por_username:
-                            estado.resolvido_por_username ||
-                            null,
-
-                        resolvido_por_nome:
-                            estado.resolvido_por_nome ||
-                            null
-                    };
-                }
-            );
-
-
         localStorage.setItem(
-            'nfe_estados_full_cache',
+            'nfe_alertas_estoque_v2',
             JSON.stringify(
-                estadosCompactos
+                estados
             )
-        );
-
-
-        console.log(
-            `💾 ${estadosCompactos.length} alerta(s) FULL salvo(s) no cache visual`
         );
 
 
@@ -23848,8 +23490,8 @@ function persistirEstadosFullLocalNFE() {
         error
     ) {
 
-        console.error(
-            '❌ Erro persistindo cache visual FULL:',
+        console.warn(
+            '⚠️ Erro salvando cache de alertas de estoque:',
             error
         );
     }
@@ -23861,7 +23503,7 @@ function hidratarEstadosFullLocalNFE() {
 
         const bruto =
             localStorage.getItem(
-                'nfe_estados_full_cache'
+                'nfe_alertas_estoque_v2'
             );
 
 
@@ -23898,45 +23540,30 @@ function hidratarEstadosFullLocalNFE() {
         estados.forEach(
             estado => {
 
-                const mlb =
-                    normalizarMLBFullNFE(
-                        estado?.mlb
-                    );
+                const chave =
+                    String(
+                        estado
+                            ?.chave_alerta ||
+                        ''
+                    )
+                        .trim();
 
 
                 if (
-                    !mlb
+                    chave
                 ) {
 
-                    return;
+                    mapa.set(
+                        chave,
+                        estado
+                    );
                 }
-
-
-                mapa.set(
-                    mlb,
-                    {
-
-                        ...estado,
-
-                        mlb,
-
-                        ativo:
-                            Boolean(
-                                estado.ativo
-                            )
-                    }
-                );
             }
         );
 
 
         window._estadosFullNFE =
             mapa;
-
-
-        console.log(
-            `⚡ ${mapa.size} alerta(s) FULL restaurado(s) SEM consultar internet`
-        );
 
 
         return mapa;
@@ -23946,8 +23573,8 @@ function hidratarEstadosFullLocalNFE() {
         error
     ) {
 
-        console.error(
-            '❌ Cache local FULL inválido:',
+        console.warn(
+            '⚠️ Cache de alertas inválido:',
             error
         );
 
@@ -24098,17 +23725,23 @@ function obterRegraFixaTipoAnuncioLocalNFE(
 }
 
 
-// =========================================================
-// HTML DO MONITOR
-// =========================================================
-
 function montarEstadoFullHtmlNFE(
     estado
 ) {
 
+    if (
+        !estado ||
+        estado.ativo !==
+            true
+    ) {
+
+        return '';
+    }
+
+
     const mlb =
         normalizarMLBFullNFE(
-            estado?.mlb
+            estado.mlb
         );
 
 
@@ -24120,21 +23753,122 @@ function montarEstadoFullHtmlNFE(
     }
 
 
+    const chave =
+        escaparHTMLNFE(
+            estado
+                .chave_alerta ||
+            ''
+        );
+
+
     const url =
         `https://www.mercadolivre.com.br/anuncios/${mlb}/modificar/bomni`;
 
 
+    const resumo =
+        estado
+            .resumo_automatico ||
+        {};
+
+
+    const regraFixaNome =
+        resumo
+            .regra_fixa_nome ||
+        null;
+
+
+    const htmlRegraFixa =
+        regraFixaNome
+
+            ? `
+                <div
+                    style="
+                        background:#343a40;
+                        color:white;
+                        border-radius:4px;
+                        padding:3px 6px;
+                        margin-top:5px;
+                        font-size:9px;
+                        font-weight:700;
+                        display:inline-block;
+                    "
+                >
+                    <i class="fas fa-lock"></i>
+                    REGRA FIXA:
+                    ${escaparHTMLNFE(
+                        regraFixaNome
+                    )}
+                </div>
+            `
+
+            : '';
+
+
+    const botoes = `
+        <a
+            href="${url}"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-sm btn-warning"
+            style="
+                margin-top:6px;
+                width:100%;
+                text-decoration:none;
+            "
+        >
+            <i class="fas fa-edit"></i>
+            Modificar anúncio
+        </a>
+
+        <button
+            type="button"
+            class="btn btn-sm btn-success"
+            onclick="confirmarAjusteAnuncioFullNFE('${chave}')"
+            style="
+                margin-top:4px;
+                width:100%;
+            "
+        >
+            <i class="fas fa-check"></i>
+            Ajustado
+        </button>
+    `;
+
+
     // =====================================================
-    // FULL ZEROU - AGUARDANDO RETIRADA
+    // FULL ESGOTADO
     // =====================================================
 
     if (
         estado.status ===
-        'full_zero_aguardando_retirada'
+        'full_zero_aguardando_ajuste'
     ) {
 
-        return `
+        const atual =
+            nomeListingTypeFullNFE(
+                estado
+                    .listing_type_atual
+            );
 
+
+        const esperado =
+            estado
+                .listing_type_esperado
+
+                ? nomeListingTypeFullNFE(
+                    estado
+                        .listing_type_esperado
+                )
+
+                : 'N/I';
+
+
+        const quantidadeCadastro =
+            resumo
+                .estoque_cadastro_anuncio_total;
+
+
+        return `
             <div
                 data-monitor-full-nfe="${mlb}"
                 style="
@@ -24143,10 +23877,9 @@ function montarEstadoFullHtmlNFE(
                     border-radius:6px;
                     padding:8px;
                     margin-top:7px;
-                    min-width:190px;
+                    min-width:195px;
                 "
             >
-
                 <div
                     style="
                         color:#dc3545;
@@ -24158,208 +23891,108 @@ function montarEstadoFullHtmlNFE(
                     FULL ESGOTADO
                 </div>
 
+                <div
+                    style="
+                        font-size:9px;
+                        margin-top:5px;
+                    "
+                >
+                    Todas as variações FULL:
+                    <strong>0</strong>
+                </div>
+
+                ${htmlRegraFixa}
 
                 <div
                     style="
                         font-size:9px;
-                        margin-top:4px;
-                        color:#721c24;
+                        margin-top:5px;
                     "
                 >
-                    Todas as variações FULL = 0.
+                    Exposição atual:
+                    <strong>
+                        ${escaparHTMLNFE(
+                            atual
+                        )}
+                    </strong>
                 </div>
 
-
-                ${montarVariacoesFullHtmlNFE(
-                    estado
-                )}
-
+                <div
+                    style="
+                        font-size:9px;
+                    "
+                >
+                    Exposição recomendada:
+                    <strong>
+                        ${escaparHTMLNFE(
+                            esperado
+                        )}
+                    </strong>
+                </div>
 
                 <div
                     style="
                         border-top:1px solid #f5c6cb;
-                        margin-top:6px;
                         padding-top:5px;
+                        margin-top:6px;
                         font-size:9px;
-                        color:#721c24;
                         font-weight:700;
                     "
                 >
                     Estoque interno:
                 </div>
 
-
                 ${montarEstoqueLocalFullHtmlNFE(
                     estado
                 )}
 
+                ${
+                    quantidadeCadastro !==
+                        null &&
+                    quantidadeCadastro !==
+                        undefined
+
+                        ? `
+                            <div
+                                style="
+                                    margin-top:4px;
+                                    font-size:9px;
+                                    color:#155724;
+                                    font-weight:700;
+                                "
+                            >
+                                Pode ativar aproximadamente:
+                                ${Number(
+                                    quantidadeCadastro
+                                )}
+                                un. no anúncio
+                            </div>
+                        `
+
+                        : ''
+                }
 
                 <div
                     style="
-                        margin-top:6px;
+                        margin-top:7px;
                         font-size:9px;
                         color:#721c24;
                         font-weight:700;
                     "
                 >
-                    ⚠ Estoque local ainda NÃO sincronizado.
+                    Ação necessária:
+                    retirar do FULL, ativar estoque
+                    e conferir a exposição.
                 </div>
 
-
-                <a
-                    href="${url}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="btn btn-sm btn-warning"
-                    style="
-                        margin-top:6px;
-                        width:100%;
-                        text-decoration:none;
-                    "
-                >
-                    <i class="fas fa-edit"></i>
-                    Modificar anúncio
-                </a>
-
-
-                <button
-                    type="button"
-                    class="btn btn-sm btn-success"
-                    onclick="confirmarAjusteAnuncioFullNFE('${mlb}')"
-                    style="
-                        margin-top:4px;
-                        width:100%;
-                    "
-                >
-                    <i class="fas fa-check-double"></i>
-                    Ajustado anúncio FULL
-                </button>
-
+                ${botoes}
             </div>
         `;
     }
 
 
     // =====================================================
-    // ERRO DE SYNC DEPOIS DA RETIRADA
-    // =====================================================
-
-    if (
-        estado.status ===
-        'full_zero_sync_erro'
-    ) {
-
-        return `
-
-            <div
-                data-monitor-full-nfe="${mlb}"
-                style="
-                    border:2px solid #dc3545;
-                    background:#fff5f5;
-                    border-radius:6px;
-                    padding:8px;
-                    margin-top:7px;
-                "
-            >
-
-                <strong
-                    style="
-                        color:#dc3545;
-                        font-size:11px;
-                    "
-                >
-                    FULL retirado, erro no sync
-                </strong>
-
-
-                ${montarResultadoSyncFullHtmlNFE(
-                    estado
-                )}
-
-
-                <button
-                    type="button"
-                    class="btn btn-sm btn-danger"
-                    onclick="confirmarAjusteAnuncioFullNFE('${mlb}')"
-                    style="
-                        margin-top:5px;
-                        width:100%;
-                    "
-                >
-                    Tentar sincronizar novamente
-                </button>
-
-            </div>
-        `;
-    }
-
-
-    // =====================================================
-    // FULL ZEROU - CONCLUÍDO
-    // =====================================================
-
-    if (
-        estado.status ===
-        'full_zero_concluido'
-    ) {
-
-        return `
-
-            <div
-                data-monitor-full-nfe="${mlb}"
-                style="
-                    border:1px solid #28a745;
-                    background:#f1fff4;
-                    border-radius:6px;
-                    padding:7px;
-                    margin-top:7px;
-                    min-width:180px;
-                "
-            >
-
-                <div
-                    style="
-                        color:#155724;
-                        font-size:10px;
-                        font-weight:800;
-                    "
-                >
-                    <i class="fas fa-robot"></i>
-                    Sistema ajustou
-                </div>
-
-
-                <div
-                    style="
-                        color:#155724;
-                        font-size:9px;
-                        margin-top:3px;
-                    "
-                >
-                    ✓ FULL removido confirmado
-                </div>
-
-                <div
-                    style="
-                        color:#155724;
-                        font-size:9px;
-                    "
-                >
-                    ✓ Estoque local sincronizado
-                </div>
-
-
-                ${montarResultadoSyncFullHtmlNFE(
-                    estado
-                )}
-
-            </div>
-        `;
-    }
-
-
-    // =====================================================
-    // EXPOSIÇÃO ERRADA
+    // EXPOSIÇÃO FULL INCORRETA
     // =====================================================
 
     if (
@@ -24367,28 +24000,7 @@ function montarEstadoFullHtmlNFE(
         'exposicao_pendente'
     ) {
 
-        const atual =
-            nomeListingTypeFullNFE(
-                estado
-                    .listing_type_atual
-            );
-
-
-        const esperado =
-            nomeListingTypeFullNFE(
-                estado
-                    .listing_type_esperado
-            );
-
-            const regraFixaNome =
-    estado
-        ?.resumo_automatico
-        ?.regra_fixa_nome ||
-    null;
-
-
         return `
-
             <div
                 data-monitor-full-nfe="${mlb}"
                 style="
@@ -24400,62 +24012,33 @@ function montarEstadoFullHtmlNFE(
                     min-width:190px;
                 "
             >
-
                 <div
                     style="
                         color:#dc3545;
-                        font-weight:800;
                         font-size:11px;
+                        font-weight:800;
                     "
                 >
                     EXPOSIÇÃO INCORRETA
                 </div>
 
+                ${htmlRegraFixa}
 
                 <div
                     style="
                         font-size:9px;
-                        margin-top:4px;
+                        margin-top:5px;
                     "
                 >
-                ${
-    regraFixaNome
-
-        ? `
-            <div
-                style="
-                    background:#343a40;
-                    color:white;
-                    border-radius:4px;
-                    padding:3px 6px;
-                    margin-top:5px;
-                    margin-bottom:5px;
-                    font-size:9px;
-                    font-weight:700;
-                    display:inline-block;
-                "
-            >
-                <i class="fas fa-lock"></i>
-                REGRA FIXA:
-                ${escaparHTMLNFE(
-                    regraFixaNome
-                )}
-            </div>
-        `
-
-        : ''
-}
-                    FULL restante:
-
+                    Estoque FULL:
                     <strong>
                         ${Number(
-                            estado
-                                .full_total ||
+                            estado.full_total ||
                             0
                         )}
+                        un.
                     </strong>
                 </div>
-
 
                 <div
                     style="
@@ -24463,14 +24046,15 @@ function montarEstadoFullHtmlNFE(
                     "
                 >
                     Atual:
-
                     <strong>
                         ${escaparHTMLNFE(
-                            atual
+                            nomeListingTypeFullNFE(
+                                estado
+                                    .listing_type_atual
+                            )
                         )}
                     </strong>
                 </div>
-
 
                 <div
                     style="
@@ -24480,113 +24064,223 @@ function montarEstadoFullHtmlNFE(
                     "
                 >
                     Correto:
-
                     ${escaparHTMLNFE(
-                        esperado
+                        nomeListingTypeFullNFE(
+                            estado
+                                .listing_type_esperado
+                        )
                     )}
                 </div>
 
-
-                ${montarVariacoesFullHtmlNFE(
-                    estado
-                )}
-
-
-                <a
-                    href="${url}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="btn btn-sm btn-warning"
-                    style="
-                        margin-top:6px;
-                        width:100%;
-                        text-decoration:none;
-                    "
-                >
-                    Modificar anúncio
-                </a>
-
-
-                <button
-                    type="button"
-                    class="btn btn-sm btn-success"
-                    onclick="confirmarExposicaoFullNFE('${mlb}')"
-                    style="
-                        margin-top:4px;
-                        width:100%;
-                    "
-                >
-                    <i class="fas fa-check"></i>
-                    Arrumado
-                </button>
-
+                ${botoes}
             </div>
         `;
     }
 
 
     // =====================================================
-    // EXPOSIÇÃO CORRETA
-    //
-    // MOSTRAR MESMO SEM ALERTA
+    // VENDA ME EM ANÚNCIO QUE TAMBÉM TEM FULL
+    // DEPÓSITO LOCAL ZEROU
     // =====================================================
 
     if (
         estado.status ===
-        'exposicao_ok'
+        'deposito_zero'
     ) {
 
         return `
-
             <div
                 data-monitor-full-nfe="${mlb}"
                 style="
-                    border:1px solid #17a2b8;
-                    background:#f2fbfd;
-                    border-radius:5px;
-                    padding:6px;
-                    margin-top:6px;
+                    border:2px solid #dc3545;
+                    background:#fff5f5;
+                    border-radius:6px;
+                    padding:8px;
+                    margin-top:7px;
+                    min-width:195px;
                 "
             >
+                <div
+                    style="
+                        color:#dc3545;
+                        font-size:11px;
+                        font-weight:800;
+                    "
+                >
+                    <i class="fas fa-exclamation-triangle"></i>
+                    DEPÓSITO ZERADO
+                </div>
 
                 <div
                     style="
                         font-size:9px;
-                        color:#495057;
+                        margin-top:5px;
                     "
                 >
-                    FULL:
+                    Venda fora do FULL.
+                </div>
 
+                <div
+                    style="
+                        font-size:9px;
+                        color:#dc3545;
+                        font-weight:700;
+                    "
+                >
+                    Estoque local/depósito:
+                    0 un.
+                </div>
+
+                <div
+                    style="
+                        font-size:9px;
+                    "
+                >
+                    Estoque FULL:
                     <strong>
                         ${Number(
-                            estado
-                                .full_total ||
+                            resumo
+                                .estoque_full_atual ||
+                            estado.full_total ||
                             0
                         )}
+                        un.
                     </strong>
                 </div>
 
+                <div
+                    style="
+                        border-top:1px solid #f5c6cb;
+                        margin-top:6px;
+                        padding-top:5px;
+                        font-size:9px;
+                        font-weight:700;
+                    "
+                >
+                    Estoque interno:
+                </div>
+
+                ${montarEstoqueLocalFullHtmlNFE(
+                    estado
+                )}
+
+                <div
+                    style="
+                        margin-top:6px;
+                        font-size:9px;
+                        color:#721c24;
+                        font-weight:700;
+                    "
+                >
+                    Adicione estoque ao depósito/local
+                    do anúncio.
+                </div>
+
+                ${botoes}
+            </div>
+        `;
+    }
+
+
+    // =====================================================
+    // ANÚNCIO NORMAL ZERADO
+    // =====================================================
+
+    if (
+        estado.status ===
+        'anuncio_zero'
+    ) {
+
+        return `
+            <div
+                data-monitor-full-nfe="${mlb}"
+                style="
+                    border:2px solid #dc3545;
+                    background:#fff5f5;
+                    border-radius:6px;
+                    padding:8px;
+                    margin-top:7px;
+                    min-width:190px;
+                "
+            >
+                <div
+                    style="
+                        color:#dc3545;
+                        font-size:11px;
+                        font-weight:800;
+                    "
+                >
+                    <i class="fas fa-exclamation-triangle"></i>
+                    ANÚNCIO ZERADO
+                </div>
 
                 <div
                     style="
                         font-size:9px;
-                        color:#155724;
+                        margin-top:5px;
                     "
                 >
-                    Exposição:
-
-                    <strong>
-                        ${escaparHTMLNFE(
-                            nomeListingTypeFullNFE(
-                                estado
-                                    .listing_type_atual
-                            )
-                        )}
-                    </strong>
-
-                    ✓
+                    Estoque no Mercado Livre:
+                    <strong>0 un.</strong>
                 </div>
 
+                ${
+                    resumo
+                        .estoque_cadastro_encontrado
+
+                        ? `
+                            <div
+                                style="
+                                    border-top:1px solid #f5c6cb;
+                                    margin-top:6px;
+                                    padding-top:5px;
+                                    font-size:9px;
+                                    font-weight:700;
+                                "
+                            >
+                                Estoque interno:
+                            </div>
+
+                            ${montarEstoqueLocalFullHtmlNFE(
+                                estado
+                            )}
+                        `
+
+                        : `
+                            <div
+                                style="
+                                    margin-top:6px;
+                                    font-size:9px;
+                                    color:#721c24;
+                                "
+                            >
+                                Produto não localizado no cadastro.
+                            </div>
+                        `
+                }
+
+                ${
+                    resumo
+                        .tem_estoque_cadastro
+
+                        ? `
+                            <div
+                                style="
+                                    margin-top:6px;
+                                    font-size:9px;
+                                    color:#155724;
+                                    font-weight:700;
+                                "
+                            >
+                                Há estoque disponível.
+                                Adicione ao anúncio.
+                            </div>
+                        `
+
+                        : ''
+                }
+
+                ${botoes}
             </div>
         `;
     }
@@ -24763,7 +24457,7 @@ function aplicarEstadosFullTabelaNFE() {
     vendas.forEach(
         venda => {
 
-            const id =
+            const vendaId =
                 normalizarOrderIdML(
                     venda.id_venda_ml ||
                     venda.id
@@ -24771,11 +24465,11 @@ function aplicarEstadosFullTabelaNFE() {
 
 
             if (
-                id
+                vendaId
             ) {
 
                 mapaVendaPorId.set(
-                    id,
+                    vendaId,
                     venda
                 );
             }
@@ -24807,50 +24501,12 @@ function aplicarEstadosFullTabelaNFE() {
                 }
 
 
-                // =============================================
-                // IDENTIFICAR VENDA
-                // =============================================
-
-                let vendaId =
-                    tr.dataset
-                        .vendaIdNfe ||
-                    '';
-
-
-                if (
-                    !vendaId
-                ) {
-
-                    const textoPrimeiraCelula =
-                        cells[0]
-                            ?.textContent ||
-                        '';
-
-
-                    const match =
-                        textoPrimeiraCelula
-                            .match(
-                                /\d{8,}/
-                            );
-
-
-                    vendaId =
-                        match
-                            ? normalizarOrderIdML(
-                                match[0]
-                            )
-                            : '';
-                }
-
-
-                if (
-                    vendaId
-                ) {
-
-                    tr.dataset
-                        .vendaIdNfe =
-                        vendaId;
-                }
+                const vendaId =
+                    normalizarOrderIdML(
+                        tr.dataset
+                            .vendaIdNfe ||
+                        ''
+                    );
 
 
                 const venda =
@@ -24867,80 +24523,49 @@ function aplicarEstadosFullTabelaNFE() {
                 }
 
 
-                // =============================================
-                // MLBS DA VENDA
-                // =============================================
-
                 const mlbs =
                     obterMLBsVendaFullNFE(
                         venda
                     );
 
 
-                if (
-                    mlbs.length ===
-                    0
-                ) {
-
-                    tr.classList
-                        .remove(
-                            'alerta-full-nfe-ativo'
-                        );
-
-                    return;
-                }
-
-
                 const estados =
                     mlbs
                         .map(
-                            mlb =>
-                                window
+                            mlb => {
+
+                                const chave =
+                                    montarChaveAlertaEstoqueVendaNFE(
+                                        venda,
+                                        mlb
+                                    );
+
+
+                                return window
                                     ._estadosFullNFE
                                     .get(
-                                        mlb
-                                    )
+                                        chave
+                                    );
+                            }
                         )
                         .filter(Boolean);
 
 
-                const estadosComHtml =
+                const ativos =
                     estados.filter(
-                        estado =>
-                            [
-                                'full_zero_aguardando_retirada',
-                                'full_zero_sync_erro',
-                                'full_zero_concluido',
-                                'exposicao_pendente',
-                                'exposicao_ok'
-                            ].includes(
-                                estado.status
-                            )
-                    );
-
-
-                const possuiAlerta =
-                    estados.some(
                         estado =>
                             estado.ativo ===
                             true
                     );
 
 
-                // =============================================
-                // PISCAR OU NÃO
-                // =============================================
-
                 tr.classList
                     .toggle(
                         'alerta-full-nfe-ativo',
-                        possuiAlerta
+                        ativos.length >
+                            0
                     );
 
-
-                // =============================================
-                // PEGAR CÉLULA ESTOQUE ANÚNCIO
-                // =============================================
 
                 const td =
                     garantirCelulaEstoqueAnuncioMonitorFullNFE(
@@ -24955,12 +24580,6 @@ function aplicarEstadosFullTabelaNFE() {
                     return;
                 }
 
-
-                // =============================================
-                // CONTAINER DO MONITOR
-                //
-                // Um único container por linha.
-                // =============================================
 
                 let container =
                     td.querySelector(
@@ -24990,22 +24609,13 @@ function aplicarEstadosFullTabelaNFE() {
 
 
                 const novoHtml =
-                    estadosComHtml
+                    ativos
                         .map(
-                            estado =>
-                                montarEstadoFullHtmlNFE(
-                                    estado
-                                )
+                            montarEstadoFullHtmlNFE
                         )
                         .filter(Boolean)
-                        .join(
-                            ''
-                        );
+                        .join('');
 
-
-                // =============================================
-                // SÓ ALTERAR DOM SE REALMENTE MUDOU
-                // =============================================
 
                 if (
                     container.innerHTML !==
@@ -25016,10 +24626,6 @@ function aplicarEstadosFullTabelaNFE() {
                         novoHtml;
                 }
 
-
-                // =============================================
-                // COLUNA OCULTA
-                // =============================================
 
                 if (
                     typeof carregarColunasOcultasNFE ===
@@ -25054,25 +24660,18 @@ async function verificarMonitorFullVendasNFE(
     ) {
 
         console.log(
-            'ℹ️ Verificação FULL já está em andamento.'
+            'ℹ️ Verificação de estoque já está em andamento.'
         );
 
         return;
     }
 
 
-    window
-        ._monitorFullNFEEmAndamento =
+    window._monitorFullNFEEmAndamento =
         true;
 
 
     try {
-
-        // =====================================================
-        // USAR ESTADOS QUE JÁ ESTÃO EM MEMÓRIA / LOCAL
-        //
-        // NÃO CONSULTAR SUPABASE AQUI.
-        // =====================================================
 
         hidratarEstadosFullLocalNFE();
 
@@ -25087,34 +24686,33 @@ async function verificarMonitorFullVendasNFE(
 
 
         const vendas =
-            Array.isArray(
-                vendasPendentes
+            (
+                Array.isArray(
+                    vendasPendentes
+                )
+                    ? vendasPendentes
+                    : []
             )
-                ? vendasPendentes
-                : [];
+                .filter(
+                    venda =>
+                        !vendaEstaCanceladaNFE(
+                            venda
+                        )
+                );
 
 
         // =====================================================
-        // SOMENTE FULL
+        // AGRUPAR POR MLB
+        //
+        // Consulta cada MLB UMA VEZ.
+        // Depois aplica a mesma resposta às vendas desse MLB.
         // =====================================================
 
-        const vendasFull =
-            vendas.filter(
-                venda =>
-                    Boolean(
-                        venda._is_full
-                    ) ||
-                    detectarVendaFullNFE(
-                        venda
-                    )
-            );
-
-
-        const mapa =
+        const mapaMLB =
             new Map();
 
 
-        vendasFull.forEach(
+        vendas.forEach(
             venda => {
 
                 const mlbs =
@@ -25127,16 +24725,25 @@ async function verificarMonitorFullVendasNFE(
                     mlb => {
 
                         if (
-                            !mapa.has(
+                            !mapaMLB.has(
                                 mlb
                             )
                         ) {
 
-                            mapa.set(
+                            mapaMLB.set(
                                 mlb,
-                                venda
+                                []
                             );
                         }
+
+
+                        mapaMLB
+                            .get(
+                                mlb
+                            )
+                            .push(
+                                venda
+                            );
                     }
                 );
             }
@@ -25144,104 +24751,76 @@ async function verificarMonitorFullVendasNFE(
 
 
         console.log(
-            `🏭 Monitor FULL: ${mapa.size} MLB(s) único(s)`
+            `🔎 Monitor de estoque: ${mapaMLB.size} MLB(s) para consultar`
         );
 
 
-        const entradas =
-            Array.from(
-                mapa.entries()
-            );
-
-
-        const TAMANHO_LOTE =
-            2;
-
+        // =====================================================
+        // UM MLB POR VEZ
+        //
+        // Evita explodir o rate limit de /user-products/stock.
+        // =====================================================
 
         for (
-            let i = 0;
-            i < entradas.length;
-            i += TAMANHO_LOTE
+            const [
+                mlb,
+                vendasDoMLB
+            ]
+            of mapaMLB
         ) {
 
-            const lote =
-                entradas.slice(
-                    i,
-                    i +
-                        TAMANHO_LOTE
-                );
+            try {
+
+                const situacao =
+                    await consultarSituacaoMLBFullNFE(
+                        mlb
+                    );
 
 
-            await Promise.all(
+                for (
+                    const venda
+                    of vendasDoMLB
+                ) {
 
-                lote.map(
-                    async (
-                        [
-                            mlb,
-                            venda
-                        ]
-                    ) => {
+                    await processarMLBMonitorFullNFE(
 
-                        try {
+                        mlb,
 
-                            await processarMLBMonitorFullNFE(
+                        venda,
 
-                                mlb,
+                        {
+                            forcar,
 
-                                venda,
-
-                                {
-                                    forcar
-                                }
-                            );
-
-
-                        } catch (
-                            error
-                        ) {
-
-                            console.warn(
-                                `⚠️ Falha verificando ${mlb}:`,
-                                error
-                            );
+                            situacaoPrecarregada:
+                                situacao
                         }
-                    }
-                )
-            );
+                    );
+                }
 
 
-            // =============================================
-            // MOSTRAR RESULTADOS ENQUANTO PROCESSA
-            // =============================================
+            } catch (
+                error
+            ) {
+
+                console.warn(
+                    `⚠️ Falha consultando ${mlb}:`,
+                    error
+                );
+            }
+
 
             aplicarEstadosFullTabelaNFE();
 
 
-            if (
-                i +
-                    TAMANHO_LOTE <
-                entradas.length
-            ) {
-
-                await new Promise(
-                    resolve =>
-                        setTimeout(
-                            resolve,
-                            250
-                        )
-                );
-            }
+            await new Promise(
+                resolve =>
+                    setTimeout(
+                        resolve,
+                        150
+                    )
+            );
         }
 
-
-        // =====================================================
-        // SALVAR O RESULTADO LOCALMENTE
-        //
-        // processarMLBMonitorFullNFE já salva cada estado no
-        // Supabase individualmente.
-        //
-        // NÃO precisamos buscar tudo novamente.
-        // =====================================================
 
         persistirEstadosFullLocalNFE();
 
@@ -25250,7 +24829,7 @@ async function verificarMonitorFullVendasNFE(
 
 
         console.log(
-            '✅ Verificação FULL finalizada'
+            '✅ Verificação de estoque dos anúncios concluída'
         );
 
 
@@ -25259,71 +24838,17 @@ async function verificarMonitorFullVendasNFE(
     ) {
 
         console.error(
-            '❌ Erro geral monitor FULL:',
+            '❌ Erro geral no monitor de estoque:',
             error
         );
 
 
     } finally {
 
-        window
-            ._monitorFullNFEEmAndamento =
+        window._monitorFullNFEEmAndamento =
             false;
     }
 }
-
-
-function agendarVerificacaoMonitorFullNFE(
-    atraso = 1500,
-    forcar = false
-) {
-
-    if (
-        window
-            ._timerVerificacaoMonitorFullNFE
-    ) {
-
-        clearTimeout(
-            window
-                ._timerVerificacaoMonitorFullNFE
-        );
-    }
-
-
-    window
-        ._timerVerificacaoMonitorFullNFE =
-        setTimeout(
-            async () => {
-
-                window
-                    ._timerVerificacaoMonitorFullNFE =
-                    null;
-
-
-                try {
-
-                    await verificarMonitorFullVendasNFE(
-                        {
-                            forcar
-                        }
-                    );
-
-
-                } catch (
-                    error
-                ) {
-
-                    console.warn(
-                        '⚠️ Erro na verificação agendada FULL:',
-                        error
-                    );
-                }
-
-            },
-            atraso
-        );
-}
-
 
 function inicializarMonitorFullNFE() {
 
@@ -25340,11 +24865,6 @@ function inicializarMonitorFullNFE() {
         true;
 
 
-    console.log(
-        '🏭 Inicializando monitor FULL...'
-    );
-
-
     garantirEstiloMonitorFullNFE();
 
 
@@ -25352,7 +24872,7 @@ function inicializarMonitorFullNFE() {
 
 
     // =====================================================
-    // TUDO QUE JÁ SABEMOS ENTRA INSTANTANEAMENTE
+    // MOSTRAR ALERTAS JÁ SALVOS IMEDIATAMENTE
     // =====================================================
 
     hidratarEstadosFullLocalNFE();
@@ -25368,7 +24888,9 @@ function inicializarMonitorFullNFE() {
 
 
     // =====================================================
-    // BANCO + REGRAS OFICIAIS EM SEGUNDO PLANO
+    // BANCO EM SEGUNDO PLANO
+    //
+    // NÃO CONSULTA MERCADO LIVRE.
     // =====================================================
 
     Promise.all([
@@ -25398,48 +24920,15 @@ function inicializarMonitorFullNFE() {
             error => {
 
                 console.warn(
-                    '⚠️ Atualização de fundo do monitor FULL:',
+                    '⚠️ Atualização de alertas:',
                     error
                 );
             }
         );
 
 
-    // =====================================================
-    // VERIFICAÇÃO PERIÓDICA
-    // =====================================================
-
-    if (
-        !window
-            ._intervalMonitorFullNFE
-    ) {
-
-        window
-            ._intervalMonitorFullNFE =
-            setInterval(
-                () => {
-
-                    verificarMonitorFullVendasNFE()
-                        .catch(
-                            error => {
-
-                                console.warn(
-                                    '⚠️ Monitor FULL periódico:',
-                                    error
-                                );
-                            }
-                        );
-
-                },
-                5 *
-                60 *
-                1000
-            );
-    }
-
-
     console.log(
-        '✅ Monitor FULL inicializado'
+        '✅ Monitor de estoque inicializado em modo somente consulta'
     );
 }
 
@@ -31475,133 +30964,139 @@ async function carregarVendasPendentes(
             'vendasPendentesBody'
         );
 
-    if (!tbody) {
+
+    if (
+        !tbody
+    ) {
+
         return;
     }
 
+
     inicializarFiltroDataNFE();
+
 
     const input =
         document.getElementById(
             'filtroDataEnvioNFE'
         );
 
+
     const dataSelecionada =
         dataForcada ||
         input?.value ||
         obterDataHojeLocal();
 
+
     const vendasCache =
-    window._nfeFiltroTodas
+        window._nfeFiltroTodas
 
-        ? await carregarVendasCacheNFE(
-            null
+            ? await carregarVendasCacheNFE(
+                null
+            )
+
+            : await carregarVendasCacheNFE(
+                dataSelecionada
+            );
+
+
+    // =====================================================
+    // ALERTAS LOCAIS PRIMEIRO
+    // =====================================================
+
+    hidratarEstadosFullLocalNFE();
+
+
+    hidratarRegrasFixasTipoAnuncioLocalNFE();
+
+
+    reconciliarEstadosFullComRegrasFixasNFE();
+
+
+    // =====================================================
+    // DESENHAR SEM ESPERAR INTERNET
+    // =====================================================
+
+    renderizarVendasNFETabela(
+        vendasCache
+    );
+
+
+    aplicarEstadosFullTabelaNFE();
+
+
+    // =====================================================
+    // ATUALIZAR ALERTAS SALVOS PELO BANCO EM BACKGROUND
+    // =====================================================
+
+    carregarEstadosFullNFE(
+        true
+    )
+        .then(
+            () => {
+
+                aplicarEstadosFullTabelaNFE();
+            }
         )
+        .catch(
+            error => {
 
-        : await carregarVendasCacheNFE(
-            dataSelecionada
+                console.warn(
+                    '⚠️ Alertas do banco:',
+                    error
+                );
+            }
         );
 
 
-// =====================================================
-// ALERTAS FULL LOCAIS
-//
-// SEM INTERNET.
-// SEM SUPABASE.
-// SEM MERCADO LIVRE.
-// =====================================================
-
-hidratarEstadosFullLocalNFE();
-
-
-hidratarRegrasFixasTipoAnuncioLocalNFE();
-
-
-reconciliarEstadosFullComRegrasFixasNFE();
-
-
-// =====================================================
-// DESENHAR PRIMEIRO
-// =====================================================
-
-renderizarVendasNFETabela(
-    vendasCache
-);
-
-
-// =====================================================
-// SUPABASE EM SEGUNDO PLANO
-//
-// Serve apenas para atualizar o cache caso outro
-// computador tenha criado/modificado um alerta.
-// =====================================================
-
-carregarEstadosFullNFE(
-    true
-)
-    .then(
-        () => {
-
-            aplicarEstadosFullTabelaNFE();
-        }
-    )
-    .catch(
-        error => {
-
-            console.warn(
-                '⚠️ Atualização de estados FULL em segundo plano:',
-                error
-            );
-        }
-    );
-
     // =====================================================
-// VERIFICAR CANCELAMENTOS EM SEGUNDO PLANO
-// =====================================================
+    // CANCELAMENTOS EM SEGUNDO PLANO
+    // =====================================================
 
-verificarCancelamentosVendasNFE()
-    .then(
-        async resultado => {
+    verificarCancelamentosVendasNFE()
+        .then(
+            async resultado => {
 
-            if (
-                resultado
-                    ?.restauradas >
-                0 ||
-                resultado
-                    ?.marcadas >
-                0
-            ) {
+                if (
+                    resultado
+                        ?.restauradas >
+                        0 ||
+                    resultado
+                        ?.marcadas >
+                        0
+                ) {
 
-                const vendasAtualizadas =
-                    window._nfeFiltroTodas
+                    const vendasAtualizadas =
+                        window._nfeFiltroTodas
 
-                        ? await carregarVendasCacheNFE(
-                            null
-                        )
+                            ? await carregarVendasCacheNFE(
+                                null
+                            )
 
-                        : await carregarVendasCacheNFE(
-                            dataSelecionada
-                        );
+                            : await carregarVendasCacheNFE(
+                                dataSelecionada
+                            );
 
 
-                renderizarVendasNFETabela(
-                    vendasAtualizadas
+                    renderizarVendasNFETabela(
+                        vendasAtualizadas
+                    );
+                }
+            }
+        )
+        .catch(
+            error => {
+
+                console.warn(
+                    '⚠️ Verificação automática de cancelamentos:',
+                    error
                 );
             }
-        }
-    )
-    .catch(
-        error => {
+        );
 
-            console.warn(
-                '⚠️ Verificação automática de cancelamentos:',
-                error
-            );
-        }
-    );
 
     // =====================================================
-    // EVITAR DUPLICIDADE
+    // EVITAR DUPLICIDADE DE SYNC DE VENDAS
     // =====================================================
 
     if (
@@ -31612,8 +31107,10 @@ verificarCancelamentosVendasNFE()
         return;
     }
 
+
     const chaveSync =
         `nfe_sync_${dataSelecionada}`;
+
 
     const ultimaSync =
         Number(
@@ -31623,19 +31120,19 @@ verificarCancelamentosVendasNFE()
             0
         );
 
+
     const precisaAtualizar =
         forcarAtualizacao ||
-
         vendasCache.length ===
             0 ||
-
         (
             Date.now() -
-            ultimaSync >
+                ultimaSync >
             2 *
             60 *
             1000
         );
+
 
     if (
         precisaAtualizar
@@ -31645,12 +31142,12 @@ verificarCancelamentosVendasNFE()
             ._sincronizacaoVendasNFEEmAndamento =
             true;
 
+
         const processo =
             sincronizarVendasPendentesML(
                 dataSelecionada,
                 true
             )
-
                 .then(
                     () => {
 
@@ -31662,7 +31159,6 @@ verificarCancelamentosVendasNFE()
                         );
                     }
                 )
-
                 .catch(
                     error => {
 
@@ -31672,7 +31168,6 @@ verificarCancelamentosVendasNFE()
                         );
                     }
                 )
-
                 .finally(
                     () => {
 
@@ -31682,6 +31177,7 @@ verificarCancelamentosVendasNFE()
                     }
                 );
 
+
         if (
             forcarAtualizacao
         ) {
@@ -31690,8 +31186,12 @@ verificarCancelamentosVendasNFE()
         }
     }
 
+
     // =====================================================
-    // SINCRONIZAÇÃO COMPLETA
+    // SINCRONIZAÇÃO COMPLETA PERIÓDICA DAS VENDAS
+    //
+    // Isto é a sincronização de VENDAS, não dos alertas.
+    // Pode continuar.
     // =====================================================
 
     const ultimaCompleta =
@@ -31702,6 +31202,7 @@ verificarCancelamentosVendasNFE()
             0
         );
 
+
     if (
         Date.now() -
             ultimaCompleta >
@@ -31709,7 +31210,6 @@ verificarCancelamentosVendasNFE()
             60 *
             60 *
             1000 &&
-
         !window
             ._nfeSyncCompleta
     ) {
@@ -31718,8 +31218,8 @@ verificarCancelamentosVendasNFE()
             ._nfeSyncCompleta =
             true;
 
-        setTimeout(
 
+        setTimeout(
             async () => {
 
                 try {
@@ -31729,12 +31229,14 @@ verificarCancelamentosVendasNFE()
                         false
                     );
 
+
                     localStorage.setItem(
                         'nfe_sync_completa',
                         String(
                             Date.now()
                         )
                     );
+
 
                 } catch (
                     error
@@ -31745,14 +31247,15 @@ verificarCancelamentosVendasNFE()
                         error
                     );
 
+
                 } finally {
 
                     window
                         ._nfeSyncCompleta =
                         false;
                 }
-            },
 
+            },
             1500
         );
     }
