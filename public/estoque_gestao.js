@@ -44236,18 +44236,13 @@ function validarCamposCondicionaisProduto() {
         if (
             !campo?.nome
         ) {
-
             continue;
-
         }
-
 
         const elemento =
             document.getElementById(
                 `campo_${campo.nome}`
             );
-
-
         if (
             !elemento
         ) {
@@ -44256,83 +44251,53 @@ function validarCamposCondicionaisProduto() {
 
         }
 
-
         const estado =
             obterComportamentoCampoCondicional(
                 campo
             );
 
-
         if (
             estado.comportamento ===
             'ocultar'
         ) {
-
             continue;
-
         }
-
-
         if (
             estado.obrigatorio !==
             true
         ) {
-
             continue;
-
         }
-
 
         let preenchido =
             false;
-
 
         if (
             elemento.type ===
             'checkbox'
         ) {
-
             preenchido =
                 elemento.checked;
-
         } else {
-
             preenchido =
                 String(
                     elemento.value ??
                     ''
                 ).trim() !==
                 '';
-
         }
-
-
         if (
             !preenchido
         ) {
-
-            showToast(
-                `⚠️ O campo "${campo.label || campo.nome}" é obrigatório.`,
-                'warning'
-            );
-
-
+            showToast(`⚠️ O campo "${campo.label || campo.nome}" é obrigatório.`, 'warning');
             elemento.focus();
-
-
             return false;
-
         }
-
     }
-
-
     return true;
 }
 
-
 function prepararCamposCondicionaisParaSalvar() {
-
     const categoria =
         document.getElementById(
             'produtoCategoria'
@@ -44353,30 +44318,22 @@ function prepararCamposCondicionaisParaSalvar() {
             subcategoria
         ) || [];
 
-
     campos.forEach(
         campo => {
-
             const elemento =
                 document.getElementById(
                     `campo_${campo.nome}`
                 );
-
-
             if (
                 !elemento
             ) {
-
                 return;
-
             }
-
 
             const estado =
                 obterComportamentoCampoCondicional(
                     campo
                 );
-
 
             if (
                 estado.comportamento ===
@@ -44411,38 +44368,27 @@ function prepararCamposCondicionaisParaSalvar() {
 // INTEGRAÇÃO DOS CAMPOS COM MÚLTIPLAS REGRAS CONDICIONAIS
 // =========================================================
 
-if (
-    !window.__integracaoRegrasCondicionaisEstoqueV2
-) {
-
-    window.__integracaoRegrasCondicionaisEstoqueV2 =
-        true;
-
+if (!window.__integracaoRegrasCondicionaisEstoqueV2) {
+    window.__integracaoRegrasCondicionaisEstoqueV2 = true;
 
     // =====================================================
     // ENVOLVER GERAÇÃO DOS CAMPOS
     // =====================================================
 
-    const gerarCamposAntesRegrasCondicionais =
-        gerarCamposDinamicos;
-
-
+    const gerarCamposAntesRegrasCondicionais = gerarCamposDinamicos;
     gerarCamposDinamicos =
         function(
             categoria,
             subcategoria = ''
         ) {
-
             const resultado =
                 gerarCamposAntesRegrasCondicionais(
                     categoria,
                     subcategoria
                 );
 
-
             const configurar =
                 function() {
-
                     configurarEventosCamposCondicionais(
                         categoria,
                         subcategoria
@@ -44453,38 +44399,13 @@ if (
 
             configurar();
 
-
-            setTimeout(
-                configurar,
-                0
-            );
-
-
-            setTimeout(
-                configurar,
-                100
-            );
-
-
-            setTimeout(
-                configurar,
-                300
-            );
-
-
-            setTimeout(
-                configurar,
-                600
-            );
-
+            setTimeout(configurar, 0);
+            setTimeout(configurar, 100);
+            setTimeout(configurar, 300);
+            setTimeout(configurar, 600);
 
             return resultado;
         };
-
-
-    window.gerarCamposDinamicos =
-        gerarCamposDinamicos;
-
 
     // =====================================================
     // ENVOLVER SALVAMENTO
@@ -44493,16 +44414,13 @@ if (
     const salvarProdutoAntesRegrasCondicionais =
         salvarProdutoEstoque;
 
-
     salvarProdutoEstoque =
         async function() {
-
             const categoria =
                 document.getElementById(
                     'produtoCategoria'
                 )?.value ||
                 '';
-
 
             const subcategoria =
                 document.getElementById(
@@ -44510,25 +44428,16 @@ if (
                 )?.value ||
                 '';
 
-
             atualizarVisibilidadeCamposCondicionais(
                 categoria,
                 subcategoria
             );
-
-
             if (
                 !validarCamposCondicionaisProduto()
             ) {
-
                 return;
-
             }
-
-
             prepararCamposCondicionaisParaSalvar();
-
-
             return await salvarProdutoAntesRegrasCondicionais
                 .apply(
                     this,
@@ -44536,50 +44445,21 @@ if (
                 );
         };
 
-
-    window.salvarProdutoEstoque =
-        salvarProdutoEstoque;
-
-
     // =====================================================
     // EXPORTAR FUNÇÕES
     // =====================================================
 
-    window.toggleRegrasCondicionaisCampo =
-        toggleRegrasCondicionaisCampo;
-
-
-    window.adicionarRegraCondicionalCampo =
-        adicionarRegraCondicionalCampo;
-
-
-    window.removerRegraCondicionalCampo =
-        removerRegraCondicionalCampo;
-
-
-    window.atualizarEditorRegrasCondicionais =
-        atualizarEditorRegrasCondicionais;
-
-
-    window.atualizarValorControladorRegra =
-        atualizarValorControladorRegra;
-
-
-    window.atualizarValorAutomaticoRegra =
-        atualizarValorAutomaticoRegra;
-
-
-    window.atualizarVisibilidadeCamposCondicionais =
-        atualizarVisibilidadeCamposCondicionais;
-
-
-    window.configurarEventosCamposCondicionais =
-        configurarEventosCamposCondicionais;
-
-
-    window.validarCamposCondicionaisProduto =
-        validarCamposCondicionaisProduto;
-
+    window.toggleRegrasCondicionaisCampo = toggleRegrasCondicionaisCampo;
+    window.adicionarRegraCondicionalCampo = adicionarRegraCondicionalCampo;
+    window.removerRegraCondicionalCampo = removerRegraCondicionalCampo;
+    window.atualizarEditorRegrasCondicionais = atualizarEditorRegrasCondicionais;
+    window.atualizarValorControladorRegra = atualizarValorControladorRegra;
+    window.atualizarValorAutomaticoRegra = atualizarValorAutomaticoRegra;
+    window.atualizarVisibilidadeCamposCondicionais = atualizarVisibilidadeCamposCondicionais;
+    window.configurarEventosCamposCondicionais = configurarEventosCamposCondicionais;
+    window.validarCamposCondicionaisProduto = validarCamposCondicionaisProduto;
+    window.salvarProdutoEstoque = salvarProdutoEstoque;
+    window.gerarCamposDinamicos = gerarCamposDinamicos;
 }
 
 console.log('📦 Gestão de Estoque carregada com sucesso! (Versão completa com categorias customizadas)');
