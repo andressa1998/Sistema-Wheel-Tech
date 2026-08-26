@@ -4292,44 +4292,490 @@ async function() {
         falhas
     );
 };
-    window.executarDesativacaoAgendada = async function(id) {
-        const supabase = obterSupabasePromocoes();
-        const original = agendamentosPromocoes.find(a => Number(a.id) === Number(id));
-        if (!original) return showToast('❌ Agendamento não encontrado', 'error');
-        if (Date.now() < new Date(original.data_desativacao).getTime()) return showToast('⚠️ A data de desativação ainda não chegou', 'warning');
-        if (!confirm(`Desativar ${original.mlb} da promoção “${original.promotion_name}”?`)) return;
 
-        try {
-            const reservado = await reservarAcaoAgenda(id, ['ativada', 'erro_desativacao'], 'desativando', {
-                erro_desativacao: null,
-                quantidade_tentativas_desativacao: Number(original.quantidade_tentativas_desativacao || 0) + 1
-            });
-            if (!reservado) return showToast('⚠️ Esta promoção já foi processada por outro usuário', 'warning');
-            await carregarAgendamentosPromocoes();
-
-            const tokenData = await window.getValidToken?.();
-            if (!tokenData?.access_token) throw new Error('Token do Mercado Livre não disponível');
-            let offerId = reservado.offer_id;
-            if (!offerId) offerId = await buscarOfferIdDoItem(reservado.mlb, reservado.promotion_id, tokenData.access_token);
-            if (!offerId) throw new Error('offer_id da promoção não encontrado');
-            const resultado = await excluirItemPromocao(offerId, tokenData.access_token);
-            if (!resultado.success) throw new Error(resultado.error || 'Mercado Livre recusou a desativação');
-
-            const { error } = await supabase.from('promocoes_agendadas').update({
-                status: 'concluida', desativada_por: nomeUsuarioAgenda(), desativada_em: new Date().toISOString(),
-                offer_id: offerId, erro_desativacao: null
-            }).eq('id', id).eq('status', 'desativando');
-            if (error) throw error;
-            showToast(`✅ ${reservado.mlb} desativado com sucesso`, 'success');
-        } catch (error) {
-            await supabase.from('promocoes_agendadas').update({ status: 'erro_desativacao', erro_desativacao: error.message }).eq('id', id).eq('status', 'desativando');
-            showToast(`❌ Erro ao desativar: ${error.message}`, 'error');
-        } finally {
-            await carregarAgendamentosPromocoes();
-            fecharModalAvisosPromocoes();
-            await verificarAvisosPromocoesAgendadas();
-        }
+async function consultarPromocaoAtivaNoML(
+    itemId,
+    promotionId,
+    token
+) {
+    const normalizar = valor => {
+        return String(valor ?? '').trim();
     };
+
+    const url =
+        `https://api.mercadolibre.com/` +
+        `seller-promotions/items/${encodeURIComponent(itemId)}` +
+        `?app_version=v2`;
+
+    const proxyUrl =
+        `${window.WORKER_URL || 'https://purple-bonus-3b1c.andmiotto1998.workers.dev'}` +
+        `/api/ml/proxy?url=${encodeURIComponent(url)}` +
+        `&token=${encodeURIComponent(token)}`;
+
+    try {
+        const response = await fetch(proxyUrl, {
+            method: 'GET',
+            cache: 'no-store'
+        });
+
+        const respostaTexto = await response.text();
+
+        let dados = null;
+
+        if (respostaTexto) {
+            try {
+                dados = JSON.parse(respostaTexto);
+            } catch {
+                dados = respostaTexto;
+            }
+        }
+
+        if (!response.ok) {
+            throw new Error(
+                dados?.message ||
+                dados?.error ||
+                respostaTexto ||
+                `Erro HTTP ${response.status} ao consultar a promoção`
+            );
+        }
+
+        const promocoes = Array.isArray(dados)
+            ? dados
+            : Array.isArray(dados?.results)
+                ? dados.results
+                : Array.isArray(dados?.promotions)
+                    ? dados.promotions
+                    : [];
+
+        const promocao = promocoes.find(item => {
+            return (
+                normalizar(item.id) ===
+                normalizar(promotionId)
+            );
+        });
+
+        /*
+         * Se a promoção não aparece mais para este MLB,
+         * o anúncio não está mais participando dela.
+         */
+        if (!promocao) {
+            log(
+                `✅ ${itemId} não aparece mais na promoção ` +
+                `${promotionId}. Considerado desativado.`,
+                'success'
+            );
+
+            return {
+                success: true,
+                ativa: false,
+                promocao: null,
+                offerId: null,
+                status: null,
+                motivo: 'promocao_nao_encontrada'
+            };
+        }
+
+        const offerId =
+            promocao.offer_id ||
+            promocao.offerId ||
+            promocao.offer?.id ||
+            null;
+
+        const status = normalizar(
+            promocao.status
+        ).toLowerCase();
+
+        /*
+         * IMPORTANTE:
+         *
+         * "started" pode ser apenas o status geral da campanha.
+         * Isso não significa que este MLB ainda esteja ativo nela.
+         *
+         * Para o anúncio estar efetivamente participando da promoção,
+         * precisa existir um offer_id.
+         */
+        const ativa = Boolean(offerId);
+
+        log(
+            `🔍 Conferência ${itemId} / ${promotionId}: ` +
+            `status=${status || 'sem status'}, ` +
+            `offer_id=${offerId || 'não encontrado'}, ` +
+            `ativa=${ativa ? 'sim' : 'não'}`,
+            ativa ? 'warning' : 'success'
+        );
+
+        return {
+            success: true,
+            ativa,
+            promocao,
+            offerId,
+            status,
+            motivo: ativa
+                ? 'oferta_ativa'
+                : 'sem_offer_id'
+        };
+    } catch (error) {
+        log(
+            `❌ Erro ao conferir ${itemId} na promoção ` +
+            `${promotionId}: ${error.message}`,
+            'error'
+        );
+
+        return {
+            success: false,
+            ativa: null,
+            promocao: null,
+            offerId: null,
+            status: null,
+            error:
+                error.message ||
+                'Não foi possível consultar a promoção no Mercado Livre'
+        };
+    }
+}
+
+async function aguardarConfirmacaoDesativacaoML(
+    itemId,
+    promotionId,
+    token,
+    quantidadeTentativas = 3
+) {
+    let ultimaConsulta = null;
+
+    for (
+        let tentativa = 1;
+        tentativa <= quantidadeTentativas;
+        tentativa++
+    ) {
+        if (tentativa > 1) {
+            await new Promise(resolve => {
+                setTimeout(resolve, 1500);
+            });
+        }
+
+        ultimaConsulta = await consultarPromocaoAtivaNoML(
+            itemId,
+            promotionId,
+            token
+        );
+
+        if (!ultimaConsulta.success) {
+            continue;
+        }
+
+        if (!ultimaConsulta.ativa) {
+            return {
+                success: true,
+                desativada: true,
+                consulta: ultimaConsulta,
+                tentativa
+            };
+        }
+
+        log(
+            `⚠️ ${itemId} ainda está ativo na promoção ` +
+            `${promotionId}. Verificação ${tentativa}/` +
+            `${quantidadeTentativas}.`,
+            'warning'
+        );
+    }
+
+    if (!ultimaConsulta?.success) {
+        return {
+            success: false,
+            desativada: false,
+            error:
+                ultimaConsulta?.error ||
+                'Não foi possível confirmar o estado da promoção'
+        };
+    }
+
+    return {
+        success: true,
+        desativada: false,
+        consulta: ultimaConsulta,
+        error:
+            'A promoção continua ativa no Mercado Livre após a tentativa de desativação'
+    };
+}
+    window.executarDesativacaoAgendada = async function(id) {
+    const supabase = obterSupabasePromocoes();
+
+    if (!supabase) {
+        showToast(
+            '❌ Supabase não conectado',
+            'error'
+        );
+
+        return;
+    }
+
+    const original = agendamentosPromocoes.find(item => {
+        return Number(item.id) === Number(id);
+    });
+
+    if (!original) {
+        showToast(
+            '❌ Agendamento não encontrado',
+            'error'
+        );
+
+        return;
+    }
+
+    const dataDesativacao = new Date(
+        original.data_desativacao
+    ).getTime();
+
+    if (
+        !Number.isFinite(dataDesativacao) ||
+        Date.now() < dataDesativacao
+    ) {
+        showToast(
+            '⚠️ A data de desativação ainda não chegou',
+            'warning'
+        );
+
+        return;
+    }
+
+    const confirmou = confirm(
+        `Verificar e desativar ${original.mlb} da promoção ` +
+        `“${original.promotion_name}”?`
+    );
+
+    if (!confirmou) {
+        return;
+    }
+
+    let reservado = null;
+    let desativacaoConfirmada = false;
+
+    try {
+        reservado = await reservarAcaoAgenda(
+            id,
+            [
+                'ativada',
+                'erro_desativacao'
+            ],
+            'desativando',
+            {
+                erro_desativacao: null,
+                quantidade_tentativas_desativacao:
+                    Number(
+                        original.quantidade_tentativas_desativacao ||
+                        0
+                    ) + 1
+            }
+        );
+
+        if (!reservado) {
+            showToast(
+                '⚠️ Esta promoção já está sendo processada por outro usuário',
+                'warning'
+            );
+
+            await carregarAgendamentosPromocoes();
+
+            return;
+        }
+
+        await carregarAgendamentosPromocoes();
+
+        const tokenData = await window.getValidToken?.();
+        const accessToken =
+            tokenData?.access_token ||
+            null;
+
+        if (!accessToken) {
+            throw new Error(
+                'Token do Mercado Livre não disponível'
+            );
+        }
+
+        /*
+         * PRIMEIRA VERIFICAÇÃO:
+         * antes de tentar excluir, confere se a promoção ainda está
+         * realmente ativa no Mercado Livre.
+         */
+        const estadoAntes = await consultarPromocaoAtivaNoML(
+            reservado.mlb,
+            reservado.promotion_id,
+            accessToken
+        );
+
+        if (!estadoAntes.success) {
+            throw new Error(
+                estadoAntes.error ||
+                'Não foi possível verificar a promoção no Mercado Livre'
+            );
+        }
+
+        if (!estadoAntes.ativa) {
+            /*
+             * Já estava desativada no Mercado Livre.
+             * Apenas corrige o status local e remove a notificação.
+             */
+            desativacaoConfirmada = true;
+
+            log(
+                `✅ ${reservado.mlb} já estava desativado no ` +
+                `Mercado Livre. Corrigindo status local.`,
+                'success'
+            );
+        } else {
+            /*
+             * Ainda está ativa. Usa primeiro o offer_id retornado pela
+             * própria verificação, que é mais confiável.
+             */
+            let offerId =
+                estadoAntes.offerId ||
+                reservado.offer_id ||
+                null;
+
+            if (!offerId) {
+                offerId = await buscarOfferIdDoItem(
+                    reservado.mlb,
+                    reservado.promotion_id,
+                    accessToken
+                );
+            }
+
+            if (!offerId) {
+                throw new Error(
+                    'A promoção está ativa, mas o offer_id não foi encontrado'
+                );
+            }
+
+            const resultadoExclusao = await excluirItemPromocao(
+                offerId,
+                accessToken
+            );
+
+            if (!resultadoExclusao?.success) {
+                /*
+                 * Mesmo quando o DELETE informa erro, ainda será feita
+                 * uma verificação, pois ela pode já ter sido desativada.
+                 */
+                log(
+                    `⚠️ O Mercado Livre retornou erro no DELETE de ` +
+                    `${reservado.mlb}: ` +
+                    `${resultadoExclusao?.error || 'erro desconhecido'}`,
+                    'warning'
+                );
+            }
+
+            /*
+             * VERIFICAÇÃO FINAL:
+             * somente considera concluída se o Mercado Livre confirmar
+             * que o anúncio não está mais ativo nessa promoção.
+             */
+            const confirmacao =
+                await aguardarConfirmacaoDesativacaoML(
+                    reservado.mlb,
+                    reservado.promotion_id,
+                    accessToken,
+                    3
+                );
+
+            if (!confirmacao.success) {
+                throw new Error(
+                    confirmacao.error ||
+                    'Não foi possível confirmar a desativação'
+                );
+            }
+
+            if (!confirmacao.desativada) {
+                throw new Error(
+                    'A promoção continua ativa no Mercado Livre. ' +
+                    'Clique novamente em “Desativar” para tentar outra vez.'
+                );
+            }
+
+            desativacaoConfirmada = true;
+
+            reservado.offer_id = offerId;
+        }
+
+        if (!desativacaoConfirmada) {
+            throw new Error(
+                'O Mercado Livre não confirmou a desativação'
+            );
+        }
+
+        const {
+            data,
+            error
+        } = await supabase
+            .from('promocoes_agendadas')
+            .update({
+                status: 'concluida',
+                desativada_por: nomeUsuarioAgenda(),
+                desativada_em: new Date().toISOString(),
+                offer_id: reservado.offer_id || null,
+                erro_desativacao: null
+            })
+            .eq('id', id)
+            .eq('status', 'desativando')
+            .select();
+
+        if (error) {
+            throw error;
+        }
+
+        if (!data?.length) {
+            throw new Error(
+                'A promoção foi desativada, mas não foi possível atualizar o status local'
+            );
+        }
+
+        /*
+         * Fecha imediatamente o aviso antigo.
+         * Como o status agora é "concluida", ele não será recriado.
+         */
+        fecharModalAvisosPromocoes();
+
+        showToast(
+            `✅ ${reservado.mlb} está realmente desativado`,
+            'success'
+        );
+    } catch (error) {
+        /*
+         * Se não houve confirmação real, volta para erro_desativacao.
+         * Assim a notificação permanece e o botão Desativar continua
+         * disponível para uma nova tentativa.
+         */
+        const mensagemErro =
+            error.message ||
+            'Erro desconhecido na desativação';
+
+        await supabase
+            .from('promocoes_agendadas')
+            .update({
+                status: 'erro_desativacao',
+                erro_desativacao: mensagemErro
+            })
+            .eq('id', id)
+            .eq('status', 'desativando');
+
+        showToast(
+            `❌ ${mensagemErro}`,
+            'error'
+        );
+
+        log(
+            `❌ Falha ao desativar agendamento ${id}: ` +
+            mensagemErro,
+            'error'
+        );
+    } finally {
+        await carregarAgendamentosPromocoes();
+
+        fecharModalAvisosPromocoes();
+
+        await verificarAvisosPromocoesAgendadas();
+    }
+};
 
     window.cancelarAgendamentoPromocao = async function(id) {
         const supabase = obterSupabasePromocoes();
