@@ -26275,6 +26275,62 @@ function garantirEstiloMonitorFullNFE() {
            anúncio normal zerado
            ================================================= */
 
+           @keyframes piscarLinhaQuantidadeAnuncioNFE {
+    0%,
+    100% {
+        background-color: #ffffff;
+        box-shadow:
+            inset 5px 0 0 #6f42c1,
+            inset -5px 0 0 #6f42c1;
+    }
+
+    50% {
+        background-color: #d8c4f1;
+        box-shadow:
+            inset 5px 0 0 #6f42c1,
+            inset -5px 0 0 #6f42c1;
+    }
+}
+
+tr.alerta-quantidade-anuncio-nfe {
+    animation:
+        piscarLinhaQuantidadeAnuncioNFE
+        1s
+        infinite;
+}
+
+tr.alerta-quantidade-anuncio-nfe > td {
+    background-color: transparent !important;
+    border-top: 2px solid #6f42c1 !important;
+    border-bottom: 2px solid #6f42c1 !important;
+}
+
+tr.alerta-quantidade-anuncio-nfe > td:first-child {
+    border-left: 2px solid #6f42c1 !important;
+}
+
+tr.alerta-quantidade-anuncio-nfe > td:last-child {
+    border-right: 2px solid #6f42c1 !important;
+}
+
+tr.alerta-quantidade-anuncio-nfe:hover {
+    animation-play-state: paused;
+    background-color: #d8c4f1 !important;
+}
+
+.aviso-quantidade-anuncio-nfe {
+    display: inline-block;
+    margin-top: 5px;
+    padding: 5px;
+    border-radius: 5px;
+    background: #6f42c1;
+    color: #ffffff;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+}
+
         @keyframes piscarLinhaFullNFE {
 
             0%,
@@ -27827,73 +27883,443 @@ function obterAlertasExposicaoVendaNFE(
                     .trim()
                     .toLowerCase();
 
-            const regra =
+            const nomeExposicaoAtual =
+                nomeListingTypeFullNFE(
+                    listingTypeAtual
+                );
+
+            const estaPremium =
+                listingTypeAtual ===
+                    'gold_pro' ||
+                listingTypeAtual ===
+                    'gold_premium';
+
+            const regraFixa =
+                obterRegraFixaTipoAnuncioLocalNFE(
+                    mlb
+                );
+
+            const estoques =
+                snapshotsMLB.map(
+                    obterEstoquesValidosSnapshotNFE
+                );
+
+            const algumAnuncioIgualUm =
+                estoques.some(
+                    item =>
+                        item.estoque_deposito === 1
+                );
+
+            const algumFullIgualUm =
+                estoques.some(
+                    item =>
+                        item.estoque_full === 1
+                );
+
+            const capacidadesCadastro =
+                snapshotsMLB.map(
+                    calcularCapacidadeEstoqueInternoSnapshotNFE
+                );
+
+            const temCadastroCompleto =
+                capacidadesCadastro.some(
+                    item =>
+                        item.tem_cadastro === true &&
+                        item.todos_cadastrados === true
+                );
+
+            const capacidadeInterna =
+                capacidadesCadastro.length > 0
+                    ? Math.max(
+                        ...capacidadesCadastro.map(
+                            item =>
+                                Number(
+                                    item.capacidade_anuncio ||
+                                    0
+                                )
+                        )
+                    )
+                    : 0;
+
+            const temEstoqueInternoParaMaisDeUm =
+                temCadastroCompleto &&
+                capacidadeInterna >= 2;
+
+            // =================================================
+            // REGRA FIXA: PRIORIDADE MÁXIMA
+            // =================================================
+            if (regraFixa) {
+                const tipoEsperado =
+                    String(
+                        regraFixa.tipo ||
+                        ''
+                    )
+                        .trim()
+                        .toLowerCase();
+
+                // Regra fixa já está sendo respeitada.
+                if (
+                    listingTypeAtual ===
+                    tipoEsperado
+                ) {
+                    // Sempre Premium, anúncio com 1 e existe
+                    // estoque interno para anunciar mais:
+                    // o erro é a quantidade.
+                    if (
+                        tipoEsperado ===
+                            'gold_pro' &&
+                        algumAnuncioIgualUm &&
+                        temEstoqueInternoParaMaisDeUm
+                    ) {
+                        alertas.push({
+                            mlb,
+
+                            tipo_alerta:
+                                'quantidade',
+
+                            cor_alerta:
+                                'roxo',
+
+                            titulo:
+                                'AJUSTAR QUANTIDADE',
+
+                            mensagem:
+                                `O anúncio está Premium, mas possui somente 1 unidade. O estoque interno permite anunciar ${capacidadeInterna} unidades.`,
+
+                            quantidade_esperada_minima:
+                                2,
+
+                            capacidade_interna:
+                                capacidadeInterna,
+
+                            listing_type_atual:
+                                listingTypeAtual,
+
+                            listing_type_atual_nome:
+                                nomeExposicaoAtual,
+
+                            tipo_esperado:
+                                tipoEsperado,
+
+                            nome_esperado:
+                                regraFixa.nome,
+
+                            regra_fixa:
+                                true,
+
+                            snapshots:
+                                snapshotsMLB
+                        });
+                    }
+
+                    return;
+                }
+
+                // Regra fixa não está sendo respeitada:
+                // o problema é a exposição.
+                alertas.push({
+                    mlb,
+
+                    tipo_alerta:
+                        'exposicao',
+
+                    cor_alerta:
+                        'vermelho',
+
+                    titulo:
+                        `ALTERAR PARA ${String(
+                            regraFixa.nome
+                        ).toUpperCase()}`,
+
+                    mensagem:
+                        `Este MLB possui regra fixa: sempre ${regraFixa.nome}.`,
+
+                    listing_type_atual:
+                        listingTypeAtual,
+
+                    listing_type_atual_nome:
+                        nomeExposicaoAtual,
+
+                    tipo_esperado:
+                        tipoEsperado,
+
+                    nome_esperado:
+                        regraFixa.nome,
+
+                    regra_fixa:
+                        true,
+
+                    snapshots:
+                        snapshotsMLB
+                });
+
+                return;
+            }
+
+            // =================================================
+            // SEM REGRA FIXA
+            // =================================================
+
+            // Anúncio Premium com 1 unidade, mas o cadastro
+            // permite anunciar 2 ou mais:
+            // o problema é a quantidade do anúncio.
+            if (
+                estaPremium &&
+                algumAnuncioIgualUm &&
+                !algumFullIgualUm &&
+                temEstoqueInternoParaMaisDeUm
+            ) {
+                alertas.push({
+                    mlb,
+
+                    tipo_alerta:
+                        'quantidade',
+
+                    cor_alerta:
+                        'roxo',
+
+                    titulo:
+                        'AJUSTAR QUANTIDADE',
+
+                    mensagem:
+                        `A exposição Premium está correta, mas o anúncio ficou com 1 unidade. O estoque interno permite anunciar ${capacidadeInterna} unidades.`,
+
+                    quantidade_esperada_minima:
+                        2,
+
+                    capacidade_interna:
+                        capacidadeInterna,
+
+                    listing_type_atual:
+                        listingTypeAtual,
+
+                    listing_type_atual_nome:
+                        nomeExposicaoAtual,
+
+                    tipo_esperado:
+                        'gold_pro',
+
+                    nome_esperado:
+                        'Premium',
+
+                    regra_fixa:
+                        false,
+
+                    snapshots:
+                        snapshotsMLB
+                });
+
+                return;
+            }
+
+            // Se o FULL ficou em 1, continua sendo necessário
+            // deixar a exposição como Clássico.
+            const algumEstoqueIgualUm =
+                algumAnuncioIgualUm ||
+                algumFullIgualUm;
+
+            if (
+                algumEstoqueIgualUm &&
+                estaPremium
+            ) {
+                alertas.push({
+                    mlb,
+
+                    tipo_alerta:
+                        'exposicao',
+
+                    cor_alerta:
+                        'vermelho',
+
+                    titulo:
+                        'ALTERAR PARA CLÁSSICO',
+
+                    mensagem:
+                        algumFullIgualUm
+                            ? 'O estoque FULL ficou em 1 unidade. A exposição deve ser Clássico.'
+                            : 'O anúncio ficou em 1 unidade e não existe estoque interno suficiente para manter Premium.',
+
+                    listing_type_atual:
+                        listingTypeAtual,
+
+                    listing_type_atual_nome:
+                        nomeExposicaoAtual,
+
+                    tipo_esperado:
+                        'gold_special',
+
+                    nome_esperado:
+                        'Clássico',
+
+                    regra_fixa:
+                        false,
+
+                    snapshots:
+                        snapshotsMLB
+                });
+
+                return;
+            }
+
+            const regraExposicao =
                 obterRegraExposicaoEsperadaVendaNFE(
                     mlb,
                     snapshotsMLB
                 );
 
             if (
-                !regra.tipo_esperado
+                regraExposicao.tipo_esperado &&
+                listingTypeAtual !==
+                    regraExposicao.tipo_esperado
             ) {
-                return;
+                alertas.push({
+                    mlb,
+
+                    tipo_alerta:
+                        'exposicao',
+
+                    cor_alerta:
+                        'vermelho',
+
+                    titulo:
+                        `ALTERAR PARA ${String(
+                            regraExposicao
+                                .nome_esperado
+                        ).toUpperCase()}`,
+
+                    mensagem:
+                        regraExposicao.motivo,
+
+                    listing_type_atual:
+                        listingTypeAtual,
+
+                    listing_type_atual_nome:
+                        nomeExposicaoAtual,
+
+                    tipo_esperado:
+                        regraExposicao
+                            .tipo_esperado,
+
+                    nome_esperado:
+                        regraExposicao
+                            .nome_esperado,
+
+                    regra_fixa:
+                        false,
+
+                    snapshots:
+                        snapshotsMLB
+                });
             }
-
-            if (
-                listingTypeAtual ===
-                regra.tipo_esperado
-            ) {
-                return;
-            }
-
-            alertas.push({
-                mlb,
-
-                variation_id:
-                    primeiroSnapshot
-                        .variation_id ??
-                    null,
-
-                sku:
-                    primeiroSnapshot.sku ||
-                    '',
-
-                listing_type_atual:
-                    listingTypeAtual,
-
-                listing_type_atual_nome:
-                    nomeListingTypeFullNFE(
-                        listingTypeAtual
-                    ),
-
-                tipo_esperado:
-                    regra.tipo_esperado,
-
-                nome_esperado:
-                    regra.nome_esperado,
-
-                regra_fixa:
-                    regra.regra_fixa,
-
-                origem:
-                    regra.origem,
-
-                motivo:
-                    regra.motivo,
-
-                estoques:
-                    regra.estoques ||
-                    [],
-
-                snapshots:
-                    snapshotsMLB
-            });
         }
     );
 
     return alertas;
 }
 
+function calcularCapacidadeEstoqueInternoSnapshotNFE(
+    snapshot
+) {
+    const itensCadastro =
+        Array.isArray(
+            snapshot?.cadastro_itens
+        )
+            ? snapshot.cadastro_itens
+            : [];
+
+    if (itensCadastro.length === 0) {
+        return {
+            tem_cadastro:
+                false,
+
+            todos_cadastrados:
+                false,
+
+            capacidade_anuncio:
+                0,
+
+            tem_estoque_para_mais_de_um:
+                false
+        };
+    }
+
+    const cadastrados =
+        itensCadastro.filter(
+            item =>
+                item.encontrado === true
+        );
+
+    const todosCadastrados =
+        cadastrados.length ===
+        itensCadastro.length;
+
+    if (
+        cadastrados.length === 0 ||
+        !todosCadastrados
+    ) {
+        return {
+            tem_cadastro:
+                cadastrados.length > 0,
+
+            todos_cadastrados:
+                false,
+
+            capacidade_anuncio:
+                0,
+
+            tem_estoque_para_mais_de_um:
+                false
+        };
+    }
+
+    const capacidades =
+        cadastrados.map(item => {
+            const estoqueInterno =
+                Math.max(
+                    0,
+                    Number(
+                        item.estoque_atual ||
+                        0
+                    )
+                );
+
+            const quantidadePorAnuncio =
+                Math.max(
+                    1,
+                    Number(
+                        item
+                            .quantidade_por_anuncio ||
+                        1
+                    )
+                );
+
+            return Math.floor(
+                estoqueInterno /
+                quantidadePorAnuncio
+            );
+        });
+
+    const capacidadeAnuncio =
+        capacidades.length > 0
+            ? Math.min(
+                ...capacidades
+            )
+            : 0;
+
+    return {
+        tem_cadastro:
+            true,
+
+        todos_cadastrados:
+            true,
+
+        capacidade_anuncio:
+            capacidadeAnuncio,
+
+        tem_estoque_para_mais_de_um:
+            capacidadeAnuncio >= 2
+    };
+}
 
 function vendaFullPrecisaMudarParaClassicoNFE(
     venda
@@ -27926,30 +28352,30 @@ function montarAvisosExposicaoVendaNFE(
 
     return alertas
         .map(alerta => {
-            const textoRegra =
-                alerta.regra_fixa
-                    ? `REGRA FIXA: SEMPRE ${String(
-                        alerta.nome_esperado
-                    ).toUpperCase()}`
-                    : `ALTERAR PARA ${String(
-                        alerta.nome_esperado
-                    ).toUpperCase()}`;
+            const ehQuantidade =
+                alerta.tipo_alerta ===
+                'quantidade';
+
+            const classeAviso =
+                ehQuantidade
+                    ? 'aviso-quantidade-anuncio-nfe'
+                    : 'aviso-exposicao-full-nfe';
 
             const icone =
-                alerta.regra_fixa
-                    ? 'fa-lock'
-                    : 'fa-exclamation-triangle';
+                ehQuantidade
+                    ? 'fa-boxes'
+                    : (
+                        alerta.regra_fixa
+                            ? 'fa-lock'
+                            : 'fa-exclamation-triangle'
+                    );
 
             return `
                 <div
-                    class="aviso-exposicao-full-nfe"
-                    style="
-                        margin-top:5px;
-                        padding:5px;
-                        text-align:center;
-                    "
+                    class="${classeAviso}"
                     title="${escaparHTMLNFE(
-                        alerta.motivo
+                        alerta.mensagem ||
+                        ''
                     )}"
                 >
                     <div
@@ -27960,8 +28386,9 @@ function montarAvisosExposicaoVendaNFE(
                         "
                     >
                         <i class="fas ${icone}"></i>
+
                         ${escaparHTMLNFE(
-                            textoRegra
+                            alerta.titulo
                         )}
                     </div>
 
@@ -27970,12 +28397,11 @@ function montarAvisosExposicaoVendaNFE(
                             margin-bottom:4px;
                             font-size:8px;
                             font-weight:400;
+                            max-width:155px;
                         "
                     >
-                        Atual:
                         ${escaparHTMLNFE(
-                            alerta
-                                .listing_type_atual_nome
+                            alerta.mensagem
                         )}
                     </div>
 
@@ -30230,15 +30656,37 @@ function renderizarVendasNFETabela(vendas) {
                             venda
                         );
 
-                        const precisaMudarParaClassico =
-                                vendaFullPrecisaMudarParaClassicoNFE(
-                                    venda
-                                );
+                        const alertasVenda =
+                            obterAlertasExposicaoVendaNFE(
+                                venda
+                            );
 
-                            const classeAlertaExposicao =
-                                precisaMudarParaClassico
-                                    ? 'alerta-exposicao-full-nfe'
-                                    : '';
+                        const temAlertaQuantidade =
+                            alertasVenda.some(
+                                alerta =>
+                                    alerta.tipo_alerta ===
+                                    'quantidade'
+                            );
+
+                        const temAlertaExposicao =
+                            alertasVenda.some(
+                                alerta =>
+                                    alerta.tipo_alerta ===
+                                    'exposicao'
+                            );
+
+                        const precisaMudarParaClassico =
+                            alertasVenda.length > 0;
+
+                        let classeAlertaExposicao = '';
+
+                        if (temAlertaQuantidade) {
+                            classeAlertaExposicao =
+                                'alerta-quantidade-anuncio-nfe';
+                        } else if (temAlertaExposicao) {
+                            classeAlertaExposicao =
+                                'alerta-exposicao-full-nfe';
+                        }
 
                             const avisoExposicaoHtml =
                                     montarAvisosExposicaoVendaNFE(
@@ -49659,7 +50107,6 @@ window.salvarNovaTransportadora = salvarNovaTransportadora;
 window.atualizarListaNFE = atualizarListaNFE;
 window.enviarXMLparaMercadoLivre = enviarXMLparaMercadoLivre;
 window.buscarValorExatoPagamento = buscarValorExatoPagamento;
-window.baixarXMLCompletoML = baixarXMLCompletoML;
 window.sincronizarEstoqueComML = sincronizarEstoqueComML;
 window.obterDataHojeLocal = obterDataHojeLocal;
 window.extrairDataEnvioML = extrairDataEnvioML;

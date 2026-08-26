@@ -149,45 +149,155 @@ class NFEService {
         return response.data;
     }
 
-    async consultarStatus(chaveAcesso, certData) {
-        const tpAmb = this.ambiente === 'producao' ? '1' : '2';
-        const xmlCons = `<consSitNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
-    <tpAmb>${tpAmb}</tpAmb>
-    <xServ>CONSULTAR</xServ>
-    <chNFe>${chaveAcesso}</chNFe>
-</consSitNFe>`;
-        const conteudoCompactado = this.compactarXml(xmlCons);
-        const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-    <soap:Body>
-        <nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4">
-            ${conteudoCompactado}
-        </nfeDadosMsg>
-    </soap:Body>
-</soap:Envelope>`;
-        const soapFinal = this.compactarXml(soapEnvelope);
+    async consultarStatus(
+    chaveAcesso,
+    certData
+) {
+    const chave =
+        String(
+            chaveAcesso ||
+            ''
+        )
+            .replace(
+                /\D/g,
+                ''
+            );
 
-        const httpsAgent = new https.Agent({
-            cert: certData.cert,
-            key: certData.privateKey,
-            ca: certData.ca || undefined,
-            rejectUnauthorized: false,
-            minVersion: 'TLSv1.2',
-            maxVersion: 'TLSv1.2'
-        });
-
-        const response = await axios.post(this.urlConsulta, soapFinal, {
-            httpsAgent,
-            headers: {
-                'Content-Type': 'text/xml; charset=utf-8',
-                'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4/nfeDadosMsg'
-            },
-            timeout: 30000,
-            responseType: 'text',
-            validateStatus: () => true
-        });
-        return response.data;
+    if (chave.length !== 44) {
+        throw new Error(
+            'Chave da NF-e inválida para consulta.'
+        );
     }
+
+    const tpAmb =
+        this.ambiente ===
+            'producao'
+            ? '1'
+            : '2';
+
+    const xmlCons =
+        `<consSitNFe xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">` +
+        `<tpAmb>${tpAmb}</tpAmb>` +
+        `<xServ>CONSULTAR</xServ>` +
+        `<chNFe>${chave}</chNFe>` +
+        `</consSitNFe>`;
+
+    const soapEnvelope =
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">` +
+        `<soap:Body>` +
+        `<nfeDadosMsg xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4">` +
+        `${xmlCons}` +
+        `</nfeDadosMsg>` +
+        `</soap:Body>` +
+        `</soap:Envelope>`;
+
+    const httpsAgent =
+        new https.Agent({
+            cert:
+                certData.cert,
+
+            key:
+                certData.privateKey,
+
+            ca:
+                certData.ca ||
+                undefined,
+
+            rejectUnauthorized:
+                false,
+
+            minVersion:
+                'TLSv1.2',
+
+            maxVersion:
+                'TLSv1.2'
+        });
+
+    console.log(
+        `🔎 Consultando NF-e ${chave} em ${this.urlConsulta}`
+    );
+
+    const response =
+        await axios.post(
+            this.urlConsulta,
+            soapEnvelope,
+            {
+                httpsAgent,
+
+                headers: {
+                    'Content-Type':
+                        'text/xml; charset=utf-8',
+
+                    SOAPAction:
+                        'http://www.portalfiscal.inf.br/nfe/wsdl/NFeConsultaProtocolo4/nfeDadosMsg'
+                },
+
+                timeout:
+                    60000,
+
+                responseType:
+                    'text',
+
+                validateStatus:
+                    () => true
+            }
+        );
+
+    const resposta =
+        String(
+            response.data ||
+            ''
+        ).trim();
+
+    if (
+        response.status < 200 ||
+        response.status >= 300
+    ) {
+        throw new Error(
+            `Consulta SEFAZ retornou HTTP ${response.status}: ${resposta.substring(0, 500)}`
+        );
+    }
+
+    if (!resposta) {
+        throw new Error(
+            'A consulta da SEFAZ retornou uma resposta vazia.'
+        );
+    }
+
+    const cStats =
+        [
+            ...resposta.matchAll(
+                /<(?:[\w.-]+:)?cStat>(\d+)<\/(?:[\w.-]+:)?cStat>/gi
+            )
+        ]
+            .map(
+                match =>
+                    match[1]
+            );
+
+    const possuiProtNFe =
+        /<(?:[\w.-]+:)?protNFe\b/i.test(
+            resposta
+        );
+
+    console.log(
+        '📨 Resposta da consulta SEFAZ:',
+        {
+            httpStatus:
+                response.status,
+
+            cStats,
+
+            possuiProtNFe,
+
+            tamanho:
+                resposta.length
+        }
+    );
+
+    return resposta;
+}
 }
 
 module.exports = NFEService;

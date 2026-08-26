@@ -2161,88 +2161,79 @@ Fonte: IBPT/empresometro.com.br 92589A`;
 
 
         // =====================================================
-        // XML nfeProc
-        // =====================================================
+// MONTAR XML PROCESSADO AUTORIZADO
+// =====================================================
 
-        let xmlParaML =
-            null;
+let xmlParaML =
+    null;
 
+let mlXmlPath =
+    null;
 
-        let mlXmlPath =
-            null;
+let dadosXmlProcessado =
+    null;
 
+try {
+    dadosXmlProcessado =
+        montarXmlProcessadoNFE(
+            xmlAssinado,
+            respostaSefaz,
+            chaveAcesso
+        );
 
-        try {
+    xmlParaML =
+        dadosXmlProcessado
+            .xmlProcessado;
 
-            const protNFeMatch =
-                respostaSefaz.match(
-                    /<protNFe[^>]*>([\s\S]*?)<\/protNFe>/
-                );
+    mlXmlPath =
+        path.join(
+            __dirname,
+            'xml_gerado',
+            `${chaveAcesso}-procNFe.xml`
+        );
 
+    fs.writeFileSync(
+        mlXmlPath,
+        xmlParaML,
+        'utf8'
+    );
 
-            let protNFe =
-                '';
+    console.log(
+        `✅ XML processado autorizado criado: ${mlXmlPath}`
+    );
 
+    console.log(
+        '🧾 XML processado:',
+        {
+            chave:
+                chaveAcesso,
 
-            if (
-                protNFeMatch
-            ) {
+            protocolo:
+                dadosXmlProcessado
+                    .protocolo,
 
-                protNFe =
-                    protNFeMatch[0];
-            }
+            cStat:
+                dadosXmlProcessado
+                    .cStat,
 
-
-            const xmlAssinadoSemDeclaracao =
-                xmlAssinado
-                    .replace(
-                        /^<\?xml[^?]*\?>/,
-                        ''
-                    )
-                    .trim();
-
-
-            const nfeProcXML =
-`<?xml version="1.0" encoding="UTF-8"?>
-<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
-${xmlAssinadoSemDeclaracao}
-${protNFe}
-</nfeProc>`;
-
-
-            mlXmlPath =
-                path.join(
-                    __dirname,
-                    'xml_gerado',
-                    `nfe_${nNF}_ml.xml`
-                );
-
-
-            fs.writeFileSync(
-                mlXmlPath,
-                nfeProcXML,
-                'utf8'
-            );
-
-
-            xmlParaML =
-                nfeProcXML;
-
-
-            console.log(
-                `📁 XML para ML salvo em: ${mlXmlPath}`
-            );
-
-
-        } catch (
-            err
-        ) {
-
-            console.warn(
-                '⚠️ Erro ao gerar XML para ML (não crítico):',
-                err.message
-            );
+            tamanho:
+                xmlParaML.length
         }
+    );
+} catch (error) {
+    console.error(
+        '❌ Não foi possível montar o XML autorizado:',
+        error
+    );
+
+    // A NF-e pode ter sido autorizada, mas não devemos
+    // enviar um XML incompleto ao Mercado Livre.
+    xmlParaML =
+        null;
+
+    mlXmlPath =
+        null;
+}
 
 
         // =====================================================
@@ -2264,6 +2255,15 @@ ${protNFe}
 
             xml_assinado:
                 xmlAssinado,
+
+                xml_processado:
+                    xmlParaML,
+
+                xml_processado_em:
+                    xmlParaML
+                        ? new Date()
+                            .toISOString()
+                        : null,
 
             chave_acesso:
                 chaveAcesso,
@@ -2624,8 +2624,7 @@ ${protNFe}
         // RETORNO
         // =====================================================
 
-        return res.json({
-
+                return res.json({
             success:
                 true,
 
@@ -2636,8 +2635,30 @@ ${protNFe}
             chave_acesso:
                 chaveAcesso,
 
+            xml:
+                xmlParaML,
+
+            xml_processado:
+                xmlParaML,
+
             xml_ml:
-                !!mlXmlPath,
+                Boolean(
+                    xmlParaML
+                ),
+
+            xml_completo:
+                Boolean(
+                    xmlParaML &&
+                    /<nfeProc\b/i.test(
+                        xmlParaML
+                    ) &&
+                    /<(?:[\w.-]+:)?protNFe\b/i.test(
+                        xmlParaML
+                    ) &&
+                    /<(?:[\w.-]+:)?nProt\b/i.test(
+                        xmlParaML
+                    )
+                ),
 
             devolucao:
                 ehDevolucao
@@ -4748,6 +4769,223 @@ async function buscarXMLPorChave(req, res) {
                     'Erro ao preparar XML da NF-e.'
             });
     }
+}
+
+function extrairTagXmlCompletaNFE(
+    xml,
+    nomeTag
+) {
+    const texto =
+        String(
+            xml ||
+            ''
+        );
+
+    const regex =
+        new RegExp(
+            `<(?:[\\w.-]+:)?${nomeTag}\\b[^>]*>[\\s\\S]*?<\\/(?:[\\w.-]+:)?${nomeTag}>`,
+            'i'
+        );
+
+    const match =
+        texto.match(
+            regex
+        );
+
+    return match
+        ? match[0].trim()
+        : null;
+}
+
+
+function extrairValorTagXmlNFE(
+    xml,
+    nomeTag
+) {
+    const texto =
+        String(
+            xml ||
+            ''
+        );
+
+    const regex =
+        new RegExp(
+            `<(?:[\\w.-]+:)?${nomeTag}\\b[^>]*>([^<]*)<\\/(?:[\\w.-]+:)?${nomeTag}>`,
+            'i'
+        );
+
+    const match =
+        texto.match(
+            regex
+        );
+
+    return match
+        ? String(
+            match[1] ||
+            ''
+        ).trim()
+        : '';
+}
+
+
+function montarXmlProcessadoNFE(
+    xmlAssinado,
+    respostaSefaz,
+    chaveEsperada = null
+) {
+    const nfeAssinada =
+        extrairTagXmlCompletaNFE(
+            xmlAssinado,
+            'NFe'
+        );
+
+    if (!nfeAssinada) {
+        throw new Error(
+            'Não foi possível localizar a tag NFe no XML assinado.'
+        );
+    }
+
+    if (
+        !/<(?:[\w.-]+:)?Signature\b/i.test(
+            nfeAssinada
+        )
+    ) {
+        throw new Error(
+            'O XML da NF-e não possui assinatura digital.'
+        );
+    }
+
+    const protNFe =
+        extrairTagXmlCompletaNFE(
+            respostaSefaz,
+            'protNFe'
+        );
+
+    if (!protNFe) {
+        throw new Error(
+            'A SEFAZ autorizou a operação, mas não retornou o protNFe completo.'
+        );
+    }
+
+    const cStat =
+        extrairValorTagXmlNFE(
+            protNFe,
+            'cStat'
+        );
+
+    if (
+        cStat !== '100' &&
+        cStat !== '150'
+    ) {
+        const motivo =
+            extrairValorTagXmlNFE(
+                protNFe,
+                'xMotivo'
+            );
+
+        throw new Error(
+            `NF-e sem protocolo de autorização válido. cStat=${cStat || 'N/I'} - ${motivo || 'motivo não informado'}`
+        );
+    }
+
+    const protocolo =
+        extrairValorTagXmlNFE(
+            protNFe,
+            'nProt'
+        );
+
+    if (!protocolo) {
+        throw new Error(
+            'O protNFe retornado pela SEFAZ não contém nProt.'
+        );
+    }
+
+    const chaveProtocolo =
+        extrairValorTagXmlNFE(
+            protNFe,
+            'chNFe'
+        );
+
+    if (
+        chaveEsperada &&
+        chaveProtocolo &&
+        String(chaveEsperada) !==
+            String(chaveProtocolo)
+    ) {
+        throw new Error(
+            `O protocolo retornado pertence à chave ${chaveProtocolo}, mas era esperada a chave ${chaveEsperada}.`
+        );
+    }
+
+    const nfeSemDeclaracao =
+        nfeAssinada
+            .replace(
+                /^<\?xml[^?]*\?>\s*/i,
+                ''
+            )
+            .trim();
+
+    const protocoloSemDeclaracao =
+        protNFe
+            .replace(
+                /^<\?xml[^?]*\?>\s*/i,
+                ''
+            )
+            .trim();
+
+    const xmlProcessado =
+        `<?xml version="1.0" encoding="UTF-8"?>` +
+        `<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">` +
+        `${nfeSemDeclaracao}` +
+        `${protocoloSemDeclaracao}` +
+        `</nfeProc>`;
+
+    const validacoes = {
+        nfeProc:
+            /<nfeProc\b/i.test(
+                xmlProcessado
+            ),
+
+        nfe:
+            /<(?:[\w.-]+:)?NFe\b/i.test(
+                xmlProcessado
+            ),
+
+        assinatura:
+            /<(?:[\w.-]+:)?Signature\b/i.test(
+                xmlProcessado
+            ),
+
+        protNFe:
+            /<(?:[\w.-]+:)?protNFe\b/i.test(
+                xmlProcessado
+            ),
+
+        nProt:
+            /<(?:[\w.-]+:)?nProt\b/i.test(
+                xmlProcessado
+            )
+    };
+
+    if (
+        Object
+            .values(validacoes)
+            .some(
+                valor =>
+                    valor !== true
+            )
+    ) {
+        throw new Error(
+            'Falha ao validar o XML processado da NF-e.'
+        );
+    }
+
+    return {
+        xmlProcessado,
+        protocolo,
+        cStat,
+        chaveProtocolo
+    };
 }
 
 // ===================== SINCRONIZAÇÃO (desabilitada no backend) =====================
