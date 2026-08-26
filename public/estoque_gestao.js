@@ -15258,6 +15258,264 @@ function gerarCamposDinamicos(
 
         }
 
+        function encontrarRegraCondicionalAtiva(campo) {
+    const regras =
+        normalizarRegrasCondicionaisCampo(
+            campo
+        );
+
+    for (const regra of regras) {
+        const controlador =
+            document.getElementById(
+                `campo_${regra.campo}`
+            );
+
+        if (!controlador) {
+            continue;
+        }
+
+        const valorAtual =
+            obterValorCampoControlador(
+                controlador
+            );
+
+        const valorEsperado =
+            String(
+                regra.valor ?? ''
+            ).trim();
+
+        if (
+            valorAtual.toLocaleLowerCase('pt-BR') ===
+            valorEsperado.toLocaleLowerCase('pt-BR')
+        ) {
+            return regra;
+        }
+    }
+
+    return null;
+}
+
+function obterComportamentoCampoCondicional(campo) {
+    const regras =
+        normalizarRegrasCondicionaisCampo(
+            campo
+        );
+
+    if (
+        regras.length === 0
+    ) {
+        return {
+            possuiRegras: false,
+            regra: null,
+            comportamento: 'editavel',
+            valorCampo: '',
+            obrigatorio: campo?.obrigatorio === true
+        };
+    }
+
+    const regra =
+        encontrarRegraCondicionalAtiva(
+            campo
+        );
+
+    if (regra) {
+        return {
+            possuiRegras: true,
+            regra,
+            comportamento:
+                regra.comportamento || 'editavel',
+            valorCampo:
+                regra.valor_campo ?? '',
+            obrigatorio:
+                regra.obrigatorio === true
+        };
+    }
+
+    return {
+        possuiRegras: true,
+        regra: null,
+        comportamento:
+            campo.comportamento_padrao_condicional ||
+            'ocultar',
+        valorCampo: '',
+        obrigatorio:
+            campo?.obrigatorio === true
+    };
+}
+
+function aplicarComportamentoCampoCondicional(
+    campo
+) {
+    if (
+        !campo?.nome
+    ) {
+        return;
+    }
+
+    const elemento =
+        document.getElementById(
+            `campo_${campo.nome}`
+        );
+
+    if (!elemento) {
+        return;
+    }
+
+    const container =
+        elemento.closest(
+            '.campo-dinamico'
+        );
+
+    if (!container) {
+        return;
+    }
+
+    const estado =
+        obterComportamentoCampoCondicional(
+            campo
+        );
+
+    const assinaturaRegra =
+        estado.regra
+            ? [
+                estado.regra.campo,
+                estado.regra.valor,
+                estado.regra.comportamento,
+                estado.regra.valor_campo
+            ].join('::')
+            : `padrao::${estado.comportamento}`;
+
+    const assinaturaAnterior =
+        container.dataset.regraCondicionalAplicada ||
+        '';
+
+    const regraMudou =
+        assinaturaAnterior !== assinaturaRegra;
+
+    container.dataset.regraCondicionalAplicada =
+        assinaturaRegra;
+
+    // Restaurar comportamento básico.
+    elemento.disabled = false;
+    elemento.readOnly = false;
+    elemento.required = false;
+
+    container.style.opacity = '';
+    container.style.display = '';
+
+    if (
+        estado.comportamento === 'ocultar'
+    ) {
+        container.style.display = 'none';
+        elemento.disabled = true;
+        elemento.required = false;
+
+        if (
+            elemento.type === 'checkbox'
+        ) {
+            elemento.checked = false;
+        } else {
+            elemento.value = '';
+        }
+
+        return;
+    }
+
+    if (
+        estado.comportamento === 'valor_fixo'
+    ) {
+        container.style.display = '';
+        container.style.opacity = '0.85';
+
+        if (
+            elemento.type === 'checkbox'
+        ) {
+            elemento.checked =
+                String(
+                    estado.valorCampo
+                ) === 'true';
+
+            elemento.disabled = true;
+        } else {
+            elemento.value =
+                estado.valorCampo;
+
+            // Select não aceita readonly.
+            if (
+                elemento.tagName === 'SELECT'
+            ) {
+                elemento.disabled = true;
+            } else {
+                elemento.readOnly = true;
+            }
+        }
+
+        elemento.required =
+            estado.obrigatorio;
+
+        return;
+    }
+
+    if (
+        estado.comportamento ===
+        'valor_preenchido'
+    ) {
+        container.style.display = '';
+
+        if (
+            regraMudou &&
+            estado.valorCampo !== ''
+        ) {
+            if (
+                elemento.type === 'checkbox'
+            ) {
+                elemento.checked =
+                    String(
+                        estado.valorCampo
+                    ) === 'true';
+            } else {
+                elemento.value =
+                    estado.valorCampo;
+            }
+        }
+
+        elemento.required =
+            estado.obrigatorio;
+
+        return;
+    }
+
+    // Mostrar editável.
+    container.style.display = '';
+
+    // Se mudou de uma regra de valor fixo para editável,
+    // desbloqueia o campo, mas mantém o valor atual para que
+    // o usuário possa confirmar ou alterar.
+    elemento.disabled = false;
+    elemento.readOnly = false;
+    elemento.required =
+        estado.obrigatorio;
+}
+
+
+        function obterValorCampoControlador(elemento) {
+    if (!elemento) {
+        return '';
+    }
+
+    if (
+        elemento.type === 'checkbox'
+    ) {
+        return elemento.checked
+            ? 'true'
+            : 'false';
+    }
+
+    return String(
+        elemento.value ?? ''
+    ).trim();
+}
+
         function obterValorCampoCondicionalProduto(
     elemento
 ) {
@@ -15352,107 +15610,14 @@ function atualizarVisibilidadeCamposCondicionais(
     categoria,
     subcategoria = ''
 ) {
-
     const campos =
         getCamposPorCategoria(
             categoria,
             subcategoria
         ) || [];
 
-
     campos.forEach(
-        campo => {
-
-            if (
-                !campo?.nome
-            ) {
-
-                return;
-
-            }
-
-
-            const elemento =
-                document.getElementById(
-                    `campo_${campo.nome}`
-                );
-
-
-            if (
-                !elemento
-            ) {
-
-                return;
-
-            }
-
-
-            const containerCampo =
-                elemento.closest(
-                    '.campo-dinamico'
-                );
-
-
-            if (
-                !containerCampo
-            ) {
-
-                return;
-
-            }
-
-
-            const visivel =
-                condicaoCampoDinamicoAtendida(
-                    campo
-                );
-
-
-            containerCampo.style.display =
-                visivel
-                    ? ''
-                    : 'none';
-
-
-            elemento.disabled =
-                !visivel;
-
-
-            elemento.required =
-                visivel &&
-                campo.obrigatorio ===
-                    true;
-
-
-            containerCampo.dataset
-                .condicaoVisivel =
-                visivel
-                    ? 'true'
-                    : 'false';
-
-
-            if (
-                !visivel
-            ) {
-
-                if (
-                    elemento.type ===
-                    'checkbox'
-                ) {
-
-                    elemento.checked =
-                        false;
-
-                } else {
-
-                    elemento.value =
-                        '';
-
-                }
-
-            }
-
-        }
+        aplicarComportamentoCampoCondicional
     );
 }
 
@@ -15461,96 +15626,69 @@ function configurarEventosCamposCondicionais(
     categoria,
     subcategoria = ''
 ) {
-
     const campos =
         getCamposPorCategoria(
             categoria,
             subcategoria
         ) || [];
 
-
     const controladores =
         new Set();
 
-
-    campos.forEach(
-        campo => {
-
-            if (
-                campo?.condicional?.ativo ===
-                    true &&
-                campo.condicional.campo
-            ) {
-
+    campos.forEach(campo => {
+        normalizarRegrasCondicionaisCampo(
+            campo
+        ).forEach(regra => {
+            if (regra?.campo) {
                 controladores.add(
-                    campo.condicional.campo
+                    regra.campo
                 );
-
             }
+        });
+    });
 
+    controladores.forEach(nomeControlador => {
+        const elemento =
+            document.getElementById(
+                `campo_${nomeControlador}`
+            );
+
+        if (!elemento) {
+            return;
         }
-    );
 
+        const chaveEvento =
+            `${categoria}::${subcategoria}`;
 
-    controladores.forEach(
-        nomeControlador => {
-
-            const elemento =
-                document.getElementById(
-                    `campo_${nomeControlador}`
-                );
-
-
-            if (
-                !elemento
-            ) {
-
-                return;
-
-            }
-
-
-            if (
-                elemento.dataset
-                    .eventoCondicionalConfigurado ===
-                'true'
-            ) {
-
-                return;
-
-            }
-
-
+        if (
             elemento.dataset
-                .eventoCondicionalConfigurado =
-                'true';
-
-
-            const atualizar =
-                function() {
-
-                    atualizarVisibilidadeCamposCondicionais(
-                        categoria,
-                        subcategoria
-                    );
-
-                };
-
-
-            elemento.addEventListener(
-                'change',
-                atualizar
-            );
-
-
-            elemento.addEventListener(
-                'input',
-                atualizar
-            );
-
+                .eventoCondicionalConfigurado ===
+            chaveEvento
+        ) {
+            return;
         }
-    );
 
+        elemento.dataset
+            .eventoCondicionalConfigurado =
+            chaveEvento;
+
+        const atualizar = function() {
+            atualizarVisibilidadeCamposCondicionais(
+                categoria,
+                subcategoria
+            );
+        };
+
+        elemento.addEventListener(
+            'change',
+            atualizar
+        );
+
+        elemento.addEventListener(
+            'input',
+            atualizar
+        );
+    });
 
     atualizarVisibilidadeCamposCondicionais(
         categoria,
@@ -15560,20 +15698,15 @@ function configurarEventosCamposCondicionais(
 
 
 function validarCamposCondicionaisProduto() {
-
     const categoria =
         document.getElementById(
             'produtoCategoria'
-        )?.value ||
-        '';
-
+        )?.value || '';
 
     const subcategoria =
         document.getElementById(
             'campo_subcategoria'
-        )?.value ||
-        '';
-
+        )?.value || '';
 
     const campos =
         getCamposPorCategoria(
@@ -15581,105 +15714,119 @@ function validarCamposCondicionaisProduto() {
             subcategoria
         ) || [];
 
-
-    for (
-        const campo
-        of campos
-    ) {
-
-        if (
-            !campo?.nome
-        ) {
-
+    for (const campo of campos) {
+        if (!campo?.nome) {
             continue;
-
         }
-
 
         const elemento =
             document.getElementById(
                 `campo_${campo.nome}`
             );
 
-
-        if (
-            !elemento
-        ) {
-
+        if (!elemento) {
             continue;
-
         }
 
-
-        const visivel =
-            condicaoCampoDinamicoAtendida(
+        const estado =
+            obterComportamentoCampoCondicional(
                 campo
             );
 
-
         if (
-            !visivel
+            estado.comportamento ===
+            'ocultar'
         ) {
-
             continue;
-
         }
 
-
         if (
-            campo.obrigatorio !==
-            true
+            estado.obrigatorio !== true
         ) {
-
             continue;
-
         }
 
-
-        let preenchido =
-            true;
-
+        let preenchido;
 
         if (
-            elemento.type ===
-            'checkbox'
+            elemento.type === 'checkbox'
         ) {
-
             preenchido =
                 elemento.checked;
-
         } else {
-
             preenchido =
                 String(
-                    elemento.value ||
-                    ''
-                ).trim() !==
-                '';
-
+                    elemento.value ?? ''
+                ).trim() !== '';
         }
 
-
-        if (
-            !preenchido
-        ) {
-
+        if (!preenchido) {
             showToast(
                 `⚠️ O campo "${campo.label || campo.nome}" é obrigatório.`,
                 'warning'
             );
 
-
             elemento.focus();
-
 
             return false;
         }
-
     }
 
-
     return true;
+}
+
+function prepararCamposCondicionaisParaSalvar() {
+    const categoria =
+        document.getElementById(
+            'produtoCategoria'
+        )?.value || '';
+
+    const subcategoria =
+        document.getElementById(
+            'campo_subcategoria'
+        )?.value || '';
+
+    const campos =
+        getCamposPorCategoria(
+            categoria,
+            subcategoria
+        ) || [];
+
+    campos.forEach(campo => {
+        const elemento =
+            document.getElementById(
+                `campo_${campo.nome}`
+            );
+
+        if (!elemento) {
+            return;
+        }
+
+        const estado =
+            obterComportamentoCampoCondicional(
+                campo
+            );
+
+        // O salvamento original busca o elemento diretamente
+        // pelo ID, portanto o valor permanece acessível mesmo
+        // quando o select está desabilitado.
+        if (
+            estado.comportamento ===
+            'valor_fixo'
+        ) {
+            if (
+                elemento.type === 'checkbox'
+            ) {
+                elemento.checked =
+                    String(
+                        estado.valorCampo
+                    ) === 'true';
+            } else {
+                elemento.value =
+                    estado.valorCampo;
+            }
+        }
+    });
 }
 
 
@@ -27864,49 +28011,21 @@ function adicionarCampoPadraoMLB() {
 }
 
 function escaparHtmlCampoCondicional(valor) {
-
-    return String(
-        valor ?? ''
-    )
-        .replace(
-            /&/g,
-            '&amp;'
-        )
-        .replace(
-            /</g,
-            '&lt;'
-        )
-        .replace(
-            />/g,
-            '&gt;'
-        )
-        .replace(
-            /"/g,
-            '&quot;'
-        )
-        .replace(
-            /'/g,
-            '&#039;'
-        );
+    return String(valor ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
 }
 
 
 function obterCamposEditorCategoria() {
+    const container = document.getElementById('novaCategoriaCampos');
 
-    const container =
-        document.getElementById(
-            'novaCategoriaCampos'
-        );
-
-
-    if (
-        !container
-    ) {
-
+    if (!container) {
         return [];
-
     }
-
 
     return Array.from(
         container.querySelectorAll(
@@ -27915,6 +28034,46 @@ function obterCamposEditorCategoria() {
     );
 }
 
+function normalizarRegrasCondicionaisCampo(campo) {
+    if (
+        Array.isArray(campo?.regras_condicionais) &&
+        campo.regras_condicionais.length > 0
+    ) {
+        return campo.regras_condicionais;
+    }
+
+    // Compatibilidade com a condição simples anterior.
+    if (
+        campo?.condicional?.ativo === true &&
+        campo.condicional.campo
+    ) {
+        return [
+            {
+                campo: campo.condicional.campo,
+                valor: campo.condicional.valor ?? '',
+                comportamento: 'editavel',
+                valor_campo: '',
+                obrigatorio: campo.obrigatorio === true
+            }
+        ];
+    }
+
+    return [];
+}
+
+function atualizarTitulosCamposDinamicos() {
+    const campos = obterCamposEditorCategoria();
+
+    campos.forEach((div, indice) => {
+        const titulo = div.querySelector(
+            '.titulo-campo-dinamico'
+        );
+
+        if (titulo) {
+            titulo.textContent = `Campo #${indice + 1}`;
+        }
+    });
+}
 
 function atualizarCamposControladoresCondicionais() {
 
@@ -28325,442 +28484,339 @@ function toggleCondicaoCampo(
 
 
 function coletarCamposCategoriaDoModal() {
+    const container = document.getElementById(
+        'novaCategoriaCampos'
+    );
 
-    const container =
-        document.getElementById(
-            'novaCategoriaCampos'
-        );
-
-
-    if (
-        !container
-    ) {
-
+    if (!container) {
         return {
-
-            success:
-                false,
-
-            error:
-                'Container dos campos da categoria não encontrado.'
-
+            success: false,
+            error: 'Container dos campos não encontrado.'
         };
     }
 
-
-    const campos =
-        [];
-
-
-    const camposDinamicos =
+    const divsCampos = Array.from(
         container.querySelectorAll(
             '.campo-dinamico:not(.campo-mlb-codes)'
-        );
+        )
+    );
 
-
-    if (
-        camposDinamicos.length ===
-        0
-    ) {
-
+    if (divsCampos.length === 0) {
         return {
-
-            success:
-                false,
-
-            error:
-                'Adicione pelo menos um campo personalizado.'
-
+            success: false,
+            error: 'Adicione pelo menos um campo personalizado.'
         };
     }
 
+    const nomesCampos = divsCampos.map(
+        div =>
+            div.querySelector(
+                '.campo-nome'
+            )?.value?.trim() || ''
+    );
 
-    const nomesUtilizados =
-        new Set();
+    const nomesUtilizados = new Set();
+    const campos = [];
 
-
-    for (
-        const div
-        of camposDinamicos
-    ) {
-
+    for (const div of divsCampos) {
         const nomeCampo =
             div.querySelector(
                 '.campo-nome'
-            )?.value?.trim() ||
-            '';
-
+            )?.value?.trim() || '';
 
         const label =
             div.querySelector(
                 '.campo-label'
-            )?.value?.trim() ||
-            '';
-
+            )?.value?.trim() || '';
 
         const tipo =
             div.querySelector(
                 '.campo-tipo'
-            )?.value ||
-            'text';
-
+            )?.value || 'text';
 
         const obrigatorio =
             div.querySelector(
                 '.campo-obrigatorio'
-            )?.value ===
-            'true';
-
+            )?.value === 'true';
 
         const placeholder =
             div.querySelector(
                 '.campo-placeholder'
-            )?.value?.trim() ||
-            '';
-
+            )?.value?.trim() || '';
 
         const validacao =
             div.querySelector(
                 '.campo-validacao'
-            )?.value ||
-            '';
-
+            )?.value || '';
 
         const rows =
             parseInt(
                 div.querySelector(
                     '.campo-rows'
                 )?.value
-            ) ||
-            2;
-
+            ) || 2;
 
         if (
             !nomeCampo ||
             !label
         ) {
-
             return {
-
-                success:
-                    false,
-
-                error:
-                    'Todos os campos precisam de Nome e Label.'
-
+                success: false,
+                error: 'Todos os campos precisam de Nome e Label.'
             };
         }
-
 
         if (
             !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(
                 nomeCampo
             )
         ) {
-
             return {
-
-                success:
-                    false,
-
+                success: false,
                 error:
-                    `O nome "${nomeCampo}" deve conter apenas letras, números e underline.`
-
+                    `O nome "${nomeCampo}" deve conter apenas ` +
+                    'letras, números e underline.'
             };
         }
-
 
         if (
             nomesUtilizados.has(
                 nomeCampo
             )
         ) {
-
             return {
-
-                success:
-                    false,
-
-                error:
-                    `O campo "${nomeCampo}" está duplicado.`
-
+                success: false,
+                error: `O campo "${nomeCampo}" está duplicado.`
             };
         }
 
+        nomesUtilizados.add(nomeCampo);
 
-        nomesUtilizados.add(
-            nomeCampo
-        );
+        let opcoes = [];
 
-
-        let opcoes =
-            [];
-
-
-        if (
-            tipo ===
-            'select'
-        ) {
-
+        if (tipo === 'select') {
             opcoes =
                 div.querySelector(
                     '.campo-opcoes'
                 )?.value
-                    ?.split(
-                        ','
-                    )
-                    .map(
-                        opcao =>
-                            opcao.trim()
-                    )
-                    .filter(
-                        Boolean
-                    ) ||
-                [];
+                    ?.split(',')
+                    .map(opcao => opcao.trim())
+                    .filter(Boolean) || [];
 
-
-            if (
-                opcoes.length ===
-                0
-            ) {
-
+            if (opcoes.length === 0) {
                 return {
-
-                    success:
-                        false,
-
+                    success: false,
                     error:
-                        `O campo "${label}" precisa de opções.`
-
+                        `O campo "${label}" precisa possuir opções.`
                 };
             }
-
         }
-
 
         const campo = {
-
-            nome:
-                nomeCampo,
-
+            nome: nomeCampo,
             label,
-
             tipo,
-
             obrigatorio,
-
             placeholder,
-
             validacao
-
         };
 
-
-        if (
-            tipo ===
-            'select'
-        ) {
-
-            campo.opcoes =
-                opcoes;
-
+        if (tipo === 'select') {
+            campo.opcoes = opcoes;
         }
 
-
-        if (
-            tipo ===
-            'textarea'
-        ) {
-
-            campo.rows =
-                rows;
-
+        if (tipo === 'textarea') {
+            campo.rows = rows;
         }
 
-
-        if (
-            tipo ===
-            'number'
-        ) {
-
-            campo.step =
-                '0.01';
-
-
-            campo.min =
-                '0';
-
+        if (tipo === 'number') {
+            campo.step = '0.01';
+            campo.min = '0';
         }
 
-
-        // =====================================================
-        // CONDIÇÃO DO CAMPO
-        // =====================================================
-
-        const condicaoAtiva =
+        const regrasAtivas =
             div.querySelector(
-                '.campo-condicao-ativa'
-            )?.checked ===
-            true;
+                '.campo-regras-ativas'
+            )?.checked === true;
 
-
-        if (
-            condicaoAtiva
-        ) {
-
-            const campoControlador =
+        if (regrasAtivas) {
+            const comportamentoPadrao =
                 div.querySelector(
-                    '.campo-condicao-controlador'
-                )?.value?.trim() ||
-                '';
+                    '.campo-comportamento-padrao'
+                )?.value || 'ocultar';
 
+            const linhasRegras = Array.from(
+                div.querySelectorAll(
+                    '.regra-condicional-linha'
+                )
+            );
 
-            const valorCondicao =
-                div.querySelector(
-                    '.campo-condicao-valor'
-                )?.value ??
-                '';
-
-
-            if (
-                !campoControlador
-            ) {
-
+            if (linhasRegras.length === 0) {
                 return {
-
-                    success:
-                        false,
-
+                    success: false,
                     error:
-                        `Selecione o campo controlador da condição de "${label}".`
-
+                        `Adicione pelo menos uma regra ao campo "${label}".`
                 };
             }
 
+            const regrasCondicionais = [];
+            const chavesRegras = new Set();
 
-            if (
-                campoControlador ===
-                nomeCampo
-            ) {
+            for (const linha of linhasRegras) {
+                const campoControlador =
+                    linha.querySelector(
+                        '.regra-campo-controlador'
+                    )?.value?.trim() || '';
 
-                return {
+                const valorControlador =
+                    linha.querySelector(
+                        '.regra-valor-controlador'
+                    )?.value ?? '';
 
-                    success:
-                        false,
+                const comportamento =
+                    linha.querySelector(
+                        '.regra-comportamento'
+                    )?.value || 'editavel';
 
-                    error:
-                        `O campo "${label}" não pode depender dele mesmo.`
+                const obrigatorioRegra =
+                    linha.querySelector(
+                        '.regra-obrigatorio'
+                    )?.value === 'true';
 
-                };
+                const valorCampo =
+                    linha.querySelector(
+                        '.regra-valor-campo'
+                    )?.value ?? '';
+
+                if (!campoControlador) {
+                    return {
+                        success: false,
+                        error:
+                            `Selecione o campo controlador da regra de "${label}".`
+                    };
+                }
+
+                if (
+                    campoControlador === nomeCampo
+                ) {
+                    return {
+                        success: false,
+                        error:
+                            `O campo "${label}" não pode depender dele mesmo.`
+                    };
+                }
+
+                if (
+                    !nomesCampos.includes(
+                        campoControlador
+                    )
+                ) {
+                    return {
+                        success: false,
+                        error:
+                            `O campo controlador "${campoControlador}" ` +
+                            `da regra de "${label}" não existe.`
+                    };
+                }
+
+                if (
+                    String(valorControlador).trim() === ''
+                ) {
+                    return {
+                        success: false,
+                        error:
+                            `Selecione o valor que ativa a regra de "${label}".`
+                    };
+                }
+
+                if (
+                    [
+                        'valor_fixo',
+                        'valor_preenchido'
+                    ].includes(comportamento) &&
+                    String(valorCampo).trim() === ''
+                ) {
+                    return {
+                        success: false,
+                        error:
+                            `Informe o valor automático da regra de "${label}".`
+                    };
+                }
+
+                const chaveRegra =
+                    `${campoControlador}::${String(
+                        valorControlador
+                    ).toLocaleLowerCase('pt-BR')}`;
+
+                if (
+                    chavesRegras.has(
+                        chaveRegra
+                    )
+                ) {
+                    return {
+                        success: false,
+                        error:
+                            `Existe mais de uma regra de "${label}" ` +
+                            `para o mesmo valor do campo controlador.`
+                    };
+                }
+
+                chavesRegras.add(chaveRegra);
+
+                regrasCondicionais.push({
+                    campo: campoControlador,
+                    valor: valorControlador,
+                    comportamento,
+                    valor_campo: [
+                        'valor_fixo',
+                        'valor_preenchido'
+                    ].includes(comportamento)
+                        ? valorCampo
+                        : '',
+                    obrigatorio: obrigatorioRegra
+                });
             }
 
+            campo.regras_condicionais =
+                regrasCondicionais;
 
-            if (
-                valorCondicao ===
-                ''
-            ) {
+            campo.comportamento_padrao_condicional =
+                comportamentoPadrao;
 
-                return {
-
-                    success:
-                        false,
-
-                    error:
-                        `Selecione ou informe o valor que ativa o campo "${label}".`
-
-                };
-            }
-
-
-            campo.condicional = {
-
-                ativo:
-                    true,
-
-                campo:
-                    campoControlador,
-
-                operador:
-                    'igual',
-
-                valor:
-                    valorCondicao
-
-            };
-
+            // Remove a estrutura antiga caso ela exista.
+            delete campo.condicional;
         }
 
-
-        campos.push(
-            campo
-        );
-
+        campos.push(campo);
     }
 
-
-    campos.push(
-        {
-
-            nome:
-                'mlb_codes',
-
-            label:
-                'Códigos MLB',
-
-            tipo:
-                'textarea',
-
-            placeholder:
-                'MLB separados por vírgula',
-
-            obrigatorio:
-                false,
-
-            rows:
-                2
-
-        }
-    );
-
+    campos.push({
+        nome: 'mlb_codes',
+        label: 'Códigos MLB',
+        tipo: 'textarea',
+        placeholder: 'MLB separados por vírgula',
+        obrigatorio: false,
+        rows: 2
+    });
 
     return {
-
-        success:
-            true,
-
+        success: true,
         campos
-
     };
 }
 
-function adicionarCampoDinamico(
-    campoExistente = null
-) {
+function adicionarCampoDinamico(campoExistente = null) {
+    const container = document.getElementById(
+        'novaCategoriaCampos'
+    );
 
-    const container =
-        document.getElementById(
-            'novaCategoriaCampos'
-        );
-
-
-    if (
-        !container
-    ) {
-
+    if (!container) {
         return;
-
     }
 
+    const div = document.createElement('div');
 
-    const div =
-        document.createElement(
-            'div'
-        );
-
-
-    div.className =
-        'campo-dinamico';
-
+    div.className = 'campo-dinamico';
 
     div.style.cssText = `
         border: 1px solid #dee2e6;
@@ -28771,162 +28827,108 @@ function adicionarCampoDinamico(
         position: relative;
     `;
 
+    const index = container.querySelectorAll(
+        '.campo-dinamico:not(.campo-mlb-codes)'
+    ).length;
 
-    const index =
-        container.querySelectorAll(
-            '.campo-dinamico:not(.campo-mlb-codes)'
-        ).length;
+    const regrasExistentes =
+        normalizarRegrasCondicionaisCampo(
+            campoExistente
+        );
 
+    const possuiCondicoes =
+        regrasExistentes.length > 0;
 
-    const condicional =
-        campoExistente?.condicional ||
-        {};
-
-
-    const condicaoAtiva =
-        condicional.ativo ===
-        true;
-
+    const comportamentoPadrao =
+        campoExistente?.comportamento_padrao_condicional ||
+        (
+            campoExistente?.condicional?.ativo === true
+                ? 'ocultar'
+                : 'editavel'
+        );
 
     div.innerHTML = `
-
-        <div
-            style="
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 10px;
-            "
-        >
-
+        <div style="
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:10px;
+        ">
             <span
                 class="titulo-campo-dinamico"
-                style="
-                    font-weight: 600;
-                "
+                style="font-weight:600;"
             >
                 Campo #${index + 1}
             </span>
 
-
             <button
                 type="button"
-                class="
-                    btn
-                    btn-sm
-                    btn-danger
-                "
+                class="btn btn-sm btn-danger"
                 onclick="removerCampoDinamico(this)"
                 title="Remover campo"
             >
                 <i class="fas fa-times"></i>
             </button>
-
         </div>
 
-
-        <div
-            style="
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 10px;
-            "
-        >
-
+        <div style="
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:10px;
+        ">
             <div>
-
-                <label
-                    style="
-                        font-weight: 500;
-                        font-size: 13px;
-                    "
-                >
+                <label style="font-weight:500;font-size:13px;">
                     Nome do Campo (identificador) *
                 </label>
 
-
                 <input
                     type="text"
-                    class="
-                        form-control
-                        campo-nome
-                    "
+                    class="form-control campo-nome"
                     placeholder="Ex: tamanho, cor, marca"
-                    value="${escaparHtmlCampoCondicional(campoExistente?.nome || '')}"
+                    value="${escaparHtmlCampoCondicional(
+                        campoExistente?.nome || ''
+                    )}"
                 >
 
-
-                <small
-                    style="
-                        color: #6c757d;
-                        font-size: 10px;
-                    "
-                >
+                <small style="color:#6c757d;font-size:10px;">
                     Use somente letras, números e underline
                 </small>
-
             </div>
 
-
             <div>
-
-                <label
-                    style="
-                        font-weight: 500;
-                        font-size: 13px;
-                    "
-                >
+                <label style="font-weight:500;font-size:13px;">
                     Label (exibido) *
                 </label>
 
-
                 <input
                     type="text"
-                    class="
-                        form-control
-                        campo-label
-                    "
+                    class="form-control campo-label"
                     placeholder="Ex: Tamanho"
-                    value="${escaparHtmlCampoCondicional(campoExistente?.label || '')}"
+                    value="${escaparHtmlCampoCondicional(
+                        campoExistente?.label || ''
+                    )}"
                 >
-
             </div>
-
         </div>
 
-
-        <div
-            style="
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 10px;
-                margin-top: 10px;
-            "
-        >
-
+        <div style="
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:10px;
+            margin-top:10px;
+        ">
             <div>
-
-                <label
-                    style="
-                        font-weight: 500;
-                        font-size: 13px;
-                    "
-                >
+                <label style="font-weight:500;font-size:13px;">
                     Tipo do Campo *
                 </label>
 
-
                 <select
-                    class="
-                        form-control
-                        campo-tipo
-                    "
+                    class="form-control campo-tipo"
                     onchange="
                         toggleOpcoesCampo(this);
-                        atualizarCamposControladoresCondicionais();
+                        atualizarEditorRegrasCondicionais();
                     "
                 >
-
                     <option
                         value="text"
                         ${campoExistente?.tipo === 'text' ? 'selected' : ''}
@@ -28961,31 +28963,15 @@ function adicionarCampoDinamico(
                     >
                         Checkbox
                     </option>
-
                 </select>
-
             </div>
 
-
             <div>
-
-                <label
-                    style="
-                        font-weight: 500;
-                        font-size: 13px;
-                    "
-                >
-                    Obrigatório
+                <label style="font-weight:500;font-size:13px;">
+                    Obrigatório normalmente
                 </label>
 
-
-                <select
-                    class="
-                        form-control
-                        campo-obrigatorio
-                    "
-                >
-
+                <select class="form-control campo-obrigatorio">
                     <option
                         value="true"
                         ${campoExistente?.obrigatorio ? 'selected' : ''}
@@ -28999,408 +28985,925 @@ function adicionarCampoDinamico(
                     >
                         Não
                     </option>
-
                 </select>
-
             </div>
-
         </div>
 
-
-        <div
-            style="
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 10px;
-                margin-top: 10px;
-            "
-        >
-
+        <div style="
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:10px;
+            margin-top:10px;
+        ">
             <div>
-
-                <label
-                    style="
-                        font-weight: 500;
-                        font-size: 13px;
-                    "
-                >
+                <label style="font-weight:500;font-size:13px;">
                     Placeholder
                 </label>
 
-
                 <input
                     type="text"
-                    class="
-                        form-control
-                        campo-placeholder
-                    "
+                    class="form-control campo-placeholder"
                     placeholder="Ex: Informe o tamanho"
-                    value="${escaparHtmlCampoCondicional(campoExistente?.placeholder || '')}"
+                    value="${escaparHtmlCampoCondicional(
+                        campoExistente?.placeholder || ''
+                    )}"
                 >
-
             </div>
-
 
             <div
                 class="campo-opcoes-container"
                 style="${
-                    campoExistente?.tipo ===
-                    'select'
+                    campoExistente?.tipo === 'select'
                         ? ''
-                        : 'display: none;'
+                        : 'display:none;'
                 }"
             >
-
-                <label
-                    style="
-                        font-weight: 500;
-                        font-size: 13px;
-                    "
-                >
+                <label style="font-weight:500;font-size:13px;">
                     Opções separadas por vírgula *
                 </label>
 
-
                 <input
                     type="text"
-                    class="
-                        form-control
-                        campo-opcoes
-                    "
-                    placeholder="Ex: Preto, Branco, Vermelho"
-                    value="${escaparHtmlCampoCondicional(campoExistente?.opcoes?.join(', ') || '')}"
-                    oninput="atualizarCamposControladoresCondicionais()"
+                    class="form-control campo-opcoes"
+                    placeholder="Ex: 170mm, 172mm, 175mm"
+                    value="${escaparHtmlCampoCondicional(
+                        campoExistente?.opcoes?.join(', ') || ''
+                    )}"
+                    oninput="atualizarEditorRegrasCondicionais()"
                 >
-
             </div>
-
         </div>
 
-
-        <div
-            style="
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 10px;
-                margin-top: 10px;
-            "
-        >
-
+        <div style="
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:10px;
+            margin-top:10px;
+        ">
             <div>
-
-                <label
-                    style="
-                        font-weight: 500;
-                        font-size: 13px;
-                    "
-                >
+                <label style="font-weight:500;font-size:13px;">
                     Validação
                 </label>
 
-
-                <select
-                    class="
-                        form-control
-                        campo-validacao
-                    "
-                >
-
+                <select class="form-control campo-validacao">
                     <option value="">
                         Nenhuma
                     </option>
 
                     <option
                         value="numero_virgula"
-                        ${campoExistente?.validacao === 'numero_virgula' ? 'selected' : ''}
+                        ${
+                            campoExistente?.validacao === 'numero_virgula'
+                                ? 'selected'
+                                : ''
+                        }
                     >
                         Número com vírgula
                     </option>
 
                     <option
                         value="email"
-                        ${campoExistente?.validacao === 'email' ? 'selected' : ''}
+                        ${
+                            campoExistente?.validacao === 'email'
+                                ? 'selected'
+                                : ''
+                        }
                     >
                         E-mail
                     </option>
 
                     <option
                         value="url"
-                        ${campoExistente?.validacao === 'url' ? 'selected' : ''}
+                        ${
+                            campoExistente?.validacao === 'url'
+                                ? 'selected'
+                                : ''
+                        }
                     >
                         URL
                     </option>
-
                 </select>
-
             </div>
 
-
             <div>
-
-                <label
-                    style="
-                        font-weight: 500;
-                        font-size: 13px;
-                    "
-                >
+                <label style="font-weight:500;font-size:13px;">
                     Rows (Texto Longo)
                 </label>
 
-
                 <input
                     type="number"
-                    class="
-                        form-control
-                        campo-rows
-                    "
+                    class="form-control campo-rows"
                     value="${campoExistente?.rows || 2}"
                     min="1"
                     max="10"
                 >
-
             </div>
-
         </div>
 
-
-        <div
-            style="
-                border-top: 1px solid #dee2e6;
-                margin-top: 15px;
-                padding-top: 15px;
-            "
-        >
-
-            <label
-                style="
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    cursor: pointer;
-                    font-weight: 600;
-                    color: #6f42c1;
-                "
-            >
-
+        <div style="
+            border-top:1px solid #dee2e6;
+            margin-top:15px;
+            padding-top:15px;
+        ">
+            <label style="
+                display:flex;
+                align-items:center;
+                gap:8px;
+                cursor:pointer;
+                color:#6f42c1;
+                font-weight:600;
+            ">
                 <input
                     type="checkbox"
-                    class="campo-condicao-ativa"
-                    ${condicaoAtiva ? 'checked' : ''}
-                    onchange="toggleCondicaoCampo(this)"
+                    class="campo-regras-ativas"
+                    ${possuiCondicoes ? 'checked' : ''}
+                    onchange="toggleRegrasCondicionaisCampo(this)"
                 >
 
-                Mostrar este campo somente quando uma condição for atendida
-
+                Usar regras condicionais neste campo
             </label>
 
-
             <div
-                class="configuracao-condicao-campo"
+                class="configuracao-regras-condicionais"
                 style="
-                    display: ${condicaoAtiva ? 'block' : 'none'};
-                    background: #f8f0ff;
-                    border: 1px solid #d8c5f0;
-                    border-left: 4px solid #6f42c1;
-                    border-radius: 7px;
-                    padding: 12px;
-                    margin-top: 10px;
+                    display:${possuiCondicoes ? 'block' : 'none'};
+                    background:#f8f0ff;
+                    border:1px solid #d8c5f0;
+                    border-left:4px solid #6f42c1;
+                    border-radius:7px;
+                    padding:12px;
+                    margin-top:10px;
                 "
             >
+                <div style="margin-bottom:12px;">
+                    <label style="font-weight:500;font-size:13px;">
+                        Quando nenhuma regra for atendida
+                    </label>
 
-                <div
-                    style="
-                        display: grid;
-                        grid-template-columns: 1fr 1fr;
-                        gap: 10px;
-                    "
-                >
-
-                    <div>
-
-                        <label
-                            style="
-                                font-weight: 500;
-                                font-size: 13px;
-                            "
-                        >
-                            Campo controlador
-                        </label>
-
-
-                        <select
-                            class="
-                                form-control
-                                campo-condicao-controlador
-                            "
-                            data-valor-inicial="${escaparHtmlCampoCondicional(condicional.campo || '')}"
-                            onchange="atualizarValoresCondicaoCampo(this)"
-                        >
-
-                            <option value="">
-                                Selecione o campo...
-                            </option>
-
-                        </select>
-
-                    </div>
-
-
-                    <div
-                        class="campo-condicao-valor-container"
-                        data-valor-inicial="${escaparHtmlCampoCondicional(condicional.valor ?? '')}"
+                    <select
+                        class="form-control campo-comportamento-padrao"
                     >
-
-                        <label
-                            style="
-                                font-weight: 500;
-                                font-size: 13px;
-                            "
+                        <option
+                            value="ocultar"
+                            ${
+                                comportamentoPadrao === 'ocultar'
+                                    ? 'selected'
+                                    : ''
+                            }
                         >
-                            Valor que ativa este campo
-                        </label>
+                            Ocultar o campo
+                        </option>
 
-
-                        <input
-                            type="text"
-                            class="
-                                form-control
-                                campo-condicao-valor
-                            "
-                            value="${escaparHtmlCampoCondicional(condicional.valor ?? '')}"
+                        <option
+                            value="editavel"
+                            ${
+                                comportamentoPadrao === 'editavel'
+                                    ? 'selected'
+                                    : ''
+                            }
                         >
-
-                    </div>
-
+                            Mostrar normalmente
+                        </option>
+                    </select>
                 </div>
 
+                <div class="lista-regras-condicionais"></div>
 
-                <small
-                    style="
-                        display: block;
-                        color: #6c757d;
-                        margin-top: 8px;
-                    "
+                <button
+                    type="button"
+                    class="btn btn-sm btn-purple"
+                    onclick="adicionarRegraCondicionalCampo(this)"
                 >
-                    Exemplo: mostrar Tamanho somente quando Cor for Preto.
+                    <i class="fas fa-plus"></i>
+                    Adicionar regra
+                </button>
+
+                <small style="
+                    display:block;
+                    color:#6c757d;
+                    margin-top:8px;
+                ">
+                    Exemplo: Cor = Preto → valor fixo 172mm.
+                    Cor = Branco → campo editável.
                 </small>
-
             </div>
-
         </div>
-
     `;
 
-
-    container.appendChild(
-        div
-    );
-
+    container.appendChild(div);
 
     const inputNome =
-        div.querySelector(
-            '.campo-nome'
-        );
-
+        div.querySelector('.campo-nome');
 
     const inputLabel =
-        div.querySelector(
-            '.campo-label'
-        );
-
+        div.querySelector('.campo-label');
 
     inputNome?.addEventListener(
         'input',
-        atualizarCamposControladoresCondicionais
+        atualizarEditorRegrasCondicionais
     );
-
 
     inputLabel?.addEventListener(
         'input',
-        atualizarCamposControladoresCondicionais
+        atualizarEditorRegrasCondicionais
     );
 
-
-    atualizarCamposControladoresCondicionais();
-}
-
-function removerCampoDinamico(
-    botao
-) {
-
-    const div =
-        botao?.closest(
-            '.campo-dinamico'
+    regrasExistentes.forEach(regra => {
+        adicionarRegraCondicionalCampo(
+            div.querySelector(
+                '.configuracao-regras-condicionais button'
+            ),
+            regra
         );
-
+    });
 
     if (
-        !div
+        possuiCondicoes &&
+        regrasExistentes.length === 0
     ) {
-
-        return;
-
+        adicionarRegraCondicionalCampo(
+            div.querySelector(
+                '.configuracao-regras-condicionais button'
+            )
+        );
     }
 
+    atualizarTitulosCamposDinamicos();
+    atualizarEditorRegrasCondicionais();
+}
+
+function toggleRegrasCondicionaisCampo(checkbox) {
+    const divCampo = checkbox?.closest(
+        '.campo-dinamico'
+    );
+
+    if (!divCampo) {
+        return;
+    }
+
+    const configuracao = divCampo.querySelector(
+        '.configuracao-regras-condicionais'
+    );
+
+    if (!configuracao) {
+        return;
+    }
+
+    configuracao.style.display =
+        checkbox.checked
+            ? 'block'
+            : 'none';
+
+    if (checkbox.checked) {
+        const lista = divCampo.querySelector(
+            '.lista-regras-condicionais'
+        );
+
+        if (
+            lista &&
+            lista.children.length === 0
+        ) {
+            adicionarRegraCondicionalCampo(
+                divCampo.querySelector(
+                    '.configuracao-regras-condicionais button'
+                )
+            );
+        }
+    }
+
+    atualizarEditorRegrasCondicionais();
+}
+
+
+function adicionarRegraCondicionalCampo(
+    botao,
+    regraExistente = null
+) {
+    const divCampo = botao?.closest(
+        '.campo-dinamico'
+    );
+
+    if (!divCampo) {
+        return;
+    }
+
+    const lista = divCampo.querySelector(
+        '.lista-regras-condicionais'
+    );
+
+    if (!lista) {
+        return;
+    }
+
+    const regra = document.createElement('div');
+
+    regra.className =
+        'regra-condicional-linha';
+
+    regra.style.cssText = `
+        background: white;
+        border: 1px solid #ded4eb;
+        border-radius: 7px;
+        padding: 12px;
+        margin-bottom: 10px;
+    `;
+
+    regra.innerHTML = `
+        <div style="
+            display:flex;
+            align-items:center;
+            justify-content:space-between;
+            margin-bottom:10px;
+        ">
+            <strong style="font-size:13px;color:#6f42c1;">
+                Regra condicional
+            </strong>
+
+            <button
+                type="button"
+                class="btn btn-sm btn-danger"
+                onclick="removerRegraCondicionalCampo(this)"
+            >
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+
+        <div style="
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:10px;
+        ">
+            <div>
+                <label style="font-weight:500;font-size:13px;">
+                    Campo controlador
+                </label>
+
+                <select
+                    class="form-control regra-campo-controlador"
+                    data-valor-inicial="${escaparHtmlCampoCondicional(
+                        regraExistente?.campo || ''
+                    )}"
+                    onchange="
+                        atualizarValorControladorRegra(this);
+                    "
+                >
+                    <option value="">
+                        Selecione o campo...
+                    </option>
+                </select>
+            </div>
+
+            <div
+                class="regra-valor-controlador-container"
+                data-valor-inicial="${escaparHtmlCampoCondicional(
+                    regraExistente?.valor ?? ''
+                )}"
+            >
+                <label style="font-weight:500;font-size:13px;">
+                    Valor do controlador
+                </label>
+
+                <input
+                    type="text"
+                    class="form-control regra-valor-controlador"
+                    value="${escaparHtmlCampoCondicional(
+                        regraExistente?.valor ?? ''
+                    )}"
+                >
+            </div>
+        </div>
+
+        <div style="
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:10px;
+            margin-top:10px;
+        ">
+            <div>
+                <label style="font-weight:500;font-size:13px;">
+                    Comportamento do campo
+                </label>
+
+                <select
+                    class="form-control regra-comportamento"
+                    onchange="atualizarValorAutomaticoRegra(this)"
+                >
+                    <option
+                        value="ocultar"
+                        ${
+                            regraExistente?.comportamento === 'ocultar'
+                                ? 'selected'
+                                : ''
+                        }
+                    >
+                        Ocultar
+                    </option>
+
+                    <option
+                        value="editavel"
+                        ${
+                            !regraExistente?.comportamento ||
+                            regraExistente?.comportamento === 'editavel'
+                                ? 'selected'
+                                : ''
+                        }
+                    >
+                        Mostrar editável
+                    </option>
+
+                    <option
+                        value="valor_fixo"
+                        ${
+                            regraExistente?.comportamento === 'valor_fixo'
+                                ? 'selected'
+                                : ''
+                        }
+                    >
+                        Mostrar com valor fixo
+                    </option>
+
+                    <option
+                        value="valor_preenchido"
+                        ${
+                            regraExistente?.comportamento ===
+                            'valor_preenchido'
+                                ? 'selected'
+                                : ''
+                        }
+                    >
+                        Preencher e permitir alteração
+                    </option>
+                </select>
+            </div>
+
+            <div>
+                <label style="font-weight:500;font-size:13px;">
+                    Obrigatório nesta regra
+                </label>
+
+                <select class="form-control regra-obrigatorio">
+                    <option
+                        value="true"
+                        ${
+                            regraExistente?.obrigatorio === true
+                                ? 'selected'
+                                : ''
+                        }
+                    >
+                        Sim
+                    </option>
+
+                    <option
+                        value="false"
+                        ${
+                            regraExistente?.obrigatorio !== true
+                                ? 'selected'
+                                : ''
+                        }
+                    >
+                        Não
+                    </option>
+                </select>
+            </div>
+        </div>
+
+        <div
+            class="regra-valor-campo-container"
+            data-valor-inicial="${escaparHtmlCampoCondicional(
+                regraExistente?.valor_campo ?? ''
+            )}"
+            style="
+                margin-top:10px;
+                display:${
+                    ['valor_fixo', 'valor_preenchido'].includes(
+                        regraExistente?.comportamento
+                    )
+                        ? 'block'
+                        : 'none'
+                };
+            "
+        >
+            <label style="font-weight:500;font-size:13px;">
+                Valor aplicado ao campo
+            </label>
+
+            <input
+                type="text"
+                class="form-control regra-valor-campo"
+                value="${escaparHtmlCampoCondicional(
+                    regraExistente?.valor_campo ?? ''
+                )}"
+            >
+        </div>
+    `;
+
+    lista.appendChild(regra);
+
+    atualizarEditorRegrasCondicionais();
+    atualizarValorAutomaticoRegra(
+        regra.querySelector(
+            '.regra-comportamento'
+        )
+    );
+}
+
+
+function removerRegraCondicionalCampo(botao) {
+    const regra = botao?.closest(
+        '.regra-condicional-linha'
+    );
+
+    regra?.remove();
+}
+
+
+function atualizarEditorRegrasCondicionais() {
+    const camposEditor =
+        obterCamposEditorCategoria();
+
+    const camposDisponiveis =
+        camposEditor
+            .map(div => ({
+                div,
+                nome:
+                    div.querySelector(
+                        '.campo-nome'
+                    )?.value?.trim() || '',
+                label:
+                    div.querySelector(
+                        '.campo-label'
+                    )?.value?.trim() || '',
+                tipo:
+                    div.querySelector(
+                        '.campo-tipo'
+                    )?.value || 'text',
+                opcoes:
+                    div.querySelector(
+                        '.campo-opcoes'
+                    )?.value
+                        ?.split(',')
+                        .map(opcao => opcao.trim())
+                        .filter(Boolean) || []
+            }))
+            .filter(campo => campo.nome);
+
+    camposEditor.forEach(divDependente => {
+        const nomeDependente =
+            divDependente.querySelector(
+                '.campo-nome'
+            )?.value?.trim() || '';
+
+        const selects = divDependente.querySelectorAll(
+            '.regra-campo-controlador'
+        );
+
+        selects.forEach(select => {
+            const valorAtual =
+                select.value ||
+                select.dataset.valorInicial ||
+                '';
+
+            select.innerHTML = `
+                <option value="">
+                    Selecione o campo...
+                </option>
+            `;
+
+            camposDisponiveis.forEach(campo => {
+                if (
+                    campo.div === divDependente ||
+                    campo.nome === nomeDependente
+                ) {
+                    return;
+                }
+
+                const option =
+                    document.createElement('option');
+
+                option.value = campo.nome;
+
+                option.textContent =
+                    campo.label
+                        ? `${campo.label} (${campo.nome})`
+                        : campo.nome;
+
+                if (campo.nome === valorAtual) {
+                    option.selected = true;
+                }
+
+                select.appendChild(option);
+            });
+
+            delete select.dataset.valorInicial;
+
+            atualizarValorControladorRegra(
+                select
+            );
+        });
+
+        divDependente
+            .querySelectorAll(
+                '.regra-comportamento'
+            )
+            .forEach(
+                atualizarValorAutomaticoRegra
+            );
+    });
+}
+
+
+function atualizarValorControladorRegra(
+    selectControlador
+) {
+    const regra = selectControlador?.closest(
+        '.regra-condicional-linha'
+    );
+
+    if (!regra) {
+        return;
+    }
+
+    const containerValor = regra.querySelector(
+        '.regra-valor-controlador-container'
+    );
+
+    if (!containerValor) {
+        return;
+    }
+
+    const valorAnterior =
+        containerValor.querySelector(
+            '.regra-valor-controlador'
+        )?.value ??
+        containerValor.dataset.valorInicial ??
+        '';
+
+    const nomeControlador =
+        selectControlador.value || '';
+
+    const divControlador =
+        obterCamposEditorCategoria().find(
+            div =>
+                div.querySelector(
+                    '.campo-nome'
+                )?.value?.trim() ===
+                nomeControlador
+        );
+
+    const tipoControlador =
+        divControlador?.querySelector(
+            '.campo-tipo'
+        )?.value || 'text';
+
+    const opcoes =
+        divControlador?.querySelector(
+            '.campo-opcoes'
+        )?.value
+            ?.split(',')
+            .map(opcao => opcao.trim())
+            .filter(Boolean) || [];
+
+    let html = `
+        <label style="font-weight:500;font-size:13px;">
+            Valor do controlador
+        </label>
+    `;
+
+    if (
+        tipoControlador === 'select' &&
+        opcoes.length > 0
+    ) {
+        html += `
+            <select
+                class="form-control regra-valor-controlador"
+            >
+                <option value="">
+                    Selecione o valor...
+                </option>
+
+                ${opcoes.map(opcao => `
+                    <option
+                        value="${escaparHtmlCampoCondicional(opcao)}"
+                        ${
+                            String(opcao) === String(valorAnterior)
+                                ? 'selected'
+                                : ''
+                        }
+                    >
+                        ${escaparHtmlCampoCondicional(opcao)}
+                    </option>
+                `).join('')}
+            </select>
+        `;
+    } else if (
+        tipoControlador === 'checkbox'
+    ) {
+        html += `
+            <select
+                class="form-control regra-valor-controlador"
+            >
+                <option
+                    value="true"
+                    ${
+                        String(valorAnterior) === 'true'
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    Marcado
+                </option>
+
+                <option
+                    value="false"
+                    ${
+                        String(valorAnterior) === 'false'
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    Desmarcado
+                </option>
+            </select>
+        `;
+    } else {
+        html += `
+            <input
+                type="text"
+                class="form-control regra-valor-controlador"
+                value="${escaparHtmlCampoCondicional(valorAnterior)}"
+                placeholder="Valor que ativa esta regra"
+            >
+        `;
+    }
+
+    containerValor.innerHTML = html;
+
+    delete containerValor.dataset.valorInicial;
+}
+
+
+function atualizarValorAutomaticoRegra(
+    selectComportamento
+) {
+    const regra = selectComportamento?.closest(
+        '.regra-condicional-linha'
+    );
+
+    if (!regra) {
+        return;
+    }
+
+    const containerValor = regra.querySelector(
+        '.regra-valor-campo-container'
+    );
+
+    if (!containerValor) {
+        return;
+    }
+
+    const comportamento =
+        selectComportamento.value;
+
+    const usaValor = [
+        'valor_fixo',
+        'valor_preenchido'
+    ].includes(comportamento);
+
+    containerValor.style.display =
+        usaValor
+            ? 'block'
+            : 'none';
+
+    if (!usaValor) {
+        return;
+    }
+
+    const divCampo = regra.closest(
+        '.campo-dinamico'
+    );
+
+    const tipoCampo =
+        divCampo?.querySelector(
+            '.campo-tipo'
+        )?.value || 'text';
+
+    const opcoesCampo =
+        divCampo?.querySelector(
+            '.campo-opcoes'
+        )?.value
+            ?.split(',')
+            .map(opcao => opcao.trim())
+            .filter(Boolean) || [];
+
+    const valorAnterior =
+        containerValor.querySelector(
+            '.regra-valor-campo'
+        )?.value ??
+        containerValor.dataset.valorInicial ??
+        '';
+
+    let html = `
+        <label style="font-weight:500;font-size:13px;">
+            Valor aplicado ao campo
+        </label>
+    `;
+
+    if (
+        tipoCampo === 'select' &&
+        opcoesCampo.length > 0
+    ) {
+        html += `
+            <select
+                class="form-control regra-valor-campo"
+            >
+                <option value="">
+                    Selecione o valor...
+                </option>
+
+                ${opcoesCampo.map(opcao => `
+                    <option
+                        value="${escaparHtmlCampoCondicional(opcao)}"
+                        ${
+                            String(opcao) === String(valorAnterior)
+                                ? 'selected'
+                                : ''
+                        }
+                    >
+                        ${escaparHtmlCampoCondicional(opcao)}
+                    </option>
+                `).join('')}
+            </select>
+        `;
+    } else if (
+        tipoCampo === 'checkbox'
+    ) {
+        html += `
+            <select
+                class="form-control regra-valor-campo"
+            >
+                <option value="true">
+                    Marcado
+                </option>
+
+                <option value="false">
+                    Desmarcado
+                </option>
+            </select>
+        `;
+    } else {
+        html += `
+            <input
+                type="${
+                    tipoCampo === 'number'
+                        ? 'number'
+                        : 'text'
+                }"
+                class="form-control regra-valor-campo"
+                value="${escaparHtmlCampoCondicional(valorAnterior)}"
+                placeholder="Valor preenchido automaticamente"
+            >
+        `;
+    }
+
+    containerValor.innerHTML = html;
+
+    delete containerValor.dataset.valorInicial;
+}
+
+function removerCampoDinamico(botao) {
+    const div = botao?.closest(
+        '.campo-dinamico'
+    );
+
+    if (!div) {
+        return;
+    }
 
     if (
         div.classList.contains(
             'campo-mlb-codes'
         )
     ) {
-
         showToast(
             '⚠️ O campo MLB Codes não pode ser removido.',
             'warning'
         );
 
-
         return;
     }
-
 
     if (
         !confirm(
             'Remover este campo?'
         )
     ) {
-
         return;
     }
 
-
     div.remove();
 
-
-    const campos =
-        obterCamposEditorCategoria();
-
-
-    campos.forEach(
-        (
-            campo,
-            indice
-        ) => {
-
-            const titulo =
-                campo.querySelector(
-                    '.titulo-campo-dinamico'
-                );
-
-
-            if (
-                titulo
-            ) {
-
-                titulo.textContent =
-                    `Campo #${indice + 1}`;
-
-            }
-
-        }
-    );
-
-
-    atualizarCamposControladoresCondicionais();
+    atualizarTitulosCamposDinamicos();
+    atualizarEditorRegrasCondicionais();
 }
 
 // ===== TOGGLE OPÇÕES =====
@@ -43080,23 +43583,847 @@ if (
 
 }
 
+function obterValorCampoControlador(
+    elemento
+) {
+
+    if (
+        !elemento
+    ) {
+
+        return '';
+
+    }
+
+
+    if (
+        elemento.type ===
+        'checkbox'
+    ) {
+
+        return elemento.checked
+            ? 'true'
+            : 'false';
+
+    }
+
+
+    return String(
+        elemento.value ??
+        ''
+    ).trim();
+}
+
+
+function encontrarRegraCondicionalAtiva(
+    campo
+) {
+
+    const regras =
+        normalizarRegrasCondicionaisCampo(
+            campo
+        );
+
+
+    for (
+        const regra
+        of regras
+    ) {
+
+        const controlador =
+            document.getElementById(
+                `campo_${regra.campo}`
+            );
+
+
+        if (
+            !controlador
+        ) {
+
+            continue;
+
+        }
+
+
+        const valorAtual =
+            obterValorCampoControlador(
+                controlador
+            );
+
+
+        const valorEsperado =
+            String(
+                regra.valor ??
+                ''
+            ).trim();
+
+
+        if (
+            valorAtual.toLocaleLowerCase(
+                'pt-BR'
+            ) ===
+            valorEsperado.toLocaleLowerCase(
+                'pt-BR'
+            )
+        ) {
+
+            return regra;
+
+        }
+
+    }
+
+
+    return null;
+}
+
+
+function obterComportamentoCampoCondicional(
+    campo
+) {
+
+    const regras =
+        normalizarRegrasCondicionaisCampo(
+            campo
+        );
+
+
+    if (
+        regras.length ===
+        0
+    ) {
+
+        return {
+
+            possuiRegras:
+                false,
+
+            regra:
+                null,
+
+            comportamento:
+                'editavel',
+
+            valorCampo:
+                '',
+
+            obrigatorio:
+                campo?.obrigatorio ===
+                true
+
+        };
+
+    }
+
+
+    const regra =
+        encontrarRegraCondicionalAtiva(
+            campo
+        );
+
+
+    if (
+        regra
+    ) {
+
+        return {
+
+            possuiRegras:
+                true,
+
+            regra,
+
+            comportamento:
+                regra.comportamento ||
+                'editavel',
+
+            valorCampo:
+                regra.valor_campo ??
+                '',
+
+            obrigatorio:
+                regra.obrigatorio ===
+                true
+
+        };
+
+    }
+
+
+    return {
+
+        possuiRegras:
+            true,
+
+        regra:
+            null,
+
+        comportamento:
+            campo
+                .comportamento_padrao_condicional ||
+            'ocultar',
+
+        valorCampo:
+            '',
+
+        obrigatorio:
+            campo?.obrigatorio ===
+            true
+
+    };
+}
+
+
+function aplicarComportamentoCampoCondicional(
+    campo
+) {
+
+    if (
+        !campo?.nome
+    ) {
+
+        return;
+
+    }
+
+
+    const elemento =
+        document.getElementById(
+            `campo_${campo.nome}`
+        );
+
+
+    if (
+        !elemento
+    ) {
+
+        return;
+
+    }
+
+
+    const container =
+        elemento.closest(
+            '.campo-dinamico'
+        );
+
+
+    if (
+        !container
+    ) {
+
+        return;
+
+    }
+
+
+    const estado =
+        obterComportamentoCampoCondicional(
+            campo
+        );
+
+
+    const assinaturaRegra =
+        estado.regra
+            ? [
+
+                estado.regra.campo,
+
+                estado.regra.valor,
+
+                estado.regra
+                    .comportamento,
+
+                estado.regra
+                    .valor_campo
+
+            ].join(
+                '::'
+            )
+            : `padrao::${estado.comportamento}`;
+
+
+    const assinaturaAnterior =
+        container.dataset
+            .regraCondicionalAplicada ||
+        '';
+
+
+    const regraMudou =
+        assinaturaAnterior !==
+        assinaturaRegra;
+
+
+    container.dataset
+        .regraCondicionalAplicada =
+        assinaturaRegra;
+
+
+    // =====================================================
+    // RESTAURAR ESTADO
+    // =====================================================
+
+    elemento.disabled =
+        false;
+
+
+    elemento.readOnly =
+        false;
+
+
+    elemento.required =
+        false;
+
+
+    container.style.opacity =
+        '';
+
+
+    container.style.display =
+        '';
+
+
+    // =====================================================
+    // OCULTAR
+    // =====================================================
+
+    if (
+        estado.comportamento ===
+        'ocultar'
+    ) {
+
+        container.style.display =
+            'none';
+
+
+        elemento.disabled =
+            true;
+
+
+        elemento.required =
+            false;
+
+
+        if (
+            elemento.type ===
+            'checkbox'
+        ) {
+
+            elemento.checked =
+                false;
+
+        } else {
+
+            elemento.value =
+                '';
+
+        }
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // VALOR FIXO
+    // =====================================================
+
+    if (
+        estado.comportamento ===
+        'valor_fixo'
+    ) {
+
+        container.style.display =
+            '';
+
+
+        container.style.opacity =
+            '0.85';
+
+
+        if (
+            elemento.type ===
+            'checkbox'
+        ) {
+
+            elemento.checked =
+                String(
+                    estado.valorCampo
+                ) ===
+                'true';
+
+
+            elemento.disabled =
+                true;
+
+        } else {
+
+            elemento.value =
+                estado.valorCampo;
+
+
+            if (
+                elemento.tagName ===
+                'SELECT'
+            ) {
+
+                elemento.disabled =
+                    true;
+
+            } else {
+
+                elemento.readOnly =
+                    true;
+
+            }
+
+        }
+
+
+        elemento.required =
+            estado.obrigatorio;
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // VALOR PREENCHIDO, MAS EDITÁVEL
+    // =====================================================
+
+    if (
+        estado.comportamento ===
+        'valor_preenchido'
+    ) {
+
+        container.style.display =
+            '';
+
+
+        if (
+            regraMudou &&
+            estado.valorCampo !==
+            ''
+        ) {
+
+            if (
+                elemento.type ===
+                'checkbox'
+            ) {
+
+                elemento.checked =
+                    String(
+                        estado.valorCampo
+                    ) ===
+                    'true';
+
+            } else {
+
+                elemento.value =
+                    estado.valorCampo;
+
+            }
+
+        }
+
+
+        elemento.disabled =
+            false;
+
+
+        elemento.readOnly =
+            false;
+
+
+        elemento.required =
+            estado.obrigatorio;
+
+
+        return;
+    }
+
+
+    // =====================================================
+    // EDITÁVEL
+    // =====================================================
+
+    container.style.display =
+        '';
+
+
+    elemento.disabled =
+        false;
+
+
+    elemento.readOnly =
+        false;
+
+
+    elemento.required =
+        estado.obrigatorio;
+}
+
+
+function atualizarVisibilidadeCamposCondicionais(
+    categoria,
+    subcategoria = ''
+) {
+
+    const campos =
+        getCamposPorCategoria(
+            categoria,
+            subcategoria
+        ) || [];
+
+
+    campos.forEach(
+        campo => {
+
+            aplicarComportamentoCampoCondicional(
+                campo
+            );
+
+        }
+    );
+}
+
+
+function configurarEventosCamposCondicionais(
+    categoria,
+    subcategoria = ''
+) {
+
+    const campos =
+        getCamposPorCategoria(
+            categoria,
+            subcategoria
+        ) || [];
+
+
+    const controladores =
+        new Set();
+
+
+    campos.forEach(
+        campo => {
+
+            const regras =
+                normalizarRegrasCondicionaisCampo(
+                    campo
+                );
+
+
+            regras.forEach(
+                regra => {
+
+                    if (
+                        regra?.campo
+                    ) {
+
+                        controladores.add(
+                            regra.campo
+                        );
+
+                    }
+
+                }
+            );
+
+        }
+    );
+
+
+    controladores.forEach(
+        nomeControlador => {
+
+            const elemento =
+                document.getElementById(
+                    `campo_${nomeControlador}`
+                );
+
+
+            if (
+                !elemento
+            ) {
+
+                return;
+
+            }
+
+
+            const chaveEvento =
+                `${categoria}::${subcategoria}`;
+
+
+            if (
+                elemento.dataset
+                    .eventoCondicionalConfigurado ===
+                chaveEvento
+            ) {
+
+                return;
+
+            }
+
+
+            elemento.dataset
+                .eventoCondicionalConfigurado =
+                chaveEvento;
+
+
+            const atualizar =
+                function() {
+
+                    atualizarVisibilidadeCamposCondicionais(
+                        categoria,
+                        subcategoria
+                    );
+
+                };
+
+
+            elemento.addEventListener(
+                'change',
+                atualizar
+            );
+
+
+            elemento.addEventListener(
+                'input',
+                atualizar
+            );
+
+        }
+    );
+
+
+    atualizarVisibilidadeCamposCondicionais(
+        categoria,
+        subcategoria
+    );
+}
+
+
+function validarCamposCondicionaisProduto() {
+
+    const categoria =
+        document.getElementById(
+            'produtoCategoria'
+        )?.value ||
+        '';
+
+
+    const subcategoria =
+        document.getElementById(
+            'campo_subcategoria'
+        )?.value ||
+        '';
+
+
+    const campos =
+        getCamposPorCategoria(
+            categoria,
+            subcategoria
+        ) || [];
+
+
+    for (
+        const campo
+        of campos
+    ) {
+
+        if (
+            !campo?.nome
+        ) {
+
+            continue;
+
+        }
+
+
+        const elemento =
+            document.getElementById(
+                `campo_${campo.nome}`
+            );
+
+
+        if (
+            !elemento
+        ) {
+
+            continue;
+
+        }
+
+
+        const estado =
+            obterComportamentoCampoCondicional(
+                campo
+            );
+
+
+        if (
+            estado.comportamento ===
+            'ocultar'
+        ) {
+
+            continue;
+
+        }
+
+
+        if (
+            estado.obrigatorio !==
+            true
+        ) {
+
+            continue;
+
+        }
+
+
+        let preenchido =
+            false;
+
+
+        if (
+            elemento.type ===
+            'checkbox'
+        ) {
+
+            preenchido =
+                elemento.checked;
+
+        } else {
+
+            preenchido =
+                String(
+                    elemento.value ??
+                    ''
+                ).trim() !==
+                '';
+
+        }
+
+
+        if (
+            !preenchido
+        ) {
+
+            showToast(
+                `⚠️ O campo "${campo.label || campo.nome}" é obrigatório.`,
+                'warning'
+            );
+
+
+            elemento.focus();
+
+
+            return false;
+
+        }
+
+    }
+
+
+    return true;
+}
+
+
+function prepararCamposCondicionaisParaSalvar() {
+
+    const categoria =
+        document.getElementById(
+            'produtoCategoria'
+        )?.value ||
+        '';
+
+
+    const subcategoria =
+        document.getElementById(
+            'campo_subcategoria'
+        )?.value ||
+        '';
+
+
+    const campos =
+        getCamposPorCategoria(
+            categoria,
+            subcategoria
+        ) || [];
+
+
+    campos.forEach(
+        campo => {
+
+            const elemento =
+                document.getElementById(
+                    `campo_${campo.nome}`
+                );
+
+
+            if (
+                !elemento
+            ) {
+
+                return;
+
+            }
+
+
+            const estado =
+                obterComportamentoCampoCondicional(
+                    campo
+                );
+
+
+            if (
+                estado.comportamento ===
+                'valor_fixo'
+            ) {
+
+                if (
+                    elemento.type ===
+                    'checkbox'
+                ) {
+
+                    elemento.checked =
+                        String(
+                            estado.valorCampo
+                        ) ===
+                        'true';
+
+                } else {
+
+                    elemento.value =
+                        estado.valorCampo;
+
+                }
+
+            }
+
+        }
+    );
+}
+
 // =========================================================
-// INTEGRAÇÃO DOS CAMPOS CONDICIONAIS
+// INTEGRAÇÃO DOS CAMPOS COM MÚLTIPLAS REGRAS CONDICIONAIS
 // =========================================================
 
 if (
-    !window.__integracaoCamposCondicionaisEstoque
+    !window.__integracaoRegrasCondicionaisEstoqueV2
 ) {
 
-    window.__integracaoCamposCondicionaisEstoque =
+    window.__integracaoRegrasCondicionaisEstoqueV2 =
         true;
 
 
     // =====================================================
-    // ENVOLVER GERAR CAMPOS DINÂMICOS
+    // ENVOLVER GERAÇÃO DOS CAMPOS
     // =====================================================
 
-    const gerarCamposDinamicosAntesCondicional =
+    const gerarCamposAntesRegrasCondicionais =
         gerarCamposDinamicos;
 
 
@@ -43107,7 +44434,7 @@ if (
         ) {
 
             const resultado =
-                gerarCamposDinamicosAntesCondicional(
+                gerarCamposAntesRegrasCondicionais(
                     categoria,
                     subcategoria
                 );
@@ -43124,12 +44451,9 @@ if (
                 };
 
 
-            // Execução imediata.
             configurar();
 
 
-            // Executa novamente após o preenchimento dos
-            // valores durante a edição de um produto.
             setTimeout(
                 configurar,
                 0
@@ -43148,6 +44472,12 @@ if (
             );
 
 
+            setTimeout(
+                configurar,
+                600
+            );
+
+
             return resultado;
         };
 
@@ -43157,15 +44487,35 @@ if (
 
 
     // =====================================================
-    // ENVOLVER SALVAMENTO DO PRODUTO
+    // ENVOLVER SALVAMENTO
     // =====================================================
 
-    const salvarProdutoEstoqueAntesCondicional =
+    const salvarProdutoAntesRegrasCondicionais =
         salvarProdutoEstoque;
 
 
     salvarProdutoEstoque =
         async function() {
+
+            const categoria =
+                document.getElementById(
+                    'produtoCategoria'
+                )?.value ||
+                '';
+
+
+            const subcategoria =
+                document.getElementById(
+                    'campo_subcategoria'
+                )?.value ||
+                '';
+
+
+            atualizarVisibilidadeCamposCondicionais(
+                categoria,
+                subcategoria
+            );
+
 
             if (
                 !validarCamposCondicionaisProduto()
@@ -43176,7 +44526,10 @@ if (
             }
 
 
-            return await salvarProdutoEstoqueAntesCondicional
+            prepararCamposCondicionaisParaSalvar();
+
+
+            return await salvarProdutoAntesRegrasCondicionais
                 .apply(
                     this,
                     arguments
@@ -43189,19 +44542,31 @@ if (
 
 
     // =====================================================
-    // EXPORTAR FUNÇÕES DO EDITOR DE CATEGORIAS
+    // EXPORTAR FUNÇÕES
     // =====================================================
 
-    window.atualizarCamposControladoresCondicionais =
-        atualizarCamposControladoresCondicionais;
+    window.toggleRegrasCondicionaisCampo =
+        toggleRegrasCondicionaisCampo;
 
 
-    window.atualizarValoresCondicaoCampo =
-        atualizarValoresCondicaoCampo;
+    window.adicionarRegraCondicionalCampo =
+        adicionarRegraCondicionalCampo;
 
 
-    window.toggleCondicaoCampo =
-        toggleCondicaoCampo;
+    window.removerRegraCondicionalCampo =
+        removerRegraCondicionalCampo;
+
+
+    window.atualizarEditorRegrasCondicionais =
+        atualizarEditorRegrasCondicionais;
+
+
+    window.atualizarValorControladorRegra =
+        atualizarValorControladorRegra;
+
+
+    window.atualizarValorAutomaticoRegra =
+        atualizarValorAutomaticoRegra;
 
 
     window.atualizarVisibilidadeCamposCondicionais =
