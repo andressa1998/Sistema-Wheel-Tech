@@ -15258,6 +15258,430 @@ function gerarCamposDinamicos(
 
         }
 
+        function obterValorCampoCondicionalProduto(
+    elemento
+) {
+
+    if (
+        !elemento
+    ) {
+
+        return '';
+
+    }
+
+
+    if (
+        elemento.type ===
+        'checkbox'
+    ) {
+
+        return elemento.checked
+            ? 'true'
+            : 'false';
+
+    }
+
+
+    return String(
+        elemento.value ??
+        ''
+    ).trim();
+}
+
+
+function condicaoCampoDinamicoAtendida(
+    campo
+) {
+
+    const condicional =
+        campo?.condicional;
+
+
+    if (
+        !condicional ||
+        condicional.ativo !==
+            true
+    ) {
+
+        return true;
+
+    }
+
+
+    const controlador =
+        document.getElementById(
+            `campo_${condicional.campo}`
+        );
+
+
+    if (
+        !controlador
+    ) {
+
+        return false;
+
+    }
+
+
+    const valorAtual =
+        obterValorCampoCondicionalProduto(
+            controlador
+        );
+
+
+    const valorEsperado =
+        String(
+            condicional.valor ??
+            ''
+        ).trim();
+
+
+    return (
+        valorAtual.toLocaleLowerCase(
+            'pt-BR'
+        ) ===
+        valorEsperado.toLocaleLowerCase(
+            'pt-BR'
+        )
+    );
+}
+
+
+function atualizarVisibilidadeCamposCondicionais(
+    categoria,
+    subcategoria = ''
+) {
+
+    const campos =
+        getCamposPorCategoria(
+            categoria,
+            subcategoria
+        ) || [];
+
+
+    campos.forEach(
+        campo => {
+
+            if (
+                !campo?.nome
+            ) {
+
+                return;
+
+            }
+
+
+            const elemento =
+                document.getElementById(
+                    `campo_${campo.nome}`
+                );
+
+
+            if (
+                !elemento
+            ) {
+
+                return;
+
+            }
+
+
+            const containerCampo =
+                elemento.closest(
+                    '.campo-dinamico'
+                );
+
+
+            if (
+                !containerCampo
+            ) {
+
+                return;
+
+            }
+
+
+            const visivel =
+                condicaoCampoDinamicoAtendida(
+                    campo
+                );
+
+
+            containerCampo.style.display =
+                visivel
+                    ? ''
+                    : 'none';
+
+
+            elemento.disabled =
+                !visivel;
+
+
+            elemento.required =
+                visivel &&
+                campo.obrigatorio ===
+                    true;
+
+
+            containerCampo.dataset
+                .condicaoVisivel =
+                visivel
+                    ? 'true'
+                    : 'false';
+
+
+            if (
+                !visivel
+            ) {
+
+                if (
+                    elemento.type ===
+                    'checkbox'
+                ) {
+
+                    elemento.checked =
+                        false;
+
+                } else {
+
+                    elemento.value =
+                        '';
+
+                }
+
+            }
+
+        }
+    );
+}
+
+
+function configurarEventosCamposCondicionais(
+    categoria,
+    subcategoria = ''
+) {
+
+    const campos =
+        getCamposPorCategoria(
+            categoria,
+            subcategoria
+        ) || [];
+
+
+    const controladores =
+        new Set();
+
+
+    campos.forEach(
+        campo => {
+
+            if (
+                campo?.condicional?.ativo ===
+                    true &&
+                campo.condicional.campo
+            ) {
+
+                controladores.add(
+                    campo.condicional.campo
+                );
+
+            }
+
+        }
+    );
+
+
+    controladores.forEach(
+        nomeControlador => {
+
+            const elemento =
+                document.getElementById(
+                    `campo_${nomeControlador}`
+                );
+
+
+            if (
+                !elemento
+            ) {
+
+                return;
+
+            }
+
+
+            if (
+                elemento.dataset
+                    .eventoCondicionalConfigurado ===
+                'true'
+            ) {
+
+                return;
+
+            }
+
+
+            elemento.dataset
+                .eventoCondicionalConfigurado =
+                'true';
+
+
+            const atualizar =
+                function() {
+
+                    atualizarVisibilidadeCamposCondicionais(
+                        categoria,
+                        subcategoria
+                    );
+
+                };
+
+
+            elemento.addEventListener(
+                'change',
+                atualizar
+            );
+
+
+            elemento.addEventListener(
+                'input',
+                atualizar
+            );
+
+        }
+    );
+
+
+    atualizarVisibilidadeCamposCondicionais(
+        categoria,
+        subcategoria
+    );
+}
+
+
+function validarCamposCondicionaisProduto() {
+
+    const categoria =
+        document.getElementById(
+            'produtoCategoria'
+        )?.value ||
+        '';
+
+
+    const subcategoria =
+        document.getElementById(
+            'campo_subcategoria'
+        )?.value ||
+        '';
+
+
+    const campos =
+        getCamposPorCategoria(
+            categoria,
+            subcategoria
+        ) || [];
+
+
+    for (
+        const campo
+        of campos
+    ) {
+
+        if (
+            !campo?.nome
+        ) {
+
+            continue;
+
+        }
+
+
+        const elemento =
+            document.getElementById(
+                `campo_${campo.nome}`
+            );
+
+
+        if (
+            !elemento
+        ) {
+
+            continue;
+
+        }
+
+
+        const visivel =
+            condicaoCampoDinamicoAtendida(
+                campo
+            );
+
+
+        if (
+            !visivel
+        ) {
+
+            continue;
+
+        }
+
+
+        if (
+            campo.obrigatorio !==
+            true
+        ) {
+
+            continue;
+
+        }
+
+
+        let preenchido =
+            true;
+
+
+        if (
+            elemento.type ===
+            'checkbox'
+        ) {
+
+            preenchido =
+                elemento.checked;
+
+        } else {
+
+            preenchido =
+                String(
+                    elemento.value ||
+                    ''
+                ).trim() !==
+                '';
+
+        }
+
+
+        if (
+            !preenchido
+        ) {
+
+            showToast(
+                `⚠️ O campo "${campo.label || campo.nome}" é obrigatório.`,
+                'warning'
+            );
+
+
+            elemento.focus();
+
+
+            return false;
+        }
+
+    }
+
+
+    return true;
+}
+
 
         // =============================================
         // EXIBIR SOMENTE PARA CAIXA DE DIREÇÃO
@@ -27439,101 +27863,1544 @@ function adicionarCampoPadraoMLB() {
     container.appendChild(div);
 }
 
-// ===== ADICIONAR CAMPO PERSONALIZADO =====
-function adicionarCampoDinamico(campoExistente = null) {
-    const container = document.getElementById('novaCategoriaCampos');
-    if (!container) return;
-    
-    const div = document.createElement('div');
-    div.className = 'campo-dinamico';
-    div.style.cssText = 'border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: #fafafa; position: relative;';
-    
-    const index = container.querySelectorAll('.campo-dinamico:not(.campo-mlb-codes)').length;
-    
-    div.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <span style="font-weight: 600;">Campo #${index + 1}</span>
-            <button type="button" class="btn btn-sm btn-danger" onclick="removerCampoDinamico(this)" title="Remover campo">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div>
-                <label style="font-weight: 500; font-size: 13px;">Nome do Campo (identificador) *</label>
-                <input type="text" class="form-control campo-nome" placeholder="Ex: diametroint, marca, etc." value="${campoExistente?.nome || ''}">
-                <small style="color: #6c757d; font-size: 10px;">Usado internamente (sem espaços)</small>
-            </div>
-            <div>
-                <label style="font-weight: 500; font-size: 13px;">Label (exibido) *</label>
-                <input type="text" class="form-control campo-label" placeholder="Ex: Diâmetro Interno" value="${campoExistente?.label || ''}">
-            </div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-            <div>
-                <label style="font-weight: 500; font-size: 13px;">Tipo do Campo *</label>
-                <select class="form-control campo-tipo" onchange="toggleOpcoesCampo(this)">
-                    <option value="text" ${campoExistente?.tipo === 'text' ? 'selected' : ''}>Texto</option>
-                    <option value="number" ${campoExistente?.tipo === 'number' ? 'selected' : ''}>Número</option>
-                    <option value="select" ${campoExistente?.tipo === 'select' ? 'selected' : ''}>Seleção (lista)</option>
-                    <option value="textarea" ${campoExistente?.tipo === 'textarea' ? 'selected' : ''}>Texto Longo</option>
-                    <option value="checkbox" ${campoExistente?.tipo === 'checkbox' ? 'selected' : ''}>Checkbox</option>
-                </select>
-            </div>
-            <div>
-                <label style="font-weight: 500; font-size: 13px;">Obrigatório</label>
-                <select class="form-control campo-obrigatorio">
-                    <option value="true" ${campoExistente?.obrigatorio ? 'selected' : ''}>Sim</option>
-                    <option value="false" ${!campoExistente?.obrigatorio ? 'selected' : ''}>Não</option>
-                </select>
-            </div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-            <div>
-                <label style="font-weight: 500; font-size: 13px;">Placeholder</label>
-                <input type="text" class="form-control campo-placeholder" placeholder="Ex: 15 ou 15,5" value="${campoExistente?.placeholder || ''}">
-            </div>
-            <div class="campo-opcoes-container" style="${campoExistente?.tipo === 'select' ? '' : 'display: none;'}">
-                <label style="font-weight: 500; font-size: 13px;">Opções (separadas por vírgula) *</label>
-                <input type="text" class="form-control campo-opcoes" placeholder="Ex: Opção1, Opção2, Opção3" value="${campoExistente?.opcoes?.join(', ') || ''}">
-                <small style="color: #6c757d; font-size: 10px;">Separe as opções por vírgula</small>
-            </div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
-            <div>
-                <label style="font-weight: 500; font-size: 13px;">Validação</label>
-                <select class="form-control campo-validacao">
-                    <option value="">Nenhuma</option>
-                    <option value="numero_virgula" ${campoExistente?.validacao === 'numero_virgula' ? 'selected' : ''}>Número com vírgula</option>
-                    <option value="email">E-mail</option>
-                    <option value="url">URL</option>
-                </select>
-            </div>
-            <div>
-                <label style="font-weight: 500; font-size: 13px;">Rows (para Texto Longo)</label>
-                <input type="number" class="form-control campo-rows" value="${campoExistente?.rows || 2}" min="1" max="10">
-            </div>
-        </div>
-    `;
-    
-    container.appendChild(div);
+function escaparHtmlCampoCondicional(valor) {
+
+    return String(
+        valor ?? ''
+    )
+        .replace(
+            /&/g,
+            '&amp;'
+        )
+        .replace(
+            /</g,
+            '&lt;'
+        )
+        .replace(
+            />/g,
+            '&gt;'
+        )
+        .replace(
+            /"/g,
+            '&quot;'
+        )
+        .replace(
+            /'/g,
+            '&#039;'
+        );
 }
 
-// ===== REMOVER CAMPO =====
-function removerCampoDinamico(btn) {
-    const div = btn.closest('.campo-dinamico');
-    if (div.classList.contains('campo-mlb-codes')) {
-        showToast('⚠️ O campo MLB Codes não pode ser removido.', 'warning');
+
+function obterCamposEditorCategoria() {
+
+    const container =
+        document.getElementById(
+            'novaCategoriaCampos'
+        );
+
+
+    if (
+        !container
+    ) {
+
+        return [];
+
+    }
+
+
+    return Array.from(
+        container.querySelectorAll(
+            '.campo-dinamico:not(.campo-mlb-codes)'
+        )
+    );
+}
+
+
+function atualizarCamposControladoresCondicionais() {
+
+    const camposEditor =
+        obterCamposEditorCategoria();
+
+
+    const camposDisponiveis =
+        camposEditor
+            .map(
+                div => {
+
+                    return {
+
+                        div,
+
+                        nome:
+                            div.querySelector(
+                                '.campo-nome'
+                            )?.value?.trim() ||
+                            '',
+
+                        label:
+                            div.querySelector(
+                                '.campo-label'
+                            )?.value?.trim() ||
+                            ''
+
+                    };
+
+                }
+            )
+            .filter(
+                campo =>
+                    campo.nome
+            );
+
+
+    camposEditor.forEach(
+        divAtual => {
+
+            const selectControlador =
+                divAtual.querySelector(
+                    '.campo-condicao-controlador'
+                );
+
+
+            if (
+                !selectControlador
+            ) {
+
+                return;
+
+            }
+
+
+            const valorAtual =
+                selectControlador.value ||
+                selectControlador.dataset.valorInicial ||
+                '';
+
+
+            const nomeCampoAtual =
+                divAtual.querySelector(
+                    '.campo-nome'
+                )?.value?.trim() ||
+                '';
+
+
+            selectControlador.innerHTML =
+                '<option value="">Selecione o campo controlador...</option>';
+
+
+            camposDisponiveis.forEach(
+                campo => {
+
+                    if (
+                        campo.div ===
+                            divAtual ||
+                        campo.nome ===
+                            nomeCampoAtual
+                    ) {
+
+                        return;
+
+                    }
+
+
+                    const option =
+                        document.createElement(
+                            'option'
+                        );
+
+
+                    option.value =
+                        campo.nome;
+
+
+                    option.textContent =
+                        campo.label
+                            ? `${campo.label} (${campo.nome})`
+                            : campo.nome;
+
+
+                    if (
+                        campo.nome ===
+                        valorAtual
+                    ) {
+
+                        option.selected =
+                            true;
+
+                    }
+
+
+                    selectControlador.appendChild(
+                        option
+                    );
+
+                }
+            );
+
+
+            delete selectControlador
+                .dataset
+                .valorInicial;
+
+
+            atualizarValoresCondicaoCampo(
+                selectControlador
+            );
+
+        }
+    );
+}
+
+
+function atualizarValoresCondicaoCampo(
+    selectControlador
+) {
+
+    const divCampo =
+        selectControlador?.closest(
+            '.campo-dinamico'
+        );
+
+
+    if (
+        !divCampo
+    ) {
+
+        return;
+
+    }
+
+
+    const containerValor =
+        divCampo.querySelector(
+            '.campo-condicao-valor-container'
+        );
+
+
+    if (
+        !containerValor
+    ) {
+
+        return;
+
+    }
+
+
+    const valorAnterior =
+        containerValor.querySelector(
+            '.campo-condicao-valor'
+        )?.value ??
+        containerValor.dataset.valorInicial ??
+        '';
+
+
+    const nomeControlador =
+        selectControlador.value ||
+        '';
+
+
+    const camposEditor =
+        obterCamposEditorCategoria();
+
+
+    const divControlador =
+        camposEditor.find(
+            div =>
+
+                div.querySelector(
+                    '.campo-nome'
+                )?.value?.trim() ===
+                nomeControlador
+        );
+
+
+    const tipoControlador =
+        divControlador?.querySelector(
+            '.campo-tipo'
+        )?.value ||
+        'text';
+
+
+    const opcoesControlador =
+        divControlador?.querySelector(
+            '.campo-opcoes'
+        )?.value
+            ?.split(
+                ','
+            )
+            .map(
+                opcao =>
+                    opcao.trim()
+            )
+            .filter(
+                Boolean
+            ) ||
+        [];
+
+
+    let html = `
+
+        <label
+            style="
+                font-weight: 500;
+                font-size: 13px;
+            "
+        >
+            Valor que ativa este campo
+        </label>
+
+    `;
+
+
+    if (
+        tipoControlador ===
+            'select' &&
+        opcoesControlador.length >
+            0
+    ) {
+
+        html += `
+
+            <select
+                class="
+                    form-control
+                    campo-condicao-valor
+                "
+            >
+
+                <option value="">
+                    Selecione o valor...
+                </option>
+
+                ${opcoesControlador
+                    .map(
+                        opcao => `
+
+                            <option
+                                value="${escaparHtmlCampoCondicional(opcao)}"
+                                ${
+                                    String(
+                                        opcao
+                                    ) ===
+                                    String(
+                                        valorAnterior
+                                    )
+                                        ? 'selected'
+                                        : ''
+                                }
+                            >
+                                ${escaparHtmlCampoCondicional(opcao)}
+                            </option>
+
+                        `
+                    )
+                    .join(
+                        ''
+                    )}
+
+            </select>
+
+        `;
+
+    } else if (
+        tipoControlador ===
+        'checkbox'
+    ) {
+
+        html += `
+
+            <select
+                class="
+                    form-control
+                    campo-condicao-valor
+                "
+            >
+
+                <option
+                    value="true"
+                    ${
+                        String(
+                            valorAnterior
+                        ) ===
+                        'true'
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    Marcado
+                </option>
+
+                <option
+                    value="false"
+                    ${
+                        String(
+                            valorAnterior
+                        ) ===
+                        'false'
+                            ? 'selected'
+                            : ''
+                    }
+                >
+                    Desmarcado
+                </option>
+
+            </select>
+
+        `;
+
+    } else {
+
+        html += `
+
+            <input
+                type="text"
+                class="
+                    form-control
+                    campo-condicao-valor
+                "
+                placeholder="Digite o valor que ativa o campo"
+                value="${escaparHtmlCampoCondicional(valorAnterior)}"
+            >
+
+        `;
+
+    }
+
+
+    containerValor.innerHTML =
+        html;
+
+
+    delete containerValor
+        .dataset
+        .valorInicial;
+}
+
+
+function toggleCondicaoCampo(
+    checkbox
+) {
+
+    const divCampo =
+        checkbox?.closest(
+            '.campo-dinamico'
+        );
+
+
+    if (
+        !divCampo
+    ) {
+
+        return;
+
+    }
+
+
+    const configuracao =
+        divCampo.querySelector(
+            '.configuracao-condicao-campo'
+        );
+
+
+    if (
+        configuracao
+    ) {
+
+        configuracao.style.display =
+            checkbox.checked
+                ? 'block'
+                : 'none';
+
+    }
+
+
+    if (
+        checkbox.checked
+    ) {
+
+        atualizarCamposControladoresCondicionais();
+
+    }
+}
+
+
+function coletarCamposCategoriaDoModal() {
+
+    const container =
+        document.getElementById(
+            'novaCategoriaCampos'
+        );
+
+
+    if (
+        !container
+    ) {
+
+        return {
+
+            success:
+                false,
+
+            error:
+                'Container dos campos da categoria não encontrado.'
+
+        };
+    }
+
+
+    const campos =
+        [];
+
+
+    const camposDinamicos =
+        container.querySelectorAll(
+            '.campo-dinamico:not(.campo-mlb-codes)'
+        );
+
+
+    if (
+        camposDinamicos.length ===
+        0
+    ) {
+
+        return {
+
+            success:
+                false,
+
+            error:
+                'Adicione pelo menos um campo personalizado.'
+
+        };
+    }
+
+
+    const nomesUtilizados =
+        new Set();
+
+
+    for (
+        const div
+        of camposDinamicos
+    ) {
+
+        const nomeCampo =
+            div.querySelector(
+                '.campo-nome'
+            )?.value?.trim() ||
+            '';
+
+
+        const label =
+            div.querySelector(
+                '.campo-label'
+            )?.value?.trim() ||
+            '';
+
+
+        const tipo =
+            div.querySelector(
+                '.campo-tipo'
+            )?.value ||
+            'text';
+
+
+        const obrigatorio =
+            div.querySelector(
+                '.campo-obrigatorio'
+            )?.value ===
+            'true';
+
+
+        const placeholder =
+            div.querySelector(
+                '.campo-placeholder'
+            )?.value?.trim() ||
+            '';
+
+
+        const validacao =
+            div.querySelector(
+                '.campo-validacao'
+            )?.value ||
+            '';
+
+
+        const rows =
+            parseInt(
+                div.querySelector(
+                    '.campo-rows'
+                )?.value
+            ) ||
+            2;
+
+
+        if (
+            !nomeCampo ||
+            !label
+        ) {
+
+            return {
+
+                success:
+                    false,
+
+                error:
+                    'Todos os campos precisam de Nome e Label.'
+
+            };
+        }
+
+
+        if (
+            !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(
+                nomeCampo
+            )
+        ) {
+
+            return {
+
+                success:
+                    false,
+
+                error:
+                    `O nome "${nomeCampo}" deve conter apenas letras, números e underline.`
+
+            };
+        }
+
+
+        if (
+            nomesUtilizados.has(
+                nomeCampo
+            )
+        ) {
+
+            return {
+
+                success:
+                    false,
+
+                error:
+                    `O campo "${nomeCampo}" está duplicado.`
+
+            };
+        }
+
+
+        nomesUtilizados.add(
+            nomeCampo
+        );
+
+
+        let opcoes =
+            [];
+
+
+        if (
+            tipo ===
+            'select'
+        ) {
+
+            opcoes =
+                div.querySelector(
+                    '.campo-opcoes'
+                )?.value
+                    ?.split(
+                        ','
+                    )
+                    .map(
+                        opcao =>
+                            opcao.trim()
+                    )
+                    .filter(
+                        Boolean
+                    ) ||
+                [];
+
+
+            if (
+                opcoes.length ===
+                0
+            ) {
+
+                return {
+
+                    success:
+                        false,
+
+                    error:
+                        `O campo "${label}" precisa de opções.`
+
+                };
+            }
+
+        }
+
+
+        const campo = {
+
+            nome:
+                nomeCampo,
+
+            label,
+
+            tipo,
+
+            obrigatorio,
+
+            placeholder,
+
+            validacao
+
+        };
+
+
+        if (
+            tipo ===
+            'select'
+        ) {
+
+            campo.opcoes =
+                opcoes;
+
+        }
+
+
+        if (
+            tipo ===
+            'textarea'
+        ) {
+
+            campo.rows =
+                rows;
+
+        }
+
+
+        if (
+            tipo ===
+            'number'
+        ) {
+
+            campo.step =
+                '0.01';
+
+
+            campo.min =
+                '0';
+
+        }
+
+
+        // =====================================================
+        // CONDIÇÃO DO CAMPO
+        // =====================================================
+
+        const condicaoAtiva =
+            div.querySelector(
+                '.campo-condicao-ativa'
+            )?.checked ===
+            true;
+
+
+        if (
+            condicaoAtiva
+        ) {
+
+            const campoControlador =
+                div.querySelector(
+                    '.campo-condicao-controlador'
+                )?.value?.trim() ||
+                '';
+
+
+            const valorCondicao =
+                div.querySelector(
+                    '.campo-condicao-valor'
+                )?.value ??
+                '';
+
+
+            if (
+                !campoControlador
+            ) {
+
+                return {
+
+                    success:
+                        false,
+
+                    error:
+                        `Selecione o campo controlador da condição de "${label}".`
+
+                };
+            }
+
+
+            if (
+                campoControlador ===
+                nomeCampo
+            ) {
+
+                return {
+
+                    success:
+                        false,
+
+                    error:
+                        `O campo "${label}" não pode depender dele mesmo.`
+
+                };
+            }
+
+
+            if (
+                valorCondicao ===
+                ''
+            ) {
+
+                return {
+
+                    success:
+                        false,
+
+                    error:
+                        `Selecione ou informe o valor que ativa o campo "${label}".`
+
+                };
+            }
+
+
+            campo.condicional = {
+
+                ativo:
+                    true,
+
+                campo:
+                    campoControlador,
+
+                operador:
+                    'igual',
+
+                valor:
+                    valorCondicao
+
+            };
+
+        }
+
+
+        campos.push(
+            campo
+        );
+
+    }
+
+
+    campos.push(
+        {
+
+            nome:
+                'mlb_codes',
+
+            label:
+                'Códigos MLB',
+
+            tipo:
+                'textarea',
+
+            placeholder:
+                'MLB separados por vírgula',
+
+            obrigatorio:
+                false,
+
+            rows:
+                2
+
+        }
+    );
+
+
+    return {
+
+        success:
+            true,
+
+        campos
+
+    };
+}
+
+function adicionarCampoDinamico(
+    campoExistente = null
+) {
+
+    const container =
+        document.getElementById(
+            'novaCategoriaCampos'
+        );
+
+
+    if (
+        !container
+    ) {
+
+        return;
+
+    }
+
+
+    const div =
+        document.createElement(
+            'div'
+        );
+
+
+    div.className =
+        'campo-dinamico';
+
+
+    div.style.cssText = `
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 15px;
+        background: #fafafa;
+        position: relative;
+    `;
+
+
+    const index =
+        container.querySelectorAll(
+            '.campo-dinamico:not(.campo-mlb-codes)'
+        ).length;
+
+
+    const condicional =
+        campoExistente?.condicional ||
+        {};
+
+
+    const condicaoAtiva =
+        condicional.ativo ===
+        true;
+
+
+    div.innerHTML = `
+
+        <div
+            style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 10px;
+            "
+        >
+
+            <span
+                class="titulo-campo-dinamico"
+                style="
+                    font-weight: 600;
+                "
+            >
+                Campo #${index + 1}
+            </span>
+
+
+            <button
+                type="button"
+                class="
+                    btn
+                    btn-sm
+                    btn-danger
+                "
+                onclick="removerCampoDinamico(this)"
+                title="Remover campo"
+            >
+                <i class="fas fa-times"></i>
+            </button>
+
+        </div>
+
+
+        <div
+            style="
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+            "
+        >
+
+            <div>
+
+                <label
+                    style="
+                        font-weight: 500;
+                        font-size: 13px;
+                    "
+                >
+                    Nome do Campo (identificador) *
+                </label>
+
+
+                <input
+                    type="text"
+                    class="
+                        form-control
+                        campo-nome
+                    "
+                    placeholder="Ex: tamanho, cor, marca"
+                    value="${escaparHtmlCampoCondicional(campoExistente?.nome || '')}"
+                >
+
+
+                <small
+                    style="
+                        color: #6c757d;
+                        font-size: 10px;
+                    "
+                >
+                    Use somente letras, números e underline
+                </small>
+
+            </div>
+
+
+            <div>
+
+                <label
+                    style="
+                        font-weight: 500;
+                        font-size: 13px;
+                    "
+                >
+                    Label (exibido) *
+                </label>
+
+
+                <input
+                    type="text"
+                    class="
+                        form-control
+                        campo-label
+                    "
+                    placeholder="Ex: Tamanho"
+                    value="${escaparHtmlCampoCondicional(campoExistente?.label || '')}"
+                >
+
+            </div>
+
+        </div>
+
+
+        <div
+            style="
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-top: 10px;
+            "
+        >
+
+            <div>
+
+                <label
+                    style="
+                        font-weight: 500;
+                        font-size: 13px;
+                    "
+                >
+                    Tipo do Campo *
+                </label>
+
+
+                <select
+                    class="
+                        form-control
+                        campo-tipo
+                    "
+                    onchange="
+                        toggleOpcoesCampo(this);
+                        atualizarCamposControladoresCondicionais();
+                    "
+                >
+
+                    <option
+                        value="text"
+                        ${campoExistente?.tipo === 'text' ? 'selected' : ''}
+                    >
+                        Texto
+                    </option>
+
+                    <option
+                        value="number"
+                        ${campoExistente?.tipo === 'number' ? 'selected' : ''}
+                    >
+                        Número
+                    </option>
+
+                    <option
+                        value="select"
+                        ${campoExistente?.tipo === 'select' ? 'selected' : ''}
+                    >
+                        Seleção (lista)
+                    </option>
+
+                    <option
+                        value="textarea"
+                        ${campoExistente?.tipo === 'textarea' ? 'selected' : ''}
+                    >
+                        Texto Longo
+                    </option>
+
+                    <option
+                        value="checkbox"
+                        ${campoExistente?.tipo === 'checkbox' ? 'selected' : ''}
+                    >
+                        Checkbox
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <div>
+
+                <label
+                    style="
+                        font-weight: 500;
+                        font-size: 13px;
+                    "
+                >
+                    Obrigatório
+                </label>
+
+
+                <select
+                    class="
+                        form-control
+                        campo-obrigatorio
+                    "
+                >
+
+                    <option
+                        value="true"
+                        ${campoExistente?.obrigatorio ? 'selected' : ''}
+                    >
+                        Sim
+                    </option>
+
+                    <option
+                        value="false"
+                        ${!campoExistente?.obrigatorio ? 'selected' : ''}
+                    >
+                        Não
+                    </option>
+
+                </select>
+
+            </div>
+
+        </div>
+
+
+        <div
+            style="
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-top: 10px;
+            "
+        >
+
+            <div>
+
+                <label
+                    style="
+                        font-weight: 500;
+                        font-size: 13px;
+                    "
+                >
+                    Placeholder
+                </label>
+
+
+                <input
+                    type="text"
+                    class="
+                        form-control
+                        campo-placeholder
+                    "
+                    placeholder="Ex: Informe o tamanho"
+                    value="${escaparHtmlCampoCondicional(campoExistente?.placeholder || '')}"
+                >
+
+            </div>
+
+
+            <div
+                class="campo-opcoes-container"
+                style="${
+                    campoExistente?.tipo ===
+                    'select'
+                        ? ''
+                        : 'display: none;'
+                }"
+            >
+
+                <label
+                    style="
+                        font-weight: 500;
+                        font-size: 13px;
+                    "
+                >
+                    Opções separadas por vírgula *
+                </label>
+
+
+                <input
+                    type="text"
+                    class="
+                        form-control
+                        campo-opcoes
+                    "
+                    placeholder="Ex: Preto, Branco, Vermelho"
+                    value="${escaparHtmlCampoCondicional(campoExistente?.opcoes?.join(', ') || '')}"
+                    oninput="atualizarCamposControladoresCondicionais()"
+                >
+
+            </div>
+
+        </div>
+
+
+        <div
+            style="
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px;
+                margin-top: 10px;
+            "
+        >
+
+            <div>
+
+                <label
+                    style="
+                        font-weight: 500;
+                        font-size: 13px;
+                    "
+                >
+                    Validação
+                </label>
+
+
+                <select
+                    class="
+                        form-control
+                        campo-validacao
+                    "
+                >
+
+                    <option value="">
+                        Nenhuma
+                    </option>
+
+                    <option
+                        value="numero_virgula"
+                        ${campoExistente?.validacao === 'numero_virgula' ? 'selected' : ''}
+                    >
+                        Número com vírgula
+                    </option>
+
+                    <option
+                        value="email"
+                        ${campoExistente?.validacao === 'email' ? 'selected' : ''}
+                    >
+                        E-mail
+                    </option>
+
+                    <option
+                        value="url"
+                        ${campoExistente?.validacao === 'url' ? 'selected' : ''}
+                    >
+                        URL
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <div>
+
+                <label
+                    style="
+                        font-weight: 500;
+                        font-size: 13px;
+                    "
+                >
+                    Rows (Texto Longo)
+                </label>
+
+
+                <input
+                    type="number"
+                    class="
+                        form-control
+                        campo-rows
+                    "
+                    value="${campoExistente?.rows || 2}"
+                    min="1"
+                    max="10"
+                >
+
+            </div>
+
+        </div>
+
+
+        <div
+            style="
+                border-top: 1px solid #dee2e6;
+                margin-top: 15px;
+                padding-top: 15px;
+            "
+        >
+
+            <label
+                style="
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    cursor: pointer;
+                    font-weight: 600;
+                    color: #6f42c1;
+                "
+            >
+
+                <input
+                    type="checkbox"
+                    class="campo-condicao-ativa"
+                    ${condicaoAtiva ? 'checked' : ''}
+                    onchange="toggleCondicaoCampo(this)"
+                >
+
+                Mostrar este campo somente quando uma condição for atendida
+
+            </label>
+
+
+            <div
+                class="configuracao-condicao-campo"
+                style="
+                    display: ${condicaoAtiva ? 'block' : 'none'};
+                    background: #f8f0ff;
+                    border: 1px solid #d8c5f0;
+                    border-left: 4px solid #6f42c1;
+                    border-radius: 7px;
+                    padding: 12px;
+                    margin-top: 10px;
+                "
+            >
+
+                <div
+                    style="
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 10px;
+                    "
+                >
+
+                    <div>
+
+                        <label
+                            style="
+                                font-weight: 500;
+                                font-size: 13px;
+                            "
+                        >
+                            Campo controlador
+                        </label>
+
+
+                        <select
+                            class="
+                                form-control
+                                campo-condicao-controlador
+                            "
+                            data-valor-inicial="${escaparHtmlCampoCondicional(condicional.campo || '')}"
+                            onchange="atualizarValoresCondicaoCampo(this)"
+                        >
+
+                            <option value="">
+                                Selecione o campo...
+                            </option>
+
+                        </select>
+
+                    </div>
+
+
+                    <div
+                        class="campo-condicao-valor-container"
+                        data-valor-inicial="${escaparHtmlCampoCondicional(condicional.valor ?? '')}"
+                    >
+
+                        <label
+                            style="
+                                font-weight: 500;
+                                font-size: 13px;
+                            "
+                        >
+                            Valor que ativa este campo
+                        </label>
+
+
+                        <input
+                            type="text"
+                            class="
+                                form-control
+                                campo-condicao-valor
+                            "
+                            value="${escaparHtmlCampoCondicional(condicional.valor ?? '')}"
+                        >
+
+                    </div>
+
+                </div>
+
+
+                <small
+                    style="
+                        display: block;
+                        color: #6c757d;
+                        margin-top: 8px;
+                    "
+                >
+                    Exemplo: mostrar Tamanho somente quando Cor for Preto.
+                </small>
+
+            </div>
+
+        </div>
+
+    `;
+
+
+    container.appendChild(
+        div
+    );
+
+
+    const inputNome =
+        div.querySelector(
+            '.campo-nome'
+        );
+
+
+    const inputLabel =
+        div.querySelector(
+            '.campo-label'
+        );
+
+
+    inputNome?.addEventListener(
+        'input',
+        atualizarCamposControladoresCondicionais
+    );
+
+
+    inputLabel?.addEventListener(
+        'input',
+        atualizarCamposControladoresCondicionais
+    );
+
+
+    atualizarCamposControladoresCondicionais();
+}
+
+function removerCampoDinamico(
+    botao
+) {
+
+    const div =
+        botao?.closest(
+            '.campo-dinamico'
+        );
+
+
+    if (
+        !div
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        div.classList.contains(
+            'campo-mlb-codes'
+        )
+    ) {
+
+        showToast(
+            '⚠️ O campo MLB Codes não pode ser removido.',
+            'warning'
+        );
+
+
         return;
     }
-    if (confirm('Remover este campo?')) {
-        div.remove();
-        const container = document.getElementById('novaCategoriaCampos');
-        const campos = container.querySelectorAll('.campo-dinamico:not(.campo-mlb-codes)');
-        campos.forEach((campo, idx) => {
-            const span = campo.querySelector('span[style*="font-weight: 600;"]');
-            if (span) span.textContent = `Campo #${idx + 1}`;
-        });
+
+
+    if (
+        !confirm(
+            'Remover este campo?'
+        )
+    ) {
+
+        return;
     }
+
+
+    div.remove();
+
+
+    const campos =
+        obterCamposEditorCategoria();
+
+
+    campos.forEach(
+        (
+            campo,
+            indice
+        ) => {
+
+            const titulo =
+                campo.querySelector(
+                    '.titulo-campo-dinamico'
+                );
+
+
+            if (
+                titulo
+            ) {
+
+                titulo.textContent =
+                    `Campo #${indice + 1}`;
+
+            }
+
+        }
+    );
+
+
+    atualizarCamposControladoresCondicionais();
 }
 
 // ===== TOGGLE OPÇÕES =====
@@ -27543,105 +29410,161 @@ function toggleOpcoesCampo(select) {
     opcoesContainer.style.display = select.value === 'select' ? 'block' : 'none';
 }
 
-// ===== SALVAR NOVA CATEGORIA =====
 function salvarNovaCategoria() {
-    const nome = document.getElementById('novaCategoriaNome').value.trim();
-    if (!nome) {
-        showToast('⚠️ Informe o nome da categoria', 'warning');
+
+    const nome =
+        document.getElementById(
+            'novaCategoriaNome'
+        )?.value?.trim() ||
+        '';
+
+
+    if (
+        !nome
+    ) {
+
+        showToast(
+            '⚠️ Informe o nome da categoria.',
+            'warning'
+        );
+
+
         return;
     }
-    
-    if (categoriasCustomizadas[nome]) {
-        showToast(`⚠️ A categoria "${nome}" já existe`, 'warning');
+
+
+    if (
+        categoriasCustomizadas[
+            nome
+        ]
+    ) {
+
+        showToast(
+            `⚠️ A categoria "${nome}" já existe.`,
+            'warning'
+        );
+
+
         return;
     }
-    
-    const categoriasPadrao = ['Eixos', 'Parafusos', 'Rolamentos', 'Raios', 'Arruelas', 'Porcas', 'CapacetesEPartes', 'outros'];
-    if (categoriasPadrao.includes(nome)) {
-        showToast(`⚠️ "${nome}" é uma categoria padrão do sistema`, 'warning');
+
+
+    const categoriasPadrao = [
+
+        'Eixos',
+        'Parafusos',
+        'Rolamentos',
+        'Raios',
+        'Arruelas',
+        'Porcas',
+        'CapacetesEPartes',
+        'outros'
+
+    ];
+
+
+    if (
+        categoriasPadrao.includes(
+            nome
+        )
+    ) {
+
+        showToast(
+            `⚠️ "${nome}" é uma categoria padrão do sistema.`,
+            'warning'
+        );
+
+
         return;
     }
-    
-    const container = document.getElementById('novaCategoriaCampos');
-    const campos = [];
-    const camposDinamicos = container.querySelectorAll('.campo-dinamico:not(.campo-mlb-codes)');
-    let temCampoValido = false;
-    
-    for (const div of camposDinamicos) {
-        const nomeCampo = div.querySelector('.campo-nome')?.value?.trim();
-        const label = div.querySelector('.campo-label')?.value?.trim();
-        const tipo = div.querySelector('.campo-tipo')?.value || 'text';
-        const obrigatorio = div.querySelector('.campo-obrigatorio')?.value === 'true';
-        const placeholder = div.querySelector('.campo-placeholder')?.value?.trim() || '';
-        const validacao = div.querySelector('.campo-validacao')?.value || '';
-        const rows = parseInt(div.querySelector('.campo-rows')?.value) || 2;
-        
-        let opcoes = [];
-        if (tipo === 'select') {
-            const opcoesInput = div.querySelector('.campo-opcoes');
-            if (opcoesInput) {
-                opcoes = opcoesInput.value.split(',').map(s => s.trim()).filter(s => s);
-            }
-            if (opcoes.length === 0) {
-                showToast(`⚠️ O campo "${label}" precisa de opções`, 'warning');
-                return;
-            }
-        }
-        
-        if (!nomeCampo || !label) {
-            showToast('⚠️ Todos os campos precisam de Nome e Label', 'warning');
-            return;
-        }
-        
-        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nomeCampo)) {
-            showToast(`⚠️ O nome "${nomeCampo}" deve conter apenas letras, números e underline`, 'warning');
-            return;
-        }
-        
-        temCampoValido = true;
-        const campo = { nome: nomeCampo, label, tipo, obrigatorio, placeholder, validacao };
-        if (tipo === 'select') campo.opcoes = opcoes;
-        if (tipo === 'textarea') campo.rows = rows;
-        if (tipo === 'number') { campo.step = '0.01'; campo.min = '0'; }
-        campos.push(campo);
-    }
-    
-    if (!temCampoValido) {
-        showToast('⚠️ Adicione pelo menos um campo personalizado', 'warning');
+
+
+    const resultadoCampos =
+        coletarCamposCategoriaDoModal();
+
+
+    if (
+        !resultadoCampos.success
+    ) {
+
+        showToast(
+            `⚠️ ${resultadoCampos.error}`,
+            'warning'
+        );
+
+
         return;
     }
-    
-    campos.push({
-        nome: 'mlb_codes',
-        label: 'Códigos MLB',
-        tipo: 'textarea',
-        placeholder: 'MLB separados por vírgula',
-        obrigatorio: false,
-        rows: 2
-    });
-    
-    categoriasCustomizadas[nome] = {
-        campos: campos,
-        criado_por: currentUser?.name || 'sistema',
-        criado_em: new Date().toISOString()
+
+
+    categoriasCustomizadas[
+        nome
+    ] = {
+
+        campos:
+            resultadoCampos.campos,
+
+        criado_por:
+            currentUser?.name ||
+            'sistema',
+
+        criado_em:
+            new Date()
+                .toISOString()
+
     };
 
-    // ===== ADICIONAR REGRAS PADRÃO PARA A NOVA CATEGORIA =====
-    if (!regrasEstoqueAtuais[nome]) {
-        regrasEstoqueAtuais[nome] = {
+
+    if (
+        !regrasEstoqueAtuais[
+            nome
+        ]
+    ) {
+
+        regrasEstoqueAtuais[
+            nome
+        ] = {
+
             condicoes: [
-                { operador: 'padrao', estoque_maximo: 30 }
+
+                {
+
+                    operador:
+                        'padrao',
+
+                    estoque_maximo:
+                        30
+
+                }
+
             ]
+
         };
-        salvarRegrasEstoque(regrasEstoqueAtuais);
+
+
+        salvarRegrasEstoque(
+            regrasEstoqueAtuais
+        );
+
     }
-    
+
+
     salvarCategoriasCustomizadas();
+
+
     fecharModalCriarCategoria();
+
+
     atualizarSelectCategorias();
+
+
     preencherListaCategorias();
-    
-    showToast(`✅ Categoria "${nome}" criada com ${campos.length} campos!`, 'success');
+
+
+    showToast(
+        `✅ Categoria "${nome}" criada com ${resultadoCampos.campos.length} campos!`,
+        'success'
+    );
 }
 
 // ===== EDITAR CATEGORIA EXISTENTE =====
@@ -27682,106 +29605,203 @@ function editarCategoriaCustomizada(nome) {
     }
 }
 
-// ===== ATUALIZAR CATEGORIA EXISTENTE =====
-function atualizarCategoriaExistente(nomeAntigo) {
-    const nome = document.getElementById('novaCategoriaNome').value.trim();
-    if (!nome) {
-        showToast('⚠️ Informe o nome da categoria', 'warning');
+function atualizarCategoriaExistente(
+    nomeAntigo
+) {
+
+    const nome =
+        document.getElementById(
+            'novaCategoriaNome'
+        )?.value?.trim() ||
+        '';
+
+
+    if (
+        !nome
+    ) {
+
+        showToast(
+            '⚠️ Informe o nome da categoria.',
+            'warning'
+        );
+
+
         return;
     }
-    
-    const container = document.getElementById('novaCategoriaCampos');
-    const campos = [];
-    const camposDinamicos = container.querySelectorAll('.campo-dinamico:not(.campo-mlb-codes)');
-    let temCampoValido = false;
-    
-    for (const div of camposDinamicos) {
-        const nomeCampo = div.querySelector('.campo-nome')?.value?.trim();
-        const label = div.querySelector('.campo-label')?.value?.trim();
-        const tipo = div.querySelector('.campo-tipo')?.value || 'text';
-        const obrigatorio = div.querySelector('.campo-obrigatorio')?.value === 'true';
-        const placeholder = div.querySelector('.campo-placeholder')?.value?.trim() || '';
-        const validacao = div.querySelector('.campo-validacao')?.value || '';
-        const rows = parseInt(div.querySelector('.campo-rows')?.value) || 2;
-        
-        let opcoes = [];
-        if (tipo === 'select') {
-            const opcoesInput = div.querySelector('.campo-opcoes');
-            if (opcoesInput) {
-                opcoes = opcoesInput.value.split(',').map(s => s.trim()).filter(s => s);
-            }
-            if (opcoes.length === 0) {
-                showToast(`⚠️ O campo "${label}" precisa de opções`, 'warning');
-                return;
-            }
-        }
-        
-        if (!nomeCampo || !label) {
-            showToast('⚠️ Todos os campos precisam de Nome e Label', 'warning');
-            return;
-        }
-        
-        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(nomeCampo)) {
-            showToast(`⚠️ O nome "${nomeCampo}" deve conter apenas letras, números e underline`, 'warning');
-            return;
-        }
-        
-        temCampoValido = true;
-        const campo = { nome: nomeCampo, label, tipo, obrigatorio, placeholder, validacao };
-        if (tipo === 'select') campo.opcoes = opcoes;
-        if (tipo === 'textarea') campo.rows = rows;
-        if (tipo === 'number') { campo.step = '0.01'; campo.min = '0'; }
-        campos.push(campo);
-    }
-    
-    if (!temCampoValido) {
-        showToast('⚠️ Adicione pelo menos um campo personalizado', 'warning');
+
+
+    const resultadoCampos =
+        coletarCamposCategoriaDoModal();
+
+
+    if (
+        !resultadoCampos.success
+    ) {
+
+        showToast(
+            `⚠️ ${resultadoCampos.error}`,
+            'warning'
+        );
+
+
         return;
     }
-    
-    campos.push({
-        nome: 'mlb_codes',
-        label: 'Códigos MLB',
-        tipo: 'textarea',
-        placeholder: 'MLB separados por vírgula',
-        obrigatorio: false,
-        rows: 2
-    });
-    
-    if (nome !== nomeAntigo) {
-        if (categoriasCustomizadas[nome]) {
-            showToast(`⚠️ Já existe uma categoria com o nome "${nome}"`, 'warning');
+
+
+    if (
+        nome !==
+        nomeAntigo
+    ) {
+
+        if (
+            categoriasCustomizadas[
+                nome
+            ]
+        ) {
+
+            showToast(
+                `⚠️ Já existe uma categoria com o nome "${nome}".`,
+                'warning'
+            );
+
+
             return;
         }
-        categoriasCustomizadas[nome] = {
-            ...categoriasCustomizadas[nomeAntigo],
-            campos: campos,
-            atualizado_em: new Date().toISOString(),
-            atualizado_por: currentUser?.name || 'sistema'
+
+
+        categoriasCustomizadas[
+            nome
+        ] = {
+
+            ...categoriasCustomizadas[
+                nomeAntigo
+            ],
+
+            campos:
+                resultadoCampos.campos,
+
+            atualizado_em:
+                new Date()
+                    .toISOString(),
+
+            atualizado_por:
+                currentUser?.name ||
+                'sistema'
+
         };
-        delete categoriasCustomizadas[nomeAntigo];
+
+
+        delete categoriasCustomizadas[
+            nomeAntigo
+        ];
+
+
+        if (
+            regrasEstoqueAtuais[
+                nomeAntigo
+            ] &&
+            !regrasEstoqueAtuais[
+                nome
+            ]
+        ) {
+
+            regrasEstoqueAtuais[
+                nome
+            ] =
+                regrasEstoqueAtuais[
+                    nomeAntigo
+                ];
+
+
+            delete regrasEstoqueAtuais[
+                nomeAntigo
+            ];
+
+
+            salvarRegrasEstoque(
+                regrasEstoqueAtuais
+            );
+
+        }
+
     } else {
-        categoriasCustomizadas[nome] = {
-            ...categoriasCustomizadas[nome],
-            campos: campos,
-            atualizado_em: new Date().toISOString(),
-            atualizado_por: currentUser?.name || 'sistema'
+
+        categoriasCustomizadas[
+            nome
+        ] = {
+
+            ...categoriasCustomizadas[
+                nome
+            ],
+
+            campos:
+                resultadoCampos.campos,
+
+            atualizado_em:
+                new Date()
+                    .toISOString(),
+
+            atualizado_por:
+                currentUser?.name ||
+                'sistema'
+
         };
+
     }
-    
+
+
     salvarCategoriasCustomizadas();
+
+
     fecharModalCriarCategoria();
+
+
     atualizarSelectCategorias();
+
+
     preencherListaCategorias();
-    
-    const btn = document.querySelector('#modalCriarCategoria .btn-success');
-    if (btn) {
-        btn.textContent = 'Criar Categoria';
-        btn.onclick = salvarNovaCategoria;
+
+
+    const botaoSalvar =
+        document.querySelector(
+            '#modalCriarCategoria .btn-success'
+        );
+
+
+    if (
+        botaoSalvar
+    ) {
+
+        botaoSalvar.innerHTML =
+            '<i class="fas fa-save"></i> Criar Categoria';
+
+
+        botaoSalvar.onclick =
+            salvarNovaCategoria;
+
     }
-    document.getElementById('novaCategoriaNome').disabled = false;
-    
-    showToast(`✅ Categoria "${nome}" atualizada!`, 'success');
+
+
+    const inputNome =
+        document.getElementById(
+            'novaCategoriaNome'
+        );
+
+
+    if (
+        inputNome
+    ) {
+
+        inputNome.disabled =
+            false;
+
+    }
+
+
+    showToast(
+        `✅ Categoria "${nome}" atualizada!`,
+        'success'
+    );
 }
 
 // =========================================================
@@ -41057,6 +43077,143 @@ if (
 
             return retorno;
         };
+
+}
+
+// =========================================================
+// INTEGRAÇÃO DOS CAMPOS CONDICIONAIS
+// =========================================================
+
+if (
+    !window.__integracaoCamposCondicionaisEstoque
+) {
+
+    window.__integracaoCamposCondicionaisEstoque =
+        true;
+
+
+    // =====================================================
+    // ENVOLVER GERAR CAMPOS DINÂMICOS
+    // =====================================================
+
+    const gerarCamposDinamicosAntesCondicional =
+        gerarCamposDinamicos;
+
+
+    gerarCamposDinamicos =
+        function(
+            categoria,
+            subcategoria = ''
+        ) {
+
+            const resultado =
+                gerarCamposDinamicosAntesCondicional(
+                    categoria,
+                    subcategoria
+                );
+
+
+            const configurar =
+                function() {
+
+                    configurarEventosCamposCondicionais(
+                        categoria,
+                        subcategoria
+                    );
+
+                };
+
+
+            // Execução imediata.
+            configurar();
+
+
+            // Executa novamente após o preenchimento dos
+            // valores durante a edição de um produto.
+            setTimeout(
+                configurar,
+                0
+            );
+
+
+            setTimeout(
+                configurar,
+                100
+            );
+
+
+            setTimeout(
+                configurar,
+                300
+            );
+
+
+            return resultado;
+        };
+
+
+    window.gerarCamposDinamicos =
+        gerarCamposDinamicos;
+
+
+    // =====================================================
+    // ENVOLVER SALVAMENTO DO PRODUTO
+    // =====================================================
+
+    const salvarProdutoEstoqueAntesCondicional =
+        salvarProdutoEstoque;
+
+
+    salvarProdutoEstoque =
+        async function() {
+
+            if (
+                !validarCamposCondicionaisProduto()
+            ) {
+
+                return;
+
+            }
+
+
+            return await salvarProdutoEstoqueAntesCondicional
+                .apply(
+                    this,
+                    arguments
+                );
+        };
+
+
+    window.salvarProdutoEstoque =
+        salvarProdutoEstoque;
+
+
+    // =====================================================
+    // EXPORTAR FUNÇÕES DO EDITOR DE CATEGORIAS
+    // =====================================================
+
+    window.atualizarCamposControladoresCondicionais =
+        atualizarCamposControladoresCondicionais;
+
+
+    window.atualizarValoresCondicaoCampo =
+        atualizarValoresCondicaoCampo;
+
+
+    window.toggleCondicaoCampo =
+        toggleCondicaoCampo;
+
+
+    window.atualizarVisibilidadeCamposCondicionais =
+        atualizarVisibilidadeCamposCondicionais;
+
+
+    window.configurarEventosCamposCondicionais =
+        configurarEventosCamposCondicionais;
+
+
+    window.validarCamposCondicionaisProduto =
+        validarCamposCondicionaisProduto;
 
 }
 
