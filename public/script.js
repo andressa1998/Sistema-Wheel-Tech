@@ -8460,6 +8460,21 @@ function podeUsuarioConferirOS(order) {
     return false;
 }
 
+function podeUsuarioNaoAutorizarOS(order) {
+    const username = getUsernameAtualOS();
+
+    // Ronald e Letícia podem não autorizar OS concluídas
+    // que ainda não foram conferidas.
+    return (
+        (
+            username === 'ronald' ||
+            username === 'leticia'
+        ) &&
+        order?.status === 'concluida' &&
+        !order?.conferido
+    );
+}
+
 function checkOrderPermission(order) {
     if (!currentUser) return false;
     
@@ -10431,39 +10446,43 @@ function renderOrdersTable() {
 
 
             if (
-                order.status ===
-                    'concluida' &&
+    order.status === 'concluida' &&
+    !order.conferido &&
+    (
+        isAdmin ||
+        podeUsuarioConferirOS(order)
+    )
+) {
+    actionButtons += `
+        <button
+            class="btn btn-success btn-sm"
+            onclick="conferirOS('${order.id}')"
+            title="Conferir"
+        >
+            <i class="fas fa-check-double"></i>
+        </button>
+    `;
+}
 
-                !order.conferido &&
-
-                (
-                    isAdmin ||
-                    podeUsuarioConferirOS(order)
-                )
-            ) {
-
-                actionButtons += `
-                    <button
-                        class="btn btn-success btn-sm"
-                        onclick="conferirOS('${order.id}')"
-                        title="Conferir"
-                    >
-                        <i class="fas fa-check-double"></i>
-                    </button>
-                `;
-
-
-                actionButtons += `
-                    <button
-                        class="btn btn-danger btn-sm"
-                        onclick="abrirRejeitarModal('${order.id}')"
-                        title="Não Autorizado"
-                    >
-                        <i class="fas fa-ban"></i>
-                        Não Autorizado
-                    </button>
-                `;
-            }
+if (
+    order.status === 'concluida' &&
+    !order.conferido &&
+    (
+        isAdmin ||
+        podeUsuarioNaoAutorizarOS(order)
+    )
+) {
+    actionButtons += `
+        <button
+            class="btn btn-danger btn-sm"
+            onclick="abrirRejeitarModal('${order.id}')"
+            title="Não Autorizado"
+        >
+            <i class="fas fa-ban"></i>
+            Não Autorizado
+        </button>
+    `;
+}
 
 
             if (
@@ -16282,133 +16301,137 @@ window.closeRejeitarModal = function() {
     }
 };
 
-window.confirmarRejeicaoOS =
-    async function() {
+window.confirmarRejeicaoOS = async function() {
+    console.log(
+        '🔴 Confirmando rejeição da OS'
+    );
 
-        console.log(
-            '🔴 Confirmando rejeição da OS'
+    // ====================================================
+    // RONALD OU LETÍCIA
+    // ====================================================
+
+    const username =
+        getUsernameAtualOS();
+
+    if (
+        !currentUser ||
+        ![
+            'ronald',
+            'leticia'
+        ].includes(username)
+    ) {
+        showToast(
+            '⚠️ Apenas Ronald ou Letícia podem não autorizar uma OS.',
+            'warning'
         );
 
+        return;
+    }
 
-        // ====================================================
-        // SOMENTE RONALD
-        // ====================================================
+    const orderId =
+        document.getElementById(
+            'rejeitarOSId'
+        )?.value;
 
-        if (
-            !currentUser ||
-            currentUser.username !==
-            META_RONALD_CONFIG.username
-        ) {
+    const motivo =
+        document.getElementById(
+            'motivoRejeicao'
+        )?.value?.trim() || '';
 
-            showToast(
-                '⚠️ A conferência das OS é responsabilidade do Ronald.',
-                'warning'
-            );
+    if (!orderId) {
+        showToast(
+            '❌ ID da OS não encontrado',
+            'error'
+        );
 
-            return;
-        }
+        return;
+    }
 
+    if (!motivo) {
+        showToast(
+            '⚠️ Informe o motivo da não autorização',
+            'warning'
+        );
 
-        const orderId =
-            document.getElementById(
-                'rejeitarOSId'
-            )?.value;
-
-
-        const motivo =
-            document.getElementById(
+        document
+            .getElementById(
                 'motivoRejeicao'
-            )?.value
-                ?.trim() ||
-            '';
-
-
-        if (!orderId) {
-
-            showToast(
-                '❌ ID da OS não encontrado',
-                'error'
-            );
-
-            return;
-        }
-
-
-        if (!motivo) {
-
-            showToast(
-                '⚠️ Informe o motivo da não autorização',
-                'warning'
-            );
-
-
-            document
-                .getElementById(
-                    'motivoRejeicao'
-                )
-                ?.focus();
-
-
-            return;
-        }
-
-
-        const order =
-            orders.find(
-                o =>
-                    String(o.id) ===
-                    String(orderId)
-            );
-
-
-        if (!order) {
-
-            showToast(
-                '❌ OS não encontrada',
-                'error'
-            );
-
-            return;
-        }
-
-
-        if (
-            !confirm(
-                `⚠️ Tem certeza que deseja NÃO AUTORIZAR esta OS?\n\nMotivo: ${motivo}\n\nA OS voltará para REVISÃO e esta análise contará para sua meta de conferência.`
             )
-        ) {
+            ?.focus();
 
-            return;
+        return;
+    }
+
+    const order =
+        orders.find(
+            item =>
+                String(item.id) ===
+                String(orderId)
+        );
+
+    if (!order) {
+        showToast(
+            '❌ OS não encontrada',
+            'error'
+        );
+
+        return;
+    }
+
+    if (
+        order.status !== 'concluida' ||
+        order.conferido
+    ) {
+        showToast(
+            '⚠️ Apenas OS não conferidas podem ser não autorizadas.',
+            'warning'
+        );
+
+        return;
+    }
+
+    const contabilizaMeta =
+        username === 'ronald';
+
+    const complementoConfirmacao =
+        contabilizaMeta
+            ? '\n\nEsta análise contará para sua meta de conferência.'
+            : '\n\nEsta ação não será contabilizada na meta do Ronald.';
+
+    if (
+        !confirm(
+            `⚠️ Tem certeza que deseja NÃO AUTORIZAR esta OS?\n\n` +
+            `Motivo: ${motivo}\n\n` +
+            `A OS voltará para REVISÃO.` +
+            complementoConfirmacao
+        )
+    ) {
+        return;
+    }
+
+    try {
+        if (!supabaseClient) {
+            throw new Error(
+                'Supabase não conectado'
+            );
         }
 
+        // =================================================
+        // RONALD: USA A RPC E CONTABILIZA NA META
+        // LETÍCIA: ATUALIZA A OS SEM CONTABILIZAR NA META
+        // =================================================
 
-        try {
+        let data = null;
+        let error = null;
 
-            if (!supabaseClient) {
-
-                throw new Error(
-                    'Supabase não conectado'
-                );
-            }
-
-
-            // =================================================
-            // REJEITA + REGISTRA A CONFERÊNCIA
-            // =================================================
-
-            const {
-                data,
-                error
-            } =
+        if (contabilizaMeta) {
+            const resultado =
                 await supabaseClient
                     .rpc(
                         'processar_conferencia_os_ronald',
                         {
-
                             p_os_id:
-                                String(
-                                    orderId
-                                ),
+                                String(orderId),
 
                             p_username:
                                 currentUser.username,
@@ -16421,75 +16444,130 @@ window.confirmarRejeicaoOS =
 
                             p_motivo:
                                 motivo
-
                         }
                     );
 
+            data =
+                resultado.data;
 
-            if (error) {
-                throw error;
-            }
+            error =
+                resultado.error;
+        } else {
+            const agoraLeticia =
+                new Date().toISOString();
 
+            const resultado =
+                await supabaseClient
+                    .from(
+                        'ordens_service'
+                    )
+                    .update({
+                        status:
+                            'pendente',
 
-            const agoraISO =
-                data
-                    ?.data_evento ||
-                new Date()
-                    .toISOString();
+                        motivo_rejeicao:
+                            motivo,
 
+                        rejeitado_por:
+                            currentUser.name,
 
-            // =================================================
-            // ATUALIZAR LOCALMENTE
-            // =================================================
+                        data_rejeicao:
+                            agoraLeticia,
 
-            order.status =
-                'pendente';
+                        conferido:
+                            false,
 
+                        conferido_por:
+                            null,
 
-            order.motivo_rejeicao =
-                motivo;
+                        data_conferencia:
+                            null,
 
+                        ultima_atualizacao:
+                            agoraLeticia
+                    })
+                    .eq(
+                        'id',
+                        orderId
+                    )
+                    .eq(
+                        'status',
+                        'concluida'
+                    )
+                    .eq(
+                        'conferido',
+                        false
+                    )
+                    .select()
+                    .maybeSingle();
 
-            order.rejeitado_por =
-                currentUser.name;
+            data =
+                resultado.data;
 
-
-            order.data_rejeicao =
-                agoraISO;
-
-
-            order.conferido =
-                false;
-
-
-            order.conferidoPor =
-                null;
-
-
-            order.dataConferencia =
-                null;
-
-
-            order.updatedAt =
-                agoraISO;
-
-
-            // =================================================
-            // NOTIFICAR CRIADOR
-            // =================================================
+            error =
+                resultado.error;
 
             if (
-                order.createdBy &&
-                order.createdBy !==
-                currentUser.name
+                !error &&
+                !data
             ) {
+                throw new Error(
+                    'A OS já foi conferida ou não está mais disponível.'
+                );
+            }
+        }
 
-                const assunto =
-                    `📋 OS não autorizada: ${order.code}`;
+        if (error) {
+            throw error;
+        }
 
+        const agoraISO =
+            data?.data_evento ||
+            data?.data_rejeicao ||
+            data?.ultima_atualizacao ||
+            new Date().toISOString();
 
-                const mensagem = `
+        // =================================================
+        // ATUALIZAÇÃO LOCAL
+        // =================================================
 
+        order.status =
+            'pendente';
+
+        order.motivo_rejeicao =
+            motivo;
+
+        order.rejeitado_por =
+            currentUser.name;
+
+        order.data_rejeicao =
+            agoraISO;
+
+        order.conferido =
+            false;
+
+        order.conferidoPor =
+            null;
+
+        order.dataConferencia =
+            null;
+
+        order.updatedAt =
+            agoraISO;
+
+        // =================================================
+        // NOTIFICAR O CRIADOR
+        // =================================================
+
+        if (
+            order.createdBy &&
+            order.createdBy !==
+                currentUser.name
+        ) {
+            const assunto =
+                `📋 OS não autorizada: ${order.code}`;
+
+            const mensagem = `
 Olá ${order.createdBy},
 
 A OS ${order.code} - ${order.productName} não foi autorizada.
@@ -16500,96 +16578,99 @@ ${motivo}
 Por favor, verifique o sistema para mais detalhes.
 
 Sistema Wheel Tech
-                `;
+            `;
 
-
+            try {
                 await enviarNotificacaoEmail(
                     order.createdBy,
                     assunto,
                     mensagem
                 );
-            }
-
-
-            closeRejeitarModal();
-
-
-            updateCounters();
-
-            renderOrdersTable();
-
-
-            // =================================================
-            // RECALCULAR META
-            // =================================================
-
-            const status =
-                await verificarMetaRonald(
-                    {
-
-                        mostrarAviso:
-                            false,
-
-                        motivo:
-                            'os_nao_autorizada'
-
-                    }
+            } catch (erroNotificacao) {
+                console.warn(
+                    '⚠️ A OS foi não autorizada, mas não foi possível enviar a notificação:',
+                    erroNotificacao
                 );
+            }
+        }
 
+        closeRejeitarModal();
+
+        updateCounters();
+
+        renderOrdersTable();
+
+        // =================================================
+        // LETÍCIA: NÃO RECALCULA A META
+        // =================================================
+
+        if (!contabilizaMeta) {
+            showToast(
+                '✅ OS não autorizada por Letícia e enviada para revisão. Esta ação não contabiliza na meta.',
+                'success'
+            );
+
+            return;
+        }
+
+        // =================================================
+        // RONALD: RECALCULA A META
+        // =================================================
+
+        const status =
+            await verificarMetaRonald({
+                mostrarAviso:
+                    false,
+
+                motivo:
+                    'os_nao_autorizada'
+            });
+
+        if (
+            status &&
+            status.faltamHoje > 0
+        ) {
+            showToast(
+                `✅ OS não autorizada e contabilizada. Faltam ${status.faltamHoje} conferências.`,
+                'success'
+            );
 
             if (
-                status &&
-                status.faltamHoje > 0
+                bloqueioMetaRonaldAtivo
             ) {
-
-                showToast(
-                    `✅ OS não autorizada e contabilizada. Faltam ${status.faltamHoje} conferências.`,
-                    'success'
+                atualizarBannerBloqueioMetaRonald(
+                    status,
+                    status.estado
+                        ?.motivo_bloqueio
                 );
 
-
-                if (
-                    bloqueioMetaRonaldAtivo
-                ) {
-
-                    atualizarBannerBloqueioMetaRonald(
-                        status,
-                        status.estado
-                            ?.motivo_bloqueio
-                    );
-
-
-                    setTimeout(
-                        aplicarRestricaoVisualMetaRonald,
-                        0
-                    );
-                }
-
-
-            } else {
-
-                showToast(
-                    '🎯 OS não autorizada e meta de conferência concluída!',
-                    'success'
+                setTimeout(
+                    aplicarRestricaoVisualMetaRonald,
+                    0
                 );
             }
-
-
-        } catch (error) {
-
-            console.error(
-                '❌ Erro ao rejeitar OS:',
-                error
-            );
-
-
+        } else {
             showToast(
-                '❌ Erro: ' +
-                error.message,
-                'error'
+                '🎯 OS não autorizada e meta de conferência concluída!',
+                'success'
             );
         }
-    };
+    } catch (error) {
+        console.error(
+            '❌ Erro ao rejeitar OS:',
+            error
+        );
+
+        showToast(
+            '❌ Erro: ' +
+            (
+                error?.message ||
+                'Não foi possível não autorizar a OS.'
+            ),
+            'error'
+        );
+    }
+};
 
 // ============================================
 // RELATÓRIO DE OS
