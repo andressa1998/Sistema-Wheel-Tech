@@ -825,6 +825,382 @@ function aplicarRegraFiltro(item, regra) {
         }
     }
 
+    function converterDataAgendaParaInputLocal(valor) {
+    if (!valor) {
+        return '';
+    }
+
+    const data = new Date(valor);
+
+    if (!Number.isFinite(data.getTime())) {
+        return '';
+    }
+
+    const preencher = numero => {
+        return String(numero).padStart(2, '0');
+    };
+
+    return (
+        `${data.getFullYear()}-` +
+        `${preencher(data.getMonth() + 1)}-` +
+        `${preencher(data.getDate())}T` +
+        `${preencher(data.getHours())}:` +
+        `${preencher(data.getMinutes())}`
+    );
+}
+
+window.fecharModalAlterarFimPromocao = function() {
+    const modal = document.getElementById(
+        'modalAlterarFimPromocao'
+    );
+
+    if (modal) {
+        modal.remove();
+    }
+};
+
+window.abrirModalAlterarFimPromocao = function(id) {
+    const agendamento = agendamentosPromocoes.find(
+        item => Number(item.id) === Number(id)
+    );
+
+    if (!agendamento) {
+        showToast(
+            '❌ Agendamento não encontrado',
+            'error'
+        );
+
+        return;
+    }
+
+    const statusPermitidos = [
+        'agendada',
+        'erro_ativacao'
+    ];
+
+    if (!statusPermitidos.includes(agendamento.status)) {
+        showToast(
+            '⚠️ A data final só pode ser alterada antes da ativação',
+            'warning'
+        );
+
+        return;
+    }
+
+    window.fecharModalAlterarFimPromocao();
+
+    const valorAtual = converterDataAgendaParaInputLocal(
+        agendamento.data_desativacao
+    );
+
+    const modal = document.createElement('div');
+
+    modal.id = 'modalAlterarFimPromocao';
+
+    modal.style.cssText = `
+        position: fixed;
+        inset: 0;
+        z-index: 100001;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.68);
+    `;
+
+    modal.innerHTML = `
+        <div
+            style="
+                width: min(520px, 96vw);
+                background: #ffffff;
+                border-radius: 14px;
+                padding: 24px;
+                box-shadow: 0 15px 50px rgba(0, 0, 0, 0.30);
+            "
+        >
+            <div
+                style="
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 15px;
+                    margin-bottom: 20px;
+                "
+            >
+                <div>
+                    <h3
+                        style="
+                            margin: 0;
+                            color: #343a40;
+                            font-size: 20px;
+                        "
+                    >
+                        <i
+                            class="fas fa-calendar-edit"
+                            style="color: #00ADEE;"
+                        ></i>
+
+                        Alterar data de encerramento
+                    </h3>
+
+                    <p
+                        class="text-muted"
+                        style="margin: 7px 0 0;"
+                    >
+                        ${escaparHtmlAgenda(agendamento.mlb)}
+                        —
+                        ${escaparHtmlAgenda(
+                            agendamento.promotion_name
+                        )}
+                    </p>
+                </div>
+
+                <button
+                    type="button"
+                    class="btn btn-sm btn-secondary"
+                    onclick="fecharModalAlterarFimPromocao()"
+                >
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+
+            <div class="form-group">
+                <label for="novaDataFimPromocao">
+                    Nova data e hora de encerramento *
+                </label>
+
+                <input
+                    type="datetime-local"
+                    id="novaDataFimPromocao"
+                    class="form-control"
+                    value="${escaparHtmlAgenda(valorAtual)}"
+                >
+
+                <small class="text-muted">
+                    A nova data precisa ser posterior à data de ativação.
+                </small>
+            </div>
+
+            <div
+                style="
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 10px;
+                    margin-top: 22px;
+                "
+            >
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    onclick="fecharModalAlterarFimPromocao()"
+                >
+                    Cancelar
+                </button>
+
+                <button
+                    type="button"
+                    id="btnSalvarNovaDataFimPromocao"
+                    class="btn btn-success"
+                    onclick="salvarNovaDataFimPromocao(${Number(
+                        agendamento.id
+                    )})"
+                >
+                    <i class="fas fa-save"></i>
+                    Salvar nova data
+                </button>
+            </div>
+        </div>
+    `;
+
+    modal.addEventListener('click', event => {
+        if (event.target === modal) {
+            window.fecharModalAlterarFimPromocao();
+        }
+    });
+
+    document.body.appendChild(modal);
+
+    setTimeout(() => {
+        document
+            .getElementById('novaDataFimPromocao')
+            ?.focus();
+    }, 100);
+};
+
+window.salvarNovaDataFimPromocao = async function(id) {
+    const supabase = obterSupabasePromocoes();
+
+    if (!supabase) {
+        showToast(
+            '❌ Supabase não conectado',
+            'error'
+        );
+
+        return;
+    }
+
+    const agendamento = agendamentosPromocoes.find(
+        item => Number(item.id) === Number(id)
+    );
+
+    if (!agendamento) {
+        showToast(
+            '❌ Agendamento não encontrado',
+            'error'
+        );
+
+        return;
+    }
+
+    const statusPermitidos = [
+        'agendada',
+        'erro_ativacao'
+    ];
+
+    if (!statusPermitidos.includes(agendamento.status)) {
+        showToast(
+            '⚠️ Esta promoção já foi ativada e não pode mais ser alterada',
+            'warning'
+        );
+
+        window.fecharModalAlterarFimPromocao();
+
+        await carregarAgendamentosPromocoes();
+
+        return;
+    }
+
+    const input = document.getElementById(
+        'novaDataFimPromocao'
+    );
+
+    const novaDataValor = input?.value;
+
+    if (!novaDataValor) {
+        showToast(
+            '⚠️ Informe a nova data de encerramento',
+            'warning'
+        );
+
+        input?.focus();
+
+        return;
+    }
+
+    const novaDataFim = new Date(novaDataValor);
+
+    if (!Number.isFinite(novaDataFim.getTime())) {
+        showToast(
+            '⚠️ A data de encerramento informada é inválida',
+            'warning'
+        );
+
+        input?.focus();
+
+        return;
+    }
+
+    const dataAtivacao = new Date(
+        agendamento.data_ativacao
+    );
+
+    if (!Number.isFinite(dataAtivacao.getTime())) {
+        showToast(
+            '❌ A data de ativação deste agendamento é inválida',
+            'error'
+        );
+
+        return;
+    }
+
+    if (novaDataFim.getTime() <= dataAtivacao.getTime()) {
+        showToast(
+            '⚠️ A data final precisa ser posterior à data de ativação',
+            'warning'
+        );
+
+        input?.focus();
+
+        return;
+    }
+
+    const botao = document.getElementById(
+        'btnSalvarNovaDataFimPromocao'
+    );
+
+    if (botao) {
+        botao.disabled = true;
+
+        botao.innerHTML = `
+            <i class="fas fa-spinner fa-spin"></i>
+            Salvando...
+        `;
+    }
+
+    try {
+        const {
+            data,
+            error
+        } = await supabase
+            .from('promocoes_agendadas')
+            .update({
+                data_desativacao: novaDataFim.toISOString(),
+                atualizada_por: nomeUsuarioAgenda(),
+                atualizada_em: new Date().toISOString()
+            })
+            .eq('id', id)
+            .in('status', statusPermitidos)
+            .select();
+
+        if (error) {
+            throw error;
+        }
+
+        if (!data?.length) {
+            throw new Error(
+                'A promoção já foi ativada ou alterada por outro usuário'
+            );
+        }
+
+        window.fecharModalAlterarFimPromocao();
+
+        showToast(
+            `✅ Nova data final salva para ${agendamento.mlb}`,
+            'success'
+        );
+
+        await carregarAgendamentosPromocoes();
+
+        fecharModalAvisosPromocoes();
+
+        await verificarAvisosPromocoesAgendadas();
+    } catch (error) {
+        log(
+            `Erro ao alterar data final do agendamento ${id}: ` +
+            `${error.message}`,
+            'error'
+        );
+
+        showToast(
+            `❌ Erro ao alterar a data final: ${error.message}`,
+            'error'
+        );
+    } finally {
+        const botaoAtual = document.getElementById(
+            'btnSalvarNovaDataFimPromocao'
+        );
+
+        if (botaoAtual) {
+            botaoAtual.disabled = false;
+
+            botaoAtual.innerHTML = `
+                <i class="fas fa-save"></i>
+                Salvar nova data
+            `;
+        }
+    }
+};
+
 // ============================================================
 // FUNÇÃO: ANALISAR ITENS (COMPLETA E ATUALIZADA)
 // ============================================================
@@ -3353,6 +3729,7 @@ function atualizarBotaoAtivacoesAgendadasHoje() {
                 'agendada',
                 'erro_ativacao'
             ].includes(item.status) &&
+            Number.isFinite(dataAtivacao) &&
             dataAtivacao <= agora;
 
         const podeDesativar =
@@ -3360,9 +3737,19 @@ function atualizarBotaoAtivacoesAgendadasHoje() {
                 'ativada',
                 'erro_desativacao'
             ].includes(item.status) &&
+            Number.isFinite(dataDesativacao) &&
             dataDesativacao <= agora;
 
         const podeCancelar = [
+            'agendada',
+            'erro_ativacao'
+        ].includes(item.status);
+
+        /*
+         * A data final só pode ser alterada enquanto a promoção
+         * ainda não foi ativada.
+         */
+        const podeAlterarDataFim = [
             'agendada',
             'erro_ativacao'
         ].includes(item.status);
@@ -3407,6 +3794,26 @@ function atualizarBotaoAtivacoesAgendadasHoje() {
 
                 <td>
                     ${formatarDataAgenda(item.data_desativacao)}
+
+                    ${
+                        podeAlterarDataFim
+                            ? `
+                                <br>
+
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-primary mt-1"
+                                    onclick="abrirModalAlterarFimPromocao(${Number(
+                                        item.id
+                                    )})"
+                                    title="Alterar a data de encerramento"
+                                >
+                                    <i class="fas fa-calendar-alt"></i>
+                                    Alterar fim
+                                </button>
+                            `
+                            : ''
+                    }
                 </td>
 
                 <td>
@@ -3442,7 +3849,9 @@ function atualizarBotaoAtivacoesAgendadasHoje() {
                             ? `
                                 <button
                                     class="btn btn-sm btn-success"
-                                    onclick="executarAtivacaoAgendada(${item.id})"
+                                    onclick="executarAtivacaoAgendada(${Number(
+                                        item.id
+                                    )})"
                                 >
                                     <i class="fas fa-play"></i>
                                     Ativar
@@ -3456,7 +3865,9 @@ function atualizarBotaoAtivacoesAgendadasHoje() {
                             ? `
                                 <button
                                     class="btn btn-sm btn-danger"
-                                    onclick="executarDesativacaoAgendada(${item.id})"
+                                    onclick="executarDesativacaoAgendada(${Number(
+                                        item.id
+                                    )})"
                                 >
                                     <i class="fas fa-stop"></i>
                                     Desativar
@@ -3470,7 +3881,9 @@ function atualizarBotaoAtivacoesAgendadasHoje() {
                             ? `
                                 <button
                                     class="btn btn-sm btn-secondary"
-                                    onclick="cancelarAgendamentoPromocao(${item.id})"
+                                    onclick="cancelarAgendamentoPromocao(${Number(
+                                        item.id
+                                    )})"
                                 >
                                     <i class="fas fa-times"></i>
                                     Cancelar
