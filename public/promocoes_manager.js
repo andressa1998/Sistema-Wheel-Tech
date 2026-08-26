@@ -114,32 +114,58 @@
         if (menu) menu.classList.remove('hidden');
     };
 
-    // ============================================================
-// CRIAÇÃO DA INTERFACE COMPLETA
-// ============================================================
 function criarInterfaceBulk() {
     log('Criando interface...', 'debug');
+
     const div = document.createElement('div');
     div.id = 'bulkPromotionSystem';
     div.className = 'container';
-    div.style.cssText = 'display:block; max-width:1400px; margin:0 auto; padding:0 20px;';
+    div.style.cssText =
+        'display:block; max-width:1400px; margin:0 auto; padding:0 20px;';
 
     div.innerHTML = `
         <header class="main-header">
             <div class="container">
                 <div class="header-content">
                     <h1 style="display:flex; align-items:center; gap:10px;">
-                        <img src="logo.png" alt="Wheel Tech" style="height:35px; width:auto;">
+                        <img
+                            src="logo.png"
+                            alt="Wheel Tech"
+                            style="height:35px; width:auto;"
+                        >
                         <span>Gestão de Promoções em Lote</span>
                     </h1>
+
                     <div class="user-info">
                         <div class="user-avatar" id="bulkUserAvatar">U</div>
+
                         <div>
-                            <div style="font-weight:600;" id="bulkUserName">Usuário</div>
-                            <div style="font-size:12px; color:#6c757d;" id="bulkUserRole"></div>
+                            <div
+                                style="font-weight:600;"
+                                id="bulkUserName"
+                            >
+                                Usuário
+                            </div>
+
+                            <div
+                                style="font-size:12px; color:#6c757d;"
+                                id="bulkUserRole"
+                            ></div>
+
                             <div class="d-flex gap-2 mt-2">
-                                <button onclick="fecharGestaoPromocoesLote()" class="btn btn-primary btn-sm">← Voltar ao Menu</button>
-                                <button onclick="handleLogout()" class="btn btn-secondary btn-sm">Sair</button>
+                                <button
+                                    onclick="fecharGestaoPromocoesLote()"
+                                    class="btn btn-primary btn-sm"
+                                >
+                                    ← Voltar ao Menu
+                                </button>
+
+                                <button
+                                    onclick="handleLogout()"
+                                    class="btn btn-secondary btn-sm"
+                                >
+                                    Sair
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -150,47 +176,101 @@ function criarInterfaceBulk() {
         <!-- AGENDAMENTO MANUAL DE PROMOÇÕES -->
         <div class="card mb-4">
             <div class="card-header">
-                <h2 class="card-title"><i class="fas fa-calendar-alt"></i> Agendar promoção por MLB</h2>
-                <button class="btn btn-sm btn-primary" onclick="carregarAgendamentosPromocoes()">
-                    <i class="fas fa-sync-alt"></i> Atualizar lista
+                <h2 class="card-title">
+                    <i class="fas fa-calendar-alt"></i>
+                    Agendar promoção por MLB
+                </h2>
+
+                <button
+                    class="btn btn-sm btn-primary"
+                    onclick="carregarAgendamentosPromocoes()"
+                >
+                    <i class="fas fa-sync-alt"></i>
+                    Atualizar lista
                 </button>
             </div>
+
             <div class="card-body">
                 <div class="row align-items-end">
                     <div class="col-md-9">
                         <div class="form-group">
                             <label>MLB do anúncio *</label>
-                            <input type="text" id="agendaMlbPesquisa" class="form-control"
+
+                            <input
+                                type="text"
+                                id="agendaMlbPesquisa"
+                                class="form-control"
                                 placeholder="Ex: MLB1234567890"
-                                onkeydown="if(event.key === 'Enter'){ event.preventDefault(); pesquisarMLBParaAgendamento(); }">
+                                onkeydown="
+                                    if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        pesquisarMLBParaAgendamento();
+                                    }
+                                "
+                            >
                         </div>
                     </div>
+
                     <div class="col-md-3">
-                        <button id="btnPesquisarAgendaMlb" class="btn btn-primary" style="width:100%;"
-                            onclick="pesquisarMLBParaAgendamento()">
-                            <i class="fas fa-search"></i> Pesquisar MLB
+                        <button
+                            id="btnPesquisarAgendaMlb"
+                            class="btn btn-primary"
+                            style="width:100%;"
+                            onclick="pesquisarMLBParaAgendamento()"
+                        >
+                            <i class="fas fa-search"></i>
+                            Pesquisar MLB
                         </button>
                     </div>
                 </div>
+
                 <div id="agendaDadosItem" class="mt-3"></div>
-                <div id="agendaPromocoesEncontradas" class="mt-3"></div>
-                <div id="agendaDatasContainer" class="row mt-3 hidden">
+
+                <div
+                    id="agendaPromocoesEncontradas"
+                    class="mt-3"
+                ></div>
+
+                <div
+                    id="agendaDatasContainer"
+                    class="row mt-3 hidden"
+                >
                     <div class="col-md-5">
                         <div class="form-group">
                             <label>Data e hora de ativação *</label>
-                            <input type="datetime-local" id="agendaDataAtivacao" class="form-control">
+
+                            <input
+                                type="datetime-local"
+                                id="agendaDataAtivacao"
+                                class="form-control"
+                            >
                         </div>
                     </div>
+
                     <div class="col-md-5">
                         <div class="form-group">
                             <label>Data e hora de desativação *</label>
-                            <input type="datetime-local" id="agendaDataDesativacao" class="form-control">
+
+                            <input
+                                type="datetime-local"
+                                id="agendaDataDesativacao"
+                                class="form-control"
+                            >
                         </div>
                     </div>
-                    <div class="col-md-2" style="display:flex; align-items:flex-end;">
-                        <button id="btnSalvarAgendamento" class="btn btn-success" style="width:100%;"
-                            onclick="salvarAgendamentosSelecionados()">
-                            <i class="fas fa-save"></i> Programar
+
+                    <div
+                        class="col-md-2"
+                        style="display:flex; align-items:flex-end;"
+                    >
+                        <button
+                            id="btnSalvarAgendamento"
+                            class="btn btn-success"
+                            style="width:100%;"
+                            onclick="salvarAgendamentosSelecionados()"
+                        >
+                            <i class="fas fa-save"></i>
+                            Programar
                         </button>
                     </div>
                 </div>
@@ -200,28 +280,88 @@ function criarInterfaceBulk() {
         <!-- LISTA DE AGENDAMENTOS -->
         <div class="card mb-4">
             <div class="card-header">
-                <h2 class="card-title"><i class="fas fa-list"></i> MLBs programados</h2>
-                <select id="agendaFiltroStatus" class="form-control form-control-sm"
-                    onchange="renderizarAgendamentosPromocoes()" style="max-width:200px;">
-                    <option value="todos">Todos os status</option>
-                    <option value="pendentes">Ações pendentes</option>
-                    <option value="agendada">Agendadas</option>
-                    <option value="ativada">Ativadas</option>
-                    <option value="concluida">Concluídas</option>
-                    <option value="erros">Com erro</option>
-                    <option value="cancelada">Canceladas</option>
-                </select>
+                <h2 class="card-title">
+                    <i class="fas fa-list"></i>
+                    MLBs programados
+                </h2>
+
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <button
+                        id="btnAtivarAgendamentosHoje"
+                        class="btn btn-sm btn-success"
+                        onclick="executarAtivacoesAgendadasDeHoje()"
+                        disabled
+                    >
+                        <i class="fas fa-play-circle"></i>
+                        Ativar todas de hoje (0)
+                    </button>
+
+                    <select
+                        id="agendaFiltroStatus"
+                        class="form-control form-control-sm"
+                        onchange="renderizarAgendamentosPromocoes()"
+                        style="max-width:200px;"
+                    >
+                        <option value="todos">
+                            Todos os status
+                        </option>
+
+                        <option value="pendentes">
+                            Ações pendentes
+                        </option>
+
+                        <option value="agendada">
+                            Agendadas
+                        </option>
+
+                        <option value="ativada">
+                            Ativadas
+                        </option>
+
+                        <option value="concluida">
+                            Concluídas
+                        </option>
+
+                        <option value="erros">
+                            Com erro
+                        </option>
+
+                        <option value="cancelada">
+                            Canceladas
+                        </option>
+                    </select>
+                </div>
             </div>
+
             <div class="card-body">
                 <div class="table-responsive">
                     <table class="table table-striped table-hover">
-                        <thead><tr>
-                            <th>MLB</th><th>Promoção</th><th style="text-align:right;">Valor final</th>
-                            <th>Ativação</th><th>Desativação</th><th>Status</th>
-                            <th>Responsável</th><th style="min-width:190px;">Ações</th>
-                        </tr></thead>
+                        <thead>
+                            <tr>
+                                <th>MLB</th>
+                                <th>Promoção</th>
+                                <th style="text-align:right;">
+                                    Valor final
+                                </th>
+                                <th>Ativação</th>
+                                <th>Desativação</th>
+                                <th>Status</th>
+                                <th>Responsável</th>
+                                <th style="min-width:190px;">
+                                    Ações
+                                </th>
+                            </tr>
+                        </thead>
+
                         <tbody id="agendaPromocoesBody">
-                            <tr><td colspan="8" class="text-center text-muted py-4">Carregando...</td></tr>
+                            <tr>
+                                <td
+                                    colspan="8"
+                                    class="text-center text-muted py-4"
+                                >
+                                    Carregando...
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -232,50 +372,118 @@ function criarInterfaceBulk() {
         <div class="card mb-4">
             <div class="card-header">
                 <h2 class="card-title">
-                    <i class="fas fa-cog"></i> Configurar Análise
+                    <i class="fas fa-cog"></i>
+                    Configurar Análise
                 </h2>
             </div>
+
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-4">
                         <div class="form-group">
-                            <label><i class="fas fa-arrow-right"></i> Promoção de Origem *</label>
-                            <select id="bulkPromocaoOrigem" class="form-control">
+                            <label>
+                                <i class="fas fa-arrow-right"></i>
+                                Promoção de Origem *
+                            </label>
+
+                            <select
+                                id="bulkPromocaoOrigem"
+                                class="form-control"
+                            >
                                 <option value="">Selecione...</option>
                             </select>
-                            <small class="text-muted">Itens ativos nesta promoção serão analisados</small>
+
+                            <small class="text-muted">
+                                Itens ativos nesta promoção serão analisados
+                            </small>
                         </div>
                     </div>
+
                     <div class="col-md-4">
                         <div class="form-group">
-                            <label><i class="fas fa-arrow-left"></i> Promoção de Destino *</label>
-                            <select id="bulkPromocaoDestino" class="form-control">
+                            <label>
+                                <i class="fas fa-arrow-left"></i>
+                                Promoção de Destino *
+                            </label>
+
+                            <select
+                                id="bulkPromocaoDestino"
+                                class="form-control"
+                            >
                                 <option value="">Selecione...</option>
                             </select>
-                            <small class="text-muted">Itens serão ativados nesta promoção</small>
+
+                            <small class="text-muted">
+                                Itens serão ativados nesta promoção
+                            </small>
                         </div>
                     </div>
+
                     <div class="col-md-4">
                         <div class="form-group">
-                            <label><i class="fas fa-rule"></i> Regra de Filtro *</label>
-                            <select id="bulkRegraFiltro" class="form-control">
-                                <option value="todos">📋 Todos os MLBs (sem filtro)</option>
-                                <option value="destino_maior">📈 Destino > Origem (preço final maior)</option>
-                                <option value="destino_menor">📉 Destino < Origem (preço final menor)</option>
-                                <option value="destino_igual">📊 Destino = Origem (preços iguais)</option>
-                                <option value="destino_maior_igual">📈 Destino ≥ Origem (maior ou igual)</option>
-                                <option value="destino_menor_igual">📉 Destino ≤ Origem (menor ou igual)</option>
-                                <option value="diferenca_minima">💰 Diferença mínima (R$ 5,00)</option>
-                                <option value="diferenca_maxima">💰 Diferença máxima (R$ 20,00)</option>
+                            <label>
+                                <i class="fas fa-rule"></i>
+                                Regra de Filtro *
+                            </label>
+
+                            <select
+                                id="bulkRegraFiltro"
+                                class="form-control"
+                            >
+                                <option value="todos">
+                                    📋 Todos os MLBs (sem filtro)
+                                </option>
+
+                                <option value="destino_maior">
+                                    📈 Destino &gt; Origem
+                                    (preço final maior)
+                                </option>
+
+                                <option value="destino_menor">
+                                    📉 Destino &lt; Origem
+                                    (preço final menor)
+                                </option>
+
+                                <option value="destino_igual">
+                                    📊 Destino = Origem
+                                    (preços iguais)
+                                </option>
+
+                                <option value="destino_maior_igual">
+                                    📈 Destino ≥ Origem
+                                    (maior ou igual)
+                                </option>
+
+                                <option value="destino_menor_igual">
+                                    📉 Destino ≤ Origem
+                                    (menor ou igual)
+                                </option>
+
+                                <option value="diferenca_minima">
+                                    💰 Diferença mínima (R$ 5,00)
+                                </option>
+
+                                <option value="diferenca_maxima">
+                                    💰 Diferença máxima (R$ 20,00)
+                                </option>
                             </select>
-                            <small class="text-muted">Filtra os MLBs com base na comparação de preços</small>
+
+                            <small class="text-muted">
+                                Filtra os MLBs com base na comparação de preços
+                            </small>
                         </div>
                     </div>
                 </div>
+
                 <div class="row mt-3">
                     <div class="col-md-12">
-                        <button class="btn btn-primary btn-block" onclick="analisarItens()" style="width:100%;">
-                            <i class="fas fa-search"></i> Analisar
+                        <button
+                            class="btn btn-primary btn-block"
+                            onclick="analisarItens()"
+                            style="width:100%;"
+                        >
+                            <i class="fas fa-search"></i>
+                            Analisar
                         </button>
                     </div>
                 </div>
@@ -286,34 +494,77 @@ function criarInterfaceBulk() {
         <div class="card mb-4">
             <div class="card-header">
                 <h2 class="card-title">
-                    <i class="fas fa-ban"></i> MLBs Bloqueados
+                    <i class="fas fa-ban"></i>
+                    MLBs Bloqueados
                 </h2>
+
                 <div class="d-flex flex-wrap gap-2">
-                    <button class="btn btn-sm btn-success" onclick="adicionarMLBBloqueado()">
-                        <i class="fas fa-plus"></i> Adicionar
+                    <button
+                        class="btn btn-sm btn-success"
+                        onclick="adicionarMLBBloqueado()"
+                    >
+                        <i class="fas fa-plus"></i>
+                        Adicionar
                     </button>
-                    <button class="btn btn-sm btn-danger" onclick="limparMLBsBloqueados()">
-                        <i class="fas fa-trash"></i> Limpar Todos
+
+                    <button
+                        class="btn btn-sm btn-danger"
+                        onclick="limparMLBsBloqueados()"
+                    >
+                        <i class="fas fa-trash"></i>
+                        Limpar Todos
                     </button>
-                    <button class="btn btn-sm btn-primary" onclick="exportarMLBsBloqueados()">
-                        <i class="fas fa-file-export"></i> Exportar
+
+                    <button
+                        class="btn btn-sm btn-primary"
+                        onclick="exportarMLBsBloqueados()"
+                    >
+                        <i class="fas fa-file-export"></i>
+                        Exportar
                     </button>
-                    <button class="btn btn-sm btn-info" onclick="importarMLBsBloqueados()">
-                        <i class="fas fa-file-import"></i> Importar
+
+                    <button
+                        class="btn btn-sm btn-info"
+                        onclick="importarMLBsBloqueados()"
+                    >
+                        <i class="fas fa-file-import"></i>
+                        Importar
                     </button>
                 </div>
             </div>
+
             <div class="card-body">
                 <div class="form-group">
                     <label>MLB's bloqueados (separados por espaço)</label>
-                    <input type="text" id="bulkMLBsBloqueados" class="form-control" 
-                        placeholder="Ex: MLB123 MLB456 MLB789" 
-                        onchange="salvarMLBsBloqueadosManuais()">
+
+                    <input
+                        type="text"
+                        id="bulkMLBsBloqueados"
+                        class="form-control"
+                        placeholder="Ex: MLB123 MLB456 MLB789"
+                        onchange="salvarMLBsBloqueadosManuais()"
+                    >
+
                     <small class="text-muted">
-                        <span class="badge badge-danger" id="contadorMLBs">0</span> MLBs bloqueados
+                        <span
+                            class="badge badge-danger"
+                            id="contadorMLBs"
+                        >
+                            0
+                        </span>
+                        MLBs bloqueados
                     </small>
                 </div>
-                <div id="bulkMLBsBloqueadosLista" class="mt-2" style="display:flex; flex-wrap:wrap; gap:5px;"></div>
+
+                <div
+                    id="bulkMLBsBloqueadosLista"
+                    class="mt-2"
+                    style="
+                        display:flex;
+                        flex-wrap:wrap;
+                        gap:5px;
+                    "
+                ></div>
             </div>
         </div>
 
@@ -321,19 +572,32 @@ function criarInterfaceBulk() {
         <div class="card mb-4">
             <div class="card-header">
                 <h2 class="card-title">
-                    <i class="fas fa-chart-bar"></i> Resultado da Análise
+                    <i class="fas fa-chart-bar"></i>
+                    Resultado da Análise
                 </h2>
+
                 <div class="d-flex flex-wrap gap-2">
-                    <button class="btn btn-success" onclick="executarAtivacaoEmMassa()" id="btnAtivarMassa" disabled>
-                        <i class="fas fa-play"></i> Ativar em Massa (0)
+                    <button
+                        class="btn btn-success"
+                        onclick="executarAtivacaoEmMassa()"
+                        id="btnAtivarMassa"
+                        disabled
+                    >
+                        <i class="fas fa-play"></i>
+                        Ativar em Massa (0)
                     </button>
-                    <button class="btn btn-info" onclick="exportarAnaliseExcel()">
-                        <i class="fas fa-file-excel"></i> Exportar
+
+                    <button
+                        class="btn btn-info"
+                        onclick="exportarAnaliseExcel()"
+                    >
+                        <i class="fas fa-file-excel"></i>
+                        Exportar
                     </button>
                 </div>
             </div>
+
             <div class="card-body">
-                <!-- Resumo -->
                 <div id="bulkResumo" class="row mb-3 hidden">
                     <div class="col-md-3">
                         <div class="card text-center bg-light">
@@ -343,6 +607,7 @@ function criarInterfaceBulk() {
                             </div>
                         </div>
                     </div>
+
                     <div class="col-md-3">
                         <div class="card text-center bg-success text-white">
                             <div class="card-body">
@@ -351,6 +616,7 @@ function criarInterfaceBulk() {
                             </div>
                         </div>
                     </div>
+
                     <div class="col-md-3">
                         <div class="card text-center bg-danger text-white">
                             <div class="card-body">
@@ -359,6 +625,7 @@ function criarInterfaceBulk() {
                             </div>
                         </div>
                     </div>
+
                     <div class="col-md-3">
                         <div class="card text-center bg-warning">
                             <div class="card-body">
@@ -369,25 +636,59 @@ function criarInterfaceBulk() {
                     </div>
                 </div>
 
-                <!-- Tabela -->
-                <div id="bulkTabelaContainer" class="table-responsive hidden">
-                    <table class="table table-striped table-hover" id="bulkItensTable">
+                <div
+                    id="bulkTabelaContainer"
+                    class="table-responsive hidden"
+                >
+                    <table
+                        class="table table-striped table-hover"
+                        id="bulkItensTable"
+                    >
                         <thead>
                             <tr>
-                                <th style="width:40px;"><input type="checkbox" id="bulkSelectAll" onchange="selecionarTodosItens()"></th>
+                                <th style="width:40px;">
+                                    <input
+                                        type="checkbox"
+                                        id="bulkSelectAll"
+                                        onchange="selecionarTodosItens()"
+                                    >
+                                </th>
+
                                 <th>MLB</th>
-                                <th style="text-align:right;">Preço Final Origem</th>
-                                <th style="text-align:center;">% Origem</th>
-                                <th style="text-align:right;">Preço Final Destino</th>
-                                <th style="text-align:center;">% Destino</th>
-                                <th style="text-align:center;">Diferença</th>
+
+                                <th style="text-align:right;">
+                                    Preço Final Origem
+                                </th>
+
+                                <th style="text-align:center;">
+                                    % Origem
+                                </th>
+
+                                <th style="text-align:right;">
+                                    Preço Final Destino
+                                </th>
+
+                                <th style="text-align:center;">
+                                    % Destino
+                                </th>
+
+                                <th style="text-align:center;">
+                                    Diferença
+                                </th>
+
                                 <th>Status</th>
                             </tr>
                         </thead>
+
                         <tbody id="bulkItensBody">
                             <tr>
-                                <td colspan="8" class="text-center py-4 text-muted">
-                                    <i class="fas fa-info-circle"></i> Selecione as promoções e clique em "Analisar"
+                                <td
+                                    colspan="8"
+                                    class="text-center py-4 text-muted"
+                                >
+                                    <i class="fas fa-info-circle"></i>
+                                    Selecione as promoções e clique em
+                                    "Analisar"
                                 </td>
                             </tr>
                         </tbody>
@@ -398,6 +699,7 @@ function criarInterfaceBulk() {
     `;
 
     log('Interface criada', 'success');
+
     return div;
 }
 
@@ -2844,112 +3146,739 @@ async function buscarOfferIdDoItemAlternativo(itemId, promotionId, token) {
     };
 
     function statusAgendaInfo(status) {
-        const mapa = {
-            agendada: ['Agendada', 'warning'], ativando: ['Ativando...', 'info'], ativada: ['Ativada', 'success'],
-            erro_ativacao: ['Erro na ativação', 'danger'], desativando: ['Desativando...', 'info'],
-            concluida: ['Concluída', 'secondary'], erro_desativacao: ['Erro na desativação', 'danger'],
-            cancelada: ['Cancelada', 'secondary']
-        };
-        return mapa[status] || [status || 'Desconhecido', 'secondary'];
+    const mapa = {
+        agendada: [
+            'Agendada',
+            'warning'
+        ],
+        ativando: [
+            'Ativando...',
+            'info'
+        ],
+        ativada: [
+            'Ativada',
+            'success'
+        ],
+        erro_ativacao: [
+            'Erro na ativação',
+            'danger'
+        ],
+        desativando: [
+            'Desativando...',
+            'info'
+        ],
+        concluida: [
+            'Concluída',
+            'secondary'
+        ],
+        erro_desativacao: [
+            'Erro na desativação',
+            'danger'
+        ],
+        cancelada: [
+            'Cancelada',
+            'secondary'
+        ]
+    };
+
+    return mapa[status] || [
+        status || 'Desconhecido',
+        'secondary'
+    ];
+}
+
+function chaveDataSaoPauloAgenda(valor) {
+    const data = valor instanceof Date
+        ? valor
+        : new Date(valor);
+
+    if (!Number.isFinite(data.getTime())) {
+        return '';
     }
+
+    const partes = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(data);
+
+    const obter = tipo => {
+        return partes.find(parte => parte.type === tipo)?.value || '';
+    };
+
+    return [
+        obter('year'),
+        obter('month'),
+        obter('day')
+    ].join('-');
+}
+
+function obterAtivacoesAgendadasDisponiveisHoje() {
+    const agora = new Date();
+    const hoje = chaveDataSaoPauloAgenda(agora);
+
+    return agendamentosPromocoes.filter(item => {
+        const dataAtivacao = new Date(item.data_ativacao);
+
+        const statusPermiteAtivar = [
+            'agendada',
+            'erro_ativacao'
+        ].includes(item.status);
+
+        const dataValida = Number.isFinite(
+            dataAtivacao.getTime()
+        );
+
+        const agendadaParaHoje =
+            chaveDataSaoPauloAgenda(dataAtivacao) === hoje;
+
+        const horarioJaChegou =
+            dataAtivacao.getTime() <= agora.getTime();
+
+        return (
+            statusPermiteAtivar &&
+            dataValida &&
+            agendadaParaHoje &&
+            horarioJaChegou
+        );
+    });
+}
+
+function atualizarBotaoAtivacoesAgendadasHoje() {
+    const botao = document.getElementById(
+        'btnAtivarAgendamentosHoje'
+    );
+
+    if (!botao) {
+        return;
+    }
+
+    const quantidade =
+        obterAtivacoesAgendadasDisponiveisHoje().length;
+
+    botao.disabled = quantidade === 0;
+
+    botao.innerHTML = `
+        <i class="fas fa-play-circle"></i>
+        Ativar todas de hoje (${quantidade})
+    `;
+
+    botao.title = quantidade > 0
+        ? 'Ativa todas as promoções de hoje cujo horário programado já chegou'
+        : 'Não há ativações de hoje com horário já alcançado';
+}
 
     window.renderizarAgendamentosPromocoes = function() {
-        const tbody = document.getElementById('agendaPromocoesBody');
-        if (!tbody) return;
-        const filtro = document.getElementById('agendaFiltroStatus')?.value || 'todos';
-        const agora = Date.now();
-        const itens = agendamentosPromocoes.filter(item => {
-            if (filtro === 'todos') return true;
-            if (filtro === 'pendentes') return (['agendada', 'erro_ativacao'].includes(item.status) && new Date(item.data_ativacao).getTime() <= agora) ||
-                (['ativada', 'erro_desativacao'].includes(item.status) && new Date(item.data_desativacao).getTime() <= agora);
-            if (filtro === 'erros') return ['erro_ativacao', 'erro_desativacao'].includes(item.status);
-            return item.status === filtro;
-        });
+    const tbody = document.getElementById(
+        'agendaPromocoesBody'
+    );
 
-        if (!itens.length) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-4">Nenhum agendamento encontrado</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = itens.map(item => {
-            const [statusTexto, statusCor] = statusAgendaInfo(item.status);
-            const podeAtivar = ['agendada', 'erro_ativacao'].includes(item.status) && new Date(item.data_ativacao).getTime() <= agora;
-            const podeDesativar = ['ativada', 'erro_desativacao'].includes(item.status) && new Date(item.data_desativacao).getTime() <= agora;
-            const podeCancelar = ['agendada', 'erro_ativacao'].includes(item.status);
-            const responsavel = item.desativada_por || item.ativada_por || item.criada_por || '-';
-            const erro = item.erro_ativacao || item.erro_desativacao;
-            return `<tr>
-                <td><strong>${escaparHtmlAgenda(item.mlb)}</strong></td>
-                <td>${escaparHtmlAgenda(item.promotion_name)}<br><small>${escaparHtmlAgenda(item.promotion_id)}</small></td>
-                <td style="text-align:right;">R$ ${Number(item.valor_final || 0).toFixed(2)}</td>
-                <td>${formatarDataAgenda(item.data_ativacao)}</td>
-                <td>${formatarDataAgenda(item.data_desativacao)}</td>
-                <td><span class="badge badge-${statusCor}">${escaparHtmlAgenda(statusTexto)}</span>${erro ? `<br><small class="text-danger" title="${escaparHtmlAgenda(erro)}">${escaparHtmlAgenda(String(erro).slice(0, 70))}</small>` : ''}</td>
-                <td>${escaparHtmlAgenda(responsavel)}</td>
-                <td>
-                    ${podeAtivar ? `<button class="btn btn-sm btn-success" onclick="executarAtivacaoAgendada(${item.id})"><i class="fas fa-play"></i> Ativar</button>` : ''}
-                    ${podeDesativar ? `<button class="btn btn-sm btn-danger" onclick="executarDesativacaoAgendada(${item.id})"><i class="fas fa-stop"></i> Desativar</button>` : ''}
-                    ${podeCancelar ? `<button class="btn btn-sm btn-secondary" onclick="cancelarAgendamentoPromocao(${item.id})"><i class="fas fa-times"></i> Cancelar</button>` : ''}
-                    ${!podeAtivar && !podeDesativar && !podeCancelar ? '<span class="text-muted">—</span>' : ''}
-                </td>
-            </tr>`;
-        }).join('');
-    };
-
-    async function reservarAcaoAgenda(id, statusPermitidos, novoStatus, camposExtras) {
-        const supabase = obterSupabasePromocoes();
-        const { data, error } = await supabase
-            .from('promocoes_agendadas')
-            .update({ status: novoStatus, ultima_tentativa_em: new Date().toISOString(), ...camposExtras })
-            .eq('id', id)
-            .in('status', statusPermitidos)
-            .select()
-            .maybeSingle();
-        if (error) throw error;
-        return data;
+    if (!tbody) {
+        return;
     }
 
-    window.executarAtivacaoAgendada = async function(id) {
-        const supabase = obterSupabasePromocoes();
-        const original = agendamentosPromocoes.find(a => Number(a.id) === Number(id));
-        if (!original) return showToast('❌ Agendamento não encontrado', 'error');
-        if (Date.now() < new Date(original.data_ativacao).getTime()) return showToast('⚠️ A data de ativação ainda não chegou', 'warning');
-        if (!confirm(`Ativar ${original.mlb} na promoção “${original.promotion_name}” por R$ ${Number(original.valor_final).toFixed(2)}?`)) return;
+    atualizarBotaoAtivacoesAgendadasHoje();
 
-        try {
-            const reservado = await reservarAcaoAgenda(id, ['agendada', 'erro_ativacao'], 'ativando', {
+    const filtro =
+        document.getElementById('agendaFiltroStatus')?.value ||
+        'todos';
+
+    const agora = Date.now();
+
+    const itens = agendamentosPromocoes.filter(item => {
+        if (filtro === 'todos') {
+            return true;
+        }
+
+        if (filtro === 'pendentes') {
+            const ativacaoPendente =
+                [
+                    'agendada',
+                    'erro_ativacao'
+                ].includes(item.status) &&
+                new Date(item.data_ativacao).getTime() <= agora;
+
+            const desativacaoPendente =
+                [
+                    'ativada',
+                    'erro_desativacao'
+                ].includes(item.status) &&
+                new Date(item.data_desativacao).getTime() <= agora;
+
+            return ativacaoPendente || desativacaoPendente;
+        }
+
+        if (filtro === 'erros') {
+            return [
+                'erro_ativacao',
+                'erro_desativacao'
+            ].includes(item.status);
+        }
+
+        return item.status === filtro;
+    });
+
+    if (!itens.length) {
+        tbody.innerHTML = `
+            <tr>
+                <td
+                    colspan="8"
+                    class="text-center text-muted py-4"
+                >
+                    Nenhum agendamento encontrado
+                </td>
+            </tr>
+        `;
+
+        return;
+    }
+
+    tbody.innerHTML = itens.map(item => {
+        const [
+            statusTexto,
+            statusCor
+        ] = statusAgendaInfo(item.status);
+
+        const dataAtivacao = new Date(
+            item.data_ativacao
+        ).getTime();
+
+        const dataDesativacao = new Date(
+            item.data_desativacao
+        ).getTime();
+
+        const podeAtivar =
+            [
+                'agendada',
+                'erro_ativacao'
+            ].includes(item.status) &&
+            dataAtivacao <= agora;
+
+        const podeDesativar =
+            [
+                'ativada',
+                'erro_desativacao'
+            ].includes(item.status) &&
+            dataDesativacao <= agora;
+
+        const podeCancelar = [
+            'agendada',
+            'erro_ativacao'
+        ].includes(item.status);
+
+        const responsavel =
+            item.desativada_por ||
+            item.ativada_por ||
+            item.criada_por ||
+            '-';
+
+        const erro =
+            item.erro_ativacao ||
+            item.erro_desativacao;
+
+        return `
+            <tr>
+                <td>
+                    <strong>
+                        ${escaparHtmlAgenda(item.mlb)}
+                    </strong>
+                </td>
+
+                <td>
+                    ${escaparHtmlAgenda(item.promotion_name)}
+
+                    <br>
+
+                    <small>
+                        ${escaparHtmlAgenda(item.promotion_id)}
+                    </small>
+                </td>
+
+                <td style="text-align:right;">
+                    R$ ${Number(
+                        item.valor_final || 0
+                    ).toFixed(2)}
+                </td>
+
+                <td>
+                    ${formatarDataAgenda(item.data_ativacao)}
+                </td>
+
+                <td>
+                    ${formatarDataAgenda(item.data_desativacao)}
+                </td>
+
+                <td>
+                    <span class="badge badge-${statusCor}">
+                        ${escaparHtmlAgenda(statusTexto)}
+                    </span>
+
+                    ${
+                        erro
+                            ? `
+                                <br>
+
+                                <small
+                                    class="text-danger"
+                                    title="${escaparHtmlAgenda(erro)}"
+                                >
+                                    ${escaparHtmlAgenda(
+                                        String(erro).slice(0, 70)
+                                    )}
+                                </small>
+                            `
+                            : ''
+                    }
+                </td>
+
+                <td>
+                    ${escaparHtmlAgenda(responsavel)}
+                </td>
+
+                <td>
+                    ${
+                        podeAtivar
+                            ? `
+                                <button
+                                    class="btn btn-sm btn-success"
+                                    onclick="executarAtivacaoAgendada(${item.id})"
+                                >
+                                    <i class="fas fa-play"></i>
+                                    Ativar
+                                </button>
+                            `
+                            : ''
+                    }
+
+                    ${
+                        podeDesativar
+                            ? `
+                                <button
+                                    class="btn btn-sm btn-danger"
+                                    onclick="executarDesativacaoAgendada(${item.id})"
+                                >
+                                    <i class="fas fa-stop"></i>
+                                    Desativar
+                                </button>
+                            `
+                            : ''
+                    }
+
+                    ${
+                        podeCancelar
+                            ? `
+                                <button
+                                    class="btn btn-sm btn-secondary"
+                                    onclick="cancelarAgendamentoPromocao(${item.id})"
+                                >
+                                    <i class="fas fa-times"></i>
+                                    Cancelar
+                                </button>
+                            `
+                            : ''
+                    }
+
+                    ${
+                        !podeAtivar &&
+                        !podeDesativar &&
+                        !podeCancelar
+                            ? '<span class="text-muted">—</span>'
+                            : ''
+                    }
+                </td>
+            </tr>
+        `;
+    }).join('');
+};
+
+    async function reservarAcaoAgenda(
+    id,
+    statusPermitidos,
+    novoStatus,
+    camposExtras
+) {
+    const supabase = obterSupabasePromocoes();
+
+    if (!supabase) {
+        throw new Error('Supabase não conectado');
+    }
+
+    const {
+        data,
+        error
+    } = await supabase
+        .from('promocoes_agendadas')
+        .update({
+            status: novoStatus,
+            ultima_tentativa_em: new Date().toISOString(),
+            ...camposExtras
+        })
+        .eq('id', id)
+        .in('status', statusPermitidos)
+        .select()
+        .maybeSingle();
+
+    if (error) {
+        throw error;
+    }
+
+    return data;
+}
+
+async function processarAtivacaoAgendada(
+    id,
+    opcoes = {}
+) {
+    const {
+        confirmar = true,
+        atualizarInterface = true,
+        tokenAcesso = null
+    } = opcoes;
+
+    const supabase = obterSupabasePromocoes();
+
+    const original = agendamentosPromocoes.find(
+        agendamento => Number(agendamento.id) === Number(id)
+    );
+
+    if (!supabase) {
+        return {
+            success: false,
+            error: 'Supabase não conectado'
+        };
+    }
+
+    if (!original) {
+        return {
+            success: false,
+            error: 'Agendamento não encontrado'
+        };
+    }
+
+    const dataAtivacao = new Date(
+        original.data_ativacao
+    ).getTime();
+
+    if (
+        !Number.isFinite(dataAtivacao) ||
+        Date.now() < dataAtivacao
+    ) {
+        return {
+            success: false,
+            error: 'A data de ativação ainda não chegou'
+        };
+    }
+
+    if (confirmar) {
+        const confirmou = confirm(
+            `Ativar ${original.mlb} na promoção ` +
+            `“${original.promotion_name}” por ` +
+            `R$ ${Number(original.valor_final).toFixed(2)}?`
+        );
+
+        if (!confirmou) {
+            return {
+                success: false,
+                cancelado: true
+            };
+        }
+    }
+
+    let reservado = null;
+
+    try {
+        reservado = await reservarAcaoAgenda(
+            id,
+            [
+                'agendada',
+                'erro_ativacao'
+            ],
+            'ativando',
+            {
                 erro_ativacao: null,
-                quantidade_tentativas_ativacao: Number(original.quantidade_tentativas_ativacao || 0) + 1
-            });
-            if (!reservado) return showToast('⚠️ Esta promoção já foi processada por outro usuário', 'warning');
-            await carregarAgendamentosPromocoes();
+                quantidade_tentativas_ativacao:
+                    Number(
+                        original.quantidade_tentativas_ativacao ||
+                        0
+                    ) + 1
+            }
+        );
 
-            const tokenData = await window.getValidToken?.();
-            if (!tokenData?.access_token) throw new Error('Token do Mercado Livre não disponível');
-            const resultado = await ativarItemPromocao(
-                reservado.mlb, reservado.promotion_id, reservado.promotion_type,
-                reservado.valor_final, tokenData.access_token
+        if (!reservado) {
+            return {
+                success: false,
+                error:
+                    'Esta promoção já foi processada por outro usuário'
+            };
+        }
+
+        if (atualizarInterface) {
+            await carregarAgendamentosPromocoes();
+        }
+
+        let accessToken = tokenAcesso;
+
+        if (!accessToken) {
+            const tokenData =
+                await window.getValidToken?.();
+
+            accessToken =
+                tokenData?.access_token ||
+                null;
+        }
+
+        if (!accessToken) {
+            throw new Error(
+                'Token do Mercado Livre não disponível'
             );
-            if (!resultado.success) throw new Error(resultado.error || 'Mercado Livre recusou a ativação');
+        }
 
-            let offerId = resultado.data?.offer_id || null;
-            if (!offerId) offerId = await buscarOfferIdDoItem(reservado.mlb, reservado.promotion_id, tokenData.access_token);
-            const { error } = await supabase.from('promocoes_agendadas').update({
-                status: 'ativada', ativada_por: nomeUsuarioAgenda(), ativada_em: new Date().toISOString(),
-                offer_id: offerId || null, erro_ativacao: null
-            }).eq('id', id).eq('status', 'ativando');
-            if (error) throw error;
-            showToast(`✅ ${reservado.mlb} ativado com sucesso`, 'success');
-        } catch (error) {
-            await supabase.from('promocoes_agendadas').update({ status: 'erro_ativacao', erro_ativacao: error.message }).eq('id', id).eq('status', 'ativando');
-            showToast(`❌ Erro ao ativar: ${error.message}`, 'error');
-        } finally {
+        const resultado = await ativarItemPromocao(
+            reservado.mlb,
+            reservado.promotion_id,
+            reservado.promotion_type,
+            reservado.valor_final,
+            accessToken
+        );
+
+        if (!resultado?.success) {
+            throw new Error(
+                resultado?.error ||
+                'Mercado Livre recusou a ativação'
+            );
+        }
+
+        let offerId =
+            resultado.data?.offer_id ||
+            null;
+
+        if (!offerId) {
+            offerId = await buscarOfferIdDoItem(
+                reservado.mlb,
+                reservado.promotion_id,
+                accessToken
+            );
+        }
+
+        const {
+            error
+        } = await supabase
+            .from('promocoes_agendadas')
+            .update({
+                status: 'ativada',
+                ativada_por: nomeUsuarioAgenda(),
+                ativada_em: new Date().toISOString(),
+                offer_id: offerId || null,
+                erro_ativacao: null
+            })
+            .eq('id', id)
+            .eq('status', 'ativando');
+
+        if (error) {
+            throw error;
+        }
+
+        if (confirmar) {
+            showToast(
+                `✅ ${reservado.mlb} ativado com sucesso`,
+                'success'
+            );
+        }
+
+        return {
+            success: true,
+            item: reservado
+        };
+    } catch (error) {
+        await supabase
+            .from('promocoes_agendadas')
+            .update({
+                status: 'erro_ativacao',
+                erro_ativacao:
+                    error.message ||
+                    'Erro desconhecido na ativação'
+            })
+            .eq('id', id)
+            .eq('status', 'ativando');
+
+        if (confirmar) {
+            showToast(
+                `❌ Erro ao ativar: ${error.message}`,
+                'error'
+            );
+        }
+
+        return {
+            success: false,
+            error:
+                error.message ||
+                'Erro desconhecido na ativação',
+            item: reservado || original
+        };
+    } finally {
+        if (atualizarInterface) {
             await carregarAgendamentosPromocoes();
+
             fecharModalAvisosPromocoes();
+
             await verificarAvisosPromocoesAgendadas();
         }
-    };
+    }
+}
 
+    window.executarAtivacaoAgendada = async function(id) {
+    return processarAtivacaoAgendada(id, {
+        confirmar: true,
+        atualizarInterface: true
+    });
+};
+
+window.executarAtivacoesAgendadasDeHoje =
+async function() {
+    const pendentes =
+        obterAtivacoesAgendadasDisponiveisHoje();
+
+    if (!pendentes.length) {
+        showToast(
+            '⚠️ Não há promoções de hoje prontas para ativar',
+            'warning'
+        );
+
+        atualizarBotaoAtivacoesAgendadasHoje();
+
+        return;
+    }
+
+    const confirmou = confirm(
+        `Ativar agora as ${pendentes.length} ` +
+        `promoção(ões) de hoje cujo horário já chegou?`
+    );
+
+    if (!confirmou) {
+        return;
+    }
+
+    const botao = document.getElementById(
+        'btnAtivarAgendamentosHoje'
+    );
+
+    if (botao) {
+        botao.disabled = true;
+
+        botao.innerHTML = `
+            <i class="fas fa-spinner fa-spin"></i>
+            Ativando 0 de ${pendentes.length}
+        `;
+    }
+
+    let tokenAcesso = null;
+
+    try {
+        const tokenData =
+            await window.getValidToken?.();
+
+        tokenAcesso =
+            tokenData?.access_token ||
+            null;
+
+        if (!tokenAcesso) {
+            throw new Error(
+                'Token do Mercado Livre não disponível'
+            );
+        }
+    } catch (error) {
+        showToast(
+            `❌ ${error.message}`,
+            'error'
+        );
+
+        atualizarBotaoAtivacoesAgendadasHoje();
+
+        return;
+    }
+
+    let sucessos = 0;
+    const falhas = [];
+
+    for (
+        let indice = 0;
+        indice < pendentes.length;
+        indice++
+    ) {
+        const item = pendentes[indice];
+
+        if (botao) {
+            botao.innerHTML = `
+                <i class="fas fa-spinner fa-spin"></i>
+                Ativando ${indice + 1} de ${pendentes.length}
+            `;
+        }
+
+        const resultado =
+            await processarAtivacaoAgendada(
+                item.id,
+                {
+                    confirmar: false,
+                    atualizarInterface: false,
+                    tokenAcesso
+                }
+            );
+
+        if (resultado.success) {
+            sucessos++;
+        } else {
+            falhas.push(
+                `${item.mlb}: ` +
+                `${resultado.error || 'erro desconhecido'}`
+            );
+        }
+    }
+
+    await carregarAgendamentosPromocoes();
+
+    fecharModalAvisosPromocoes();
+
+    await verificarAvisosPromocoesAgendadas();
+
+    if (!falhas.length) {
+        showToast(
+            `✅ ${sucessos} promoção(ões) de hoje ` +
+            `ativada(s) com sucesso`,
+            'success'
+        );
+
+        return;
+    }
+
+    if (sucessos > 0) {
+        showToast(
+            `⚠️ ${sucessos} ativada(s) e ` +
+            `${falhas.length} com erro. Veja o console.`,
+            'warning'
+        );
+
+        log(
+            'Falhas na ativação das promoções de hoje',
+            'error',
+            falhas
+        );
+
+        return;
+    }
+
+    showToast(
+        `❌ Nenhuma promoção foi ativada. ` +
+        `${falhas.length} erro(s).`,
+        'error'
+    );
+
+    log(
+        'Falhas na ativação das promoções de hoje',
+        'error',
+        falhas
+    );
+};
     window.executarDesativacaoAgendada = async function(id) {
         const supabase = obterSupabasePromocoes();
         const original = agendamentosPromocoes.find(a => Number(a.id) === Number(id));
