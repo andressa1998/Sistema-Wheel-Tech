@@ -100,6 +100,8 @@ let categoriasCustomizadas = {};
 let subcategoriasEstoque = {};
 let subcategoriasEstoqueCarregadas = false;
 let promessaCarregamentoSubcategorias = null;
+let regrasEstoqueCarregadas = false;
+let sincronizacaoCategoriaEmAndamento = false;
 
 // =========================================================
 // REGRAS FIXAS DE TIPO DE ANÚNCIO DO MERCADO LIVRE
@@ -1284,7 +1286,9 @@ async function carregarCategoriasCustomizadas() {
                             localData
                         ) || {};
 
-                } catch (error) {
+                } catch (
+                    error
+                ) {
 
                     console.error(
                         '❌ Erro lendo categorias do localStorage:',
@@ -1296,6 +1300,11 @@ async function carregarCategoriasCustomizadas() {
                         {};
 
                 }
+
+            } else {
+
+                categoriasCustomizadas =
+                    {};
 
             }
 
@@ -1309,18 +1318,32 @@ async function carregarCategoriasCustomizadas() {
 
 
             // =============================================
-            // IMPORTANTE
+            // ATUALIZAR SELECTS
             // =============================================
 
-            atualizarSelectCategorias();
+            if (
+                typeof atualizarSelectCategorias ===
+                    'function'
+            ) {
+
+                atualizarSelectCategorias();
+
+            }
 
 
-            preencherListaCategorias();
+            if (
+                typeof preencherListaCategorias ===
+                    'function'
+            ) {
+
+                preencherListaCategorias();
+
+            }
 
 
             if (
                 typeof preencherListaCategoriasGerenciamento ===
-                'function'
+                    'function'
             ) {
 
                 const modalGerenciar =
@@ -1332,12 +1355,31 @@ async function carregarCategoriasCustomizadas() {
                 if (
                     modalGerenciar &&
                     modalGerenciar.style.display ===
-                    'flex'
+                        'flex'
                 ) {
 
                     preencherListaCategoriasGerenciamento();
 
                 }
+
+            }
+
+
+            // =============================================
+            // CRIAR REGRA SOMENTE PARA CATEGORIA NOVA
+            //
+            // Só executa se as regras salvas já tiverem
+            // terminado de carregar.
+            // =============================================
+
+            if (
+                window.regrasEstoqueCarregadasGestao ===
+                    true &&
+                typeof inicializarRegrasCategoriasCustomizadas ===
+                    'function'
+            ) {
+
+                await inicializarRegrasCategoriasCustomizadas();
 
             }
 
@@ -1348,7 +1390,7 @@ async function carregarCategoriasCustomizadas() {
 
 
         // =================================================
-        // SUPABASE
+        // COM SUPABASE
         // =================================================
 
         const {
@@ -1359,51 +1401,59 @@ async function carregarCategoriasCustomizadas() {
                 .from(
                     'configuracoes_sistema'
                 )
-                .select('*')
+                .select(
+                    '*'
+                )
                 .eq(
                     'chave',
                     'categorias_customizadas'
                 )
-                .maybeSingle();
+                .limit(
+                    1
+                );
 
 
         if (
             error
         ) {
 
-            console.error(
-                '❌ Erro ao carregar categorias customizadas:',
-                error
-            );
-
-
-            return categoriasCustomizadas;
+            throw error;
 
         }
 
 
+        const configuracao =
+            Array.isArray(
+                data
+            )
+                ? data[0]
+                : data;
+
+
         // =================================================
-        // CARREGAR OBJETO
+        // CARREGAR OBJETO DO BANCO
         // =================================================
 
         if (
-            data &&
-            data.valor
+            configuracao &&
+            configuracao.valor
         ) {
 
             if (
-                typeof data.valor ===
-                'string'
+                typeof configuracao.valor ===
+                    'string'
             ) {
 
                 try {
 
                     categoriasCustomizadas =
                         JSON.parse(
-                            data.valor
+                            configuracao.valor
                         ) || {};
 
-                } catch (error) {
+                } catch (
+                    error
+                ) {
 
                     console.error(
                         '❌ JSON das categorias inválido:',
@@ -1419,30 +1469,69 @@ async function carregarCategoriasCustomizadas() {
             } else {
 
                 categoriasCustomizadas =
-                    data.valor || {};
+                    configuracao.valor ||
+                    {};
 
             }
 
         } else {
 
-            categoriasCustomizadas =
-                {};
+            // =============================================
+            // NÃO ENCONTROU NO BANCO
+            // TENTAR O LOCALSTORAGE
+            // =============================================
+
+            const localData =
+                localStorage.getItem(
+                    'categorias_customizadas'
+                );
+
+
+            if (
+                localData
+            ) {
+
+                try {
+
+                    categoriasCustomizadas =
+                        JSON.parse(
+                            localData
+                        ) || {};
+
+                } catch (
+                    error
+                ) {
+
+                    console.error(
+                        '❌ Erro lendo categorias locais:',
+                        error
+                    );
+
+
+                    categoriasCustomizadas =
+                        {};
+
+                }
+
+            } else {
+
+                categoriasCustomizadas =
+                    {};
+
+            }
 
         }
 
 
         // =================================================
-        // FALLBACK LOCAL
+        // ATUALIZAR CÓPIA LOCAL
         // =================================================
 
         localStorage.setItem(
-
             'categorias_customizadas',
-
             JSON.stringify(
                 categoriasCustomizadas
             )
-
         );
 
 
@@ -1455,18 +1544,32 @@ async function carregarCategoriasCustomizadas() {
 
 
         // =================================================
-        // ESSA PARTE ESTAVA FALTANDO
+        // ATUALIZAR SELECTS E LISTAS
         // =================================================
 
-        atualizarSelectCategorias();
+        if (
+            typeof atualizarSelectCategorias ===
+                'function'
+        ) {
+
+            atualizarSelectCategorias();
+
+        }
 
 
-        preencherListaCategorias();
+        if (
+            typeof preencherListaCategorias ===
+                'function'
+        ) {
+
+            preencherListaCategorias();
+
+        }
 
 
         if (
             typeof preencherListaCategoriasGerenciamento ===
-            'function'
+                'function'
         ) {
 
             const modalGerenciar =
@@ -1478,7 +1581,7 @@ async function carregarCategoriasCustomizadas() {
             if (
                 modalGerenciar &&
                 modalGerenciar.style.display ===
-                'flex'
+                    'flex'
             ) {
 
                 preencherListaCategoriasGerenciamento();
@@ -1488,10 +1591,30 @@ async function carregarCategoriasCustomizadas() {
         }
 
 
+        // =================================================
+        // REGRAS DAS CATEGORIAS
+        //
+        // Não pode executar antes do carregamento das
+        // regras persistidas.
+        // =================================================
+
+        if (
+            window.regrasEstoqueCarregadasGestao ===
+                true &&
+            typeof inicializarRegrasCategoriasCustomizadas ===
+                'function'
+        ) {
+
+            await inicializarRegrasCategoriasCustomizadas();
+
+        }
+
+
         return categoriasCustomizadas;
 
-
-    } catch (error) {
+    } catch (
+        error
+    ) {
 
         console.error(
             '❌ Erro ao carregar categorias customizadas:',
@@ -1499,11 +1622,95 @@ async function carregarCategoriasCustomizadas() {
         );
 
 
-        categoriasCustomizadas =
-            {};
+        // =================================================
+        // FALLBACK LOCAL
+        // =================================================
+
+        try {
+
+            const localData =
+                localStorage.getItem(
+                    'categorias_customizadas'
+                );
 
 
-        atualizarSelectCategorias();
+            categoriasCustomizadas =
+                localData
+                    ? JSON.parse(
+                        localData
+                    ) || {}
+                    : {};
+
+        } catch (
+            erroLocal
+        ) {
+
+            console.error(
+                '❌ Erro no fallback local das categorias:',
+                erroLocal
+            );
+
+
+            categoriasCustomizadas =
+                {};
+
+        }
+
+
+        if (
+            typeof atualizarSelectCategorias ===
+                'function'
+        ) {
+
+            atualizarSelectCategorias();
+
+        }
+
+
+        if (
+            typeof preencherListaCategorias ===
+                'function'
+        ) {
+
+            preencherListaCategorias();
+
+        }
+
+
+        if (
+            typeof preencherListaCategoriasGerenciamento ===
+                'function'
+        ) {
+
+            const modalGerenciar =
+                document.getElementById(
+                    'modalGerenciarCategorias'
+                );
+
+
+            if (
+                modalGerenciar &&
+                modalGerenciar.style.display ===
+                    'flex'
+            ) {
+
+                preencherListaCategoriasGerenciamento();
+
+            }
+
+        }
+
+
+        if (
+            window.regrasEstoqueCarregadasGestao ===
+                true &&
+            typeof inicializarRegrasCategoriasCustomizadas ===
+                'function'
+        ) {
+
+            await inicializarRegrasCategoriasCustomizadas();
+
+        }
 
 
         return categoriasCustomizadas;
@@ -15383,155 +15590,1034 @@ function atualizarModelosPorMarca(marcaSelecionada) {
 }
 
 async function carregarRegrasEstoque() {
+
     try {
-        console.log('🔄 [carregarRegrasEstoque] Iniciando carregamento...');
-        
-        if (!window.supabaseClient) {
-            console.log('⚠️ Supabase não disponível, usando localStorage');
-            const localData = localStorage.getItem('regras_estoque_condicionais');
-            if (localData) {
-                regrasEstoqueAtuais = JSON.parse(localData);
-                console.log('✅ Regras carregadas do localStorage:', regrasEstoqueAtuais);
-            } else {
-                regrasEstoqueAtuais = JSON.parse(JSON.stringify(regrasEstoquePadrao));
-                localStorage.setItem('regras_estoque_condicionais', JSON.stringify(regrasEstoqueAtuais));
-                console.log('✅ Regras padrão carregadas do código:', regrasEstoqueAtuais);
+
+        console.log(
+            '🔄 [carregarRegrasEstoque] Iniciando carregamento...'
+        );
+
+
+        window.regrasEstoqueCarregadasGestao =
+            false;
+
+
+        // =====================================================
+        // FUNÇÃO INTERNA PARA VALIDAR AS REGRAS
+        // =====================================================
+
+        function regrasValidas(
+            regras
+        ) {
+
+            return (
+
+                regras &&
+
+                typeof regras ===
+                    'object' &&
+
+                !Array.isArray(
+                    regras
+                ) &&
+
+                Object.keys(
+                    regras
+                ).length > 0
+
+            );
+        }
+
+
+        // =====================================================
+        // FUNÇÃO INTERNA PARA LER LOCALSTORAGE
+        // =====================================================
+
+        function carregarRegrasLocais() {
+
+            try {
+
+                const localData =
+                    localStorage.getItem(
+                        'regras_estoque_condicionais'
+                    );
+
+
+                if (
+                    !localData
+                ) {
+
+                    return null;
+
+                }
+
+
+                const regras =
+                    JSON.parse(
+                        localData
+                    );
+
+
+                return regrasValidas(
+                    regras
+                )
+                    ? regras
+                    : null;
+
+            } catch (
+                error
+            ) {
+
+                console.error(
+                    '❌ Erro lendo regras locais:',
+                    error
+                );
+
+
+                return null;
             }
-            return;
         }
-        
-        // Buscar regras do Supabase
-        const { data, error } = await window.supabaseClient
-            .from('configuracoes_sistema')
-            .select('*')
-            .eq('chave', 'regras_estoque_condicionais')
-            .single();
-        
-        if (error && error.code !== 'PGRST116') {
-            console.error('❌ Erro ao carregar regras do Supabase:', error);
-            return;
-        }
-        
-        if (data && data.valor) {
-            // Se veio do Supabase como string, converte
-            if (typeof data.valor === 'string') {
-                regrasEstoqueAtuais = JSON.parse(data.valor);
+
+
+        // =====================================================
+        // SEM SUPABASE
+        // =====================================================
+
+        if (
+            !window.supabaseClient
+        ) {
+
+            console.warn(
+                '⚠️ Supabase não disponível. Usando regras locais.'
+            );
+
+
+            const regrasLocais =
+                carregarRegrasLocais();
+
+
+            if (
+                regrasLocais
+            ) {
+
+                regrasEstoqueAtuais =
+                    regrasLocais;
+
             } else {
-                regrasEstoqueAtuais = data.valor;
+
+                regrasEstoqueAtuais =
+                    JSON.parse(
+                        JSON.stringify(
+                            regrasEstoquePadrao
+                        )
+                    );
+
+
+                localStorage.setItem(
+                    'regras_estoque_condicionais',
+                    JSON.stringify(
+                        regrasEstoqueAtuais
+                    )
+                );
+
             }
-            console.log('✅ Regras carregadas do Supabase:', regrasEstoqueAtuais);
-            
-            // 🔥 SALVAR TAMBÉM NO LOCALSTORAGE PARA FALBACK
-            localStorage.setItem('regras_estoque_condicionais', JSON.stringify(regrasEstoqueAtuais));
-        } else {
-            // Se não tem no Supabase, usa o padrão
-            regrasEstoqueAtuais = JSON.parse(JSON.stringify(regrasEstoquePadrao));
-            await salvarRegrasEstoque(regrasEstoqueAtuais);
-            console.log('✅ Regras padrão salvas no Supabase:', regrasEstoqueAtuais);
+
+
+            window.regrasEstoqueCarregadasGestao =
+                true;
+
+
+            await inicializarRegrasCategoriasCustomizadas();
+
+
+            const modal =
+                document.getElementById(
+                    'modalRegrasEstoque'
+                );
+
+
+            if (
+                modal &&
+                modal.style.display ===
+                    'flex'
+            ) {
+
+                preencherModalRegras();
+
+            }
+
+
+            return {
+
+                success:
+                    true,
+
+                origem:
+                    regrasLocais
+                        ? 'localStorage'
+                        : 'padrao',
+
+                regras:
+                    regrasEstoqueAtuais
+
+            };
         }
-        
-        // Atualizar modal se estiver aberto
-        if (document.getElementById('modalRegrasEstoque')) {
+
+
+        // =====================================================
+        // BUSCAR CONFIGURAÇÃO NO SUPABASE
+        // =====================================================
+
+        const {
+            data,
+            error
+        } =
+            await window.supabaseClient
+                .from(
+                    'configuracoes_sistema'
+                )
+                .select(
+                    '*'
+                )
+                .eq(
+                    'chave',
+                    'regras_estoque_condicionais'
+                )
+                .limit(
+                    1
+                );
+
+
+        if (
+            error
+        ) {
+
+            throw error;
+
+        }
+
+
+        const configuracao =
+            Array.isArray(
+                data
+            )
+                ? data[0]
+                : data;
+
+
+        // =====================================================
+        // REGRAS ENCONTRADAS NO BANCO
+        // =====================================================
+
+        if (
+            configuracao &&
+            configuracao.valor
+        ) {
+
+            let regrasBanco =
+                configuracao.valor;
+
+
+            if (
+                typeof regrasBanco ===
+                'string'
+            ) {
+
+                regrasBanco =
+                    JSON.parse(
+                        regrasBanco
+                    );
+
+            }
+
+
+            if (
+                !regrasValidas(
+                    regrasBanco
+                )
+            ) {
+
+                throw new Error(
+                    'As regras salvas no banco são inválidas.'
+                );
+
+            }
+
+
+            regrasEstoqueAtuais =
+                regrasBanco;
+
+
+            localStorage.setItem(
+                'regras_estoque_condicionais',
+                JSON.stringify(
+                    regrasEstoqueAtuais
+                )
+            );
+
+
+            console.log(
+                '✅ Regras carregadas do Supabase:',
+                regrasEstoqueAtuais
+            );
+
+        }
+
+        // =====================================================
+        // NÃO EXISTE CONFIGURAÇÃO NO BANCO
+        // =====================================================
+
+        else {
+
+            const regrasLocais =
+                carregarRegrasLocais();
+
+
+            if (
+                regrasLocais
+            ) {
+
+                regrasEstoqueAtuais =
+                    regrasLocais;
+
+            } else {
+
+                regrasEstoqueAtuais =
+                    JSON.parse(
+                        JSON.stringify(
+                            regrasEstoquePadrao
+                        )
+                    );
+
+            }
+
+
+            const resultadoSalvamento =
+                await salvarRegrasEstoque(
+                    regrasEstoqueAtuais,
+                    true
+                );
+
+
+            if (
+                !resultadoSalvamento.success
+            ) {
+
+                throw new Error(
+                    resultadoSalvamento.error ||
+                    'Não foi possível criar a configuração de regras.'
+                );
+
+            }
+
+        }
+
+
+        window.regrasEstoqueCarregadasGestao =
+            true;
+
+
+        await inicializarRegrasCategoriasCustomizadas();
+
+
+        const modal =
+            document.getElementById(
+                'modalRegrasEstoque'
+            );
+
+
+        if (
+            modal &&
+            modal.style.display ===
+                'flex'
+        ) {
+
             preencherModalRegras();
+
         }
-        
-        console.log('✅ [carregarRegrasEstoque] Finalizado com sucesso!');
-        
-    } catch (error) {
-        console.error('❌ Erro ao carregar regras:', error);
-        // Fallback para localStorage
-        const localData = localStorage.getItem('regras_estoque_condicionais');
-        if (localData) {
-            regrasEstoqueAtuais = JSON.parse(localData);
-            console.log('✅ Regras carregadas do localStorage (fallback):', regrasEstoqueAtuais);
-        } else {
-            regrasEstoqueAtuais = JSON.parse(JSON.stringify(regrasEstoquePadrao));
-            console.log('✅ Regras padrão carregadas (fallback):', regrasEstoqueAtuais);
+
+
+        console.log(
+            '✅ [carregarRegrasEstoque] Finalizado!'
+        );
+
+
+        return {
+
+            success:
+                true,
+
+            origem:
+                'supabase',
+
+            regras:
+                regrasEstoqueAtuais
+
+        };
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro carregando regras do Supabase:',
+            error
+        );
+
+
+        // =====================================================
+        // FALLBACK LOCAL
+        // NÃO SALVA PADRÃO NO BANCO NESTE CASO
+        // =====================================================
+
+        let carregouLocal =
+            false;
+
+
+        try {
+
+            const localData =
+                localStorage.getItem(
+                    'regras_estoque_condicionais'
+                );
+
+
+            if (
+                localData
+            ) {
+
+                const regrasLocais =
+                    JSON.parse(
+                        localData
+                    );
+
+
+                if (
+                    regrasLocais &&
+                    typeof regrasLocais ===
+                        'object' &&
+                    !Array.isArray(
+                        regrasLocais
+                    ) &&
+                    Object.keys(
+                        regrasLocais
+                    ).length > 0
+                ) {
+
+                    regrasEstoqueAtuais =
+                        regrasLocais;
+
+
+                    carregouLocal =
+                        true;
+
+                }
+
+            }
+
+        } catch (
+            erroLocal
+        ) {
+
+            console.error(
+                '❌ Erro carregando regras locais:',
+                erroLocal
+            );
+
         }
+
+
+        if (
+            !carregouLocal
+        ) {
+
+            regrasEstoqueAtuais =
+                JSON.parse(
+                    JSON.stringify(
+                        regrasEstoquePadrao
+                    )
+                );
+
+        }
+
+
+        window.regrasEstoqueCarregadasGestao =
+            true;
+
+
+        await inicializarRegrasCategoriasCustomizadas();
+
+
+        const modal =
+            document.getElementById(
+                'modalRegrasEstoque'
+            );
+
+
+        if (
+            modal &&
+            modal.style.display ===
+                'flex'
+        ) {
+
+            preencherModalRegras();
+
+        }
+
+
+        showToast(
+            carregouLocal
+                ? '⚠️ Banco indisponível. Usando as últimas regras salvas neste navegador.'
+                : '⚠️ Banco indisponível. Usando regras padrão temporariamente.',
+            'warning'
+        );
+
+
+        return {
+
+            success:
+                carregouLocal,
+
+            origem:
+                carregouLocal
+                    ? 'localStorage'
+                    : 'padrao_temporario',
+
+            error:
+                error.message,
+
+            regras:
+                regrasEstoqueAtuais
+
+        };
     }
 }
 
-async function salvarRegrasEstoque(regras) {
+async function salvarRegrasEstoque(
+    regras,
+    silencioso = false
+) {
+
     try {
-        console.log('🔄 [salvarRegrasEstoque] Salvando regras...');
-        
-        // 🔥 CORREÇÃO: Limpar regras inválidas antes de salvar
+
+        console.log(
+            '🔄 [salvarRegrasEstoque] Salvando regras...'
+        );
+
+
+        if (
+            !regras ||
+            typeof regras !==
+                'object' ||
+            Array.isArray(
+                regras
+            )
+        ) {
+
+            throw new Error(
+                'Estrutura de regras inválida.'
+            );
+
+        }
+
+
         const regrasLimpias = {};
-        
-        for (const [categoria, dados] of Object.entries(regras)) {
-            if (!dados || !dados.condicoes || dados.condicoes.length === 0) {
-                // Se não tem condições, pular
-                console.log(`⚠️ Categoria ${categoria} sem condições, pulando...`);
+
+
+        for (
+            const [
+                categoria,
+                dados
+            ]
+            of Object.entries(
+                regras
+            )
+        ) {
+
+            if (
+                !categoria ||
+                !dados ||
+                !Array.isArray(
+                    dados.condicoes
+                ) ||
+                dados.condicoes.length ===
+                    0
+            ) {
+
+                console.warn(
+                    `⚠️ Categoria ignorada porque não possui condições: ${categoria}`
+                );
+
+
                 continue;
             }
-            
-            // Limpar cada condição
-            const condicoesLimpias = dados.condicoes.map(cond => {
-                const condLimpa = {};
-                
-                // Operador (obrigatório)
-                condLimpa.operador = cond.operador || 'padrao';
-                
-                // Valor (se não for padrão)
-                if (condLimpa.operador !== 'padrao') {
-                    condLimpa.valor = typeof cond.valor === 'number' ? cond.valor : 0;
+
+
+            const condicoesLimpias = [];
+
+
+            for (
+                const condicao
+                of dados.condicoes
+            ) {
+
+                if (
+                    !condicao ||
+                    typeof condicao !==
+                        'object'
+                ) {
+
+                    continue;
+
                 }
-                
-                // Estoque máximo (obrigatório)
-                condLimpa.estoque_maximo = typeof cond.estoque_maximo === 'number' ? cond.estoque_maximo : 30;
-                
-                return condLimpa;
-            });
-            
-            // Filtrar condições duplicadas ou inválidas
-            const condicoesFiltradas = condicoesLimpias.filter((cond, index, self) => {
-                // Se for padrão, manter apenas a primeira
-                if (cond.operador === 'padrao') {
-                    return self.findIndex(c => c.operador === 'padrao') === index;
+
+
+                let operador =
+                    condicao.operador;
+
+
+                if (
+                    ![
+                        'maior_que',
+                        'menor_que',
+                        'igual_a',
+                        'padrao'
+                    ].includes(
+                        operador
+                    )
+                ) {
+
+                    operador =
+                        'padrao';
+
                 }
-                return true;
-            });
-            
-            // Garantir que tem pelo menos a condição padrão
-            const temPadrao = condicoesFiltradas.some(c => c.operador === 'padrao');
-            if (!temPadrao) {
-                condicoesFiltradas.push({ operador: 'padrao', estoque_maximo: 30 });
+
+
+                let estoqueMaximo =
+                    Number(
+                        condicao.estoque_maximo
+                    );
+
+
+                if (
+                    !Number.isFinite(
+                        estoqueMaximo
+                    )
+                ) {
+
+                    estoqueMaximo =
+                        30;
+
+                }
+
+
+                estoqueMaximo =
+                    Math.max(
+                        0,
+                        Math.floor(
+                            estoqueMaximo
+                        )
+                    );
+
+
+                const condicaoLimpa = {
+
+                    operador,
+
+                    estoque_maximo:
+                        estoqueMaximo
+
+                };
+
+
+                if (
+                    operador !==
+                    'padrao'
+                ) {
+
+                    let valor =
+                        Number(
+                            condicao.valor
+                        );
+
+
+                    if (
+                        !Number.isFinite(
+                            valor
+                        )
+                    ) {
+
+                        valor =
+                            0;
+
+                    }
+
+
+                    condicaoLimpa.valor =
+                        Math.max(
+                            0,
+                            valor
+                        );
+
+                }
+
+
+                condicoesLimpias.push(
+                    condicaoLimpa
+                );
+
             }
-            
-            regrasLimpias[categoria] = {
-                condicoes: condicoesFiltradas
+
+
+            // =================================================
+            // MANTER SOMENTE UMA CONDIÇÃO PADRÃO
+            // =================================================
+
+            const condicoesNormais =
+                condicoesLimpias.filter(
+                    condicao =>
+                        condicao.operador !==
+                        'padrao'
+                );
+
+
+            let condicaoPadrao =
+                condicoesLimpias.find(
+                    condicao =>
+                        condicao.operador ===
+                        'padrao'
+                );
+
+
+            if (
+                !condicaoPadrao
+            ) {
+
+                condicaoPadrao = {
+
+                    operador:
+                        'padrao',
+
+                    estoque_maximo:
+                        30
+
+                };
+
+            }
+
+
+            regrasLimpias[
+                categoria
+            ] = {
+
+                condicoes: [
+
+                    ...condicoesNormais,
+
+                    condicaoPadrao
+
+                ]
+
+            };
+
+        }
+
+
+        if (
+            Object.keys(
+                regrasLimpias
+            ).length === 0
+        ) {
+
+            throw new Error(
+                'Nenhuma regra válida foi encontrada.'
+            );
+
+        }
+
+
+        // =====================================================
+        // SALVAR PRIMEIRO NO LOCALSTORAGE
+        // =====================================================
+
+        localStorage.setItem(
+            'regras_estoque_condicionais',
+            JSON.stringify(
+                regrasLimpias
+            )
+        );
+
+
+        regrasEstoqueAtuais =
+            JSON.parse(
+                JSON.stringify(
+                    regrasLimpias
+                )
+            );
+
+
+        // =====================================================
+        // SEM SUPABASE
+        // =====================================================
+
+        if (
+            !window.supabaseClient
+        ) {
+
+            console.warn(
+                '⚠️ Supabase indisponível. Regras salvas localmente.'
+            );
+
+
+            if (
+                !silencioso
+            ) {
+
+                showToast(
+                    '✅ Regras salvas neste navegador.',
+                    'success'
+                );
+
+            }
+
+
+            if (
+                typeof renderizarTabelaProdutos ===
+                    'function'
+            ) {
+
+                renderizarTabelaProdutos(
+                    produtosFiltradosAtuais
+                );
+
+            }
+
+
+            return {
+
+                success:
+                    true,
+
+                local:
+                    true,
+
+                regras:
+                    regrasEstoqueAtuais
+
             };
         }
-        
-        console.log('📊 Regras limpas para salvar:', regrasLimpias);
-        
-        if (!window.supabaseClient) {
-            localStorage.setItem('regras_estoque_condicionais', JSON.stringify(regrasLimpias));
-            regrasEstoqueAtuais = regrasLimpias;
-            showToast('✅ Regras salvas no localStorage!', 'success');
-            renderizarTabelaProdutos(produtosFiltradosAtuais);
-            return;
+
+
+        // =====================================================
+        // VERIFICAR SE CONFIGURAÇÃO JÁ EXISTE
+        // =====================================================
+
+        const {
+            data: configuracoesExistentes,
+            error: erroConsulta
+        } =
+            await window.supabaseClient
+                .from(
+                    'configuracoes_sistema'
+                )
+                .select(
+                    'chave'
+                )
+                .eq(
+                    'chave',
+                    'regras_estoque_condicionais'
+                )
+                .limit(
+                    1
+                );
+
+
+        if (
+            erroConsulta
+        ) {
+
+            throw erroConsulta;
+
         }
-        
-        const { error } = await window.supabaseClient
-            .from('configuracoes_sistema')
-            .upsert({
-                chave: 'regras_estoque_condicionais',
-                valor: JSON.stringify(regrasLimpias),
-                atualizado_em: new Date().toISOString(),
-                atualizado_por: currentUser?.name || 'sistema'
-            }, { onConflict: 'chave' });
-        
-        if (error) throw error;
-        
-        regrasEstoqueAtuais = regrasLimpias;
-        console.log('✅ Regras salvas com sucesso!');
-        showToast('✅ Regras de estoque atualizadas!', 'success');
-        renderizarTabelaProdutos(produtosFiltradosAtuais);
-        
-    } catch (error) {
-        console.error('❌ Erro ao salvar regras:', error);
-        showToast('Erro ao salvar regras: ' + error.message, 'error');
+
+
+        const dadosSalvar = {
+
+            valor:
+                JSON.stringify(
+                    regrasLimpias
+                ),
+
+            atualizado_em:
+                new Date()
+                    .toISOString(),
+
+            atualizado_por:
+                currentUser?.name ||
+                currentUser?.username ||
+                'sistema'
+
+        };
+
+
+        let erroSalvamento =
+            null;
+
+
+        if (
+            Array.isArray(
+                configuracoesExistentes
+            ) &&
+            configuracoesExistentes.length >
+                0
+        ) {
+
+            const {
+                error
+            } =
+                await window.supabaseClient
+                    .from(
+                        'configuracoes_sistema'
+                    )
+                    .update(
+                        dadosSalvar
+                    )
+                    .eq(
+                        'chave',
+                        'regras_estoque_condicionais'
+                    );
+
+
+            erroSalvamento =
+                error;
+
+        } else {
+
+            const {
+                error
+            } =
+                await window.supabaseClient
+                    .from(
+                        'configuracoes_sistema'
+                    )
+                    .insert(
+                        {
+
+                            chave:
+                                'regras_estoque_condicionais',
+
+                            ...dadosSalvar
+
+                        }
+                    );
+
+
+            erroSalvamento =
+                error;
+
+        }
+
+
+        if (
+            erroSalvamento
+        ) {
+
+            throw erroSalvamento;
+
+        }
+
+
+        // Mantém banco e navegador com a mesma versão.
+        localStorage.setItem(
+            'regras_estoque_condicionais',
+            JSON.stringify(
+                regrasLimpias
+            )
+        );
+
+
+        regrasEstoqueAtuais =
+            JSON.parse(
+                JSON.stringify(
+                    regrasLimpias
+                )
+            );
+
+
+        console.log(
+            '✅ Regras salvas no banco e no navegador:',
+            regrasEstoqueAtuais
+        );
+
+
+        if (
+            typeof renderizarTabelaProdutos ===
+                'function'
+        ) {
+
+            renderizarTabelaProdutos(
+                produtosFiltradosAtuais
+            );
+
+        }
+
+
+        if (
+            !silencioso
+        ) {
+
+            showToast(
+                '✅ Regras de estoque atualizadas!',
+                'success'
+            );
+
+        }
+
+
+        return {
+
+            success:
+                true,
+
+            local:
+                false,
+
+            regras:
+                regrasEstoqueAtuais
+
+        };
+
+    } catch (
+        error
+    ) {
+
+        console.error(
+            '❌ Erro ao salvar regras:',
+            error
+        );
+
+
+        if (
+            !silencioso
+        ) {
+
+            showToast(
+                `❌ Erro ao salvar regras: ${error.message}`,
+                'error'
+            );
+
+        }
+
+
+        return {
+
+            success:
+                false,
+
+            error:
+                error.message
+
+        };
     }
 }
 
@@ -34830,95 +35916,216 @@ window.obterRegraFixaTipoAnuncioML = obterRegraFixaTipoAnuncioML;
 window.carregarRegrasFixasTipoAnuncioML = carregarRegrasFixasTipoAnuncioML;
 window.salvarRegrasFixasTipoAnuncioML = salvarRegrasFixasTipoAnuncioML;
 
-// =========================================================
-// INICIALIZAR REGRAS PARA CATEGORIAS CUSTOMIZADAS
-// =========================================================
+async function inicializarRegrasCategoriasCustomizadas() {
 
-function inicializarRegrasCategoriasCustomizadas() {
-    console.log('🔄 Inicializando regras para categorias customizadas...');
-    
-    const categoriasCustom = Object.keys(categoriasCustomizadas);
-    let alterado = false;
-    
-    categoriasCustom.forEach(cat => {
-        if (!regrasEstoqueAtuais[cat]) {
-            regrasEstoqueAtuais[cat] = {
-                condicoes: [
-                    { operador: 'padrao', estoque_maximo: 30 }
-                ]
-            };
-            alterado = true;
-            console.log(`✅ Regras padrão criadas para categoria: ${cat}`);
-        } else {
-            // Verificar se tem condição padrão
-            const temPadrao = regrasEstoqueAtuais[cat].condicoes.some(c => c.operador === 'padrao');
-            if (!temPadrao) {
-                regrasEstoqueAtuais[cat].condicoes.push({ operador: 'padrao', estoque_maximo: 30 });
-                alterado = true;
-                console.log(`✅ Condição padrão adicionada para: ${cat}`);
-            }
-        }
-    });
-    
-    if (alterado) {
-        // Salvar automaticamente
-        salvarRegrasEstoque(regrasEstoqueAtuais);
-        console.log('✅ Regras de categorias customizadas inicializadas!');
-    }
-}
-
-// =========================================================
-// SOBRESCREVER FUNÇÃO DE CARREGAR CATEGORIAS
-// =========================================================
-
-// Guardar referência da função original
-// =========================================================
-// SOBRESCREVER CARREGAMENTO DAS CATEGORIAS
-// =========================================================
-
-const _carregarCategoriasCustomizadasOriginal =
-    carregarCategoriasCustomizadas;
+    console.log(
+        '🔄 Verificando regras das categorias customizadas...'
+    );
 
 
-carregarCategoriasCustomizadas =
-    async function() {
+    // Impede que regras padrão sejam criadas antes
+    // do carregamento das regras salvas.
+    if (
+        window.regrasEstoqueCarregadasGestao !==
+        true
+    ) {
 
-        // Carregar categorias
-        const resultado =
-            await _carregarCategoriasCustomizadasOriginal();
-
-
-        // =================================================
-        // GARANTIR SELECTS ATUALIZADOS
-        // =================================================
-
-        atualizarSelectCategorias();
-
-
-        // =================================================
-        // INICIALIZAR REGRAS DAS NOVAS CATEGORIAS
-        // =================================================
-
-        setTimeout(
-            inicializarRegrasCategoriasCustomizadas,
-            500
+        console.log(
+            '⏳ As regras salvas ainda não foram carregadas.'
         );
 
 
-        return resultado;
+        return {
+
+            success:
+                true,
+
+            aguardando:
+                true,
+
+            alterado:
+                false
+
+        };
+    }
+
+
+    if (
+        !categoriasCustomizadas ||
+        typeof categoriasCustomizadas !==
+            'object'
+    ) {
+
+        return {
+
+            success:
+                true,
+
+            alterado:
+                false
+
+        };
+    }
+
+
+    let alterado =
+        false;
+
+
+    const categoriasCustom =
+        Object.keys(
+            categoriasCustomizadas
+        );
+
+
+    for (
+        const categoria
+        of categoriasCustom
+    ) {
+
+        if (
+            !categoria
+        ) {
+
+            continue;
+
+        }
+
+
+        if (
+            !regrasEstoqueAtuais[
+                categoria
+            ]
+        ) {
+
+            regrasEstoqueAtuais[
+                categoria
+            ] = {
+
+                condicoes: [
+
+                    {
+
+                        operador:
+                            'padrao',
+
+                        estoque_maximo:
+                            30
+
+                    }
+
+                ]
+
+            };
+
+
+            alterado =
+                true;
+
+
+            console.log(
+                `✅ Regra criada para a nova categoria: ${categoria}`
+            );
+
+
+            continue;
+        }
+
+
+        if (
+            !Array.isArray(
+                regrasEstoqueAtuais[
+                    categoria
+                ].condicoes
+            )
+        ) {
+
+            regrasEstoqueAtuais[
+                categoria
+            ].condicoes = [];
+
+        }
+
+
+        const temPadrao =
+            regrasEstoqueAtuais[
+                categoria
+            ].condicoes.some(
+                condicao =>
+                    condicao.operador ===
+                    'padrao'
+            );
+
+
+        if (
+            !temPadrao
+        ) {
+
+            regrasEstoqueAtuais[
+                categoria
+            ].condicoes.push(
+                {
+
+                    operador:
+                        'padrao',
+
+                    estoque_maximo:
+                        30
+
+                }
+            );
+
+
+            alterado =
+                true;
+
+
+            console.log(
+                `✅ Condição padrão acrescentada à categoria: ${categoria}`
+            );
+
+        }
+
+    }
+
+
+    if (
+        alterado
+    ) {
+
+        const resultado =
+            await salvarRegrasEstoque(
+                regrasEstoqueAtuais,
+                true
+            );
+
+
+        if (
+            !resultado.success
+        ) {
+
+            console.error(
+                '❌ Erro salvando regras das novas categorias:',
+                resultado.error
+            );
+
+
+            return resultado;
+
+        }
+
+    }
+
+
+    return {
+
+        success:
+            true,
+
+        alterado
+
     };
-
-    // =========================================================
-// ESTOQUE A CAMINHO / EM TRÂNSITO
-// PRINCIPALMENTE PARA RAIOS
-// =========================================================
-
-
-// =========================================================
-// QUEM PODE VER
-//
-// Admins + Arthur
-// =========================================================
+}
 
 function podeVerQuantidadeACaminhoRaios() {
 
@@ -38958,6 +40165,650 @@ function abrirDetalhesRastreioProduto(
         modal
     );
 }
+
+window.sincronizarEstoqueMLPorCategoria =
+    async function sincronizarEstoqueMLPorCategoria() {
+
+        // =====================================================
+        // IMPEDIR DUAS SINCRONIZAÇÕES AO MESMO TEMPO
+        // =====================================================
+
+        if (
+            window.sincronizacaoCategoriaMLExecutando ===
+            true
+        ) {
+
+            showToast(
+                '⚠️ Já existe uma sincronização por categoria em andamento.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        // =====================================================
+        // VERIFICAR PERMISSÃO
+        // =====================================================
+
+        const username =
+            currentUser?.username
+                ?.toLowerCase()
+                ?.trim() ||
+            '';
+
+
+        const autorizado =
+
+            (
+                Array.isArray(
+                    usuariosAutorizadosSync
+                ) &&
+                usuariosAutorizadosSync.includes(
+                    username
+                )
+            ) ||
+
+            (
+                Array.isArray(
+                    usuariosAdmin
+                ) &&
+                usuariosAdmin.includes(
+                    username
+                )
+            );
+
+
+        if (
+            !autorizado
+        ) {
+
+            showToast(
+                '⚠️ Você não tem permissão para sincronizar estoques.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        // =====================================================
+        // OBTER CATEGORIA SELECIONADA
+        // =====================================================
+
+        const selectCategoria =
+            document.getElementById(
+                'filtroCategoriaEstoque'
+            );
+
+
+        if (
+            !selectCategoria
+        ) {
+
+            showToast(
+                '❌ Campo de categoria não encontrado.',
+                'error'
+            );
+
+
+            return;
+        }
+
+
+        const categoria =
+            String(
+                selectCategoria.value ||
+                ''
+            ).trim();
+
+
+        if (
+            !categoria
+        ) {
+
+            showToast(
+                '⚠️ Selecione uma categoria no filtro antes de sincronizar.',
+                'warning'
+            );
+
+
+            selectCategoria.focus();
+
+
+            return;
+        }
+
+
+        // =====================================================
+        // VERIFICAR PRODUTOS CARREGADOS
+        // =====================================================
+
+        if (
+            !Array.isArray(
+                produtosEstoque
+            ) ||
+            produtosEstoque.length ===
+                0
+        ) {
+
+            showToast(
+                '⚠️ Os produtos ainda não foram carregados.',
+                'warning'
+            );
+
+
+            return;
+        }
+
+
+        // =====================================================
+        // PRODUTOS DA CATEGORIA
+        // =====================================================
+
+        const produtosDaCategoria =
+            produtosEstoque.filter(
+                produto =>
+
+                    String(
+                        produto?.categoria ||
+                        ''
+                    ).trim() ===
+                    categoria
+            );
+
+
+        if (
+            produtosDaCategoria.length ===
+            0
+        ) {
+
+            showToast(
+                `ℹ️ Nenhum produto encontrado na categoria ${categoria}.`,
+                'info'
+            );
+
+
+            return;
+        }
+
+
+        // =====================================================
+        // FUNÇÃO INTERNA PARA OBTER MLBs
+        // =====================================================
+
+        function obterMLBsProduto(
+            produto
+        ) {
+
+            const mlbCodes =
+                produto?.dados_extra
+                    ?.mlb_codes;
+
+
+            if (
+                Array.isArray(
+                    mlbCodes
+                )
+            ) {
+
+                return mlbCodes
+                    .map(
+                        codigo =>
+                            String(
+                                codigo ||
+                                ''
+                            )
+                                .trim()
+                                .toUpperCase()
+                    )
+                    .filter(
+                        Boolean
+                    );
+
+            }
+
+
+            return String(
+                mlbCodes ||
+                ''
+            )
+                .split(
+                    /[,;\n]+/
+                )
+                .map(
+                    codigo =>
+                        codigo
+                            .trim()
+                            .toUpperCase()
+                )
+                .filter(
+                    Boolean
+                );
+        }
+
+
+        // =====================================================
+        // SEPARAR PRODUTOS
+        // =====================================================
+
+        const produtosSemMLB = [];
+
+        const produtosBloqueados = [];
+
+        const produtosParaSincronizar = [];
+
+
+        for (
+            const produto
+            of produtosDaCategoria
+        ) {
+
+            const mlbs =
+                obterMLBsProduto(
+                    produto
+                );
+
+
+            const bloqueado =
+
+                produto?.bloquear_sync_ml ===
+                    true ||
+
+                produto?.dados_extra
+                    ?.bloquear_sync_ml ===
+                    true;
+
+
+            if (
+                mlbs.length ===
+                0
+            ) {
+
+                produtosSemMLB.push(
+                    produto
+                );
+
+
+                continue;
+            }
+
+
+            if (
+                bloqueado
+            ) {
+
+                produtosBloqueados.push(
+                    produto
+                );
+
+
+                continue;
+            }
+
+
+            produtosParaSincronizar.push(
+                produto
+            );
+
+        }
+
+
+        if (
+            produtosParaSincronizar.length ===
+            0
+        ) {
+
+            showToast(
+                `ℹ️ Nenhum produto sincronizável na categoria ${categoria}. ` +
+                `${produtosSemMLB.length} sem MLB e ` +
+                `${produtosBloqueados.length} bloqueado(s).`,
+                'info'
+            );
+
+
+            return;
+        }
+
+
+        // =====================================================
+        // CONFIRMAÇÃO
+        // =====================================================
+
+        const confirmou =
+            confirm(
+                `Sincronizar a categoria "${categoria}"?\n\n` +
+
+                `Produtos cadastrados: ${produtosDaCategoria.length}\n` +
+
+                `Produtos que serão sincronizados: ${produtosParaSincronizar.length}\n` +
+
+                `Produtos sem MLB: ${produtosSemMLB.length}\n` +
+
+                `Produtos com sincronização bloqueada: ${produtosBloqueados.length}`
+            );
+
+
+        if (
+            !confirmou
+        ) {
+
+            return;
+        }
+
+
+        // =====================================================
+        // BOTÃO E CONTADORES
+        // =====================================================
+
+        const botao =
+            document.getElementById(
+                'btnSincronizarCategoriaML'
+            );
+
+
+        const conteudoOriginalBotao =
+            botao?.innerHTML ||
+            '';
+
+
+        let produtosSucesso =
+            0;
+
+
+        let produtosFalha =
+            0;
+
+
+        let anunciosSucesso =
+            0;
+
+
+        let anunciosFalha =
+            0;
+
+
+        const erros =
+            [];
+
+
+        window.sincronizacaoCategoriaMLExecutando =
+            true;
+
+
+        try {
+
+            if (
+                botao
+            ) {
+
+                botao.disabled =
+                    true;
+
+
+                botao.innerHTML =
+                    `<i class="fas fa-spinner fa-spin"></i> ` +
+                    `Sincronizando 0/${produtosParaSincronizar.length}`;
+
+            }
+
+
+            // =================================================
+            // SINCRONIZAR UM PRODUTO POR VEZ
+            // =================================================
+
+            for (
+                let indice = 0;
+                indice <
+                produtosParaSincronizar.length;
+                indice++
+            ) {
+
+                const produto =
+                    produtosParaSincronizar[
+                        indice
+                    ];
+
+
+                if (
+                    botao
+                ) {
+
+                    botao.innerHTML =
+                        `<i class="fas fa-spinner fa-spin"></i> ` +
+                        `Sincronizando ${indice + 1}/${produtosParaSincronizar.length}`;
+
+                }
+
+
+                console.log(
+                    `🔄 [SINCRONIZAÇÃO POR CATEGORIA] ` +
+                    `${indice + 1}/${produtosParaSincronizar.length} | ` +
+                    `Categoria: ${categoria} | ` +
+                    `SKU: ${produto?.sku || 'sem SKU'}`
+                );
+
+
+                try {
+
+                    if (
+                        typeof sincronizarEstoqueML !==
+                        'function'
+                    ) {
+
+                        throw new Error(
+                            'A função sincronizarEstoqueML não foi encontrada.'
+                        );
+
+                    }
+
+
+                    const resultado =
+                        await sincronizarEstoqueML(
+                            produto
+                        );
+
+
+                    const resultadosAnuncios =
+                        Array.isArray(
+                            resultado?.results
+                        )
+                            ? resultado.results
+                            : [];
+
+
+                    const sucessosProduto =
+                        resultadosAnuncios.filter(
+                            item =>
+                                item?.success ===
+                                true
+                        ).length;
+
+
+                    const falhasProduto =
+                        resultadosAnuncios.filter(
+                            item =>
+                                item?.success !==
+                                true
+                        ).length;
+
+
+                    anunciosSucesso +=
+                        sucessosProduto;
+
+
+                    anunciosFalha +=
+                        falhasProduto;
+
+
+                    if (
+                        resultado?.success ===
+                        true
+                    ) {
+
+                        produtosSucesso++;
+
+                    } else {
+
+                        produtosFalha++;
+
+
+                        erros.push(
+                            {
+
+                                sku:
+                                    produto?.sku ||
+                                    'sem SKU',
+
+                                mensagem:
+                                    resultado?.error ||
+                                    `${falhasProduto} anúncio(s) com falha`
+
+                            }
+                        );
+
+                    }
+
+                } catch (
+                    error
+                ) {
+
+                    produtosFalha++;
+
+
+                    erros.push(
+                        {
+
+                            sku:
+                                produto?.sku ||
+                                'sem SKU',
+
+                            mensagem:
+                                error.message
+
+                        }
+                    );
+
+
+                    console.error(
+                        `❌ Erro sincronizando ${produto?.sku}:`,
+                        error
+                    );
+
+                }
+
+
+                // Reduz chamadas consecutivas à API.
+                await new Promise(
+                    resolve =>
+                        setTimeout(
+                            resolve,
+                            300
+                        )
+                );
+
+            }
+
+
+            // =================================================
+            // RESULTADO FINAL
+            // =================================================
+
+            console.log(
+                '📊 Resultado da sincronização por categoria:',
+                {
+
+                    categoria,
+
+                    produtosDaCategoria:
+                        produtosDaCategoria.length,
+
+                    produtosSincronizados:
+                        produtosParaSincronizar.length,
+
+                    produtosSucesso,
+
+                    produtosFalha,
+
+                    anunciosSucesso,
+
+                    anunciosFalha,
+
+                    produtosSemMLB:
+                        produtosSemMLB.length,
+
+                    produtosBloqueados:
+                        produtosBloqueados.length,
+
+                    erros
+
+                }
+            );
+
+
+            if (
+                produtosFalha ===
+                0
+            ) {
+
+                showToast(
+                    `✅ Categoria ${categoria} sincronizada: ` +
+                    `${produtosSucesso} produto(s) processado(s) e ` +
+                    `${anunciosSucesso} anúncio(s) atualizado(s).`,
+                    'success'
+                );
+
+            } else {
+
+                showToast(
+                    `⚠️ Categoria ${categoria} concluída: ` +
+                    `${produtosSucesso} produto(s) com sucesso, ` +
+                    `${produtosFalha} com falha, ` +
+                    `${anunciosSucesso} anúncio(s) atualizado(s) e ` +
+                    `${anunciosFalha} com falha. Consulte o console.`,
+                    'warning'
+                );
+
+            }
+
+        } catch (
+            error
+        ) {
+
+            console.error(
+                '❌ Erro geral na sincronização por categoria:',
+                error
+            );
+
+
+            showToast(
+                `❌ Erro na sincronização por categoria: ${error.message}`,
+                'error'
+            );
+
+        } finally {
+
+            window.sincronizacaoCategoriaMLExecutando =
+                false;
+
+
+            if (
+                botao
+            ) {
+
+                botao.disabled =
+                    false;
+
+
+                botao.innerHTML =
+                    conteudoOriginalBotao;
+
+            }
+
+        }
+    };
 
 
 // =========================================================

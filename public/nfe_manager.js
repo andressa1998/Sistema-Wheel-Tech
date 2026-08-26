@@ -7292,14 +7292,9 @@ function montarEstoqueAnuncioPosVendaHtmlNFE(venda) {
                     : null;
 
             const ehFull =
-                String(
-                    item.modalidade ||
-                    ''
-                ).toUpperCase() === 'FULL' ||
-                String(
-                    item.origem_estoque ||
-                    ''
-                ).includes('full');
+                    item
+                        ?.oferecendo_full ===
+                        true;
 
             function obterCorEstoque(numero) {
                 if (numero === null) {
@@ -22773,9 +22768,6 @@ async function buscarEstoqueAnuncioPosVendaNFE(
         return [];
     }
 
-    const isFull =
-        detectarVendaFullNFE(venda);
-
     const orderItems =
         Array.isArray(
             venda?.order_items
@@ -22788,9 +22780,7 @@ async function buscarEstoqueAnuncioPosVendaNFE(
     orderItems.forEach(orderItem => {
         const itemId =
             normalizarMLBFullNFE(
-                orderItem
-                    ?.item
-                    ?.id
+                orderItem?.item?.id
             );
 
         if (!itemId) {
@@ -22802,22 +22792,21 @@ async function buscarEstoqueAnuncioPosVendaNFE(
                 itemId,
 
             variation_id:
-                orderItem
-                    ?.item
-                    ?.variation_id ??
+                orderItem?.item?.variation_id ??
                 null,
 
             sku:
-                orderItem
-                    ?.item
-                    ?.seller_sku ||
+                orderItem?.item?.seller_sku ||
+                orderItem?.seller_sku ||
                 'SEM_SKU',
 
             quantidade_vendida:
-                Number(
-                    orderItem
-                        ?.quantity ||
-                    1
+                Math.max(
+                    1,
+                    Number(
+                        orderItem?.quantity ||
+                        1
+                    )
                 )
         });
     });
@@ -22836,407 +22825,473 @@ async function buscarEstoqueAnuncioPosVendaNFE(
 
                 variation_id:
                     venda?.variation_id ??
+                    venda?.item?.variation_id ??
                     null,
 
                 sku:
                     venda?.sku ||
                     venda?.item_sku ||
+                    venda?.item?.seller_sku ||
                     'SEM_SKU',
 
                 quantidade_vendida:
-                    Number(
-                        venda?.quantidade ||
-                        1
+                    Math.max(
+                        1,
+                        Number(
+                            venda?.quantidade ||
+                            venda?.quantity ||
+                            1
+                        )
                     )
             });
         }
     }
 
+    if (candidatos.length === 0) {
+        return [];
+    }
+
     const resultado = [];
+    const mapaSituacoes = new Map();
 
-    const mapaSituacoes =
-        new Map();
-
-    for (
-        const candidato
-        of candidatos
-    ) {
+    for (const candidato of candidatos) {
         try {
-            // =============================================
-            // VENDA FULL
-            // =============================================
-            if (isFull) {
-                let situacao =
-                    mapaSituacoes.get(
+            let situacao =
+                mapaSituacoes.get(
+                    candidato.item_id
+                );
+
+            if (!situacao) {
+                console.log(
+                    `🏭 Capturando situação atual ${candidato.item_id}...`
+                );
+
+                situacao =
+                    await consultarSituacaoMLBFullNFE(
                         candidato.item_id
                     );
 
-                if (!situacao) {
-                    situacao =
-                        await consultarSituacaoMLBFullNFE(
-                            candidato.item_id
-                        );
-
-                    mapaSituacoes.set(
-                        candidato.item_id,
-                        situacao
-                    );
-                }
-
-                let detalhe = null;
-
-                if (
-                    candidato.variation_id !== null &&
-                    candidato.variation_id !== undefined
-                ) {
-                    detalhe =
-                        situacao.detalhes.find(
-                            item =>
-                                String(
-                                    item.variation_id
-                                ) ===
-                                String(
-                                    candidato.variation_id
-                                )
-                        ) ||
-                        null;
-                } else {
-                    detalhe =
-                        situacao.detalhes[0] ||
-                        null;
-                }
-
-                resultado.push({
-    item_id:
-        candidato.item_id,
-
-    variation_id:
-        candidato.variation_id,
-
-    sku:
-        candidato.sku,
-
-    quantidade_vendida:
-        candidato.quantidade_vendida,
-
-    // Estoque disponível no próprio anúncio/variação.
-    quantidade_anuncio_restante:
-        detalhe
-            ?.available_quantity_item ??
-        situacao
-            ?.item
-            ?.available_quantity ??
-        null,
-
-    // Mantido para compatibilidade com as outras funções.
-    quantidade_restante:
-        detalhe
-            ?.available_quantity_item ??
-        situacao
-            ?.item
-            ?.available_quantity ??
-        null,
-
-    // Quantidade fisicamente disponível no FULL.
-    quantidade_full_restante:
-        detalhe
-            ?.estoque_full ??
-        null,
-
-    user_product_id:
-        detalhe
-            ?.user_product_id ||
-        null,
-
-    inventory_id:
-        detalhe
-            ?.inventory_id ||
-        null,
-
-    origem_estoque:
-        'full_user_product',
-
-    modalidade:
-        'FULL',
-
-    listing_type_id:
-        situacao
-            .listing_type_atual ||
-        '',
-
-    listing_type_nome:
-        situacao
-            .listing_type_atual_nome ||
-        nomeListingTypeFullNFE(
-            situacao
-                .listing_type_atual
-        ),
-
-    capturado_em:
-        new Date()
-            .toISOString()
-});
-
-                continue;
+                mapaSituacoes.set(
+                    candidato.item_id,
+                    situacao
+                );
             }
 
-            // =============================================
-// VENDA NORMAL / MERCADO ENVIOS
-//
-// Mesmo que a venda tenha ocorrido por ME,
-// o anúncio pode possuir estoque no depósito
-// e também estoque armazenado no FULL.
-// =============================================
-const {
-    data: item
-} =
-    await consultarGETMLFullNFE(
-        `https://api.mercadolibre.com/items/${candidato.item_id}`,
-        token
-    );
+            const itemML =
+                situacao?.item ||
+                {};
 
-let quantidadeAnuncio =
-    null;
+            const detalhes =
+                Array.isArray(
+                    situacao?.detalhes
+                )
+                    ? situacao.detalhes
+                    : [];
 
-let quantidadeDeposito =
-    null;
+            let variacaoML = null;
 
-let quantidadeFull =
-    null;
-
-let detalheUserProduct =
-    null;
-
-// =================================================
-// QUANTIDADE DO ANÚNCIO/Variação
-// =================================================
-if (
-    candidato.variation_id !== null &&
-    candidato.variation_id !== undefined
-) {
-    const variacao =
-        Array.isArray(
-            item.variations
-        )
-            ? item.variations.find(
-                variacao =>
-                    String(
-                        variacao.id
-                    ) ===
-                    String(
-                        candidato.variation_id
-                    )
-            )
-            : null;
-
-    if (variacao) {
-        const quantidade =
-            Number(
-                variacao.available_quantity
-            );
-
-        if (
-            Number.isFinite(
-                quantidade
-            )
-        ) {
-            quantidadeAnuncio =
-                quantidade;
-        }
-    }
-} else {
-    const quantidade =
-        Number(
-            item.available_quantity
-        );
-
-    if (
-        Number.isFinite(
-            quantidade
-        )
-    ) {
-        quantidadeAnuncio =
-            quantidade;
-    }
-}
-
-// =================================================
-// CONSULTAR ESTOQUE DO DEPÓSITO E DO FULL
-//
-// Essa consulta também é feita quando a venda saiu
-// por ME, pois o anúncio pode possuir os dois tipos
-// de estoque simultaneamente.
-// =================================================
-try {
-    let situacaoEstoque =
-        mapaSituacoes.get(
-            candidato.item_id
-        );
-
-    if (!situacaoEstoque) {
-        situacaoEstoque =
-            await consultarSituacaoMLBFullNFE(
-                candidato.item_id
-            );
-
-        mapaSituacoes.set(
-            candidato.item_id,
-            situacaoEstoque
-        );
-    }
-
-    if (
-        candidato.variation_id !== null &&
-        candidato.variation_id !== undefined
-    ) {
-        detalheUserProduct =
-            situacaoEstoque
-                ?.detalhes
-                ?.find(
-                    detalhe =>
+            if (
+                candidato.variation_id !== null &&
+                candidato.variation_id !== undefined
+            ) {
+                variacaoML =
+                    (
+                        Array.isArray(
+                            itemML?.variations
+                        )
+                            ? itemML.variations
+                            : []
+                    ).find(variacao =>
                         String(
-                            detalhe.variation_id
+                            variacao?.id
                         ) ===
                         String(
                             candidato.variation_id
                         )
-                ) ||
-            null;
-    } else {
-        detalheUserProduct =
-            situacaoEstoque
-                ?.detalhes
-                ?.[0] ||
-            null;
-    }
+                    ) ||
+                    null;
+            }
 
-    const estoqueLocalConsultado =
-        Number(
-            detalheUserProduct
-                ?.estoque_local_ml
-        );
+            let detalhe = null;
 
-    const estoqueFullConsultado =
-        Number(
-            detalheUserProduct
-                ?.estoque_full
-        );
+            if (
+                candidato.variation_id !== null &&
+                candidato.variation_id !== undefined
+            ) {
+                detalhe =
+                    detalhes.find(item =>
+                        String(
+                            item?.variation_id
+                        ) ===
+                        String(
+                            candidato.variation_id
+                        )
+                    ) ||
+                    null;
+            }
 
-    if (
-        Number.isFinite(
-            estoqueLocalConsultado
-        )
-    ) {
-        quantidadeDeposito =
-            estoqueLocalConsultado;
-    }
+            if (
+                !detalhe &&
+                candidato.sku
+            ) {
+                detalhe =
+                    detalhes.find(item =>
+                        String(
+                            item?.sku ||
+                            ''
+                        )
+                            .trim()
+                            .toUpperCase() ===
+                        String(
+                            candidato.sku ||
+                            ''
+                        )
+                            .trim()
+                            .toUpperCase()
+                    ) ||
+                    null;
+            }
 
-    if (
-        Number.isFinite(
-            estoqueFullConsultado
-        )
-    ) {
-        quantidadeFull =
-            estoqueFullConsultado;
-    }
-} catch (error) {
-    console.warn(
-        `⚠️ Não foi possível consultar depósito/FULL do anúncio ${candidato.item_id}:`,
-        error
-    );
-}
+            if (
+                !detalhe &&
+                detalhes.length === 1
+            ) {
+                detalhe =
+                    detalhes[0];
+            }
 
-// Se o endpoint de User Product não informar o depósito,
-// utilizar o estoque apresentado no anúncio.
-if (
-    quantidadeDeposito === null
-) {
-    quantidadeDeposito =
-        quantidadeAnuncio;
-}
+            /*
+             * Estoque no depósito/anúncio.
+             */
+            const quantidadeAnuncioBruta =
+                variacaoML
+                    ? variacaoML.available_quantity
+                    : itemML?.available_quantity;
 
-resultado.push({
-    item_id:
-        candidato.item_id,
+            const numeroEstoqueAnuncio =
+                Number(
+                    quantidadeAnuncioBruta
+                );
 
-    variation_id:
-        candidato.variation_id,
+            const quantidadeAnuncio =
+                Number.isFinite(
+                    numeroEstoqueAnuncio
+                )
+                    ? Math.max(
+                        0,
+                        numeroEstoqueAnuncio
+                    )
+                    : null;
 
-    sku:
-        candidato.sku,
+            /*
+             * Localização de estoque FULL.
+             *
+             * Atenção: essa localização pode permanecer no endpoint
+             * mesmo depois que a oferta FULL for removida. Portanto,
+             * ela não confirma o FULL sozinha.
+             */
+            const possuiLocalizacaoFull =
+                detalhe
+                    ? detalhe.tem_meli_facility === true
+                    : detalhes.some(item =>
+                        item?.tem_meli_facility === true
+                    );
 
-    quantidade_vendida:
-        candidato.quantidade_vendida,
+            const statusAnuncio =
+                String(
+                    itemML?.status ||
+                    situacao?.status_anuncio ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase();
 
-    quantidade_anuncio_restante:
-        quantidadeAnuncio,
+            const anuncioAtivo =
+                ![
+                    'closed',
+                    'paused',
+                    'inactive',
+                    'under_review'
+                ].includes(
+                    statusAnuncio
+                );
 
-    quantidade_deposito_restante:
-        quantidadeDeposito,
+            /*
+             * Este é o sinal atual de que o anúncio está configurado
+             * para vender pela logística FULL.
+             */
+            const shippingLogisticType =
+                String(
+                    itemML?.shipping?.logistic_type ||
+                    situacao?.shipping_logistic_type ||
+                    situacao?.logistic_type ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase();
 
-    quantidade_full_restante:
-        quantidadeFull,
+            const possuiLogisticaFullAtual =
+                shippingLogisticType ===
+                'fulfillment';
 
-    // Compatibilidade com o sistema anterior.
-    quantidade_restante:
-        quantidadeAnuncio,
+            /*
+             * O anúncio somente é considerado oferecendo FULL quando:
+             *
+             * 1. está ativo;
+             * 2. logistic_type atual é fulfillment;
+             * 3. existe localização meli_facility.
+             *
+             * Isso evita considerar uma localização antiga e zerada
+             * como oferta FULL atual.
+             */
+            const oferecendoFull =
+                Boolean(
+                    anuncioAtivo &&
+                    possuiLogisticaFullAtual &&
+                    possuiLocalizacaoFull
+                );
 
-    user_product_id:
-        detalheUserProduct
-            ?.user_product_id ||
-        null,
+            let quantidadeFull =
+                null;
 
-    inventory_id:
-        detalheUserProduct
-            ?.inventory_id ||
-        null,
+            if (oferecendoFull) {
+                if (
+                    detalhe?.estoque_full !== null &&
+                    detalhe?.estoque_full !== undefined &&
+                    Number.isFinite(
+                        Number(
+                            detalhe.estoque_full
+                        )
+                    )
+                ) {
+                    quantidadeFull =
+                        Math.max(
+                            0,
+                            Number(
+                                detalhe.estoque_full
+                            )
+                        );
+                } else {
+                    const detalhesComFull =
+                        detalhes.filter(item =>
+                            item?.tem_meli_facility === true &&
+                            item?.estoque_full !== null &&
+                            item?.estoque_full !== undefined &&
+                            Number.isFinite(
+                                Number(
+                                    item.estoque_full
+                                )
+                            )
+                        );
 
-    origem_estoque:
-        quantidadeFull !== null
-            ? 'anuncio_com_full'
-            : 'anuncio',
+                    if (
+                        detalhesComFull.length > 0
+                    ) {
+                        quantidadeFull =
+                            detalhesComFull.reduce(
+                                (total, item) =>
+                                    total +
+                                    Math.max(
+                                        0,
+                                        Number(
+                                            item.estoque_full
+                                        )
+                                    ),
+                                0
+                            );
+                    }
+                }
+            }
 
-    modalidade:
-        'ME',
+            /*
+             * Se não estiver oferecendo FULL atualmente, não guardamos
+             * zero como estoque FULL. Null significa que a oferta FULL
+             * não está ativa.
+             */
+            if (!oferecendoFull) {
+                quantidadeFull =
+                    null;
+            }
 
-    listing_type_id:
-        item.listing_type_id ||
-        '',
+            const listingTypeId =
+                String(
+                    itemML?.listing_type_id ||
+                    situacao?.listing_type_atual ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase();
 
-    listing_type_nome:
-        nomeListingTypeFullNFE(
-            item.listing_type_id
-        ),
+            const tags =
+                Array.isArray(
+                    itemML?.tags
+                )
+                    ? itemML.tags
+                    : [];
 
-    capturado_em:
-        new Date()
-            .toISOString()
-});
+            const snapshotBase = {
+                item_id:
+                    candidato.item_id,
+
+                mlb:
+                    candidato.item_id,
+
+                variation_id:
+                    candidato.variation_id,
+
+                sku:
+                    candidato.sku,
+
+                quantidade_vendida:
+                    candidato.quantidade_vendida,
+
+                quantidade_restante:
+                    quantidadeAnuncio,
+
+                quantidade_anuncio_restante:
+                    quantidadeAnuncio,
+
+                estoque_deposito:
+                    quantidadeAnuncio,
+
+                quantidade_full_restante:
+                    quantidadeFull,
+
+                estoque_full:
+                    quantidadeFull,
+
+                oferecendo_full:
+                    oferecendoFull,
+
+                item_marcado_como_full:
+                    possuiLogisticaFullAtual,
+
+                possui_localizacao_full:
+                    possuiLocalizacaoFull,
+
+                possui_logistica_full:
+                    possuiLogisticaFullAtual,
+
+                user_product_id:
+                    detalhe?.user_product_id ||
+                    null,
+
+                inventory_id:
+                    detalhe?.inventory_id ||
+                    null,
+
+                listing_type_id:
+                    listingTypeId,
+
+                listing_type_nome:
+                    situacao?.listing_type_atual_nome ||
+                    nomeListingTypeFullNFE(
+                        listingTypeId
+                    ),
+
+                status_anuncio:
+                    statusAnuncio ||
+                    null,
+
+                anuncio_ativo:
+                    anuncioAtivo,
+
+                origem_estoque:
+                    oferecendoFull
+                        ? 'anuncio_e_full'
+                        : 'anuncio',
+
+                modalidade:
+                    oferecendoFull
+                        ? 'FULL'
+                        : 'ME',
+
+                deteccao_full_versao:
+                    5,
+
+                sinais_full: {
+                    fonte_confiavel:
+                        'logistic_type_e_meli_facility',
+
+                    location_full:
+                        possuiLocalizacaoFull,
+
+                    logistic_type_full:
+                        possuiLogisticaFullAtual,
+
+                    oferecendo_full_confirmado:
+                        oferecendoFull,
+
+                    anuncio_ativo:
+                        anuncioAtivo,
+
+                    shipping_logistic_type:
+                        shippingLogisticType ||
+                        null,
+
+                    tags:
+                        tags,
+
+                    /*
+                     * Tags são mantidas apenas para diagnóstico.
+                     * Elas não confirmam uma oferta FULL.
+                     */
+                    tags_indicam_full:
+                        tags.some(tag =>
+                            String(
+                                tag ||
+                                ''
+                            )
+                                .trim()
+                                .toLowerCase()
+                                .includes(
+                                    'fulfillment'
+                                )
+                        )
+                },
+
+                capturado_em:
+                    new Date()
+                        .toISOString()
+            };
+
+            console.log(
+                `🏭 Detecção FULL atual ${candidato.item_id}:`,
+                {
+                    anuncioAtivo,
+                    statusAnuncio,
+
+                    estoqueAnuncio:
+                        quantidadeAnuncio,
+
+                    estoqueFull:
+                        quantidadeFull,
+
+                    oferecendoFull,
+                    possuiLocalizacaoFull,
+                    possuiLogisticaFullAtual,
+                    shippingLogisticType,
+                    tags
+                }
+            );
+
+            const snapshotEnriquecido =
+                await enriquecerSnapshotCadastroInternoNFE(
+                    snapshotBase
+                );
+
+            resultado.push(
+                snapshotEnriquecido
+            );
         } catch (error) {
             console.warn(
-                `⚠️ Erro consultando estoque ${candidato.item_id}:`,
+                `⚠️ Erro consultando estoque do anúncio ${candidato.item_id}:`,
                 error
             );
         }
     }
 
-    // =====================================================
-    // CONSULTAR CADASTRO E ESTOQUE INTERNO
-    // =====================================================
-    const resultadoEnriquecido = [];
-
-    for (
-        const snapshot
-        of resultado
-    ) {
-        resultadoEnriquecido.push(
-            await enriquecerSnapshotCadastroInternoNFE(
-                snapshot
-            )
-        );
-    }
-
-    return resultadoEnriquecido;
+    return resultado;
 }
 
 // =========================================================
@@ -27744,12 +27799,16 @@ function vendaFullPrecisaMudarParaClassicoNFE(
 
 
 function garantirEstiloAlertaExposicaoFullNFE() {
-    if (
+    const styleId =
+        'nfe-estilo-alertas-exposicao-full';
+
+    const estiloAnterior =
         document.getElementById(
-            'estiloAlertaExposicaoFullNFE'
-        )
-    ) {
-        return;
+            styleId
+        );
+
+    if (estiloAnterior) {
+        estiloAnterior.remove();
     }
 
     const style =
@@ -27758,62 +27817,445 @@ function garantirEstiloAlertaExposicaoFullNFE() {
         );
 
     style.id =
-        'estiloAlertaExposicaoFullNFE';
+        styleId;
 
     style.textContent = `
-        @keyframes piscarLinhaExposicaoFullNFE {
+        /* ==============================================
+         * ANIMAÇÕES DAS LINHAS
+         * ============================================== */
+
+        @keyframes nfePiscarVermelho {
             0%,
             100% {
                 background-color: #ffffff;
                 box-shadow:
-                    inset 5px 0 0 #dc3545,
-                    inset -5px 0 0 #dc3545;
+                    inset 5px 0 0 #dc3545;
             }
 
             50% {
-                background-color: #ffb3b3;
+                background-color: #ffb3b8;
                 box-shadow:
-                    inset 5px 0 0 #dc3545,
-                    inset -5px 0 0 #dc3545;
+                    inset 5px 0 0 #dc3545;
             }
         }
 
-        tr.alerta-exposicao-full-nfe {
+        @keyframes nfePiscarRoxo {
+            0%,
+            100% {
+                background-color: #ffffff;
+                box-shadow:
+                    inset 5px 0 0 #7b2cbf;
+            }
+
+            50% {
+                background-color: #e2c6ff;
+                box-shadow:
+                    inset 5px 0 0 #7b2cbf;
+            }
+        }
+
+        @keyframes nfePiscarLaranja {
+            0%,
+            100% {
+                background-color: #ffffff;
+                box-shadow:
+                    inset 5px 0 0 #ff7a00;
+            }
+
+            50% {
+                background-color: #ffd3a8;
+                box-shadow:
+                    inset 5px 0 0 #ff7a00;
+            }
+        }
+
+        tr.nfe-alerta-exposicao-vermelho {
             animation:
-                piscarLinhaExposicaoFullNFE
-                1s
-                infinite;
+                nfePiscarVermelho
+                1.15s
+                ease-in-out
+                infinite !important;
         }
 
-        tr.alerta-exposicao-full-nfe > td {
-            background-color: transparent !important;
-            border-top: 2px solid #dc3545 !important;
-            border-bottom: 2px solid #dc3545 !important;
+        tr.nfe-alerta-exposicao-roxo {
+            animation:
+                nfePiscarRoxo
+                1.15s
+                ease-in-out
+                infinite !important;
         }
 
-        tr.alerta-exposicao-full-nfe > td:first-child {
-            border-left: 2px solid #dc3545 !important;
+        tr.nfe-alerta-exposicao-laranja {
+            animation:
+                nfePiscarLaranja
+                1.15s
+                ease-in-out
+                infinite !important;
         }
 
-        tr.alerta-exposicao-full-nfe > td:last-child {
-            border-right: 2px solid #dc3545 !important;
+        /*
+         * Algumas tabelas possuem background diretamente no TD.
+         * O fundo transparente permite visualizar a animação do TR.
+         */
+        tr.nfe-alerta-exposicao-vermelho > td,
+        tr.nfe-alerta-exposicao-roxo > td,
+        tr.nfe-alerta-exposicao-laranja > td {
+            background-color:
+                transparent !important;
+
+            transition:
+                background-color
+                0.25s
+                ease;
         }
 
-        tr.alerta-exposicao-full-nfe:hover {
-            animation-play-state: paused;
-            background-color: #ffb3b3 !important;
+        /* ==============================================
+         * CARTÃO BASE
+         * ============================================== */
+
+        .nfe-alerta-exposicao-full {
+            width:
+                200px;
+
+            max-width:
+                100%;
+
+            box-sizing:
+                border-box;
+
+            display:
+                flex;
+
+            flex-direction:
+                column;
+
+            align-items:
+                stretch;
+
+            gap:
+                5px;
+
+            margin-top:
+                9px;
+
+            padding:
+                10px 11px;
+
+            border-radius:
+                7px;
+
+            color:
+                #ffffff !important;
+
+            font-size:
+                10px;
+
+            line-height:
+                1.3;
+
+            text-align:
+                center;
+
+            box-shadow:
+                0 2px 5px
+                rgba(
+                    0,
+                    0,
+                    0,
+                    0.16
+                );
         }
 
-        .aviso-exposicao-full-nfe {
-            display: inline-block;
-            margin-top: 5px;
-            padding: 4px 7px;
-            border-radius: 5px;
-            background: #dc3545;
-            color: #ffffff;
-            font-size: 9px;
-            font-weight: 700;
-            line-height: 1.25;
+        /* ==============================================
+         * CARTÃO VERMELHO — EXPOSIÇÃO ERRADA
+         * ============================================== */
+
+        .nfe-alerta-exposicao-full.nfe-alerta-exposicao-vermelho,
+        .nfe-alerta-exposicao-full.nfe-alerta-exposicao-errada {
+            background:
+                linear-gradient(
+                    135deg,
+                    #e63946,
+                    #c82333
+                ) !important;
+
+            border:
+                1px solid
+                #b71c2a;
+        }
+
+        /* ==============================================
+         * CARTÃO ROXO — QUANTIDADE ERRADA
+         * ============================================== */
+
+        .nfe-alerta-exposicao-full.nfe-alerta-exposicao-roxo,
+        .nfe-alerta-exposicao-full.nfe-alerta-quantidade-anuncio {
+            background:
+                linear-gradient(
+                    135deg,
+                    #8738c9,
+                    #6320a0
+                ) !important;
+
+            border:
+                1px solid
+                #55158d;
+        }
+
+        /* ==============================================
+         * CARTÃO LARANJA — FULL ZERADO
+         * ============================================== */
+
+        .nfe-alerta-exposicao-full.nfe-alerta-exposicao-laranja,
+        .nfe-alerta-exposicao-full.nfe-alerta-full-zero {
+            background:
+                linear-gradient(
+                    135deg,
+                    #ff8412,
+                    #f06700
+                ) !important;
+
+            border:
+                1px solid
+                #d95c00;
+        }
+
+        /* ==============================================
+         * TÍTULO
+         * ============================================== */
+
+        .nfe-alerta-exposicao-titulo {
+            width:
+                100%;
+
+            display:
+                flex;
+
+            align-items:
+                center;
+
+            justify-content:
+                center;
+
+            gap:
+                4px;
+
+            color:
+                #ffffff !important;
+
+            font-size:
+                11px;
+
+            font-weight:
+                700;
+
+            line-height:
+                1.2;
+
+            text-align:
+                center;
+
+            text-transform:
+                uppercase;
+        }
+
+        .nfe-alerta-exposicao-titulo span,
+        .nfe-alerta-exposicao-titulo strong {
+            color:
+                #ffffff !important;
+        }
+
+        /* ==============================================
+         * MENSAGEM
+         * ============================================== */
+
+        .nfe-alerta-exposicao-mensagem {
+            width:
+                100%;
+
+            color:
+                #ffffff !important;
+
+            font-size:
+                9px;
+
+            line-height:
+                1.3;
+
+            text-align:
+                center;
+        }
+
+        /* ==============================================
+         * DETALHES
+         * ============================================== */
+
+        .nfe-alerta-exposicao-detalhes {
+            width:
+                100%;
+
+            color:
+                #ffffff !important;
+
+            font-size:
+                9px;
+
+            line-height:
+                1.25;
+
+            text-align:
+                center;
+        }
+
+        .nfe-alerta-exposicao-detalhes strong {
+            color:
+                #ffffff !important;
+
+            font-weight:
+                700;
+        }
+
+        /* ==============================================
+         * BOTÃO AJUSTADO
+         * ============================================== */
+
+        .nfe-btn-ajustado-exposicao {
+            min-width:
+                96px;
+
+            align-self:
+                center;
+
+            display:
+                inline-flex;
+
+            align-items:
+                center;
+
+            justify-content:
+                center;
+
+            gap:
+                5px;
+
+            margin-top:
+                3px;
+
+            padding:
+                5px 12px;
+
+            border:
+                0;
+
+            border-radius:
+                999px;
+
+            background:
+                #ffffff !important;
+
+            color:
+                #171717 !important;
+
+            font-size:
+                11px;
+
+            font-weight:
+                700;
+
+            line-height:
+                1;
+
+            cursor:
+                pointer;
+
+            box-shadow:
+                0 1px 3px
+                rgba(
+                    0,
+                    0,
+                    0,
+                    0.22
+                );
+
+            transition:
+                transform
+                0.15s
+                ease,
+                box-shadow
+                0.15s
+                ease,
+                opacity
+                0.15s
+                ease;
+        }
+
+        .nfe-btn-ajustado-exposicao:hover:not(:disabled) {
+            transform:
+                translateY(-1px);
+
+            box-shadow:
+                0 3px 6px
+                rgba(
+                    0,
+                    0,
+                    0,
+                    0.26
+                );
+        }
+
+        .nfe-btn-ajustado-exposicao:active:not(:disabled) {
+            transform:
+                translateY(0);
+        }
+
+        .nfe-btn-ajustado-exposicao:disabled {
+            opacity:
+                0.7;
+
+            cursor:
+                wait;
+        }
+
+        .nfe-btn-ajustado-exposicao span {
+            color:
+                #171717 !important;
+
+            font-size:
+                13px;
+
+            font-weight:
+                900;
+        }
+
+        /* ==============================================
+         * ACESSIBILIDADE
+         * ============================================== */
+
+        @media (
+            prefers-reduced-motion:
+            reduce
+        ) {
+            tr.nfe-alerta-exposicao-vermelho,
+            tr.nfe-alerta-exposicao-roxo,
+            tr.nfe-alerta-exposicao-laranja {
+                animation:
+                    none !important;
+            }
+
+            tr.nfe-alerta-exposicao-vermelho {
+                background-color:
+                    #ffb3b8 !important;
+            }
+
+            tr.nfe-alerta-exposicao-roxo {
+                background-color:
+                    #e2c6ff !important;
+            }
+
+            tr.nfe-alerta-exposicao-laranja {
+                background-color:
+                    #ffd3a8 !important;
+            }
         }
     `;
 
@@ -27825,8 +28267,6 @@ function garantirEstiloAlertaExposicaoFullNFE() {
 function obterAlertasExposicaoVendaNFE(
     venda
 ) {
-    hidratarRegrasFixasTipoAnuncioLocalNFE();
-
     const snapshots =
         Array.isArray(
             venda?._estoque_anuncio_pos_venda
@@ -27834,387 +28274,469 @@ function obterAlertasExposicaoVendaNFE(
             ? venda._estoque_anuncio_pos_venda
             : [];
 
-    const gruposPorMLB =
-        new Map();
-
-    snapshots.forEach(snapshot => {
-        const mlb =
-            normalizarMLBFullNFE(
-                snapshot?.item_id
-            );
-
-        if (!mlb) {
-            return;
-        }
-
-        if (
-            !gruposPorMLB.has(
-                mlb
-            )
-        ) {
-            gruposPorMLB.set(
-                mlb,
-                []
-            );
-        }
-
-        gruposPorMLB
-            .get(mlb)
-            .push(snapshot);
-    });
-
     const alertas = [];
 
-    gruposPorMLB.forEach(
+    snapshots.forEach(
         (
-            snapshotsMLB,
-            mlb
+            snapshot,
+            indice
         ) => {
-            const primeiroSnapshot =
-                snapshotsMLB[0] ||
-                {};
+            const mlb =
+                normalizarMLBFullNFE(
+                    snapshot?.item_id ||
+                    snapshot?.mlb
+                );
+
+            if (!mlb) {
+                return;
+            }
 
             const listingTypeAtual =
                 String(
-                    primeiroSnapshot
-                        .listing_type_id ||
+                    snapshot?.listing_type_id ||
                     ''
                 )
                     .trim()
                     .toLowerCase();
 
-            const nomeExposicaoAtual =
+            const exposicaoAtualNome =
+                snapshot?.listing_type_nome ||
                 nomeListingTypeFullNFE(
                     listingTypeAtual
+                ) ||
+                'Não identificada';
+
+            const estoqueAnuncioBruto =
+                snapshot?.quantidade_anuncio_restante ??
+                snapshot?.quantidade_restante ??
+                snapshot?.estoque_deposito ??
+                null;
+
+            const estoqueFullBruto =
+                snapshot?.quantidade_full_restante ??
+                snapshot?.estoque_full ??
+                null;
+
+            const estoqueAnuncio =
+                estoqueAnuncioBruto !== null &&
+                estoqueAnuncioBruto !== undefined &&
+                Number.isFinite(
+                    Number(
+                        estoqueAnuncioBruto
+                    )
+                )
+                    ? Math.max(
+                        0,
+                        Number(
+                            estoqueAnuncioBruto
+                        )
+                    )
+                    : null;
+
+            const estoqueFull =
+                estoqueFullBruto !== null &&
+                estoqueFullBruto !== undefined &&
+                Number.isFinite(
+                    Number(
+                        estoqueFullBruto
+                    )
+                )
+                    ? Math.max(
+                        0,
+                        Number(
+                            estoqueFullBruto
+                        )
+                    )
+                    : null;
+
+            const sinaisFull =
+                snapshot?.sinais_full &&
+                typeof snapshot.sinais_full ===
+                'object'
+                    ? snapshot.sinais_full
+                    : {};
+
+            const statusAnuncio =
+                String(
+                    snapshot?.status_anuncio ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase();
+
+            const anuncioAtivo =
+                snapshot?.anuncio_ativo !== false &&
+                ![
+                    'closed',
+                    'paused',
+                    'inactive',
+                    'under_review'
+                ].includes(
+                    statusAnuncio
                 );
 
-            const estaPremium =
-                listingTypeAtual ===
-                    'gold_pro' ||
-                listingTypeAtual ===
-                    'gold_premium';
+            /*
+             * Localização meli_facility.
+             */
+            const possuiLocalizacaoFull =
+                snapshot?.possui_localizacao_full === true ||
+                sinaisFull?.location_full === true;
+
+            /*
+             * Configuração logística atual do anúncio.
+             */
+            const possuiLogisticaFullAtual =
+                snapshot?.possui_logistica_full === true ||
+                sinaisFull?.logistic_type_full === true ||
+                String(
+                    sinaisFull?.shipping_logistic_type ||
+                    ''
+                )
+                    .trim()
+                    .toLowerCase() ===
+                    'fulfillment';
+
+            /*
+             * Para o alerta laranja, os três sinais precisam estar
+             * presentes. Uma location meli_facility antiga e zerada
+             * não é mais suficiente.
+             */
+            const anuncioOferecendoFull =
+                Boolean(
+                    anuncioAtivo &&
+                    snapshot?.oferecendo_full === true &&
+                    possuiLogisticaFullAtual &&
+                    possuiLocalizacaoFull
+                );
 
             const regraFixa =
                 obterRegraFixaTipoAnuncioLocalNFE(
                     mlb
                 );
 
-            const estoques =
-                snapshotsMLB.map(
-                    obterEstoquesValidosSnapshotNFE
-                );
-
-            const algumAnuncioIgualUm =
-                estoques.some(
-                    item =>
-                        item.estoque_deposito === 1
-                );
-
-            const algumFullIgualUm =
-                estoques.some(
-                    item =>
-                        item.estoque_full === 1
-                );
-
-            const capacidadesCadastro =
-                snapshotsMLB.map(
-                    calcularCapacidadeEstoqueInternoSnapshotNFE
-                );
-
-            const temCadastroCompleto =
-                capacidadesCadastro.some(
-                    item =>
-                        item.tem_cadastro === true &&
-                        item.todos_cadastrados === true
-                );
-
             const capacidadeInterna =
-                capacidadesCadastro.length > 0
-                    ? Math.max(
-                        ...capacidadesCadastro.map(
-                            item =>
-                                Number(
-                                    item.capacidade_anuncio ||
-                                    0
-                                )
-                        )
-                    )
-                    : 0;
+                calcularCapacidadeEstoqueInternoSnapshotNFE(
+                    snapshot
+                );
 
-            const temEstoqueInternoParaMaisDeUm =
-                temCadastroCompleto &&
-                capacidadeInterna >= 2;
+            /*
+             * PRIORIDADE 1:
+             * FULL zerado e oferta FULL realmente ativa.
+             */
+            if (
+                anuncioOferecendoFull &&
+                estoqueFull === 0
+            ) {
+                alertas.push({
+                    chave:
+                        `${mlb}|${snapshot?.variation_id ?? ''}|full_zero`,
 
-            // =================================================
-            // REGRA FIXA: PRIORIDADE MÁXIMA
-            // =================================================
-            if (regraFixa) {
-                const tipoEsperado =
+                    tipo:
+                        'full_zero',
+
+                    prioridade:
+                        1,
+
+                    cor:
+                        'laranja',
+
+                    mlb,
+
+                    indice_snapshot:
+                        indice,
+
+                    variation_id:
+                        snapshot?.variation_id ??
+                        null,
+
+                    sku:
+                        snapshot?.sku ||
+                        null,
+
+                    titulo:
+                        'FULL ZERADO',
+
+                    mensagem:
+                        'O estoque FULL está zerado, mas o anúncio continua oferecendo FULL. Remova a oferta FULL ou regularize o estoque.',
+
+                    listing_type_atual:
+                        listingTypeAtual,
+
+                    exposicao_atual_nome:
+                        exposicaoAtualNome,
+
+                    estoque_anuncio:
+                        estoqueAnuncio,
+
+                    estoque_full:
+                        estoqueFull,
+
+                    oferecendo_full:
+                        anuncioOferecendoFull,
+
+                    possui_localizacao_full:
+                        possuiLocalizacaoFull,
+
+                    possui_logistica_full:
+                        possuiLogisticaFullAtual,
+
+                    regra_fixa:
+                        regraFixa ||
+                        null
+                });
+
+                return;
+            }
+
+            /*
+             * PRIORIDADE 2:
+             * Exposição Premium correta, estoque interno permite mais
+             * de uma unidade, mas o anúncio possui somente uma.
+             */
+            if (
+                !regraFixa &&
+                capacidadeInterna?.todos_cadastrados === true &&
+                capacidadeInterna?.tem_estoque_para_mais_de_um === true &&
+                estoqueAnuncio === 1 &&
+                listingTypeAtual ===
+                'gold_pro'
+            ) {
+                alertas.push({
+                    chave:
+                        `${mlb}|${snapshot?.variation_id ?? ''}|quantidade_anuncio`,
+
+                    tipo:
+                        'quantidade_anuncio',
+
+                    prioridade:
+                        2,
+
+                    cor:
+                        'roxo',
+
+                    mlb,
+
+                    indice_snapshot:
+                        indice,
+
+                    variation_id:
+                        snapshot?.variation_id ??
+                        null,
+
+                    sku:
+                        snapshot?.sku ||
+                        null,
+
+                    titulo:
+                        'CORRIGIR QUANTIDADE',
+
+                    mensagem:
+                        `A exposição Premium está correta, mas o anúncio possui somente 1 unidade. O estoque interno permite anunciar ${capacidadeInterna.capacidade_anuncio} unidades.`,
+
+                    listing_type_atual:
+                        listingTypeAtual,
+
+                    exposicao_atual_nome:
+                        exposicaoAtualNome,
+
+                    listing_type_esperado:
+                        'gold_pro',
+
+                    exposicao_esperada_nome:
+                        'Premium',
+
+                    estoque_anuncio:
+                        estoqueAnuncio,
+
+                    estoque_full:
+                        estoqueFull,
+
+                    capacidade_anuncio:
+                        capacidadeInterna.capacidade_anuncio,
+
+                    regra_fixa:
+                        null
+                });
+
+                return;
+            }
+
+            let listingTypeEsperado =
+                null;
+
+            let exposicaoEsperadaNome =
+                null;
+
+            let origemRegra =
+                null;
+
+            /*
+             * A regra fixa possui prioridade sobre as quantidades.
+             */
+            if (regraFixa?.tipo) {
+                listingTypeEsperado =
                     String(
-                        regraFixa.tipo ||
-                        ''
+                        regraFixa.tipo
                     )
                         .trim()
                         .toLowerCase();
 
-                // Regra fixa já está sendo respeitada.
+                exposicaoEsperadaNome =
+                    regraFixa.nome ||
+                    nomeListingTypeFullNFE(
+                        listingTypeEsperado
+                    );
+
+                origemRegra =
+                    'regra_fixa';
+            } else {
+                const estoquesValidos = [];
+
                 if (
-                    listingTypeAtual ===
-                    tipoEsperado
+                    estoqueAnuncio !== null &&
+                    estoqueAnuncio > 0
                 ) {
-                    // Sempre Premium, anúncio com 1 e existe
-                    // estoque interno para anunciar mais:
-                    // o erro é a quantidade.
-                    if (
-                        tipoEsperado ===
-                            'gold_pro' &&
-                        algumAnuncioIgualUm &&
-                        temEstoqueInternoParaMaisDeUm
-                    ) {
-                        alertas.push({
-                            mlb,
-
-                            tipo_alerta:
-                                'quantidade',
-
-                            cor_alerta:
-                                'roxo',
-
-                            titulo:
-                                'AJUSTAR QUANTIDADE',
-
-                            mensagem:
-                                `O anúncio está Premium, mas possui somente 1 unidade. O estoque interno permite anunciar ${capacidadeInterna} unidades.`,
-
-                            quantidade_esperada_minima:
-                                2,
-
-                            capacidade_interna:
-                                capacidadeInterna,
-
-                            listing_type_atual:
-                                listingTypeAtual,
-
-                            listing_type_atual_nome:
-                                nomeExposicaoAtual,
-
-                            tipo_esperado:
-                                tipoEsperado,
-
-                            nome_esperado:
-                                regraFixa.nome,
-
-                            regra_fixa:
-                                true,
-
-                            snapshots:
-                                snapshotsMLB
-                        });
-                    }
-
-                    return;
+                    estoquesValidos.push(
+                        estoqueAnuncio
+                    );
                 }
 
-                // Regra fixa não está sendo respeitada:
-                // o problema é a exposição.
-                alertas.push({
-                    mlb,
+                /*
+                 * Só usamos estoque FULL para decidir exposição quando
+                 * a oferta FULL está realmente ativa.
+                 */
+                if (
+                    anuncioOferecendoFull &&
+                    estoqueFull !== null &&
+                    estoqueFull > 0
+                ) {
+                    estoquesValidos.push(
+                        estoqueFull
+                    );
+                }
 
-                    tipo_alerta:
-                        'exposicao',
+                /*
+                 * Se qualquer estoque atual ficou em uma unidade,
+                 * a exposição correta é Clássico.
+                 */
+                if (
+                    estoquesValidos.some(
+                        quantidade =>
+                            quantidade === 1
+                    )
+                ) {
+                    listingTypeEsperado =
+                        'gold_special';
 
-                    cor_alerta:
-                        'vermelho',
+                    exposicaoEsperadaNome =
+                        'Clássico';
 
-                    titulo:
-                        `ALTERAR PARA ${String(
-                            regraFixa.nome
-                        ).toUpperCase()}`,
+                    origemRegra =
+                        'estoque_igual_um';
+                } else if (
+                    estoquesValidos.some(
+                        quantidade =>
+                            quantidade > 1
+                    )
+                ) {
+                    listingTypeEsperado =
+                        'gold_pro';
 
-                    mensagem:
-                        `Este MLB possui regra fixa: sempre ${regraFixa.nome}.`,
+                    exposicaoEsperadaNome =
+                        'Premium';
 
-                    listing_type_atual:
-                        listingTypeAtual,
-
-                    listing_type_atual_nome:
-                        nomeExposicaoAtual,
-
-                    tipo_esperado:
-                        tipoEsperado,
-
-                    nome_esperado:
-                        regraFixa.nome,
-
-                    regra_fixa:
-                        true,
-
-                    snapshots:
-                        snapshotsMLB
-                });
-
-                return;
+                    origemRegra =
+                        'estoque_maior_um';
+                }
             }
 
-            // =================================================
-            // SEM REGRA FIXA
-            // =================================================
-
-            // Anúncio Premium com 1 unidade, mas o cadastro
-            // permite anunciar 2 ou mais:
-            // o problema é a quantidade do anúncio.
             if (
-                estaPremium &&
-                algumAnuncioIgualUm &&
-                !algumFullIgualUm &&
-                temEstoqueInternoParaMaisDeUm
-            ) {
-                alertas.push({
-                    mlb,
-
-                    tipo_alerta:
-                        'quantidade',
-
-                    cor_alerta:
-                        'roxo',
-
-                    titulo:
-                        'AJUSTAR QUANTIDADE',
-
-                    mensagem:
-                        `A exposição Premium está correta, mas o anúncio ficou com 1 unidade. O estoque interno permite anunciar ${capacidadeInterna} unidades.`,
-
-                    quantidade_esperada_minima:
-                        2,
-
-                    capacidade_interna:
-                        capacidadeInterna,
-
-                    listing_type_atual:
-                        listingTypeAtual,
-
-                    listing_type_atual_nome:
-                        nomeExposicaoAtual,
-
-                    tipo_esperado:
-                        'gold_pro',
-
-                    nome_esperado:
-                        'Premium',
-
-                    regra_fixa:
-                        false,
-
-                    snapshots:
-                        snapshotsMLB
-                });
-
-                return;
-            }
-
-            // Se o FULL ficou em 1, continua sendo necessário
-            // deixar a exposição como Clássico.
-            const algumEstoqueIgualUm =
-                algumAnuncioIgualUm ||
-                algumFullIgualUm;
-
-            if (
-                algumEstoqueIgualUm &&
-                estaPremium
-            ) {
-                alertas.push({
-                    mlb,
-
-                    tipo_alerta:
-                        'exposicao',
-
-                    cor_alerta:
-                        'vermelho',
-
-                    titulo:
-                        'ALTERAR PARA CLÁSSICO',
-
-                    mensagem:
-                        algumFullIgualUm
-                            ? 'O estoque FULL ficou em 1 unidade. A exposição deve ser Clássico.'
-                            : 'O anúncio ficou em 1 unidade e não existe estoque interno suficiente para manter Premium.',
-
-                    listing_type_atual:
-                        listingTypeAtual,
-
-                    listing_type_atual_nome:
-                        nomeExposicaoAtual,
-
-                    tipo_esperado:
-                        'gold_special',
-
-                    nome_esperado:
-                        'Clássico',
-
-                    regra_fixa:
-                        false,
-
-                    snapshots:
-                        snapshotsMLB
-                });
-
-                return;
-            }
-
-            const regraExposicao =
-                obterRegraExposicaoEsperadaVendaNFE(
-                    mlb,
-                    snapshotsMLB
-                );
-
-            if (
-                regraExposicao.tipo_esperado &&
+                listingTypeEsperado &&
+                listingTypeAtual &&
                 listingTypeAtual !==
-                    regraExposicao.tipo_esperado
+                listingTypeEsperado
             ) {
                 alertas.push({
-                    mlb,
+                    chave:
+                        `${mlb}|${snapshot?.variation_id ?? ''}|exposicao`,
 
-                    tipo_alerta:
+                    tipo:
                         'exposicao',
 
-                    cor_alerta:
+                    prioridade:
+                        3,
+
+                    cor:
                         'vermelho',
 
+                    mlb,
+
+                    indice_snapshot:
+                        indice,
+
+                    variation_id:
+                        snapshot?.variation_id ??
+                        null,
+
+                    sku:
+                        snapshot?.sku ||
+                        null,
+
                     titulo:
-                        `ALTERAR PARA ${String(
-                            regraExposicao
-                                .nome_esperado
-                        ).toUpperCase()}`,
+                        listingTypeEsperado ===
+                        'gold_special'
+                            ? 'ALTERAR PARA CLÁSSICO'
+                            : 'ALTERAR PARA PREMIUM',
 
                     mensagem:
-                        regraExposicao.motivo,
+                        regraFixa
+                            ? `Este MLB possui regra fixa e deve permanecer como ${exposicaoEsperadaNome}.`
+                            : 'A exposição atual não corresponde ao estoque disponível.',
 
                     listing_type_atual:
                         listingTypeAtual,
 
-                    listing_type_atual_nome:
-                        nomeExposicaoAtual,
+                    exposicao_atual_nome:
+                        exposicaoAtualNome,
 
-                    tipo_esperado:
-                        regraExposicao
-                            .tipo_esperado,
+                    listing_type_esperado:
+                        listingTypeEsperado,
 
-                    nome_esperado:
-                        regraExposicao
-                            .nome_esperado,
+                    exposicao_esperada_nome:
+                        exposicaoEsperadaNome,
+
+                    origem_regra:
+                        origemRegra,
+
+                    estoque_anuncio:
+                        estoqueAnuncio,
+
+                    estoque_full:
+                        estoqueFull,
+
+                    capacidade_anuncio:
+                        capacidadeInterna?.capacidade_anuncio ??
+                        0,
 
                     regra_fixa:
-                        false,
-
-                    snapshots:
-                        snapshotsMLB
+                        regraFixa ||
+                        null
                 });
             }
         }
     );
 
-    return alertas;
+    return alertas.sort(
+        (a, b) =>
+            Number(
+                a?.prioridade ||
+                99
+            ) -
+            Number(
+                b?.prioridade ||
+                99
+            )
+    );
 }
 
 function calcularCapacidadeEstoqueInternoSnapshotNFE(
@@ -28246,7 +28768,7 @@ function calcularCapacidadeEstoqueInternoSnapshotNFE(
     const cadastrados =
         itensCadastro.filter(
             item =>
-                item.encontrado === true
+                item?.encontrado === true
         );
 
     const todosCadastrados =
@@ -28274,24 +28796,34 @@ function calcularCapacidadeEstoqueInternoSnapshotNFE(
 
     const capacidades =
         cadastrados.map(item => {
-            const estoqueInterno =
-                Math.max(
-                    0,
-                    Number(
-                        item.estoque_atual ||
-                        0
-                    )
+            const estoqueConvertido =
+                Number(
+                    item?.estoque_atual
                 );
 
-            const quantidadePorAnuncio =
-                Math.max(
-                    1,
-                    Number(
-                        item
-                            .quantidade_por_anuncio ||
-                        1
-                    )
+            const quantidadeConvertida =
+                Number(
+                    item
+                        ?.quantidade_por_anuncio
                 );
+
+            const estoqueInterno =
+                Number.isFinite(
+                    estoqueConvertido
+                )
+                    ? Math.max(
+                        0,
+                        estoqueConvertido
+                    )
+                    : 0;
+
+            const quantidadePorAnuncio =
+                Number.isFinite(
+                    quantidadeConvertida
+                ) &&
+                quantidadeConvertida > 0
+                    ? quantidadeConvertida
+                    : 1;
 
             return Math.floor(
                 estoqueInterno /
@@ -28335,98 +28867,355 @@ function vendaFullPrecisaMudarParaClassicoNFE(
 function montarAvisosExposicaoVendaNFE(
     venda
 ) {
+    garantirEstiloAlertaExposicaoFullNFE();
+
     const alertas =
         obterAlertasExposicaoVendaNFE(
             venda
         );
 
-    if (alertas.length === 0) {
+    if (
+        !Array.isArray(alertas) ||
+        alertas.length === 0
+    ) {
         return '';
     }
 
+    /*
+     * Exibimos um alerta principal por linha.
+     *
+     * Prioridade:
+     * 1. FULL zerado;
+     * 2. quantidade do anúncio;
+     * 3. exposição.
+     */
+    const alerta =
+        [...alertas].sort(
+            (a, b) =>
+                Number(
+                    a?.prioridade ||
+                    99
+                ) -
+                Number(
+                    b?.prioridade ||
+                    99
+                )
+        )[0];
+
     const vendaId =
         normalizarOrderIdML(
-            venda.id_venda_ml ||
-            venda.id
+            venda?.id_venda_ml ||
+            venda?.id ||
+            venda?._order_ids_pack?.[0]
         );
 
-    return alertas
-        .map(alerta => {
-            const ehQuantidade =
-                alerta.tipo_alerta ===
-                'quantidade';
-
-            const classeAviso =
-                ehQuantidade
-                    ? 'aviso-quantidade-anuncio-nfe'
-                    : 'aviso-exposicao-full-nfe';
-
-            const icone =
-                ehQuantidade
-                    ? 'fa-boxes'
-                    : (
-                        alerta.regra_fixa
-                            ? 'fa-lock'
-                            : 'fa-exclamation-triangle'
+    const escapar =
+        typeof escaparHTMLNFE ===
+        'function'
+            ? escaparHTMLNFE
+            : valor =>
+                String(
+                    valor ??
+                    ''
+                )
+                    .replaceAll(
+                        '&',
+                        '&amp;'
+                    )
+                    .replaceAll(
+                        '<',
+                        '&lt;'
+                    )
+                    .replaceAll(
+                        '>',
+                        '&gt;'
+                    )
+                    .replaceAll(
+                        '"',
+                        '&quot;'
+                    )
+                    .replaceAll(
+                        "'",
+                        '&#039;'
                     );
 
-            return `
-                <div
-                    class="${classeAviso}"
-                    title="${escaparHTMLNFE(
-                        alerta.mensagem ||
-                        ''
-                    )}"
-                >
-                    <div
-                        style="
-                            margin-bottom:3px;
-                            font-size:9px;
-                            font-weight:700;
-                        "
-                    >
-                        <i class="fas ${icone}"></i>
+    let classeAlerta =
+        'nfe-alerta-exposicao-errada ' +
+        'nfe-alerta-exposicao-vermelho';
 
-                        ${escaparHTMLNFE(
-                            alerta.titulo
-                        )}
-                    </div>
+    let icone =
+        '⚠';
 
-                    <div
-                        style="
-                            margin-bottom:4px;
-                            font-size:8px;
-                            font-weight:400;
-                            max-width:155px;
-                        "
-                    >
-                        ${escaparHTMLNFE(
-                            alerta.mensagem
-                        )}
-                    </div>
+    let detalhes =
+        '';
 
-                    <button
-                        type="button"
-                        class="btn btn-sm btn-light"
-                        style="
-                            padding:3px 7px;
-                            font-size:9px;
-                            font-weight:700;
-                            white-space:nowrap;
-                        "
-                        onclick="confirmarAjusteExposicaoNFE(
-                            '${escaparHTMLNFE(vendaId)}',
-                            '${escaparHTMLNFE(alerta.mlb)}',
-                            this
-                        )"
-                    >
-                        <i class="fas fa-check"></i>
-                        Ajustado
-                    </button>
-                </div>
-            `;
-        })
-        .join('');
+    /*
+     * FULL ZERADO
+     */
+    if (
+        alerta.tipo ===
+        'full_zero'
+    ) {
+        classeAlerta =
+            'nfe-alerta-full-zero ' +
+            'nfe-alerta-exposicao-laranja';
+
+        icone =
+            '🏭';
+
+        detalhes = `
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Exposição atual:
+
+                <strong>
+                    ${escapar(
+                        alerta
+                            .exposicao_atual_nome ||
+                        'Não identificada'
+                    )}
+                </strong>
+            </div>
+
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Estoque FULL:
+
+                <strong>
+                    ${Number(
+                        alerta
+                            .estoque_full ||
+                        0
+                    )}
+                    un.
+                </strong>
+            </div>
+        `;
+    }
+
+    /*
+     * QUANTIDADE DO ANÚNCIO ERRADA
+     */
+    else if (
+        alerta.tipo ===
+        'quantidade_anuncio'
+    ) {
+        classeAlerta =
+            'nfe-alerta-quantidade-anuncio ' +
+            'nfe-alerta-exposicao-roxo';
+
+        icone =
+            '📦';
+
+        detalhes = `
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Exposição:
+
+                <strong>
+                    ${escapar(
+                        alerta
+                            .exposicao_atual_nome ||
+                        'Premium'
+                    )}
+                </strong>
+
+                — correta
+            </div>
+
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Quantidade no anúncio:
+
+                <strong>
+                    ${Number(
+                        alerta
+                            .estoque_anuncio ||
+                        0
+                    )}
+                    un.
+                </strong>
+            </div>
+
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Capacidade pelo estoque interno:
+
+                <strong>
+                    ${Number(
+                        alerta
+                            .capacidade_anuncio ||
+                        0
+                    )}
+                    un.
+                </strong>
+            </div>
+        `;
+    }
+
+    /*
+     * EXPOSIÇÃO ERRADA
+     */
+    else {
+        classeAlerta =
+            'nfe-alerta-exposicao-errada ' +
+            'nfe-alerta-exposicao-vermelho';
+
+        icone =
+            '⚠';
+
+        detalhes = `
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Atual:
+
+                <strong>
+                    ${escapar(
+                        alerta
+                            .exposicao_atual_nome ||
+                        'Não identificada'
+                    )}
+                </strong>
+            </div>
+
+            <div
+                class="
+                    nfe-alerta-exposicao-detalhes
+                "
+            >
+                Correto:
+
+                <strong>
+                    ${escapar(
+                        alerta
+                            .exposicao_esperada_nome ||
+                        'Não identificada'
+                    )}
+                </strong>
+            </div>
+
+            ${
+                alerta.regra_fixa
+                    ? `
+                        <div
+                            class="
+                                nfe-alerta-exposicao-detalhes
+                            "
+                        >
+                            Regra fixa deste MLB
+                        </div>
+                    `
+                    : ''
+            }
+        `;
+    }
+
+    return `
+        <div
+            class="
+                nfe-alerta-exposicao-full
+                ${classeAlerta}
+            "
+
+            data-alerta-mlb="${escapar(
+                alerta.mlb
+            )}"
+
+            data-alerta-tipo="${escapar(
+                alerta.tipo
+            )}"
+        >
+            <div
+                class="
+                    nfe-alerta-exposicao-titulo
+                "
+            >
+                <span>
+                    ${icone}
+                </span>
+
+                <strong>
+                    ${escapar(
+                        alerta.titulo ||
+                        'ATENÇÃO'
+                    )}
+                </strong>
+            </div>
+
+            <div
+                class="
+                    nfe-alerta-exposicao-mensagem
+                "
+            >
+                ${escapar(
+                    alerta.mensagem ||
+                    ''
+                )}
+            </div>
+
+            ${detalhes}
+
+            <button
+                type="button"
+
+                class="
+                    nfe-btn-ajustado-exposicao
+                "
+
+                data-mlb="${escapar(
+                    alerta.mlb
+                )}"
+
+                data-venda-id="${escapar(
+                    vendaId
+                )}"
+
+                data-tipo-alerta="${escapar(
+                    alerta.tipo
+                )}"
+
+                data-variation-id="${escapar(
+                    alerta.variation_id ??
+                    ''
+                )}"
+
+                data-sku="${escapar(
+                    alerta.sku ||
+                    ''
+                )}"
+
+                onclick="
+                    confirmarAjusteExposicaoNFE(
+                        this
+                    )
+                "
+            >
+                <span>
+                    ✓
+                </span>
+
+                Ajustado
+            </button>
+        </div>
+    `;
 }
 
 function obterEstoquesValidosSnapshotNFE(
@@ -28498,399 +29287,418 @@ function obterEstoquesValidosSnapshotNFE(
 }
 
 async function confirmarAjusteExposicaoNFE(
-    vendaId,
-    mlb,
     botao
 ) {
-    vendaId =
-        normalizarOrderIdML(
-            vendaId
-        );
+    if (!botao) {
+        return;
+    }
 
-    mlb =
+    const mlb =
         normalizarMLBFullNFE(
-            mlb
+            botao.dataset.mlb
         );
 
-    if (
-        !vendaId ||
-        !mlb
-    ) {
+    const vendaId =
+        normalizarOrderIdML(
+            botao.dataset.vendaId ||
+            botao.dataset.orderId
+        );
+
+    const tipoAlertaOriginal =
+        String(
+            botao.dataset.tipoAlerta ||
+            ''
+        )
+            .trim();
+
+    const variationId =
+        botao.dataset.variationId !==
+            undefined &&
+        botao.dataset.variationId !==
+            ''
+            ? String(
+                botao.dataset.variationId
+            )
+            : null;
+
+    if (!mlb) {
         alert(
-            'Não foi possível identificar a venda ou o MLB.'
+            'Não foi possível identificar o MLB deste alerta.'
+        );
+
+        return;
+    }
+
+    const listaVendas =
+        Array.isArray(window.vendasPendentes)
+            ? window.vendasPendentes
+            : (
+                typeof vendasPendentes !== 'undefined' &&
+                Array.isArray(vendasPendentes)
+                    ? vendasPendentes
+                    : []
+            );
+
+    let venda =
+        listaVendas.find(item =>
+            normalizarOrderIdML(
+                item?.id_venda_ml ||
+                item?.id
+            ) === vendaId
+        ) ||
+        null;
+
+    /*
+     * Caso seja uma venda agrupada, também procuramos dentro
+     * dos membros do pack.
+     */
+    if (!venda) {
+        venda =
+            listaVendas.find(item =>
+                Array.isArray(item?._order_ids_pack) &&
+                item._order_ids_pack.some(id =>
+                    normalizarOrderIdML(id) ===
+                    vendaId
+                )
+            ) ||
+            null;
+    }
+
+    if (!venda) {
+        alert(
+            `Não foi possível localizar a venda ${vendaId || ''} na tela.`
         );
 
         return;
     }
 
     const textoOriginal =
-        botao?.innerHTML ||
-        'Ajustado';
+        botao.innerHTML;
 
-    if (botao) {
-        botao.disabled =
-            true;
+    botao.disabled =
+        true;
 
-        botao.innerHTML = `
-            <i class="fas fa-spinner fa-spin"></i>
-            Verificando...
-        `;
-    }
+    botao.innerHTML =
+        '⏳ Verificando...';
 
     try {
-        const vendas =
-            Array.isArray(
-                vendasPendentes
-            )
-                ? vendasPendentes
+        /*
+         * Cria uma venda temporária contendo apenas o MLB clicado.
+         * Assim a verificação não consulta novamente todos os MLBs
+         * presentes no pack.
+         */
+        const orderItemsOriginais =
+            Array.isArray(venda?.order_items)
+                ? venda.order_items
                 : [];
 
-        const venda =
-            vendas.find(item => {
-                const idPrincipal =
-                    normalizarOrderIdML(
-                        item.id_venda_ml ||
-                        item.id
-                    );
+        const orderItemsDoMLB =
+            orderItemsOriginais.filter(orderItem =>
+                normalizarMLBFullNFE(
+                    orderItem?.item?.id
+                ) === mlb &&
+                (
+                    variationId === null ||
+                    String(
+                        orderItem?.item?.variation_id ??
+                        ''
+                    ) === variationId
+                )
+            );
 
-                if (
-                    idPrincipal ===
-                    vendaId
-                ) {
-                    return true;
-                }
+        const vendaSomenteMLB = {
+            ...venda,
 
-                return (
-                    Array.isArray(
-                        item._order_ids_pack
-                    ) &&
-                    item._order_ids_pack
-                        .map(
-                            normalizarOrderIdML
-                        )
-                        .includes(
-                            vendaId
-                        )
-                );
-            });
+            item_id:
+                mlb,
 
-        if (!venda) {
+            variation_id:
+                variationId,
+
+            order_items:
+                orderItemsDoMLB.length > 0
+                    ? orderItemsDoMLB
+                    : [
+                        {
+                            quantity:
+                                1,
+
+                            item: {
+                                id:
+                                    mlb,
+
+                                variation_id:
+                                    variationId,
+
+                                seller_sku:
+                                    botao.dataset.sku ||
+                                    null
+                            }
+                        }
+                    ]
+        };
+
+        const snapshotsAtualizados =
+            await buscarEstoqueAnuncioPosVendaNFE(
+                vendaSomenteMLB
+            );
+
+        if (
+            !Array.isArray(snapshotsAtualizados) ||
+            snapshotsAtualizados.length === 0
+        ) {
             throw new Error(
-                'Venda não encontrada na tabela.'
+                `O Mercado Livre não retornou a situação atual de ${mlb}.`
             );
         }
 
-        // Consulta novamente somente o MLB selecionado.
-        const situacao =
-            await consultarSituacaoMLBFullNFE(
-                mlb
-            );
-
-        const listingTypeAtual =
-            String(
-                situacao
-                    ?.listing_type_atual ||
-                situacao
-                    ?.item
-                    ?.listing_type_id ||
-                ''
-            )
-                .trim()
-                .toLowerCase();
-
-        const nomeExposicaoAtual =
-            nomeListingTypeFullNFE(
-                listingTypeAtual
-            );
-
-        const snapshotsAtuais =
+        const snapshotsAnteriores =
             Array.isArray(
-                venda._estoque_anuncio_pos_venda
+                venda?._estoque_anuncio_pos_venda
             )
                 ? venda._estoque_anuncio_pos_venda
                 : [];
 
-        const snapshotsAtualizados =
-            snapshotsAtuais.map(snapshot => {
-                if (
+        const outrosSnapshots =
+            snapshotsAnteriores.filter(snapshot => {
+                const mesmoMLB =
                     normalizarMLBFullNFE(
-                        snapshot.item_id
-                    ) !== mlb
-                ) {
-                    return snapshot;
+                        snapshot?.item_id ||
+                        snapshot?.mlb
+                    ) === mlb;
+
+                if (!mesmoMLB) {
+                    return true;
                 }
 
-                let detalhe =
-                    null;
-
-                if (
-                    snapshot.variation_id !== null &&
-                    snapshot.variation_id !== undefined
-                ) {
-                    detalhe =
-                        situacao
-                            ?.detalhes
-                            ?.find(
-                                item =>
-                                    String(
-                                        item.variation_id
-                                    ) ===
-                                    String(
-                                        snapshot.variation_id
-                                    )
-                            ) ||
-                        null;
+                if (variationId === null) {
+                    return false;
                 }
 
-                if (
-                    !detalhe &&
-                    snapshot.sku
-                ) {
-                    detalhe =
-                        situacao
-                            ?.detalhes
-                            ?.find(
-                                item =>
-                                    String(
-                                        item.sku ||
-                                        ''
-                                    )
-                                        .trim()
-                                        .toUpperCase() ===
-                                    String(
-                                        snapshot.sku ||
-                                        ''
-                                    )
-                                        .trim()
-                                        .toUpperCase()
-                            ) ||
-                        null;
-                }
-
-                if (!detalhe) {
-                    detalhe =
-                        situacao
-                            ?.detalhes
-                            ?.[0] ||
-                        null;
-                }
-
-                const estoqueDeposito =
-                    detalhe
-                        ?.estoque_local_ml ??
-                    snapshot
-                        .quantidade_deposito_restante ??
-                    snapshot
-                        .quantidade_anuncio_restante ??
-                    snapshot
-                        .quantidade_restante ??
-                    null;
-
-                const estoqueFull =
-                    detalhe
-                        ?.estoque_full ??
-                    snapshot
-                        .quantidade_full_restante ??
-                    null;
-
-                const estoqueAnuncio =
-                    detalhe
-                        ?.available_quantity_item ??
-                    situacao
-                        ?.item
-                        ?.available_quantity ??
-                    snapshot
-                        .quantidade_anuncio_restante ??
-                    snapshot
-                        .quantidade_restante ??
-                    null;
-
-                return {
-                    ...snapshot,
-
-                    quantidade_restante:
-                        estoqueAnuncio,
-
-                    quantidade_anuncio_restante:
-                        estoqueAnuncio,
-
-                    quantidade_deposito_restante:
-                        estoqueDeposito,
-
-                    quantidade_full_restante:
-                        estoqueFull,
-
-                    listing_type_id:
-                        listingTypeAtual,
-
-                    listing_type_nome:
-                        nomeExposicaoAtual,
-
-                    user_product_id:
-                        detalhe
-                            ?.user_product_id ||
-                        snapshot
-                            .user_product_id ||
-                        null,
-
-                    inventory_id:
-                        detalhe
-                            ?.inventory_id ||
-                        snapshot
-                            .inventory_id ||
-                        null,
-
-                    capturado_em:
-                        new Date()
-                            .toISOString()
-                };
+                return (
+                    String(
+                        snapshot?.variation_id ??
+                        ''
+                    ) !== variationId
+                );
             });
 
-        const snapshotsMLB =
-            snapshotsAtualizados.filter(
-                snapshot =>
-                    normalizarMLBFullNFE(
-                        snapshot.item_id
-                    ) === mlb
+        const snapshotsMesclados =
+            consolidarSnapshotsEstoqueAnuncioNFE(
+                [
+                    ...outrosSnapshots,
+                    ...snapshotsAtualizados
+                ]
             );
 
-        // =====================================================
-// DESCOBRIR A EXPOSIÇÃO CORRETA
-//
-// A regra fixa possui prioridade sobre o estoque.
-// =====================================================
-hidratarRegrasFixasTipoAnuncioLocalNFE();
-
-const regraExposicao =
-    obterRegraExposicaoEsperadaVendaNFE(
-        mlb,
-        snapshotsMLB
-    );
-
-const tipoEsperado =
-    regraExposicao
-        .tipo_esperado;
-
-const nomeEsperado =
-    regraExposicao
-        .nome_esperado;
-
-const exposicaoCorreta =
-    Boolean(
-        tipoEsperado
-    ) &&
-    listingTypeAtual ===
-        tipoEsperado;
-
-        // Atualiza os dados em memória mesmo quando
-        // a exposição ainda estiver incorreta.
         venda._estoque_anuncio_pos_venda =
-            snapshotsAtualizados;
+            snapshotsMesclados;
 
+        /*
+         * Atualiza também os membros do pack que pertencem
+         * ao MLB consultado.
+         */
         if (
-            Array.isArray(
-                venda._membros_pack
-            )
+            Array.isArray(venda?._membros_pack)
         ) {
-            venda._membros_pack.forEach(
-                membro => {
-                    const snapshotsMembro =
-                        Array.isArray(
-                            membro
-                                ._estoque_anuncio_pos_venda
-                        )
-                            ? membro
-                                ._estoque_anuncio_pos_venda
-                            : [];
+            venda._membros_pack.forEach(membro => {
+                const membroPossuiMLB =
+                    (
+                        Array.isArray(membro?.order_items)
+                            ? membro.order_items
+                            : []
+                    ).some(orderItem =>
+                        normalizarMLBFullNFE(
+                            orderItem?.item?.id
+                        ) === mlb
+                    );
 
-                    membro._estoque_anuncio_pos_venda =
-                        snapshotsMembro.map(
-                            snapshot => {
-                                const atualizado =
-                                    snapshotsAtualizados.find(
-                                        item =>
-                                            normalizarMLBFullNFE(
-                                                item.item_id
-                                            ) ===
-                                                normalizarMLBFullNFE(
-                                                    snapshot.item_id
-                                                ) &&
-                                            String(
-                                                item.variation_id ??
-                                                ''
-                                            ) ===
-                                                String(
-                                                    snapshot.variation_id ??
-                                                    ''
-                                                ) &&
-                                            String(
-                                                item.sku ||
-                                                ''
-                                            ) ===
-                                                String(
-                                                    snapshot.sku ||
-                                                    ''
-                                                )
-                                    );
-
-                                return (
-                                    atualizado ||
-                                    snapshot
-                                );
-                            }
-                        );
+                if (!membroPossuiMLB) {
+                    return;
                 }
+
+                const snapshotsMembro =
+                    Array.isArray(
+                        membro?._estoque_anuncio_pos_venda
+                    )
+                        ? membro._estoque_anuncio_pos_venda
+                        : [];
+
+                membro._estoque_anuncio_pos_venda =
+                    consolidarSnapshotsEstoqueAnuncioNFE([
+                        ...snapshotsMembro.filter(snapshot =>
+                            normalizarMLBFullNFE(
+                                snapshot?.item_id ||
+                                snapshot?.mlb
+                            ) !== mlb
+                        ),
+                        ...snapshotsAtualizados
+                    ]);
+            });
+        }
+
+        /*
+         * Persiste a atualização. Esta é a mesma estrutura usada
+         * pelo cache de vendas.
+         */
+        if (
+            typeof persistirEstoqueAnuncioVendaNFE ===
+            'function'
+        ) {
+            await persistirEstoqueAnuncioVendaNFE(
+                venda,
+                snapshotsMesclados
+            );
+        } else if (
+            typeof salvarVendasCacheNFE ===
+            'function'
+        ) {
+            const vendasParaSalvar =
+                Array.isArray(venda?._membros_pack) &&
+                venda._membros_pack.length > 0
+                    ? venda._membros_pack
+                    : [venda];
+
+            await salvarVendasCacheNFE(
+                vendasParaSalvar
             );
         }
 
-        await persistirEstoqueAnuncioVendaNFE(
-            venda,
-            snapshotsAtualizados
-        );
+        const alertasAtuais =
+            obterAlertasExposicaoVendaNFE(
+                venda
+            );
 
-        renderizarVendasNFETabela(
-            window._vendasTabelaNFEBase ||
-            vendasPendentes
-        );
+        const alertaOriginalContinua =
+            alertasAtuais.find(alerta =>
+                alerta.mlb === mlb &&
+                alerta.tipo ===
+                tipoAlertaOriginal &&
+                (
+                    variationId === null ||
+                    String(
+                        alerta.variation_id ??
+                        ''
+                    ) === variationId
+                )
+            ) ||
+            null;
 
-        if (exposicaoCorreta) {
-    alert(
-        `Exposição confirmada.\n\n` +
-        `${mlb} está como ${nomeExposicaoAtual}.\n` +
-        `${
-            regraExposicao.regra_fixa
-                ? `Regra fixa respeitada: sempre ${nomeEsperado}.`
-                : regraExposicao.motivo
-        }\n\n` +
-        `A linha foi atualizada e o alerta foi removido.`
-    );
-} else {
-    alert(
-        `A exposição ainda não foi alterada.\n\n` +
-        `${mlb} está como ${nomeExposicaoAtual}.\n` +
-        `A exposição correta é ${nomeEsperado}.\n\n` +
-        `${
-            regraExposicao.regra_fixa
-                ? `Este MLB possui regra fixa: sempre ${nomeEsperado}, independentemente do estoque.`
-                : regraExposicao.motivo
-        }`
-    );
-}
+        const outroAlertaDoMLB =
+            alertasAtuais.find(alerta =>
+                alerta.mlb === mlb &&
+                (
+                    variationId === null ||
+                    String(
+                        alerta.variation_id ??
+                        ''
+                    ) === variationId
+                )
+            ) ||
+            null;
+
+        /*
+         * Renderiza usando os dados já atualizados, evitando
+         * recolocar na tela o snapshot antigo.
+         */
+        if (
+            typeof renderizarVendasNFETabela ===
+            'function'
+        ) {
+            renderizarVendasNFETabela(
+                listaVendas
+            );
+        }
+
+        if (alertaOriginalContinua) {
+            let explicacao =
+                alertaOriginalContinua.mensagem ||
+                'O ajuste ainda não foi identificado pelo Mercado Livre.';
+
+            if (
+                alertaOriginalContinua.tipo ===
+                'full_zero'
+            ) {
+                explicacao =
+                    'O Mercado Livre ainda informa uma localização meli_facility ativa e estoque FULL zerado.';
+            } else if (
+                alertaOriginalContinua.tipo ===
+                'quantidade_anuncio'
+            ) {
+                explicacao =
+                    `O anúncio continua com ${alertaOriginalContinua.estoque_anuncio} unidade e o estoque interno permite ${alertaOriginalContinua.capacidade_anuncio} unidades.`;
+            } else if (
+                alertaOriginalContinua.tipo ===
+                'exposicao'
+            ) {
+                explicacao =
+                    `A exposição continua como ${alertaOriginalContinua.exposicao_atual_nome}. O esperado é ${alertaOriginalContinua.exposicao_esperada_nome}.`;
+            }
+
+            alert(
+                `O ajuste ainda não foi confirmado.\n\n` +
+                `${mlb}\n` +
+                `${explicacao}\n\n` +
+                `O alerta foi mantido.`
+            );
+
+            return;
+        }
+
+        if (outroAlertaDoMLB) {
+            alert(
+                `A alteração foi identificada, mas ${mlb} ainda possui outra pendência.\n\n` +
+                `${outroAlertaDoMLB.titulo}\n` +
+                `${outroAlertaDoMLB.mensagem}`
+            );
+
+            return;
+        }
+
+        let mensagemSucesso =
+            `Ajuste confirmado para ${mlb}.\n\n`;
+
+        if (
+            tipoAlertaOriginal ===
+            'full_zero'
+        ) {
+            mensagemSucesso +=
+                'O anúncio não está mais oferecendo FULL. A linha foi atualizada e o alerta laranja foi removido.';
+        } else if (
+            tipoAlertaOriginal ===
+            'quantidade_anuncio'
+        ) {
+            mensagemSucesso +=
+                'A quantidade atual do anúncio está correta. A linha foi atualizada e o alerta roxo foi removido.';
+        } else {
+            const snapshotAtual =
+                snapshotsAtualizados[0];
+
+            mensagemSucesso +=
+                `${mlb} está como ` +
+                `${snapshotAtual?.listing_type_nome || 'exposição correta'}.\n` +
+                'A linha foi atualizada e o alerta vermelho foi removido.';
+        }
+
+        alert(
+            mensagemSucesso
+        );
     } catch (error) {
         console.error(
-            `❌ Erro verificando exposição do ${mlb}:`,
+            `❌ Erro verificando ajuste de ${mlb}:`,
             error
         );
 
         alert(
-            `Não foi possível verificar o anúncio ${mlb}.\n\n` +
-            (
-                error.message ||
-                'Erro desconhecido'
-            )
+            `Não foi possível verificar ${mlb}.\n\n` +
+            `${error?.message || error}`
         );
-
-        if (botao) {
+    } finally {
+        /*
+         * O botão pode não estar mais no DOM depois da
+         * renderização. Só restauramos se ele continuar conectado.
+         */
+        if (botao?.isConnected) {
             botao.disabled =
                 false;
 
@@ -30661,6 +31469,13 @@ function renderizarVendasNFETabela(vendas) {
                                 venda
                             );
 
+                        const temAlertaFullZero =
+                            alertasVenda.some(
+                                alerta =>
+                                    alerta.tipo_alerta ===
+                                    'full_zero'
+                            );
+
                         const temAlertaQuantidade =
                             alertasVenda.some(
                                 alerta =>
@@ -30680,7 +31495,10 @@ function renderizarVendasNFETabela(vendas) {
 
                         let classeAlertaExposicao = '';
 
-                        if (temAlertaQuantidade) {
+                        if (temAlertaFullZero) {
+                            classeAlertaExposicao =
+                                'alerta-full-zero-nfe';
+                        } else if (temAlertaQuantidade) {
                             classeAlertaExposicao =
                                 'alerta-quantidade-anuncio-nfe';
                         } else if (temAlertaExposicao) {
@@ -32529,7 +33347,13 @@ let precisaCapturarEstoque =
             item.quantidade_deposito_restante ===
                 undefined ||
             item.quantidade_full_restante ===
-                undefined
+                undefined ||
+            item.oferecendo_full ===
+                undefined ||
+            Number(
+            item.deteccao_full_versao ||
+            0
+        ) < 5
     );
 
 
