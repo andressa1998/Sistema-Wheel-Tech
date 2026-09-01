@@ -6262,164 +6262,193 @@
     }
 
 
-    // ========================================================
-    // ENVIAR MENSAGEM
-    // ========================================================
-
     window.enviarMensagemChamados =
-        async function(
-            id
+    async function(id) {
+
+        if (
+            salvandoMensagem
+        ) {
+            return;
+        }
+
+
+        const sb =
+            sbChamados();
+
+
+        const u =
+            usuarioChamados();
+
+
+        if (
+            !sb ||
+            !u
         ) {
 
-            if (
-                salvandoMensagem
-            ) {
+            toastChamados(
+                '❌ Supabase ou usuário não disponível.',
+                'error'
+            );
 
-                return;
-
-            }
-
-
-            const sb =
-                sbChamados();
+            return;
+        }
 
 
-            const u =
-                usuarioChamados();
+        const texto =
+            document
+                .getElementById(
+                    'chResposta'
+                )
+                ?.value
+                .trim() ||
+            '';
 
 
-            if (
-                !sb ||
-                !u
-            ) {
+        if (
+            !texto &&
+            !printNovaMensagem
+        ) {
 
-                return;
+            toastChamados(
+                '⚠️ Digite uma mensagem ou anexe um print.',
+                'warning'
+            );
 
-            }
-
-
-            const texto =
-                document
-                    .getElementById(
-                        'chResposta'
-                    )
-                    ?.value
-                    .trim() ||
-                '';
+            return;
+        }
 
 
-            if (
-                !texto &&
-                !printNovaMensagem
-            ) {
-
-                toastChamados(
-                    '⚠️ Digite uma mensagem ou anexe um print.',
-                    'warning'
-                );
-
-                return;
-
-            }
+        salvandoMensagem =
+            true;
 
 
-            salvandoMensagem =
+        const btn =
+            document.getElementById(
+                'chEnviarMsg'
+            );
+
+
+        if (btn) {
+
+            btn.disabled =
                 true;
 
 
-            const btn =
-                document.getElementById(
-                    'chEnviarMsg'
-                );
+            btn.innerHTML = `
+
+                <i
+                    class="
+                        fas
+                        fa-spinner
+                        fa-spin
+                    "
+                ></i>
+
+                Enviando...
+
+            `;
+        }
 
 
-            if (btn) {
+        // ====================================================
+        // SE O PRINT FALHAR, A MENSAGEM CONTINUA SENDO ENVIADA
+        // ====================================================
 
-                btn.disabled =
-                    true;
+        let erroUploadAnexo =
+            null;
 
 
-                btn.innerHTML = `
+        try {
 
-                    <i
-                        class="
-                            fas
-                            fa-spinner
-                            fa-spin
-                        "
-                    ></i>
+            // =================================================
+            // BUSCA DADOS ATUAIS DO CHAMADO
+            //
+            // Além de validar permissão, usamos os dados para:
+            // - saber quem abriu
+            // - saber status atual
+            // - gerar notificação
+            // =================================================
 
-                    Enviando...
+            let queryChamado =
+                sb
 
-                `;
+                    .from(
+                        CFG_CHAMADOS
+                            .tabelaChamados
+                    )
 
+                    .select(
+                        'id, titulo, status, criado_por_username, criado_por_nome'
+                    )
+
+                    .eq(
+                        'id',
+                        id
+                    );
+
+
+            // =================================================
+            // USUÁRIO COMUM SÓ PODE RESPONDER CHAMADO PRÓPRIO
+            // =================================================
+
+            if (
+                !ehAdminChamados()
+            ) {
+
+                queryChamado =
+                    queryChamado.eq(
+                        'criado_por_username',
+                        usernameChamados()
+                    );
             }
 
 
-            try {
+            const {
+                data: dadosChamado,
+                error: erroBuscarChamado
+            } =
+                await queryChamado
+                    .single();
 
-                // ============================================
-                // SEGURANÇA EXTRA NO FRONT
-                // Usuário comum só responde chamado próprio
-                // ============================================
+
+            if (
+                erroBuscarChamado ||
+                !dadosChamado
+            ) {
 
                 if (
                     !ehAdminChamados()
                 ) {
 
-                    const {
-                        data,
-                        error
-                    } =
-                        await sb
-
-                            .from(
-                                CFG_CHAMADOS
-                                    .tabelaChamados
-                            )
-
-                            .select(
-                                'id'
-                            )
-
-                            .eq(
-                                'id',
-                                id
-                            )
-
-                            .eq(
-                                'criado_por_username',
-                                usernameChamados()
-                            )
-
-                            .single();
-
-
-                    if (
-                        error ||
-                        !data
-                    ) {
-
-                        throw new Error(
-                            'Você não tem permissão para responder este chamado.'
-                        );
-
-                    }
+                    throw new Error(
+                        'Você não tem permissão para responder este chamado.'
+                    );
 
                 }
 
 
-                // ============================================
-                // UPLOAD DE ANEXO
-                // ============================================
+                throw (
+                    erroBuscarChamado ||
+                    new Error(
+                        'Chamado não encontrado.'
+                    )
+                );
+            }
 
-                let anexoUrl =
-                    null;
+
+            // =================================================
+            // UPLOAD DO PRINT
+            // =================================================
+
+            let anexoUrl =
+                null;
 
 
-                if (
-                    printNovaMensagem
-                ) {
+            if (
+                printNovaMensagem
+            ) {
+
+                try {
 
                     anexoUrl =
                         await uploadImagemChamados(
@@ -6428,194 +6457,428 @@
                             'mensagens'
                         );
 
-                }
 
-
-                const agora =
-                    new Date()
-                        .toISOString();
-
-
-                // ============================================
-                // INSERE MENSAGEM
-                // ============================================
-
-                const {
-                    error
-                } =
-                    await sb
-
-                        .from(
-                            CFG_CHAMADOS
-                                .tabelaMensagens
-                        )
-
-                        .insert({
-
-                            chamado_id:
-                                id,
-
-                            autor_username:
-                                usernameChamados(),
-
-                            autor_nome:
-                                u.name ||
-                                u.username ||
-                                usernameChamados(),
-
-                            mensagem:
-                                texto ||
-                                null,
-
-                            anexo_url:
-                                anexoUrl,
-
-                            criado_em:
-                                agora
-
-                        });
-
-
-                if (error) {
-
-                    throw error;
-
-                }
-
-
-                // ============================================
-                // ATUALIZA CHAMADO
-                // ============================================
-
-                const atualizacao = {
-
-                    atualizado_em:
-                        agora
-
-                };
-
-
-                // Se funcionário responder um chamado
-                // já concluído, reabre como aguardando
-                if (
-                    !ehAdminChamados() &&
-                    chamadoAberto?.status ===
-                    'concluido'
+                } catch (
+                    erroUpload
                 ) {
 
-                    atualizacao.status =
-                        'aguardando';
-
-
-                    atualizacao.concluido_em =
-                        null;
-
-                }
-
-
-                const {
-                    error:
-                        erroUpdate
-                } =
-                    await sb
-
-                        .from(
-                            CFG_CHAMADOS
-                                .tabelaChamados
-                        )
-
-                        .update(
-                            atualizacao
-                        )
-
-                        .eq(
-                            'id',
-                            id
-                        );
-
-
-                if (
-                    erroUpdate
-                ) {
-
-                    throw (
-                        erroUpdate
+                    console.error(
+                        '❌ Erro ao enviar print do chamado:',
+                        erroUpload
                     );
 
+
+                    erroUploadAnexo =
+                        erroUpload;
+
+
+                    // =========================================
+                    // IMPORTANTE
+                    //
+                    // Não damos throw aqui.
+                    // A resposta de texto será enviada mesmo
+                    // que o print tenha falhado.
+                    // =========================================
+                }
+            }
+
+
+            const agora =
+                new Date()
+                    .toISOString();
+
+
+            // =================================================
+            // INSERE A MENSAGEM
+            // =================================================
+
+            const {
+                error: erroMensagem
+            } =
+                await sb
+
+                    .from(
+                        CFG_CHAMADOS
+                            .tabelaMensagens
+                    )
+
+                    .insert({
+
+                        chamado_id:
+                            id,
+
+                        autor_username:
+                            usernameChamados(),
+
+                        autor_nome:
+                            u.name ||
+                            u.username ||
+                            usernameChamados(),
+
+                        mensagem:
+                            texto ||
+                            null,
+
+                        anexo_url:
+                            anexoUrl,
+
+                        criado_em:
+                            agora
+
+                    });
+
+
+            if (
+                erroMensagem
+            ) {
+
+                throw erroMensagem;
+            }
+
+
+            // =================================================
+            // ATUALIZA DATA DO CHAMADO
+            // =================================================
+
+            const atualizacao = {
+
+                atualizado_em:
+                    agora
+
+            };
+
+
+            // =================================================
+            // SE USUÁRIO RESPONDER CHAMADO CONCLUÍDO
+            //
+            // Reabre como "Aguardando"
+            // =================================================
+
+            if (
+                !ehAdminChamados() &&
+                dadosChamado.status ===
+                    'concluido'
+            ) {
+
+                atualizacao.status =
+                    'aguardando';
+
+
+                atualizacao.concluido_em =
+                    null;
+            }
+
+
+            const {
+                error: erroUpdate
+            } =
+                await sb
+
+                    .from(
+                        CFG_CHAMADOS
+                            .tabelaChamados
+                    )
+
+                    .update(
+                        atualizacao
+                    )
+
+                    .eq(
+                        'id',
+                        id
+                    );
+
+
+            if (
+                erroUpdate
+            ) {
+
+                throw erroUpdate;
+            }
+
+
+            // =================================================
+            // NOTIFICAÇÕES
+            // =================================================
+
+            try {
+
+                const criadorChamado =
+                    (
+                        dadosChamado
+                            .criado_por_username ||
+                        ''
+                    )
+                        .toString()
+                        .trim()
+                        .toLowerCase();
+
+
+                const previewMensagem =
+                    texto
+
+                        ? texto.substring(
+                            0,
+                            180
+                        )
+
+                        : anexoUrl
+
+                            ? 'Foi enviado um novo print no chamado.'
+
+                            : 'Nova atualização no chamado.';
+
+
+                // =============================================
+                // ADMIN RESPONDEU
+                //
+                // -> NOTIFICA QUEM ABRIU O CHAMADO
+                // =============================================
+
+                if (
+                    ehAdminChamados()
+                ) {
+
+                    if (
+                        criadorChamado &&
+                        criadorChamado !==
+                            usernameChamados() &&
+                        typeof window
+                            .criarNotificacaoChamado ===
+                            'function'
+                    ) {
+
+                        await window
+                            .criarNotificacaoChamado({
+
+                                chamadoId:
+                                    id,
+
+                                destinatarioUsername:
+                                    criadorChamado,
+
+                                tipo:
+                                    'nova_mensagem',
+
+                                titulo:
+                                    'Nova resposta no seu chamado',
+
+                                mensagem:
+                                    previewMensagem
+
+                            });
+                    }
+
+
+                // =============================================
+                // FUNCIONÁRIO RESPONDEU
+                //
+                // -> NOTIFICA OS ADMINISTRADORES
+                // =============================================
+
+                } else {
+
+                    if (
+                        typeof window
+                            .notificarAdminsChamado ===
+                            'function'
+                    ) {
+
+                        await window
+                            .notificarAdminsChamado({
+
+                                chamadoId:
+                                    id,
+
+                                tipo:
+                                    'resposta_usuario',
+
+                                titulo:
+                                    `${
+                                        u.name ||
+                                        u.username ||
+                                        'Usuário'
+                                    } respondeu o chamado #${numeroChamado(id)}`,
+
+                                mensagem:
+                                    previewMensagem
+
+                            });
+                    }
                 }
 
 
-                printNovaMensagem =
-                    null;
+            } catch (
+                erroNotificacao
+            ) {
+
+                // =============================================
+                // UMA FALHA NA NOTIFICAÇÃO NÃO PODE
+                // CANCELAR UMA RESPOSTA QUE JÁ FOI ENVIADA
+                // =============================================
+
+                console.warn(
+                    '⚠️ Mensagem enviada, mas não foi possível gerar a notificação:',
+                    erroNotificacao
+                );
+            }
 
 
-                await carregarDetalhesChamados(
-                    id
+            // =================================================
+            // LIMPA ANEXO
+            // =================================================
+
+            printNovaMensagem =
+                null;
+
+
+            const arquivoInput =
+                document.getElementById(
+                    'chArquivoMsg'
                 );
 
 
-                await window
-                    .carregarChamados(
-                        false
+            if (
+                arquivoInput
+            ) {
+
+                arquivoInput.value =
+                    '';
+            }
+
+
+            // =================================================
+            // RECARREGA O CHAMADO
+            // =================================================
+
+            await carregarDetalhesChamados(
+                id
+            );
+
+
+            // =================================================
+            // RECARREGA LISTAGEM DE CHAMADOS
+            // =================================================
+
+            await window
+                .carregarChamados(
+                    false
+                );
+
+
+            // =================================================
+            // CONTADOR DO CARD "CHAMADOS"
+            // =================================================
+
+            await atualizarContadorMenuChamados();
+
+
+            // =================================================
+            // ATUALIZA O SINO DO PRÓPRIO USUÁRIO
+            //
+            // Não é obrigatório, mas mantém o contador
+            // sincronizado imediatamente.
+            // =================================================
+
+            if (
+                typeof window
+                    .carregarNotificacoesChamados ===
+                'function'
+            ) {
+
+                try {
+
+                    await window
+                        .carregarNotificacoesChamados();
+
+                } catch (
+                    erroAtualizarSino
+                ) {
+
+                    console.warn(
+                        '⚠️ Não foi possível atualizar o sino:',
+                        erroAtualizarSino
                     );
+                }
+            }
 
 
-                await atualizarContadorMenuChamados();
+            // =================================================
+            // RESULTADO
+            // =================================================
 
+            if (
+                erroUploadAnexo
+            ) {
+
+                toastChamados(
+                    '⚠️ Resposta enviada, mas o print não pôde ser anexado: ' +
+                    (
+                        erroUploadAnexo.message ||
+                        'erro desconhecido'
+                    ),
+                    'warning'
+                );
+
+
+            } else {
 
                 toastChamados(
                     '✅ Resposta enviada.',
                     'success'
                 );
+            }
 
 
-            } catch (
+        } catch (
+            e
+        ) {
+
+            console.error(
+                '❌ Erro ao responder chamado:',
                 e
+            );
+
+
+            toastChamados(
+                '❌ Erro ao responder chamado: ' +
+                (
+                    e.message ||
+                    'erro desconhecido'
+                ),
+                'error'
+            );
+
+
+        } finally {
+
+            salvandoMensagem =
+                false;
+
+
+            if (
+                btn
             ) {
 
-                console.error(
-                    '❌ Erro ao responder chamado:',
-                    e
-                );
-
-
-                toastChamados(
-                    '❌ Erro ao responder chamado: ' +
-                    e.message,
-                    'error'
-                );
-
-
-            } finally {
-
-                salvandoMensagem =
+                btn.disabled =
                     false;
 
 
-                if (btn) {
+                btn.innerHTML = `
 
-                    btn.disabled =
-                        false;
+                    <i
+                        class="
+                            fas
+                            fa-paper-plane
+                        "
+                    ></i>
 
+                    Enviar resposta
 
-                    btn.innerHTML = `
-
-                        <i
-                            class="
-                                fas
-                                fa-paper-plane
-                            "
-                        ></i>
-
-                        Enviar resposta
-
-                    `;
-
-                }
-
+                `;
             }
-
-        };
+        }
+    };
 
 
     // ========================================================
